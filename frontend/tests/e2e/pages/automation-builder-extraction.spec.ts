@@ -50,30 +50,25 @@ test.describe("Extraction (Unified)", () => {
     await page.goto("/automation-builder/extraction");
     await page.waitForLoadState("domcontentloaded");
 
-    // The page should have a configuration area with method-specific panels
-    // Verify the page has rendered meaningful content (not just a spinner)
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
 
     // The page wraps in RequireProject with pageName="Discover".
-    // Without a project query param, the RequireProject fallback renders the
-    // "No project selected" card with a "Go to Dashboard" link. With one,
-    // the method selector renders. Wait for either branch to settle before
-    // asserting so we don't race the initial render.
-    const hasMethodOptions = await page
-      .getByText("Web Extraction")
-      .first()
-      .isVisible({ timeout: 10000 })
-      .catch(() => false);
-
-    const hasProjectRequirement = await page
-      .getByText(/no project selected|select.*project/i)
-      .first()
-      .isVisible({ timeout: 10000 })
-      .catch(() => false);
-
-    // Either method options are shown (project selected) or project selection is required
-    expect(hasMethodOptions || hasProjectRequirement).toBe(true);
+    // Without a project query param, RequireProject renders the
+    // "No project selected" card. With one, the method selector
+    // renders ("Web Extraction" + others). Either branch is a
+    // valid "page is doing something" signal — `toBeVisible()`
+    // polls until one of them lands. (Locator.isVisible({timeout})
+    // is deprecated and does NOT actually wait, which is why the
+    // earlier two-isVisible-calls implementation flaked across all
+    // four cross-browser engines: by the time isVisible was called
+    // RequireProject was still resolving useProjects() and neither
+    // element was in the DOM yet, so both returned false.)
+    await expect(
+      page
+        .getByText(/web extraction|no project selected|select or create/i)
+        .first()
+    ).toBeVisible({ timeout: 15000 });
   });
 
   test("should support multiple extraction methods", async ({ page }) => {
