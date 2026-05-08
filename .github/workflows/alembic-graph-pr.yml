@@ -1,0 +1,113 @@
+# Pre-merge sibling-head gate for the alembic chain.
+#
+# Companion to `alembic-graph-check.yml`, which fires on push-to-main
+# (post-merge) and only COMMENTS on the merging PR — by design the
+# notification arrives after main has already gained an extra head.
+#
+# This workflow is the pre-merge counterpart: it runs on every PR that
+# touches `backend/alembic/versions/**` and FAILS THE CHECK if the
+# resulting chain would have more than one head. Combined with branch
+# protection requiring this check, it converts "silent fork lying around
+# in the chain" into "PR cannot merge until the author either rebases
+# or adds an `alembic merge` revision."
+#
+# Background: the 2026-05-07 multi-head divergence (cr01a2b3c4d5 +
+# 7c5e4d3b2a1f) silently broke the canonical migrator container for
+# four hours. The post-merge informational workflow noticed it but
+# didn't block; this gate would have failed the second PR's check
+# before merge.
+#
+# Why a separate workflow vs. extending alembic-graph-check.yml:
+# the existing workflow's docstring explicitly states it is
+# informational-only ("by the time it runs, the merge has already
+# happened"). Mixing pre-merge blocking semantics into the same job
+# would muddy that intent. Two short workflow files with one trigger
+# each read more clearly than one workflow with conditional behavior.
+
+name: alembic graph PR gate
+
+on:
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "backend/alembic/versions/**"
+
+permissions:
+  contents: read
+
+jobs:
+  alembic-heads-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Count alembic heads
+        id: heads
+        working-directory: backend
+        run: |
+          # Same offline counter as alembic-graph-check.yml: scan
+          # versions/*.py without loading env.py (which would pull in
+          # qontinui-web's full app + ML deps). A revision is a head
+          # if no other revision references it as a parent.
+          set -euo pipefail
+          python -c "
+          import glob, re, sys
+          rev_re = re.compile(r'^revision[: ]+\s*=\s*[\"\'](.+?)[\"\']', re.M)
+          down_re = re.compile(r'^down_revision[: ]+\s*=\s*(.+)$', re.M)
+          revs = {}
+          parents = set()
+          for p in glob.glob('alembic/versions/*.py'):
+              with open(p, encoding='utf-8') as f:
+                  s = f.read()
+              m = rev_re.search(s)
+              if not m:
+                  continue
+              rev = m.group(1)
+              dm = down_re.search(s)
+              down = dm.group(1).strip() if dm else 'None'
+              for ref in re.findall(r'[\"\'](\w[\w]*)[\"\']', down):
+                  parents.add(ref)
+              revs[rev] = down
+          heads = sorted(r for r in revs if r not in parents)
+          print('HEAD_COUNT=' + str(len(heads)))
+          for h in heads:
+              print('HEAD=' + h)
+          " | tee heads.txt
+          count=$(grep -c '^HEAD=' heads.txt || echo 0)
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          if [ "$count" -gt 1 ]; then
+            heads_list=$(grep '^HEAD=' heads.txt | sed 's/^HEAD=//' | tr '\n' ' ')
+            echo "heads_list=$heads_list" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Fail if chain has more than one head
+        if: steps.heads.outputs.count > 1
+        run: |
+          echo "::error::Alembic chain has ${{ steps.heads.outputs.count }} heads after this PR:" >&2
+          for h in ${{ steps.heads.outputs.heads_list }}; do
+            echo "::error::  - $h" >&2
+          done
+          cat <<'EOF' >&2
+
+          Resolution: rebase onto the current head OR author a merge
+          revision before merging this PR.
+
+              cd backend
+              alembic merge -m "merge sibling heads" <head_a> <head_b>
+              git add alembic/versions/<merge_file>.py
+              git commit -m "chore(alembic): merge sibling heads"
+              git push
+
+          The merge revision is empty bookkeeping (it just joins parents).
+          Nothing happens at upgrade time beyond stamping the new head.
+
+          Why this gate is blocking: a multi-head chain breaks
+          `alembic upgrade head` (which refuses to disambiguate), which
+          in turn breaks the canonical-stack migrator container's
+          one-shot startup. Since 2026-05-08, services in
+          qontinui-stack/docker-compose.yml gate on
+          `migrator: service_completed_successfully`, so a multi-head
+          merge to main also blocks `coord` from starting.
+          EOF
+          exit 1

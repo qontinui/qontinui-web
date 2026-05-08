@@ -30,10 +30,23 @@ drop_table, create_index, drop_index, create_foreign_key,
 drop_constraint, create_unique_constraint, create_check_constraint,
 rename_table, batch_alter_table.
 
-Not gated: execute (raw SQL — out of scope; use search_path prefix or
-schema-qualified table names directly). The Phase 7 revisions
-themselves are exclusively ``op.execute()``-driven for the same reason
-this gate intentionally skips them.
+Raw SQL inside ``op.execute("…")``: also gated, with a regex-based
+audit of CREATE / ALTER / DROP / REFERENCES / INDEX-ON statements.
+Closes the f9d3e8a4c1b6 / add_arq_job_id_to_training_jobs class of
+bugs (2026-05-07 incident: an unqualified ``CREATE TABLE
+regression_suites`` and ``op.add_column("training_jobs", …)`` without
+``schema="project"`` silently broke the canonical migrator).
+
+The raw-SQL audit accepts ``public`` as a valid schema (Phase 7
+revisions legitimately reference ``public.<table>`` while moving
+tables out of public). The forbid-public-schema CI workflow is the
+backstop that prevents NEW domain references to ``public.*``; this
+gate only enforces "DDL must name a schema, any allowed schema."
+
+Pre-commit invokes this script with the changed-file list, so the
+raw-SQL audit only runs on migrations actually being modified —
+already-applied raw-SQL revisions are not re-audited unless the
+author touches them.
 
 Exit code: 0 = all clean; 1 = at least one violation.
 """
@@ -41,6 +54,7 @@ Exit code: 0 = all clean; 1 = at least one violation.
 from __future__ import annotations
 
 import ast
+import re
 import sys
 from pathlib import Path
 
@@ -61,6 +75,184 @@ GATED_OPS = {
 }
 
 ALLOWED_SCHEMAS = {"project", "coord", "agent", "auth", "cloud"}
+
+# Schemas accepted by the raw-SQL audit. ``public`` is included here
+# (and only here) because Phase 7 revisions legitimately reference
+# ``public.<table>`` while moving tables out of public — the
+# forbid-public-schema CI workflow guards against NEW public refs;
+# this gate only requires DDL to name *some* allowed schema.
+RAW_SQL_ALLOWED_SCHEMAS = ALLOWED_SCHEMAS | {"public"}
+
+# Identifiers the raw-SQL audit accepts unqualified. ``alembic_version``
+# is alembic's own bookkeeping table — it's intrinsically in
+# ``public`` and migrations that touch it conventionally don't
+# schema-qualify (alembic itself doesn't either). Add to this set
+# only for similarly-intrinsic identifiers.
+RAW_SQL_UNQUALIFIED_OK = {"alembic_version"}
+
+# Regexes for the raw-SQL audit. Each pattern captures the table
+# identifier in named group ``ident``. Identifiers may be unqualified
+# (``foo``), schema-qualified (``project.foo``), or quoted
+# (``"project"."foo"`` / ``"foo"``). The audit accepts any of those
+# shapes that names an allowed schema.
+#
+# Comments are stripped before matching. Patterns are deliberately
+# conservative — we'd rather miss a weird construction than false-
+# flag a working migration.
+_IDENT = r'(?:"[^"]+"|\w+)'  # bare or double-quoted identifier
+_QUALIFIED_IDENT = rf'(?:{_IDENT}\s*\.\s*{_IDENT})'  # schema.table form
+
+_DDL_PATTERNS = [
+    # CREATE TABLE [IF NOT EXISTS] <name> (
+    (
+        "CREATE TABLE",
+        re.compile(
+            r"\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?P<ident>"
+            + _IDENT
+            + r"(?:\s*\.\s*"
+            + _IDENT
+            + r")?)",
+            re.IGNORECASE,
+        ),
+    ),
+    # ALTER TABLE [ONLY] <name>
+    (
+        "ALTER TABLE",
+        re.compile(
+            r"\bALTER\s+TABLE\s+(?:ONLY\s+)?(?P<ident>"
+            + _IDENT
+            + r"(?:\s*\.\s*"
+            + _IDENT
+            + r")?)",
+            re.IGNORECASE,
+        ),
+    ),
+    # DROP TABLE [IF EXISTS] <name>
+    (
+        "DROP TABLE",
+        re.compile(
+            r"\bDROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?P<ident>"
+            + _IDENT
+            + r"(?:\s*\.\s*"
+            + _IDENT
+            + r")?)",
+            re.IGNORECASE,
+        ),
+    ),
+    # CREATE [UNIQUE] INDEX [IF NOT EXISTS] <idxname> ON [ONLY] <table>
+    (
+        "INDEX ON",
+        re.compile(
+            r"\bON\s+(?:ONLY\s+)?(?P<ident>"
+            + _IDENT
+            + r"(?:\s*\.\s*"
+            + _IDENT
+            + r")?)\s*(?:\(|USING\b)",
+            re.IGNORECASE,
+        ),
+    ),
+    # REFERENCES <name>(col) — inline FK in CREATE TABLE / ALTER TABLE.
+    (
+        "REFERENCES",
+        re.compile(
+            r"\bREFERENCES\s+(?P<ident>"
+            + _IDENT
+            + r"(?:\s*\.\s*"
+            + _IDENT
+            + r")?)\s*\(",
+            re.IGNORECASE,
+        ),
+    ),
+]
+
+
+def _strip_sql_comments(sql: str) -> str:
+    """Strip ``--`` line comments and ``/* … */`` block comments so the
+    DDL regexes don't match inside commentary."""
+    # Block comments first (greedy-non-greedy combo + DOTALL).
+    sql = re.sub(r"/\*.*?\*/", " ", sql, flags=re.DOTALL)
+    # Line comments (-- to end of line).
+    sql = re.sub(r"--[^\n]*", " ", sql)
+    return sql
+
+
+def _ident_schema(ident: str) -> str | None:
+    """Return the schema part of ``ident`` if schema-qualified.
+
+    Identifiers are normalised by stripping double quotes and
+    surrounding whitespace. Returns None for an unqualified identifier
+    (no dot)."""
+    cleaned = ident.strip()
+    if "." not in cleaned:
+        return None
+    schema_raw = cleaned.split(".", 1)[0].strip()
+    if schema_raw.startswith('"') and schema_raw.endswith('"'):
+        schema_raw = schema_raw[1:-1]
+    return schema_raw
+
+
+def _check_raw_sql(call: ast.Call) -> list[tuple[int, str]]:
+    """Audit raw SQL inside an ``op.execute("…")`` call.
+
+    Returns a list of ``(lineno, message)`` violations. Skips calls
+    whose arg is non-literal (e.g. computed at runtime via
+    ``sa.text(...)`` with bound params) — those need manual review."""
+    if not call.args:
+        return []
+    first = call.args[0]
+    # Plain string literal.
+    if isinstance(first, ast.Constant) and isinstance(first.value, str):
+        sql = first.value
+    else:
+        # Computed / dynamic SQL — skip silently. Pre-commit can't
+        # statically analyse runtime values without false positives.
+        return []
+
+    body = _strip_sql_comments(sql)
+    violations: list[tuple[int, str]] = []
+    seen: set[tuple[int, str, str]] = set()
+    for label, pattern in _DDL_PATTERNS:
+        for m in pattern.finditer(body):
+            ident = m.group("ident")
+            schema = _ident_schema(ident)
+            if schema is None:
+                bare = ident.strip().strip('"')
+                if bare in RAW_SQL_UNQUALIFIED_OK:
+                    continue
+                key = (call.lineno, label, ident.strip())
+                if key in seen:
+                    continue
+                seen.add(key)
+                violations.append(
+                    (
+                        call.lineno,
+                        f"op.execute(...) raw SQL: {label} references unqualified "
+                        f"identifier {ident.strip()!r}; schema-qualify it (one of: "
+                        f"{sorted(RAW_SQL_ALLOWED_SCHEMAS)})",
+                    )
+                )
+            elif schema not in RAW_SQL_ALLOWED_SCHEMAS:
+                key = (call.lineno, label, ident.strip())
+                if key in seen:
+                    continue
+                seen.add(key)
+                violations.append(
+                    (
+                        call.lineno,
+                        f"op.execute(...) raw SQL: {label} references "
+                        f"{ident.strip()!r} in schema {schema!r} — not in allowed "
+                        f"set {sorted(RAW_SQL_ALLOWED_SCHEMAS)}",
+                    )
+                )
+    return violations
+
+
+def _is_op_execute_call(call: ast.Call) -> bool:
+    """Return True if ``call`` is ``op.execute(...)``."""
+    func = call.func
+    if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
+        return func.value.id == "op" and func.attr == "execute"
+    return False
 
 
 def _is_op_call(call: ast.Call) -> str | None:
@@ -105,25 +297,31 @@ def check_file(path: Path) -> list[str]:
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
+
+        # 1. op.<gated_func>(..., schema=...) kwarg gate.
         op_name = _is_op_call(node)
-        if op_name is None:
+        if op_name is not None:
+            schema_value = _schema_kwarg_value(node)
+            if schema_value is MISSING:
+                violations.append(
+                    f"{path}:{node.lineno}: op.{op_name}(...) missing schema= argument; "
+                    f"specify one of: {sorted(ALLOWED_SCHEMAS)}"
+                )
+            elif schema_value is DYNAMIC:
+                # Computed schema= (e.g. via a variable). Allow but note.
+                # Comment out next line if you want to enforce literals only.
+                pass
+            elif schema_value not in ALLOWED_SCHEMAS:
+                violations.append(
+                    f"{path}:{node.lineno}: op.{op_name}(..., schema={schema_value!r}) — "
+                    f"not in allowed set {sorted(ALLOWED_SCHEMAS)}"
+                )
             continue
 
-        schema_value = _schema_kwarg_value(node)
-        if schema_value is MISSING:
-            violations.append(
-                f"{path}:{node.lineno}: op.{op_name}(...) missing schema= argument; "
-                f"specify one of: {sorted(ALLOWED_SCHEMAS)}"
-            )
-        elif schema_value is DYNAMIC:
-            # Computed schema= (e.g. via a variable). Allow but note.
-            # Comment out next line if you want to enforce literals only.
-            pass
-        elif schema_value not in ALLOWED_SCHEMAS:
-            violations.append(
-                f"{path}:{node.lineno}: op.{op_name}(..., schema={schema_value!r}) — "
-                f"not in allowed set {sorted(ALLOWED_SCHEMAS)}"
-            )
+        # 2. op.execute("...") raw-SQL gate.
+        if _is_op_execute_call(node):
+            for lineno, msg in _check_raw_sql(node):
+                violations.append(f"{path}:{lineno}: {msg}")
     return violations
 
 

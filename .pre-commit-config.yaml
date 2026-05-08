@@ -40,9 +40,12 @@ repos:
         entry: python .pre-commit-hooks/check_alembic_schema_args.py
         language: system
         files: ^backend/alembic/(_staged_consolidation|versions)/.*\.py$
-        # Scope is currently narrowed to _staged_consolidation/ inside
-        # the script itself. Expand to versions/ after the consolidation
-        # transplant lands (see TODO in the script).
+        # Two checks: (1) op.<gated_func>(..., schema=...) kwarg
+        # presence, (2) raw SQL inside op.execute("...") names a
+        # schema for every CREATE/ALTER/DROP/REFERENCES/INDEX-ON.
+        # Pre-commit invokes with the changed-file list so the audit
+        # only runs on migrations actually being touched — already-
+        # applied legacy revisions aren't re-audited.
 
   - repo: local
     hooks:
