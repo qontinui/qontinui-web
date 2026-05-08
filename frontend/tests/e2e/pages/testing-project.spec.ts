@@ -243,23 +243,28 @@ test.describe("Project Testing - Integration Page", () => {
     await page.waitForLoadState("domcontentloaded");
 
     // The list area has three legitimate states: empty-state heading, a list
-    // of run cards, or a loading spinner while the first fetch resolves.
-    // Without a runner the API call rejects and we land on the API-offline
-    // warning + empty body, so accept any of those signals.
+    // of run cards, or the API-offline warning. A loading spinner shows
+    // briefly while the first fetch + the apiHealthy check resolve; poll the
+    // OR-check so we wait through that transient state instead of racing it.
     const emptyState = page.getByText("No Integration Tests Yet");
     const runsList = page.locator(
       '[class*="space-y"] > [class*="cursor-pointer"]'
     );
-    const apiOffline = page.getByText(
-      "Runner is not reachable at",
-      { exact: false }
-    );
+    const apiOffline = page.getByText("Runner is not reachable at", {
+      exact: false,
+    });
 
-    const hasEmpty = await emptyState.isVisible().catch(() => false);
-    const hasRuns = (await runsList.count()) > 0;
-    const hasOffline = await apiOffline.isVisible().catch(() => false);
-
-    expect(hasEmpty || hasRuns || hasOffline).toBeTruthy();
+    await expect
+      .poll(
+        async () => {
+          const hasEmpty = await emptyState.isVisible().catch(() => false);
+          const hasRuns = (await runsList.count()) > 0;
+          const hasOffline = await apiOffline.isVisible().catch(() => false);
+          return hasEmpty || hasRuns || hasOffline;
+        },
+        { timeout: 15000 }
+      )
+      .toBeTruthy();
   });
 });
 

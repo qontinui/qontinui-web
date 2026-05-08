@@ -41,8 +41,18 @@ test.describe("Tools - Error Monitor", () => {
     await page.goto("/tools/error-monitor");
     await page.waitForLoadState("domcontentloaded");
 
-    // When runner is online, the page shows severity filter buttons (All, Error, Warning, Info)
-    // and log entries area. When offline, it shows a runner offline state.
+    // The page returns a centered <Loader2> while useRunnerHealth is loading;
+    // wait for the "Error Monitor" heading to land so we're past that early
+    // return before snapshotting visibility.
+    await expect(page.locator("text=Error Monitor").first()).toBeVisible({
+      timeout: 15000,
+    });
+
+    // The severity filter buttons (Error/Warning/Info/All) live inside a
+    // showFilters && (...) conditional and only render after a Filters click.
+    // The "Log Entries" CardTitle always renders past healthLoading, and the
+    // RunnerPartialState banner ("Runner offline — ...") shows when isOffline.
+    // Accept any of those as a healthy structural signal.
     const hasErrorFilter =
       (await page.locator('button:has-text("Error")').count()) > 0;
     const hasWarningFilter =
@@ -52,10 +62,9 @@ test.describe("Tools - Error Monitor", () => {
     const hasAllFilter =
       (await page.locator('button:has-text("All")').count()) > 0;
     const hasOfflineState =
-      (await page.locator("text=Start the Qontinui Runner").count()) > 0;
+      (await page.locator("text=Runner offline").count()) > 0;
     const hasLogEntries = (await page.locator("text=Log Entries").count()) > 0;
 
-    // Should have either filter buttons (runner online) or offline state
     const hasFilteringUI =
       hasErrorFilter && hasWarningFilter && hasInfoFilter && hasAllFilter;
     expect(hasFilteringUI || hasOfflineState || hasLogEntries).toBeTruthy();
@@ -67,16 +76,21 @@ test.describe("Tools - Error Monitor", () => {
     await page.goto("/tools/error-monitor");
     await page.waitForLoadState("domcontentloaded");
 
-    // When runner is online, there should be 4 summary cards (Total, Errors, Warnings, Info)
+    // Wait past the healthLoading early-return spinner (see sibling test).
+    await expect(page.locator("text=Error Monitor").first()).toBeVisible({
+      timeout: 15000,
+    });
+
+    // Summary cards (Total, Critical, Errors, Warnings, Info) always render
+    // once past healthLoading. The RunnerPartialState banner ("Runner offline
+    // — ...") sits above them when isOffline. The "Failed to load error
+    // entries" message renders inside the Log Entries card when the runner
+    // is reachable but the log source isn't configured.
     const hasTotalCard = (await page.locator("text=Total").count()) > 0;
     const hasErrorsCard = (await page.locator("text=Errors").count()) > 0;
     const hasWarningsCard = (await page.locator("text=Warnings").count()) > 0;
     const hasOfflineState =
-      (await page.locator("text=Start the Qontinui Runner").count()) > 0;
-    // The runner can also be reachable but failing to deliver entries (e.g.,
-    // log source not configured); the page renders summary cards plus a
-    // "Failed to load error entries" message rather than the explicit offline
-    // CTA.
+      (await page.locator("text=Runner offline").count()) > 0;
     const hasLoadFailure =
       (await page.locator("text=Failed to load error entries").count()) > 0;
 
