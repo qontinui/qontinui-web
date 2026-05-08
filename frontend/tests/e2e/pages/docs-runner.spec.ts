@@ -329,7 +329,9 @@ test.describe("Runner Monitoring (/docs/runner/monitoring)", () => {
 
     await page.screenshot({
       path: "test-results/docs-runner-monitoring.png",
-      fullPage: true,
+      // Mobile Safari/WebKit caps screenshot canvas at 32767px;
+      // long docs pages exceed that with fullPage: true.
+      fullPage: false,
     });
   });
 
@@ -517,7 +519,7 @@ test.describe("Runner Troubleshooting (/docs/runner/troubleshooting)", () => {
 
     await page.screenshot({
       path: "test-results/docs-runner-troubleshooting.png",
-      fullPage: true,
+      fullPage: false,
     });
   });
 
@@ -735,7 +737,7 @@ test.describe("Runner Workflow Descriptions (/docs/runner/workflow-descriptions)
 
     await page.screenshot({
       path: "test-results/docs-runner-workflow-descriptions.png",
-      fullPage: true,
+      fullPage: false,
     });
   });
 
