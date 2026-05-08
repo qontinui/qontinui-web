@@ -536,12 +536,20 @@ jobs:
         working-directory: ./frontend
         run: npm ci
 
-      # Install only the engine this matrix entry needs:
-      #   firefox → firefox, webkit → webkit,
-      #   Mobile Chrome → chromium, Mobile Safari → webkit
-      - name: Install Playwright browser (${{ matrix.engine }})
+      # Install chromium PLUS the engine this matrix entry needs.
+      # The `setup` project (auth.setup.ts) runs in chromium for every
+      # matrix entry — Playwright resolves project dependencies before
+      # running the target project, and the firefox/webkit/Mobile-*
+      # projects all `dependencies: ["setup"]`. Without chromium
+      # installed, auth.setup fails with `Executable doesn't exist at
+      # .../chromium_headless_shell-*` and every dependent test skips.
+      # Mobile Chrome's engine is already chromium; for the other three
+      # entries this adds chromium alongside firefox/webkit. `npx
+      # playwright install` is idempotent, so passing chromium twice is
+      # a no-op when it's already in the list.
+      - name: Install Playwright browsers (chromium for setup + ${{ matrix.engine }})
         working-directory: ./frontend
-        run: npx playwright install --with-deps ${{ matrix.engine }}
+        run: npx playwright install --with-deps chromium ${{ matrix.engine }}
 
       - name: Create runner schema
         env:
