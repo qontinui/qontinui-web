@@ -28,7 +28,9 @@ test.describe("Homepage (/)", () => {
 
     await page.screenshot({
       path: "test-results/marketing-homepage.png",
-      fullPage: true,
+      // Mobile Safari/WebKit caps screenshot canvas at 32767px;
+      // long landing pages exceed that with fullPage: true.
+      fullPage: false,
     });
   });
 

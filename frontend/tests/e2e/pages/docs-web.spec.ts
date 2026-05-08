@@ -371,7 +371,9 @@ test.describe("Web Image Recognition (/docs/web/image-recognition)", () => {
 
     await page.screenshot({
       path: "test-results/docs-web-image-recognition.png",
-      fullPage: true,
+      // Mobile Safari/WebKit caps screenshot canvas at 32767px;
+      // long docs pages exceed that with fullPage: true.
+      fullPage: false,
     });
   });
 
