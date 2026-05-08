@@ -429,20 +429,40 @@ jobs:
             frontend/playwright-report/
           retention-days: 30
 
-  # Phase 3 cross-browser baseline collection. Runs firefox + webkit +
-  # Mobile Chrome + Mobile Safari sequentially in one non-gating job to
-  # produce a fail inventory the way Phase 2 had for chromium. Once we
-  # know which browsers are tractable, individual ones can be promoted
-  # to a sharded gating matrix; until then the survey is informational
-  # only and `continue-on-error: true` keeps it out of the merge gate.
-  # Skipped on PRs (PR-time CI is the @smoke set on chromium); runs on
-  # push-to-main and the nightly schedule.
+  # Phase 3 cross-browser baseline collection. PR-K shipped this as a
+  # single sequential job (chromium ∪ firefox ∪ webkit install, all 4
+  # projects run back-to-back). Run 25523412918 hit the 90-min
+  # timeout-minutes after firefox + webkit only; Mobile Chrome + Mobile
+  # Safari never started. PR-L converts to a 4-way matrix so each
+  # browser gets its own runner with its own ~60-min budget — wall-
+  # clock parallelizes from "killed at 90min" to "max ~60min concurrent."
+  # Still non-gating: continue-on-error: true keeps it out of the merge
+  # gate; test-summary excludes it. Skipped on PRs.
   frontend-tests-cross-browser-survey:
-    name: Frontend E2E Tests — cross-browser survey (firefox + webkit + mobile)
+    name: Frontend E2E Tests — cross-browser survey (${{ matrix.browser }})
     if: github.event_name != 'pull_request'
     continue-on-error: true
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 60
+
+    strategy:
+      # Each browser runs independently; one engine timing out should
+      # not cancel the others.
+      fail-fast: false
+      matrix:
+        include:
+          - browser: firefox
+            browser-slug: firefox
+            engine: firefox
+          - browser: webkit
+            browser-slug: webkit
+            engine: webkit
+          - browser: Mobile Chrome
+            browser-slug: mobile-chrome
+            engine: chromium
+          - browser: Mobile Safari
+            browser-slug: mobile-safari
+            engine: webkit
 
     services:
       postgres:
@@ -516,12 +536,12 @@ jobs:
         working-directory: ./frontend
         run: npm ci
 
-      # Mobile Chrome uses the chromium engine; Mobile Safari uses webkit.
-      # Installing chromium + firefox + webkit covers all four non-chromium
-      # desktop-or-mobile projects in playwright.config.ts.
-      - name: Install Playwright browsers (chromium + firefox + webkit)
+      # Install only the engine this matrix entry needs:
+      #   firefox → firefox, webkit → webkit,
+      #   Mobile Chrome → chromium, Mobile Safari → webkit
+      - name: Install Playwright browser (${{ matrix.engine }})
         working-directory: ./frontend
-        run: npx playwright install --with-deps chromium firefox webkit
+        run: npx playwright install --with-deps ${{ matrix.engine }}
 
       - name: Create runner schema
         env:
@@ -554,28 +574,25 @@ jobs:
         run: |
           python create_admin.py
 
-      # Run all four non-chromium projects sequentially in one job. workers=1
-      # is inherited from playwright.config.ts's CI block; each project's
-      # tests finish before the next starts. Slow (expect 60-90min) but the
-      # goal is a fail inventory, not speed — we'll shard once we know which
-      # browsers are tractable.
-      - name: Run cross-browser survey
+      # Single project per matrix entry. workers=1 (inherited from
+      # playwright.config.ts) keeps within-project execution serial; the
+      # parallelism is between matrix entries.
+      - name: Run cross-browser survey (${{ matrix.browser }})
         working-directory: ./frontend
         env:
           CI: true
           PLAYWRIGHT_BASE_URL: http://localhost:3001
         run: |
-          npx playwright test \
-            --project=firefox \
-            --project=webkit \
-            --project="Mobile Chrome" \
-            --project="Mobile Safari"
+          npx playwright test --project="${{ matrix.browser }}"
 
+      # Artifact names must be unique across matrix entries
+      # (actions/upload-artifact@v4 rejects collisions). browser-slug
+      # avoids spaces in artifact names ("mobile-chrome" not "Mobile Chrome").
       - name: Upload survey Playwright report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report-cross-browser-survey
+          name: playwright-report-cross-browser-survey-${{ matrix.browser-slug }}
           path: frontend/playwright-report/
           retention-days: 30
 
@@ -583,7 +600,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: cross-browser-survey-test-results
+          name: cross-browser-survey-test-results-${{ matrix.browser-slug }}
           path: frontend/test-results/
           retention-days: 30
 
