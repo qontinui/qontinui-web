@@ -8,7 +8,6 @@
  * - /automation-builder/web-extraction (legacy redirect)
  * - /automation-builder/background-removal
  * - /automation-builder/pattern-optimization
- * - /automation-builder/ui-bridge-states (legacy redirect)
  */
 
 import { test, expect } from "../fixtures";
@@ -275,33 +274,5 @@ test.describe("Pattern Optimization", () => {
       const pageContent = await page.content();
       expect(pageContent).not.toContain("Internal Server Error");
     }
-  });
-});
-
-test.describe("UI Bridge States (Legacy Redirect)", () => {
-  test("should redirect to the unified extraction page with ui-bridge method", async ({
-    page,
-  }) => {
-    await page.goto("/automation-builder/ui-bridge-states");
-    await page.waitForLoadState("domcontentloaded");
-
-    await page.screenshot({
-      path: "test-results/ui-bridge-states-redirect.png",
-      fullPage: true,
-    });
-
-    const pageContent = await page.content();
-    expect(pageContent).not.toContain("Internal Server Error");
-
-    // The ui-bridge-states page redirects via router.replace to
-    // /automation-builder/extraction?method=ui-bridge
-    await page.waitForURL(
-      /\/automation-builder\/extraction.*method=ui-bridge/,
-      {
-        timeout: 15000,
-      }
-    );
-    expect(page.url()).toContain("/automation-builder/extraction");
-    expect(page.url()).toContain("method=ui-bridge");
   });
 });
