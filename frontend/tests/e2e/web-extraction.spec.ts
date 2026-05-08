@@ -3,34 +3,12 @@
  * Tests that the Connect Runner link is displayed when no runner is connected
  */
 
-import { test, expect } from "@playwright/test";
-import { TEST_USER } from "./test-credentials";
+import { test, expect } from "./fixtures";
 
 // Valid project ID from the bug report URL
 const PROJECT_ID = "fb93478d-98bd-4e40-99f4-0f2c08c1fd5a";
 
 test.describe("Web Extraction Page", () => {
-  test.beforeEach(async ({ page }) => {
-    // Login flow
-    await page.goto("/");
-
-    // Click Sign In button to open auth dialog
-    await page.click('button:has-text("Sign In")');
-
-    // Wait for dialog to appear
-    await page.waitForSelector('[role="dialog"]');
-
-    // Fill login form
-    await page.fill("#login-username", TEST_USER.username);
-    await page.fill("#login-password", TEST_USER.password);
-
-    // Submit login
-    await page.click('button[type="submit"]:has-text("Sign In")');
-
-    // Wait for redirect after login (dashboard for normal users, admin for superusers)
-    await page.waitForURL(/\/(dashboard|admin)/, { timeout: 10000 });
-  });
-
   test("displays Connect Runner link when no runner is connected", async ({
     page,
   }) => {

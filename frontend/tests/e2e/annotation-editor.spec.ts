@@ -10,8 +10,8 @@
  * - Export functionality
  */
 
-import { test, expect, Page } from "@playwright/test";
-import { TEST_USER } from "./test-credentials";
+import type { Page } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 // Test constants
 const PROJECT_ID = "fb93478d-98bd-4e40-99f4-0f2c08c1fd5a";
@@ -135,25 +135,6 @@ async function _selectSelectTool(page: Page): Promise<void> {
 }
 
 test.describe("Annotation Editor", () => {
-  test.beforeEach(async ({ page }) => {
-    // Login if not already authenticated
-    const currentUrl = page.url();
-    if (!currentUrl.includes("dashboard") && !currentUrl.includes("admin")) {
-      await page.goto("/");
-
-      // Check if Sign In button is visible (means not logged in)
-      const signInButton = page.locator('button:has-text("Sign In")');
-      if (await signInButton.isVisible({ timeout: 3000 }).catch(() => false)) {
-        await signInButton.click();
-        await page.waitForSelector('[role="dialog"]');
-        await page.fill("#login-username", TEST_USER.username);
-        await page.fill("#login-password", TEST_USER.password);
-        await page.click('button[type="submit"]:has-text("Sign In")');
-        await page.waitForURL(/\/(dashboard|admin)/, { timeout: 10000 });
-      }
-    }
-  });
-
   test.describe("Canvas Interaction", () => {
     test("should display annotation canvas when screenshot is loaded", async ({
       page,
