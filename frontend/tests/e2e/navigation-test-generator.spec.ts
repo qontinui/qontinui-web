@@ -163,18 +163,23 @@ test.describe("Navigation Test Generator", () => {
   });
 
   test("should switch to State Graph tab", async ({ page }) => {
-    // Click on State Graph tab
-    await page.getByRole("button", { name: /State Graph/i }).click();
-
-    // Verify empty state message. Tab switch triggers an async React
-    // setActiveTab → StateGraphPanel mount → render cycle; on
-    // firefox/Mobile Chrome under CI load this can exceed the 5s
-    // default toBeVisible timeout. Match the 15000ms convention used
-    // for similar render races in automation-builder-extraction.spec.ts
-    // (lines 45, 70) and testing-project.spec.ts (lines 358, 372).
-    await expect(page.getByText(/No states discovered yet/i)).toBeVisible({
-      timeout: 15000,
+    const stateGraphBtn = page.getByRole("button", {
+      name: /State Graph/i,
     });
+    const emptyState = page.getByText(/No states discovered yet/i);
+
+    // Click is a one-shot in Playwright. If it lands before React
+    // hydration has attached the onClick handler to this tab button
+    // (the tab buttons in NavigationTestGenerator have no `disabled`
+    // prop, so there's no DOM-observable hydration signal to wait
+    // on), the DOM event fires (button gets focus) but
+    // setActiveTab("graph") doesn't run, so StateGraphPanel never
+    // mounts and `emptyState` never enters the DOM. Retry the
+    // click+assert pair until both pass within the budget.
+    await expect(async () => {
+      await stateGraphBtn.click();
+      await expect(emptyState).toBeVisible({ timeout: 2000 });
+    }).toPass({ timeout: 15000 });
   });
 
   test("should show Source selector with New Exploration button", async ({
