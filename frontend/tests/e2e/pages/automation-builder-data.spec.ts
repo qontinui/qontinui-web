@@ -14,13 +14,21 @@
 import { test, expect } from "../fixtures";
 
 /**
- * Helper to select a project from the dashboard before navigating
- * to pages that require a project context.
+ * Helper to select a project from the post-login landing page before
+ * navigating to pages that require a project context.
+ *
+ * Navigates to "/build/workflows" rather than "/dashboard" because
+ * /dashboard is a redirect stub (router.replace → /build/workflows or
+ * /tools/visual-automation in useEffect). Going to /dashboard leaves a
+ * redirect navigation in flight that races with the next page.goto on
+ * slower engines (firefox NS_BINDING_ABORTED, webkit / Mobile Safari
+ * "Navigation interrupted by /dashboard"). Same pattern as PR-P #97
+ * Fix A on automation-builder-analytics.spec.ts.
  */
 async function selectProjectIfAvailable(
   page: import("@playwright/test").Page
 ): Promise<boolean> {
-  await page.goto("/dashboard");
+  await page.goto("/build/workflows");
   await page.waitForLoadState("domcontentloaded");
   await page.waitForTimeout(2000);
 
