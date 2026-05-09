@@ -1,7 +1,7 @@
 """coord.build_events — Tinderbox-style peer-visible build status
 
 Revision ID: c0bdef_coord_build_events
-Revises: sd01_coord_coordinator_shadow_decisions
+Revises: a6f606408ecb
 Create Date: 2026-05-09
 
 Phase B1 of the coord-tinderbox-build-status plan
@@ -46,7 +46,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "c0bdef_coord_build_events"
-down_revision: str = "sd01_coord_coordinator_shadow_decisions"
+down_revision: str = "a6f606408ecb"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
