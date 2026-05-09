@@ -14,6 +14,16 @@
 
 import { test, expect } from "../fixtures";
 
+// Tests below navigate to "/build/workflows" instead of the more obvious
+// "/dashboard" because /dashboard is a redirect stub
+// (frontend/src/app/(app)/dashboard/page.tsx → router.replace to
+// /build/workflows or /tools/visual-automation in useEffect). Going to
+// /dashboard leaves a redirect navigation in flight that races with the
+// next page.goto on slower engines (firefox NS_BINDING_ABORTED, webkit /
+// Mobile Safari "Navigation interrupted by /dashboard"). Navigate
+// directly to the destination — same pattern as PR-P #97 Fix A on
+// automation-builder-analytics.spec.ts.
+
 test.describe("Automation Builder - Core Pages", () => {
   test.setTimeout(60000);
 
@@ -55,8 +65,8 @@ test.describe("Automation Builder - Core Pages", () => {
     test("renders page content when project context is available", async ({
       page,
     }) => {
-      // Navigate to dashboard first to select a project
-      await page.goto("/dashboard");
+      // Navigate to a post-redirect destination first to select a project
+      await page.goto("/build/workflows");
       await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
@@ -114,7 +124,7 @@ test.describe("Automation Builder - Core Pages", () => {
       page,
     }) => {
       // Select a project first
-      await page.goto("/dashboard");
+      await page.goto("/build/workflows");
       await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
@@ -158,7 +168,7 @@ test.describe("Automation Builder - Core Pages", () => {
     test("displays statistics section with state, transition, workflow, and image counts", async ({
       page,
     }) => {
-      await page.goto("/dashboard");
+      await page.goto("/build/workflows");
       await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
@@ -217,7 +227,7 @@ test.describe("Automation Builder - Core Pages", () => {
     });
 
     test("displays quick navigation links", async ({ page }) => {
-      await page.goto("/dashboard");
+      await page.goto("/build/workflows");
       await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
@@ -290,7 +300,7 @@ test.describe("Automation Builder - Core Pages", () => {
     test("displays image library area with upload capability", async ({
       page,
     }) => {
-      await page.goto("/dashboard");
+      await page.goto("/build/workflows");
       await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
@@ -369,7 +379,7 @@ test.describe("Automation Builder - Core Pages", () => {
     test("displays tabs: Definition, State View, Transitions", async ({
       page,
     }) => {
-      await page.goto("/dashboard");
+      await page.goto("/build/workflows");
       await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
@@ -418,7 +428,7 @@ test.describe("Automation Builder - Core Pages", () => {
     test("Definition tab is active by default and shows state editor area", async ({
       page,
     }) => {
-      await page.goto("/dashboard");
+      await page.goto("/build/workflows");
       await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
@@ -458,7 +468,7 @@ test.describe("Automation Builder - Core Pages", () => {
     });
 
     test("can switch between tabs", async ({ page }) => {
-      await page.goto("/dashboard");
+      await page.goto("/build/workflows");
       await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
@@ -537,7 +547,7 @@ test.describe("Automation Builder - Core Pages", () => {
     });
 
     test("displays Settings heading and tabs", async ({ page }) => {
-      await page.goto("/dashboard");
+      await page.goto("/build/workflows");
       await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
@@ -595,7 +605,7 @@ test.describe("Automation Builder - Core Pages", () => {
     });
 
     test("General tab shows auto-save toggle", async ({ page }) => {
-      await page.goto("/dashboard");
+      await page.goto("/build/workflows");
       await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
@@ -643,7 +653,7 @@ test.describe("Automation Builder - Core Pages", () => {
     });
 
     test("can switch between settings tabs", async ({ page }) => {
-      await page.goto("/dashboard");
+      await page.goto("/build/workflows");
       await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(2000);
 
