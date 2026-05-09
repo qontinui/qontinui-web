@@ -16,6 +16,7 @@
  */
 
 import { test, expect } from "../fixtures";
+import { gotoWithRetry } from "../helpers/network-retry";
 
 test.describe("Project Dashboard Page", () => {
   test("loads without errors and shows heading", async ({ page }) => {
@@ -39,19 +40,10 @@ test.describe("Project Dashboard Page", () => {
 
   test("shows metric cards and resource overview tabs", async ({ page }) => {
     // firefox occasionally hits ERR_CONNECTION_REFUSED on the first
-    // goto of this test under CI load even though the dev server is
-    // up (other tests in this file succeed). One retry papers over
-    // the browser-init timing window.
-    try {
-      await page.goto("/project-dashboard");
-    } catch (e) {
-      if (e instanceof Error && /CONNECTION_REFUSED/i.test(e.message)) {
-        await page.waitForTimeout(1000);
-        await page.goto("/project-dashboard");
-      } else {
-        throw e;
-      }
-    }
+    // goto of this test under CI load (browser-init timing window).
+    await gotoWithRetry(page, "/project-dashboard", {
+      matchError: /CONNECTION_REFUSED/i,
+    });
     await page.waitForLoadState("domcontentloaded");
 
     // Verify metric cards are visible (rendered by MetricsOverview).

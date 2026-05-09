@@ -15,10 +15,52 @@
  */
 
 import { test, expect } from "@playwright/test";
+import { gotoWithRetry } from "../helpers/network-retry";
+
+const DOCS_RUNNER_PAGES = [
+  "/docs/runner",
+  "/docs/runner/installation",
+  "/docs/runner/execution",
+  "/docs/runner/monitoring",
+  "/docs/runner/multi-monitor",
+  "/docs/runner/troubleshooting",
+  "/docs/runner/ai-integration",
+  "/docs/runner/workflow-descriptions",
+];
+
+// Bump per-test timeout from the 60s default. Cold-compile of a heavy
+// /docs/runner/* MDX page on a saturated cross-browser-survey runner can
+// stretch past the 60s budget that encompasses goto + load + assertion.
+// 90s gives margin for residual queueing the prewarm doesn't fully cover.
+test.describe.configure({ timeout: 90_000 });
+
+// Pre-compile all /docs/runner/* sub-pages once per file execution. Next.js
+// dev mode JIT-compiles routes on first request (5-15s on CI, longer under
+// contention). The cross-browser-survey workflow runs the FULL test suite
+// per browser (no --shard, see .github/workflows/cross-browser-survey.yml),
+// so by the time this spec runs the dev server has already compiled many
+// other routes; individual tests with the per-test timeout can't always
+// absorb a cold compile + assertion. Front-loading the compilations into a
+// beforeAll (with its own extended 180s budget) keeps per-test budgets
+// generous. Best-effort: any goto failure here is swallowed because the
+// per-test goto will surface the actual error shape with full stack.
+test.beforeAll(async ({ browser }) => {
+  test.setTimeout(180_000);
+  const page = await browser.newPage();
+  try {
+    for (const path of DOCS_RUNNER_PAGES) {
+      await page
+        .goto(path, { waitUntil: "domcontentloaded", timeout: 60_000 })
+        .catch(() => {});
+    }
+  } finally {
+    await page.close();
+  }
+});
 
 test.describe("Runner Overview (/docs/runner)", () => {
   test("loads without 500 error", async ({ page }) => {
-    await page.goto("/docs/runner");
+    await gotoWithRetry(page, "/docs/runner", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
@@ -31,7 +73,7 @@ test.describe("Runner Overview (/docs/runner)", () => {
   });
 
   test("displays main heading and description", async ({ page }) => {
-    await page.goto("/docs/runner");
+    await gotoWithRetry(page, "/docs/runner", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     const heading = page.getByRole("heading", {
@@ -48,7 +90,7 @@ test.describe("Runner Overview (/docs/runner)", () => {
   });
 
   test("shows key capabilities", async ({ page }) => {
-    await page.goto("/docs/runner");
+    await gotoWithRetry(page, "/docs/runner", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
@@ -66,7 +108,7 @@ test.describe("Runner Overview (/docs/runner)", () => {
   });
 
   test("shows system requirements for all platforms", async ({ page }) => {
-    await page.goto("/docs/runner");
+    await gotoWithRetry(page, "/docs/runner", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
@@ -85,7 +127,7 @@ test.describe("Runner Overview (/docs/runner)", () => {
   });
 
   test("shows documentation section links to sub-pages", async ({ page }) => {
-    await page.goto("/docs/runner");
+    await gotoWithRetry(page, "/docs/runner", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
@@ -108,7 +150,7 @@ test.describe("Runner Overview (/docs/runner)", () => {
   });
 
   test("shows Key Features section", async ({ page }) => {
-    await page.goto("/docs/runner");
+    await gotoWithRetry(page, "/docs/runner", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
@@ -121,7 +163,7 @@ test.describe("Runner Overview (/docs/runner)", () => {
   });
 
   test("has download CTA", async ({ page }) => {
-    await page.goto("/docs/runner");
+    await gotoWithRetry(page, "/docs/runner", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
@@ -132,7 +174,7 @@ test.describe("Runner Overview (/docs/runner)", () => {
 
 test.describe("Runner Installation (/docs/runner/installation)", () => {
   test("loads without 500 error", async ({ page }) => {
-    await page.goto("/docs/runner/installation");
+    await gotoWithRetry(page, "/docs/runner/installation", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
@@ -145,7 +187,7 @@ test.describe("Runner Installation (/docs/runner/installation)", () => {
   });
 
   test("displays page title", async ({ page }) => {
-    await page.goto("/docs/runner/installation");
+    await gotoWithRetry(page, "/docs/runner/installation", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     const heading = page.getByRole("heading", {
@@ -155,7 +197,7 @@ test.describe("Runner Installation (/docs/runner/installation)", () => {
   });
 
   test("shows Windows installation section", async ({ page }) => {
-    await page.goto("/docs/runner/installation");
+    await gotoWithRetry(page, "/docs/runner/installation", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
@@ -167,7 +209,7 @@ test.describe("Runner Installation (/docs/runner/installation)", () => {
   });
 
   test("shows macOS installation section", async ({ page }) => {
-    await page.goto("/docs/runner/installation");
+    await gotoWithRetry(page, "/docs/runner/installation", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
@@ -180,7 +222,7 @@ test.describe("Runner Installation (/docs/runner/installation)", () => {
   });
 
   test("shows Linux installation section", async ({ page }) => {
-    await page.goto("/docs/runner/installation");
+    await gotoWithRetry(page, "/docs/runner/installation", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
@@ -192,7 +234,7 @@ test.describe("Runner Installation (/docs/runner/installation)", () => {
   });
 
   test("shows checksum verification section", async ({ page }) => {
-    await page.goto("/docs/runner/installation");
+    await gotoWithRetry(page, "/docs/runner/installation", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
@@ -205,7 +247,7 @@ test.describe("Runner Installation (/docs/runner/installation)", () => {
   });
 
   test("shows troubleshooting section", async ({ page }) => {
-    await page.goto("/docs/runner/installation");
+    await gotoWithRetry(page, "/docs/runner/installation", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
@@ -218,7 +260,7 @@ test.describe("Runner Installation (/docs/runner/installation)", () => {
 
 test.describe("Runner Execution (/docs/runner/execution)", () => {
   test("loads without 500 error", async ({ page }) => {
-    await page.goto("/docs/runner/execution");
+    await gotoWithRetry(page, "/docs/runner/execution", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
@@ -231,7 +273,7 @@ test.describe("Runner Execution (/docs/runner/execution)", () => {
   });
 
   test("displays page title", async ({ page }) => {
-    await page.goto("/docs/runner/execution");
+    await gotoWithRetry(page, "/docs/runner/execution", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     const heading = page.getByRole("heading", {
@@ -241,7 +283,7 @@ test.describe("Runner Execution (/docs/runner/execution)", () => {
   });
 
   test("shows 3 execution modes", async ({ page }) => {
-    await page.goto("/docs/runner/execution");
+    await gotoWithRetry(page, "/docs/runner/execution", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
@@ -254,7 +296,7 @@ test.describe("Runner Execution (/docs/runner/execution)", () => {
   });
 
   test("shows configurable execution settings", async ({ page }) => {
-    await page.goto("/docs/runner/execution");
+    await gotoWithRetry(page, "/docs/runner/execution", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
@@ -276,7 +318,7 @@ test.describe("Runner Execution (/docs/runner/execution)", () => {
   });
 
   test("shows prerequisites section", async ({ page }) => {
-    await page.goto("/docs/runner/execution");
+    await gotoWithRetry(page, "/docs/runner/execution", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
@@ -289,7 +331,7 @@ test.describe("Runner Execution (/docs/runner/execution)", () => {
   });
 
   test("shows monitoring section", async ({ page }) => {
-    await page.goto("/docs/runner/execution");
+    await gotoWithRetry(page, "/docs/runner/execution", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
@@ -306,7 +348,7 @@ test.describe("Runner Execution (/docs/runner/execution)", () => {
   });
 
   test("shows best practices", async ({ page }) => {
-    await page.goto("/docs/runner/execution");
+    await gotoWithRetry(page, "/docs/runner/execution", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
@@ -321,7 +363,7 @@ test.describe("Runner Execution (/docs/runner/execution)", () => {
 
 test.describe("Runner Monitoring (/docs/runner/monitoring)", () => {
   test("loads without 500 error", async ({ page }) => {
-    await page.goto("/docs/runner/monitoring");
+    await gotoWithRetry(page, "/docs/runner/monitoring", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
@@ -336,7 +378,7 @@ test.describe("Runner Monitoring (/docs/runner/monitoring)", () => {
   });
 
   test("displays page title", async ({ page }) => {
-    await page.goto("/docs/runner/monitoring");
+    await gotoWithRetry(page, "/docs/runner/monitoring", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     const heading = page.getByRole("heading", {
@@ -347,7 +389,7 @@ test.describe("Runner Monitoring (/docs/runner/monitoring)", () => {
   });
 
   test("shows log file structure documentation", async ({ page }) => {
-    await page.goto("/docs/runner/monitoring");
+    await gotoWithRetry(page, "/docs/runner/monitoring", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
@@ -366,7 +408,7 @@ test.describe("Runner Monitoring (/docs/runner/monitoring)", () => {
   });
 
   test("shows log levels documentation", async ({ page }) => {
-    await page.goto("/docs/runner/monitoring");
+    await gotoWithRetry(page, "/docs/runner/monitoring", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
@@ -380,7 +422,7 @@ test.describe("Runner Monitoring (/docs/runner/monitoring)", () => {
   });
 
   test("shows real-time monitoring section", async ({ page }) => {
-    await page.goto("/docs/runner/monitoring");
+    await gotoWithRetry(page, "/docs/runner/monitoring", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
@@ -399,7 +441,7 @@ test.describe("Runner Monitoring (/docs/runner/monitoring)", () => {
   });
 
   test("shows health monitoring section", async ({ page }) => {
-    await page.goto("/docs/runner/monitoring");
+    await gotoWithRetry(page, "/docs/runner/monitoring", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
@@ -412,7 +454,7 @@ test.describe("Runner Monitoring (/docs/runner/monitoring)", () => {
   });
 
   test("shows debugging tips", async ({ page }) => {
-    await page.goto("/docs/runner/monitoring");
+    await gotoWithRetry(page, "/docs/runner/monitoring", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
@@ -427,7 +469,7 @@ test.describe("Runner Monitoring (/docs/runner/monitoring)", () => {
 
 test.describe("Runner Multi-Monitor (/docs/runner/multi-monitor)", () => {
   test("loads without 500 error", async ({ page }) => {
-    await page.goto("/docs/runner/multi-monitor");
+    await gotoWithRetry(page, "/docs/runner/multi-monitor", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
@@ -440,7 +482,7 @@ test.describe("Runner Multi-Monitor (/docs/runner/multi-monitor)", () => {
   });
 
   test("displays page title", async ({ page }) => {
-    await page.goto("/docs/runner/multi-monitor");
+    await gotoWithRetry(page, "/docs/runner/multi-monitor", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     const heading = page.getByRole("heading", {
@@ -450,7 +492,7 @@ test.describe("Runner Multi-Monitor (/docs/runner/multi-monitor)", () => {
   });
 
   test("shows virtual desktop coordinate system docs", async ({ page }) => {
-    await page.goto("/docs/runner/multi-monitor");
+    await gotoWithRetry(page, "/docs/runner/multi-monitor", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
@@ -463,7 +505,7 @@ test.describe("Runner Multi-Monitor (/docs/runner/multi-monitor)", () => {
   });
 
   test("shows monitor detection documentation", async ({ page }) => {
-    await page.goto("/docs/runner/multi-monitor");
+    await gotoWithRetry(page, "/docs/runner/multi-monitor", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("Monitor Detection")).toBeVisible({
@@ -475,7 +517,7 @@ test.describe("Runner Multi-Monitor (/docs/runner/multi-monitor)", () => {
   });
 
   test("shows monitor selection methods", async ({ page }) => {
-    await page.goto("/docs/runner/multi-monitor");
+    await gotoWithRetry(page, "/docs/runner/multi-monitor", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
@@ -488,7 +530,7 @@ test.describe("Runner Multi-Monitor (/docs/runner/multi-monitor)", () => {
   });
 
   test("shows bounding region capture concept", async ({ page }) => {
-    await page.goto("/docs/runner/multi-monitor");
+    await gotoWithRetry(page, "/docs/runner/multi-monitor", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("Bounding Region Capture")).toBeVisible({
@@ -497,7 +539,7 @@ test.describe("Runner Multi-Monitor (/docs/runner/multi-monitor)", () => {
   });
 
   test("shows common use cases", async ({ page }) => {
-    await page.goto("/docs/runner/multi-monitor");
+    await gotoWithRetry(page, "/docs/runner/multi-monitor", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
@@ -511,7 +553,7 @@ test.describe("Runner Multi-Monitor (/docs/runner/multi-monitor)", () => {
 
 test.describe("Runner Troubleshooting (/docs/runner/troubleshooting)", () => {
   test("loads without 500 error", async ({ page }) => {
-    await page.goto("/docs/runner/troubleshooting");
+    await gotoWithRetry(page, "/docs/runner/troubleshooting", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
@@ -524,7 +566,7 @@ test.describe("Runner Troubleshooting (/docs/runner/troubleshooting)", () => {
   });
 
   test("displays page title", async ({ page }) => {
-    await page.goto("/docs/runner/troubleshooting");
+    await gotoWithRetry(page, "/docs/runner/troubleshooting", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     const heading = page.getByRole("heading", {
@@ -534,7 +576,7 @@ test.describe("Runner Troubleshooting (/docs/runner/troubleshooting)", () => {
   });
 
   test("shows 4 issue categories", async ({ page }) => {
-    await page.goto("/docs/runner/troubleshooting");
+    await gotoWithRetry(page, "/docs/runner/troubleshooting", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     // Installation Issues
@@ -559,7 +601,7 @@ test.describe("Runner Troubleshooting (/docs/runner/troubleshooting)", () => {
   });
 
   test("shows quick diagnostics section", async ({ page }) => {
-    await page.goto("/docs/runner/troubleshooting");
+    await gotoWithRetry(page, "/docs/runner/troubleshooting", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
@@ -575,7 +617,7 @@ test.describe("Runner Troubleshooting (/docs/runner/troubleshooting)", () => {
   });
 
   test("shows error codes reference", async ({ page }) => {
-    await page.goto("/docs/runner/troubleshooting");
+    await gotoWithRetry(page, "/docs/runner/troubleshooting", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
@@ -590,7 +632,7 @@ test.describe("Runner Troubleshooting (/docs/runner/troubleshooting)", () => {
   });
 
   test("shows installation issues with error codes", async ({ page }) => {
-    await page.goto("/docs/runner/troubleshooting");
+    await gotoWithRetry(page, "/docs/runner/troubleshooting", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("INSTALL_001")).toBeVisible({ timeout: 10000 });
@@ -599,7 +641,7 @@ test.describe("Runner Troubleshooting (/docs/runner/troubleshooting)", () => {
   });
 
   test("shows platform-specific issues", async ({ page }) => {
-    await page.goto("/docs/runner/troubleshooting");
+    await gotoWithRetry(page, "/docs/runner/troubleshooting", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
@@ -608,7 +650,7 @@ test.describe("Runner Troubleshooting (/docs/runner/troubleshooting)", () => {
   });
 
   test("shows advanced debugging section", async ({ page }) => {
-    await page.goto("/docs/runner/troubleshooting");
+    await gotoWithRetry(page, "/docs/runner/troubleshooting", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
@@ -623,7 +665,7 @@ test.describe("Runner Troubleshooting (/docs/runner/troubleshooting)", () => {
 
 test.describe("Runner AI Integration (/docs/runner/ai-integration)", () => {
   test("loads without 500 error", async ({ page }) => {
-    await page.goto("/docs/runner/ai-integration");
+    await gotoWithRetry(page, "/docs/runner/ai-integration", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
@@ -636,7 +678,7 @@ test.describe("Runner AI Integration (/docs/runner/ai-integration)", () => {
   });
 
   test("displays page title", async ({ page }) => {
-    await page.goto("/docs/runner/ai-integration");
+    await gotoWithRetry(page, "/docs/runner/ai-integration", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     const heading = page.getByRole("heading", {
@@ -646,7 +688,7 @@ test.describe("Runner AI Integration (/docs/runner/ai-integration)", () => {
   });
 
   test("shows MCP integration documentation", async ({ page }) => {
-    await page.goto("/docs/runner/ai-integration");
+    await gotoWithRetry(page, "/docs/runner/ai-integration", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
@@ -659,7 +701,7 @@ test.describe("Runner AI Integration (/docs/runner/ai-integration)", () => {
   });
 
   test("shows structured description format", async ({ page }) => {
-    await page.goto("/docs/runner/ai-integration");
+    await gotoWithRetry(page, "/docs/runner/ai-integration", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
@@ -681,7 +723,7 @@ test.describe("Runner AI Integration (/docs/runner/ai-integration)", () => {
   });
 
   test("shows why workflow descriptions matter", async ({ page }) => {
-    await page.goto("/docs/runner/ai-integration");
+    await gotoWithRetry(page, "/docs/runner/ai-integration", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
@@ -692,7 +734,7 @@ test.describe("Runner AI Integration (/docs/runner/ai-integration)", () => {
   });
 
   test("shows workflow examples", async ({ page }) => {
-    await page.goto("/docs/runner/ai-integration");
+    await gotoWithRetry(page, "/docs/runner/ai-integration", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByRole("heading", { name: /examples/i })).toBeVisible({
@@ -711,7 +753,7 @@ test.describe("Runner AI Integration (/docs/runner/ai-integration)", () => {
   });
 
   test("shows best practices with Do and Don't", async ({ page }) => {
-    await page.goto("/docs/runner/ai-integration");
+    await gotoWithRetry(page, "/docs/runner/ai-integration", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
@@ -729,7 +771,7 @@ test.describe("Runner AI Integration (/docs/runner/ai-integration)", () => {
 
 test.describe("Runner Workflow Descriptions (/docs/runner/workflow-descriptions)", () => {
   test("loads without 500 error", async ({ page }) => {
-    await page.goto("/docs/runner/workflow-descriptions");
+    await gotoWithRetry(page, "/docs/runner/workflow-descriptions", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     const pageContent = await page.content();
@@ -742,7 +784,7 @@ test.describe("Runner Workflow Descriptions (/docs/runner/workflow-descriptions)
   });
 
   test("displays page title", async ({ page }) => {
-    await page.goto("/docs/runner/workflow-descriptions");
+    await gotoWithRetry(page, "/docs/runner/workflow-descriptions", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     const heading = page.getByRole("heading", {
@@ -752,7 +794,7 @@ test.describe("Runner Workflow Descriptions (/docs/runner/workflow-descriptions)
   });
 
   test("shows writing tips section", async ({ page }) => {
-    await page.goto("/docs/runner/workflow-descriptions");
+    await gotoWithRetry(page, "/docs/runner/workflow-descriptions", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("Start with the Action")).toBeVisible({
@@ -764,7 +806,7 @@ test.describe("Runner Workflow Descriptions (/docs/runner/workflow-descriptions)
   });
 
   test("shows JSON format example", async ({ page }) => {
-    await page.goto("/docs/runner/workflow-descriptions");
+    await gotoWithRetry(page, "/docs/runner/workflow-descriptions", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
@@ -778,7 +820,7 @@ test.describe("Runner Workflow Descriptions (/docs/runner/workflow-descriptions)
   });
 
   test("shows workflow categories table", async ({ page }) => {
-    await page.goto("/docs/runner/workflow-descriptions");
+    await gotoWithRetry(page, "/docs/runner/workflow-descriptions", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
@@ -806,7 +848,7 @@ test.describe("Runner Workflow Descriptions (/docs/runner/workflow-descriptions)
   });
 
   test("shows structured description format", async ({ page }) => {
-    await page.goto("/docs/runner/workflow-descriptions");
+    await gotoWithRetry(page, "/docs/runner/workflow-descriptions", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
@@ -820,7 +862,7 @@ test.describe("Runner Workflow Descriptions (/docs/runner/workflow-descriptions)
   });
 
   test("shows best practices with Do and Don't", async ({ page }) => {
-    await page.goto("/docs/runner/workflow-descriptions");
+    await gotoWithRetry(page, "/docs/runner/workflow-descriptions", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
@@ -835,7 +877,7 @@ test.describe("Runner Workflow Descriptions (/docs/runner/workflow-descriptions)
   });
 
   test("shows multi-workflow sequences section", async ({ page }) => {
-    await page.goto("/docs/runner/workflow-descriptions");
+    await gotoWithRetry(page, "/docs/runner/workflow-descriptions", { matchError: /CONNECTION_RESET/i });
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
