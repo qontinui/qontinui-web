@@ -46,9 +46,6 @@ jobs:
             ':!backend/alembic/versions/*'
             ':!backend/alembic/_staged_phase7/*'
             ':!backend/alembic/_staged_consolidation/*'
-            # Pre-Phase-7 helper script that introspects information_schema.
-            # Not consumer code; never targets a real public.<X> domain table.
-            ':!backend/migrate_to_uuid.py'
             # Self-reference: this workflow file contains the pattern
             # strings as part of its definition.
             ':!.github/workflows/forbid-public-schema.yml'
