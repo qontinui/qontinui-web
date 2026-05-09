@@ -53,8 +53,12 @@ jobs:
           # children.
           python -c "
           import os, re, glob
-          rev_re = re.compile(r'^revision[: ]+\s*=\s*[\"\'](.+?)[\"\']', re.M)
-          down_re = re.compile(r'^down_revision[: ]+\s*=\s*(.+)$', re.M)
+          # Match both legacy 'revision = \"x\"' and modern 'revision: str = \"x\"'
+          # syntaxes. The colon-prefixed type annotation can contain letters
+          # (e.g. ': str = ', ': str | None = '), so '[: ]+' is too narrow —
+          # use an optional ':<non-eq chars>' segment between the keyword and =.
+          rev_re = re.compile(r'^revision\s*(?::[^=]*)?\s*=\s*[\"\'](.+?)[\"\']', re.M)
+          down_re = re.compile(r'^down_revision\s*(?::[^=]*)?\s*=\s*(.+)$', re.M)
           revs = {}
           parents = set()
           for p in glob.glob('alembic/versions/*.py'):
