@@ -166,8 +166,15 @@ test.describe("Navigation Test Generator", () => {
     // Click on State Graph tab
     await page.getByRole("button", { name: /State Graph/i }).click();
 
-    // Verify empty state message
-    await expect(page.getByText(/No states discovered yet/i)).toBeVisible();
+    // Verify empty state message. Tab switch triggers an async React
+    // setActiveTab → StateGraphPanel mount → render cycle; on
+    // firefox/Mobile Chrome under CI load this can exceed the 5s
+    // default toBeVisible timeout. Match the 15000ms convention used
+    // for similar render races in automation-builder-extraction.spec.ts
+    // (lines 45, 70) and testing-project.spec.ts (lines 358, 372).
+    await expect(page.getByText(/No states discovered yet/i)).toBeVisible({
+      timeout: 15000,
+    });
   });
 
   test("should show Source selector with New Exploration button", async ({
