@@ -20,7 +20,12 @@ test.describe("Demo List Page (/demo)", () => {
 
     await page.screenshot({
       path: "test-results/demo-list.png",
-      fullPage: true,
+      // Mobile Chrome (Pixel 5) takes >60s to stitch fullPage on
+      // /demo's long card grid. PR-O found the same pattern on
+      // Mobile Safari (canvas-cap); this is the latency analog on
+      // chromium-engine mobile. Visible-viewport screenshot is
+      // sufficient — never asserted on.
+      fullPage: false,
     });
   });
 

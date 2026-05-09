@@ -19,7 +19,13 @@ import { test, expect } from "../fixtures";
 async function selectProjectIfAvailable(
   page: import("@playwright/test").Page
 ): Promise<boolean> {
-  await page.goto("/dashboard");
+  // /dashboard is a redirect stub (router.replace → /build/workflows
+  // or /tools/visual-automation). Going there leaves a redirect
+  // navigation in flight that races with the next page.goto in
+  // tests on slower engines (firefox NS_BINDING_ABORTED, webkit /
+  // Mobile Safari "Navigation interrupted"). Navigate directly to
+  // the destination.
+  await page.goto("/build/workflows");
   await page.waitForLoadState("domcontentloaded");
   await page.waitForTimeout(2000);
 
