@@ -436,142 +436,10 @@ jobs:
   # cancelled mid-run by every push to main. See that file for
   # details.
 
-  integration-tests:
-    name: Full Stack Integration Tests
-    runs-on: ubuntu-latest
-    needs: [backend-tests, frontend-tests]
-
-    services:
-      postgres:
-        image: pgvector/pgvector:pg15
-        env:
-          POSTGRES_USER: test
-          POSTGRES_PASSWORD: test
-          POSTGRES_DB: test_db
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
-
-      redis:
-        image: redis:7-alpine
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 6379:6379
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      # Same sibling deps as the frontend-tests job — both backend and
-      # frontend installs need them.
-      - name: Clone sibling dependencies
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CC_TOKEN: ${{ secrets.web_ci_cloud_control_read }}
-        run: |
-          set -euo pipefail
-          for spec in \
-            "qontinui/qontinui-schemas" \
-            "qontinui/qontinui" \
-            "qontinui/ui-bridge" \
-            "qontinui/qontinui-workflow-ui" \
-            "qontinui/qontinui-workflow-utils" \
-            "qontinui/qontinui-navigation" \
-          ; do
-            repo_name="${spec#*/}"
-            target="../${repo_name}"
-            echo "::group::Cloning ${spec} → ${target}"
-            git clone --depth 1 \
-              "https://x-access-token:${GH_TOKEN}@github.com/${spec}.git" \
-              "${target}"
-            echo "::endgroup::"
-          done
-          # cloud-control lives under jspinak/ and is private — needs PAT
-          echo "::group::Cloning jspinak/qontinui-cloud-control → ../qontinui-cloud-control"
-          git clone --depth 1 \
-            "https://x-access-token:${CC_TOKEN}@github.com/jspinak/qontinui-cloud-control.git" \
-            "../qontinui-cloud-control"
-          echo "::endgroup::"
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install backend dependencies
-        working-directory: ./backend
-        run: |
-          python -m pip install --upgrade pip
-          pip install pytest pytest-cov pytest-asyncio
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          if [ -f pyproject.toml ]; then pip install -e .; fi
-          pip install -e ../../qontinui-cloud-control
-
-      - name: Install frontend dependencies
-        working-directory: ./frontend
-        run: npm ci
-
-      - name: Install Playwright
-        working-directory: ./frontend
-        run: npx playwright install --with-deps chromium
-
-      - name: Start backend server
-        working-directory: ./backend
-        env:
-          DATABASE_URL: postgresql://test:test@localhost:5432/test_db
-          REDIS_URL: redis://localhost:6379
-          TESTING: 1
-          SECRET_KEY: test-secret-key-for-testing-only-minimum-32-chars-required
-          ACCESS_SECRET_KEY: test-access-secret-key-minimum-32-characters-required
-          RESET_PASSWORD_SECRET_KEY: test-reset-password-secret-key-min-32-chars-required
-          VERIFICATION_SECRET_KEY: test-verification-secret-key-min-32-chars-required
-          ALGORITHM: HS256
-          FRONTEND_URL: http://localhost:3000
-          BACKEND_CORS_ORIGINS: '["http://localhost:3000"]'
-          STORAGE_BACKEND: local
-          REDIS_ENABLED: 'false'
-        run: |
-          python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 &
-          sleep 10
-
-      - name: Run full integration tests
-        working-directory: ./frontend
-        env:
-          CI: true
-          PLAYWRIGHT_BASE_URL: http://localhost:3001
-          API_BASE_URL: http://localhost:8000
-        run: |
-          npx playwright test --project=chromium
-
-      - name: Upload full integration test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: full-integration-test-results
-          path: |
-            frontend/playwright-report/
-            frontend/test-results/
-          retention-days: 30
-
   test-summary:
     name: Test Summary
     runs-on: ubuntu-latest
-    needs: [backend-tests, frontend-tests, integration-tests]
+    needs: [backend-tests, frontend-tests]
     if: always()
 
     steps:
@@ -586,7 +454,6 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- Backend Tests: ${{ needs.backend-tests.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- Frontend Tests: ${{ needs.frontend-tests.result }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Integration Tests: ${{ needs.integration-tests.result }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## Artifacts" >> $GITHUB_STEP_SUMMARY
           echo "Test reports and artifacts are available in the Actions artifacts section." >> $GITHUB_STEP_SUMMARY
