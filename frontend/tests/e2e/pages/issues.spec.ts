@@ -24,11 +24,10 @@ test.describe("Issues Page", () => {
   test("should display Detected Issues heading", async ({ page }) => {
     await page.goto("/issues");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
 
-    const hasHeading = (await page.locator("text=Detected Issues").count()) > 0;
-
-    expect(hasHeading).toBeTruthy();
+    await expect(
+      page.getByRole("heading", { name: /detected issues/i, level: 1 })
+    ).toBeVisible({ timeout: 15000 });
   });
 
   test("should display stats cards", async ({ page }) => {
