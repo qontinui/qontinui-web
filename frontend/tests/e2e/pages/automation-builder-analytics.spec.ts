@@ -13,36 +13,25 @@
 import { test, expect } from "../fixtures";
 
 /**
- * Helper to select a project from the dashboard before navigating
- * to pages that require a project context.
+ * Honest no-op stub. The original helper looked up a project switcher via
+ * `[aria-label="Select project"]`, which only matches a dead-code component
+ * (`src/components/navigation/ProjectSwitcher.tsx`, zero importers). The
+ * actually-mounted switcher is `navigation/sidebar/ProjectSwitcher.tsx`,
+ * which has no aria-label and is gated on `mode === "visual"` while
+ * e2e storageState defaults `getStoredProductMode()` to `"ai"`. So the
+ * helper has been silently returning `false` on every run for a long time,
+ * and the `if (hasProject)` blocks below never executed.
+ *
+ * Preserved as a stub to keep test bodies unchanged. A future PR should
+ * either delete the `if (hasProject)` blocks (test bodies degrade to
+ * navigate + screenshot + no-500 — same as the existing "loads without
+ * 500 error" test in each describe), or rewire this around the real
+ * sidebar switcher: localStorage-inject `mode = "visual"` via
+ * `page.addInitScript`, then click `[data-tutorial-id="sidebar-project-switcher"]`.
  */
 async function selectProjectIfAvailable(
-  page: import("@playwright/test").Page
+  _page: import("@playwright/test").Page
 ): Promise<boolean> {
-  // /dashboard is a redirect stub (router.replace → /build/workflows
-  // or /tools/visual-automation). Going there leaves a redirect
-  // navigation in flight that races with the next page.goto in
-  // tests on slower engines (firefox NS_BINDING_ABORTED, webkit /
-  // Mobile Safari "Navigation interrupted"). Navigate directly to
-  // the destination.
-  await page.goto("/build/workflows");
-  await page.waitForLoadState("domcontentloaded");
-  await page.waitForTimeout(2000);
-
-  const projectSwitcher = page.locator('[aria-label="Select project"]');
-  if (await projectSwitcher.isVisible({ timeout: 5000 }).catch(() => false)) {
-    await projectSwitcher.click();
-    await page.waitForTimeout(500);
-
-    const projectItems = page.locator('[role="menuitem"]');
-    const projectCount = await projectItems.count();
-
-    if (projectCount > 0) {
-      await projectItems.first().click();
-      await page.waitForTimeout(1000);
-      return true;
-    }
-  }
   return false;
 }
 
