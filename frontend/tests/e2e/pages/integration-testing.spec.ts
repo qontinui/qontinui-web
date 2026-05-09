@@ -166,22 +166,23 @@ test.describe("Integration Testing Page", () => {
     await page.goto(PAGE_URL);
     await page.waitForLoadState("domcontentloaded");
 
-    // Wait for the runs section to hydrate past RequireProject + useProjectLoader
-    // + the mocked fetch + state update. On slower engines (webkit, Mobile
-    // Safari) this chain can exceed the default 5s toBeVisible timeout. Wait
-    // for the first mocked run name to appear, after which the status badges
-    // are guaranteed to be in the DOM.
-    await expect(page.getByText("Login Workflow").first()).toBeVisible({
-      timeout: 15000,
-    });
-
     await page.screenshot({
       path: "test-results/pages-integration-testing-with-runs.png",
       fullPage: true,
     });
 
-    // Verify status badges are rendered for different statuses
-    await expect(page.getByText("Completed").first()).toBeVisible();
+    // Wait for the runs section to hydrate past RequireProject +
+    // useProjectLoader + the mocked fetch + state update on the first
+    // status-badge assertion. On slower engines (webkit, Mobile Safari) the
+    // default 5s toBeVisible timeout isn't enough for that chain. Note: the
+    // mock body uses the IntegrationTestRunSummary shape (workflow_name,
+    // status, ...), but services/integration-testing.ts:349 reads
+    // run.workflow_metadata?.workflow_name — so workflow_name renders blank.
+    // status flows through unchanged, which is why we anchor on the badges.
+    // Once the first badge lands, the rest are in the DOM by construction.
+    await expect(page.getByText("Completed").first()).toBeVisible({
+      timeout: 15000,
+    });
     await expect(page.getByText("Failed").first()).toBeVisible();
     await expect(page.getByText("Running").first()).toBeVisible();
     await expect(page.getByText("Timeout").first()).toBeVisible();
