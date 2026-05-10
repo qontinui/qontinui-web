@@ -19,7 +19,7 @@ jobs:
         working-directory: ./backend
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # backend/pyproject.toml declares path-deps on sibling repos:
       #   qontinui-schemas = {path = "../../qontinui-schemas", develop = true}

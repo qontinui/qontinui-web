@@ -31,7 +31,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # backend/pyproject.toml has path deps on ../../qontinui-schemas
       # and ../../qontinui; without these clones, `pip install -e .`
@@ -137,7 +137,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Clone sibling dependencies
         env:
@@ -168,7 +168,7 @@ jobs:
           python-version: '3.12'
 
       - name: Set up Node.js 20
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: 'npm'
@@ -288,7 +288,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # Both backend pyproject.toml and frontend package.json have path
       # deps on these five sibling repos. Without this clone, `pip
@@ -328,7 +328,7 @@ jobs:
           python-version: '3.12'
 
       - name: Set up Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'

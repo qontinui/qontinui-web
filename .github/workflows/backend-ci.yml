@@ -23,7 +23,7 @@ jobs:
         working-directory: ./backend
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # qontinui (a path-dep) pulls in torch from pytorch-cu128 — wheels
       # are large enough to overflow the runner's default disk. Remove
@@ -39,7 +39,7 @@ jobs:
           swap-storage: false
 
       # Backend's pyproject.toml has path-deps on sibling repos
-      # (qontinui-schemas, qontinui). actions/checkout@v4 refuses
+      # (qontinui-schemas, qontinui). actions/checkout@v5 refuses
       # `path:` outside the workspace, so clone them via git directly.
       # qontinui-cloud-control is private — clone with auth so the test
       # harness can side-effect-import it (see backend/tests/conftest.py).
@@ -128,7 +128,7 @@ jobs:
           - 6379:6379
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # qontinui (a path-dep) pulls in torch from pytorch-cu128 — wheels
       # are large enough to overflow the runner's default disk. Remove
@@ -144,7 +144,7 @@ jobs:
           swap-storage: false
 
       # Backend's pyproject.toml has path-deps on sibling repos
-      # (qontinui-schemas, qontinui). actions/checkout@v4 refuses
+      # (qontinui-schemas, qontinui). actions/checkout@v5 refuses
       # `path:` outside the workspace, so clone them via git directly.
       # qontinui-cloud-control is private — clone with auth so the test
       # harness can side-effect-import it (see backend/tests/conftest.py).
@@ -247,7 +247,7 @@ jobs:
         working-directory: ./backend
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
@@ -319,7 +319,7 @@ jobs:
         working-directory: ./backend
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # The Dockerfile installs torch from pytorch-cu128 (multi-GB wheels);
       # the runner's default disk allocation isn't enough for the build
