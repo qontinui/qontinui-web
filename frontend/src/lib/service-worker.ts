@@ -39,6 +39,31 @@ class ServiceWorkerManager {
       return null;
     }
 
+    // In dev, the SW's cache-first strategy serves stale `/_next/static/chunks/*`
+    // because CACHE_NAME = 'qontinui-__BUILD_ID__' is a literal (the build-id
+    // injector only runs on production builds), so the cache key never rotates
+    // between HMR rebuilds. Stale chunks reference module IDs that no longer
+    // exist in the live __webpack_modules__ registry, producing
+    // "Cannot read properties of undefined (reading 'call')" at Lazy boundaries.
+    // Unregister any leftover dev SW + drop its caches so existing sessions
+    // self-heal on next load.
+    if (process.env.NODE_ENV !== "production") {
+      try {
+        const existing = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(existing.map((r) => r.unregister()));
+        const cacheNames = await caches.keys();
+        await Promise.all(
+          cacheNames
+            .filter((name) => name.startsWith("qontinui-"))
+            .map((name) => caches.delete(name))
+        );
+      } catch (err) {
+        console.warn("[ServiceWorker] Dev cleanup failed:", err);
+      }
+      this.setStatus("unsupported");
+      return null;
+    }
+
     try {
       this.setStatus("registering");
 

@@ -178,6 +178,17 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Skip Next.js build output. Chunks under /_next/static/* are content-hashed
+  // in prod (HTTP cache handles them) and rebuild constantly in dev with new
+  // module IDs. SW caching them creates the exact mismatch this comment exists
+  // to prevent: cached chunk references __webpack_modules__[oldId], the live
+  // runtime only has the new ids, Lazy boundaries throw
+  // "Cannot read properties of undefined (reading 'call')". Skipping /_next/
+  // entirely also covers /_next/data/* RSC payloads and HMR streams.
+  if (url.pathname.startsWith('/_next/')) {
+    return;
+  }
+
   // Skip WebSocket requests
   if (url.protocol === 'ws:' || url.protocol === 'wss:') {
     return;
