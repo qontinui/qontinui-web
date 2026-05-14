@@ -25,7 +25,20 @@ export function useSpecSourceState(
   const [isOpen, setIsOpen] = useState(false);
 
   const browser = useAppBrowser();
-  const { specs: bundled } = useDiscoveredSpecs();
+  // Skip degenerate specs (Plan 04): validation is null/undefined for clean
+  // specs, populated when the state machine has degenerate or indistinguishable
+  // states. Sending those to the AI wastes tokens and confuses the picker.
+  const { specs: rawBundled } = useDiscoveredSpecs();
+  const bundled = useMemo(
+    () =>
+      rawBundled.filter(
+        (s) =>
+          !s.validation ||
+          (s.validation.degenerateStateIds.length === 0 &&
+            s.validation.indistinguishableStatePairs.length === 0),
+      ),
+    [rawBundled],
+  );
 
   const [discoveredSpecs, setDiscoveredSpecs] = useState<DiscoveredSpec[]>([]);
   const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(
