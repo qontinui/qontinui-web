@@ -1,7 +1,7 @@
 """coord phase 1 01 agent worktrees
 
 Revision ID: coord_phase_1_01_agent_worktrees
-Revises: fleet_phase_1_01_machine_budget
+Revises: wt01_workflow_triggers_workflow_id_nullable
 Create Date: 2026-05-14
 
 Phase 1 of the branch-per-agent coordination plan
@@ -86,11 +86,13 @@ Design notes:
   rows — the sweeper handles abandonment via timeout, not via FK
   cascade.
 
-Chains off ``fleet_phase_1_01_machine_budget`` (Wave 1's Row 2
-sibling) so the alembic head stays linear. The two Wave 1 migrations
-are independent — fleet_phase_1 adds columns to coord.machines,
-coord_phase_1_01 creates coord.agent_worktrees — but linearity is
-cheaper than re-merging heads later.
+Chains off ``wt01_workflow_triggers_workflow_id_nullable`` — the
+current main head. (The first authoring chained off
+``fleet_phase_1_01_machine_budget``, but that revision was a sibling
+Wave 1 agent's still-uncommitted file when this PR opened, so
+``alembic-heads-pr`` flagged a 2-head chain. Rebased to wt01 to keep
+the head linear; if fleet_phase_1 lands first, a follow-up merge
+revision joins the resulting two heads.)
 """
 
 from collections.abc import Sequence
@@ -102,7 +104,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_phase_1_01_agent_worktrees"
-down_revision: str = "fleet_phase_1_01_machine_budget"
+down_revision: str = "wt01_workflow_triggers_workflow_id_nullable"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
