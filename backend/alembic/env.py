@@ -39,32 +39,36 @@ from app.db.base_class import *  # Import all models
 target_metadata = Base.metadata
 
 
-# NOTE on cross-schema autogenerate (post-consolidation):
+# Atlas-owned tables (Row 3 schema-half pilot, Wave 1.4).
 #
-# Earlier this file carried an ``include_object`` filter that
-# block-listed ``runner.*`` tables not declared as SQLAlchemy models.
-# Its purpose was to prevent autogenerate from proposing
-# ``op.drop_table`` on tables the runner-native migration system owned
-# (qontinui-runner managed its own ``runner`` schema independently of
-# alembic).
+# Atlas Community is the source of truth for this set; the HCL lives at
+# ``qontinui-runner/atlas/schema.hcl``. Historical alembic migrations for
+# these tables remain in ``versions/`` as frozen history, but new
+# ``alembic revision --autogenerate`` runs MUST skip them — otherwise
+# autogenerate would propose drop/recreate ops every time, since the
+# tables aren't declared as SQLAlchemy models on the alembic side.
 #
-# That filter is deleted here as part of the migration consolidation
-# (see ``D:/qontinui-root/tmp_migration_consolidation_plan.md``).
-# Post-consolidation, alembic owns every table across all four canonical
-# schemas (``project``, ``coord``, ``agent``, ``auth``), so autogenerate
-# should see all of them — which is what removing the filter
-# accomplishes (``include_schemas=True`` below makes alembic reflect
-# all non-system schemas; with no filter, every table is a candidate).
-#
-# Transitional hazard: if someone runs ``alembic revision
-# --autogenerate`` on a DB that still has the old runner-native
-# ``runner.*`` tables (i.e., before the consolidation chain in
-# ``backend/alembic/_staged_consolidation/`` is transplanted into
-# ``versions/`` and applied), autogenerate will propose
-# ``op.drop_table(..., schema="runner")`` for every runner-managed
-# table — destructive if accepted. Until the consolidation lands,
-# review autogenerate output carefully and discard any drop_table
-# proposals targeting the ``runner`` schema.
+# When Atlas takes over additional tables, add them here too.
+ATLAS_OWNED_TABLES: set[tuple[str, str]] = {
+    ("project", "regression_suites"),
+    ("project", "regression_runs"),
+    ("project", "regression_diagnoses"),
+    ("project", "regression_assertion_executions"),
+    ("coord", "coordinator_shadow_decisions"),
+}
+
+
+def _include_object(object_, name, type_, reflected, compare_to):  # noqa: ARG001
+    """Skip Atlas-owned tables on autogenerate.
+
+    Indexes and FKs hanging off skipped tables come along for the ride —
+    alembic doesn't surface them as standalone autogenerate candidates
+    when their parent table is filtered out.
+    """
+    if type_ == "table":
+        schema = getattr(object_, "schema", None)
+        return (schema, name) not in ATLAS_OWNED_TABLES
+    return True
 
 
 def run_migrations_offline() -> None:
@@ -86,6 +90,7 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         include_schemas=True,
+        include_object=_include_object,
     )
 
     with context.begin_transaction():
@@ -110,6 +115,7 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             include_schemas=True,
+            include_object=_include_object,
         )
 
         with context.begin_transaction():
