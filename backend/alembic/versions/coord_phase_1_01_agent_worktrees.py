@@ -34,9 +34,10 @@ Columns:
   a FK — pluggable per deployment.
 * ``branch`` — TEXT. ``agent/<short-machine>-<short-agent>`` per §4.2
   branch naming, but the migration treats it as opaque text so future
-  naming changes don't need a schema migration. UNIQUE across all
-  rows because two agents naming the same branch would race on
-  ``git worktree add``.
+  naming changes don't need a schema migration. UNIQUE per ``(repo,
+  branch)`` because the §4.1 "single writer per branch" invariant is
+  per-repo — one agent that spans N repos has N rows sharing the
+  same branch name, one per repo's namespace.
 * ``parent_sha`` — TEXT. Commit the worktree branched from. Recorded
   so dry-rebase in Phase 4 has the original divergence point.
 * ``worktree_path`` — TEXT. Host-absolute path; opaque to coord. The
@@ -62,8 +63,10 @@ Indexes:
   agents" listings.
 * ``idx_agent_worktrees_machine_status`` — supports "what's running
   on machine X" queries from the fleet dashboard (Phase 6).
-* UNIQUE on ``branch`` — enforces the §4.1 "single writer per branch"
-  invariant at the DB level.
+* UNIQUE on ``(repo, branch)`` — enforces the §4.1 "single writer per
+  branch" invariant per-repo. One agent with N worktrees shares one
+  branch name across N rows; the constraint stops two *different*
+  agents from claiming the same branch in the same repo.
 
 Design notes:
 
@@ -142,7 +145,7 @@ def upgrade() -> None:
             server_default=sa.text("now()"),
         ),
         sa.PrimaryKeyConstraint("agent_id", "repo"),
-        sa.UniqueConstraint("branch", name="agent_worktrees_branch_uq"),
+        sa.UniqueConstraint("repo", "branch", name="agent_worktrees_repo_branch_uq"),
         schema="coord",
     )
 
