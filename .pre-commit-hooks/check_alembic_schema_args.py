@@ -4,10 +4,13 @@ Walks alembic revision files (``backend/alembic/versions/*.py``) and
 verifies every DDL ``op.<func>(...)`` call carries an explicit ``schema=``
 keyword argument with one of the canonical schemas:
 
-    project, coord, agent, auth, cloud
+    project, coord, agent, auth, cloud, strategy
 
 The ``cloud`` schema was added per the cloud-control carve-out
-(tmp_cloud_control_carve_out.md §5).
+(tmp_cloud_control_carve_out.md §5). The ``strategy`` schema was
+added for the Strategy Collaboration product (Phase 1, design
+``plans/2026-05-15-strategy-collaboration-design.md`` §5.2) — the
+6th canonical schema, same precedent as ``cloud``.
 Plan reference: ``D:/qontinui-root/tmp_migration_consolidation_plan.md``
 Phase 6.
 
@@ -74,7 +77,7 @@ GATED_OPS = {
     "batch_alter_table",
 }
 
-ALLOWED_SCHEMAS = {"project", "coord", "agent", "auth", "cloud"}
+ALLOWED_SCHEMAS = {"project", "coord", "agent", "auth", "cloud", "strategy"}
 
 # Schemas accepted by the raw-SQL audit. ``public`` is included here
 # (and only here) because Phase 7 revisions legitimately reference
