@@ -85,8 +85,7 @@ class StrategyClient:
             )
         if resp.status_code != 200:
             raise RuntimeError(
-                f"coord service-token mint failed: {resp.status_code} "
-                f"{resp.text[:200]}"
+                f"coord service-token mint failed: {resp.status_code} {resp.text[:200]}"
             )
         body = resp.json()
         self._token = body["token"]
@@ -104,10 +103,7 @@ class StrategyClient:
         if not self.enabled:
             raise StrategyDisabledError("COORD_ADMIN_SECRET not set")
         async with self._lock:
-            if (
-                self._token is None
-                or self._exp - int(time.time()) <= _REFRESH_BUFFER_S
-            ):
+            if self._token is None or self._exp - int(time.time()) <= _REFRESH_BUFFER_S:
                 await self._mint()
             assert self._token is not None
             return self._token
@@ -158,14 +154,10 @@ class StrategyClient:
             "X-Qontinui-User-Id": acting_user_id,
         }
 
-    async def _get(
-        self, path: str, acting_user_id: str
-    ) -> tuple[int, object]:
+    async def _get(self, path: str, acting_user_id: str) -> tuple[int, object]:
         headers = await self._headers(acting_user_id)
         async with httpx.AsyncClient(timeout=10.0) as c:
-            resp = await c.get(
-                f"{self._coord_url}{path}", headers=headers
-            )
+            resp = await c.get(f"{self._coord_url}{path}", headers=headers)
         try:
             body: object = resp.json()
         except ValueError:
@@ -175,12 +167,8 @@ class StrategyClient:
     async def list_docs(self, acting_user_id: str) -> tuple[int, object]:
         return await self._get("/strategy/docs", acting_user_id)
 
-    async def get_doc(
-        self, acting_user_id: str, name: str
-    ) -> tuple[int, object]:
-        return await self._get(
-            f"/strategy/docs/{name}", acting_user_id
-        )
+    async def get_doc(self, acting_user_id: str, name: str) -> tuple[int, object]:
+        return await self._get(f"/strategy/docs/{name}", acting_user_id)
 
 
 # Process-wide singleton, wired in app startup.

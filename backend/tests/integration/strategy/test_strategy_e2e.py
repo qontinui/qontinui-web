@@ -61,12 +61,8 @@ async def test_git_read_cache_hit(client: StrategyClient) -> None:
         "X-Qontinui-User-Id": str(uuid.uuid4()),
     }
     async with httpx.AsyncClient(timeout=10.0) as h:
-        r1 = await h.get(
-            f"{COORD_URL}/strategy/docs/README.md", headers=headers
-        )
-        r2 = await h.get(
-            f"{COORD_URL}/strategy/docs/README.md", headers=headers
-        )
+        r1 = await h.get(f"{COORD_URL}/strategy/docs/README.md", headers=headers)
+        r2 = await h.get(f"{COORD_URL}/strategy/docs/README.md", headers=headers)
         # Different doc = different cache key (independent state).
         r3 = await h.get(
             f"{COORD_URL}/strategy/docs/business-goals.md",

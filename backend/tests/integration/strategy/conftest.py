@@ -48,6 +48,4 @@ elif not ADMIN_SECRET:
 elif not _coord_reachable():
     _skip_reason = f"coord unreachable at {COORD_URL}"
 
-pytestmark = pytest.mark.skipif(
-    _skip_reason is not None, reason=_skip_reason or ""
-)
+pytestmark = pytest.mark.skipif(_skip_reason is not None, reason=_skip_reason or "")
