@@ -390,6 +390,12 @@ async def startup_event():
             note="Redis disabled — scheduled_workflow_runs won't fire",
         )
 
+    # Strategy Collaboration (Phase 1) service-account bridge. No-op
+    # until COORD_ADMIN_SECRET is set; fail-fast when set-but-misconfig.
+    from app.services.strategy import strategy_client
+
+    await strategy_client.startup()
+
 
 @app.on_event("shutdown")
 async def shutdown_event():

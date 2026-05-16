@@ -153,6 +153,25 @@ class Settings(BaseSettings):
     REDIS_PORT: int = Field(default=6379)
     REDIS_DB: int = Field(default=0)
 
+    # Strategy Collaboration (Phase 1) — coord service-account bridge.
+    # Feature is DISABLED until COORD_ADMIN_SECRET is set (i.e. until
+    # the next coord deploy provisions it); endpoints then return 503.
+    COORD_URL: str = Field(
+        default="http://localhost:9870",
+        description="Base URL of qontinui-coord for the strategy bridge",
+    )
+    COORD_ADMIN_SECRET: str | None = Field(
+        default=None,
+        description=(
+            "Shared secret for POST /coord/auth/service-token. Unset = "
+            "strategy feature disabled. Set-but-wrong = fail-fast at startup."
+        ),
+    )
+    STRATEGY_SERVICE_NAME: str = Field(
+        default="qontinui-web-strategy",
+        description="sub=service:<name> the web backend mints at coord",
+    )
+
     # Stripe
     STRIPE_SECRET_KEY: str | None = Field(default=None, description="Stripe secret key")
     STRIPE_PUBLISHABLE_KEY: str | None = Field(
