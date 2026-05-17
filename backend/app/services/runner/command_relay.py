@@ -6,6 +6,7 @@ Handles command/response routing via Redis pub/sub channels.
 
 import asyncio
 import json
+import time
 from collections.abc import Callable, Coroutine
 from typing import Any
 
@@ -16,6 +17,36 @@ from redis import asyncio as aioredis
 from app.services.runner.connection_registry import WebSocketConnectionRegistry
 
 logger = structlog.get_logger(__name__)
+
+
+class RunnerNotConnectedError(RuntimeError):
+    """Raised when a dispatch target runner is not registered as connected.
+
+    Surfaced by :meth:`CommandRelayService.dispatch_and_wait` at the
+    pre-publish gate. HTTP callers should translate this into a structured
+    503 envelope via
+    :func:`app.services.runner.runner_selector.runner_bridge_503_no_runner`.
+    """
+
+    def __init__(self, runner_id: str) -> None:
+        super().__init__(f"runner {runner_id!s} is not connected")
+        self.runner_id = runner_id
+
+
+class RunnerCommandTimeoutError(TimeoutError):
+    """Raised when no matching response arrives within the dispatch timeout.
+
+    HTTP callers should translate this into a 504 Gateway Timeout envelope.
+    """
+
+    def __init__(self, runner_id: str, request_id: str, timeout_s: float) -> None:
+        super().__init__(
+            f"runner {runner_id!s} did not respond to request "
+            f"{request_id!s} within {timeout_s:.1f}s"
+        )
+        self.runner_id = runner_id
+        self.request_id = request_id
+        self.timeout_s = timeout_s
 
 
 class CommandRelayService:
@@ -87,6 +118,118 @@ class CommandRelayService:
                 runner_id=runner_id,
                 error=str(e),
             )
+
+    async def dispatch_and_wait(
+        self,
+        runner_id: str,
+        command: dict[str, Any],
+        *,
+        request_id: str,
+        timeout_s: float = 30.0,
+    ) -> dict[str, Any]:
+        """Send a command and synchronously await the matching response.
+
+        Subscribes to ``runner:responses:{runner_id}`` BEFORE publishing the
+        command to eliminate the lost-wakeup race, then publishes the command
+        (with the ``request_id`` field merged in) on
+        ``runner:commands:{runner_id}``. Filters incoming responses by
+        ``request_id`` (UUID string), returning the first match.
+
+        Args:
+            runner_id: Target runner UUID (string form).
+            command: Command payload. Must be JSON-serialisable. The caller
+                does not need to pre-populate ``request_id``; it is merged in.
+            request_id: Correlation id (UUID4 string is recommended).
+            timeout_s: Max seconds to wait for a matching response.
+
+        Returns:
+            The parsed JSON response dict whose ``request_id`` field matches.
+
+        Raises:
+            RunnerNotConnectedError: Runner is not registered as connected at
+                dispatch time.
+            RunnerCommandTimeoutError: No matching response arrived within
+                ``timeout_s``.
+        """
+        if not self._registry.is_runner_connected(runner_id):
+            raise RunnerNotConnectedError(runner_id)
+
+        response_channel = f"runner:responses:{runner_id}"
+        command_channel = f"runner:commands:{runner_id}"
+
+        # Subscribe BEFORE publishing to avoid losing a fast response.
+        pubsub = self._redis.pubsub()
+        try:
+            await pubsub.subscribe(response_channel)
+            logger.debug(
+                "dispatch_subscribed",
+                runner_id=runner_id,
+                request_id=request_id,
+                channel=response_channel,
+            )
+
+            payload = {**command, "request_id": request_id}
+            try:
+                await self._redis.publish(command_channel, json.dumps(payload))
+            except Exception as e:
+                logger.error(
+                    "dispatch_publish_failed",
+                    runner_id=runner_id,
+                    request_id=request_id,
+                    error=str(e),
+                )
+                raise
+
+            deadline = time.monotonic() + timeout_s
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                # Poll with a 1s cap so cancellation is responsive.
+                wait_s = min(1.0, remaining)
+                msg = await pubsub.get_message(
+                    ignore_subscribe_messages=True,
+                    timeout=wait_s,
+                )
+                if msg is None:
+                    continue
+                if msg.get("type") != "message":
+                    continue
+                try:
+                    data = msg["data"]
+                    if isinstance(data, bytes | bytearray):
+                        data = data.decode("utf-8")
+                    response = json.loads(data)
+                except (TypeError, ValueError) as e:
+                    logger.warning(
+                        "dispatch_response_parse_failed",
+                        runner_id=runner_id,
+                        request_id=request_id,
+                        error=str(e),
+                    )
+                    continue
+                if not isinstance(response, dict):
+                    continue
+                if response.get("request_id") == request_id:
+                    logger.debug(
+                        "dispatch_response_matched",
+                        runner_id=runner_id,
+                        request_id=request_id,
+                    )
+                    return response
+                # Mismatched request_id — keep listening; the response is
+                # for some other in-flight dispatcher.
+
+            raise RunnerCommandTimeoutError(runner_id, request_id, timeout_s)
+        finally:
+            try:
+                await pubsub.unsubscribe(response_channel)
+            except Exception:  # noqa: BLE001 - best effort cleanup
+                pass
+            try:
+                await pubsub.close()
+            except Exception:  # noqa: BLE001 - best effort cleanup
+                pass
 
     async def start_runner_listener(
         self,

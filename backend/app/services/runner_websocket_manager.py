@@ -319,6 +319,28 @@ class RunnerWebSocketManager:
         await self._terminal_relay.send_response_to_mobiles(rid, response)
 
     # ========================================================================
+    # Service accessors (read-only) — used by HTTP handlers that need to
+    # dispatch+await over the runner WS bridge.
+    # ========================================================================
+
+    @property
+    def relay(self) -> CommandRelayService:
+        """Public accessor for the underlying command relay.
+
+        Used by HTTP handlers calling :meth:`CommandRelayService.dispatch_and_wait`.
+        """
+        return self._relay
+
+    @property
+    def registry(self) -> WebSocketConnectionRegistry:
+        """Public accessor for the WS connection registry.
+
+        Used by the runner-selection helper to filter user-owned runners
+        down to those connected to *this* web process.
+        """
+        return self._registry
+
+    # ========================================================================
     # Connection-state queries
     # ========================================================================
 
