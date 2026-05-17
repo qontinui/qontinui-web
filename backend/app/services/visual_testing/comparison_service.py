@@ -2,12 +2,20 @@
 Visual comparison service.
 
 Handles the compare workflow, review management, and pending reviews.
+
+NOTE: As of plan-2026-05-17-web-image-slim, `compare_screenshot` raises
+HTTPException(503) for the ignore-regions path (qontinui.vision.comparison
+no longer lives in the web image). The standard path also fails at
+`self.comparator`, which is the parent class's 503 short-circuit. The
+runner-bridge replacement is tracked under
+plan-2026-05-17-ws-bridge-for-violating-routers.
 """
 
 from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
+from fastapi import HTTPException, status
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -175,11 +183,24 @@ class ComparisonService(ComparisonEngine):
 
         # Apply ignore regions if any
         if ignore_regions:
-            from qontinui.vision.comparison import IgnoreRegion
-
-            regions = [IgnoreRegion.from_dict(r) for r in ignore_regions]
-            baseline_img = self.comparator.apply_ignore_mask(baseline_img, regions)
-            screenshot_img = self.comparator.apply_ignore_mask(screenshot_img, regions)
+            # DEFERRED: ws-bridge — qontinui.vision.comparison no longer lives
+            # in the web image (plan-2026-05-17-web-image-slim). Surface a
+            # structured 503 BEFORE the import would ImportError.
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={
+                    "error": "endpoint_requires_runner_bridge",
+                    "message": (
+                        "This endpoint depends on qontinui runtime functionality that lives on "
+                        "the runner. The web - runner WebSocket bridge for this functionality is "
+                        "not yet implemented. See architectural-decisions.md "
+                        "'Web - runner WebSocket boundary'."
+                    ),
+                    "runner_module": "qontinui.vision.comparison",
+                    "endpoint": "comparison_service.compare_screenshot (ignore_regions path)",
+                    "tracking": "plan-2026-05-17-ws-bridge-for-violating-routers (TBD)",
+                },
+            )
 
         # Run comparison
         try:
@@ -215,11 +236,14 @@ class ComparisonService(ComparisonEngine):
 
             return comparison_result
 
-        # Determine status
+        # Determine status. Local var renamed to avoid shadowing fastapi
+        # `status` (imported above for the 503 short-circuit's
+        # status.HTTP_503_SERVICE_UNAVAILABLE) — mypy flags shadowed binding
+        # as used-before-def.
         if comp_result.passed:
-            status = VisualComparisonStatus.PASSED
+            comparison_status = VisualComparisonStatus.PASSED
         else:
-            status = VisualComparisonStatus.PENDING_REVIEW
+            comparison_status = VisualComparisonStatus.PENDING_REVIEW
 
         # Generate and upload diff image if there are differences
         diff_image_path = None
@@ -247,7 +271,7 @@ class ComparisonService(ComparisonEngine):
             comparison_algorithm=comp_algorithm,
             similarity_score=comp_result.similarity_score,
             threshold_used=comp_threshold,
-            status=status,
+            status=comparison_status,
             diff_image_path=diff_image_path,
             diff_regions=[r.to_dict() for r in comp_result.diff_regions],
             execution_time_ms=comp_result.execution_time_ms,
@@ -260,7 +284,7 @@ class ComparisonService(ComparisonEngine):
         logger.info(
             "comparison_completed",
             comparison_id=str(comparison_result.id),
-            status=status.value,
+            status=comparison_status.value,
             similarity_score=comp_result.similarity_score,
             threshold=comp_threshold,
         )

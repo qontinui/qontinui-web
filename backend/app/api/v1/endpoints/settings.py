@@ -1,4 +1,12 @@
-"""Settings API endpoints for Qontinui properties configuration."""
+"""Settings API endpoints for Qontinui properties configuration.
+
+NOTE: As of plan-2026-05-17-web-image-slim, every endpoint here returns 503.
+The QontinuiProperties pydantic model lives in the qontinui package, which
+no longer ships in the web image. The runner-bridge replacement is tracked
+under plan-2026-05-17-ws-bridge-for-violating-routers. The Redis key
+helpers remain in place because the future runner-bridge can still use
+them as-is.
+"""
 
 import json
 import logging
@@ -10,7 +18,6 @@ from redis import asyncio as aioredis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_active_user_async
-from app.config.redis_config import get_redis
 from app.models.user import User
 from app.schemas.settings import QontinuiSettings, QontinuiSettingsUpdate
 
@@ -73,6 +80,26 @@ async def _delete_settings(redis: aioredis.Redis, user_id: str) -> bool:
         return False
 
 
+def _runner_bridge_503(endpoint: str) -> HTTPException:
+    """Build the structured 503 envelope for endpoints that depend on
+    qontinui.config.qontinui_properties (now living on the runner)."""
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail={
+            "error": "endpoint_requires_runner_bridge",
+            "message": (
+                "This endpoint depends on qontinui runtime functionality that lives on "
+                "the runner. The web - runner WebSocket bridge for this functionality is "
+                "not yet implemented. See architectural-decisions.md "
+                "'Web - runner WebSocket boundary'."
+            ),
+            "runner_module": "qontinui.config.qontinui_properties",
+            "endpoint": endpoint,
+            "tracking": "plan-2026-05-17-ws-bridge-for-violating-routers (TBD)",
+        },
+    )
+
+
 @router.get("/", response_model=QontinuiSettings)
 async def get_settings(
     db: AsyncSession = Depends(get_async_db),
@@ -80,26 +107,9 @@ async def get_settings(
 ) -> Any:
     """Get current Qontinui settings.
 
-    Returns the settings from Redis or default settings if none exist.
+    Returns 503 until the runner-bridge ships.
     """
-    from qontinui.config.qontinui_properties import QontinuiProperties
-
-    # Try to load from Redis
-    try:
-        redis = await get_redis()
-        stored = await _get_stored_settings(redis, str(current_user.id))
-        if stored:
-            # Merge with defaults (in case new settings were added)
-            props = QontinuiProperties()
-            default_dict = props.model_dump()
-            default_dict.update(stored)
-            return default_dict
-    except Exception as e:
-        logger.warning(f"Redis unavailable, using defaults: {e}")
-
-    # Return defaults
-    props = QontinuiProperties()
-    return props.model_dump()
+    raise _runner_bridge_503("/api/v1/settings/")
 
 
 @router.put("/", response_model=QontinuiSettings)
@@ -111,41 +121,9 @@ async def update_settings(
 ) -> Any:
     """Update Qontinui settings.
 
-    Updates the application settings and persists them to Redis.
+    Returns 503 until the runner-bridge ships.
     """
-    from qontinui.config.qontinui_properties import QontinuiProperties
-
-    # Load current settings (from Redis or defaults)
-    props = QontinuiProperties()
-    current_settings = props.model_dump()
-
-    try:
-        redis = await get_redis()
-        stored = await _get_stored_settings(redis, str(current_user.id))
-        if stored:
-            current_settings.update(stored)
-    except Exception as e:
-        logger.warning(f"Redis unavailable, starting from defaults: {e}")
-
-    # Update with new values
-    update_data = settings_in.model_dump(exclude_unset=True)
-    for key, value in update_data.items():
-        if value is not None:
-            current_settings[key] = value
-
-    # Persist to Redis
-    try:
-        redis = await get_redis()
-        await _save_settings(redis, str(current_user.id), current_settings)
-        logger.info(f"Settings saved for user {current_user.id}")
-    except Exception as e:
-        logger.error(f"Failed to persist settings: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to save settings",
-        )
-
-    return current_settings
+    raise _runner_bridge_503("/api/v1/settings/")
 
 
 @router.post("/reset", response_model=QontinuiSettings)
@@ -153,20 +131,11 @@ async def reset_settings(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
-    """Reset settings to default values."""
-    from qontinui.config.qontinui_properties import QontinuiProperties
+    """Reset settings to default values.
 
-    props = QontinuiProperties()
-
-    # Clear stored settings from Redis
-    try:
-        redis = await get_redis()
-        await _delete_settings(redis, str(current_user.id))
-        logger.info(f"Settings reset for user {current_user.id}")
-    except Exception as e:
-        logger.warning(f"Failed to clear stored settings: {e}")
-
-    return props.model_dump()
+    Returns 503 until the runner-bridge ships.
+    """
+    raise _runner_bridge_503("/api/v1/settings/reset")
 
 
 @router.get("/export")
@@ -175,21 +144,11 @@ async def export_settings(
     current_user: User = Depends(get_current_active_user_async),
     format: str = "yaml",
 ) -> Any:
-    """Export settings to YAML or JSON format."""
-    from qontinui.config.qontinui_properties import QontinuiProperties
+    """Export settings to YAML or JSON format.
 
-    props = QontinuiProperties()
-
-    if format == "yaml":
-        yaml_str = props.to_yaml()
-        return {"format": "yaml", "content": yaml_str}
-    elif format == "json":
-        return {"format": "json", "content": props.model_dump()}
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported format: {format}",
-        )
+    Returns 503 until the runner-bridge ships.
+    """
+    raise _runner_bridge_503("/api/v1/settings/export")
 
 
 @router.post("/import")
@@ -200,48 +159,8 @@ async def import_settings(
     format: str = "yaml",
     current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
-    """Import settings from YAML or JSON format."""
-    import tempfile
-    from pathlib import Path
+    """Import settings from YAML or JSON format.
 
-    from qontinui.config.qontinui_properties import QontinuiProperties
-
-    try:
-        if format == "yaml":
-            # Write to temp file and load
-            with tempfile.NamedTemporaryFile(
-                mode="w", suffix=".yaml", delete=False
-            ) as f:
-                f.write(content)
-                temp_path = Path(f.name)
-
-            props = QontinuiProperties.from_yaml(temp_path)
-            temp_path.unlink()
-        elif format == "json":
-            data = json.loads(content)
-            props = QontinuiProperties(**data)
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Unsupported format: {format}",
-            )
-
-        # Persist to Redis
-        try:
-            redis = await get_redis()
-            await _save_settings(redis, str(current_user.id), props.model_dump())
-            logger.info(f"Settings imported for user {current_user.id}")
-        except Exception as e:
-            logger.error(f"Failed to persist imported settings: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to save imported settings",
-            )
-
-        return {"success": True, "settings": props.model_dump()}
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to import settings: {str(e)}",
-        )
+    Returns 503 until the runner-bridge ships.
+    """
+    raise _runner_bridge_503("/api/v1/settings/import")

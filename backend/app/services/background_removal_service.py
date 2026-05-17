@@ -1,109 +1,71 @@
-"""Background Removal Service wraps qontinui background removal for the API."""
+"""Background Removal Service.
 
-import sys
-from pathlib import Path
-from typing import TYPE_CHECKING, Any
+NOTE: As of plan-2026-05-17-web-image-slim, the underlying qontinui background
+removal module no longer ships with the web image. Constructing this service
+now raises HTTPException(503) directly; FastAPI propagates it from whichever
+route handler instantiates the service. The runner-bridge replacement is tracked
+under plan-2026-05-17-ws-bridge-for-violating-routers.
+"""
+
+from typing import Any
 
 import structlog
-
-if TYPE_CHECKING:
-    from qontinui.discovery.background_removal import BackgroundRemovalConfig
+from fastapi import HTTPException, status
 
 logger = structlog.get_logger(__name__)
 
-# Add qontinui src directory to Python path for package imports
-QONTINUI_SRC_PATH = (
-    Path(__file__).parent.parent.parent.parent.parent / "qontinui" / "src"
-)
-if QONTINUI_SRC_PATH.exists():
-    sys.path.insert(0, str(QONTINUI_SRC_PATH))
-    logger.info(f"Added qontinui src path: {QONTINUI_SRC_PATH}")
-else:
-    logger.warning(f"Qontinui src path not found: {QONTINUI_SRC_PATH}")
-
 
 class BackgroundRemovalService:
-    """Service for removing backgrounds from screenshots using base64 strings."""
+    """Service for removing backgrounds from screenshots using base64 strings.
 
-    config: "BackgroundRemovalConfig | None"
+    DEFERRED: ws-bridge — raising HTTPException(503) here is the lean choice
+    per plan §3 implementation approach. FastAPI propagates the exception
+    through the calling route handler so the client sees a proper 503 envelope.
+    """
 
     def __init__(self, config_dict: dict[str, Any] | None = None):
-        """Initialize the background removal service."""
-        try:
-            # Import qontinui background removal module
-            from qontinui.discovery.background_removal import (
-                BackgroundRemovalConfig,
-                remove_backgrounds_from_base64,
-            )
+        """Initialize the background removal service.
 
-            # Store the function for use in remove_backgrounds
-            self._remove_backgrounds_from_base64 = remove_backgrounds_from_base64
-
-            # Convert config dict to BackgroundRemovalConfig
-            if config_dict:
-                # Map snake_case keys to what the Python module expects
-                python_config = {
-                    "use_temporal_variance": config_dict.get(
-                        "use_temporal_variance", True
-                    ),
-                    "use_edge_density": config_dict.get("use_edge_density", True),
-                    "use_uniformity": config_dict.get("use_uniformity", True),
-                    "variance_threshold": config_dict.get("variance_threshold", 20.0),
-                    "min_screenshots_for_variance": config_dict.get(
-                        "min_screenshots_for_variance", 3
-                    ),
-                    "edge_density_threshold": config_dict.get(
-                        "edge_density_threshold", 0.05
-                    ),
-                    "edge_kernel_size": config_dict.get("edge_kernel_size", 3),
-                    "uniformity_threshold": config_dict.get(
-                        "uniformity_threshold", 15.0
-                    ),
-                    "uniformity_region_size": config_dict.get(
-                        "uniformity_region_size", 20
-                    ),
-                    "apply_morphology": config_dict.get("apply_morphology", True),
-                    "morphology_kernel_size": config_dict.get(
-                        "morphology_kernel_size", 3
-                    ),
-                    "min_foreground_region_size": config_dict.get(
-                        "min_foreground_region_size", 50
-                    ),
-                    "foreground_alpha": config_dict.get("foreground_alpha", 255),
-                    "background_alpha": config_dict.get("background_alpha", 0),
-                }
-
-                self.config = BackgroundRemovalConfig(**python_config)
-            else:
-                self.config = None
-
-            logger.info("BackgroundRemovalService initialized successfully")
-
-        except ImportError as e:
-            logger.error(f"Failed to import qontinui modules: {e}")
-            logger.error(
-                "Make sure the qontinui library is accessible from the backend directory"
-            )
-            raise RuntimeError(
-                f"Failed to import qontinui background removal module: {e}"
-            ) from e
+        Raises HTTPException(503) until the runner-bridge ships — qontinui.discovery
+        no longer lives in the web image.
+        """
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "error": "endpoint_requires_runner_bridge",
+                "message": (
+                    "This endpoint depends on qontinui runtime functionality that lives on "
+                    "the runner. The web - runner WebSocket bridge for this functionality is "
+                    "not yet implemented. See architectural-decisions.md "
+                    "'Web - runner WebSocket boundary'."
+                ),
+                "runner_module": "qontinui.discovery.background_removal",
+                "endpoint": "background_removal_service",
+                "tracking": "plan-2026-05-17-ws-bridge-for-violating-routers (TBD)",
+            },
+        )
 
     def remove_backgrounds_base64(
         self, base64_screenshots: list[str], debug: bool = False
     ) -> tuple[list[str], dict[str, Any]]:
-        """Remove backgrounds from base64-encoded screenshots."""
-        try:
-            masked_screenshots, stats = self._remove_backgrounds_from_base64(
-                base64_screenshots, config=self.config, debug=debug
-            )
+        """Remove backgrounds from base64-encoded screenshots.
 
-            logger.info(
-                f"Processed {len(base64_screenshots)} screenshots: "
-                f"{stats['foreground_percentage']:.1f}% foreground"
-            )
-
-            return masked_screenshots, stats
-
-        except Exception as e:
-            logger.error(f"Background removal failed: {e}", exc_info=True)
-            raise RuntimeError(f"Background removal processing failed: {e}") from e
+        Unreachable: __init__ raises 503 before this can be called. Kept on the
+        class so that if a stale caller constructs the service via some sentinel
+        path, the second 503 surfaces here too.
+        """
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "error": "endpoint_requires_runner_bridge",
+                "message": (
+                    "This endpoint depends on qontinui runtime functionality that lives on "
+                    "the runner. The web - runner WebSocket bridge for this functionality is "
+                    "not yet implemented. See architectural-decisions.md "
+                    "'Web - runner WebSocket boundary'."
+                ),
+                "runner_module": "qontinui.discovery.background_removal",
+                "endpoint": "background_removal_service.remove_backgrounds_base64",
+                "tracking": "plan-2026-05-17-ws-bridge-for-violating-routers (TBD)",
+            },
+        )

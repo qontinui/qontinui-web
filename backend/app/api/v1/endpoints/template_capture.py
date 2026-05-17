@@ -1,14 +1,9 @@
 """API endpoints for Template Capture (click-to-template system)."""
 
-import io
-from datetime import UTC, datetime
 from uuid import UUID
 
-import httpx
-import numpy as np
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
-from PIL import Image
 from pydantic import BaseModel
 from qontinui_schemas.template_capture import (
     ApplicationProfileCreate,
@@ -42,9 +37,6 @@ from app.services.template_candidate_storage_service import (
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
-
-# HTTP client timeout for downloading screenshots
-SCREENSHOT_DOWNLOAD_TIMEOUT = 30.0
 
 
 class CandidateUrlsResponse(BaseModel):
@@ -683,238 +675,25 @@ async def tune_profile(
     2. Runs the ApplicationTuner algorithm to find optimal parameters
     3. Updates the profile with the tuning results
     4. Returns metrics and strategy rankings
+
+    Returns 503 until the runner-bridge ships — qontinui.discovery.click_analysis
+    no longer lives in the web image
+    (plan-2026-05-17-web-image-slim / plan-2026-05-17-ws-bridge-for-violating-routers).
     """
-    # Import qontinui tuning components
-    from qontinui.discovery.click_analysis.application_tuner import ApplicationTuner
-    from qontinui.discovery.click_analysis.models import InferredBoundingBox
-
-    result = await db.execute(
-        select(ApplicationProfile).where(ApplicationProfile.name == name)
-    )
-    profile = result.scalar_one_or_none()
-
-    if not profile:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Profile '{name}' not found",
-        )
-
-    # Validate request
-    if not tuning_request.screenshot_urls:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="At least one screenshot URL is required for tuning",
-        )
-
-    logger.info(
-        "Starting profile tuning",
-        profile_name=name,
-        screenshot_count=len(tuning_request.screenshot_urls),
-    )
-
-    # Download screenshots from URLs
-    screenshots: list[np.ndarray] = []
-    failed_urls: list[str] = []
-
-    async with httpx.AsyncClient(timeout=SCREENSHOT_DOWNLOAD_TIMEOUT) as client:
-        for url in tuning_request.screenshot_urls:
-            try:
-                response = await client.get(url)
-                response.raise_for_status()
-
-                # Convert image bytes to numpy array (BGR for OpenCV compatibility)
-                image_bytes = io.BytesIO(response.content)
-                pil_image: Image.Image = Image.open(image_bytes)
-
-                # Convert to RGB first, then to BGR for OpenCV
-                if pil_image.mode != "RGB":
-                    pil_image = pil_image.convert("RGB")
-
-                # Convert to numpy array and swap RGB to BGR
-                np_array = np.array(pil_image)
-                bgr_array = np_array[:, :, ::-1].copy()  # RGB to BGR
-                screenshots.append(bgr_array)
-
-                logger.debug(
-                    "Downloaded screenshot",
-                    url=url,
-                    shape=bgr_array.shape,
-                )
-
-            except httpx.HTTPStatusError as e:
-                logger.warning(
-                    "Failed to download screenshot - HTTP error",
-                    url=url,
-                    status_code=e.response.status_code,
-                )
-                failed_urls.append(url)
-
-            except httpx.RequestError as e:
-                logger.warning(
-                    "Failed to download screenshot - request error",
-                    url=url,
-                    error=str(e),
-                )
-                failed_urls.append(url)
-
-            except Exception as e:
-                logger.warning(
-                    "Failed to process screenshot",
-                    url=url,
-                    error=str(e),
-                )
-                failed_urls.append(url)
-
-    # Check if we have enough screenshots
-    if not screenshots:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to download any screenshots. Failed URLs: {failed_urls}",
-        )
-
-    # Convert known elements to InferredBoundingBox if provided
-    known_elements: list[InferredBoundingBox] | None = None
-    if tuning_request.known_elements:
-        from qontinui.discovery.click_analysis.models import (
-            DetectionStrategy,
-            ElementType,
-        )
-
-        known_elements = []
-        for elem in tuning_request.known_elements:
-            # Convert schema DetectionStrategyType to qontinui DetectionStrategy
-            strategy_value = (
-                elem.strategy_used.value if elem.strategy_used else "fixed_size"
-            )
-            element_type_value = (
-                elem.element_type.value if elem.element_type else "unknown"
-            )
-
-            known_elements.append(
-                InferredBoundingBox(
-                    x=elem.x,
-                    y=elem.y,
-                    width=elem.width,
-                    height=elem.height,
-                    confidence=elem.confidence,
-                    strategy_used=DetectionStrategy(strategy_value),
-                    element_type=ElementType(element_type_value),
-                )
-            )
-
-    # Run the tuning algorithm
-    try:
-        tuner = ApplicationTuner()
-        tuning_result = tuner.tune_from_samples(
-            screenshots=screenshots,
-            known_elements=known_elements,
-        )
-
-        logger.info(
-            "Tuning completed",
-            profile_name=name,
-            success=tuning_result.success,
-            sample_count=len(screenshots),
-            strategy_rankings=[
-                (s.value, score) for s, score in tuning_result.strategy_rankings[:3]
-            ],
-        )
-
-    except Exception as e:
-        logger.error(
-            "Tuning algorithm failed",
-            profile_name=name,
-            error=str(e),
-        )
-        return TuningResult(
-            success=False,
-            metrics=None,
-            strategyRankings=[],
-            errorMessage=f"Tuning algorithm failed: {str(e)}",
-        )
-
-    if not tuning_result.success:
-        return TuningResult(
-            success=False,
-            metrics=None,
-            strategyRankings=[],
-            errorMessage=tuning_result.error_message or "Tuning failed",
-        )
-
-    # Update the profile with tuning results
-    # Convert InferenceConfig to dict for storage
-    config_dict = tuning_result.config.to_dict()
-    profile.inference_config = config_dict
-
-    # Set preferred strategies from rankings (top 4)
-    profile.preferred_strategies = [
-        s.value for s, _ in tuning_result.strategy_rankings[:4]
-    ]
-
-    # Convert TuningMetrics to dict for storage
-    metrics_dict = tuning_result.metrics.to_dict()
-    profile.tuning_metrics = metrics_dict
-
-    # Update sample count (add to existing count)
-    profile.sample_count = (profile.sample_count or 0) + len(screenshots)
-
-    # Calculate success rate based on average confidence
-    # Higher confidence = higher success rate estimate
-    avg_confidence = tuning_result.metrics.avg_confidence
-    if avg_confidence > 0:
-        # Weighted average with existing success rate
-        if profile.success_rate > 0 and profile.sample_count > len(screenshots):
-            old_weight = min(0.7, (profile.sample_count - len(screenshots)) / 100)
-            profile.success_rate = (
-                old_weight * profile.success_rate + (1 - old_weight) * avg_confidence
-            )
-        else:
-            profile.success_rate = avg_confidence
-
-    await db.commit()
-    await db.refresh(profile)
-
-    logger.info(
-        "Profile updated with tuning results",
-        profile_name=name,
-        sample_count=profile.sample_count,
-        success_rate=profile.success_rate,
-        preferred_strategies=profile.preferred_strategies,
-    )
-
-    # Build response
-    metrics_response = TuningMetrics(
-        sampleCount=tuning_result.metrics.sample_count,
-        edgeScore=tuning_result.metrics.edge_score,
-        contourScore=tuning_result.metrics.contour_score,
-        colorScore=tuning_result.metrics.color_score,
-        floodFillScore=tuning_result.metrics.flood_fill_score,
-        gradientScore=tuning_result.metrics.gradient_score,
-        avgDetectionTimeMs=tuning_result.metrics.avg_detection_time_ms,
-        avgConfidence=tuning_result.metrics.avg_confidence,
-        tuningIterations=tuning_result.metrics.tuning_iterations,
-        lastTunedAt=(
-            tuning_result.metrics.last_tuned_at.isoformat()
-            if tuning_result.metrics.last_tuned_at
-            else datetime.now(UTC).isoformat()
-        ),
-    )
-
-    # Convert strategy rankings to list of tuples (strategy_value, score)
-    strategy_rankings_response = [
-        (s.value, score) for s, score in tuning_result.strategy_rankings
-    ]
-
-    # Include warning about failed downloads if any
-    error_msg = None
-    if failed_urls:
-        error_msg = f"Warning: {len(failed_urls)} screenshot(s) failed to download"
-
-    return TuningResult(
-        success=True,
-        metrics=metrics_response,
-        strategyRankings=strategy_rankings_response,
-        errorMessage=error_msg,
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail={
+            "error": "endpoint_requires_runner_bridge",
+            "message": (
+                "This endpoint depends on qontinui runtime functionality that lives on "
+                "the runner. The web - runner WebSocket bridge for this functionality is "
+                "not yet implemented. See architectural-decisions.md "
+                "'Web - runner WebSocket boundary'."
+            ),
+            "runner_module": "qontinui.discovery.click_analysis",
+            "endpoint": "/api/v1/template-capture/profiles/{name}/tune",
+            "tracking": "plan-2026-05-17-ws-bridge-for-violating-routers (TBD)",
+        },
     )
 
 

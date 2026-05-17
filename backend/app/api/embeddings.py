@@ -5,50 +5,20 @@ using the qontinui all-MiniLM-L6-v2 model (384 dimensions).
 
 Both the Rust runner (embedding_client.rs) and the web backend's own
 semantic_search endpoint call these routes at http://127.0.0.1:8001.
+
+NOTE: As of plan-2026-05-17-web-image-slim, the web backend no longer
+depends on `qontinui` (sentence-transformers + torch were ~3.7 GiB of the
+image). These endpoints return 503 until the runner-bridge ships
+(plan-2026-05-17-ws-bridge-for-violating-routers).
 """
 
-import threading
-
 import structlog
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
 logger = structlog.get_logger(__name__)
 
 router = APIRouter()
-
-# Lazy-loaded, thread-safe singleton for the embedding provider.
-_provider = None
-_provider_lock = threading.Lock()
-
-
-def _get_provider():
-    global _provider
-    if _provider is not None:
-        return _provider
-    with _provider_lock:
-        if _provider is not None:
-            return _provider
-        try:
-            from qontinui.embeddings import (
-                EmbeddingConfig,
-                EmbeddingProviderType,
-                get_embedding_provider,
-            )
-
-            config = EmbeddingConfig(
-                provider=EmbeddingProviderType.SENTENCE_TRANSFORMERS
-            )
-            _provider = get_embedding_provider(config)
-            logger.info(
-                "embedding_provider_loaded",
-                model=config.model_name,
-                dim=_provider.dimension,
-            )
-        except Exception as e:
-            logger.error("embedding_provider_load_failed", error=str(e))
-            raise
-    return _provider
 
 
 # ── Request / response schemas ─────────────────────────────────────
@@ -77,6 +47,29 @@ class BatchEmbeddingResponse(BaseModel):
     embedding_dim: int
 
 
+# ── 503 helper ─────────────────────────────────────────────────────
+
+
+def _runner_bridge_503(endpoint: str) -> HTTPException:
+    """Build the structured 503 envelope for endpoints that depend on
+    qontinui runtime functionality (now living on the runner)."""
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail={
+            "error": "endpoint_requires_runner_bridge",
+            "message": (
+                "This endpoint depends on qontinui runtime functionality that lives on "
+                "the runner. The web - runner WebSocket bridge for this functionality is "
+                "not yet implemented. See architectural-decisions.md "
+                "'Web - runner WebSocket boundary'."
+            ),
+            "runner_module": "qontinui.embeddings",
+            "endpoint": endpoint,
+            "tracking": "plan-2026-05-17-ws-bridge-for-violating-routers (TBD)",
+        },
+    )
+
+
 # ── Endpoints ──────────────────────────────────────────────────────
 
 
@@ -84,57 +77,30 @@ class BatchEmbeddingResponse(BaseModel):
 def compute_text_embedding(request: TextEmbeddingRequest) -> TextEmbeddingResponse:
     """Compute a single 384-dim text embedding.
 
-    Uses `def` (not `async def`) so FastAPI runs the CPU-bound
-    sentence-transformers inference in a threadpool worker, avoiding
-    blocking the event loop.
+    Returns 503 until the runner-bridge ships — sentence-transformers/torch
+    are no longer installed in the web image.
     """
-    try:
-        provider = _get_provider()
-        vec = provider.embed(request.text)
-        return TextEmbeddingResponse(
-            success=True,
-            embedding=vec.tolist(),
-            embedding_dim=len(vec),
-        )
-    except Exception as e:
-        logger.error("compute_text_embedding_failed", error=str(e))
-        return TextEmbeddingResponse(
-            success=False,
-            embedding=[],
-            embedding_dim=0,
-            error=str(e),
-        )
+    raise _runner_bridge_503("/api/embeddings/compute-text")
 
 
 @router.post("/compute-batch", response_model=BatchEmbeddingResponse)
 def compute_batch_embedding(request: BatchEmbeddingRequest) -> BatchEmbeddingResponse:
-    """Compute 384-dim embeddings for multiple texts."""
-    try:
-        provider = _get_provider()
-        matrix = provider.embed_batch(request.texts)
-        return BatchEmbeddingResponse(
-            success=True,
-            embeddings=[row.tolist() for row in matrix],
-            embedding_dim=int(matrix.shape[1]) if len(matrix) > 0 else 384,
-        )
-    except Exception as e:
-        logger.error("compute_batch_embedding_failed", error=str(e))
-        return BatchEmbeddingResponse(
-            success=False,
-            embeddings=[],
-            embedding_dim=0,
-        )
+    """Compute 384-dim embeddings for multiple texts.
+
+    Returns 503 until the runner-bridge ships.
+    """
+    raise _runner_bridge_503("/api/embeddings/compute-batch")
 
 
 @router.get("/status")
 def embedding_status() -> dict[str, object]:
-    """Health/status probe for the embedding service."""
-    try:
-        provider = _get_provider()
-        return {
-            "available": True,
-            "model": "all-MiniLM-L6-v2",
-            "dimension": provider.dimension,
-        }
-    except Exception as e:
-        return {"available": False, "error": str(e)}
+    """Health/status probe for the embedding service.
+
+    Returns a structured "available: false" payload — the qontinui-backed
+    provider has been removed pending the runner-bridge.
+    """
+    return {
+        "available": False,
+        "error": "embedding_provider_moved_to_runner",
+        "tracking": "plan-2026-05-17-ws-bridge-for-violating-routers (TBD)",
+    }

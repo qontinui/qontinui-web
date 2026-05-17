@@ -3,6 +3,11 @@ Core visual comparison engine.
 
 Handles image conversion, comparison algorithms (SSIM, histogram, pixel diff),
 and diff image upload.
+
+NOTE: As of plan-2026-05-17-web-image-slim, the comparator property raises
+HTTPException(503) — qontinui.vision.comparison no longer ships with the web
+image. The runner-bridge replacement is tracked under
+plan-2026-05-17-ws-bridge-for-violating-routers.
 """
 
 import io
@@ -11,6 +16,7 @@ from uuid import UUID
 
 import numpy as np
 import structlog
+from fastapi import HTTPException, status
 from PIL import Image
 
 from app.services.object_storage import object_storage
@@ -30,19 +36,29 @@ class ComparisonEngine:
 
     @property
     def comparator(self):
-        """Lazy-load the comparator from qontinui library."""
-        if self._comparator is None:
-            try:
-                from qontinui.vision.comparison import VisualComparator
+        """Lazy-load the comparator (historically backed by qontinui.vision).
 
-                self._comparator = VisualComparator()
-            except ImportError:
-                logger.error("qontinui library not available for visual comparison")
-                raise ImportError(
-                    "qontinui library is required for visual comparison. "
-                    "Install with: pip install qontinui"
-                )
-        return self._comparator
+        Raises HTTPException(503) until the runner-bridge ships —
+        qontinui.vision.comparison no longer lives in the web image
+        (plan-2026-05-17-web-image-slim). FastAPI propagates the 503
+        envelope from whichever route handler accessed this property.
+        DEFERRED: ws-bridge.
+        """
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "error": "endpoint_requires_runner_bridge",
+                "message": (
+                    "This endpoint depends on qontinui runtime functionality that lives on "
+                    "the runner. The web - runner WebSocket bridge for this functionality is "
+                    "not yet implemented. See architectural-decisions.md "
+                    "'Web - runner WebSocket boundary'."
+                ),
+                "runner_module": "qontinui.vision.comparison",
+                "endpoint": "comparison_engine.comparator",
+                "tracking": "plan-2026-05-17-ws-bridge-for-violating-routers (TBD)",
+            },
+        )
 
     def _bytes_to_numpy(self, image_bytes: bytes) -> np.ndarray:
         """Convert image bytes to numpy array."""

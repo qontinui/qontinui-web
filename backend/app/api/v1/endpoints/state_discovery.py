@@ -339,90 +339,23 @@ async def discover_ui_bridge_states(
     - `fingerprint`: Enhanced discovery with element fingerprints (supports ID fallback)
 
     For fingerprint discovery, provide `cooccurrence_export` with fingerprint data.
+
+    Returns 503 until the runner-bridge ships — qontinui.discovery.state_discovery
+    no longer lives in the web image
+    (plan-2026-05-17-web-image-slim / plan-2026-05-17-ws-bridge-for-violating-routers).
     """
-    # Import here to avoid circular dependency at module load
-    from qontinui.discovery.state_discovery import (
-        DiscoveryStrategyType,
-        StateDiscoveryService,
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail={
+            "error": "endpoint_requires_runner_bridge",
+            "message": (
+                "This endpoint depends on qontinui runtime functionality that lives on "
+                "the runner. The web - runner WebSocket bridge for this functionality is "
+                "not yet implemented. See architectural-decisions.md "
+                "'Web - runner WebSocket boundary'."
+            ),
+            "runner_module": "qontinui.discovery.state_discovery",
+            "endpoint": "/api/v1/state-discovery/ui-bridge/discover-states",
+            "tracking": "plan-2026-05-17-ws-bridge-for-violating-routers (TBD)",
+        },
     )
-
-    # Map request strategy to library strategy type
-    strategy_map = {
-        "auto": DiscoveryStrategyType.AUTO,
-        "fingerprint": DiscoveryStrategyType.FINGERPRINT,
-    }
-    strategy = strategy_map.get(request.strategy.value, DiscoveryStrategyType.AUTO)
-
-    logger.info(
-        "Running UI Bridge state discovery",
-        render_count=len(request.renders),
-        strategy=request.strategy.value,
-        has_cooccurrence_export=request.cooccurrence_export is not None,
-    )
-
-    try:
-        service = StateDiscoveryService()
-
-        if request.cooccurrence_export:
-            result = service.discover_from_export(
-                request.cooccurrence_export,
-                strategy=strategy,
-            )
-        else:
-            result = service.discover_from_renders(
-                request.renders,
-                include_html_ids=request.include_html_ids,
-                strategy=strategy,
-            )
-
-        # Convert to response format
-        states = [
-            UIBridgeDiscoveredState(
-                id=s.id,
-                name=s.name,
-                element_ids=s.element_ids,
-                render_ids=s.render_ids,
-                confidence=s.confidence,
-                position_zone=s.position_zone,
-                landmark_context=s.landmark_context,
-                is_global=s.is_global,
-                is_modal=s.is_modal,
-            )
-            for s in result.states
-        ]
-
-        elements = [
-            UIBridgeDiscoveredElement(
-                id=e.id,
-                name=e.name,
-                element_type=e.element_type,
-                render_ids=e.render_ids,
-                fingerprint_hash=e.fingerprint_hash,
-                position_zone=e.position_zone,
-            )
-            for e in result.elements
-        ]
-
-        logger.info(
-            "UI Bridge state discovery completed",
-            states_found=len(states),
-            elements_found=len(elements),
-            strategy_used=result.strategy_used.value,
-        )
-
-        return UIBridgeDiscoveryResponse(
-            states=states,
-            elements=elements,
-            element_to_renders=result.element_to_renders,
-            render_count=result.render_count,
-            unique_element_count=result.unique_element_count,
-            strategy_used=result.strategy_used.value,
-            strategy_metadata=result.strategy_metadata,
-        )
-
-    except Exception as e:
-        logger.error("UI Bridge state discovery failed", error=str(e))
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"State discovery failed: {str(e)}",
-        )

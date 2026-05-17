@@ -4,6 +4,14 @@ Recording Pipeline API endpoints.
 Processes recording session exports from the UI Bridge SDK into
 discovered state machines with states, transitions, and optionally
 generated playbooks. Persists results to PostgreSQL.
+
+NOTE: As of plan-2026-05-17-web-image-slim, the pipeline-execution endpoints
+(/process, /process-with-playbook, /merge) return 503. The qontinui
+state-machine library that powered them now lives on the runner; the
+web - runner WebSocket bridge is tracked under
+plan-2026-05-17-ws-bridge-for-violating-routers. The /experiences
+read-only endpoint and the PG persistence helpers below remain functional
+because they only touch app.models.
 """
 
 from typing import Any
@@ -106,6 +114,31 @@ class ProcessWithPlaybookResponse(ProcessRecordingResponse):
 
 
 # ============================================================================
+# 503 helper
+# ============================================================================
+
+
+def _runner_bridge_503(endpoint: str, runner_module: str) -> HTTPException:
+    """Build the structured 503 envelope for endpoints that depend on
+    qontinui runtime functionality (now living on the runner)."""
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail={
+            "error": "endpoint_requires_runner_bridge",
+            "message": (
+                "This endpoint depends on qontinui runtime functionality that lives on "
+                "the runner. The web - runner WebSocket bridge for this functionality is "
+                "not yet implemented. See architectural-decisions.md "
+                "'Web - runner WebSocket boundary'."
+            ),
+            "runner_module": runner_module,
+            "endpoint": endpoint,
+            "tracking": "plan-2026-05-17-ws-bridge-for-violating-routers (TBD)",
+        },
+    )
+
+
+# ============================================================================
 # Endpoints
 # ============================================================================
 
@@ -122,107 +155,13 @@ async def process_recording(
     """
     Process a recording session export into a state machine.
 
-    Takes a CooccurrenceExport JSON (from the UI Bridge SDK's
-    RecordingSessionManager.stop()) and runs the full pipeline:
-    state discovery, transition detection, and persistence.
-
-    **Returns:**
-    - Discovered states with confidence scores
-    - Detected transitions with reliability metrics
+    Returns 503 until the runner-bridge ships — qontinui.state_machine
+    no longer lives in the web image.
     """
-    from qontinui.state_machine import RecordingPipeline, RecordingPipelineConfig
-
-    logger.info(
-        "recording_pipeline_request",
-        session_id=request.export_data.get("sessionId", "unknown"),
-        fingerprint_count=len(request.export_data.get("allFingerprints", [])),
-        transition_count=len(request.export_data.get("transitions", [])),
+    raise _runner_bridge_503(
+        "/api/v1/recording-pipeline/process",
+        "qontinui.state_machine",
     )
-
-    try:
-        # Build config from request
-        config = RecordingPipelineConfig()
-        if request.config:
-            for key, value in request.config.items():
-                if hasattr(config, key):
-                    setattr(config, key, value)
-        # Don't persist via the API — let the caller decide
-        config.persist = False
-
-        pipeline = RecordingPipeline(persistence=None, config=config)
-        result = pipeline.process_recording(request.export_data)
-
-        # Build response
-        states = []
-        for s in result.states:
-            states.append(
-                DiscoveredStateResponse(
-                    id=s.id,
-                    name=s.name,
-                    element_count=len(s.element_ids),
-                    is_blocking=s.blocking,
-                    is_global=s.metadata.get("is_global", False),
-                    position_zone=s.metadata.get("position_zone"),
-                    confidence=s.metadata.get("confidence", 0.0),
-                )
-            )
-
-        transitions = []
-        for t in result.transitions:
-            transitions.append(
-                DiscoveredTransitionResponse(
-                    id=t.id,
-                    name=t.name,
-                    from_states=t.from_states,
-                    activate_states=t.activate_states,
-                    exit_states=t.exit_states,
-                    confidence=t.metadata.get("confidence", 0.0),
-                    observation_count=t.metadata.get("observation_count", 0),
-                    is_bidirectional=t.metadata.get("is_bidirectional", False),
-                )
-            )
-
-        # Persist to PostgreSQL if project_id is provided
-        if request.project_id:
-            await _persist_to_pg(
-                db=db,
-                project_id=request.project_id,
-                config_name=request.config_name or f"recording-{result.session_id}",
-                result=result,
-                export_data=request.export_data,
-            )
-            await db.commit()
-
-        logger.info(
-            "recording_pipeline_success",
-            session_id=result.session_id,
-            state_count=result.state_count,
-            transition_count=result.transition_count,
-            persisted=request.project_id is not None,
-        )
-
-        return ProcessRecordingResponse(
-            session_id=result.session_id,
-            state_count=result.state_count,
-            transition_count=result.transition_count,
-            global_state_count=result.global_state_count,
-            modal_state_count=result.modal_state_count,
-            states=states,
-            transitions=transitions,
-        )
-
-    except ValueError as e:
-        logger.warning("recording_pipeline_invalid_input", error=str(e))
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(e),
-        ) from e
-    except Exception as e:
-        logger.error("recording_pipeline_error", error=str(e), exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Recording pipeline failed: {e}",
-        ) from e
 
 
 @router.post(
@@ -237,120 +176,12 @@ async def process_recording_with_playbook(
     """
     Process a recording session and generate a playbook.
 
-    Same as /process but additionally generates a playbook markdown file
-    from the discovered states, transitions, and extracted variables.
+    Returns 503 until the runner-bridge ships.
     """
-    from qontinui.state_machine import RecordingPipeline, RecordingPipelineConfig
-    from qontinui.state_machine.playbook_generator import generate_playbook
-
-    logger.info(
-        "recording_pipeline_with_playbook_request",
-        session_id=request.export_data.get("sessionId", "unknown"),
-        variable_count=len(request.variables),
+    raise _runner_bridge_503(
+        "/api/v1/recording-pipeline/process-with-playbook",
+        "qontinui.state_machine",
     )
-
-    try:
-        config = RecordingPipelineConfig()
-        if request.config:
-            for key, value in request.config.items():
-                if hasattr(config, key):
-                    setattr(config, key, value)
-        config.persist = False
-
-        pipeline = RecordingPipeline(persistence=None, config=config)
-        result = pipeline.process_recording(request.export_data)
-
-        # Generate playbook
-        playbook_content = generate_playbook(
-            states=result.states,
-            transitions=result.transitions,
-            variables=request.variables,
-            interactions=request.export_data.get("transitions", []),
-            app_name=request.app_name,
-            app_url=request.app_url,
-        )
-
-        # Build state/transition responses (same as /process)
-        states = [
-            DiscoveredStateResponse(
-                id=s.id,
-                name=s.name,
-                element_count=len(s.element_ids),
-                is_blocking=s.blocking,
-                is_global=s.metadata.get("is_global", False),
-                position_zone=s.metadata.get("position_zone"),
-                confidence=s.metadata.get("confidence", 0.0),
-            )
-            for s in result.states
-        ]
-
-        transitions = [
-            DiscoveredTransitionResponse(
-                id=t.id,
-                name=t.name,
-                from_states=t.from_states,
-                activate_states=t.activate_states,
-                exit_states=t.exit_states,
-                confidence=t.metadata.get("confidence", 0.0),
-                observation_count=t.metadata.get("observation_count", 0),
-                is_bidirectional=t.metadata.get("is_bidirectional", False),
-            )
-            for t in result.transitions
-        ]
-
-        # Persist to PostgreSQL if project_id is provided
-        state_config_id = None
-        if request.project_id:
-            state_config_id = await _persist_to_pg(
-                db=db,
-                project_id=request.project_id,
-                config_name=request.config_name or f"recording-{result.session_id}",
-                result=result,
-                export_data=request.export_data,
-            )
-
-        # Save as experience memory
-        if request.project_id and request.save_experience:
-            await _save_experience(
-                db=db,
-                project_id=request.project_id,
-                result=result,
-                export_data=request.export_data,
-                variables=request.variables,
-                app_name=request.app_name,
-                app_url=request.app_url,
-                playbook_content=playbook_content,
-                state_config_id=state_config_id,
-            )
-
-        # Single commit for both persist + experience (atomic)
-        if request.project_id:
-            await db.commit()
-
-        return ProcessWithPlaybookResponse(
-            session_id=result.session_id,
-            state_count=result.state_count,
-            transition_count=result.transition_count,
-            global_state_count=result.global_state_count,
-            modal_state_count=result.modal_state_count,
-            states=states,
-            transitions=transitions,
-            playbook_content=playbook_content,
-        )
-
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(e),
-        ) from e
-    except Exception as e:
-        logger.error(
-            "recording_pipeline_with_playbook_error", error=str(e), exc_info=True
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Recording pipeline with playbook failed: {e}",
-        ) from e
 
 
 # ============================================================================
@@ -382,185 +213,11 @@ async def merge_recording(
     """
     Merge a new recording session into an existing state machine.
 
-    Matches new states to existing ones by fingerprint overlap, updates
-    confidence scores, adds new transitions, and increases observation counts.
-    The existing state config is updated in-place.
+    Returns 503 until the runner-bridge ships.
     """
-    from qontinui.state_machine import RecordingPipeline, RecordingPipelineConfig
-    from qontinui.state_machine.ui_bridge_runtime import (
-        UIBridgeState as UIBridgeStateInternal,
-    )
-    from qontinui.state_machine.ui_bridge_runtime import (
-        UIBridgeTransition as UIBridgeTransitionInternal,
-    )
-    from sqlalchemy import select
-
-    from app.models.ui_bridge_state import UIBridgeState as UIBridgeStateModel
-    from app.models.ui_bridge_state import UIBridgeStateConfig
-    from app.models.ui_bridge_transition import (
-        UIBridgeTransition as UIBridgeTransitionModel,
-    )
-
-    # Load existing config with states and transitions
-    config_result = await db.execute(
-        select(UIBridgeStateConfig).where(UIBridgeStateConfig.id == request.config_id)
-    )
-    state_config = config_result.scalar_one_or_none()
-    if not state_config:
-        raise HTTPException(status_code=404, detail="State config not found")
-
-    states_result = await db.execute(
-        select(UIBridgeStateModel).where(
-            UIBridgeStateModel.config_id == request.config_id
-        )
-    )
-    existing_state_rows = states_result.scalars().all()
-
-    transitions_result = await db.execute(
-        select(UIBridgeTransitionModel).where(
-            UIBridgeTransitionModel.config_id == request.config_id
-        )
-    )
-    existing_transition_rows = transitions_result.scalars().all()
-
-    # Convert PG models to internal types
-    existing_states = [
-        UIBridgeStateInternal(
-            id=row.state_id,
-            name=row.name,
-            element_ids=row.element_ids or [],
-            blocking=(
-                row.extra_metadata.get("blocking", False)
-                if row.extra_metadata
-                else False
-            ),
-            metadata={
-                "confidence": row.confidence,
-                "is_global": (
-                    row.extra_metadata.get("is_global", False)
-                    if row.extra_metadata
-                    else False
-                ),
-                "position_zone": (
-                    row.extra_metadata.get("position_zone")
-                    if row.extra_metadata
-                    else None
-                ),
-                **(row.extra_metadata or {}),
-            },
-        )
-        for row in existing_state_rows
-    ]
-
-    existing_transitions = [
-        UIBridgeTransitionInternal(
-            id=row.transition_id,
-            name=row.name,
-            from_states=row.from_states or [],
-            activate_states=row.activate_states or [],
-            exit_states=row.exit_states or [],
-            actions=row.actions or [],
-            path_cost=row.path_cost,
-            metadata=row.extra_metadata or {},
-        )
-        for row in existing_transition_rows
-    ]
-
-    # Run merge
-    pipeline_config = RecordingPipelineConfig()
-    if request.config:
-        for key, value in request.config.items():
-            if hasattr(pipeline_config, key):
-                setattr(pipeline_config, key, value)
-    pipeline_config.persist = False
-
-    pipeline = RecordingPipeline(persistence=None, config=pipeline_config)
-    result = pipeline.merge_recording(
-        export_data=request.export_data,
-        existing_states=existing_states,
-        existing_transitions=existing_transitions,
-    )
-
-    # Update PG: delete old states/transitions, insert merged ones
-    for row in existing_state_rows:
-        await db.delete(row)
-    for row in existing_transition_rows:
-        await db.delete(row)
-
-    for s in result.states:
-        db.add(
-            UIBridgeStateModel(
-                config_id=request.config_id,
-                state_id=s.id,
-                name=s.name,
-                element_ids=s.element_ids,
-                confidence=s.metadata.get("confidence", 0.0),
-                extra_metadata={
-                    "blocking": s.blocking,
-                    "is_global": s.metadata.get("is_global", False),
-                    "position_zone": s.metadata.get("position_zone"),
-                    "observation_count": s.metadata.get("observation_count", 1),
-                    "source": "recording_merge",
-                },
-            )
-        )
-
-    for t in result.transitions:
-        db.add(
-            UIBridgeTransitionModel(
-                config_id=request.config_id,
-                transition_id=t.id,
-                name=t.name,
-                from_states=t.from_states,
-                activate_states=t.activate_states,
-                exit_states=t.exit_states,
-                actions=t.actions,
-                path_cost=t.path_cost,
-                extra_metadata={
-                    "confidence": t.metadata.get("confidence", 0.0),
-                    "observation_count": t.metadata.get("observation_count", 1),
-                    "source": "recording_merge",
-                },
-            )
-        )
-
-    await db.commit()
-
-    # Build response
-    states = [
-        DiscoveredStateResponse(
-            id=s.id,
-            name=s.name,
-            element_count=len(s.element_ids),
-            is_blocking=s.blocking,
-            is_global=s.metadata.get("is_global", False),
-            position_zone=s.metadata.get("position_zone"),
-            confidence=s.metadata.get("confidence", 0.0),
-        )
-        for s in result.states
-    ]
-    transitions = [
-        DiscoveredTransitionResponse(
-            id=t.id,
-            name=t.name,
-            from_states=t.from_states,
-            activate_states=t.activate_states,
-            exit_states=t.exit_states,
-            confidence=t.metadata.get("confidence", 0.0),
-            observation_count=t.metadata.get("observation_count", 0),
-            is_bidirectional=t.metadata.get("is_bidirectional", False),
-        )
-        for t in result.transitions
-    ]
-
-    return ProcessRecordingResponse(
-        session_id=result.session_id,
-        state_count=result.state_count,
-        transition_count=result.transition_count,
-        global_state_count=result.global_state_count,
-        modal_state_count=result.modal_state_count,
-        states=states,
-        transitions=transitions,
+    raise _runner_bridge_503(
+        "/api/v1/recording-pipeline/merge",
+        "qontinui.state_machine",
     )
 
 
@@ -633,7 +290,8 @@ async def get_past_experiences(
 
 
 # ============================================================================
-# PostgreSQL Persistence
+# PostgreSQL Persistence (helpers retained for the future runner-bridge —
+# they only touch app.models, no qontinui dep)
 # ============================================================================
 
 

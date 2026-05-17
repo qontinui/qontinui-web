@@ -1,7 +1,7 @@
-# Stage 1: clone the sibling path-deps that pyproject.toml references
-# at ../../qontinui-schemas and ../../qontinui. With WORKDIR=/app in the
-# runtime stage, those paths resolve to /qontinui-schemas and /qontinui.
-# Cloning here keeps the runtime image free of git.
+# Stage 1: clone qontinui-schemas only (path dep). qontinui is no longer
+# a dependency - per architectural-decisions.md "Web - runner WebSocket
+# boundary", heavy deps (torch, vision, ML, OCR, embeddings) live on the
+# runner side. The cloud-deployed web image is a thin orchestration tier.
 FROM python:3.12-slim AS sibling-deps
 
 RUN apt-get update && apt-get install -y --no-install-recommends git \
@@ -9,69 +9,44 @@ RUN apt-get update && apt-get install -y --no-install-recommends git \
 
 WORKDIR /src
 RUN git clone --depth 1 https://github.com/qontinui/qontinui-schemas.git
-RUN git clone --depth 1 https://github.com/jspinak/qontinui.git
-
-# Stub for the optional `ml` group's qontinui-train path-dep. Poetry 2.x
-# validates path-deps in optional groups even when `--only main` excludes
-# them — the path must exist as a parseable poetry project, even though
-# we never install it in CI/Docker.
-RUN mkdir -p /src/qontinui-train && \
-    printf '[project]\nname = "qontinui-train"\nversion = "0.0.0"\ndescription = "stub"\nauthors = [{name = "stub"}]\n' \
-        > /src/qontinui-train/pyproject.toml
 
 
 # Stage 2: runtime image
 FROM python:3.12-slim
 
-# Set working directory
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    POETRY_NO_INTERACTION=1 \
+    POETRY_VIRTUALENVS_CREATE=false
+
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    gcc \
-    postgresql-client \
-    libgl1 \
-    libglib2.0-0 \
+# Runtime system deps. psycopg2-binary ships libpq, so no libpq-dev.
+# tini for PID-1 signal handling. postgresql-client for ad-hoc DSN
+# probes. gcc / libgl1 / libglib2.0-0 are dropped: they were present
+# for qontinui's native vision extensions and OpenCV runtime, neither
+# of which is in this image anymore.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends tini postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
-# Install poetry. 2.x understands the PEP 621 [project] metadata block
-# in pyproject.toml; 1.8.3 errors with "fields are required in package
-# mode" because it only reads [tool.poetry].
-RUN pip install poetry==2.3.2
+RUN pip install --no-cache-dir poetry==2.3.2
 
-# Copy sibling path-deps to where pyproject.toml expects them.
-# pyproject says `qontinui-schemas = {path = "../../qontinui-schemas"}`,
-# which from /app resolves to /qontinui-schemas. Same for qontinui.
+# Copy qontinui-schemas path-dep target. qontinui is NOT copied -
+# web's runtime has no business importing it.
 COPY --from=sibling-deps /src/qontinui-schemas /qontinui-schemas
-COPY --from=sibling-deps /src/qontinui /qontinui
-COPY --from=sibling-deps /src/qontinui-train /qontinui-train
 
-# Copy dependency files
-COPY pyproject.toml poetry.lock* ./
+COPY pyproject.toml poetry.lock ./
+RUN poetry install --only main --no-root --no-interaction --no-ansi \
+    && rm -rf /tmp/poetry-cache
 
-# Configure poetry to not create virtual env
-RUN poetry config virtualenvs.create false
-
-# Install dependencies (--no-dev skips dev group; the optional ml group
-# stays disabled, so qontinui-train (which doesn't exist as a public repo)
-# is not needed).
-# `--only main` is the poetry 2.x replacement for 1.x's `--no-dev` AND
-# explicitly excludes the optional `ml` group. We need the latter
-# because poetry 2.x validates path-deps in optional groups even when
-# not installing them — and qontinui-train doesn't exist as a public
-# repo (it's local-dev-only).
-RUN poetry install --only main --no-root --no-interaction --no-ansi
-
-# Copy application code
 COPY . .
 
-# Create uploads directory
 RUN mkdir -p /app/uploads
 
-# Expose port
 EXPOSE 8000
 
-# Run database migrations and start server
-# Note: Migrations commented out temporarily for debugging
-# CMD alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
-CMD uvicorn app.main:app --host 0.0.0.0 --port 8000
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
