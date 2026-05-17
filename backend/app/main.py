@@ -226,9 +226,7 @@ async def startup_event():
     # Suppress the benign Windows-Proactor ConnectionResetError raised when a
     # WS client force-RSTs us (Python bug #39010 lineage). No-op on non-Windows
     # since the transport type won't match there.
-    asyncio.get_running_loop().set_exception_handler(
-        _suppress_proactor_connection_lost
-    )
+    asyncio.get_running_loop().set_exception_handler(_suppress_proactor_connection_lost)
 
     # Initialize Sentry for error tracking
     import os
