@@ -164,11 +164,59 @@ class StrategyClient:
             body = {"error": resp.text[:500]}
         return resp.status_code, body
 
+    async def _post(
+        self,
+        path: str,
+        acting_user_id: str,
+        json_body: dict | None = None,
+    ) -> tuple[int, object]:
+        headers = await self._headers(acting_user_id)
+        async with httpx.AsyncClient(timeout=10.0) as c:
+            resp = await c.post(
+                f"{self._coord_url}{path}",
+                headers=headers,
+                json=json_body,
+            )
+        # 204 No Content has no body to parse.
+        if resp.status_code == 204 or not resp.content:
+            return resp.status_code, None
+        try:
+            body: object = resp.json()
+        except ValueError:
+            body = {"error": resp.text[:500]}
+        return resp.status_code, body
+
     async def list_docs(self, acting_user_id: str) -> tuple[int, object]:
         return await self._get("/strategy/docs", acting_user_id)
 
     async def get_doc(self, acting_user_id: str, name: str) -> tuple[int, object]:
         return await self._get(f"/strategy/docs/{name}", acting_user_id)
+
+    # -- proxied writes -------------------------------------------------
+    # Strategy Phase 2.4 — presence heartbeat. Body has no ttl_s
+    # (server-side 90s TTL policy). Accepts either an already-resolved
+    # `doc_id` (UUID) or a `doc_name` (substrate-relative path,
+    # e.g. `README.md`). Coord resolves doc_name → doc_id via PG and
+    # returns the canonical doc_id in the response body so the
+    # frontend can subscribe to per-doc aggregate channels.
+    async def heartbeat(
+        self,
+        acting_user_id: str,
+        doc_id: str | None = None,
+        doc_name: str | None = None,
+    ) -> tuple[int, object]:
+        if not doc_id and not doc_name:
+            raise ValueError("heartbeat requires doc_id or doc_name")
+        body: dict = {}
+        if doc_id is not None:
+            body["doc_id"] = doc_id
+        if doc_name is not None:
+            body["doc_name"] = doc_name
+        return await self._post(
+            "/strategy/presence/heartbeat",
+            acting_user_id,
+            json_body=body,
+        )
 
 
 # Process-wide singleton, wired in app startup.
