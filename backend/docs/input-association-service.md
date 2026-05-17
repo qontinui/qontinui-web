@@ -6,7 +6,7 @@ The `InputAssociationService` automatically associates automation screenshots wi
 
 ## Location
 
-`/mnt/c/Users/jspin/Documents/qontinui-root/qontinui-web/backend/app/services/input_association_service.py`
+`qontinui-web/backend/app/services/input_association_service.py`
 
 ## Purpose
 

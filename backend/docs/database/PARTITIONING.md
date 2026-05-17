@@ -638,7 +638,7 @@ ALTER TABLE automation_logs_new RENAME TO automation_logs;
 - [PARTITION_MONITORING.md](./PARTITION_MONITORING.md) - Monitoring and alerting guide
 
 **Architecture:**
-- [database-architecture-analysis.md](/mnt/c/Users/Joshua/Documents/qontinui-root/qontinui-web/frontend/public/docs/architecture/database-architecture-analysis.md) - Full database analysis
+- [database-architecture-analysis.md](../../../frontend/public/docs/architecture/database-architecture-analysis.md) - Full database analysis
 
 **Implementation Files:**
 - `app/worker/tasks/partition_tasks.py` - Automated partition management

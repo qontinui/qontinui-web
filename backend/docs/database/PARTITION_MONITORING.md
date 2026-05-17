@@ -767,7 +767,7 @@ aws cloudwatch get-metric-statistics \
 
 - [PARTITIONING.md](./PARTITIONING.md) - Overall strategy
 - [PARTITION_MAINTENANCE.md](./PARTITION_MAINTENANCE.md) - Operations guide
-- [database-architecture-analysis.md](/mnt/c/Users/Joshua/Documents/qontinui-root/qontinui-web/frontend/public/docs/architecture/database-architecture-analysis.md) - Database analysis
+- [database-architecture-analysis.md](../../../frontend/public/docs/architecture/database-architecture-analysis.md) - Database analysis
 
 ---
 
