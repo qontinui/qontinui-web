@@ -200,6 +200,20 @@ _file_cleanup_task: asyncio.Task | None = None
 _wrapper_sync_task: asyncio.Task | None = None
 
 
+def _suppress_proactor_connection_lost(loop, context):
+    exc = context.get("exception")
+    transport = context.get("transport")
+    # Proactor _call_connection_lost on a force-RST'd client surfaces as a
+    # ConnectionResetError (WinError 10054) on a _ProactorSocketTransport.
+    # Benign on Windows; never blanket-swallow ConnectionResetError elsewhere.
+    if (
+        isinstance(exc, ConnectionResetError)
+        and type(transport).__name__ == "_ProactorSocketTransport"
+    ):
+        return  # benign on Windows; client RST'd us
+    loop.default_exception_handler(context)
+
+
 @app.on_event("startup")
 async def startup_event():
     logger.info(
@@ -207,6 +221,13 @@ async def startup_event():
         version=settings.VERSION,
         environment=settings.ENVIRONMENT,
         project=settings.PROJECT_NAME,
+    )
+
+    # Suppress the benign Windows-Proactor ConnectionResetError raised when a
+    # WS client force-RSTs us (Python bug #39010 lineage). No-op on non-Windows
+    # since the transport type won't match there.
+    asyncio.get_running_loop().set_exception_handler(
+        _suppress_proactor_connection_lost
     )
 
     # Initialize Sentry for error tracking
