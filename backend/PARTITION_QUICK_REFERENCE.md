@@ -4,7 +4,7 @@
 
 ### Run the Migration
 ```bash
-cd /mnt/c/Users/Joshua/Documents/qontinui-root/qontinui-web/backend
+cd qontinui-web/backend
 alembic upgrade head
 ```
 
