@@ -7,10 +7,11 @@ coord dual-identity-audits the call. Threads/posts/comments are Phase
 2 and intentionally absent (design §7).
 """
 
+from uuid import UUID
+
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from uuid import UUID
 
 from app.api.deps import current_active_user
 from app.models.user import User
