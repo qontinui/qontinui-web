@@ -4,6 +4,8 @@ import React, { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+
+import { useAuth } from "@/contexts/auth-context";
 import {
   listStrategyDocs,
   getStrategyDoc,
@@ -12,15 +14,25 @@ import {
 } from "@/lib/api/strategy";
 import { StrategySidebar } from "../_components/StrategySidebar";
 import { PresenceIndicator } from "../_components/PresenceIndicator";
+import { CommentsPanel } from "../_components/CommentsPanel";
 import { usePresenceHeartbeat } from "@/lib/strategy/presence";
 
 /**
- * /strategy/[doc] — read-only Markdown viewer + git provenance.
- * Phase 1: no comments panel / composer / mention rendering (Phase 2).
+ * /strategy/[doc] — Markdown viewer + collaborative comments panel
+ * (Phase 2.3) + real-time presence indicator (Phase 2.4).
+ *
+ * - Right-rail `<CommentsPanel>` renders threads/posts/mention
+ *   autocomplete on top of the read-only doc body. Doc bodies use
+ *   plain ReactMarkdown; only post bodies route through
+ *   `<MentionAwareMarkdown>` (post bodies carry `@[user_id:<uuid>]`
+ *   markers; doc bodies don't).
+ * - `usePresenceHeartbeat` drives the 30 s heartbeat ping to coord
+ *   and `<PresenceIndicator>` renders the aggregate viewer count.
  */
 export default function StrategyDocPage() {
   const params = useParams<{ doc: string }>();
   const name = decodeURIComponent(params.doc);
+  const { user } = useAuth();
 
   const [docs, setDocs] = useState<StrategyDocSummary[]>([]);
   const [doc, setDoc] = useState<StrategyDoc | null>(null);
@@ -75,6 +87,7 @@ export default function StrategyDocPage() {
           </article>
         )}
       </main>
+      {user && doc && <CommentsPanel docName={name} currentUserId={user.id} />}
     </div>
   );
 }
