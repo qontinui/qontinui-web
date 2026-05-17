@@ -268,6 +268,17 @@ class StrategyClient:
             f"/strategy/mentions/{mention_id}/mark-read", acting_user_id, None
         )
 
+    async def mark_post_mentions_read(
+        self, acting_user_id: str, post_id: str
+    ) -> tuple[int, object]:
+        """Phase 2.5 — bulk-clears every unread mention belonging to
+        the acting user on this post. Used by the doc-visit deep-link
+        (`/strategy/<doc>?post=<post_id>`). Idempotent 200 even when
+        zero rows are touched."""
+        return await self._post(
+            f"/strategy/posts/{post_id}/mentions/mark-read", acting_user_id, None
+        )
+
     # -- Phase 2.4 presence ----------------------------------------------
     # Body has no ttl_s (server-side 90s TTL policy). Accepts either an
     # already-resolved `doc_id` (UUID) or a `doc_name` (substrate-

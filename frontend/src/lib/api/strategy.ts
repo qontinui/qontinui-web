@@ -223,6 +223,25 @@ export async function markMentionRead(mentionId: string): Promise<void> {
   }
 }
 
+/**
+ * Phase 2.5 — bulk-clear every unread mention the current user has on
+ * a single post. Used by the doc-visit deep-link
+ * (`/strategy/<doc>?post=<post_id>`) so opening the mentioning post
+ * clears all your badges for it in one round-trip.
+ *
+ * Returns the server-reported `marked_read` count so callers can skip
+ * cache invalidation when nothing changed (the page-visit case is
+ * naturally idempotent).
+ */
+export async function markPostMentionsRead(postId: string): Promise<number> {
+  const res = await fetch(
+    `/api/v1/strategy/posts/${encodeURIComponent(postId)}/mentions/mark-read`,
+    jsonInit("POST")
+  );
+  const body = await unwrap<{ post_id: string; marked_read: number }>(res);
+  return body.marked_read ?? 0;
+}
+
 // --- User directory (web-side, no coord proxy) ----------------------------
 
 export async function searchUsers(

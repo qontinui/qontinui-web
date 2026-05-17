@@ -11,6 +11,8 @@ import { TabStateProvider } from "@/contexts/tab-state-context";
 import { ProductModeProvider } from "@/contexts/product-mode-context";
 import { AppInitializer } from "@/components/offline/AppInitializer";
 import { BetaBanner } from "@/components/beta-banner";
+import { useAuth } from "@/contexts/auth-context";
+import { MentionRealtimeSubscriber } from "@/app/(app)/strategy/_components/MentionRealtimeSubscriber";
 import { cn } from "@/lib/utils";
 
 // Dynamic imports with ssr:false to avoid hydration mismatches
@@ -57,6 +59,7 @@ function SidebarSkeleton({ isCollapsed }: { isCollapsed: boolean }) {
 
 function AppLayoutContent({ children }: { children: React.ReactNode }) {
   const { isCollapsed } = useSidebar();
+  const { user } = useAuth();
 
   return (
     <div className="flex h-screen bg-background overflow-hidden">
@@ -81,6 +84,10 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
       <Suspense fallback={null}>
         <RecordingIndicator />
       </Suspense>
+      {/* Strategy Phase 2.5 — headless subscriber for the
+          per-user mention WS channel. Mounted once at the app-
+          shell level so the badge updates anywhere in the app. */}
+      <MentionRealtimeSubscriber userId={user?.id ?? null} />
     </div>
   );
 }
