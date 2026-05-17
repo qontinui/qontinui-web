@@ -229,9 +229,7 @@ async def mark_post_mentions_read(
     client: StrategyClient = Depends(get_client),
 ) -> Any:
     try:
-        status_code, body = await client.mark_post_mentions_read(
-            str(user.id), post_id
-        )
+        status_code, body = await client.mark_post_mentions_read(str(user.id), post_id)
     except StrategyDisabledError:
         return _disabled_response()
     return JSONResponse(status_code=status_code, content=body)
