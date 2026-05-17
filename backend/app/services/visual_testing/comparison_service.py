@@ -236,11 +236,14 @@ class ComparisonService(ComparisonEngine):
 
             return comparison_result
 
-        # Determine status
+        # Determine status. Local var renamed to avoid shadowing fastapi
+        # `status` (imported above for the 503 short-circuit's
+        # status.HTTP_503_SERVICE_UNAVAILABLE) — mypy flags shadowed binding
+        # as used-before-def.
         if comp_result.passed:
-            status = VisualComparisonStatus.PASSED
+            comparison_status = VisualComparisonStatus.PASSED
         else:
-            status = VisualComparisonStatus.PENDING_REVIEW
+            comparison_status = VisualComparisonStatus.PENDING_REVIEW
 
         # Generate and upload diff image if there are differences
         diff_image_path = None
@@ -268,7 +271,7 @@ class ComparisonService(ComparisonEngine):
             comparison_algorithm=comp_algorithm,
             similarity_score=comp_result.similarity_score,
             threshold_used=comp_threshold,
-            status=status,
+            status=comparison_status,
             diff_image_path=diff_image_path,
             diff_regions=[r.to_dict() for r in comp_result.diff_regions],
             execution_time_ms=comp_result.execution_time_ms,
@@ -281,7 +284,7 @@ class ComparisonService(ComparisonEngine):
         logger.info(
             "comparison_completed",
             comparison_id=str(comparison_result.id),
-            status=status.value,
+            status=comparison_status.value,
             similarity_score=comp_result.similarity_score,
             threshold=comp_threshold,
         )
