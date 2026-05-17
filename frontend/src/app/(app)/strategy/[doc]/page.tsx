@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -16,6 +16,7 @@ import { StrategySidebar } from "../_components/StrategySidebar";
 import { PresenceIndicator } from "../_components/PresenceIndicator";
 import { CommentsPanel } from "../_components/CommentsPanel";
 import { usePresenceHeartbeat } from "@/lib/strategy/presence";
+import { useMarkPostMentionsReadOnVisit } from "@/lib/strategy/useMarkPostMentionsReadOnVisit";
 
 /**
  * /strategy/[doc] — Markdown viewer + collaborative comments panel
@@ -31,6 +32,7 @@ import { usePresenceHeartbeat } from "@/lib/strategy/presence";
  */
 export default function StrategyDocPage() {
   const params = useParams<{ doc: string }>();
+  const search = useSearchParams();
   const name = decodeURIComponent(params.doc);
   const { user } = useAuth();
 
@@ -51,6 +53,13 @@ export default function StrategyDocPage() {
       .then(setDoc)
       .catch((e) => setError(e.message));
   }, [name]);
+
+  // Strategy Phase 2.5 — when arriving via a mention deep-link
+  // (`/strategy/<doc>?post=<post_id>`), bulk-clear every unread
+  // mention the user has on that post. Single round-trip per visit;
+  // safe to call even when 0 mentions match (coord returns idempotent
+  // 200 with marked_read=0).
+  useMarkPostMentionsReadOnVisit(search?.get("post") ?? null);
 
   // Strategy Phase 2.4 — drive presence heartbeats while the page is
   // mounted. Returns the resolved doc_id so <PresenceIndicator> can

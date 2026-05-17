@@ -218,6 +218,23 @@ async def mark_mention_read(
     return JSONResponse(status_code=status_code, content=body)
 
 
+# Strategy Phase 2.5 — bulk mark-as-read for every mention the acting
+# user has on a given post. Frontend fires this on doc-visit deep-link
+# (`/strategy/<doc>?post=<post_id>`) so a single round-trip clears all
+# of the user's badges for that post.
+@router.post("/posts/{post_id}/mentions/mark-read")
+async def mark_post_mentions_read(
+    post_id: str,
+    user: User = Depends(current_active_user),
+    client: StrategyClient = Depends(get_client),
+) -> Any:
+    try:
+        status_code, body = await client.mark_post_mentions_read(str(user.id), post_id)
+    except StrategyDisabledError:
+        return _disabled_response()
+    return JSONResponse(status_code=status_code, content=body)
+
+
 # Strategy Phase 2.4 — presence heartbeat. Forwards to coord's
 # `POST /strategy/presence/heartbeat`, which emits the per-user
 # dual-publish event consumed by the in-process aggregator. Body has
