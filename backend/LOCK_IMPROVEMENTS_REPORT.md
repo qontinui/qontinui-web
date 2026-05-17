@@ -14,7 +14,7 @@ Successfully implemented fixes for race conditions in lock acquisition, added RE
 
 ### 1. Fixed Race Condition in `acquire_project_lock()` ✓
 
-**File:** `/mnt/c/Users/Joshua/Documents/qontinui_parent_directory/qontinui-web/backend/app/services/collaboration_service.py`
+**File:** `/mnt/c/Users/Joshua/Documents/qontinui-root/qontinui-web/backend/app/services/collaboration_service.py`
 
 **Lines:** 225-337
 
@@ -50,7 +50,7 @@ result = await db.execute(
 
 ### 2. Created Lock Utility Functions ✓
 
-**File:** `/mnt/c/Users/Joshua/Documents/qontinui_parent_directory/qontinui-web/backend/app/utils/lock_utils.py`
+**File:** `/mnt/c/Users/Joshua/Documents/qontinui-root/qontinui-web/backend/app/utils/lock_utils.py`
 
 **New File:** 132 lines
 
@@ -80,7 +80,7 @@ result = await db.execute(
 
 ### 3. Added Lock Checking to REST Endpoint ✓
 
-**File:** `/mnt/c/Users/Joshua/Documents/qontinui_parent_directory/qontinui-web/backend/app/api/v1/endpoints/projects.py`
+**File:** `/mnt/c/Users/Joshua/Documents/qontinui-root/qontinui-web/backend/app/api/v1/endpoints/projects.py`
 
 **Import Added (Line 23):**
 ```python
@@ -133,7 +133,7 @@ if not can_modify and lock:
 
 ### 4. Implemented Distributed Lock Service ✓
 
-**File:** `/mnt/c/Users/Joshua/Documents/qontinui_parent_directory/qontinui-web/backend/app/services/distributed_lock_service.py`
+**File:** `/mnt/c/Users/Joshua/Documents/qontinui-root/qontinui-web/backend/app/services/distributed_lock_service.py`
 
 **New File:** 632 lines
 
@@ -212,7 +212,7 @@ if not can_modify and lock:
 
 ### 5. Updated CollaborationService to Use Distributed Locks ✓
 
-**File:** `/mnt/c/Users/Joshua/Documents/qontinui_parent_directory/qontinui-web/backend/app/services/collaboration_service.py`
+**File:** `/mnt/c/Users/Joshua/Documents/qontinui-root/qontinui-web/backend/app/services/collaboration_service.py`
 
 **Import Added (Line 34):**
 ```python
@@ -309,7 +309,7 @@ async def refresh_lock(
 
 ### Redis Configuration
 
-**File:** `/mnt/c/Users/Joshua/Documents/qontinui_parent_directory/qontinui-web/backend/app/core/config.py`
+**File:** `/mnt/c/Users/Joshua/Documents/qontinui-root/qontinui-web/backend/app/core/config.py`
 
 **Existing Settings (Lines 112-117):**
 ```python
@@ -320,7 +320,7 @@ REDIS_DB: int = Field(default=0)
 ```
 
 **Redis Client:**
-- Managed by `/mnt/c/Users/Joshua/Documents/qontinui_parent_directory/qontinui-web/backend/app/config/redis_config.py`
+- Managed by `/mnt/c/Users/Joshua/Documents/qontinui-root/qontinui-web/backend/app/config/redis_config.py`
 - Connection pooling enabled (max 10 connections)
 - Automatic reconnection on failure
 
@@ -569,10 +569,10 @@ try {
 ### New Files
 
 1. **lock_utils.py** (132 lines)
-   - Complete path: `/mnt/c/Users/Joshua/Documents/qontinui_parent_directory/qontinui-web/backend/app/utils/lock_utils.py`
+   - Complete path: `/mnt/c/Users/Joshua/Documents/qontinui-root/qontinui-web/backend/app/utils/lock_utils.py`
 
 2. **distributed_lock_service.py** (632 lines)
-   - Complete path: `/mnt/c/Users/Joshua/Documents/qontinui_parent_directory/qontinui-web/backend/app/services/distributed_lock_service.py`
+   - Complete path: `/mnt/c/Users/Joshua/Documents/qontinui-root/qontinui-web/backend/app/services/distributed_lock_service.py`
 
 ### Unchanged (Dependencies)
 

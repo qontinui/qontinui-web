@@ -314,7 +314,7 @@ See these files for working examples:
 
 To apply database changes:
 ```bash
-cd /mnt/c/Users/Joshua/Documents/qontinui_parent_directory/qontinui-web/backend
+cd /mnt/c/Users/Joshua/Documents/qontinui-root/qontinui-web/backend
 alembic upgrade head
 ```
 

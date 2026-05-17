@@ -237,7 +237,7 @@ Failed to import qontinui modules
 ```
 **Solution**: Ensure qontinui library is in the correct location relative to backend:
 ```
-qontinui_parent_directory/
+qontinui-root/
 ├── qontinui/          # Library location
 └── qontinui-web/
     └── backend/       # Backend location

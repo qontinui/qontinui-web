@@ -343,5 +343,5 @@ expect(result.requiresReembedding).toBe(false);
 
 ## Related Files
 
-- `/mnt/c/Users/Joshua/Documents/qontinui_parent_directory/qontinui-runner/src-tauri/src/config/rag_types.rs` - Rust RAG types (runner)
-- `/mnt/c/Users/Joshua/Documents/qontinui_parent_directory/qontinui/src/qontinui/rag/export.py` - Python RAG export (core library)
+- `/mnt/c/Users/Joshua/Documents/qontinui-root/qontinui-runner/src-tauri/src/config/rag_types.rs` - Rust RAG types (runner)
+- `/mnt/c/Users/Joshua/Documents/qontinui-root/qontinui/src/qontinui/rag/export.py` - Python RAG export (core library)
