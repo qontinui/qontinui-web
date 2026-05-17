@@ -119,11 +119,19 @@ export async function listThreads(docName: string): Promise<StrategyThread[]> {
     `/api/v1/strategy/docs/${encodeURIComponent(docName)}/threads`,
     { credentials: "include" }
   );
-  const body = await unwrap<{ threads: StrategyThread[] } | StrategyThread[]>(
-    res
-  );
-  // Coord may return either {threads: [...]} or a bare array; tolerate both.
-  return Array.isArray(body) ? body : body.threads;
+  const body = await unwrap<
+    | { items: StrategyThread[] }
+    | { threads: StrategyThread[] }
+    | StrategyThread[]
+  >(res);
+  // Coord (Phase 2.2 `list_threads`) returns
+  // `{items: [...], next_before: ...}` — see `proj_strategy_phase_2_endpoints`
+  // memory + `qontinui-coord/src/strategy_threads.rs`. The legacy
+  // `{threads:[...]}` and bare-array shapes are tolerated for any
+  // older mock or proxy setups, but `items` is the live contract.
+  if (Array.isArray(body)) return body;
+  if ("items" in body) return body.items;
+  return body.threads;
 }
 
 export async function createThread(
@@ -201,9 +209,15 @@ export async function listUnreadMentions(): Promise<StrategyMention[]> {
     credentials: "include",
   });
   const body = await unwrap<
-    { mentions: StrategyMention[] } | StrategyMention[]
+    | { items: StrategyMention[] }
+    | { mentions: StrategyMention[] }
+    | StrategyMention[]
   >(res);
-  return Array.isArray(body) ? body : body.mentions;
+  // Coord (Phase 2.2 `list_unread_mentions`) returns `{items: [...]}`.
+  // Legacy shapes kept as fallbacks.
+  if (Array.isArray(body)) return body;
+  if ("items" in body) return body.items;
+  return body.mentions;
 }
 
 export async function markMentionRead(mentionId: string): Promise<void> {
