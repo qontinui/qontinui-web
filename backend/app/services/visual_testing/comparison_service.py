@@ -2,12 +2,20 @@
 Visual comparison service.
 
 Handles the compare workflow, review management, and pending reviews.
+
+NOTE: As of plan-2026-05-17-web-image-slim, `compare_screenshot` raises
+HTTPException(503) for the ignore-regions path (qontinui.vision.comparison
+no longer lives in the web image). The standard path also fails at
+`self.comparator`, which is the parent class's 503 short-circuit. The
+runner-bridge replacement is tracked under
+plan-2026-05-17-ws-bridge-for-violating-routers.
 """
 
 from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
+from fastapi import HTTPException, status
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -175,11 +183,24 @@ class ComparisonService(ComparisonEngine):
 
         # Apply ignore regions if any
         if ignore_regions:
-            from qontinui.vision.comparison import IgnoreRegion
-
-            regions = [IgnoreRegion.from_dict(r) for r in ignore_regions]
-            baseline_img = self.comparator.apply_ignore_mask(baseline_img, regions)
-            screenshot_img = self.comparator.apply_ignore_mask(screenshot_img, regions)
+            # DEFERRED: ws-bridge — qontinui.vision.comparison no longer lives
+            # in the web image (plan-2026-05-17-web-image-slim). Surface a
+            # structured 503 BEFORE the import would ImportError.
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={
+                    "error": "endpoint_requires_runner_bridge",
+                    "message": (
+                        "This endpoint depends on qontinui runtime functionality that lives on "
+                        "the runner. The web - runner WebSocket bridge for this functionality is "
+                        "not yet implemented. See architectural-decisions.md "
+                        "'Web - runner WebSocket boundary'."
+                    ),
+                    "runner_module": "qontinui.vision.comparison",
+                    "endpoint": "comparison_service.compare_screenshot (ignore_regions path)",
+                    "tracking": "plan-2026-05-17-ws-bridge-for-violating-routers (TBD)",
+                },
+            )
 
         # Run comparison
         try:

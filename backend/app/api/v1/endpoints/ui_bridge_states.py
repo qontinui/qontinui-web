@@ -43,7 +43,6 @@ from app.schemas.ui_bridge_state import (
     ExportResponse,
     PathfindingRequest,
     PathfindingResponse,
-    PathfindingStep,
     UIBridgeDiscoverAndSaveRequest,
     UIBridgeDiscoverAndSaveResponse,
     UIBridgeStateConfigCreate,
@@ -62,8 +61,10 @@ from app.schemas.ui_bridge_state import (
     UIBridgeTransitionUpdate,
 )
 
-# Note: qontinui imports are done lazily in endpoints that need them
-# to avoid loading torch/easyocr at application startup
+# Note: discover-and-save / pathfind endpoints used to lazy-load the
+# state-discovery / state-machine modules from the runner library; they
+# now return 503 envelopes (plan-2026-05-17-web-image-slim) until the
+# runner-bridge ships (plan-2026-05-17-ws-bridge-for-violating-routers).
 
 logger = structlog.get_logger(__name__)
 
@@ -796,137 +797,26 @@ async def discover_and_save_states(
     - `fingerprint`: Enhanced discovery with element fingerprints (supports ID fallback)
 
     Use this to persist discovery results for later use.
+
+    Returns 503 until the runner-bridge ships — qontinui.discovery.state_discovery
+    no longer lives in the web image
+    (plan-2026-05-17-web-image-slim / plan-2026-05-17-ws-bridge-for-violating-routers).
     """
-    await get_project_or_404(project_id, current_user.id, db)
-
-    # Lazy import to avoid loading torch/easyocr at startup
-    from qontinui.discovery.state_discovery import (
-        DiscoveryStrategyType,
-        StateDiscoveryService,
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail={
+            "error": "endpoint_requires_runner_bridge",
+            "message": (
+                "This endpoint depends on qontinui runtime functionality that lives on "
+                "the runner. The web - runner WebSocket bridge for this functionality is "
+                "not yet implemented. See architectural-decisions.md "
+                "'Web - runner WebSocket boundary'."
+            ),
+            "runner_module": "qontinui.discovery.state_discovery",
+            "endpoint": "/api/v1/projects/{project_id}/ui-bridge-discover",
+            "tracking": "plan-2026-05-17-ws-bridge-for-violating-routers (TBD)",
+        },
     )
-
-    # Map request strategy to library strategy type
-    strategy_map = {
-        "auto": DiscoveryStrategyType.AUTO,
-        "fingerprint": DiscoveryStrategyType.FINGERPRINT,
-    }
-    strategy = strategy_map.get(request.strategy.value, DiscoveryStrategyType.AUTO)
-
-    logger.info(
-        "Starting UI Bridge state discovery",
-        project_id=str(project_id),
-        user_id=str(current_user.id),
-        render_count=len(request.renders),
-        include_html_ids=request.include_html_ids,
-        strategy=request.strategy.value,
-        has_cooccurrence_export=request.cooccurrence_export is not None,
-    )
-
-    try:
-        # Use unified state discovery service
-        service = StateDiscoveryService()
-
-        # Choose discovery method based on available data
-        if request.cooccurrence_export:
-            discovery_result = service.discover_from_export(
-                request.cooccurrence_export,
-                strategy=strategy,
-            )
-        else:
-            discovery_result = service.discover_from_renders(
-                request.renders,
-                include_html_ids=request.include_html_ids,
-                strategy=strategy,
-            )
-
-        # Create config
-        config = UIBridgeStateConfig(
-            project_id=project_id,
-            name=request.config_name,
-            description=request.config_description,
-            render_count=discovery_result.render_count,
-            element_count=discovery_result.unique_element_count,
-            include_html_ids=request.include_html_ids,
-            discovery_result={
-                "element_to_renders": discovery_result.element_to_renders,
-                "strategy_used": discovery_result.strategy_used.value,
-                "strategy_metadata": discovery_result.strategy_metadata,
-            },
-        )
-        db.add(config)
-        await db.flush()  # Get config ID
-
-        # Create states
-        states = []
-        for discovered_state in discovery_result.states:
-            state = UIBridgeState(
-                config_id=config.id,
-                state_id=discovered_state.id,
-                name=discovered_state.name,
-                element_ids=discovered_state.element_ids,
-                render_ids=discovered_state.render_ids,
-                confidence=discovered_state.confidence,
-            )
-            db.add(state)
-            states.append(state)
-
-        await db.commit()
-
-        # Build response directly to avoid lazy-load greenlet errors.
-        # Newly created states have no domain_knowledge_refs yet, so
-        # we can construct the response without touching relationships.
-        config_id = config.id
-        await db.refresh(config)
-
-        state_responses = []
-        for state in states:
-            await db.refresh(state)
-            state_responses.append(
-                UIBridgeStateResponse(
-                    id=state.id,
-                    config_id=state.config_id,
-                    state_id=state.state_id,
-                    name=state.name,
-                    description=state.description,
-                    element_ids=state.element_ids or [],
-                    render_ids=state.render_ids or [],
-                    confidence=state.confidence,
-                    acceptance_criteria=state.acceptance_criteria or [],
-                    extra_metadata=state.extra_metadata or {},
-                    created_at=state.created_at,
-                    updated_at=state.updated_at,
-                    domain_knowledge=[],
-                )
-            )
-
-        logger.info(
-            "Completed UI Bridge state discovery",
-            project_id=str(project_id),
-            config_id=str(config_id),
-            states_discovered=len(state_responses),
-            render_count=discovery_result.render_count,
-            element_count=discovery_result.unique_element_count,
-            strategy_used=discovery_result.strategy_used.value,
-        )
-
-        return UIBridgeDiscoverAndSaveResponse(
-            config=UIBridgeStateConfigResponse.model_validate(config),
-            states=state_responses,
-            render_count=discovery_result.render_count,
-            unique_element_count=discovery_result.unique_element_count,
-        )
-
-    except Exception as e:
-        logger.error(
-            "UI Bridge state discovery failed",
-            project_id=str(project_id),
-            user_id=str(current_user.id),
-            error=str(e),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"State discovery failed: {str(e)}",
-        )
 
 
 # =============================================================================
@@ -1501,144 +1391,26 @@ async def pathfind(
 
     This builds a UIBridgeRuntime in-memory with a stub client
     and runs pathfinding without executing any actual actions.
+
+    Returns 503 until the runner-bridge ships — qontinui.state_machine.ui_bridge_runtime
+    no longer lives in the web image
+    (plan-2026-05-17-web-image-slim / plan-2026-05-17-ws-bridge-for-violating-routers).
     """
-    await get_project_or_404(project_id, current_user.id, db)
-
-    # Load config with states and transitions
-    result = await db.execute(
-        select(UIBridgeStateConfig)
-        .options(
-            selectinload(UIBridgeStateConfig.states),
-            selectinload(UIBridgeStateConfig.transitions),
-        )
-        .where(
-            UIBridgeStateConfig.id == config_id,
-            UIBridgeStateConfig.project_id == project_id,
-        )
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail={
+            "error": "endpoint_requires_runner_bridge",
+            "message": (
+                "This endpoint depends on qontinui runtime functionality that lives on "
+                "the runner. The web - runner WebSocket bridge for this functionality is "
+                "not yet implemented. See architectural-decisions.md "
+                "'Web - runner WebSocket boundary'."
+            ),
+            "runner_module": "qontinui.state_machine.ui_bridge_runtime",
+            "endpoint": "/api/v1/projects/{project_id}/ui-bridge-configs/{config_id}/pathfind",
+            "tracking": "plan-2026-05-17-ws-bridge-for-violating-routers (TBD)",
+        },
     )
-    config = result.scalar_one_or_none()
-
-    if not config:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="State configuration not found",
-        )
-
-    try:
-        # Lazy import to avoid loading torch at startup
-        from qontinui.state_machine.ui_bridge_runtime import (
-            UIBridgeRuntime,
-            UIBridgeRuntimeConfig,
-        )
-        from qontinui.state_machine.ui_bridge_runtime import (
-            UIBridgeState as UIBridgeStateData,
-        )
-        from qontinui.state_machine.ui_bridge_runtime import (
-            UIBridgeTransition as UIBridgeTransitionData,
-        )
-
-        # Create a stub client that does nothing
-        class StubClient:
-            def find(self, **kwargs: Any) -> Any:
-                return type("R", (), {"elements": []})()
-
-            def get_active_states(self) -> list[str]:
-                return request.from_states
-
-            def execute_transition(self, transition_id: str) -> Any:
-                return type("R", (), {"success": True})()
-
-            def navigate_to(self, targets: list[str]) -> Any:
-                raise NotImplementedError
-
-            def click(self, element_id: str, **kwargs: Any) -> Any:
-                return type("R", (), {"success": True})()
-
-            def type(self, element_id: str, text: str, **kwargs: Any) -> Any:
-                return type("R", (), {"success": True})()
-
-        stub = StubClient()
-        runtime_config = UIBridgeRuntimeConfig(
-            enable_reliability_tracking=False,
-        )
-        runtime = UIBridgeRuntime(stub, runtime_config)
-
-        # Register states
-        for state in config.states:
-            runtime.register_state(
-                UIBridgeStateData(
-                    id=state.state_id,
-                    name=state.name,
-                    element_ids=state.element_ids or [],
-                )
-            )
-
-        # Register transitions
-        for trans in config.transitions:
-            runtime.register_transition(
-                UIBridgeTransitionData(
-                    id=trans.transition_id,
-                    name=trans.name,
-                    from_states=trans.from_states or [],
-                    activate_states=trans.activate_states or [],
-                    exit_states=trans.exit_states or [],
-                    actions=trans.actions or [],
-                    path_cost=trans.path_cost,
-                    stays_visible=trans.stays_visible,
-                )
-            )
-
-        # Run pathfinding
-        path = runtime.find_path(
-            target_states=request.target_states,
-            from_states=set(request.from_states),
-        )
-
-        if not path:
-            return PathfindingResponse(
-                found=False,
-                error="No path found between specified states",
-            )
-
-        # Build response
-        steps = []
-        total_cost = 0.0
-        for trans in path.transitions_sequence:
-            ui_trans = runtime._ui_transitions.get(trans.id)
-            if ui_trans:
-                steps.append(
-                    PathfindingStep(
-                        transition_id=ui_trans.id,
-                        transition_name=ui_trans.name,
-                        from_states=ui_trans.from_states,
-                        activate_states=ui_trans.activate_states,
-                        exit_states=ui_trans.exit_states,
-                        path_cost=ui_trans.path_cost,
-                    )
-                )
-                total_cost += ui_trans.path_cost
-
-        return PathfindingResponse(
-            found=True,
-            steps=steps,
-            total_cost=total_cost,
-        )
-
-    except ImportError:
-        return PathfindingResponse(
-            found=False,
-            error="qontinui core library not available for pathfinding",
-        )
-    except Exception as e:
-        logger.error(
-            "Pathfinding failed",
-            config_id=str(config_id),
-            error=str(e),
-        )
-        return PathfindingResponse(
-            found=False,
-            error=f"Pathfinding error: {str(e)}",
-        )
 
 
 # =============================================================================

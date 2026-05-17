@@ -43,12 +43,17 @@ def _get_velocity_file():
     if _VELOCITY_FILE is not None:
         return _VELOCITY_FILE
 
-    # Resolve .dev-logs/ relative to the project parent directory
-    dev_logs_dir = Path(__file__).resolve().parents[4] / ".dev-logs"
-    dev_logs_dir.mkdir(parents=True, exist_ok=True)
-    _VELOCITY_JSONL_PATH = dev_logs_dir / "backend-velocity.jsonl"
-
+    # Resolve .dev-logs/ relative to the project parent directory. The
+    # cloud-deployed image lives at /app/ (only 3 parents available), so
+    # the dev-tree layout (parents[4]) doesn't apply — skip velocity
+    # logging when the expected layout isn't present rather than crash.
+    parents = Path(__file__).resolve().parents
+    if len(parents) <= 4:
+        return None
+    dev_logs_dir = parents[4] / ".dev-logs"
     try:
+        dev_logs_dir.mkdir(parents=True, exist_ok=True)
+        _VELOCITY_JSONL_PATH = dev_logs_dir / "backend-velocity.jsonl"
         _VELOCITY_FILE = open(_VELOCITY_JSONL_PATH, "a", encoding="utf-8")
     except OSError:
         pass

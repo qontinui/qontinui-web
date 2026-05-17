@@ -26,14 +26,24 @@ logger = structlog.get_logger(__name__)
 #           app/
 #             worker/
 #               tasks.py                     <- __file__
-#       qontinui-train/                      <- TRAINING_REPO
-#       qontinui-finetune/                   <- FINETUNE_REPO
+#       qontinui-train/                      <- _training_repo()
+#       qontinui-finetune/                   <- _finetune_repo()
 #
-# Paths are resolved at import time so an unset / moved repo fails fast
-# rather than at the end of an export.
-_REPO_ROOT = Path(__file__).resolve().parents[4]
-TRAINING_REPO = _REPO_ROOT / "qontinui-train"
-FINETUNE_REPO = _REPO_ROOT / "qontinui-finetune"
+# Resolved lazily at call time. The cloud-deployed web image has neither
+# `qontinui-train` nor `qontinui-finetune` siblings (they live next to
+# the runner, not in the FastAPI service). Module-import must succeed
+# without these — only the training/finetune task entrypoints below
+# actually consult these paths.
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def _training_repo() -> Path:
+    return _repo_root() / "qontinui-train"
+
+
+def _finetune_repo() -> Path:
+    return _repo_root() / "qontinui-finetune"
 
 # Training subprocess output handling.
 #
@@ -836,7 +846,7 @@ def _build_training_command(
             "--project",
             str(dest_dir / "runs"),
         ]
-        return cmd, FINETUNE_REPO
+        return cmd, _finetune_repo()
 
     cmd = [
         "python",
@@ -854,7 +864,7 @@ def _build_training_command(
         "--out",
         str(dest_dir / "runs"),
     ]
-    return cmd, TRAINING_REPO
+    return cmd, _training_repo()
 
 
 def _append_logs(buffer: str, line: str) -> str:

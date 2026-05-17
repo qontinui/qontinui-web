@@ -2,6 +2,11 @@
 Baseline image processing utilities.
 
 Handles downloading, hashing, thumbnailing, and uploading baseline images.
+
+NOTE: As of plan-2026-05-17-web-image-slim, the perceptual-hash helper raises
+HTTPException(503) — qontinui.vision.comparison no longer ships with the web
+image. The runner-bridge replacement is tracked under
+plan-2026-05-17-ws-bridge-for-violating-routers.
 """
 
 import io
@@ -9,6 +14,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
+from fastapi import HTTPException, status
 from PIL import Image
 
 from app.services.object_storage import object_storage
@@ -31,24 +37,27 @@ class BaselineImageProcessing:
         return self.storage.download_file(storage_path)
 
     async def _compute_perceptual_hash(self, image_bytes: bytes) -> str | None:
-        """Compute perceptual hash for an image."""
-        try:
-            from qontinui.vision.comparison import VisualComparator
+        """Compute perceptual hash for an image.
 
-            comparator = VisualComparator()
-            image_file = io.BytesIO(image_bytes)
-            with Image.open(image_file) as img:
-                import numpy as np
-
-                img_array = np.array(img.convert("RGB"))
-                hash_result = comparator.compute_perceptual_hash(img_array)
-                return str(hash_result) if hash_result is not None else None
-        except ImportError:
-            logger.warning("qontinui library not available for perceptual hash")
-            return None
-        except Exception as e:
-            logger.warning("perceptual_hash_computation_failed", error=str(e))
-            return None
+        Raises HTTPException(503) until the runner-bridge ships — qontinui.vision.comparison
+        no longer lives in the web image. FastAPI propagates the 503 envelope
+        from whichever route handler called us. DEFERRED: ws-bridge.
+        """
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "error": "endpoint_requires_runner_bridge",
+                "message": (
+                    "This endpoint depends on qontinui runtime functionality that lives on "
+                    "the runner. The web - runner WebSocket bridge for this functionality is "
+                    "not yet implemented. See architectural-decisions.md "
+                    "'Web - runner WebSocket boundary'."
+                ),
+                "runner_module": "qontinui.vision.comparison",
+                "endpoint": "baseline_image_processing._compute_perceptual_hash",
+                "tracking": "plan-2026-05-17-ws-bridge-for-violating-routers (TBD)",
+            },
+        )
 
     async def _create_thumbnail(self, image_bytes: bytes) -> bytes:
         """Create a thumbnail from image bytes."""

@@ -22,11 +22,15 @@ from fastapi.responses import FileResponse, StreamingResponse
 logger = structlog.get_logger(__name__)
 router = APIRouter()
 
-# The parent directory where .dev-logs lives (qontinui_parent/).
-# This file is at: qontinui_parent/qontinui-web/backend/app/api/v1/endpoints/screenshots.py
-# parents[0]=endpoints, [1]=v1, [2]=api, [3]=app, [4]=backend, [5]=qontinui-web, [6]=qontinui_parent
-_THIS_FILE = Path(__file__).resolve()
-_PARENT_DIR = _THIS_FILE.parents[6]
+# Resolved lazily — the cloud-deployed image lives at /app/ with only 3
+# parents, while the dev tree has the layout qontinui_parent/qontinui-web/
+# backend/app/api/v1/endpoints/screenshots.py (parents[6] = qontinui_parent).
+# Resolving at import time crashed the FastAPI module-load on Fargate.
+def _parent_dir() -> Path | None:
+    parents = Path(__file__).resolve().parents
+    if len(parents) <= 6:
+        return None
+    return parents[6]
 
 
 def _resolve_screenshot_path(relative_path: str) -> Path | None:
@@ -36,24 +40,28 @@ def _resolve_screenshot_path(relative_path: str) -> Path | None:
     relative to the parent project directory.  The frontend may strip the
     '.dev-logs/' prefix before sending, so we try multiple resolution strategies.
     """
+    parent_dir = _parent_dir()
+    if parent_dir is None:
+        return None
+
     # Strip leading slashes/dots for safety
     clean_path = relative_path.lstrip("/").lstrip("\\")
 
     # Try resolving relative to the parent directory directly
     # Handles: '.dev-logs/screenshots/file.png' or 'screenshots/file.png'
-    candidate = _PARENT_DIR / clean_path
+    candidate = parent_dir / clean_path
     if candidate.is_file():
         return candidate
 
     # Try under .dev-logs/ prefix (handles stripped paths like 'screenshots/file.png')
-    candidate = _PARENT_DIR / ".dev-logs" / clean_path
+    candidate = parent_dir / ".dev-logs" / clean_path
     if candidate.is_file():
         return candidate
 
     # Try just the filename in common screenshot directories
     filename = Path(clean_path).name
     for subdir in ["screenshots", "playwright-screenshots"]:
-        candidate = _PARENT_DIR / ".dev-logs" / subdir / filename
+        candidate = parent_dir / ".dev-logs" / subdir / filename
         if candidate.is_file():
             return candidate
 
@@ -73,10 +81,11 @@ async def get_screenshot(path: str) -> FileResponse | StreamingResponse:
 
     # Try local filesystem first
     local_path = _resolve_screenshot_path(path)
-    if local_path is not None:
+    parent_dir = _parent_dir()
+    if local_path is not None and parent_dir is not None:
         # Ensure the resolved path is still within the parent directory
         try:
-            local_path.resolve().relative_to(_PARENT_DIR.resolve())
+            local_path.resolve().relative_to(parent_dir.resolve())
         except ValueError:
             raise HTTPException(status_code=403, detail="Access denied")
 
