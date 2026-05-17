@@ -1,4 +1,12 @@
 @import "tailwindcss";
+/* Tailwind v4 plugin activation. Powers the `prose` / `prose-sm` /
+ * `dark:prose-invert` typography utilities used by the strategy doc
+ * viewer (`src/app/(app)/strategy/[doc]/page.tsx`) and any future
+ * ReactMarkdown surfaces. Without this directive, `prose` is a no-op
+ * class and `<h2>` / `<p>` / `<code>` / tables / links all render at
+ * Tailwind preflight's reset (16px / 400 / no spacing, no link color),
+ * which looks like an unstyled wall of plain text. */
+@plugin "@tailwindcss/typography";
 @import "tw-animate-css";
 @import "@xyflow/react/dist/style.css";
 @import "@qontinui/design-tokens/css";
