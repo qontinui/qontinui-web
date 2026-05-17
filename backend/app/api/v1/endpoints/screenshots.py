@@ -22,6 +22,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 logger = structlog.get_logger(__name__)
 router = APIRouter()
 
+
 # Resolved lazily — the cloud-deployed image lives at /app/ with only 3
 # parents, while the dev tree has the layout qontinui_parent/qontinui-web/
 # backend/app/api/v1/endpoints/screenshots.py (parents[6] = qontinui_parent).

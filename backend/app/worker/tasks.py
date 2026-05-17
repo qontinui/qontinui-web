@@ -45,6 +45,7 @@ def _training_repo() -> Path:
 def _finetune_repo() -> Path:
     return _repo_root() / "qontinui-finetune"
 
+
 # Training subprocess output handling.
 #
 # - ``MAX_LOGS_BYTES``: cap stored stdout at 1 MiB. Beyond this the tail
