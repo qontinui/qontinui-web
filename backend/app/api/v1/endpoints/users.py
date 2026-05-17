@@ -204,7 +204,7 @@ async def search_users(
     stmt = (
         select(UserModel)
         .where(
-            UserModel.is_active,
+            UserModel.is_active.is_(True),  # type: ignore[attr-defined]
             or_(
                 UserModel.username.ilike(prefix),  # type: ignore[attr-defined]
                 UserModel.email.ilike(prefix),  # type: ignore[attr-defined]
