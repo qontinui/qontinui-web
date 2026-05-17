@@ -77,6 +77,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install pytest pytest-cov pytest-asyncio
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          # Force fresh editable install of qontinui-schemas BEFORE `pip install -e .`
+          # so the cached pip-wheel layer (actions/cache@v3 above) doesn't restore a
+          # stale wheel from a prior version of schemas. Without this, `pip install -e .`
+          # resolves the schemas path-dep against the pip cache and pulls whichever
+          # version was last built, even though `develop = true` in backend's pyproject
+          # asks for an editable install. Cost: ~1s rebuild; benefit: schemas always
+          # reflects the cloned ../../qontinui-schemas HEAD state.
+          pip install --no-cache-dir -e ../../qontinui-schemas
           if [ -f pyproject.toml ]; then pip install -e .; fi
           pip install -e ../../qontinui-cloud-control
 
