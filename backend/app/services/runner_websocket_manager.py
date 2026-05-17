@@ -241,6 +241,14 @@ class RunnerWebSocketManager:
         rid = _rid(runner_id)
         runner_connected = self._registry.is_runner_connected(rid)
         await self._terminal_relay.start_mobile_listener(rid, websocket)
+        if runner_connected:
+            # Tell the runner a mobile is now watching this terminal so it
+            # starts forwarding terminal_output/terminal_exit frames. The
+            # runner keeps a subscriber counter, so one subscribe per connect
+            # is correct even with multiple mobiles on the same runner.
+            await self._relay.send_command_to_runner(
+                rid, {"type": "terminal_subscribe", "runner_id": rid}
+            )
         return runner_connected
 
     async def disconnect_mobile_terminal(
@@ -248,6 +256,18 @@ class RunnerWebSocketManager:
     ) -> None:
         rid = _rid(runner_id)
         await self._terminal_relay.stop_mobile_listener(rid, websocket)
+        # Best-effort: the runner may already be gone on disconnect, which is
+        # fine — its subscriber counter is decremented per unsubscribe.
+        try:
+            await self._relay.send_command_to_runner(
+                rid, {"type": "terminal_unsubscribe", "runner_id": rid}
+            )
+        except Exception as exc:
+            logger.debug(
+                "terminal_unsubscribe_send_failed",
+                runner_id=rid,
+                error=str(exc),
+            )
 
     # ========================================================================
     # Outbound sends (typed)

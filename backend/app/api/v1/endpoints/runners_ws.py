@@ -46,6 +46,11 @@ from app.services.runner_websocket_manager import get_runner_websocket_manager
 
 logger = structlog.get_logger(__name__)
 
+# Max per-mobile terminal_output frame payload (chars). Runaway lines (e.g. a
+# binary dumped to a tty) are truncated with a marker so a single frame can't
+# blow the per-mobile memory budget. See plan Risks / feedback_memory_pressure.
+_TERMINAL_FRAME_LIMIT = 65536
+
 router = APIRouter()
 
 
@@ -288,6 +293,19 @@ async def _route_runner_message(
         return
 
     if msg_type == "terminal_response":
+        await manager.send_terminal_response_to_mobiles(runner_id, msg)
+        return
+
+    if msg_type in {"terminal_output", "terminal_exit"}:
+        if msg_type == "terminal_output":
+            data = msg.get("data")
+            if isinstance(data, str) and len(data) > _TERMINAL_FRAME_LIMIT:
+                dropped = len(data) - _TERMINAL_FRAME_LIMIT
+                truncated = (
+                    data[:_TERMINAL_FRAME_LIMIT]
+                    + f"\n[...truncated {dropped} bytes...]"
+                )
+                msg = {**msg, "data": truncated}
         await manager.send_terminal_response_to_mobiles(runner_id, msg)
         return
 
