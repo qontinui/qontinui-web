@@ -11,6 +11,8 @@ import {
   type StrategyDocSummary,
 } from "@/lib/api/strategy";
 import { StrategySidebar } from "../_components/StrategySidebar";
+import { PresenceIndicator } from "../_components/PresenceIndicator";
+import { usePresenceHeartbeat } from "@/lib/strategy/presence";
 
 /**
  * /strategy/[doc] — read-only Markdown viewer + git provenance.
@@ -38,6 +40,11 @@ export default function StrategyDocPage() {
       .catch((e) => setError(e.message));
   }, [name]);
 
+  // Strategy Phase 2.4 — drive presence heartbeats while the page is
+  // mounted. Returns the resolved doc_id so <PresenceIndicator> can
+  // subscribe to the per-doc aggregate channel.
+  const presenceDocId = usePresenceHeartbeat({ docName: name });
+
   return (
     <div className="flex h-full">
       <StrategySidebar docs={docs} activeName={name} />
@@ -51,7 +58,10 @@ export default function StrategyDocPage() {
         ) : (
           <article className="mx-auto max-w-3xl px-8 py-6">
             <header className="mb-4 border-b border-border pb-3">
-              <h1 className="text-2xl font-semibold">{doc.title}</h1>
+              <div className="flex items-center justify-between gap-3">
+                <h1 className="text-2xl font-semibold">{doc.title}</h1>
+                <PresenceIndicator docId={presenceDocId} />
+              </div>
               <p className="mt-1 text-xs text-muted-foreground">
                 {doc.provenance.commit_sha.slice(0, 8)} ·{" "}
                 {doc.provenance.author} · {doc.provenance.committed_at}

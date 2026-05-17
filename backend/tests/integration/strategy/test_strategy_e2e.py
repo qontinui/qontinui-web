@@ -92,3 +92,35 @@ async def test_doc_read_content_and_provenance(
     assert re.fullmatch(r"[0-9a-f]{40}", prov["commit_sha"]), prov
     assert prov["author"], "author must be non-empty"
     assert prov["committed_at"], "committed_at must be non-empty"
+
+
+@pytest.mark.asyncio
+async def test_presence_heartbeat_with_doc_name(client: StrategyClient) -> None:
+    """Phase 2.4: POST /strategy/presence/heartbeat with `doc_name`
+    resolves to a canonical doc_id and emits on the dual-publish bus.
+    Coord echoes the resolved doc_id in the response so the frontend
+    can subscribe to per-doc aggregate channels. The full delta-only
+    aggregator behaviour is unit-tested coord-side; this harness just
+    proves the HTTP surface + PG resolution are wired."""
+    status, body = await client.heartbeat(
+        str(uuid.uuid4()),
+        doc_name="README.md",
+    )
+    assert status == 200, body
+    assert isinstance(body, dict)
+    assert "doc_id" in body
+    assert re.fullmatch(
+        r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+        body["doc_id"],
+    ), body
+
+
+@pytest.mark.asyncio
+async def test_presence_heartbeat_with_doc_id(client: StrategyClient) -> None:
+    """Phase 2.4: caller can also send a pre-resolved doc_id. (The
+    frontend uses doc_name; this path exists for tests + future
+    callers that already have the UUID.)"""
+    doc_id = str(uuid.uuid4())
+    status, body = await client.heartbeat(str(uuid.uuid4()), doc_id=doc_id)
+    assert status == 200, body
+    assert body == {"doc_id": doc_id}
