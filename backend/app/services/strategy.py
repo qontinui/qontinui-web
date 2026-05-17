@@ -168,7 +168,7 @@ class StrategyClient:
         self,
         path: str,
         acting_user_id: str,
-        json_body: dict | None = None,
+        json_body: object | None = None,
     ) -> tuple[int, object]:
         headers = await self._headers(acting_user_id)
         async with httpx.AsyncClient(timeout=10.0) as c:
@@ -186,19 +186,94 @@ class StrategyClient:
             body = {"error": resp.text[:500]}
         return resp.status_code, body
 
+    async def _patch(
+        self,
+        path: str,
+        acting_user_id: str,
+        json_body: object | None = None,
+    ) -> tuple[int, object]:
+        headers = await self._headers(acting_user_id)
+        async with httpx.AsyncClient(timeout=10.0) as c:
+            resp = await c.patch(
+                f"{self._coord_url}{path}", headers=headers, json=json_body
+            )
+        try:
+            body: object = resp.json()
+        except ValueError:
+            body = {"error": resp.text[:500]}
+        return resp.status_code, body
+
+    async def _delete(self, path: str, acting_user_id: str) -> tuple[int, object]:
+        headers = await self._headers(acting_user_id)
+        async with httpx.AsyncClient(timeout=10.0) as c:
+            resp = await c.delete(f"{self._coord_url}{path}", headers=headers)
+        try:
+            body: object = resp.json()
+        except ValueError:
+            body = {"error": resp.text[:500]}
+        return resp.status_code, body
+
     async def list_docs(self, acting_user_id: str) -> tuple[int, object]:
         return await self._get("/strategy/docs", acting_user_id)
 
     async def get_doc(self, acting_user_id: str, name: str) -> tuple[int, object]:
         return await self._get(f"/strategy/docs/{name}", acting_user_id)
 
-    # -- proxied writes -------------------------------------------------
-    # Strategy Phase 2.4 — presence heartbeat. Body has no ttl_s
-    # (server-side 90s TTL policy). Accepts either an already-resolved
-    # `doc_id` (UUID) or a `doc_name` (substrate-relative path,
-    # e.g. `README.md`). Coord resolves doc_name → doc_id via PG and
-    # returns the canonical doc_id in the response body so the
-    # frontend can subscribe to per-doc aggregate channels.
+    # -- Phase 2.3 collaboration proxies ---------------------------------
+
+    async def list_threads(self, acting_user_id: str, name: str) -> tuple[int, object]:
+        return await self._get(f"/strategy/docs/{name}/threads", acting_user_id)
+
+    async def create_thread(
+        self, acting_user_id: str, name: str, body: object
+    ) -> tuple[int, object]:
+        return await self._post(f"/strategy/docs/{name}/threads", acting_user_id, body)
+
+    async def get_thread(
+        self, acting_user_id: str, thread_id: str
+    ) -> tuple[int, object]:
+        return await self._get(f"/strategy/threads/{thread_id}", acting_user_id)
+
+    async def create_post(
+        self, acting_user_id: str, thread_id: str, body: object
+    ) -> tuple[int, object]:
+        return await self._post(
+            f"/strategy/threads/{thread_id}/posts", acting_user_id, body
+        )
+
+    async def resolve_thread(
+        self, acting_user_id: str, thread_id: str
+    ) -> tuple[int, object]:
+        return await self._post(
+            f"/strategy/threads/{thread_id}/resolve", acting_user_id, None
+        )
+
+    async def edit_post(
+        self, acting_user_id: str, post_id: str, body: object
+    ) -> tuple[int, object]:
+        return await self._patch(f"/strategy/posts/{post_id}", acting_user_id, body)
+
+    async def delete_post(
+        self, acting_user_id: str, post_id: str
+    ) -> tuple[int, object]:
+        return await self._delete(f"/strategy/posts/{post_id}", acting_user_id)
+
+    async def list_unread_mentions(self, acting_user_id: str) -> tuple[int, object]:
+        return await self._get("/strategy/mentions/unread", acting_user_id)
+
+    async def mark_mention_read(
+        self, acting_user_id: str, mention_id: str
+    ) -> tuple[int, object]:
+        return await self._post(
+            f"/strategy/mentions/{mention_id}/mark-read", acting_user_id, None
+        )
+
+    # -- Phase 2.4 presence ----------------------------------------------
+    # Body has no ttl_s (server-side 90s TTL policy). Accepts either an
+    # already-resolved `doc_id` (UUID) or a `doc_name` (substrate-
+    # relative path, e.g. `README.md`). Coord resolves doc_name → doc_id
+    # via PG and returns the canonical doc_id in the response body so
+    # the frontend can subscribe to per-doc aggregate channels.
     async def heartbeat(
         self,
         acting_user_id: str,

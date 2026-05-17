@@ -2,10 +2,21 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
+    current_active_user,
     get_async_db,
     get_current_active_user_async,
     get_current_superuser_async,
@@ -172,6 +183,80 @@ async def read_users(
     await db.commit()
 
     return users
+
+
+@router.get("/search")
+async def search_users(
+    q: str = Query(min_length=1, max_length=64),
+    limit: int = Query(default=10, ge=1, le=10),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(current_active_user),
+) -> list[dict[str, str]]:
+    """Prefix-match directory search backing the @mention autocomplete.
+
+    Authenticated end-users only; cap at 10 hits regardless of query.
+    Returns ``[{id, display, email}]`` where ``display`` falls back to
+    email when username is unset. Phase 2 is single-tenant dogfood, so
+    no organization-scoped filter (Phase 7's multi-tenant work tightens
+    this).
+    """
+    prefix = f"{q}%"
+    stmt = (
+        select(UserModel)
+        .where(
+            UserModel.is_active.is_(True),  # type: ignore[attr-defined]
+            or_(
+                UserModel.username.ilike(prefix),  # type: ignore[attr-defined]
+                UserModel.email.ilike(prefix),  # type: ignore[attr-defined]
+            ),
+        )
+        .order_by(UserModel.username)
+        .limit(limit)
+    )
+    rows = (await db.execute(stmt)).scalars().all()
+    return [
+        {
+            "id": str(row.id),
+            "display": row.username or row.email,
+            "email": row.email,
+        }
+        for row in rows
+    ]
+
+
+@router.get("/lookup")
+async def lookup_users(
+    ids: str = Query(description="Comma-separated UUIDs (max 50)"),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(current_active_user),
+) -> list[dict[str, str]]:
+    """Batch user lookup for the @mention rendering cache.
+
+    Accepts ``?ids=<uuid>,<uuid>,...`` and returns the same shape as
+    /search. Bounded at 50 ids per call to keep query plans cheap; the
+    frontend dedupes upstream. Invalid UUIDs are skipped silently.
+    """
+    raw = [s.strip() for s in ids.split(",") if s.strip()]
+    parsed: list[UUID] = []
+    for s in raw[:50]:
+        try:
+            parsed.append(UUID(s))
+        except ValueError:
+            continue
+    if not parsed:
+        return []
+    stmt = select(UserModel).where(
+        UserModel.id.in_(parsed)  # type: ignore[attr-defined]
+    )
+    rows = (await db.execute(stmt)).scalars().all()
+    return [
+        {
+            "id": str(row.id),
+            "display": row.username or row.email,
+            "email": row.email,
+        }
+        for row in rows
+    ]
 
 
 @router.get("/{user_id}", response_model=User)
