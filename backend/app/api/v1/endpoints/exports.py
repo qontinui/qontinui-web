@@ -29,8 +29,8 @@ router = APIRouter()
 # These should be configured based on deployment environment
 ALLOWED_LOCAL_PATHS: list[str] = [
     # Development paths
-    "D:/qontinui_parent_directory/exports",
-    "D:/qontinui_parent_directory/training_data",
+    "D:/qontinui-root/exports",
+    "D:/qontinui-root/training_data",
     # User home exports directory
     os.path.expanduser("~/qontinui_exports"),
     # Temp directory for testing

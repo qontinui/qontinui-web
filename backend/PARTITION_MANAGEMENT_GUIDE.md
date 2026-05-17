@@ -37,7 +37,7 @@ The qontinui-web backend now includes a comprehensive partition management syste
 ### Step 1: Run the Migration
 
 ```bash
-cd /mnt/c/Users/Joshua/Documents/qontinui_parent_directory/qontinui-web/backend
+cd /mnt/c/Users/Joshua/Documents/qontinui-root/qontinui-web/backend
 alembic upgrade head
 ```
 

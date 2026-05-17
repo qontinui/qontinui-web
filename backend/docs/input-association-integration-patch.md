@@ -2,7 +2,7 @@
 
 ## File to Modify
 
-`/mnt/c/Users/jspin/Documents/qontinui_parent/qontinui-web/backend/app/api/v1/endpoints/automation_ws.py`
+`/mnt/c/Users/jspin/Documents/qontinui-root/qontinui-web/backend/app/api/v1/endpoints/automation_ws.py`
 
 ## Changes Required
 

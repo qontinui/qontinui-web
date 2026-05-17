@@ -20,7 +20,7 @@ logger = structlog.get_logger(__name__)
 # The training/finetune repos live as siblings of ``qontinui-web``. From
 # this file the layout is::
 #
-#     qontinui_parent/                       <- 5 parents up
+#     qontinui-root/                       <- 5 parents up
 #       qontinui-web/
 #         backend/
 #           app/

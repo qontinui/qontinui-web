@@ -25,7 +25,7 @@ I've detected that you're using **AWS Elastic Beanstalk with Docker** for your q
 ### Step 1: Test Locally First
 
 ```bash
-cd /home/jspinak/qontinui_parent_directory/qontinui-web/backend
+cd /home/jspinak/qontinui-root/qontinui-web/backend
 
 # Build and start all containers
 docker-compose up --build
@@ -46,7 +46,7 @@ Elastic Beanstalk will automatically detect `docker-compose.yml` and deploy all 
 
 ```bash
 # Make sure you're in the backend directory
-cd /home/jspinak/qontinui_parent_directory/qontinui-web/backend
+cd /home/jspinak/qontinui-root/qontinui-web/backend
 
 # Initialize EB CLI if not already done
 eb init
