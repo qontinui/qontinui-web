@@ -23,6 +23,7 @@ import uuid
 
 import httpx
 import pytest
+import pytest_asyncio
 
 from app.services.strategy import StrategyClient
 
@@ -31,7 +32,7 @@ ADMIN_SECRET = os.environ["COORD_ADMIN_SECRET"]  # presence enforced by conftest
 SERVICE_NAME = "qontinui-web-strategy-e2e"
 
 
-@pytest.fixture()
+@pytest_asyncio.fixture()
 async def client() -> StrategyClient:
     c = StrategyClient(COORD_URL, ADMIN_SECRET, SERVICE_NAME)
     await c.startup()  # fail-fast initial mint
