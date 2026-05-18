@@ -21,6 +21,7 @@ See: D:/qontinui-root/qontinui-cloud-control/  (private repo)
 from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
+    agent_sessions,
     ai_prompts,
     analytics,
     annotations,
@@ -343,6 +344,12 @@ api_router.include_router(
 )
 # Strategy Collaboration (Phase 1, read-only doc proxy → coord)
 api_router.include_router(strategy.router, prefix="/strategy", tags=["strategy"])
+# Agent sessions observability — Side D / Phase 4 of plan
+# coord-agent-session-id-tracking.md. Lists sessions from
+# coord.agent_sessions + per-session lineage timeline.
+api_router.include_router(
+    agent_sessions.router, prefix="/admin", tags=["admin-agent-sessions"]
+)
 
 # Cloud-control extension hook — no-op when no cloud-control package has
 # registered any route extensions. Cloud-control's
