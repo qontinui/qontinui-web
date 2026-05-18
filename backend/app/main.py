@@ -415,6 +415,23 @@ async def startup_event():
 
     await strategy_client.startup()
 
+    # Recording-pipeline async-run recovery (Phase 4 of plan
+    # 2026-05-17-web-runner-ws-bridge-plan-b.md). Flips stale
+    # in-flight rows to ``timed_out`` so polling clients see a
+    # terminal state after a web restart.
+    try:
+        from app.services.recording_pipeline_subscriber import (
+            recover_running_runs_on_boot,
+        )
+
+        await recover_running_runs_on_boot()
+        logger.info("recording_pipeline_recovery_complete")
+    except Exception as exc:  # noqa: BLE001 - non-fatal at boot
+        logger.error(
+            "recording_pipeline_recovery_failed",
+            error=str(exc),
+        )
+
 
 @app.on_event("shutdown")
 async def shutdown_event():

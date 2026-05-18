@@ -105,6 +105,7 @@ from app.models.recording import (
     RecordingInteraction,
     RecordingStatus,
 )
+from app.models.recording_pipeline_run import RecordingPipelineRun  # noqa
 from app.models.recording_session import RecordingSession  # noqa
 from app.models.render_log import (
     RenderImage,
