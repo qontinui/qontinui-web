@@ -1,7 +1,7 @@
 """coord phase 2 01 claims_audit steal columns
 
 Revision ID: coord_phase_2_01_claims_audit_steal_columns
-Revises: agent, ud01_unify_devices_registry
+Revises: fleet_phase_1_01_machine_budget, ud01_unify_devices_registry
 Create Date: 2026-05-18
 
 Phase 2 of plan
@@ -30,7 +30,7 @@ Per Phase 1 integration spec §2.4 (read-only verification): no FK on
 columns only — no behavioral break for existing callers.
 
 Sibling-head merge: this revision merges the two heads
-``agent`` (``fleet_phase_1_01_machine_budget``) and
+``fleet_phase_1_01_machine_budget`` and
 ``ud01_unify_devices_registry`` per
 [[feedback_alembic_sibling_head_merge]]. The single-line
 ``down_revision`` tuple is intentional — the ``alembic-graph-pr.yml``
@@ -47,7 +47,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_phase_2_01_claims_audit_steal_columns"
-down_revision: tuple[str, str] = ("agent", "ud01_unify_devices_registry")
+down_revision: tuple[str, str] = ("fleet_phase_1_01_machine_budget", "ud01_unify_devices_registry")
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
