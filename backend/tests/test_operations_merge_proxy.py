@@ -182,3 +182,83 @@ class TestGetMergeProposal:
             resp = auth_client.get(f"{API_PREFIX}/merge/p-missing")
 
         assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# POST /operations/agents/allocate
+# ---------------------------------------------------------------------------
+
+
+class TestPostAgentsAllocate:
+    """The demo-control page POSTs three allocations in parallel; this
+    endpoint is the per-call proxy. Body shape matches coord's
+    `AllocateRequest`; response shape matches coord's `AllocateResponse`
+    including the per-agent JWT.
+    """
+
+    _ALLOCATE_PAYLOAD = {
+        "machine_id": "11111111-1111-1111-1111-111111111111",
+        "repos": [{"repo": "qontinui-web", "parent_sha": "deadbeef"}],
+        "intent": "demo-feature-profile",
+    }
+
+    def test_proxies_post(self, auth_client: TestClient):
+        coord_resp_body = {
+            "agent_id": "22222222-2222-2222-2222-222222222222",
+            "worktrees": [
+                {
+                    "repo": "qontinui-web",
+                    "branch": "demo-feature-profile",
+                    "parent_sha": "deadbeef",
+                    "worktree_path": "D:/qontinui-root.wt/22.../qontinui-web",
+                    "status": "allocated",
+                }
+            ],
+            "token": "header.payload.signature",
+            "token_jti": "33333333-3333-3333-3333-333333333333",
+            "token_exp": 9_999_999_999,
+        }
+        mock_resp = _mock_response(json_data=coord_resp_body)
+
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.post.return_value = mock_resp
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.post(
+                f"{API_PREFIX}/agents/allocate", json=self._ALLOCATE_PAYLOAD
+            )
+
+        assert resp.status_code == 200
+        assert resp.json() == coord_resp_body
+        instance.post.assert_called_once()
+        called_url = instance.post.call_args.args[0]
+        called_body = instance.post.call_args.kwargs["json"]
+        assert called_url.endswith("/agents/allocate")
+        assert called_body == self._ALLOCATE_PAYLOAD
+
+    def test_unknown_machine_4xx_passes_through(self, auth_client: TestClient):
+        mock_resp = _mock_response(status_code=400, text="machine_id not registered")
+
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.post.return_value = mock_resp
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.post(
+                f"{API_PREFIX}/agents/allocate", json=self._ALLOCATE_PAYLOAD
+            )
+
+        assert resp.status_code == 400
+
+    def test_coord_unreachable_returns_502(self, auth_client: TestClient):
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.post.side_effect = httpx.ConnectError("refused")
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.post(
+                f"{API_PREFIX}/agents/allocate", json=self._ALLOCATE_PAYLOAD
+            )
+
+        assert resp.status_code == 502
