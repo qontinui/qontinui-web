@@ -4,7 +4,11 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { FleetOverview } from "@/components/operations";
+import {
+  FleetOverview,
+  LandedFeaturesPanel,
+  MergeTrain,
+} from "@/components/operations";
 import { Activity } from "lucide-react";
 
 export default function OperationsPage() {
@@ -37,8 +41,17 @@ export default function OperationsPage() {
       </header>
 
       <ScrollArea className="flex-1 min-h-0">
-        <div className="px-6 py-4">
+        <div className="px-6 py-4 space-y-4">
+          {/*
+           * Merge train anchors at the top — it is the demo's primary
+           * visual anchor per `plans/2026-05-18-coordination-layer-demos.md`
+           * §5.2.1. FleetOverview below shows the machines + Claude
+           * sessions. LandedFeaturesPanel surfaces the deployed demo
+           * features via embedded iframes (§5.2.2).
+           */}
+          <MergeTrain />
           <FleetOverview />
+          <LandedFeaturesPanel />
         </div>
       </ScrollArea>
     </div>
