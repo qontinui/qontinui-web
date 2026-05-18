@@ -157,9 +157,13 @@ app.add_middleware(SecurityHeadersMiddleware)
 logger.info("security_headers_middleware_enabled", environment=settings.ENVIRONMENT)
 
 # CORS middleware must be added LAST so it executes FIRST (middleware order is reversed)
+cors_origin_regex = settings.BACKEND_CORS_ORIGIN_REGEX or None
+if cors_origin_regex:
+    logger.info("Using CORS origin regex", regex=cors_origin_regex)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
+    allow_origin_regex=cors_origin_regex,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],

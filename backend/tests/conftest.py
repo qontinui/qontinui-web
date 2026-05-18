@@ -48,6 +48,9 @@ os.environ["VERIFICATION_SECRET_KEY"] = (
 os.environ["ALGORITHM"] = "HS256"
 os.environ["FRONTEND_URL"] = "http://localhost:3000"
 os.environ["BACKEND_CORS_ORIGINS"] = '["http://localhost:3000"]'
+os.environ["BACKEND_CORS_ORIGIN_REGEX"] = (
+    r"^https://([a-z0-9-]+\.)*staging\.qontinui\.io$"
+)
 os.environ["STORAGE_BACKEND"] = "local"
 os.environ["REDIS_ENABLED"] = "false"  # Disable Redis for tests
 
