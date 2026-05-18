@@ -132,6 +132,76 @@ export interface PipelineDiscoveryResult {
   playbookContent?: string;
 }
 
+/**
+ * Raw snake_case shape of the runner-produced RecordingPipelineResult
+ * payload (mirrors the Phase 4 schema at
+ * qontinui_schemas.commands.recording_pipeline.ProcessRecordingResult.result).
+ */
+interface PipelineRunResultPayload {
+  session_id: string;
+  state_count: number;
+  transition_count: number;
+  global_state_count?: number;
+  modal_state_count?: number;
+  states: Array<{
+    id: string;
+    name: string;
+    element_ids?: string[];
+    element_count?: number;
+    blocking?: boolean;
+    metadata?: {
+      is_global?: boolean;
+      position_zone?: string | null;
+      confidence?: number;
+    };
+  }>;
+  transitions: Array<{
+    id: string;
+    name: string;
+    from_states: string[];
+    activate_states: string[];
+    exit_states: string[];
+    metadata?: {
+      confidence?: number;
+      observation_count?: number;
+      is_bidirectional?: boolean;
+    };
+  }>;
+  playbook_content?: string;
+}
+
+function mapPipelineRunResult(
+  payload: PipelineRunResultPayload
+): PipelineDiscoveryResult {
+  return {
+    sessionId: payload.session_id,
+    stateCount: payload.state_count,
+    transitionCount: payload.transition_count,
+    globalStateCount: payload.global_state_count ?? 0,
+    modalStateCount: payload.modal_state_count ?? 0,
+    states: payload.states.map((s) => ({
+      id: s.id,
+      name: s.name,
+      elementCount: s.element_count ?? s.element_ids?.length ?? 0,
+      isBlocking: Boolean(s.blocking),
+      isGlobal: Boolean(s.metadata?.is_global),
+      positionZone: s.metadata?.position_zone ?? null,
+      confidence: s.metadata?.confidence ?? 0,
+    })),
+    transitions: payload.transitions.map((t) => ({
+      id: t.id,
+      name: t.name,
+      fromStates: t.from_states,
+      activateStates: t.activate_states,
+      exitStates: t.exit_states,
+      confidence: t.metadata?.confidence ?? 0,
+      observationCount: t.metadata?.observation_count ?? 0,
+      isBidirectional: Boolean(t.metadata?.is_bidirectional),
+    })),
+    playbookContent: payload.playbook_content,
+  };
+}
+
 const INITIAL_SESSION: RecordingSession = {
   isRecording: false,
   tabId: null,
@@ -565,6 +635,14 @@ export function useUIBridgeRecording() {
   /**
    * Process the SDK recording result through the pipeline API.
    * Discovers states, transitions, and optionally generates a playbook.
+   *
+   * As of Phase 4 of plan 2026-05-17-web-runner-ws-bridge-plan-b.md,
+   * the pipeline endpoints are async: POST returns 202 + {run_id};
+   * the actual compute runs on the user's connected runner over the WS
+   * bridge. This hook polls GET /runs/{run_id} until the run reaches
+   * a terminal status ("completed", "failed", "timed_out"), then
+   * resolves the result into the legacy PipelineDiscoveryResult shape
+   * for unchanged downstream consumers.
    */
   const processRecording = useCallback(
     async (
@@ -596,21 +674,87 @@ export function useUIBridgeRecording() {
           body.app_url = options.appUrl;
         }
 
-        const response = await fetch(`${apiBaseUrl}${endpoint}`, {
+        const dispatchResponse = await fetch(`${apiBaseUrl}${endpoint}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         });
 
-        if (!response.ok) {
-          const error = await response.json().catch(() => ({}));
+        if (!dispatchResponse.ok) {
+          const error = await dispatchResponse.json().catch(() => ({}));
           throw new Error(
-            (error as { detail?: string }).detail ||
-              "Pipeline processing failed"
+            (error as { detail?: string | { message?: string } }).detail &&
+              typeof (
+                error as { detail?: string | { message?: string } }
+              ).detail === "object"
+              ? (error.detail as { message?: string }).message ||
+                "Pipeline dispatch failed"
+              : ((error as { detail?: string }).detail as string) ||
+                "Pipeline dispatch failed"
           );
         }
 
-        const result = (await response.json()) as PipelineDiscoveryResult;
+        const accepted = (await dispatchResponse.json()) as {
+          run_id: string;
+          status: string;
+        };
+
+        // Poll the run status until terminal.
+        const POLL_INTERVAL_MS = 2000;
+        const POLL_TIMEOUT_MS = 30 * 60 * 1000; // matches runner-side TTL
+        const startedAt = Date.now();
+        let terminal: {
+          run_id: string;
+          status: string;
+          result?: PipelineRunResultPayload | null;
+          error?: { error: string; message: string; traceback?: string } | null;
+        } | null = null;
+
+        while (Date.now() - startedAt < POLL_TIMEOUT_MS) {
+          const statusResp = await fetch(
+            `${apiBaseUrl}/api/v1/recording-pipeline/runs/${accepted.run_id}`,
+            { method: "GET" }
+          );
+          if (!statusResp.ok) {
+            throw new Error(
+              `Failed to poll run ${accepted.run_id}: HTTP ${statusResp.status}`
+            );
+          }
+          const status = (await statusResp.json()) as {
+            run_id: string;
+            status: string;
+            result?: PipelineRunResultPayload | null;
+            error?: { error: string; message: string; traceback?: string } | null;
+          };
+          if (
+            status.status === "completed" ||
+            status.status === "failed" ||
+            status.status === "timed_out"
+          ) {
+            terminal = status;
+            break;
+          }
+          await new Promise((resolve) =>
+            setTimeout(resolve, POLL_INTERVAL_MS)
+          );
+        }
+
+        if (terminal === null) {
+          throw new Error(
+            `Pipeline run ${accepted.run_id} did not reach a terminal state within the poll window.`
+          );
+        }
+
+        if (terminal.status !== "completed" || !terminal.result) {
+          const msg =
+            terminal.error?.message ||
+            `Pipeline run finished with status=${terminal.status}.`;
+          throw new Error(msg);
+        }
+
+        // Map the snake_case runner payload to the camelCase
+        // PipelineDiscoveryResult shape used by downstream consumers.
+        const result = mapPipelineRunResult(terminal.result);
         setPipelineResult(result);
 
         log.debug(
