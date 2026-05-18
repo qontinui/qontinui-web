@@ -13,8 +13,11 @@ name: Cross-browser Survey
 # scope can.
 
 on:
-  push:
-    branches: [main, develop]
+  # Push trigger removed 2026-05-18 — survey is informational only (no
+  # merge gate depends on it) and a 30-60 min per-browser run on every
+  # push to main/develop is poor value vs. catching the same regressions
+  # in the nightly cron. Reinstate the push trigger if survey deltas
+  # ever block on something faster than nightly.
   schedule:
     - cron: '0 4 * * *'
   workflow_dispatch:
