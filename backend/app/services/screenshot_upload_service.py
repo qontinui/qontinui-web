@@ -73,6 +73,7 @@ class ScreenshotUploadService:
         image_data: bytes,
         original_filename: str | None,
         content_type: str | None,
+        user_id: UUID | None = None,
     ) -> dict[str, Any]:
         """
         Upload a screenshot with metadata.
@@ -84,6 +85,11 @@ class ScreenshotUploadService:
             image_data: Raw image bytes
             original_filename: Original filename
             content_type: MIME type
+            user_id: Owning user UUID (Phase 7 — forwarded to the
+                downstream visual-comparison call for runner selection
+                via the WS bridge). When ``None``, the visual
+                comparison is skipped silently rather than raising
+                a 503.
 
         Returns:
             Dictionary with upload result data
@@ -139,9 +145,9 @@ class ScreenshotUploadService:
                 state_name=metadata.state,
             )
 
-            # Perform visual comparison if state is provided
+            # Perform visual comparison if state + user_id are provided
             visual_comparison = await self._perform_visual_comparison(
-                db, test_screenshot, metadata.state
+                db, test_screenshot, metadata.state, user_id
             )
 
             await db.commit()
@@ -281,9 +287,16 @@ class ScreenshotUploadService:
         db: AsyncSession,
         screenshot: TestScreenshot,
         state_name: str | None,
+        user_id: UUID | None,
     ) -> VisualComparisonSummary | None:
-        """Perform visual comparison if state is provided."""
-        if not state_name:
+        """Perform visual comparison if state + user_id are provided.
+
+        ``user_id`` is required by Phase 7's runner-WS dispatch in
+        :meth:`VisualComparisonService.compare_screenshot`; when the
+        caller doesn't have one (e.g. an internal pipeline), the
+        comparison is skipped silently rather than raising a 503.
+        """
+        if not state_name or user_id is None:
             return None
 
         try:
@@ -291,6 +304,7 @@ class ScreenshotUploadService:
             comparison = await comparison_service.compare_screenshot(
                 db=db,
                 screenshot_id=screenshot.id,
+                user_id=user_id,
             )
 
             if comparison:

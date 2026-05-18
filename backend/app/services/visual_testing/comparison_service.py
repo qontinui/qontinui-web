@@ -3,19 +3,19 @@ Visual comparison service.
 
 Handles the compare workflow, review management, and pending reviews.
 
-NOTE: As of plan-2026-05-17-web-image-slim, `compare_screenshot` raises
-HTTPException(503) for the ignore-regions path (qontinui.vision.comparison
-no longer lives in the web image). The standard path also fails at
-`self.comparator`, which is the parent class's 503 short-circuit. The
-runner-bridge replacement is tracked under
-plan-2026-05-17-ws-bridge-for-violating-routers.
+Phase 7 of plan ``plans/2026-05-17-web-runner-ws-bridge-plan-b.md`` routes
+the actual cv2-bound comparison through the runner WebSocket bridge via
+the ``vision.compare_screenshots`` command (a thin wrapper around
+:meth:`qontinui.vision.comparison.VisualComparator.compare`). The web
+tier no longer imports ``qontinui.vision``; it pipes image bytes +
+ignore regions over Redis pub/sub and round-trips the structured
+``ComparisonResult`` payload plus an optional diff PNG.
 """
 
 from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
-from fastapi import HTTPException, status
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -58,6 +58,7 @@ class ComparisonService(ComparisonEngine):
         self,
         db: AsyncSession,
         screenshot_id: UUID,
+        user_id: UUID,
         baseline_id: UUID | None = None,
         algorithm: str | None = None,
         threshold: float | None = None,
@@ -65,9 +66,17 @@ class ComparisonService(ComparisonEngine):
         """
         Compare a screenshot against its baseline.
 
+        Phase 7 dispatches the actual cv2-bound comparison through the
+        runner WebSocket bridge via the ``vision.compare_screenshots``
+        command. ``user_id`` is used to pick the user's connected
+        runner; without a connected runner, the helper raises an
+        ``HTTPException(503)`` with the ``no_runner_connected``
+        envelope.
+
         Args:
             db: Database session
             screenshot_id: Screenshot to compare
+            user_id: Owning user UUID (for runner selection)
             baseline_id: Optional explicit baseline ID (otherwise auto-lookup)
             algorithm: Override comparison algorithm
             threshold: Override comparison threshold
@@ -77,6 +86,10 @@ class ComparisonService(ComparisonEngine):
 
         Raises:
             ValueError: If screenshot not found
+            HTTPException(503): No connected runner for the user.
+            HTTPException(504): Runner accepted the command but did
+                not respond in time.
+            HTTPException(500): Runner returned an error envelope.
         """
         logger.info(
             "comparing_screenshot",
@@ -177,43 +190,32 @@ class ComparisonService(ComparisonEngine):
 
             return comparison_result
 
-        # Convert to numpy arrays
-        baseline_img = self._bytes_to_numpy(baseline_bytes)
-        screenshot_img = self._bytes_to_numpy(screenshot_bytes)
+        # Dispatch the actual comparison to the runner via the WS bridge.
+        # The helper raises HTTPException for runner-unavailable / timeout /
+        # runner-error cases; FastAPI propagates those to the caller.
+        # Soft per-image failures (e.g. unsupported decode format) surface
+        # as ``response.result.error`` and are persisted as
+        # VisualComparisonStatus.FAILED rows below.
+        response, diff_bytes = await self._dispatch_compare(
+            db=db,
+            user_id=user_id,
+            baseline_bytes=baseline_bytes,
+            current_bytes=screenshot_bytes,
+            algorithm=comp_algorithm,
+            threshold=comp_threshold,
+            ignore_regions=ignore_regions,
+            generate_diff_image=True,
+        )
 
-        # Apply ignore regions if any
-        if ignore_regions:
-            # DEFERRED: ws-bridge — qontinui.vision.comparison no longer lives
-            # in the web image (plan-2026-05-17-web-image-slim). Surface a
-            # structured 503 BEFORE the import would ImportError.
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail={
-                    "error": "endpoint_requires_runner_bridge",
-                    "message": (
-                        "This endpoint depends on qontinui runtime functionality that lives on "
-                        "the runner. The web - runner WebSocket bridge for this functionality is "
-                        "not yet implemented. See architectural-decisions.md "
-                        "'Web - runner WebSocket boundary'."
-                    ),
-                    "runner_module": "qontinui.vision.comparison",
-                    "endpoint": "comparison_service.compare_screenshot (ignore_regions path)",
-                    "tracking": "plan-2026-05-17-ws-bridge-for-violating-routers (TBD)",
-                },
-            )
+        comp_payload = response.result
 
-        # Run comparison
-        try:
-            comp_result = self.comparator.compare(
-                baseline=baseline_img,
-                screenshot=screenshot_img,
-                algorithm=comp_algorithm,
-                threshold=comp_threshold,
-            )
-        except Exception as e:
+        if comp_payload.error:
+            # Runtime-level qontinui soft error (e.g. scikit-image not
+            # installed on the runner). Persist a FAILED row so the
+            # caller can surface diagnostics without losing context.
             logger.error(
                 "comparison_failed",
-                error=str(e),
+                error=comp_payload.error,
             )
             comparison_result = VisualComparisonResult(
                 test_run_id=test_run.id,
@@ -226,8 +228,8 @@ class ComparisonService(ComparisonEngine):
                 threshold_used=comp_threshold,
                 status=VisualComparisonStatus.FAILED,
                 diff_regions=[],
-                execution_time_ms=0,
-                error_message=f"Comparison failed: {str(e)}",
+                execution_time_ms=comp_payload.execution_time_ms,
+                error_message=f"Comparison failed: {comp_payload.error}",
             )
 
             db.add(comparison_result)
@@ -237,27 +239,23 @@ class ComparisonService(ComparisonEngine):
             return comparison_result
 
         # Determine status. Local var renamed to avoid shadowing fastapi
-        # `status` (imported above for the 503 short-circuit's
-        # status.HTTP_503_SERVICE_UNAVAILABLE) — mypy flags shadowed binding
-        # as used-before-def.
-        if comp_result.passed:
+        # ``status`` symbol that downstream code paths may still import.
+        if comp_payload.passed:
             comparison_status = VisualComparisonStatus.PASSED
         else:
             comparison_status = VisualComparisonStatus.PENDING_REVIEW
 
-        # Generate and upload diff image if there are differences
-        diff_image_path = None
-        if not comp_result.passed and comp_result.diff_mask is not None:
+        # Upload diff image if the runner returned one (only populated
+        # on failed comparisons with generate_diff_image=True).
+        diff_image_path: str | None = None
+        if not comp_payload.passed and diff_bytes is not None:
             try:
-                diff_png = self.comparator.generate_diff_image(
-                    baseline_img, screenshot_img, comp_result.diff_mask
-                )
                 diff_image_path = await self._upload_diff_image(
-                    test_run.id, screenshot_id, diff_png
+                    test_run.id, screenshot_id, diff_bytes
                 )
             except Exception as e:
                 logger.warning(
-                    "diff_image_generation_failed",
+                    "diff_image_upload_failed",
                     error=str(e),
                 )
 
@@ -269,12 +267,12 @@ class ComparisonService(ComparisonEngine):
             transition_execution_id=screenshot.transition_execution_id,
             state_name=screenshot.state_name,
             comparison_algorithm=comp_algorithm,
-            similarity_score=comp_result.similarity_score,
+            similarity_score=comp_payload.similarity_score,
             threshold_used=comp_threshold,
             status=comparison_status,
             diff_image_path=diff_image_path,
-            diff_regions=[r.to_dict() for r in comp_result.diff_regions],
-            execution_time_ms=comp_result.execution_time_ms,
+            diff_regions=comp_payload.diff_regions,
+            execution_time_ms=comp_payload.execution_time_ms,
         )
 
         db.add(comparison_result)
@@ -285,7 +283,7 @@ class ComparisonService(ComparisonEngine):
             "comparison_completed",
             comparison_id=str(comparison_result.id),
             status=comparison_status.value,
-            similarity_score=comp_result.similarity_score,
+            similarity_score=comp_payload.similarity_score,
             threshold=comp_threshold,
         )
 
@@ -295,6 +293,7 @@ class ComparisonService(ComparisonEngine):
         self,
         db: AsyncSession,
         test_run_id: UUID,
+        user_id: UUID,
         state_filter: str | None = None,
     ) -> list[VisualComparisonResult]:
         """
@@ -303,6 +302,8 @@ class ComparisonService(ComparisonEngine):
         Args:
             db: Database session
             test_run_id: Test run ID
+            user_id: Owning user UUID (forwarded to each per-screenshot
+                ``compare_screenshot`` call for runner selection)
             state_filter: Optional state name filter
 
         Returns:
@@ -329,7 +330,9 @@ class ComparisonService(ComparisonEngine):
         results = []
         for screenshot in screenshots:
             try:
-                comparison_result = await self.compare_screenshot(db, screenshot.id)
+                comparison_result = await self.compare_screenshot(
+                    db, screenshot.id, user_id=user_id
+                )
                 results.append(comparison_result)
             except Exception as e:
                 logger.error(

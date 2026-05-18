@@ -195,6 +195,7 @@ async def compare_screenshot(
         comparison = await visual_comparison_service.compare_screenshot(
             db=db,
             screenshot_id=screenshot_id,
+            user_id=current_user.id,
             baseline_id=request.baseline_id if request else None,
             algorithm=request.algorithm if request else None,
             threshold=request.threshold if request else None,
@@ -230,6 +231,7 @@ async def compare_test_run(
         comparisons = await visual_comparison_service.compare_test_run(
             db=db,
             test_run_id=run_id,
+            user_id=current_user.id,
             state_filter=request.state_filter if request else None,
         )
 

@@ -84,8 +84,10 @@ class BaselineCreation(BaselineImageProcessing):
             # Get image bytes from storage
             image_bytes = await self._download_image(screenshot.storage_path)
 
-            # Compute perceptual hash
-            perceptual_hash = await self._compute_perceptual_hash(image_bytes)
+            # Compute perceptual hash via the runner WS bridge (Phase 7).
+            perceptual_hash = await self._compute_perceptual_hash(
+                image_bytes, db=db, user_id=user_id
+            )
 
             # Create thumbnail and upload
             thumbnail_bytes = await self._create_thumbnail(image_bytes)
@@ -208,8 +210,10 @@ class BaselineCreation(BaselineImageProcessing):
         # Get next version
         version = await self._get_next_version(db, project_id, state_name, workflow_id)
 
-        # Compute perceptual hash
-        perceptual_hash = await self._compute_perceptual_hash(image_bytes)
+        # Compute perceptual hash via the runner WS bridge (Phase 7).
+        perceptual_hash = await self._compute_perceptual_hash(
+            image_bytes, db=db, user_id=user_id
+        )
 
         # Create thumbnail
         thumbnail_bytes = await self._create_thumbnail(image_bytes)
