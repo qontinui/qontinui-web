@@ -252,6 +252,7 @@ async def upload_screenshot(
             image_data=image_data,
             original_filename=image.filename,
             content_type=image.content_type,
+            user_id=user.id,
         )
 
         return ScreenshotUploadResponse(**result)
