@@ -343,7 +343,9 @@ async def merge_recording(
     # config the user can't see.)
     config_row = (
         await db.execute(
-            select(UIBridgeStateConfig).where(UIBridgeStateConfig.id == request.config_id)
+            select(UIBridgeStateConfig).where(
+                UIBridgeStateConfig.id == request.config_id
+            )
         )
     ).scalar_one_or_none()
     if config_row is None:
@@ -353,19 +355,27 @@ async def merge_recording(
         )
 
     existing_states = (
-        await db.execute(
-            select(UIBridgeStateModel).where(
-                UIBridgeStateModel.config_id == request.config_id
+        (
+            await db.execute(
+                select(UIBridgeStateModel).where(
+                    UIBridgeStateModel.config_id == request.config_id
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     existing_transitions = (
-        await db.execute(
-            select(UIBridgeTransitionModel).where(
-                UIBridgeTransitionModel.config_id == request.config_id
+        (
+            await db.execute(
+                select(UIBridgeTransitionModel).where(
+                    UIBridgeTransitionModel.config_id == request.config_id
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     runner, manager = await _resolve_runner(
         current_user=current_user, db=db, endpoint=_MERGE_ENDPOINT
@@ -511,7 +521,9 @@ def _transition_row_to_wire(row: Any) -> dict[str, Any]:
         "activate_groups": list(extra.get("activate_groups", [])),
         "exit_groups": list(extra.get("exit_groups", [])),
         "path_cost": float(row.path_cost) if row.path_cost is not None else 1.0,
-        "stays_visible": bool(row.stays_visible) if row.stays_visible is not None else False,
+        "stays_visible": bool(row.stays_visible)
+        if row.stays_visible is not None
+        else False,
         "metadata": extra,
     }
 

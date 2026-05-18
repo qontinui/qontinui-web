@@ -215,7 +215,9 @@ async def _subscribe_and_persist(
             run_id=run_id,
             error_payload={
                 "error": response.get("error", "unknown_runner_response"),
-                "message": response.get("message", "runner returned an unexpected envelope"),
+                "message": response.get(
+                    "message", "runner returned an unexpected envelope"
+                ),
                 "traceback": response.get("traceback"),
             },
         )
@@ -224,7 +226,8 @@ async def _subscribe_and_persist(
     if response_status == "failed":
         await _record_failure(
             run_id=run_id,
-            error_payload=response.get("error") or {
+            error_payload=response.get("error")
+            or {
                 "error": "qontinui_exception",
                 "message": "runner reported failure with no error payload",
                 "traceback": None,
@@ -401,22 +404,30 @@ async def _apply_merge_to_pg(
     )
 
     existing_states = (
-        await session.execute(
-            select(UIBridgeStateModel).where(
-                UIBridgeStateModel.config_id == config_id
+        (
+            await session.execute(
+                select(UIBridgeStateModel).where(
+                    UIBridgeStateModel.config_id == config_id
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     for row in existing_states:
         await session.delete(row)
 
     existing_transitions = (
-        await session.execute(
-            select(UIBridgeTransitionModel).where(
-                UIBridgeTransitionModel.config_id == config_id
+        (
+            await session.execute(
+                select(UIBridgeTransitionModel).where(
+                    UIBridgeTransitionModel.config_id == config_id
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     for row in existing_transitions:
         await session.delete(row)
 
@@ -513,12 +524,16 @@ async def recover_running_runs_on_boot() -> None:
         # logged; future iterations may re-subscribe them. For now they
         # are left as-is — they'll expire on the next boot sweep.
         survivors = (
-            await session.execute(
-                select(RecordingPipelineRun.run_id).where(
-                    RecordingPipelineRun.status.in_(["queued", "running"]),
+            (
+                await session.execute(
+                    select(RecordingPipelineRun.run_id).where(
+                        RecordingPipelineRun.status.in_(["queued", "running"]),
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         if survivors:
             logger.warning(
                 "recording_pipeline_unsubscribed_survivors",

@@ -72,9 +72,7 @@ class RecordingPipelineRun(Base):
     command_type: Mapped[str] = mapped_column(
         String(),
         nullable=False,
-        comment=(
-            "One of recording_pipeline.process / .process_with_playbook / .merge"
-        ),
+        comment=("One of recording_pipeline.process / .process_with_playbook / .merge"),
     )
     status: Mapped[str] = mapped_column(
         String(),
