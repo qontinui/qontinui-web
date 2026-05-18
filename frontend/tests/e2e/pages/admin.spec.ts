@@ -175,6 +175,95 @@ test.describe("Admin - Dataset Detail (non-existent)", () => {
   });
 });
 
+test.describe("Admin - Agent Claims", () => {
+  // Plan `2026-05-18-agent-spawn-coordination.md` Phase 5. The page
+  // backs the `/admin/agent-claims` route and renders four sections —
+  // active claims, recent conflicts, recent steals, stale-claim alerts.
+  // Smoke-only: superuser-gated like other admin pages, so non-admin
+  // users redirect away.
+
+  test("should load agent-claims page without errors", async ({ page }) => {
+    await page.goto("/admin/agent-claims");
+    await page.waitForLoadState("domcontentloaded");
+
+    await page.screenshot({
+      path: "test-results/admin-agent-claims.png",
+      fullPage: true,
+    });
+
+    const pageContent = await page.content();
+    expect(pageContent).not.toContain("Internal Server Error");
+  });
+
+  test("should render heading or redirect non-admin", async ({ page }) => {
+    await page.goto("/admin/agent-claims");
+    await page.waitForLoadState("domcontentloaded");
+    await page.waitForTimeout(2000);
+
+    const hasAgentClaimsHeading =
+      (await page
+        .getByRole("heading", { name: "Agent claims", exact: true })
+        .count()) > 0;
+    const wasRedirected =
+      page.url().includes("/build/workflows") ||
+      (page.url().includes("/dashboard") && !page.url().includes("/admin"));
+
+    expect(hasAgentClaimsHeading || wasRedirected).toBeTruthy();
+  });
+
+  test("should render four dashboard sections for superusers", async ({
+    page,
+  }) => {
+    await page.goto("/admin/agent-claims");
+    await page.waitForLoadState("domcontentloaded");
+    await page.waitForTimeout(2500);
+
+    const hasAgentClaimsHeading =
+      (await page
+        .getByRole("heading", { name: "Agent claims", exact: true })
+        .count()) > 0;
+
+    if (hasAgentClaimsHeading) {
+      // The dashboard wrapper exists.
+      await expect(
+        page.getByTestId("agent-claims-dashboard")
+      ).toBeVisible();
+
+      // All four section cards render — they don't depend on coord
+      // data being present (each shows an empty-state message when
+      // the proxy returns no data).
+      await expect(
+        page.getByTestId("claims-active-section")
+      ).toBeVisible();
+      await expect(
+        page.getByTestId("claims-conflicts-section")
+      ).toBeVisible();
+      await expect(
+        page.getByTestId("claims-steals-section")
+      ).toBeVisible();
+      await expect(
+        page.getByTestId("claims-alerts-section")
+      ).toBeVisible();
+    }
+  });
+
+  test("should have navigation back to admin", async ({ page }) => {
+    await page.goto("/admin/agent-claims");
+    await page.waitForLoadState("domcontentloaded");
+    await page.waitForTimeout(2000);
+
+    const hasAgentClaimsHeading =
+      (await page
+        .getByRole("heading", { name: "Agent claims", exact: true })
+        .count()) > 0;
+
+    if (hasAgentClaimsHeading) {
+      const adminBreadcrumb = page.getByTestId("admin-agent-claims-back-btn");
+      await expect(adminBreadcrumb).toBeVisible();
+    }
+  });
+});
+
 test.describe("Admin - Region Analysis", () => {
   test("should load region analysis page without errors", async ({ page }) => {
     await page.goto("/admin/region-analysis");
