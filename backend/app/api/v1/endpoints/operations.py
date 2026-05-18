@@ -190,9 +190,7 @@ async def remove_runner(
 # Per plans/2026-05-18-coordination-layer-demos.md §5.2.1.
 
 
-async def _proxy_coord_get(
-    path: str, *, params: dict[str, Any] | None = None
-) -> Any:
+async def _proxy_coord_get(path: str, *, params: dict[str, Any] | None = None) -> Any:
     """Proxy a GET request to coord and return the JSON body.
 
     ``params`` is forwarded as the query string when set — the merge
@@ -315,9 +313,7 @@ async def get_recent_conflicts(
     params: dict[str, Any] = {}
     if limit is not None:
         params["limit"] = limit
-    return await _proxy_coord_get(
-        "/coord/claims/recent-conflicts", params=params
-    )
+    return await _proxy_coord_get("/coord/claims/recent-conflicts", params=params)
 
 
 @router.get("/claims/recent-expirations")
@@ -329,9 +325,7 @@ async def get_recent_expirations(
     params: dict[str, Any] = {}
     if limit is not None:
         params["limit"] = limit
-    return await _proxy_coord_get(
-        "/coord/claims/recent-expirations", params=params
-    )
+    return await _proxy_coord_get("/coord/claims/recent-expirations", params=params)
 
 
 @router.get("/claims/steals")
@@ -373,7 +367,8 @@ async def get_claims_alerts(
     else:
         return payload
     filtered = [
-        a for a in rows
+        a
+        for a in rows
         if isinstance(a, dict) and str(a.get("alert_key", "")).startswith("claim-")
     ]
     if is_dict:

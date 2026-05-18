@@ -111,9 +111,7 @@ class TestGetClaimsList:
     def test_coord_400_passed_through(self, auth_client: TestClient):
         # coord returns 400 for an unrecognized kind; that should
         # surface as 400 here (proxy preserves status code).
-        mock_resp = _mock_response(
-            status_code=400, text='{"error": "invalid kind"}'
-        )
+        mock_resp = _mock_response(status_code=400, text='{"error": "invalid kind"}')
         with _patch_httpx() as MockClient:
             instance = AsyncMock()
             instance.get.return_value = mock_resp
@@ -156,9 +154,7 @@ class TestRecentConflicts:
             instance = AsyncMock()
             instance.get.return_value = mock_resp
             _configure_mock_client(MockClient, instance)
-            resp = auth_client.get(
-                f"{API_PREFIX}/claims/recent-conflicts?limit=25"
-            )
+            resp = auth_client.get(f"{API_PREFIX}/claims/recent-conflicts?limit=25")
         assert resp.status_code == 200
         called_params = instance.get.call_args.kwargs.get("params", {})
         assert called_params.get("limit") == 25
