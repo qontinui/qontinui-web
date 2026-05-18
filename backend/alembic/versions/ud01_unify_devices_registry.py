@@ -73,8 +73,10 @@ delete-doesn't-cascade alerts):
 
 And one cross-schema rename + table relocation:
 
-* ``auth.runner_sessions``                → ``coord.device_sessions``
+* ``auth.runner_sessions``                → ``coord.device_connections``
   (preserves the CASCADE FK; column ``runner_id`` → ``device_id``).
+  Name resolved per operator decision 2026-05-18 (plan §3.2 Path α);
+  avoids the ``auth.device_sessions`` Python-class collision.
 
 Multi-head note
 ===============
@@ -696,17 +698,26 @@ def upgrade() -> None:
     )
 
     # ------------------------------------------------------------------
-    # Step 7 — relocate auth.runner_sessions → coord.device_sessions
+    # Step 7 — relocate auth.runner_sessions → coord.device_connections
     # ------------------------------------------------------------------
     # Per plan: SCHEMA move + column rename. FK CASCADE preserved by
     # ALTER COLUMN RENAME + explicit FK swap to coord.devices.
     #
-    # Name-collision note: ``auth.device_sessions`` already exists for
-    # user-device fingerprinting (login detection, distinct domain).
-    # The TABLE rename is safe under schema qualification
-    # (``coord.device_sessions`` ≠ ``auth.device_sessions``). The Python
-    # class/file name collision is resolved by Phase 5
-    # (per plan "Vet-pass findings — UNRESOLVED" subsection).
+    # Name decision (operator-arbitrated 2026-05-18, plan §3.2 Path α):
+    # the renamed table lands as ``coord.device_connections`` (NOT
+    # ``coord.device_sessions``) for two reasons:
+    #
+    # 1. **Semantic accuracy.** The rows track WebSocket connection
+    #    lifecycle (``ws_connected_at`` → disconnect events), not
+    #    application sessions. "Connection" is the more accurate noun.
+    #
+    # 2. **Python collision avoidance.** ``auth.device_sessions``
+    #    already exists for user-device fingerprinting (login detection,
+    #    distinct domain). While the TABLE rename is safe under schema
+    #    qualification, the Python class/file name ``DeviceSession`` /
+    #    ``device_session.py`` would collide. The operator's "clean
+    #    code" priority favored a distinct name (``DeviceConnection`` /
+    #    ``device_connection.py``) over the schema-only hack.
     op.execute(
         "ALTER TABLE auth.runner_sessions "
         "RENAME COLUMN runner_id TO device_id"
@@ -719,11 +730,11 @@ def upgrade() -> None:
         "ALTER TABLE auth.runner_sessions SET SCHEMA coord"
     )
     op.execute(
-        "ALTER TABLE coord.runner_sessions RENAME TO device_sessions"
+        "ALTER TABLE coord.runner_sessions RENAME TO device_connections"
     )
     op.create_foreign_key(
-        "device_sessions_device_id_fkey",
-        "device_sessions",
+        "device_connections_device_id_fkey",
+        "device_connections",
         "devices",
         ["device_id"],
         ["device_id"],
