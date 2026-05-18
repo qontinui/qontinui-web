@@ -76,8 +76,23 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pytest pytest-cov pytest-asyncio
+          # All non-path runtime deps are already pinned in requirements.txt;
+          # path-deps (qontinui-schemas, qontinui-cloud-control) are installed
+          # editable below. Together this satisfies every dep backend's
+          # pyproject declares.
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          if [ -f pyproject.toml ]; then pip install -e .; fi
+          # Force fresh editable install of qontinui-schemas before backend itself.
+          # Without this, `pip install -e .` resolves the schemas path-dep against
+          # pip's wheel cache (actions/cache@v3 above) and DOWNGRADES schemas to
+          # whichever version was cached (e.g., 0.2.1) even though the cloned
+          # ../../qontinui-schemas is at HEAD (0.4.0). Surfaces as
+          # `ModuleNotFoundError: No module named 'qontinui_schemas.commands'`
+          # whenever schemas ships a new sub-package.
+          pip install --no-cache-dir -e ../../qontinui-schemas
+          # `--no-deps` is critical: it prevents `pip install -e .` from
+          # re-resolving (and downgrading) the editable schemas we just
+          # installed. All backend deps are already satisfied above.
+          if [ -f pyproject.toml ]; then pip install -e . --no-deps; fi
           pip install -e ../../qontinui-cloud-control
 
       - name: Run backend E2E tests
