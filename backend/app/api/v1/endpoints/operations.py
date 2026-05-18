@@ -226,3 +226,42 @@ async def get_merge_proposal(
 ) -> Any:
     """Return a single merge proposal's detail from coord."""
     return await _proxy_coord_get(f"/merge/{proposal_id}")
+
+
+async def _proxy_coord_post(path: str, body: Any) -> Any:
+    """Proxy a POST request to coord and return the JSON body."""
+    url = f"{settings.COORD_URL}{path}"
+    async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
+        try:
+            resp = await client.post(url, json=body)
+        except httpx.ConnectError:
+            raise HTTPException(
+                status_code=502,
+                detail="coord is not reachable",
+            )
+        except httpx.TimeoutException:
+            raise HTTPException(
+                status_code=504,
+                detail="timeout waiting for coord",
+            )
+    if resp.status_code >= 400:
+        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+    return resp.json()
+
+
+@router.post("/agents/allocate")
+async def post_agents_allocate(
+    body: dict[str, Any],
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> Any:
+    """Proxy `POST /agents/allocate` to coord.
+
+    Used by the demo-control page (§5.2.3 of the coordination-layer
+    demo plan) to spawn agents on PC + MSI with one click. Body
+    shape matches coord's `AllocateRequest` (machine_id, repos,
+    optional intent). Coord's response — including the agent's JWT
+    — passes through; the operator's browser doesn't consume the
+    JWT itself, but the receiving runner picks up the allocation
+    via the `events.agent.allocated` event coord fans out.
+    """
+    return await _proxy_coord_post("/agents/allocate", body)
