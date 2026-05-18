@@ -1,7 +1,7 @@
-"""wave 8 03 drop recreated auth.runner_tokens table
+"""ud02 drop recreated auth.runner_tokens table
 
-Revision ID: wave_8_03_drop_runner_tokens
-Revises: wave_8_02_unify_devices
+Revision ID: ud02_drop_runner_tokens
+Revises: ud01_unify_devices_registry
 Create Date: 2026-05-18
 
 Phase 5 of plan
@@ -16,6 +16,11 @@ recreated model alongside the token-mint endpoints (token issuance is
 now coord's responsibility via ``POST /coord/devices/pair-complete``),
 so the underlying table must go as well.
 
+Chained off ``ud01_unify_devices_registry`` (PR #144's canonical
+Phase 1 revision) per operator decision 2026-05-18 (plan §3.5).
+Earlier draft chained off ``wave_8_02_unify_devices`` (this session's
+discarded Phase 1 attempt); rebased here for cutover alignment.
+
 Operator priority: no backward-compat (flag-day rollout); ``downgrade``
 is irreversible.
 """
@@ -27,8 +32,8 @@ from alembic import op
 
 
 # revision identifiers, used by Alembic.
-revision: str = "wave_8_03_drop_runner_tokens"
-down_revision: Union[str, None] = "wave_8_02_unify_devices"
+revision: str = "ud02_drop_runner_tokens"
+down_revision: Union[str, None] = "ud01_unify_devices_registry"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
