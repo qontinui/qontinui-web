@@ -117,14 +117,11 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     automation_sessions = relationship(
         "AutomationSession", back_populates="user", cascade="all, delete-orphan"
     )
-    runner_sessions = relationship(
-        "RunnerSession", back_populates="user", cascade="all, delete-orphan"
+    device_connections = relationship(
+        "DeviceConnection", back_populates="user", cascade="all, delete-orphan"
     )
-    runner_tokens = relationship(
-        "RunnerToken", back_populates="user", cascade="all, delete-orphan"
-    )
-    runners = relationship(
-        "Runner", back_populates="user", cascade="all, delete-orphan"
+    devices = relationship(
+        "Device", back_populates="user", passive_deletes=True
     )
     project_versions = relationship(
         "ProjectVersion", back_populates="created_by_user", cascade="all, delete-orphan"

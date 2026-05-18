@@ -12,7 +12,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_runner_user_from_token
+from app.api.deps import get_authenticated_device_user
 from app.models.user import User
 from app.services.deficiency_management_service import (
     DeficiencyManagementService,
@@ -49,9 +49,14 @@ def get_deficiency_service() -> DeficiencyManagementService:
 async def get_runner_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> User:
-    """Validate runner bearer token and return the associated user."""
-    user, _runner_token = await get_runner_user_from_token(credentials.credentials)
-    return user
+    """Validate device-token JWT and return the owning user.
+
+    Phase 5 of the Unified Devices Registry plan
+    (``D:/qontinui-root/plans/2026-05-18-unified-devices-registry.md``)
+    replaced the runner-bearer-token path with coord-issued device-JWTs
+    verified locally via :mod:`app.services.coord_jwks`.
+    """
+    return await get_authenticated_device_user(credentials)
 
 
 # ============================================================================

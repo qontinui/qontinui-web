@@ -41,6 +41,8 @@ from app.api.v1.endpoints import (
     constraints,
     custom_functions,
     device_bridge_ws,
+    devices,
+    devices_ws,
     discoveries,
     element_annotations,
     error_monitor,
@@ -84,8 +86,6 @@ from app.api.v1.endpoints import (
     runner_status_ws,
     runner_terminal_ws,
     runner_wake,
-    runners,
-    runners_ws,
     runs_drift,
     scheduled_runs,
     screenshots,
@@ -169,18 +169,22 @@ api_router.include_router(
     state_discovery.router, prefix="/state-discovery", tags=["state-discovery"]
 )
 api_router.include_router(videos.router, prefix="/videos", tags=["videos"])
-api_router.include_router(runners.router, prefix="/runners", tags=["runners"])
-# Unified runner-side WebSocket (Phase 2B) — runner-token bearer auth.
+# Unified devices registry — Phase 5 of plan
+# ``D:/qontinui-root/plans/2026-05-18-unified-devices-registry.md`` retired
+# ``/api/v1/runners/*`` (rename, no deprecation alias) in favour of
+# ``/api/v1/devices/*``.
+api_router.include_router(devices.router, prefix="/devices", tags=["devices"])
+# Unified device-side WebSocket — coord-issued device-token JWT auth.
 api_router.include_router(
-    runners_ws.router, prefix="/runners", tags=["runners-websocket"]
+    devices_ws.router, prefix="/devices", tags=["devices-websocket"]
 )
-# Wake an offline runner from the web (Phase F.2 of scheduler reliability plan)
-api_router.include_router(runner_wake.router, prefix="/runner", tags=["runner-wake"])
+# Wake an offline device from the web (Phase F.2 of scheduler reliability plan)
+api_router.include_router(runner_wake.router, prefix="/device", tags=["device-wake"])
 # Operations — fleet aggregation + cross-machine Claude session monitoring.
 api_router.include_router(operations.router, prefix="/operations", tags=["operations"])
-# Runner process logs proxy — read persisted process logs from runner's PG DB
+# Device process logs proxy — read persisted process logs from the device's PG DB
 api_router.include_router(
-    runner_logs.router, prefix="/runner-logs", tags=["runner-logs"]
+    runner_logs.router, prefix="/device-logs", tags=["device-logs"]
 )
 api_router.include_router(versions.router, prefix="/projects", tags=["versions"])
 api_router.include_router(
@@ -212,19 +216,19 @@ api_router.include_router(
 )
 api_router.include_router(extraction.router, tags=["extraction"])
 api_router.include_router(
-    runner_command_ws.router, prefix="/runners", tags=["runner-command-websockets"]
+    runner_command_ws.router, prefix="/devices", tags=["device-command-websockets"]
 )
 api_router.include_router(
-    runner_chat_ws.router, prefix="/runners", tags=["runner-chat-websockets"]
+    runner_chat_ws.router, prefix="/devices", tags=["device-chat-websockets"]
 )
 api_router.include_router(
     runner_terminal_ws.router,
-    prefix="/runners",
-    tags=["runner-terminal-websockets"],
+    prefix="/devices",
+    tags=["device-terminal-websockets"],
 )
-api_router.include_router(runner_chat.router, prefix="/runners", tags=["runner-chat"])
+api_router.include_router(runner_chat.router, prefix="/devices", tags=["device-chat"])
 api_router.include_router(chat_sessions.router, tags=["chat-sessions"])
-api_router.include_router(runner_status_ws.router, tags=["runner-status-websockets"])
+api_router.include_router(runner_status_ws.router, tags=["device-status-websockets"])
 api_router.include_router(rag_builder.router, prefix="/rag", tags=["rag-builder"])
 api_router.include_router(
     rag_dashboard.router, prefix="/projects", tags=["rag-dashboard"]

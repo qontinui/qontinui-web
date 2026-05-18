@@ -16,7 +16,7 @@ from sqlalchemy import select
 from app.api.deps import get_current_user_from_ws
 from app.config.redis_config import get_redis
 from app.db.session import AsyncSessionLocal
-from app.models.runner import Runner
+from app.models.device import Device
 from app.models.user import User
 from app.services.runner_websocket_manager import get_runner_websocket_manager
 
@@ -68,8 +68,8 @@ async def websocket_runner_chat_endpoint(
             return
 
         async with AsyncSessionLocal() as db:
-            query = select(Runner).where(
-                Runner.id == runner_id, Runner.user_id == user.id
+            query = select(Device).where(
+                Device.device_id == runner_id, Device.user_id == user.id
             )
             result = await db.execute(query)
             runner = result.scalar_one_or_none()

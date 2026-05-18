@@ -46,6 +46,8 @@ from app.models.collaboration import (
 from app.models.coverage_snapshot import CoverageSnapshot
 from app.models.custom_function import CustomFunction
 from app.models.detected_issue import DetectedIssue
+from app.models.device import Device
+from app.models.device_connection import DeviceConnection
 from app.models.device_session import DeviceSession
 from app.models.discovered_state import DiscoveredState
 from app.models.discovery import Discovery
@@ -114,9 +116,6 @@ from app.models.render_log import (
     RenderLogMutationType,
     RenderLogTrigger,
 )
-from app.models.runner import Runner
-from app.models.runner_session import RunnerSession
-from app.models.runner_token import RunnerToken
 from app.models.scheduled_workflow_run import ScheduledWorkflowRun
 from app.models.screenshot_input_association import ScreenshotInputAssociation
 from app.models.session_activity import SessionActivity
@@ -307,11 +306,10 @@ __all__ = [
     "SnapshotAction",
     "SnapshotPattern",
     "SnapshotMatch",
-    # Runner Sessions (audit log of WS connections)
-    "RunnerSession",
-    # Runner Fleet Registry
-    "Runner",
-    "RunnerToken",
+    # Device connections (audit log of WS connections)
+    "DeviceConnection",
+    # Unified device registry (coord.devices)
+    "Device",
     # Scheduled Workflow Runs (cron-driven dispatch — Phase 3D)
     "ScheduledWorkflowRun",
     # Phase Results (server-mode runner phase-completion records)

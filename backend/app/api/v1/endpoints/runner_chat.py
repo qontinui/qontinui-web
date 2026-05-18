@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.config.redis_config import get_redis
-from app.models.runner import Runner
+from app.models.device import Device
 from app.models.user import User as UserModel
 from app.services.runner_websocket_manager import get_runner_websocket_manager
 
@@ -44,9 +44,11 @@ async def _verify_runner_ownership(
     runner_id: UUID,
     user: UserModel,
     db: AsyncSession,
-) -> Runner:
-    """Verify the runner exists and belongs to the user."""
-    query = select(Runner).where(Runner.id == runner_id, Runner.user_id == user.id)
+) -> Device:
+    """Verify the device exists and belongs to the user."""
+    query = select(Device).where(
+        Device.device_id == runner_id, Device.user_id == user.id
+    )
     result = await db.execute(query)
     runner = result.scalar_one_or_none()
 

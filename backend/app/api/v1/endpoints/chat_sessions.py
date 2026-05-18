@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import current_active_user, get_db
 from app.config.redis_config import get_redis
-from app.models.runner import Runner
+from app.models.device import Device
 from app.models.user import User
 from app.services.runner_websocket_manager import get_runner_websocket_manager
 
@@ -27,24 +27,24 @@ async def list_chat_sessions(
     current_user: User = Depends(current_active_user),
 ):
     """List chat sessions from connected runners."""
-    # Pick the first WS-connected runner owned by this user.
-    query = select(Runner).where(
-        Runner.user_id == current_user.id,
-        Runner.ws_session_id.is_not(None),
+    # Pick the first WS-connected device owned by this user.
+    query = select(Device).where(
+        Device.user_id == current_user.id,
+        Device.ws_session_id.is_not(None),
     )
     result = await db.execute(query)
-    runner = result.scalars().first()
+    device = result.scalars().first()
 
-    if not runner:
+    if not device:
         return {"sessions": [], "runner_connected": False}
 
     redis_client = await get_redis()
     manager = await get_runner_websocket_manager(redis_client)
 
-    if not manager.is_connected(runner.id):
+    if not manager.is_connected(device.device_id):
         return {"sessions": [], "runner_connected": False}
 
-    sent = await manager.send_chat(runner.id, {"type": "chat_list_running"})
+    sent = await manager.send_chat(device.device_id, {"type": "chat_list_running"})
     if not sent:
         return {
             "sessions": [],
