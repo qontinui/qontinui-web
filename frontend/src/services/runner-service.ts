@@ -8,7 +8,7 @@ import type {
 import { HttpClient } from "./http-client";
 
 /**
- * RunnerService — wraps the unified `/api/v1/runners` endpoint surface.
+ * RunnerService — wraps the unified `/api/v1/devices` endpoint surface.
  *
  * Backed by the canonical {@link Runner} entity. Replaces the legacy
  * connection-tracking flow that hit `/runners/connections/*`.

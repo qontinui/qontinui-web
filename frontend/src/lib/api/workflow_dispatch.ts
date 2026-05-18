@@ -2,7 +2,7 @@
  * Workflow Dispatch API
  *
  * Dispatches a workflow to a specific runner. Backed by the unified
- * `POST /api/v1/runners/{runner_id}/dispatch` endpoint (Phase 2 of the
+ * `POST /api/v1/devices/{runner_id}/dispatch` endpoint (Phase 2 of the
  * unified-runner architecture). Returns the execution_id so the caller
  * can follow along in the run detail view.
  */
@@ -38,7 +38,7 @@ export async function dispatchWorkflow(
   runnerId: string,
   data: DispatchRequest
 ): Promise<DispatchResponse> {
-  const response = await fetch(`/api/v1/runners/${runnerId}/dispatch`, {
+  const response = await fetch(`/api/v1/devices/${runnerId}/dispatch`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",

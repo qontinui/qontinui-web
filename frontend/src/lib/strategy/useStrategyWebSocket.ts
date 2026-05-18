@@ -12,7 +12,7 @@
  *   emitter, sub-components in the same route subtree share the
  *   wire.
  *
- * Coord URL resolution mirrors `MachineStatusTile.tsx:18` —
+ * Coord URL resolution mirrors `DeviceStatusTile.tsx:18` —
  * `NEXT_PUBLIC_COORD_WS_URL` envvar with a `ws://localhost:9870/ws`
  * fallback for local dev. The coord `/ws` route is anonymous (see
  * `qontinui-coord/src/routes.rs:138`) so no token is needed; the
@@ -33,7 +33,7 @@
 
 import { useEffect, useRef } from "react";
 
-/** Coord WebSocket URL. `MachineStatusTile.tsx` uses the same env. */
+/** Coord WebSocket URL. `DeviceStatusTile.tsx` uses the same env. */
 export const COORD_WS_URL =
   process.env.NEXT_PUBLIC_COORD_WS_URL || "ws://localhost:9870/ws";
 

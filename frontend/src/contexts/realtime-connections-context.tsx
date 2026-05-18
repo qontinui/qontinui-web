@@ -23,7 +23,7 @@ const log = createLogger("RealtimeConnections");
 interface RealtimeConnectionsContextValue {
   /**
    * Runners that are reachable right now — derivedStatus is one of
-   * `healthy`, `degraded`, or `starting`. Backed by `GET /api/v1/runners`
+   * `healthy`, `degraded`, or `starting`. Backed by `GET /api/v1/devices`
    * (status filter) plus the `/runners/status` WebSocket push channel.
    */
   runners: Runner[];
@@ -178,11 +178,11 @@ export function RealtimeConnectionsProvider({
       return;
     }
 
-    // Build WebSocket URL — Phase 2 path: /api/v1/runners/status
+    // Build WebSocket URL — Phase 2 path: /api/v1/devices/status
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
     const wsProtocol = apiUrl.startsWith("https") ? "wss" : "ws";
     const apiHost = apiUrl.replace(/^https?:\/\//, "");
-    const wsUrl = `${wsProtocol}://${apiHost}/api/v1/runners/status?token=${encodeURIComponent(token)}`;
+    const wsUrl = `${wsProtocol}://${apiHost}/api/v1/devices/status?token=${encodeURIComponent(token)}`;
 
     try {
       const ws = new WebSocket(wsUrl);

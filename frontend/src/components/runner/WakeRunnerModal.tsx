@@ -146,7 +146,7 @@ export function WakeRunnerModal({
           process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
         const wsProto = apiUrl.startsWith("https") ? "wss" : "ws";
         const apiHost = apiUrl.replace(/^https?:\/\//, "");
-        const wsUrl = `${wsProto}://${apiHost}/api/v1/runners/status?token=${encodeURIComponent(token)}`;
+        const wsUrl = `${wsProto}://${apiHost}/api/v1/devices/status?token=${encodeURIComponent(token)}`;
 
         ws = new WebSocket(wsUrl);
         ws.onmessage = (ev) => {

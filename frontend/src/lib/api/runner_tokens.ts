@@ -1,8 +1,12 @@
 /**
- * Runner Tokens API
+ * Device Tokens API
  *
- * Long-lived bearer tokens used by server-mode runners to authenticate
- * against the backend when they register and heartbeat.
+ * Long-lived bearer tokens used by paired devices (server-mode runners)
+ * to authenticate against the backend when they register and heartbeat.
+ *
+ * Phase 6 of the unified-devices-registry plan: pair-confirm POST replaces
+ * `POST /api/v1/runners/tokens`; list/revoke now live under
+ * `/api/v1/devices/tokens` to match the canonical `coord.devices` surface.
  */
 
 import type {
@@ -30,13 +34,16 @@ async function handleResponse<T>(
 }
 
 /**
- * Create a new runner token. The plain token is only returned on creation
- * and must be shown to the user once.
+ * Pair-confirm: create a new device token. The plain token is only
+ * returned on creation and must be shown to the user once.
+ *
+ * Backed by Phase 5's `POST /api/v1/devices/pair-confirm` endpoint —
+ * mints the device JWT and (on a fresh device) UPSERTs `coord.devices`.
  */
 export async function createRunnerToken(
   data: CreateRunnerTokenRequest
 ): Promise<CreateRunnerTokenResponse> {
-  const response = await fetch(`/api/v1/runners/tokens`, {
+  const response = await fetch(`/api/v1/devices/pair-confirm`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
@@ -44,26 +51,26 @@ export async function createRunnerToken(
   });
   return handleResponse<CreateRunnerTokenResponse>(
     response,
-    "Failed to create runner token"
+    "Failed to create device token"
   );
 }
 
-/** List the user's runner tokens (hashes never leak). */
+/** List the user's device tokens (hashes never leak). */
 export async function listRunnerTokens(): Promise<RunnerToken[]> {
-  const response = await fetch(`/api/v1/runners/tokens`, {
+  const response = await fetch(`/api/v1/devices/tokens`, {
     credentials: "include",
   });
   return handleResponse<RunnerToken[]>(
     response,
-    "Failed to list runner tokens"
+    "Failed to list device tokens"
   );
 }
 
-/** Revoke a runner token. */
+/** Revoke a device token. */
 export async function revokeRunnerToken(tokenId: string): Promise<void> {
-  const response = await fetch(`/api/v1/runners/tokens/${tokenId}`, {
+  const response = await fetch(`/api/v1/devices/tokens/${tokenId}`, {
     method: "DELETE",
     credentials: "include",
   });
-  await handleResponse<void>(response, "Failed to revoke runner token");
+  await handleResponse<void>(response, "Failed to revoke device token");
 }

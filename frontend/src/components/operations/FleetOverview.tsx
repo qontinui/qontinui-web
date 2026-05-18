@@ -13,7 +13,7 @@ import {
   WifiOff,
 } from "lucide-react";
 import { MachineCard } from "./MachineCard";
-import { MachineStatusTile } from "./MachineStatusTile";
+import { DeviceStatusTile } from "./DeviceStatusTile";
 import { TaskRunCard } from "./TaskRunCard";
 import { OPERATIONS_API, POLL_INTERVAL_MS, relativeTime } from "./utils";
 import type {
@@ -182,7 +182,7 @@ export function FleetOverview() {
   }
 
   // ---- Error / empty state ----
-  // Fleet API (FastAPI :8000) is unreachable, but MachineStatusTile reads from
+  // Fleet API (FastAPI :8000) is unreachable, but DeviceStatusTile reads from
   // qontinui-coord (:9870) — separate service, separate concern. Render the tile
   // alongside the fleet-error notice rather than short-circuiting it out.
   if (error && !fleet) {
@@ -199,7 +199,7 @@ export function FleetOverview() {
               the operations endpoints are deployed.
             </p>
           </div>
-          <MachineStatusTile />
+          <DeviceStatusTile />
         </div>
       </TooltipProvider>
     );
@@ -280,8 +280,8 @@ export function FleetOverview() {
           </div>
         )}
 
-        {/* Machine status broadcast (qontinui-coord Phase 6 Item 3) */}
-        <MachineStatusTile />
+        {/* Device status broadcast (qontinui-coord Phase 6 Item 3) */}
+        <DeviceStatusTile />
 
         {/* Active workflows */}
         {runningTasks.length > 0 && (
