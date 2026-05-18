@@ -737,8 +737,7 @@ async def tune_profile(
         runner = picked
 
     known_elements_payload = [
-        e.model_dump(mode="json")
-        for e in (tuning_request.known_elements or [])
+        e.model_dump(mode="json") for e in (tuning_request.known_elements or [])
     ]
 
     request_id = uuid4()
