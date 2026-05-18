@@ -1,12 +1,29 @@
 """
-Background Removal API endpoint
+Background Removal API endpoint.
+
+Dispatches the cv2+numpy background-removal work to a connected
+qontinui-runner over the WS bridge (Phase 6 of plan
+``plans/2026-05-17-web-runner-ws-bridge-plan-b.md``). The runner
+invokes
+``qontinui.discovery.background_removal.remove_backgrounds_from_base64``
+and returns masked screenshots + analyser statistics; this endpoint
+re-emits them in the existing ``RemoveBackgroundResponse`` shape so
+existing callers are unchanged.
 """
 
-import structlog
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from typing import Any
+from uuid import UUID
 
+import structlog
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import get_async_db, get_current_active_user_async
+from app.config.redis_config import get_redis
+from app.models.user import User
 from app.services.background_removal_service import BackgroundRemovalService
+from app.services.runner_websocket_manager import get_runner_websocket_manager
 
 logger = structlog.get_logger(__name__)
 
@@ -72,92 +89,100 @@ class RemoveBackgroundResponse(BaseModel):
 
 
 @router.post("/remove-background", response_model=RemoveBackgroundResponse)
-async def remove_background(request: RemoveBackgroundRequest):
+async def remove_background(
+    request: RemoveBackgroundRequest,
+    runner_id: UUID | None = None,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user_async),
+) -> RemoveBackgroundResponse:
     """
     Remove backgrounds from screenshots for State Discovery.
 
-    This endpoint:
-    1. Accepts base64 encoded screenshots
-    2. Applies background removal using configured strategies
-    3. Returns RGBA images with transparent backgrounds
-    4. Provides statistics about the removal
+    Dispatches the cv2-based work to the user's currently-connected
+    qontinui-runner over the WS bridge. Behaviour:
+
+    1. Accepts base64 encoded screenshots.
+    2. Forwards the batch + config to the active runner.
+    3. Returns RGBA images with transparent backgrounds.
+    4. Provides analyser statistics about the removal.
+
+    **Runner selection:**
+
+    - If ``?runner_id=<uuid>`` is provided, that runner is used (must
+      belong to the current user).
+    - Otherwise the user's most-recently-heartbeat-active connected
+      runner is selected.
+    - If no runner is connected, returns 503 with the
+      ``no_runner_connected`` envelope.
 
     Args:
-        request: Background removal request with screenshots and config
+        request: Background removal request with screenshots and config.
+        runner_id: Optional explicit runner UUID; must belong to caller.
 
     Returns:
-        Masked screenshots with statistics
+        Masked screenshots with statistics.
 
     Raises:
-        HTTPException: If processing fails or invalid data provided
+        HTTPException: 400 on empty input, 413 on >20 MB payload, 503
+            when no runner is available, 504 on runner timeout, 500 on
+            runner-side error.
     """
-    try:
-        if not request.screenshots:
-            raise HTTPException(status_code=400, detail="No screenshots provided")
+    if not request.screenshots:
+        raise HTTPException(status_code=400, detail="No screenshots provided")
 
-        logger.info(
-            f"Received {len(request.screenshots)} screenshots for background removal"
+    logger.info(
+        "background_removal_request",
+        num_screenshots=len(request.screenshots),
+        debug=request.debug,
+        user_id=str(current_user.id),
+    )
+
+    if len(request.screenshots) < request.config.min_screenshots_for_variance:
+        logger.warning(
+            "background_removal_screenshot_count_below_variance_threshold",
+            provided=len(request.screenshots),
+            required=request.config.min_screenshots_for_variance,
         )
 
-        if len(request.screenshots) < request.config.min_screenshots_for_variance:
-            logger.warning(
-                f"Only {len(request.screenshots)} screenshots provided, "
-                f"but {request.config.min_screenshots_for_variance} required for temporal variance"
-            )
+    redis = await get_redis()
+    manager = await get_runner_websocket_manager(redis)
 
-        # Initialize service
-        logger.info("Initializing BackgroundRemovalService")
-        service = BackgroundRemovalService(request.config.model_dump())
+    service = BackgroundRemovalService(
+        user_id=current_user.id,
+        db=db,
+        manager=manager,
+        runner_id=runner_id,
+    )
 
-        # Process screenshots (all encoding/decoding handled by qontinui library)
-        logger.info("Processing screenshots...")
-        masked_screenshots, stats = service.remove_backgrounds_base64(
-            request.screenshots, debug=request.debug
-        )
-        logger.info(
-            f"Processing complete: {len(masked_screenshots)} masked screenshots"
-        )
+    masked_screenshots, stats = await service.remove_backgrounds(
+        screenshots_b64=request.screenshots,
+        config=request.config.model_dump(),
+        debug=request.debug,
+    )
 
-        # Extract debug mask if present
-        background_mask_b64 = stats.pop("background_mask_base64", None)
+    logger.info(
+        "background_removal_complete",
+        num_screenshots=len(request.screenshots),
+        num_masked=len(masked_screenshots),
+    )
 
-        # Build response
-        response = RemoveBackgroundResponse(
-            masked_screenshots=masked_screenshots,
-            statistics=BackgroundRemovalStatistics(
-                total_pixels=stats["total_pixels"],
-                background_pixels=stats["background_pixels"],
-                foreground_pixels=stats["foreground_pixels"],
-                background_percentage=stats["background_percentage"],
-                foreground_percentage=stats["foreground_percentage"],
-                num_screenshots=stats["num_screenshots"],
-                image_size=tuple(stats["image_size"]),
-            ),
-            background_mask=background_mask_b64,
-        )
+    # Extract debug mask if present
+    stats_local: dict[str, Any] = dict(stats)
+    background_mask_b64 = stats_local.pop("background_mask_base64", None)
 
-        logger.info(
-            f"Background removal complete: {len(request.screenshots)} screenshots processed, "
-            f"{stats['foreground_percentage']:.1f}% foreground"
-        )
-
-        return response
-
-    except HTTPException:
-        raise
-    except ValueError as e:
-        logger.error(f"Validation error: {e}", exc_info=True)
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"Background removal failed: {e}", exc_info=True)
-        # Include more detailed error information
-        import traceback
-
-        error_detail = f"{type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
-        logger.error(f"Full traceback:\n{error_detail}")
-        raise HTTPException(
-            status_code=500, detail=f"Background removal failed: {str(e)}"
-        )
+    return RemoveBackgroundResponse(
+        masked_screenshots=masked_screenshots,
+        statistics=BackgroundRemovalStatistics(
+            total_pixels=stats_local["total_pixels"],
+            background_pixels=stats_local["background_pixels"],
+            foreground_pixels=stats_local["foreground_pixels"],
+            background_percentage=stats_local["background_percentage"],
+            foreground_percentage=stats_local["foreground_percentage"],
+            num_screenshots=stats_local["num_screenshots"],
+            image_size=tuple(stats_local["image_size"]),  # type: ignore[arg-type]
+        ),
+        background_mask=background_mask_b64,
+    )
 
 
 @router.get("/background-removal/presets")
