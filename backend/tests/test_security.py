@@ -118,6 +118,42 @@ def test_cors_headers():
     )
 
 
+def test_cors_origin_regex_allows_matching_subdomain():
+    origin = "https://demo.staging.qontinui.io"
+    response = client.options(
+        "/health",
+        headers={
+            "Origin": origin,
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+    assert response.headers.get("access-control-allow-origin") == origin
+
+
+def test_cors_origin_regex_rejects_outside_subtree():
+    response = client.options(
+        "/health",
+        headers={
+            "Origin": "https://evil.example.com",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+    assert response.headers.get("access-control-allow-origin") is None
+
+
+def test_cors_origin_regex_rejects_suffix_attack():
+    # Anchor verification: the regex must not match a domain that merely
+    # ends with the staging suffix, e.g. via a parent attacker domain.
+    response = client.options(
+        "/health",
+        headers={
+            "Origin": "https://staging.qontinui.io.attacker.com",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+    assert response.headers.get("access-control-allow-origin") is None
+
+
 def test_environment_configuration():
     """Test environment-specific configuration"""
     from app.core.config import settings
