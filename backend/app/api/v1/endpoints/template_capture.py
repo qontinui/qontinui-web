@@ -1,10 +1,14 @@
 """API endpoints for Template Capture (click-to-template system)."""
 
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+from qontinui_schemas.commands.click_analysis import (
+    TuneProfileRequest,
+    TuneProfileResponse,
+)
 from qontinui_schemas.template_capture import (
     ApplicationProfileCreate,
     ApplicationProfileListResponse,
@@ -30,13 +34,24 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import current_active_user, get_async_db
+from app.config.redis_config import get_redis
 from app.models import ApplicationProfile, TemplateCandidate, User
+from app.services.runner import (
+    RunnerCommandTimeoutError,
+    RunnerNotConnectedError,
+    pick_active_runner_for_user,
+    runner_bridge_503_no_runner,
+)
+from app.services.runner_websocket_manager import get_runner_websocket_manager
 from app.services.template_candidate_storage_service import (
     TemplateCandidateStorageService,
 )
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
+
+
+_TUNE_PROFILE_ENDPOINT = "/api/v1/template-capture/profiles/{name}/tune"
 
 
 class CandidateUrlsResponse(BaseModel):
@@ -662,39 +677,145 @@ async def update_profile(
 async def tune_profile(
     name: str,
     tuning_request: TuningRequest,
+    runner_id: UUID | None = None,
     current_user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
     """Trigger tuning for an application profile.
 
-    This endpoint accepts screenshot URLs and triggers the tuning
-    algorithm to optimize detection parameters for the application.
+    This endpoint accepts screenshot URLs and dispatches tuning to the
+    user's currently-connected qontinui-runner over the
+    ``runner_command_ws`` WebSocket relay (command
+    ``click_analysis.tune_profile``). The runner downloads the
+    screenshots directly from the supplied URLs (typically presigned S3
+    URLs), runs ``qontinui.discovery.click_analysis.ApplicationTuner``,
+    and returns the resulting ``TuningResult`` payload. Web does not
+    pre-fetch screenshot bytes.
 
     The tuning process:
-    1. Downloads screenshots from the provided URLs
-    2. Runs the ApplicationTuner algorithm to find optimal parameters
-    3. Updates the profile with the tuning results
-    4. Returns metrics and strategy rankings
 
-    Returns 503 until the runner-bridge ships — qontinui.discovery.click_analysis
-    no longer lives in the web image
-    (plan-2026-05-17-web-image-slim / plan-2026-05-17-ws-bridge-for-violating-routers).
+    1. Runner downloads screenshots from the provided URLs.
+    2. Runner runs ``ApplicationTuner.tune_from_samples`` to find
+       optimal detection parameters.
+    3. Web returns the ``TuningResult`` payload (metrics, strategy
+       rankings, optimised config).
+
+    **Runner selection:**
+
+    - If ``?runner_id=<uuid>`` is provided, that runner is used (must
+      belong to the current user).
+    - Otherwise the user's most-recently-heartbeat-active connected
+      runner is selected.
+    - If no runner is connected, the endpoint returns 503 with the
+      ``no_runner_connected`` envelope.
+    - On runner-side timeout (60s ceiling), returns 504.
+
+    The profile name is forwarded to the runner for logging context
+    only; the runner is stateless w.r.t. the profile row.
     """
-    raise HTTPException(
-        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail={
-            "error": "endpoint_requires_runner_bridge",
-            "message": (
-                "This endpoint depends on qontinui runtime functionality that lives on "
-                "the runner. The web - runner WebSocket bridge for this functionality is "
-                "not yet implemented. See architectural-decisions.md "
-                "'Web - runner WebSocket boundary'."
-            ),
-            "runner_module": "qontinui.discovery.click_analysis",
-            "endpoint": "/api/v1/template-capture/profiles/{name}/tune",
-            "tracking": "plan-2026-05-17-ws-bridge-for-violating-routers (TBD)",
-        },
+    redis = await get_redis()
+    manager = await get_runner_websocket_manager(redis)
+
+    if runner_id is not None:
+        from app.crud import runner_crud
+
+        owned_runner = await runner_crud.get_runner(db, runner_id=runner_id)
+        if owned_runner is None or owned_runner.user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"error": "runner_not_found", "runner_id": str(runner_id)},
+            )
+        if not manager.registry.is_runner_connected(str(owned_runner.id)):
+            raise runner_bridge_503_no_runner(_TUNE_PROFILE_ENDPOINT)
+        runner = owned_runner
+    else:
+        picked = await pick_active_runner_for_user(
+            current_user.id, db, manager.registry
+        )
+        if picked is None:
+            raise runner_bridge_503_no_runner(_TUNE_PROFILE_ENDPOINT)
+        runner = picked
+
+    known_elements_payload = [
+        e.model_dump(mode="json")
+        for e in (tuning_request.known_elements or [])
+    ]
+
+    request_id = uuid4()
+    cmd = TuneProfileRequest(
+        request_id=request_id,
+        project_id=None,
+        profile_name=name,
+        screenshot_urls=tuning_request.screenshot_urls,
+        known_elements=known_elements_payload,
+    ).model_dump(mode="json")
+
+    logger.info(
+        "tune_profile_dispatch",
+        runner_id=str(runner.id),
+        request_id=str(request_id),
+        profile_name=name,
+        screenshot_count=len(tuning_request.screenshot_urls),
+        known_element_count=len(known_elements_payload),
     )
+
+    try:
+        raw_response = await manager.relay.dispatch_and_wait(
+            str(runner.id),
+            cmd,
+            request_id=str(request_id),
+            timeout_s=60.0,
+        )
+    except RunnerNotConnectedError:
+        logger.warning(
+            "tune_profile_runner_disconnected_mid_dispatch",
+            runner_id=str(runner.id),
+            request_id=str(request_id),
+        )
+        raise runner_bridge_503_no_runner(_TUNE_PROFILE_ENDPOINT)
+    except RunnerCommandTimeoutError:
+        logger.error(
+            "tune_profile_timeout",
+            runner_id=str(runner.id),
+            request_id=str(request_id),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail={
+                "error": "runner_timeout",
+                "endpoint": _TUNE_PROFILE_ENDPOINT,
+                "request_id": str(request_id),
+            },
+        )
+
+    if raw_response.get("error"):
+        logger.error(
+            "tune_profile_runner_error",
+            runner_id=str(runner.id),
+            request_id=str(request_id),
+            error=raw_response.get("error"),
+            message=raw_response.get("message"),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "error": "runner_error",
+                "runner_error": raw_response.get("error"),
+                "message": raw_response.get("message") or "Runner returned an error.",
+            },
+        )
+
+    response = TuneProfileResponse.model_validate(raw_response)
+
+    logger.info(
+        "tune_profile_completed",
+        runner_id=str(runner.id),
+        request_id=str(request_id),
+        profile_name=name,
+        success=response.tuning_result.get("success"),
+    )
+
+    return TuningResult.model_validate(response.tuning_result)
 
 
 # =============================================================================
