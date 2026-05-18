@@ -47,6 +47,16 @@ repos:
         # only runs on migrations actually being touched — already-
         # applied legacy revisions aren't re-audited.
 
+      - id: web-boundary-lint
+        name: web/backend ↔ qontinui boundary lint
+        entry: .pre-commit-hooks/check_web_boundary.sh
+        language: script
+        files: ^backend/app/.*\.py$
+        # Mirrors .github/workflows/web-boundary-lint.yml — catches the
+        # boundary violation before push. `qontinui-schemas` is exempt
+        # (shared Pydantic types). `backend/app/api/embeddings.py` is
+        # allowlisted defensively pending Phase 8 (embeddings runner-bridge).
+
   - repo: local
     hooks:
       - id: block-claude-attribution

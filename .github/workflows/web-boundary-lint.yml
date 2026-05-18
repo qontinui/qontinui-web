@@ -1,0 +1,81 @@
+name: web/backend ↔ qontinui boundary lint
+
+# Phase 9 deliverable of plan-2026-05-17-web-runner-ws-bridge-plan-b.
+#
+# Enforces the architectural boundary documented in memo
+# `proj_arch_web_runner_websocket_boundary`: the qontinui-web backend
+# (cloud FastAPI tier) MUST NOT import from the `qontinui` namespace
+# (torch, CV, ML, OCR — runner-side concerns). Communication is via the
+# WebSocket bridge (runner_command_ws) + canonical PG.
+#
+# `qontinui-schemas` is explicitly NOT covered by this rule — it is a
+# pure-Pydantic shared schemas crate with zero heavy deps and is the
+# canonical type boundary for both sides.
+#
+# Allowlist:
+# - `backend/app/api/embeddings.py` — Phase 8 (embeddings runner-bridge)
+#   is DEFERRED-PENDING-USE-CASE. The file currently returns 503 stubs
+#   and contains no live qontinui imports, but is allowlisted defensively
+#   so a future use-case-driven re-introduction of `qontinui.embeddings`
+#   doesn't trip this gate before Phase 8 lands. Remove the allowlist
+#   line when Phase 8 ships the WS bridge.
+#
+# Regex notes:
+# - We require the token after `from`/`import` to be `qontinui` followed
+#   by `.`, whitespace, or end-of-line — i.e. real Python import grammar.
+#   This avoids false positives on prose like "from qontinui-runner's
+#   exporter" inside comments and docstrings (where `\b` would otherwise
+#   match the hyphen as a word boundary).
+# - The `qontinui_schemas` / `qontinui-schemas` filter exempts the
+#   shared schemas crate.
+#
+# Self-trigger avoidance:
+# - This workflow's `on.pull_request.paths` deliberately does NOT include
+#   `.github/workflows/web-boundary-lint.yml` so the introducing PR
+#   doesn't try to run a gate against itself before it has landed on
+#   main. (Per feedback_self_triggering_ci_gates memo.) `workflow_dispatch`
+#   is included so the gate can be manually fired after merge.
+
+on:
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "backend/app/**/*.py"
+  push:
+    branches: [main, develop]
+    paths:
+      - "backend/app/**/*.py"
+  workflow_dispatch:
+
+jobs:
+  web-boundary-lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Scan backend/app for qontinui.* boundary violations
+        run: |
+          set -uo pipefail
+
+          # Match actual Python `from qontinui.X import …` / `import qontinui[.X]`
+          # statements — not prose referencing "qontinui-runner".
+          PATTERN='(^|[^a-zA-Z0-9_-])(from|import)[[:space:]]+qontinui([[:space:].]|$)'
+
+          # DEFERRED — remove the embeddings.py allowlist when Phase 8
+          # (embeddings runner-bridge) ships.
+          HITS="$(grep -rnE "$PATTERN" backend/app/ --include='*.py' \
+            | grep -vE 'qontinui[-_]schemas' \
+            | grep -v '^backend/app/api/embeddings.py:' \
+            || true)"
+
+          if [ -n "$HITS" ]; then
+            echo "::error::web/backend imports from qontinui — architectural boundary violation."
+            echo "::error::The qontinui-web cloud tier must not depend on the qontinui namespace (torch, CV, ML, OCR)."
+            echo "::error::See memo proj_arch_web_runner_websocket_boundary and plan-2026-05-17-web-runner-ws-bridge-plan-b."
+            echo "::error::Communicate with the runner via the WebSocket bridge (runner_command_ws) or use qontinui-schemas for shared types."
+            echo "Violations:"
+            echo "$HITS"
+            exit 1
+          fi
+          echo "Boundary lint clean — no qontinui.* imports in backend/app/."
