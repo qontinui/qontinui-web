@@ -113,9 +113,7 @@ async def list_agent_sessions(
         where_clauses.append("last_seen >= :since")
         params["since"] = since
 
-    where_sql = (
-        f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
-    )
+    where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
     sql = text(
         f"""
         SELECT id, user_id, device_id, first_seen, last_seen, label, closed_at
@@ -234,9 +232,7 @@ async def get_agent_session_lineage(
         {
             "kind": r["kind"],
             "handle": r["handle"],
-            "occurred_at": (
-                r["occurred_at"].isoformat() if r["occurred_at"] else None
-            ),
+            "occurred_at": (r["occurred_at"].isoformat() if r["occurred_at"] else None),
         }
         for r in rows
     ]

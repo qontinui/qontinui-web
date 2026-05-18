@@ -12,11 +12,10 @@ at the SQLAlchemy ``AsyncSession`` level so no live PG is needed.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
-from uuid import UUID, uuid4
+from uuid import uuid4
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -97,7 +96,7 @@ class TestListAgentSessions:
         sid = uuid4()
         uid = uuid4()
         did = uuid4()
-        now = datetime(2026, 5, 18, 12, 0, 0, tzinfo=timezone.utc)
+        now = datetime(2026, 5, 18, 12, 0, 0, tzinfo=UTC)
         row = {
             "id": sid,
             "user_id": uid,
@@ -122,7 +121,7 @@ class TestListAgentSessions:
 
     def test_handles_null_user_and_device(self):
         sid = uuid4()
-        now = datetime(2026, 5, 18, tzinfo=timezone.utc)
+        now = datetime(2026, 5, 18, tzinfo=UTC)
         row = {
             "id": sid,
             "user_id": None,
@@ -160,9 +159,7 @@ class TestListAgentSessions:
     def test_since_filter_binds_param(self):
         app, last_call = _build_test_app(list_rows=[])
         client = TestClient(app)
-        resp = client.get(
-            "/api/v1/admin/agent-sessions?since=2026-05-18T00:00:00Z"
-        )
+        resp = client.get("/api/v1/admin/agent-sessions?since=2026-05-18T00:00:00Z")
         assert resp.status_code == 200
         assert "last_seen >= :since" in last_call.stmt
         assert "since" in last_call.params
@@ -195,7 +192,6 @@ class TestListAgentSessions:
 
     def test_unauth_blocked(self):
         # Mount without overriding require_admin → default raises 403.
-        from app.api.admin_deps import require_admin
         from app.api.deps import get_async_db, get_current_user_async
         from app.api.v1.endpoints.agent_sessions import router
 
@@ -236,7 +232,7 @@ class TestGetSessionLineage:
         claim_id = uuid4()
         build_id = uuid4()
         proposal_id = uuid4()
-        t = datetime(2026, 5, 18, 12, 0, 0, tzinfo=timezone.utc)
+        t = datetime(2026, 5, 18, 12, 0, 0, tzinfo=UTC)
         rows = [
             {"kind": "merge_proposal", "handle": str(proposal_id), "occurred_at": t},
             {"kind": "build_event", "handle": str(build_id), "occurred_at": t},
