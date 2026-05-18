@@ -190,12 +190,18 @@ async def remove_runner(
 # Per plans/2026-05-18-coordination-layer-demos.md §5.2.1.
 
 
-async def _proxy_coord_get(path: str) -> Any:
-    """Proxy a GET request to coord and return the JSON body."""
+async def _proxy_coord_get(path: str, *, params: dict[str, Any] | None = None) -> Any:
+    """Proxy a GET request to coord and return the JSON body.
+
+    ``params`` is forwarded as the query string when set — the merge
+    queue endpoint takes none, but the claims dashboard endpoints
+    (Phase 5 of plan 2026-05-18-agent-spawn-coordination.md) take
+    ``kind``, ``prefix``, ``limit``, ``since`` filters.
+    """
     url = f"{settings.COORD_URL}{path}"
     async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
         try:
-            resp = await client.get(url)
+            resp = await client.get(url, params=params)
         except httpx.ConnectError:
             raise HTTPException(
                 status_code=502,
@@ -265,3 +271,106 @@ async def post_agents_allocate(
     via the `events.agent.allocated` event coord fans out.
     """
     return await _proxy_coord_post("/agents/allocate", body)
+
+
+# ---- Coord claims-dashboard proxy ---------------------------------------
+#
+# Plan `2026-05-18-agent-spawn-coordination.md` Phase 5 — the
+# `/admin/agent-claims` dashboard backend. Five read-only proxy
+# endpoints that forward to coord:
+#
+# - `/operations/claims/list`             → coord `/coord/claims/list`
+# - `/operations/claims/recent-conflicts` → coord `/coord/claims/recent-conflicts`
+# - `/operations/claims/recent-expirations` → coord `/coord/claims/recent-expirations`
+# - `/operations/claims/steals`           → coord `/coord/claims/steals`
+# - `/operations/claims/alerts`           → coord `/coord/alerts` (filtered)
+#
+# Same proxy posture as the merge endpoints above — read-only, no
+# mutating coord routes exposed through this surface. Steal +
+# acquire stay agent → coord directly (correct auth boundary).
+
+
+@router.get("/claims/list")
+async def get_claims_list(
+    kind: str,
+    prefix: str = "",
+    limit: int | None = None,
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> Any:
+    """List active claims by kind + resource_key prefix."""
+    params: dict[str, Any] = {"kind": kind, "prefix": prefix}
+    if limit is not None:
+        params["limit"] = limit
+    return await _proxy_coord_get("/coord/claims/list", params=params)
+
+
+@router.get("/claims/recent-conflicts")
+async def get_recent_conflicts(
+    limit: int | None = None,
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> Any:
+    """Return the recent-conflicts ring buffer from coord."""
+    params: dict[str, Any] = {}
+    if limit is not None:
+        params["limit"] = limit
+    return await _proxy_coord_get("/coord/claims/recent-conflicts", params=params)
+
+
+@router.get("/claims/recent-expirations")
+async def get_recent_expirations(
+    limit: int | None = None,
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> Any:
+    """Return the recent-expirations ring buffer from coord."""
+    params: dict[str, Any] = {}
+    if limit is not None:
+        params["limit"] = limit
+    return await _proxy_coord_get("/coord/claims/recent-expirations", params=params)
+
+
+@router.get("/claims/steals")
+async def get_claims_steals(
+    since: str | None = None,
+    limit: int | None = None,
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> Any:
+    """Return recent admin_stolen audit rows from coord."""
+    params: dict[str, Any] = {}
+    if since is not None:
+        params["since"] = since
+    if limit is not None:
+        params["limit"] = limit
+    return await _proxy_coord_get("/coord/claims/steals", params=params)
+
+
+@router.get("/claims/alerts")
+async def get_claims_alerts(
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> Any:
+    """Return active claim-related alerts from coord.
+
+    Filters the coord ``/coord/alerts`` response to rows whose
+    ``alert_key`` starts with ``claim-`` (the convention used by
+    [`claims_alert_watcher`](https://github.com/qontinui/qontinui-coord/blob/main/src/claims_alert_watcher.rs)).
+    Other alert kinds (fleet-health, alembic-status, etc.) stay scoped
+    to the Operations page's general alerts surface.
+    """
+    payload = await _proxy_coord_get("/coord/alerts")
+    # coord returns either a list or `{"alerts": [...]}` depending on
+    # the version; tolerate both.
+    if isinstance(payload, dict) and "alerts" in payload:
+        rows = payload["alerts"]
+        is_dict = True
+    elif isinstance(payload, list):
+        rows = payload
+        is_dict = False
+    else:
+        return payload
+    filtered = [
+        a
+        for a in rows
+        if isinstance(a, dict) and str(a.get("alert_key", "")).startswith("claim-")
+    ]
+    if is_dict:
+        return {"alerts": filtered}
+    return filtered
