@@ -48,10 +48,10 @@ function statusTint(status: ProposalStatus): string {
 
 function MergeTrainRow({ proposal }: { proposal: ProposalDetail }) {
   const repoSummary = useMemo(() => {
-    if (proposal.repos.length === 0) return "—";
+    const first = proposal.repos[0];
+    if (!first) return "—";
     if (proposal.repos.length === 1) {
-      const r = proposal.repos[0];
-      return `${r.repo} · ${r.branch}`;
+      return `${first.repo} · ${first.branch}`;
     }
     return `${proposal.repos.length} repos`;
   }, [proposal.repos]);
