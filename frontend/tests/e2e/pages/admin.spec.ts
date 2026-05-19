@@ -264,6 +264,113 @@ test.describe("Admin - Agent Claims", () => {
   });
 });
 
+test.describe("Admin - Coord operator console", () => {
+  // Plan `2026-05-19-coordinator-production-readiness.md` Phase 2 (Wave 2).
+  // The `/admin/coord/*` shell hosts five pages (Fleet / Trees / Plans /
+  // Alerts / History) plus cross-links to /admin/agent-claims +
+  // /admin/agent-sessions. Smoke-only: superuser-gated like other admin
+  // surfaces, so non-admin users redirect away.
+
+  test("should load /admin/coord (landing) without errors", async ({ page }) => {
+    await page.goto("/admin/coord");
+    await page.waitForLoadState("domcontentloaded");
+
+    await page.screenshot({
+      path: "test-results/admin-coord-landing.png",
+      fullPage: true,
+    });
+
+    const pageContent = await page.content();
+    expect(pageContent).not.toContain("Internal Server Error");
+  });
+
+  test("should render coord nav shell with five primary tabs", async ({
+    page,
+  }) => {
+    // The landing page redirects to /admin/coord/fleet. After redirect,
+    // both layout + nav render, and the user (if superuser) can see the
+    // 5 primary tabs + cross-links.
+    await page.goto("/admin/coord/fleet");
+    await page.waitForLoadState("domcontentloaded");
+    await page.waitForTimeout(2500);
+
+    const hasCoordHeading =
+      (await page
+        .getByRole("heading", { name: "Coord operator console", exact: true })
+        .count()) > 0;
+    const wasRedirected =
+      page.url().includes("/build/workflows") ||
+      (page.url().includes("/dashboard") && !page.url().includes("/admin"));
+
+    expect(hasCoordHeading || wasRedirected).toBeTruthy();
+
+    if (hasCoordHeading) {
+      await expect(page.getByTestId("coord-nav")).toBeVisible();
+      // All 5 primary tabs render.
+      await expect(page.getByTestId("coord-nav-fleet")).toBeVisible();
+      await expect(page.getByTestId("coord-nav-trees")).toBeVisible();
+      await expect(page.getByTestId("coord-nav-plans")).toBeVisible();
+      await expect(page.getByTestId("coord-nav-alerts")).toBeVisible();
+      await expect(page.getByTestId("coord-nav-history")).toBeVisible();
+      // Cross-links to existing surfaces.
+      await expect(page.getByTestId("coord-nav-claims")).toBeVisible();
+      await expect(page.getByTestId("coord-nav-sessions")).toBeVisible();
+    }
+  });
+
+  for (const { path, testId } of [
+    { path: "/admin/coord/fleet", testId: "coord-fleet-page" },
+    { path: "/admin/coord/trees", testId: "coord-trees-page" },
+    { path: "/admin/coord/plans", testId: "coord-plans-page" },
+    { path: "/admin/coord/alerts", testId: "coord-alerts-page" },
+    { path: "/admin/coord/history", testId: "coord-history-page" },
+  ]) {
+    test(`should load ${path} without errors`, async ({ page }) => {
+      await page.goto(path);
+      await page.waitForLoadState("domcontentloaded");
+      await page.waitForTimeout(1500);
+
+      const pageContent = await page.content();
+      expect(pageContent).not.toContain("Internal Server Error");
+
+      const hasCoordHeading =
+        (await page
+          .getByRole("heading", { name: "Coord operator console", exact: true })
+          .count()) > 0;
+      const wasRedirected =
+        page.url().includes("/build/workflows") ||
+        (page.url().includes("/dashboard") && !page.url().includes("/admin"));
+
+      if (hasCoordHeading) {
+        // For superusers the inner page-testid container must render.
+        await expect(page.getByTestId(testId)).toBeVisible();
+      } else {
+        // Non-superusers redirect; either path is acceptable here.
+        expect(hasCoordHeading || wasRedirected).toBeTruthy();
+      }
+    });
+  }
+
+  test("nav link click navigates between coord pages", async ({ page }) => {
+    await page.goto("/admin/coord/fleet");
+    await page.waitForLoadState("domcontentloaded");
+    await page.waitForTimeout(2000);
+
+    const hasCoordHeading =
+      (await page
+        .getByRole("heading", { name: "Coord operator console", exact: true })
+        .count()) > 0;
+    if (!hasCoordHeading) {
+      // Non-superuser path; redirect already verified above.
+      return;
+    }
+
+    await page.getByTestId("coord-nav-plans").click();
+    await page.waitForURL(/\/admin\/coord\/plans/);
+    await expect(page.getByTestId("coord-plans-page")).toBeVisible();
+  });
+});
+
 test.describe("Admin - Region Analysis", () => {
   test("should load region analysis page without errors", async ({ page }) => {
     await page.goto("/admin/region-analysis");
