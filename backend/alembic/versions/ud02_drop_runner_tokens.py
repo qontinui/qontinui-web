@@ -1,7 +1,7 @@
 """ud02 drop recreated auth.runner_tokens table
 
 Revision ID: ud02_drop_runner_tokens
-Revises: ud01_unify_devices_registry
+Revises: coord_agent_session_id_lineage
 Create Date: 2026-05-18
 
 Phase 5 of plan
@@ -16,10 +16,13 @@ recreated model alongside the token-mint endpoints (token issuance is
 now coord's responsibility via ``POST /coord/devices/pair-complete``),
 so the underlying table must go as well.
 
-Chained off ``ud01_unify_devices_registry`` (PR #144's canonical
-Phase 1 revision) per operator decision 2026-05-18 (plan §3.5).
-Earlier draft chained off ``wave_8_02_unify_devices`` (this session's
-discarded Phase 1 attempt); rebased here for cutover alignment.
+Chained off ``coord_agent_session_id_lineage`` (post-rebase tip of the
+alembic chain on main as of 2026-05-19). Earlier drafts chained off
+``ud01_unify_devices_registry`` (which would have made this a sibling
+head of ``coord_phase_2_01_claims_audit_steal_columns`` + the
+``coord_agent_session_id_lineage`` chain). No content dependency on
+the intervening revisions; pure rebase repoint to keep alembic on a
+single head.
 
 Operator priority: no backward-compat (flag-day rollout); ``downgrade``
 is irreversible.
@@ -33,7 +36,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "ud02_drop_runner_tokens"
-down_revision: Union[str, None] = "ud01_unify_devices_registry"
+down_revision: Union[str, None] = "coord_agent_session_id_lineage"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
