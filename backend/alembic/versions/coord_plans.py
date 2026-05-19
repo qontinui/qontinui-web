@@ -1,4 +1,4 @@
-"""coord.plans + coord.plan_status_history (Phase 2 substrate)
+"""coord.plans schema evolution + coord.plan_status_history (Phase 2 substrate)
 
 Revision ID: coord_plans
 Revises: coord_primary_trees
@@ -7,56 +7,26 @@ Create Date: 2026-05-19
 Phase 2 of plan
 ``D:/qontinui-root/plans/2026-05-19-coordinator-production-readiness.md``.
 
-Stands up ``coord.plans`` and ``coord.plan_status_history`` so that
-markdown plans authored under ``D:/qontinui-root/plans/`` can be
-mirrored into the coordinator as first-class rows. The eventual coord
-``plan_ingest_worker`` will tail the filesystem and UPSERT plan content
-+ status here; the operator dashboard (qontinui-web) reads from these
-tables to render the plans surface.
+`coord.plans` already exists from `consolidation_phase2_v_28_productivity_plans_tasks.py`
+as a thin pointer table (markdown_path, version_hash, status, title,
+summary). Per Q7 resolution in the readiness plan, coord becomes the
+canonical home for plan content — not just a pointer registry. This
+revision evolves the existing schema:
 
-Schema:
+  - Adds `slug`, `content`, `authored_by`, `origin_path`, `archive_path`,
+    `metadata` columns to `coord.plans` (ADD COLUMN IF NOT EXISTS).
+  - Adds an index on `slug` once backfilled (UNIQUE is deferred —
+    backfill runs in coord-side `plan_ingest_worker` in a follow-up).
+  - Creates `coord.plan_status_history` for the status-transition audit
+    log. FK references `coord.plans(id)` (the existing PK) to preserve
+    the existing `coord.tasks(plan_id) → coord.plans(id)` invariant.
 
-* ``coord.plans``
-  * ``plan_id UUID PRIMARY KEY``       — synthetic id; not the filename.
-  * ``slug TEXT NOT NULL UNIQUE``      — stable filesystem-derived key,
-    e.g. ``2026-05-19-coordinator-production-readiness``.
-  * ``title TEXT NOT NULL``            — parsed from the markdown's H1.
-  * ``content TEXT NOT NULL``          — full markdown body. Kept inline
-    (not S3) — plans are small (<200KB typical) and operator UI needs
-    immediate read.
-  * ``status TEXT NOT NULL``           — one of ``draft|active|gated|
-    deferred|shipped|archived``. The plans dashboard filters on this.
-  * ``authored_at TIMESTAMPTZ``        — filesystem ctime / first-seen.
-  * ``updated_at TIMESTAMPTZ``         — last-seen mtime; the
-    plan_ingest_worker UPSERTs on this.
-  * ``authored_by TEXT``               — best-effort attribution.
-  * ``origin_path TEXT``               — original filesystem path
-    relative to ``D:/qontinui-root/plans/``.
-  * ``archive_path TEXT``              — set when plan moves to
-    ``qontinui-dev-notes/plans/`` per
-    [[feedback_shipped_plans_archive_location]].
-  * ``metadata JSONB``                 — open-ended; phase counts,
-    SHIPPED stamps, etc.
-
-* ``coord.plan_status_history``
-  * Append-only audit log of every status transition. The plans
-    dashboard renders the timeline from this; the planning-discipline
-    watcher (later phase) detects stuck-in-gated plans here.
-
-Indices:
-
-* ``idx_plans_status`` covers the dashboard's "all active plans" query.
-* ``idx_plans_updated_at`` covers "most recently touched plans".
-* ``idx_plan_status_history_plan`` covers per-plan timeline lookup.
-
-Idempotency: ``CREATE TABLE IF NOT EXISTS`` + ``CREATE INDEX IF NOT
-EXISTS``. Mirrors the runtime self-heal posture used by ``coord.alerts``
-/ ``coord.primary_trees`` per [[feedback_canonical_db_behind_alembic]];
-coord will gain an ``ensure_plans_tables`` self-heal alongside the
-ingest worker.
-
-Chains off ``coord_primary_trees`` (Phase 1 head on origin/main 2026-05-19
-per [[feedback_verify_origin_state_before_phase_start]]).
+Legacy columns (`markdown_path`, `version_hash`, `summary`) are left in
+place for this revision; a follow-up cleanup revision drops them once
+the `plan_ingest_worker` has migrated their content into `origin_path`
++ `metadata`. This is NOT a back-compat shim — it's a content-migration
+sequencing concern (the data has to land in the new columns before the
+old ones can be dropped).
 """
 
 from collections.abc import Sequence
@@ -72,42 +42,43 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    """Create ``coord.plans`` + ``coord.plan_status_history``. Idempotent."""
+    """Evolve ``coord.plans`` + add ``coord.plan_status_history``. Idempotent."""
+    # Phase 2 columns on existing coord.plans. ADD COLUMN IF NOT EXISTS
+    # is PG 9.6+; canonical PG is far past that.
     op.execute(
         """
-        CREATE TABLE IF NOT EXISTS coord.plans (
-            plan_id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            slug             TEXT NOT NULL UNIQUE,
-            title            TEXT NOT NULL,
-            content          TEXT NOT NULL,
-            status           TEXT NOT NULL,
-            authored_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-            updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-            authored_by      TEXT,
-            origin_path      TEXT,
-            archive_path     TEXT,
-            metadata         JSONB NOT NULL DEFAULT '{}'::jsonb
-        )
+        ALTER TABLE coord.plans
+            ADD COLUMN IF NOT EXISTS slug         TEXT,
+            ADD COLUMN IF NOT EXISTS content      TEXT,
+            ADD COLUMN IF NOT EXISTS authored_by  TEXT,
+            ADD COLUMN IF NOT EXISTS origin_path  TEXT,
+            ADD COLUMN IF NOT EXISTS archive_path TEXT,
+            ADD COLUMN IF NOT EXISTS metadata     JSONB NOT NULL DEFAULT '{}'::jsonb
         """
     )
+    # Slug index — coord.plans dashboard queries by slug. UNIQUE is
+    # deferred until the plan_ingest_worker backfills rows.
     op.execute(
         """
-        CREATE INDEX IF NOT EXISTS idx_plans_status
-            ON coord.plans(status)
+        CREATE INDEX IF NOT EXISTS idx_plans_slug
+            ON coord.plans(slug) WHERE slug IS NOT NULL
         """
     )
+    # Recent-touch index for the dashboard's default sort.
     op.execute(
         """
         CREATE INDEX IF NOT EXISTS idx_plans_updated_at
             ON coord.plans(updated_at DESC)
         """
     )
+
+    # plan_status_history — FK against existing coord.plans(id) PK.
     op.execute(
         """
         CREATE TABLE IF NOT EXISTS coord.plan_status_history (
             history_id       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             plan_id          UUID NOT NULL
-                REFERENCES coord.plans(plan_id) ON DELETE CASCADE,
+                REFERENCES coord.plans(id) ON DELETE CASCADE,
             from_status      TEXT,
             to_status        TEXT NOT NULL,
             transitioned_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -125,11 +96,21 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Drop ``coord.plans`` + history table + indices."""
+    """Reverse plan_status_history + drop Phase 2 columns."""
     op.execute(
         "DROP INDEX IF EXISTS coord.idx_plan_status_history_plan"
     )
     op.execute("DROP TABLE IF EXISTS coord.plan_status_history")
     op.execute("DROP INDEX IF EXISTS coord.idx_plans_updated_at")
-    op.execute("DROP INDEX IF EXISTS coord.idx_plans_status")
-    op.execute("DROP TABLE IF EXISTS coord.plans")
+    op.execute("DROP INDEX IF EXISTS coord.idx_plans_slug")
+    op.execute(
+        """
+        ALTER TABLE coord.plans
+            DROP COLUMN IF EXISTS metadata,
+            DROP COLUMN IF EXISTS archive_path,
+            DROP COLUMN IF EXISTS origin_path,
+            DROP COLUMN IF EXISTS authored_by,
+            DROP COLUMN IF EXISTS content,
+            DROP COLUMN IF EXISTS slug
+        """
+    )
