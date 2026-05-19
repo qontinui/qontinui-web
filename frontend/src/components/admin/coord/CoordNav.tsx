@@ -18,6 +18,7 @@ import {
   Boxes,
   FileText,
   History as HistoryIcon,
+  Inbox,
   ShieldCheck,
   Users,
 } from "lucide-react";
@@ -49,6 +50,12 @@ const PRIMARY_TABS: NavItem[] = [
     label: "Plans",
     icon: FileText,
     testId: "coord-nav-plans",
+  },
+  {
+    href: "/admin/coord/questions",
+    label: "Questions",
+    icon: Inbox,
+    testId: "coord-nav-questions",
   },
   {
     href: "/admin/coord/alerts",

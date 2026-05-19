@@ -386,6 +386,87 @@ class TestAgentQuestionsEndpoints:
         resp = user_client.get(f"{API_PREFIX}/agent-questions/pending")
         assert resp.status_code == 403
 
+    def test_answered(self, admin_client: TestClient):
+        coord_payload = {
+            "questions": [
+                {
+                    "question_id": "q-9",
+                    "response": "yes",
+                    "responded_by_operator": "admin@example.com",
+                }
+            ]
+        }
+        mock_resp = _mock_response(json_data=coord_payload)
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = mock_resp
+            _configure_mock_client(MockClient, instance)
+            resp = admin_client.get(
+                f"{API_PREFIX}/agent-questions/answered?limit=50"
+            )
+        assert resp.status_code == 200
+        assert resp.json() == coord_payload
+        called_url = instance.get.call_args.args[0]
+        assert called_url.endswith("/coord/agent-questions/answered")
+        called_params = instance.get.call_args.kwargs.get("params", {})
+        assert called_params.get("limit") == 50
+
+    def test_get_single_question(self, admin_client: TestClient):
+        coord_payload = {
+            "question_id": "q-1",
+            "agent_id": "a-1",
+            "agent_session_id": "s-1",
+            "device_id": "d-1",
+            "plan_phase": "Phase 3",
+            "question": "Continue with phase 2?",
+            "options": [{"value": "yes", "label": "Yes"}],
+            "context": "more info here",
+            "created_at": "2026-05-20T01:00:00Z",
+            "responded_at": None,
+            "response": None,
+        }
+        mock_resp = _mock_response(json_data=coord_payload)
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = mock_resp
+            _configure_mock_client(MockClient, instance)
+            resp = admin_client.get(f"{API_PREFIX}/agent-questions/q-1")
+        assert resp.status_code == 200
+        assert resp.json() == coord_payload
+        called_url = instance.get.call_args.args[0]
+        assert called_url.endswith("/coord/agent-questions/q-1")
+
+    def test_by_session(self, admin_client: TestClient):
+        coord_payload = {
+            "session_id": "s-42",
+            "questions": [
+                {"question_id": "q-1", "question": "first?"},
+                {"question_id": "q-2", "question": "second?"},
+            ],
+        }
+        mock_resp = _mock_response(json_data=coord_payload)
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = mock_resp
+            _configure_mock_client(MockClient, instance)
+            resp = admin_client.get(
+                f"{API_PREFIX}/agent-questions/by-session/s-42"
+            )
+        assert resp.status_code == 200
+        assert resp.json() == coord_payload
+        called_url = instance.get.call_args.args[0]
+        assert called_url.endswith("/coord/agent-questions/by-session/s-42")
+
+    def test_by_session_non_admin_forbidden(self, user_client: TestClient):
+        resp = user_client.get(
+            f"{API_PREFIX}/agent-questions/by-session/s-1"
+        )
+        assert resp.status_code == 403
+
+    def test_get_single_non_admin_forbidden(self, user_client: TestClient):
+        resp = user_client.get(f"{API_PREFIX}/agent-questions/q-1")
+        assert resp.status_code == 403
+
 
 # ---------------------------------------------------------------------------
 # Wave-3 prep — agent logs + memory

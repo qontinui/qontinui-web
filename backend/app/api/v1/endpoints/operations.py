@@ -395,6 +395,8 @@ async def get_claims_alerts(
 # - GET    /operations/alerts                            — full alert rollup
 # - GET    /operations/fleet/health                      — fleet rollup
 # - GET    /operations/agent-questions/pending           — Wave-3 prep
+# - GET    /operations/agent-questions/{id}              — Wave-3a single lookup
+# - GET    /operations/agent-questions/by-session/{sid}  — Wave-3a by-session
 # - POST   /operations/agent-questions/{id}/respond      — Wave-3 prep
 # - GET    /operations/agent-logs/by-agent/{agent_id}    — Wave-3 prep
 # - GET    /operations/memory/list                       — Wave-3 prep
@@ -521,6 +523,54 @@ async def get_pending_agent_questions(
 ) -> Any:
     """Return pending agent questions awaiting an operator response."""
     return await _proxy_coord_get("/coord/agent-questions/pending")
+
+
+@router.get("/agent-questions/answered")
+async def get_answered_agent_questions(
+    limit: int | None = Query(default=None, ge=1, le=500),
+    _admin: Any = Depends(require_admin),
+) -> Any:
+    """Return recently-answered agent questions.
+
+    Wave 3a — surfaces the "answered" tab on the questions inbox so
+    operators can audit prior decisions without leaving the page.
+    """
+    params: dict[str, Any] = {}
+    if limit is not None:
+        params["limit"] = limit
+    return await _proxy_coord_get(
+        "/coord/agent-questions/answered", params=params or None
+    )
+
+
+@router.get("/agent-questions/by-session/{session_id}")
+async def get_agent_questions_by_session(
+    session_id: str,
+    _admin: Any = Depends(require_admin),
+) -> Any:
+    """Return all questions tied to a single ``agent_session_id``.
+
+    Cross-link target from ``/admin/agent-sessions/{session_id}``. Returns
+    pending + answered rows so the session-lineage view can show the
+    operator-decision arm in line with the other UNION arms.
+    """
+    return await _proxy_coord_get(
+        f"/coord/agent-questions/by-session/{session_id}"
+    )
+
+
+@router.get("/agent-questions/{question_id}")
+async def get_agent_question(
+    question_id: str,
+    _admin: Any = Depends(require_admin),
+) -> Any:
+    """Return a single agent-question row (pending or answered).
+
+    Backs the ``/admin/coord/questions/[id]`` detail page so the operator
+    can render the full question + context + options without first
+    fetching the pending list.
+    """
+    return await _proxy_coord_get(f"/coord/agent-questions/{question_id}")
 
 
 @router.post("/agent-questions/{question_id}/respond")

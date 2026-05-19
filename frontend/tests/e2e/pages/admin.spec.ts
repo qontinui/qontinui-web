@@ -306,10 +306,12 @@ test.describe("Admin - Coord operator console", () => {
 
     if (hasCoordHeading) {
       await expect(page.getByTestId("coord-nav")).toBeVisible();
-      // All 5 primary tabs render.
+      // All primary tabs render — Wave 3a adds "questions" between
+      // Plans and Alerts.
       await expect(page.getByTestId("coord-nav-fleet")).toBeVisible();
       await expect(page.getByTestId("coord-nav-trees")).toBeVisible();
       await expect(page.getByTestId("coord-nav-plans")).toBeVisible();
+      await expect(page.getByTestId("coord-nav-questions")).toBeVisible();
       await expect(page.getByTestId("coord-nav-alerts")).toBeVisible();
       await expect(page.getByTestId("coord-nav-history")).toBeVisible();
       // Cross-links to existing surfaces.
@@ -322,6 +324,7 @@ test.describe("Admin - Coord operator console", () => {
     { path: "/admin/coord/fleet", testId: "coord-fleet-page" },
     { path: "/admin/coord/trees", testId: "coord-trees-page" },
     { path: "/admin/coord/plans", testId: "coord-plans-page" },
+    { path: "/admin/coord/questions", testId: "coord-questions-page" },
     { path: "/admin/coord/alerts", testId: "coord-alerts-page" },
     { path: "/admin/coord/history", testId: "coord-history-page" },
   ]) {
