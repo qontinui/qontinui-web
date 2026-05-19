@@ -206,13 +206,11 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
                     registered_device_id=str(device_row.device_id),
                 )
 
-            connection_record = (
-                await device_connection_crud.create_connection_record(
-                    db,
-                    device_id=device_row.device_id,
-                    user_id=user_id,
-                    ip_address=client_ip,
-                )
+            connection_record = await device_connection_crud.create_connection_record(
+                db,
+                device_id=device_row.device_id,
+                user_id=user_id,
+                ip_address=client_ip,
             )
 
             # Mark the device as WS-connected by pointing at the open

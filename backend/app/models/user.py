@@ -120,9 +120,7 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     device_connections = relationship(
         "DeviceConnection", back_populates="user", cascade="all, delete-orphan"
     )
-    devices = relationship(
-        "Device", back_populates="user", passive_deletes=True
-    )
+    devices = relationship("Device", back_populates="user", passive_deletes=True)
     project_versions = relationship(
         "ProjectVersion", back_populates="created_by_user", cascade="all, delete-orphan"
     )

@@ -102,10 +102,7 @@ class CoordJWKSClient:
         """Return the cached JWKS, refetching when expired or absent."""
         async with self._lock:
             now = time.time()
-            if (
-                self._jwks is not None
-                and (now - self._fetched_at) < self._ttl_s
-            ):
+            if self._jwks is not None and (now - self._fetched_at) < self._ttl_s:
                 return self._jwks
 
             jwks = await self._fetch_jwks()
