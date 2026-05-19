@@ -157,18 +157,24 @@ async def list_agent_sessions(
 # ---- GET /admin/agent-sessions/{id}/lineage ------------------------------
 
 
-# UNION ALL query from plan Verification §3. The four lineage tables
-# carry the bulk of audit history; ``coord.coordinator_decisions`` and
-# ``coord.devices`` also have the column but are excluded from the
-# timeline view (decisions are coordinator-internal; devices show the
-# latest-session pointer, not a per-session action). Both surface in
-# follow-up rollup views (see plan §"Out-of-scope follow-ups").
+# UNION ALL query from plan Verification §3, extended in
+# ``2026-05-19-coordinator-production-readiness.md`` Phase 5 with the
+# ``coord.agent_logs`` arm. Five lineage tables now carry the bulk of
+# audit history; ``coord.coordinator_decisions`` and ``coord.devices``
+# also have the column but are excluded from the timeline view
+# (decisions are coordinator-internal; devices show the latest-session
+# pointer, not a per-session action). Both surface in follow-up rollup
+# views (see plan §"Out-of-scope follow-ups").
 #
 # Each branch synthesises a uniform ``(kind, handle, occurred_at)``
 # shape so the client renders a single timeline without per-kind
 # field gymnastics. ``handle`` is the row's natural identifier
-# (agent_id, claims_audit row id, build_id, proposal_id) for
-# operator drill-down.
+# (agent_id, claims_audit row id, build_id, proposal_id, or for
+# ``agent_log`` a human-readable ``"<level> <event>"`` string) for
+# operator drill-down. Per the readiness plan: ``agent_log`` is
+# expected to dominate row counts for active sessions — the 500-row
+# LIMIT applies post-UNION, so a noisy agent doesn't crowd out the
+# four lower-volume kinds.
 _LINEAGE_SQL = text(
     """
     SELECT 'agent_worktree'  AS kind,
@@ -190,6 +196,11 @@ _LINEAGE_SQL = text(
            proposal_id::text AS handle,
            created_at        AS occurred_at
       FROM coord.merge_proposals    WHERE agent_session_id = :session_id
+    UNION ALL
+    SELECT 'agent_log'       AS kind,
+           level || ' ' || event AS handle,
+           occurred_at       AS occurred_at
+      FROM coord.agent_logs         WHERE agent_session_id = :session_id
     ORDER BY occurred_at DESC
     LIMIT :limit
     """
