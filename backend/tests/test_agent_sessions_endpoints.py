@@ -242,7 +242,11 @@ class TestGetSessionLineage:
             # same UNION. Handle is "<level> <event>" (e.g. "info
             # phase_start") for human-readable timeline rendering.
             {"kind": "agent_log", "handle": "info phase_start", "occurred_at": t},
-            {"kind": "agent_log", "handle": "error verification_failed", "occurred_at": t},
+            {
+                "kind": "agent_log",
+                "handle": "error verification_failed",
+                "occurred_at": t,
+            },
         ]
         app, _ = _build_test_app(lineage_rows=rows)
         client = TestClient(app)
