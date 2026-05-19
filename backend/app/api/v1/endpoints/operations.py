@@ -399,6 +399,8 @@ async def get_claims_alerts(
 # - GET    /operations/agent-questions/by-session/{sid}  — Wave-3a by-session
 # - POST   /operations/agent-questions/{id}/respond      — Wave-3 prep
 # - GET    /operations/agent-logs/by-agent/{agent_id}    — Wave-3 prep
+# - GET    /operations/agent-logs/by-session/{session_id} — Wave 3b
+# - GET    /operations/agent-logs/recent                 — Wave 3b
 # - GET    /operations/memory/list                       — Wave-3 prep
 # - GET    /operations/memory/{name}                     — Wave-3 prep
 
@@ -600,6 +602,58 @@ async def get_agent_logs_by_agent(
         params["since"] = since
     return await _proxy_coord_get(
         f"/coord/agent-logs/by-agent/{agent_id}",
+        params=params or None,
+    )
+
+
+@router.get("/agent-logs/by-session/{session_id}")
+async def get_agent_logs_by_session(
+    session_id: str,
+    limit: int | None = Query(default=None, ge=1, le=2000),
+    since: str | None = Query(default=None),
+    _admin: Any = Depends(require_admin),
+) -> Any:
+    """Return ``coord.agent_logs`` rows for a single agent_session_id.
+
+    Wave 3b — backs the per-agent live view's cross-link to the
+    session-lineage page. Coord routes the request to its
+    ``/coord/agent-logs/by-session/{session_id}`` handler, which selects
+    on the ``agent_session_id`` column rather than ``agent_id``.
+    """
+    params: dict[str, Any] = {}
+    if limit is not None:
+        params["limit"] = limit
+    if since is not None:
+        params["since"] = since
+    return await _proxy_coord_get(
+        f"/coord/agent-logs/by-session/{session_id}",
+        params=params or None,
+    )
+
+
+@router.get("/agent-logs/recent")
+async def get_agent_logs_recent(
+    limit: int | None = Query(default=None, ge=1, le=2000),
+    since: str | None = Query(default=None),
+    level: str | None = Query(default=None, description="Filter by min level."),
+    _admin: Any = Depends(require_admin),
+) -> Any:
+    """Return the fleet-wide recent agent_logs timeline.
+
+    Wave 3b — backs the ``/admin/coord/agents`` landing timeline.
+    Optional ``level`` filters to a minimum severity (trace/debug/info/
+    warn/error). Coord owns the ordering + level-rollup semantics; this
+    endpoint is a transparent proxy.
+    """
+    params: dict[str, Any] = {}
+    if limit is not None:
+        params["limit"] = limit
+    if since is not None:
+        params["since"] = since
+    if level is not None:
+        params["level"] = level
+    return await _proxy_coord_get(
+        "/coord/agent-logs/recent",
         params=params or None,
     )
 

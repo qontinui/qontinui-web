@@ -312,6 +312,7 @@ test.describe("Admin - Coord operator console", () => {
       await expect(page.getByTestId("coord-nav-trees")).toBeVisible();
       await expect(page.getByTestId("coord-nav-plans")).toBeVisible();
       await expect(page.getByTestId("coord-nav-questions")).toBeVisible();
+      await expect(page.getByTestId("coord-nav-agents")).toBeVisible();
       await expect(page.getByTestId("coord-nav-alerts")).toBeVisible();
       await expect(page.getByTestId("coord-nav-history")).toBeVisible();
       // Cross-links to existing surfaces.
@@ -325,6 +326,7 @@ test.describe("Admin - Coord operator console", () => {
     { path: "/admin/coord/trees", testId: "coord-trees-page" },
     { path: "/admin/coord/plans", testId: "coord-plans-page" },
     { path: "/admin/coord/questions", testId: "coord-questions-page" },
+    { path: "/admin/coord/agents", testId: "coord-agents-page" },
     { path: "/admin/coord/alerts", testId: "coord-alerts-page" },
     { path: "/admin/coord/history", testId: "coord-history-page" },
   ]) {
@@ -371,6 +373,176 @@ test.describe("Admin - Coord operator console", () => {
     await page.getByTestId("coord-nav-plans").click();
     await page.waitForURL(/\/admin\/coord\/plans/);
     await expect(page.getByTestId("coord-plans-page")).toBeVisible();
+  });
+});
+
+test.describe("Admin - Coord agents (logs)", () => {
+  // Plan `2026-05-19-coordinator-production-readiness.md` Phase 5 (Wave 3b).
+  // The `/admin/coord/agents` page is the fleet-wide recent agent_logs
+  // timeline; `/admin/coord/agents/[agent_id]` is the per-agent live view
+  // with filters + session cross-link. Both tests route the coord proxy
+  // through Playwright so the page renders deterministic mixed-level
+  // rows regardless of whether real coord state is present.
+
+  test("recent activity loads + renders mixed-level rows", async ({
+    page,
+  }) => {
+    const occurredAt = (deltaSec: number) =>
+      new Date(Date.now() - deltaSec * 1000).toISOString();
+    const mockedLogs = {
+      logs: [
+        {
+          log_id: "fake-1",
+          agent_id: "agent-trace-mock-1",
+          level: "info",
+          event: "agent_boot",
+          payload: { build: "fake" },
+          occurred_at: occurredAt(5),
+        },
+        {
+          log_id: "fake-2",
+          agent_id: "agent-trace-mock-2",
+          level: "warn",
+          event: "claim_contended",
+          payload: { kind: "branch", resource: "wip/foo" },
+          occurred_at: occurredAt(20),
+        },
+        {
+          log_id: "fake-3",
+          agent_id: "agent-trace-mock-1",
+          level: "error",
+          event: "claim_failed",
+          payload: { code: "E_BUSY" },
+          occurred_at: occurredAt(40),
+        },
+      ],
+    };
+
+    await page.route("**/api/v1/operations/agent-logs/recent**", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(mockedLogs),
+      }),
+    );
+
+    await page.goto("/admin/coord/agents");
+    await page.waitForLoadState("domcontentloaded");
+    await page.waitForTimeout(2500);
+
+    const hasCoordHeading =
+      (await page
+        .getByRole("heading", { name: "Coord operator console", exact: true })
+        .count()) > 0;
+    if (!hasCoordHeading) {
+      // Non-superuser identity (test fixture redirects); the redirect
+      // is already verified by the broader admin coord smoke tests.
+      return;
+    }
+
+    await expect(page.getByTestId("coord-agents-page")).toBeVisible();
+    await expect(page.getByTestId("coord-agents-recent-list")).toBeVisible();
+
+    const rows = page.getByTestId("agent-log-row");
+    await expect(rows).toHaveCount(3);
+
+    // Mixed levels rendered.
+    await expect(page.getByTestId("log-level-info").first()).toBeVisible();
+    await expect(page.getByTestId("log-level-warn").first()).toBeVisible();
+    await expect(page.getByTestId("log-level-error").first()).toBeVisible();
+  });
+
+  test("per-agent page filters correctly + shows session cross-link", async ({
+    page,
+  }) => {
+    const occurredAt = (deltaSec: number) =>
+      new Date(Date.now() - deltaSec * 1000).toISOString();
+    const agentId = "agent-fake-session-test";
+    const sessionId = "session-fake-uuid-1234";
+    const mockedLogs = {
+      agent_id: agentId,
+      logs: [
+        {
+          log_id: "p-1",
+          agent_id: agentId,
+          agent_session_id: sessionId,
+          level: "info",
+          event: "boot",
+          payload: { ok: true },
+          occurred_at: occurredAt(2),
+        },
+        {
+          log_id: "p-2",
+          agent_id: agentId,
+          agent_session_id: sessionId,
+          level: "warn",
+          event: "slow_query",
+          payload: { ms: 4500 },
+          occurred_at: occurredAt(10),
+        },
+        {
+          log_id: "p-3",
+          agent_id: agentId,
+          agent_session_id: sessionId,
+          level: "info",
+          event: "phase_complete",
+          payload: { phase: "build" },
+          occurred_at: occurredAt(30),
+        },
+      ],
+    };
+
+    await page.route(
+      `**/api/v1/operations/agent-logs/by-agent/${agentId}**`,
+      (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(mockedLogs),
+        }),
+    );
+
+    await page.goto(`/admin/coord/agents/${agentId}`);
+    await page.waitForLoadState("domcontentloaded");
+    await page.waitForTimeout(2500);
+
+    const hasCoordHeading =
+      (await page
+        .getByRole("heading", { name: "Coord operator console", exact: true })
+        .count()) > 0;
+    if (!hasCoordHeading) {
+      return;
+    }
+
+    await expect(page.getByTestId("coord-agent-log-page")).toBeVisible();
+    await expect(page.getByTestId("coord-agent-log-list")).toBeVisible();
+
+    // All three rows render initially (no filter).
+    const rows = page.getByTestId("agent-log-row");
+    await expect(rows).toHaveCount(3);
+
+    // Toggle warn-only filter → 1 row remains.
+    await page.getByTestId("coord-agent-log-level-warn").click();
+    await expect(rows).toHaveCount(1);
+    await expect(page.getByTestId("log-level-warn")).toBeVisible();
+
+    // Clear warn, toggle info → 2 rows.
+    await page.getByTestId("coord-agent-log-level-warn").click();
+    await page.getByTestId("coord-agent-log-level-info").click();
+    await expect(rows).toHaveCount(2);
+
+    // Clear filter, then event-contains "phase" → 1 row.
+    await page.getByTestId("coord-agent-log-level-info").click();
+    await page.getByTestId("coord-agent-log-event-filter").fill("phase");
+    await expect(rows).toHaveCount(1);
+
+    // Session cross-link surfaces because rows carry agent_session_id.
+    const sessionLink = page.getByTestId("coord-agent-log-session-link");
+    await expect(sessionLink).toBeVisible();
+    await expect(sessionLink).toHaveAttribute(
+      "href",
+      `/admin/agent-sessions/${sessionId}`,
+    );
   });
 });
 

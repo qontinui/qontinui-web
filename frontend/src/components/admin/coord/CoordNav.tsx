@@ -20,6 +20,7 @@ import {
   History as HistoryIcon,
   Inbox,
   Rocket,
+  ScrollText,
   ShieldCheck,
   Users,
 } from "lucide-react";
@@ -63,6 +64,12 @@ const PRIMARY_TABS: NavItem[] = [
     label: "Questions",
     icon: Inbox,
     testId: "coord-nav-questions",
+  },
+  {
+    href: "/admin/coord/agents",
+    label: "Agents",
+    icon: ScrollText,
+    testId: "coord-nav-agents",
   },
   {
     href: "/admin/coord/alerts",
