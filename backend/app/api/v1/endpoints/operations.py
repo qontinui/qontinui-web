@@ -20,6 +20,7 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.admin_deps import require_admin
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.api.v1.endpoints.devices import _device_to_wire as _runner_to_wire
 from app.core.config import settings
@@ -374,3 +375,197 @@ async def get_claims_alerts(
     if is_dict:
         return {"alerts": filtered}
     return filtered
+
+
+# ---- Coord readiness dashboard proxy (Wave 2 — admin-gated) --------------
+#
+# Plan ``2026-05-19-coordinator-production-readiness.md`` Phase 2. Adds
+# the browser-side operator console at ``/admin/coord/*``. ALL endpoints
+# in this section are admin-gated (``require_admin``) — the operator
+# console is fleet-mutating and read-amplifying surface, not user-scoped.
+#
+# Routes (read-only unless noted):
+#
+# - GET    /operations/plans                            — list coord.plans
+# - GET    /operations/plans/{slug}                      — single plan
+# - GET    /operations/plans/{slug}/history              — status history
+# - POST   /operations/plans/{slug}/transition           — set plan status
+# - GET    /operations/trees/by-device/{device_id}       — primary trees
+# - GET    /operations/trees/contention                  — overlap view
+# - GET    /operations/alerts                            — full alert rollup
+# - GET    /operations/fleet/health                      — fleet rollup
+# - GET    /operations/agent-questions/pending           — Wave-3 prep
+# - POST   /operations/agent-questions/{id}/respond      — Wave-3 prep
+# - GET    /operations/agent-logs/by-agent/{agent_id}    — Wave-3 prep
+# - GET    /operations/memory/list                       — Wave-3 prep
+# - GET    /operations/memory/{name}                     — Wave-3 prep
+
+
+# ---- Plans (Phase 2 substrate — coord.plans is canonical per Q7) --------
+
+
+@router.get("/plans")
+async def list_coord_plans(
+    status: str | None = Query(default=None, description="Filter by status."),
+    limit: int | None = Query(default=None, ge=1, le=500),
+    _admin: Any = Depends(require_admin),
+) -> Any:
+    """List entries from ``coord.plans`` via coord."""
+    params: dict[str, Any] = {}
+    if status is not None:
+        params["status"] = status
+    if limit is not None:
+        params["limit"] = limit
+    return await _proxy_coord_get("/coord/plans", params=params or None)
+
+
+@router.get("/plans/{slug}")
+async def get_coord_plan(
+    slug: str,
+    _admin: Any = Depends(require_admin),
+) -> Any:
+    """Return a single plan from ``coord.plans``."""
+    return await _proxy_coord_get(f"/coord/plans/{slug}")
+
+
+@router.get("/plans/{slug}/history")
+async def get_coord_plan_history(
+    slug: str,
+    _admin: Any = Depends(require_admin),
+) -> Any:
+    """Return the status history timeline for a plan."""
+    return await _proxy_coord_get(f"/coord/plans/{slug}/history")
+
+
+@router.post("/plans/{slug}/transition")
+async def post_coord_plan_transition(
+    slug: str,
+    body: dict[str, Any],
+    _admin: Any = Depends(require_admin),
+) -> Any:
+    """Transition a plan to a new status.
+
+    Body shape (coord): ``{"status": "<new_status>", "note": "<optional>"}``.
+    Audit trail lives in ``coord.plan_status_history``.
+    """
+    return await _proxy_coord_post(f"/coord/plans/{slug}/transition", body)
+
+
+# ---- Primary trees (Phase 1 substrate) -----------------------------------
+
+
+@router.get("/trees/by-device/{device_id}")
+async def get_trees_by_device(
+    device_id: str,
+    _admin: Any = Depends(require_admin),
+) -> Any:
+    """Return primary-tree rows for a device from ``coord.primary_trees``."""
+    return await _proxy_coord_get(f"/coord/trees/by-device/{device_id}")
+
+
+@router.get("/trees/contention")
+async def get_trees_contention(
+    _admin: Any = Depends(require_admin),
+) -> Any:
+    """Return primary-tree contention view across the fleet."""
+    return await _proxy_coord_get("/coord/trees/contention")
+
+
+# ---- Alerts (full rollup; sibling of /claims/alerts) ---------------------
+
+
+@router.get("/alerts")
+async def get_coord_alerts(
+    include_resolved: bool = Query(default=False),
+    severity: str | None = Query(default=None),
+    kind: str | None = Query(default=None),
+    _admin: Any = Depends(require_admin),
+) -> Any:
+    """Return the full ``coord.alerts`` rollup with optional filters.
+
+    Sibling of ``/operations/claims/alerts`` (which filters to
+    ``alert_key`` prefix ``claim-``). This endpoint exposes ALL alert
+    kinds (claim / conflict / stale_wip / health) for the dashboard's
+    Alerts page.
+    """
+    params: dict[str, Any] = {"include_resolved": include_resolved}
+    if severity is not None:
+        params["severity"] = severity
+    if kind is not None:
+        params["kind"] = kind
+    return await _proxy_coord_get("/coord/alerts", params=params)
+
+
+# ---- Fleet health --------------------------------------------------------
+
+
+@router.get("/fleet/health")
+async def get_fleet_health(
+    _admin: Any = Depends(require_admin),
+) -> Any:
+    """Return the fleet-health rollup from coord (`coord.fleet_health`)."""
+    return await _proxy_coord_get("/coord/fleet/health")
+
+
+# ---- Wave-3 prep (decision queue + agent-logs + memory) ------------------
+#
+# These endpoints are added now so the Wave-3 frontend (decision queue
+# inbox, per-agent log tail, memory browser) doesn't need to re-touch
+# operations.py. Backed by the Phase 3/5/6 coord routes — the substrate
+# is shipped; the operator UI for them lands in Wave-3.
+
+
+@router.get("/agent-questions/pending")
+async def get_pending_agent_questions(
+    _admin: Any = Depends(require_admin),
+) -> Any:
+    """Return pending agent questions awaiting an operator response."""
+    return await _proxy_coord_get("/coord/agent-questions/pending")
+
+
+@router.post("/agent-questions/{question_id}/respond")
+async def post_agent_question_response(
+    question_id: str,
+    body: dict[str, Any],
+    _admin: Any = Depends(require_admin),
+) -> Any:
+    """Operator answers an agent question."""
+    return await _proxy_coord_post(
+        f"/coord/agent-questions/{question_id}/respond", body
+    )
+
+
+@router.get("/agent-logs/by-agent/{agent_id}")
+async def get_agent_logs_by_agent(
+    agent_id: str,
+    limit: int | None = Query(default=None, ge=1, le=2000),
+    since: str | None = Query(default=None),
+    _admin: Any = Depends(require_admin),
+) -> Any:
+    """Return ``coord.agent_logs`` rows for a single agent_id."""
+    params: dict[str, Any] = {}
+    if limit is not None:
+        params["limit"] = limit
+    if since is not None:
+        params["since"] = since
+    return await _proxy_coord_get(
+        f"/coord/agent-logs/by-agent/{agent_id}",
+        params=params or None,
+    )
+
+
+@router.get("/memory/list")
+async def get_memory_list(
+    _admin: Any = Depends(require_admin),
+) -> Any:
+    """List entries from the canonical memory substrate."""
+    return await _proxy_coord_get("/coord/memory/list")
+
+
+@router.get("/memory/{name}")
+async def get_memory_entry(
+    name: str,
+    _admin: Any = Depends(require_admin),
+) -> Any:
+    """Return a single memory entry (latest version) by name."""
+    return await _proxy_coord_get(f"/coord/memory/{name}")
