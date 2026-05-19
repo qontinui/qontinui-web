@@ -1,17 +1,17 @@
 "use client";
 
 /**
- * One-click runner token provisioning landing page.
+ * One-click device pairing landing page.
  *
  * The runner's Settings UI opens this URL with:
  *   ?state=<64-hex>              — random per-flow state, echoed back in redirect
  *   &callback=<runner-url>       — http://127.0.0.1:<port>/auth/runner-token-callback
- *   &runner_name=<hostname>      — shown to the user for confirmation
+ *   &device_name=<hostname>      — shown to the user for confirmation
  *
- * On "Connect" click we POST to /api/v1/runners/tokens, then redirect the
- * browser to `<callback>?state=<state>&token=<plain>&token_id=<id>`. The
+ * On "Connect" click we POST to /api/v1/devices/pair-confirm, then redirect the
+ * browser to `<callback>?state=<state>&token=<plain>&token_id=<device_id>`. The
  * runner's local callback handler captures the token, persists it, and
- * opens a persistent WebSocket to /api/v1/runners/ws to register with web.
+ * opens a persistent WebSocket to /api/v1/devices/ws to register with web.
  *
  * Security:
  *   - Token creation requires an explicit button click; no GET-triggered
@@ -19,7 +19,7 @@
  *   - `callback` must match `^http://127\.0\.0\.1:\d+/auth/runner-token-callback$`.
  *     This blocks an attacker from crafting a link that would redirect the
  *     user's browser (and token!) to an arbitrary URL.
- *   - The `runner_name` is displayed prominently and cannot be forged by a
+ *   - The `device_name` is displayed prominently and cannot be forged by a
  *     malicious link without the user noticing.
  *   - The callback URL is shown to the user before redirect.
  */
@@ -49,7 +49,11 @@ export default function ConnectRunnerPage() {
 
   const state = searchParams?.get("state") ?? "";
   const callback = searchParams?.get("callback") ?? "";
-  const runnerName = searchParams?.get("runner_name") ?? "";
+  // Phase 6: prefer `device_name`; accept legacy `runner_name` so a Phase
+  // 6-frontend talking to a pre-Phase-6 runner build still labels the
+  // device correctly during the cutover window.
+  const deviceName =
+    searchParams?.get("device_name") ?? searchParams?.get("runner_name") ?? "";
 
   // Validate inputs. The runner's callback-handler re-checks state on its
   // side, but we validate `callback` here to block open-redirect attacks
@@ -72,14 +76,14 @@ export default function ConnectRunnerPage() {
           "Invalid callback URL. Only http://127.0.0.1:<port>/auth/runner-token-callback is allowed.",
       };
     }
-    if (!runnerName || runnerName.trim().length === 0) {
+    if (!deviceName || deviceName.trim().length === 0) {
       return {
         ok: false as const,
-        error: "Missing runner_name parameter.",
+        error: "Missing device_name parameter.",
       };
     }
     return { ok: true as const };
-  }, [state, callback, runnerName]);
+  }, [state, callback, deviceName]);
 
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -90,8 +94,8 @@ export default function ConnectRunnerPage() {
     setErrorMessage(null);
     setSubmitting(true);
     try {
-      const safeName = runnerName.replace(/[^A-Za-z0-9._-]/g, "-").slice(0, 48);
-      const tokenName = `browser-flow-${safeName || "runner"}-${formatYmd(new Date())}`;
+      const safeName = deviceName.replace(/[^A-Za-z0-9._-]/g, "-").slice(0, 48);
+      const tokenName = `browser-flow-${safeName || "device"}-${formatYmd(new Date())}`;
       const result = await createRunnerToken({
         name: tokenName,
         expires_in_days: null,
@@ -106,7 +110,7 @@ export default function ConnectRunnerPage() {
       window.location.href = redirectUrl.toString();
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "Failed to create runner token.";
+        err instanceof Error ? err.message : "Failed to create device token.";
       setErrorMessage(message);
       setSubmitting(false);
     }
@@ -137,18 +141,18 @@ export default function ConnectRunnerPage() {
         <div className="rounded-lg border border-border-subtle bg-surface-raised/80 backdrop-blur-md p-6 shadow-xl">
           <div className="flex items-center gap-3 mb-4">
             <Server className="w-6 h-6 text-brand-primary" aria-hidden />
-            <h1 className="text-2xl font-bold">Connect Runner</h1>
+            <h1 className="text-2xl font-bold">Connect Device</h1>
           </div>
 
           {validation.ok ? (
             <>
               <p className="text-text-muted mb-4">
                 You&apos;re about to authorize{" "}
-                <strong className="text-white">{runnerName}</strong> to connect
+                <strong className="text-white">{deviceName}</strong> to connect
                 to your account.
               </p>
               <div className="rounded-md border border-border-subtle bg-surface-canvas/60 p-4 mb-4 space-y-2 text-sm text-text-muted">
-                <p>Once authorized, this runner will:</p>
+                <p>Once authorized, this device will:</p>
                 <ul className="list-disc pl-5 space-y-1">
                   <li>Connect to qontinui-web over a persistent WebSocket</li>
                   <li>
@@ -160,7 +164,7 @@ export default function ConnectRunnerPage() {
                 </ul>
                 <p className="pt-2">
                   You can revoke this authorization anytime from{" "}
-                  <em>Runners &rarr; Tokens</em>.
+                  <em>Devices &rarr; Tokens</em>.
                 </p>
               </div>
 
@@ -172,7 +176,7 @@ export default function ConnectRunnerPage() {
                   {callback}
                 </code>
                 <p className="mt-2 text-[11px]">
-                  This must be a localhost URL your runner is listening on. If
+                  This must be a localhost URL your device is listening on. If
                   it isn&apos;t, don&apos;t click Connect.
                 </p>
               </div>
@@ -229,7 +233,7 @@ export default function ConnectRunnerPage() {
                 <span className="text-amber-200">{validation.error}</span>
               </div>
               <p className="text-text-muted text-sm mb-4">
-                This page is opened by your runner&apos;s Settings panel when
+                This page is opened by your device&apos;s Settings panel when
                 you click &ldquo;Connect with web login&rdquo;. If you landed
                 here directly, there&apos;s nothing to do.
               </p>

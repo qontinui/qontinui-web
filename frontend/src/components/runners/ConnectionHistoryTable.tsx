@@ -30,7 +30,7 @@ import type { RunnerSessionFilters } from "@/types/runner";
 
 /**
  * Session History table — replaces the legacy "Connection History" view.
- * Reads from `GET /api/v1/runners/sessions` (Phase 2 unified endpoint).
+ * Reads from `GET /api/v1/devices/sessions` (Phase 2 unified endpoint).
  */
 export function ConnectionHistoryTable() {
   const [filters, setFilters] = useState<RunnerSessionFilters>({

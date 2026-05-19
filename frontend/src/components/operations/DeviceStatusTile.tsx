@@ -10,14 +10,14 @@ import { Badge } from "@/components/ui/badge";
 import { Activity, RefreshCw, WifiOff } from "lucide-react";
 import { createLogger } from "@/lib/logger";
 import { relativeTime } from "./utils";
-import type { MachineStatusResponse, MachineStatusRow } from "./coordTypes";
+import type { DeviceStatusResponse, DeviceStatusRow } from "./coordTypes";
 
-const log = createLogger("MachineStatusTile");
+const log = createLogger("DeviceStatusTile");
 
 const COORD_REST_PATH = "/coord-api/status";
 const COORD_WS_URL =
   process.env.NEXT_PUBLIC_COORD_WS_URL || "ws://localhost:9870/ws";
-const WS_PATTERN = "events.coord.machine_status_updated";
+const WS_PATTERN = "events.coord.device_status_updated";
 const POLL_INTERVAL_MS = 30_000;
 const REFETCH_DEBOUNCE_MS = 1_000;
 const MAX_RECONNECT_ATTEMPTS = 5;
@@ -52,12 +52,12 @@ function rowTextClass(staleness: Staleness): string {
   return "text-foreground";
 }
 
-function identityLabel(row: MachineStatusRow): string {
+function identityLabel(row: DeviceStatusRow): string {
   if (row.hostname && row.hostname.length > 0) return row.hostname;
-  return row.machine_id.slice(0, 8) + "…";
+  return row.device_id.slice(0, 8) + "…";
 }
 
-function repoBranchLabel(row: MachineStatusRow): string | null {
+function repoBranchLabel(row: DeviceStatusRow): string | null {
   if (row.current_repo && row.current_branch) {
     return `${row.current_repo}:${row.current_branch}`;
   }
@@ -67,7 +67,7 @@ function repoBranchLabel(row: MachineStatusRow): string | null {
 /**
  * If a MachineCard with the same hostname exists above this tile, scroll
  * it into view and flash a highlight ring. Cheap UX win for the operator
- * jumping from "this machine is doing X" to the runner detail card.
+ * jumping from "this device is doing X" to the runner detail card.
  */
 function focusMachineCard(hostname: string | null) {
   if (!hostname) return;
@@ -82,8 +82,8 @@ function focusMachineCard(hostname: string | null) {
   }, 1500);
 }
 
-export function MachineStatusTile() {
-  const [rows, setRows] = useState<MachineStatusRow[]>([]);
+export function DeviceStatusTile() {
+  const [rows, setRows] = useState<DeviceStatusRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [wsConnected, setWsConnected] = useState(false);
@@ -103,8 +103,8 @@ export function MachineStatusTile() {
     try {
       const res = await fetch(COORD_REST_PATH, { credentials: "omit" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data: MachineStatusResponse = await res.json();
-      setRows(data.machines ?? []);
+      const data: DeviceStatusResponse = await res.json();
+      setRows(data.devices ?? []);
       setError(null);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "fetch failed";
@@ -181,7 +181,7 @@ export function MachineStatusTile() {
       stopPolling();
       // Resync after (re)connect to catch any updates that landed while
       // we were disconnected — the publish payload only carries
-      // `{machine_id, updated_at}`, never the full row, so a refetch is
+      // `{device_id, updated_at}`, never the full row, so a refetch is
       // the simplest path to consistency.
       void fetchStatus();
     };
@@ -271,13 +271,13 @@ export function MachineStatusTile() {
   return (
     <section
       className="rounded-lg border border-border bg-card/30 p-4"
-      data-ui-bridge-id="operations.machine-status-tile"
+      data-ui-bridge-id="operations.device-status-tile"
     >
       <header className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <Activity className="w-4 h-4 text-muted-foreground" />
           <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-            Machine status
+            Device status
           </h2>
           <Badge variant="outline" className="text-[10px]">
             {sortedRows.length}
@@ -290,7 +290,7 @@ export function MachineStatusTile() {
                 className="h-2 w-2 rounded-full bg-green-500"
                 aria-hidden
               />
-              <span data-ui-bridge-id="operations.machine-status-connection">
+              <span data-ui-bridge-id="operations.device-status-connection">
                 live
               </span>
             </>
@@ -299,7 +299,7 @@ export function MachineStatusTile() {
               <WifiOff className="h-3 w-3 text-yellow-400" />
               <span
                 className="text-yellow-300"
-                data-ui-bridge-id="operations.machine-status-connection"
+                data-ui-bridge-id="operations.device-status-connection"
               >
                 polling (WS offline)
               </span>
@@ -314,8 +314,8 @@ export function MachineStatusTile() {
             type="button"
             onClick={() => void fetchStatus()}
             className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/30"
-            data-ui-bridge-id="operations.machine-status-refresh"
-            aria-label="Refresh machine status"
+            data-ui-bridge-id="operations.device-status-refresh"
+            aria-label="Refresh device status"
           >
             <RefreshCw className="w-3 h-3" />
           </button>
@@ -324,18 +324,18 @@ export function MachineStatusTile() {
 
       {loading && sortedRows.length === 0 ? (
         <p className="text-xs text-muted-foreground italic px-2 py-3">
-          Loading machine status&hellip;
+          Loading device status&hellip;
         </p>
       ) : sortedRows.length === 0 ? (
         <div className="rounded-md border border-border/40 bg-muted/10 p-3 text-xs text-muted-foreground">
-          No machines reporting status. Agents post here voluntarily via{" "}
+          No devices reporting status. Agents post here voluntarily via{" "}
           <code className="bg-muted px-1 rounded">POST /coord/status</code>;
           rows older than 1h are pruned.
         </div>
       ) : (
         <ul
           className="flex flex-col gap-1.5"
-          data-ui-bridge-id="operations.machine-status-list"
+          data-ui-bridge-id="operations.device-status-list"
         >
           {sortedRows.map((row) => {
             const staleness = classifyAge(row.updated_at);
@@ -343,9 +343,9 @@ export function MachineStatusTile() {
             const identity = identityLabel(row);
             return (
               <li
-                key={row.machine_id}
-                data-ui-bridge-id="operations.machine-status-row"
-                data-machine-id={row.machine_id}
+                key={row.device_id}
+                data-ui-bridge-id="operations.device-status-row"
+                data-device-id={row.device_id}
                 data-staleness={staleness}
                 className={`grid grid-cols-[10rem_minmax(0,1.4fr)_minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-border/40 px-3 py-2 text-sm ${rowTintClass(staleness)} ${rowTextClass(staleness)}`}
               >
@@ -356,19 +356,19 @@ export function MachineStatusTile() {
                       onClick={() => focusMachineCard(row.hostname)}
                       className="text-left font-medium truncate hover:underline disabled:cursor-default disabled:no-underline"
                       disabled={!row.hostname}
-                      data-ui-bridge-id="operations.machine-status-identity"
+                      data-ui-bridge-id="operations.device-status-identity"
                     >
                       {identity}
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="top" className="font-mono text-[11px]">
-                    {row.machine_id}
+                    {row.device_id}
                   </TooltipContent>
                 </Tooltip>
 
                 <span
                   className="truncate text-foreground/90"
-                  data-ui-bridge-id="operations.machine-status-task"
+                  data-ui-bridge-id="operations.device-status-task"
                 >
                   {row.current_task ?? (
                     <span className="text-muted-foreground italic">
@@ -379,7 +379,7 @@ export function MachineStatusTile() {
 
                 <span
                   className="truncate font-mono text-xs text-muted-foreground"
-                  data-ui-bridge-id="operations.machine-status-repo-branch"
+                  data-ui-bridge-id="operations.device-status-repo-branch"
                 >
                   {repoBranch ?? ""}
                 </span>
@@ -388,7 +388,7 @@ export function MachineStatusTile() {
                   {row.free_text && (
                     <span
                       className="italic max-w-[14rem] truncate"
-                      data-ui-bridge-id="operations.machine-status-free-text"
+                      data-ui-bridge-id="operations.device-status-free-text"
                       title={row.free_text}
                     >
                       {row.free_text}
@@ -396,7 +396,7 @@ export function MachineStatusTile() {
                   )}
                   <span
                     className="tabular-nums"
-                    data-ui-bridge-id="operations.machine-status-updated-at"
+                    data-ui-bridge-id="operations.device-status-updated-at"
                     title={new Date(row.updated_at).toLocaleString()}
                   >
                     {relativeTime(row.updated_at)}
