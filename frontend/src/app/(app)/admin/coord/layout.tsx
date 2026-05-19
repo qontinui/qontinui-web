@@ -53,11 +53,13 @@ export default function CoordLayout({
       data-testid="coord-layout"
       className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden"
     >
-      <header className="flex items-center gap-3 px-6 py-3 border-b border-border shrink-0">
-        <Activity className="h-5 w-5 text-muted-foreground" />
-        <div>
-          <h1 className="text-lg font-semibold">Coord operator console</h1>
-          <p className="text-xs text-muted-foreground">
+      <header className="flex items-center gap-3 px-3 sm:px-6 py-3 border-b border-border shrink-0">
+        <Activity className="h-5 w-5 text-muted-foreground shrink-0" />
+        <div className="min-w-0">
+          <h1 className="text-base sm:text-lg font-semibold truncate">
+            Coord operator console
+          </h1>
+          <p className="text-xs text-muted-foreground hidden sm:block">
             Cross-machine fleet state, primary trees, plans, alerts, history.
           </p>
         </div>

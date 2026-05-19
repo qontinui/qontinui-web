@@ -89,7 +89,7 @@ export default function CoordAlertsPage() {
   const alerts = data?.alerts ?? [];
 
   return (
-    <div className="p-6 space-y-4" data-testid="coord-alerts-page">
+    <div className="p-3 sm:p-6 space-y-4" data-testid="coord-alerts-page">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">

@@ -132,7 +132,7 @@ export default function CoordQuestionDetailPage() {
 
   return (
     <div
-      className="p-6 space-y-4 max-w-4xl mx-auto"
+      className="p-3 sm:p-6 space-y-4 max-w-4xl mx-auto"
       data-testid="coord-question-detail-page"
     >
       <div className="flex items-center gap-2">

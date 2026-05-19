@@ -222,7 +222,7 @@ export default function CoordTreesPage() {
   const initialDeviceId = searchParams?.get("device_id") ?? "";
 
   return (
-    <div className="p-6 space-y-4" data-testid="coord-trees-page">
+    <div className="p-3 sm:p-6 space-y-4" data-testid="coord-trees-page">
       <Tabs defaultValue={initialDeviceId ? "by-device" : "by-device"}>
         <TabsList>
           <TabsTrigger value="by-device" data-testid="coord-trees-tab-by-device">

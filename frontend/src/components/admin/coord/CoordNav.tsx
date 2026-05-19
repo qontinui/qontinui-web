@@ -118,14 +118,16 @@ export default function CoordNav() {
   return (
     <nav
       data-testid="coord-nav"
-      className="flex items-center gap-1 flex-wrap px-6 py-2 border-b border-border bg-card"
+      className="flex items-center gap-1 flex-wrap px-3 sm:px-6 py-2 border-b border-border bg-card overflow-x-auto"
     >
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1 flex-wrap">
         {PRIMARY_TABS.map(renderItem)}
       </div>
-      <div className="mx-3 h-5 w-px bg-border" aria-hidden />
-      <div className="flex items-center gap-1">
-        <span className="text-xs text-muted-foreground mr-1">cross-links:</span>
+      <div className="mx-1 sm:mx-3 h-5 w-px bg-border hidden sm:block" aria-hidden />
+      <div className="flex items-center gap-1 flex-wrap">
+        <span className="text-xs text-muted-foreground mr-1 hidden sm:inline">
+          cross-links:
+        </span>
         {CROSS_LINKS.map(renderItem)}
       </div>
     </nav>

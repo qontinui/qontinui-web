@@ -75,7 +75,7 @@ export default function CoordPlansListPage() {
   const plans = data?.plans ?? [];
 
   return (
-    <div className="p-6 space-y-4" data-testid="coord-plans-page">
+    <div className="p-3 sm:p-6 space-y-4" data-testid="coord-plans-page">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
