@@ -137,7 +137,6 @@ export function SpawnModal({
         if (cancelled) return;
         // Fall through silently — operator can still type a device ID
         // via the free-text alternative if coord is unreachable.
-        // eslint-disable-next-line no-console
         console.warn("[SpawnModal] fleet/health fetch failed", e);
       })
       .finally(() => {

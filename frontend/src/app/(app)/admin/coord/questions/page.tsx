@@ -95,7 +95,6 @@ export default function CoordQuestionsPage() {
     } catch (e) {
       // Don't clobber a pending-tab error; just leave answered empty.
       // Operators see the pending tab as the load-bearing view.
-      // eslint-disable-next-line no-console
       console.warn("[coord/questions] fetchAnswered failed", e);
     }
   }, []);
