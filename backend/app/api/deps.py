@@ -243,7 +243,9 @@ async def _verify_device_jwt(token: str) -> tuple[dict, User]:
         ) from exc
 
     async with AsyncSessionLocal() as session:
-        result = await session.execute(select(User).where(User.id == user_id))
+        result = await session.execute(
+            select(User).where(User.id == user_id)  # type: ignore[arg-type]
+        )
         user = result.scalar_one_or_none()
 
     if user is None:

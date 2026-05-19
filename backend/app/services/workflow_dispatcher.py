@@ -284,11 +284,17 @@ async def dispatch_workflow_to_runner(
         run_id=run_id,
     )
 
+    # ``Device.port`` is nullable on the unified ``coord.devices`` table
+    # (non-runner devices have NULL). A runner that reached this dispatch
+    # path has WS-paired, which implies it advertised a port — but mypy
+    # can't see that, so narrow explicitly with a 0 fallback. Downstream
+    # consumers treat 0 as "WS dispatch already routed; HTTP fallback
+    # disabled", consistent with the WS-bridge architecture.
     return WorkflowDispatchResponse(
         execution_id=run_id,
         runner_id=runner.device_id,
         runner_hostname=runner.hostname,
-        runner_port=runner.port,
+        runner_port=runner.port or 0,
         dispatched_at=utc_now(),
         task_run_id=None,
     )
