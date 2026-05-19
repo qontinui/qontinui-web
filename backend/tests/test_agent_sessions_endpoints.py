@@ -238,6 +238,15 @@ class TestGetSessionLineage:
             {"kind": "build_event", "handle": str(build_id), "occurred_at": t},
             {"kind": "claim_event", "handle": str(claim_id), "occurred_at": t},
             {"kind": "agent_worktree", "handle": str(agent_id), "occurred_at": t},
+            # Readiness Phase 5 — agent_log rows now appear in the
+            # same UNION. Handle is "<level> <event>" (e.g. "info
+            # phase_start") for human-readable timeline rendering.
+            {"kind": "agent_log", "handle": "info phase_start", "occurred_at": t},
+            {
+                "kind": "agent_log",
+                "handle": "error verification_failed",
+                "occurred_at": t,
+            },
         ]
         app, _ = _build_test_app(lineage_rows=rows)
         client = TestClient(app)
@@ -245,14 +254,24 @@ class TestGetSessionLineage:
         assert resp.status_code == 200
         body = resp.json()
         assert body["session_id"] == str(sid)
-        assert len(body["actions"]) == 4
+        assert len(body["actions"]) == 6
         kinds = [a["kind"] for a in body["actions"]]
         assert set(kinds) == {
             "merge_proposal",
             "build_event",
             "claim_event",
             "agent_worktree",
+            "agent_log",
         }
+        # The two agent_log entries surface in payload with the
+        # "<level> <event>" handle format.
+        log_handles = sorted(
+            a["handle"] for a in body["actions"] if a["kind"] == "agent_log"
+        )
+        assert log_handles == [
+            "error verification_failed",
+            "info phase_start",
+        ]
 
     def test_binds_session_id_param(self):
         sid = uuid4()
@@ -269,7 +288,10 @@ class TestGetSessionLineage:
         client.get(f"/api/v1/admin/agent-sessions/{sid}/lineage")
         assert last_call.params["limit"] == 500
 
-    def test_union_all_includes_all_four_tables(self):
+    def test_union_all_includes_all_five_tables(self):
+        # Readiness Phase 5 added the ``coord.agent_logs`` arm to the
+        # UNION; the count therefore goes from 3 (4 tables, 3 UNIONs)
+        # to 4 (5 tables, 4 UNIONs).
         sid = uuid4()
         app, last_call = _build_test_app(lineage_rows=[])
         client = TestClient(app)
@@ -279,7 +301,8 @@ class TestGetSessionLineage:
         assert "coord.claims_audit" in sql
         assert "coord.build_events" in sql
         assert "coord.merge_proposals" in sql
-        assert sql.count("union all") == 3
+        assert "coord.agent_logs" in sql
+        assert sql.count("union all") == 4
 
     def test_invalid_session_id_rejected_as_422(self):
         app, _ = _build_test_app(lineage_rows=[])
