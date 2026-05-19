@@ -523,9 +523,7 @@ class TestAgentLogsAndMemoryEndpoints:
             instance = AsyncMock()
             instance.get.return_value = mock_resp
             _configure_mock_client(MockClient, instance)
-            resp = admin_client.get(
-                f"{API_PREFIX}/agent-logs/by-session/session-456"
-            )
+            resp = admin_client.get(f"{API_PREFIX}/agent-logs/by-session/session-456")
         assert resp.status_code == 200
         called_params = instance.get.call_args.kwargs.get("params")
         assert called_params is None
@@ -580,9 +578,7 @@ class TestAgentLogsAndMemoryEndpoints:
         called_params = instance.get.call_args.kwargs.get("params", {})
         assert called_params.get("since") == "2026-05-19T00:00:00Z"
 
-    def test_agent_logs_by_session_non_admin_forbidden(
-        self, user_client: TestClient
-    ):
+    def test_agent_logs_by_session_non_admin_forbidden(self, user_client: TestClient):
         resp = user_client.get(f"{API_PREFIX}/agent-logs/by-session/s-1")
         assert resp.status_code == 403
 
