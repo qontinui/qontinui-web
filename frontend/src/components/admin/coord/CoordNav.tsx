@@ -15,6 +15,7 @@ import { usePathname } from "next/navigation";
 import {
   Activity,
   AlertTriangle,
+  BookOpen,
   Boxes,
   FileText,
   History as HistoryIcon,
@@ -76,6 +77,12 @@ const PRIMARY_TABS: NavItem[] = [
     label: "Alerts",
     icon: AlertTriangle,
     testId: "coord-nav-alerts",
+  },
+  {
+    href: "/admin/coord/memory",
+    label: "Memory",
+    icon: BookOpen,
+    testId: "coord-nav-memory",
   },
   {
     href: "/admin/coord/history",
