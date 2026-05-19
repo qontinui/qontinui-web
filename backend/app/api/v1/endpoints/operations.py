@@ -619,3 +619,56 @@ async def get_memory_entry(
 ) -> Any:
     """Return a single memory entry (latest version) by name."""
     return await _proxy_coord_get(f"/coord/memory/{name}")
+
+
+# ---- Wave 4 — Spawn-from-Plan ---------------------------------------------
+#
+# Plan ``2026-05-19-coordinator-production-readiness.md`` Phase 4 (Wave 4).
+# The operator authoring path: pick a plan + phase, pick a device, pick
+# repos + intent + declared_overlap_paths, write an initial prompt, hit
+# Submit. Coord owns claim acquisition + agent allocation + first-tick
+# prompt delivery; this surface is a thin proxy.
+#
+# Sibling of ``POST /agents/allocate`` (Wave 0 demo-control path). The
+# spawn route is admin-gated because it mints a coord agent and pins
+# device state; allocate stays user-auth (legacy demo entrypoint).
+#
+# Wire shape (request):
+#   ``{ "plan_slug": str, "plan_phase": str, "device_id": str,
+#       "repos": list[str], "intent": str,
+#       "declared_overlap_paths": list[str] | None,
+#       "initial_prompt": str }``
+#
+# Wire shape (response): coord's spawn payload passes through — at
+# minimum ``{ "agent_id": str, "agent_session_id": str, ...}``.
+
+
+@router.post("/agents/spawn")
+async def post_agents_spawn(
+    body: dict[str, Any],
+    _admin: Any = Depends(require_admin),
+) -> Any:
+    """Proxy ``POST /agents/spawn`` to coord (Wave 4 spawn-from-plan).
+
+    Operator-driven spawn from the ``/admin/coord/spawn`` page. Coord
+    handles claim acquisition, device pinning, agent JWT mint, and
+    first-tick initial-prompt delivery. The browser doesn't consume
+    the agent JWT directly — the receiving runner picks up the new
+    agent through the ``events.agent.spawned`` event coord publishes.
+    """
+    return await _proxy_coord_post("/agents/spawn", body)
+
+
+@router.get("/agents/{agent_id}")
+async def get_agent(
+    agent_id: str,
+    _admin: Any = Depends(require_admin),
+) -> Any:
+    """Return a single spawned agent's status row from coord.
+
+    Backs the spawn-confirmation surface so the operator can see
+    "spawn succeeded; agent X is now allocated to device Y" without
+    leaving the page. Read-only — mutating routes (steal, kill, ...)
+    stay agent→coord direct.
+    """
+    return await _proxy_coord_get(f"/agents/{agent_id}")
