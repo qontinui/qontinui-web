@@ -1,12 +1,16 @@
-"""
-Runner session model — audit log of WebSocket sessions.
+"""Device connection model — audit log of device WebSocket connections.
 
 Each row represents one open-to-close WebSocket connection between a
-runner and the backend. The authoritative "is this runner online right
-now" signal lives on :class:`~app.models.runner.Runner.ws_session_id`,
-which points at the currently-open session row (or ``NULL`` when no
-session is open). The session-history table is for connection history
-and analytics — never query it for liveness.
+device (formerly "runner") and the backend. The session-history table
+is for connection history and analytics; the authoritative liveness
+signal lives on the unified ``coord.devices`` row.
+
+This module replaces the legacy ``RunnerSession`` model — Phase 5 of the
+Unified Devices Registry plan (``coord.machines`` + ``auth.runners`` →
+``coord.devices``). The renamed table is ``coord.device_connections``;
+the rename specifically avoids colliding with the user-fingerprinting
+``DeviceSession`` model (``auth.device_sessions``) which is unrelated
+and stays in place.
 """
 
 from datetime import datetime
@@ -20,29 +24,25 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 
-class RunnerSession(Base):
-    """
-    Audit-log row for one runner WebSocket session.
+class DeviceConnection(Base):
+    """Audit-log row for one device WebSocket session.
 
-    Created when the runner's WS connects, closed when it disconnects.
-    The owning :class:`~app.models.runner.Runner` row's
-    ``ws_session_id`` points at the currently-open session for that
-    runner.
+    Created when the device's WS connects, closed when it disconnects.
     """
 
-    __tablename__ = "runner_sessions"
-    __table_args__ = {"schema": "auth"}
+    __tablename__ = "device_connections"
+    __table_args__ = {"schema": "coord"}
 
     # Primary key (auto-incrementing integer for simplicity)
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
 
-    # FK to the canonical runners row this session belongs to.
-    runner_id: Mapped[UUID] = mapped_column(
+    # FK to the canonical coord.devices row this connection belongs to.
+    device_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("auth.runners.id", ondelete="CASCADE"),
+        ForeignKey("coord.devices.device_id", ondelete="CASCADE"),
         nullable=False,
         index=True,
-        comment="Owning runner row (one runner has many sessions over its lifetime).",
+        comment="Owning device row (one device has many connections over its lifetime).",
     )
 
     # Foreign key to user
@@ -94,19 +94,13 @@ class RunnerSession(Base):
     )
 
     # Relationships
-    runner = relationship("Runner", back_populates="sessions")
-    user = relationship("User", back_populates="runner_sessions")
+    user = relationship("User", back_populates="device_connections")
     software_test_runs = relationship(
-        "SoftwareTestRun", back_populates="runner_session"
+        "SoftwareTestRun", back_populates="device_connection"
     )
 
     def calculate_duration(self) -> None:
-        """Calculate and set the duration_seconds field.
-
-        Uses to_utc() to ensure both datetimes are timezone-aware before
-        subtraction, preventing "can't subtract offset-naive and offset-aware
-        datetimes" errors.
-        """
+        """Calculate and set the duration_seconds field."""
         if self.connected_at and self.disconnected_at:
             connected_utc = to_utc(self.connected_at)
             disconnected_utc = to_utc(self.disconnected_at)
@@ -114,9 +108,9 @@ class RunnerSession(Base):
             self.duration_seconds = int(delta.total_seconds())
 
     def __repr__(self) -> str:
-        """Return string representation of the runner session."""
+        """Return string representation of the device connection."""
         status = "active" if self.disconnected_at is None else "closed"
         return (
-            f"<RunnerSession(id={self.id}, runner_id={self.runner_id}, "
+            f"<DeviceConnection(id={self.id}, device_id={self.device_id}, "
             f"status={status})>"
         )

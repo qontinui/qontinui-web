@@ -57,13 +57,13 @@ class SoftwareTestRun(Base):
 
     # Historical column name retained as ``runner_connection_id`` for
     # schema stability; the FK target was renamed by the
-    # ``unify_runner_concepts`` migration. A future cleanup pass can
-    # rename the column to match (``runner_session_id``); for now the
-    # ORM attribute is named consistently with the new model.
-    runner_session_id: Mapped[int | None] = mapped_column(
+    # ``unify_runner_concepts`` migration and again by the
+    # ``wave_8_02_unify_devices`` Phase 1 migration (which moved
+    # ``auth.runner_sessions`` → ``coord.device_connections``).
+    device_connection_id: Mapped[int | None] = mapped_column(
         "runner_connection_id",
         Integer,
-        ForeignKey("auth.runner_sessions.id", ondelete="SET NULL"),
+        ForeignKey("coord.device_connections.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -165,7 +165,9 @@ class SoftwareTestRun(Base):
     # Relationships
     project = relationship("Project", back_populates="software_test_runs")
 
-    runner_session = relationship("RunnerSession", back_populates="software_test_runs")
+    device_connection = relationship(
+        "DeviceConnection", back_populates="software_test_runs"
+    )
 
     transition_executions = relationship(
         "TransitionExecution",

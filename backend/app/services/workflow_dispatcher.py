@@ -28,7 +28,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config.redis_config import get_redis
-from app.models.runner import Runner
+from app.models.device import Device
 from app.models.unified_workflow import UnifiedWorkflow
 from app.schemas.workflow_dispatch import WorkflowDispatchResponse
 from app.services.runner_websocket_manager import get_runner_websocket_manager
@@ -79,40 +79,43 @@ class DispatchError(Exception):
 # ---------------------------------------------------------------------------
 
 
-def _is_healthy(runner: Runner) -> bool:
-    """Return True if ``runner``'s last heartbeat is within the health window."""
-    if runner.last_heartbeat is None:
+def _is_healthy(device: Device) -> bool:
+    """Return True if ``device``'s last heartbeat is within the health window."""
+    if device.last_heartbeat is None:
         return False
-    age = utc_now() - runner.last_heartbeat
+    age = utc_now() - device.last_heartbeat
     return age <= timedelta(seconds=HEALTHY_HEARTBEAT_WINDOW_SECONDS)
 
 
-async def _pick_auto_runner(db: AsyncSession, user_id: UUID) -> Runner | None:
-    """Return the healthiest runner owned by ``user_id`` (WS-connected wins).
+async def _pick_auto_runner(db: AsyncSession, user_id: UUID) -> Device | None:
+    """Return the healthiest device owned by ``user_id`` (WS-connected wins).
 
     Preference order:
-      1. WS-connected (``ws_session_id IS NOT NULL``) and healthy.
-      2. Heartbeat-fresh and ``status == 'healthy'``.
+      1. WS-connected (``ws_session_id IS NOT NULL``) and derived_status healthy.
+      2. Heartbeat-fresh and derived_status == 'healthy'.
     """
     query = (
-        select(Runner)
-        .where(Runner.user_id == user_id)
+        select(Device)
+        .where(
+            Device.user_id == user_id,
+            Device.capability_user_paired.is_(True),
+        )
         .order_by(
-            Runner.ws_session_id.is_not(None).desc(),
-            Runner.last_heartbeat.desc().nullslast(),
+            Device.ws_session_id.is_not(None).desc(),
+            Device.last_heartbeat.desc().nullslast(),
         )
     )
     result = await db.execute(query)
-    for runner in result.scalars().all():
-        if runner.ws_session_id is not None and runner.status == "healthy":
-            return runner
-        if _is_healthy(runner) and runner.status == "healthy":
-            return runner
+    for device in result.scalars().all():
+        if device.ws_session_id is not None and device.derived_status == "healthy":
+            return device
+        if _is_healthy(device) and device.derived_status == "healthy":
+            return device
     return None
 
 
-async def _get_runner_by_id(db: AsyncSession, runner_id: UUID) -> Runner | None:
-    query = select(Runner).where(Runner.id == runner_id)
+async def _get_runner_by_id(db: AsyncSession, runner_id: UUID) -> Device | None:
+    query = select(Device).where(Device.device_id == runner_id)
     result = await db.execute(query)
     return result.scalar_one_or_none()
 
@@ -208,7 +211,7 @@ async def dispatch_workflow_to_runner(
             )
         # WS-connected wins; otherwise fall through to heartbeat freshness.
         if runner.ws_session_id is None and (
-            not _is_healthy(runner) or runner.status != "healthy"
+            not _is_healthy(runner) or runner.derived_status != "healthy"
         ):
             raise DispatchError(
                 status_code=503,
@@ -217,7 +220,7 @@ async def dispatch_workflow_to_runner(
                     "code": "runner_unhealthy",
                     "message": (
                         f"Runner {target_id} is not healthy (last_heartbeat="
-                        f"{runner.last_heartbeat!s}, status={runner.status!r})."
+                        f"{runner.last_heartbeat!s}, status={runner.derived_status!r})."
                     ),
                 },
             )
@@ -232,7 +235,7 @@ async def dispatch_workflow_to_runner(
             detail={
                 "code": "runner_offline",
                 "message": (
-                    f"Runner {runner.id} is not connected via WebSocket. "
+                    f"Runner {runner.device_id} is not connected via WebSocket. "
                     "Start the runner so it connects to "
                     "/api/v1/runners/ws and retry."
                 ),
@@ -241,14 +244,14 @@ async def dispatch_workflow_to_runner(
 
     redis = await get_redis()
     manager = await get_runner_websocket_manager(redis)
-    if not manager.is_connected(runner.id):
+    if not manager.is_connected(runner.device_id):
         raise DispatchError(
             status_code=503,
             code="runner_offline",
             detail={
                 "code": "runner_offline",
                 "message": (
-                    f"Runner {runner.id} has a stale ws_session_id but no "
+                    f"Runner {runner.device_id} has a stale ws_session_id but no "
                     "active WebSocket on this backend instance."
                 ),
             },
@@ -256,7 +259,7 @@ async def dispatch_workflow_to_runner(
 
     run_id = str(_uuid.uuid4())
     sent = await manager.send_dispatch(
-        runner.id,
+        runner.device_id,
         {
             "run_id": run_id,
             "workflow_id": str(workflow_id),
@@ -277,15 +280,21 @@ async def dispatch_workflow_to_runner(
         "workflow_dispatched_ws",
         user_id=str(user_id),
         workflow_id=str(workflow_id),
-        runner_id=str(runner.id),
+        runner_id=str(runner.device_id),
         run_id=run_id,
     )
 
+    # ``Device.port`` is nullable on the unified ``coord.devices`` table
+    # (non-runner devices have NULL). A runner that reached this dispatch
+    # path has WS-paired, which implies it advertised a port — but mypy
+    # can't see that, so narrow explicitly with a 0 fallback. Downstream
+    # consumers treat 0 as "WS dispatch already routed; HTTP fallback
+    # disabled", consistent with the WS-bridge architecture.
     return WorkflowDispatchResponse(
         execution_id=run_id,
-        runner_id=runner.id,
+        runner_id=runner.device_id,
         runner_hostname=runner.hostname,
-        runner_port=runner.port,
+        runner_port=runner.port or 0,
         dispatched_at=utc_now(),
         task_run_id=None,
     )

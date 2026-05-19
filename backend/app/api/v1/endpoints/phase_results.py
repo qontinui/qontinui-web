@@ -21,8 +21,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.middleware.rate_limit import user_limiter
+from app.models.device import Device
 from app.models.phase_result import PhaseResult
-from app.models.runner import Runner
 from app.models.user import User
 from app.schemas.phase_result import PhaseResultResponse
 
@@ -61,10 +61,10 @@ async def list_phase_results(
     """
     query = (
         select(PhaseResult)
-        .join(Runner, Runner.id == PhaseResult.runner_id)
+        .join(Device, Device.device_id == PhaseResult.runner_id)
         .where(
             PhaseResult.execution_id == execution_id,
-            Runner.user_id == current_user.id,
+            Device.user_id == current_user.id,
         )
         .order_by(PhaseResult.created_at.asc())
         .offset(offset)
@@ -114,10 +114,10 @@ async def get_phase_result(
     """Fetch a single phase result by id. Owner of the runner only."""
     query = (
         select(PhaseResult)
-        .join(Runner, Runner.id == PhaseResult.runner_id)
+        .join(Device, Device.device_id == PhaseResult.runner_id)
         .where(
             PhaseResult.id == phase_result_id,
-            Runner.user_id == current_user.id,
+            Device.user_id == current_user.id,
         )
     )
     result = await db.execute(query)

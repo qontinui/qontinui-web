@@ -19,15 +19,15 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
+    DeviceTokenContext,
     get_async_db,
-    get_authenticated_runner,
+    get_authenticated_device,
     get_current_active_user_async,
 )
 from app.db.session import AsyncSessionLocal
 from app.middleware.rate_limit import user_limiter
+from app.models.device import Device
 from app.models.phase_result import PhaseResult
-from app.models.runner import Runner
-from app.models.runner_token import RunnerToken
 from app.models.user import User
 from app.models.workflow_event import WorkflowEvent, WorkflowEventType
 from app.schemas.phase_result import PhaseResultIngestRequest, PhaseResultResponse
@@ -75,15 +75,14 @@ async def ingest_workflow_event(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
     event_in: WorkflowEventCreate,
-    runner_token: RunnerToken = Depends(get_authenticated_runner),
+    device_ctx: DeviceTokenContext = Depends(get_authenticated_device),
 ) -> Any:
     """
-    Ingest a workflow event from a runner.
+    Ingest a workflow event from a device.
 
-    Runners call this at key lifecycle points (run start, complete, fail, HITL,
-    etc.). Authenticated with a runner bearer token; the event is associated
-    with the token's owning user. The stored event triggers push notifications
-    to the user's mobile devices.
+    Devices call this at key lifecycle points (run start, complete,
+    fail, HITL, etc.). Authenticated with the coord-issued device-token
+    JWT; the event is associated with the token's owning user.
     """
     # Validate event type
     valid_types = {e.value for e in WorkflowEventType}
@@ -93,7 +92,7 @@ async def ingest_workflow_event(
             detail=f"Invalid event_type '{event_in.event_type}'. Must be one of: {', '.join(sorted(valid_types))}",
         )
 
-    user_id = runner_token.user_id
+    user_id = device_ctx.user_id
 
     logger.info(
         "workflow_event_ingested",
@@ -168,7 +167,7 @@ async def ingest_phase_completed(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
     payload: PhaseResultIngestRequest,
-    runner_token: RunnerToken = Depends(get_authenticated_runner),
+    device_ctx: DeviceTokenContext = Depends(get_authenticated_device),
 ) -> Any:
     """
     Ingest a phase-completion result from a server-mode runner.
@@ -196,40 +195,43 @@ async def ingest_phase_completed(
     Returns ``202 Accepted`` with the created phase-result record. Duplicates
     are not deduplicated; repeated deliveries create additional rows.
     """
-    # Resolve a runner_id for this user.
-    matched_runner: Runner | None = None
+    # Resolve a device for this user.
+    matched_device: Device | None = None
     if payload.runner_id is not None:
-        # Explicit runner_id path (Phase 3B): verify the authenticated token's
-        # user owns the referenced runner; else 403.
+        # Explicit device_id path: verify the authenticated token's user
+        # owns the referenced device; else 403.
         explicit_result = await db.execute(
-            select(Runner).where(Runner.id == payload.runner_id)
+            select(Device).where(Device.device_id == payload.runner_id)
         )
-        matched_runner = explicit_result.scalar_one_or_none()
-        if matched_runner is None:
+        matched_device = explicit_result.scalar_one_or_none()
+        if matched_device is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Runner not found",
+                detail="Device not found",
             )
-        if matched_runner.user_id != runner_token.user_id:
+        if matched_device.user_id != device_ctx.user_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Runner belongs to a different user",
+                detail="Device belongs to a different user",
             )
     else:
-        # Fallback (legacy): most-recently-heartbeated runner owned by this
-        # user. Still nullable: if no runner has registered yet, the row is
-        # written with NULL runner_id.
-        runner_result = await db.execute(
-            select(Runner)
-            .where(Runner.user_id == runner_token.user_id)
+        # Fallback: most-recently-heartbeated device owned by this user.
+        # Still nullable: if no device has registered yet, the row is
+        # written with NULL device id.
+        device_result = await db.execute(
+            select(Device)
+            .where(
+                Device.user_id == device_ctx.user_id,
+                Device.capability_user_paired.is_(True),
+            )
             .order_by(
-                Runner.last_heartbeat.desc().nullslast(),
-                Runner.created_at.desc(),
+                Device.last_heartbeat.desc().nullslast(),
+                Device.created_at.desc(),
             )
             .limit(1)
         )
-        matched_runner = runner_result.scalar_one_or_none()
-    runner_id = matched_runner.id if matched_runner is not None else None
+        matched_device = device_result.scalar_one_or_none()
+    runner_id = matched_device.device_id if matched_device is not None else None
 
     phase_result = PhaseResult(
         runner_id=runner_id,
@@ -248,9 +250,9 @@ async def ingest_phase_completed(
     db.add(phase_result)
     await db.flush()  # materialize id before wrapping in WorkflowEvent
 
-    runner_name = matched_runner.name if matched_runner is not None else "unknown"
+    runner_name = matched_device.name if matched_device is not None else "unknown"
     device_id = (
-        str(matched_runner.id) if matched_runner is not None else "server-runner"
+        str(matched_device.device_id) if matched_device is not None else "server-device"
     )
     summary = (
         f"Phase '{payload.phase}' "
@@ -259,7 +261,7 @@ async def ingest_phase_completed(
     )
 
     event = WorkflowEvent(
-        user_id=runner_token.user_id,
+        user_id=device_ctx.user_id,
         event_type=WorkflowEventType.PHASE_COMPLETED.value,
         device_id=device_id,
         runner_name=runner_name,
@@ -283,8 +285,8 @@ async def ingest_phase_completed(
 
     logger.info(
         "phase_result_ingested",
-        user_id=str(runner_token.user_id),
-        runner_id=str(runner_id) if runner_id is not None else None,
+        user_id=str(device_ctx.user_id),
+        device_id=str(runner_id) if runner_id is not None else None,
         phase_result_id=str(phase_result.id),
         execution_id=payload.execution_id,
         phase=payload.phase,

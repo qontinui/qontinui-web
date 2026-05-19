@@ -48,12 +48,15 @@ class PhaseResult(Base):
         server_default=text("gen_random_uuid()"),
     )
 
+    # Historical column name retained as ``runner_id`` for schema
+    # stability; Phase 1 of the Unified Devices Registry plan moved the
+    # FK target to ``coord.devices.device_id``.
     runner_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("auth.runners.id", ondelete="SET NULL"),
+        ForeignKey("coord.devices.device_id", ondelete="SET NULL"),
         nullable=True,
-        comment="Runner fleet id that produced this phase result (nullable so "
-        "history is preserved after a runner is deregistered).",
+        comment="Device id that produced this phase result (nullable so "
+        "history is preserved after a device is deregistered).",
     )
 
     execution_id: Mapped[str] = mapped_column(

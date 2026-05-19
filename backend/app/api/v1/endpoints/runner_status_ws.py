@@ -26,7 +26,7 @@ from redis import asyncio as aioredis
 from starlette.websockets import WebSocketState
 
 from app.api.deps import get_current_user_from_ws
-from app.api.v1.endpoints.runners import _runner_to_wire
+from app.api.v1.endpoints.devices import _device_to_wire as _runner_to_wire
 from app.config.redis_config import get_redis
 from app.core.config import settings
 from app.crud import runner_crud

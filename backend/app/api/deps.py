@@ -16,8 +16,8 @@ __all__ = [
     "get_current_superuser_async",
     "get_verified_user_async",
     "get_current_user_from_ws",
-    "get_runner_user_from_token",
-    "get_authenticated_runner",
+    "get_authenticated_device",
+    "get_authenticated_device_user",
 ]
 
 from typing import cast
@@ -146,107 +146,138 @@ async def get_current_user_from_ws(token: str) -> User:
         return user
 
 
-async def get_runner_user_from_token(
-    token: str,
-    db: "AsyncSession | None" = None,
-) -> tuple[User, "RunnerToken"]:
-    """
-    Authenticate a runner bearer token.
-
-    This is the primary authentication entrypoint for headless qontinui runner
-    processes. The raw bearer token (shape ``qontinui_runner_<64 hex>``) is
-    looked up in the ``runner_tokens`` table, verified with Argon2, and the
-    associated user is returned along with the token record.
-
-    Args:
-        token: Plain runner bearer token.
-        db: Optional pre-existing async session. When ``None`` (the default),
-            a short-lived :class:`AsyncSessionLocal` session is opened for
-            the duration of this call. Pass an explicit session when calling
-            from tests that rely on a rollback-bounded transactional session.
-
-    Returns:
-        Tuple ``(user, runner_token)``.
-
-    Raises:
-        HTTPException 401: Token is missing, malformed, expired, revoked, or
-        the associated user is inactive.
-    """
-    from sqlalchemy import select
-
-    from app.crud.runner_crud import validate_runner_token
-    from app.db.session import AsyncSessionLocal
-    from app.models.runner_token import RunnerToken  # noqa: F401 — runtime import
-
-    async def _authenticate(session: "AsyncSession") -> tuple[User, "RunnerToken"]:
-        runner_token = await validate_runner_token(session, token)
-        if runner_token is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token",
-            )
-
-        result = await session.execute(
-            select(User).where(User.id == runner_token.user_id)  # type: ignore[arg-type]
-        )
-        user = result.scalar_one_or_none()
-
-        if user is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User not found",
-            )
-        if not user.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User is not active",
-            )
-
-        return user, runner_token
-
-    if db is not None:
-        return await _authenticate(db)
-
-    async with AsyncSessionLocal() as owned_session:
-        return await _authenticate(owned_session)
-
-
 # Type annotations for forward references
 from typing import TYPE_CHECKING  # noqa: E402
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession  # noqa: F401
 
-    from app.models.runner_token import RunnerToken
-
 
 # ---------------------------------------------------------------------------
-# Runner-token FastAPI dependencies
+# Device-token FastAPI dependencies (Phase 5 — Unified Devices Registry)
 # ---------------------------------------------------------------------------
+#
+# Phase 5 of plan ``D:/qontinui-root/plans/2026-05-18-unified-devices-registry.md``
+# retired the legacy runner-bearer-token auth (``qontinui_runner_<random>`` +
+# Argon2) in favour of coord-issued device-token JWTs verified locally via
+# coord's JWKS.
 
 from fastapi import Depends  # noqa: E402
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer  # noqa: E402
 
-_runner_bearer_scheme = HTTPBearer(auto_error=True)
+_device_bearer_scheme = HTTPBearer(auto_error=True)
 
 
-async def get_authenticated_runner(
-    credentials: HTTPAuthorizationCredentials = Depends(_runner_bearer_scheme),
-) -> "RunnerToken":
-    """FastAPI dependency — authenticate the caller as a runner and return
-    the :class:`~app.models.runner_token.RunnerToken` row they presented.
+class DeviceTokenContext:
+    """Authenticated device context — the decoded JWT claims plus the
+    owning ``User`` row.
 
-    Endpoints that only need the owning user can use the narrower
-    :func:`get_authenticated_runner_user` dependency instead.
+    Phase 5 replacement for the old ``RunnerToken`` model that previous
+    runner-authenticated HTTP handlers used to receive via Depends().
+    Endpoints that only need the user can use :func:`get_authenticated_device_user`.
     """
-    _user, runner_token = await get_runner_user_from_token(credentials.credentials)
-    return runner_token
+
+    def __init__(self, claims: dict, user: User) -> None:
+        self.claims = claims
+        self.user = user
+
+    @property
+    def device_id(self) -> UUID:
+        raw = self.claims.get("device_id")
+        if not raw:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Device token missing device_id claim",
+            )
+        try:
+            return UUID(str(raw))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Device token device_id malformed",
+            ) from exc
+
+    @property
+    def user_id(self) -> UUID:
+        return self.user.id
 
 
-async def get_authenticated_runner_user(
-    credentials: HTTPAuthorizationCredentials = Depends(_runner_bearer_scheme),
+async def _verify_device_jwt(token: str) -> tuple[dict, User]:
+    """Verify a coord-issued device JWT and resolve the owning user."""
+    from sqlalchemy import select
+
+    from app.db.session import AsyncSessionLocal
+    from app.services.coord_jwks import (
+        CoordJWKSUnavailableError,
+        CoordTokenInvalidError,
+        coord_jwks_client,
+    )
+
+    try:
+        claims = await coord_jwks_client.verify_token(token)
+    except CoordJWKSUnavailableError as exc:
+        logger.error("device_token_jwks_unavailable", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Device authentication temporarily unavailable.",
+        ) from exc
+    except CoordTokenInvalidError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired device token.",
+        ) from exc
+
+    raw_user_id = claims.get("user_id")
+    if not raw_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Device token missing user_id claim.",
+        )
+
+    try:
+        user_id = UUID(str(raw_user_id))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Device token user_id malformed.",
+        ) from exc
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(User).where(User.id == user_id)  # type: ignore[arg-type]
+        )
+        user = result.scalar_one_or_none()
+
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found.",
+        )
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User is not active.",
+        )
+
+    return claims, user
+
+
+async def get_authenticated_device(
+    credentials: HTTPAuthorizationCredentials = Depends(_device_bearer_scheme),
+) -> DeviceTokenContext:
+    """FastAPI dependency — authenticate the caller as a paired device.
+
+    Verifies the presented coord-issued device-token JWT and returns the
+    decoded claims alongside the owning ``User``.
+    """
+    claims, user = await _verify_device_jwt(credentials.credentials)
+    return DeviceTokenContext(claims=claims, user=user)
+
+
+async def get_authenticated_device_user(
+    credentials: HTTPAuthorizationCredentials = Depends(_device_bearer_scheme),
 ) -> User:
-    """FastAPI dependency — authenticate the caller as a runner and return
-    the owning :class:`~app.models.user.User`."""
-    user, _runner_token = await get_runner_user_from_token(credentials.credentials)
+    """FastAPI dependency — authenticate the caller as a paired device and
+    return the owning :class:`~app.models.user.User`."""
+    _claims, user = await _verify_device_jwt(credentials.credentials)
     return user

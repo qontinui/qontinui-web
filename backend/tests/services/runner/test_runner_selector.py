@@ -14,7 +14,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from app.services.runner.runner_selector import (
+from app.services.runner.device_selector import (
     pick_active_runner_for_user,
     runner_bridge_503_no_runner,
 )
@@ -28,11 +28,14 @@ def _make_registry(connected_ids: set[str]) -> MagicMock:
 
 
 def _make_runner(*, runner_id: UUID, user_id: UUID, name: str = "r") -> SimpleNamespace:
-    """Lightweight stand-in for an ORM ``Runner`` row.
+    """Lightweight stand-in for an ORM ``Device`` row.
 
-    The selector only reads ``.id``; the rest is here for readability.
+    The selector only reads ``.device_id``; ``id`` is preserved for the
+    ``str(runner.id)`` assertions further down.
     """
-    return SimpleNamespace(id=runner_id, user_id=user_id, name=name)
+    return SimpleNamespace(
+        device_id=runner_id, id=runner_id, user_id=user_id, name=name
+    )
 
 
 def _make_db_with_runners(runners: list[SimpleNamespace]) -> AsyncMock:
@@ -163,4 +166,4 @@ def test_runner_bridge_503_no_runner_envelope_shape() -> None:
     assert exc.detail["error"] == "no_runner_connected"
     assert exc.detail["endpoint"] == "/api/v1/state-discovery/ui-bridge/discover-states"
     assert "remedy" in exc.detail
-    assert "runner" in exc.detail["message"].lower()
+    assert "device" in exc.detail["message"].lower()

@@ -200,6 +200,7 @@ jobs:
             -c "CREATE SCHEMA IF NOT EXISTS project;" \
             -c "CREATE SCHEMA IF NOT EXISTS auth;" \
             -c "CREATE SCHEMA IF NOT EXISTS cloud;" \
+            -c "CREATE SCHEMA IF NOT EXISTS coord;" \
             -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
       - name: Run tests with coverage
