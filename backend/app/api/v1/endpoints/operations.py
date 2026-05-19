@@ -556,9 +556,7 @@ async def get_agent_questions_by_session(
     pending + answered rows so the session-lineage view can show the
     operator-decision arm in line with the other UNION arms.
     """
-    return await _proxy_coord_get(
-        f"/coord/agent-questions/by-session/{session_id}"
-    )
+    return await _proxy_coord_get(f"/coord/agent-questions/by-session/{session_id}")
 
 
 @router.get("/agent-questions/{question_id}")

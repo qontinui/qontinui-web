@@ -401,9 +401,7 @@ class TestAgentQuestionsEndpoints:
             instance = AsyncMock()
             instance.get.return_value = mock_resp
             _configure_mock_client(MockClient, instance)
-            resp = admin_client.get(
-                f"{API_PREFIX}/agent-questions/answered?limit=50"
-            )
+            resp = admin_client.get(f"{API_PREFIX}/agent-questions/answered?limit=50")
         assert resp.status_code == 200
         assert resp.json() == coord_payload
         called_url = instance.get.call_args.args[0]
@@ -449,18 +447,14 @@ class TestAgentQuestionsEndpoints:
             instance = AsyncMock()
             instance.get.return_value = mock_resp
             _configure_mock_client(MockClient, instance)
-            resp = admin_client.get(
-                f"{API_PREFIX}/agent-questions/by-session/s-42"
-            )
+            resp = admin_client.get(f"{API_PREFIX}/agent-questions/by-session/s-42")
         assert resp.status_code == 200
         assert resp.json() == coord_payload
         called_url = instance.get.call_args.args[0]
         assert called_url.endswith("/coord/agent-questions/by-session/s-42")
 
     def test_by_session_non_admin_forbidden(self, user_client: TestClient):
-        resp = user_client.get(
-            f"{API_PREFIX}/agent-questions/by-session/s-1"
-        )
+        resp = user_client.get(f"{API_PREFIX}/agent-questions/by-session/s-1")
         assert resp.status_code == 403
 
     def test_get_single_non_admin_forbidden(self, user_client: TestClient):
