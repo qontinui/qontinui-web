@@ -401,9 +401,7 @@ class TestAgentQuestionsEndpoints:
             instance = AsyncMock()
             instance.get.return_value = mock_resp
             _configure_mock_client(MockClient, instance)
-            resp = admin_client.get(
-                f"{API_PREFIX}/agent-questions/answered?limit=50"
-            )
+            resp = admin_client.get(f"{API_PREFIX}/agent-questions/answered?limit=50")
         assert resp.status_code == 200
         assert resp.json() == coord_payload
         called_url = instance.get.call_args.args[0]
@@ -449,18 +447,14 @@ class TestAgentQuestionsEndpoints:
             instance = AsyncMock()
             instance.get.return_value = mock_resp
             _configure_mock_client(MockClient, instance)
-            resp = admin_client.get(
-                f"{API_PREFIX}/agent-questions/by-session/s-42"
-            )
+            resp = admin_client.get(f"{API_PREFIX}/agent-questions/by-session/s-42")
         assert resp.status_code == 200
         assert resp.json() == coord_payload
         called_url = instance.get.call_args.args[0]
         assert called_url.endswith("/coord/agent-questions/by-session/s-42")
 
     def test_by_session_non_admin_forbidden(self, user_client: TestClient):
-        resp = user_client.get(
-            f"{API_PREFIX}/agent-questions/by-session/s-1"
-        )
+        resp = user_client.get(f"{API_PREFIX}/agent-questions/by-session/s-1")
         assert resp.status_code == 403
 
     def test_get_single_non_admin_forbidden(self, user_client: TestClient):
@@ -485,6 +479,106 @@ class TestAgentLogsAndMemoryEndpoints:
         assert resp.status_code == 200
         called_params = instance.get.call_args.kwargs.get("params", {})
         assert called_params.get("limit") == 100
+
+    def test_agent_logs_by_session(self, admin_client: TestClient):
+        """Wave 3b — per-session UNION arm of the lineage query."""
+        coord_payload = {
+            "agent_session_id": "session-123",
+            "logs": [
+                {
+                    "log_id": "l-1",
+                    "agent_id": "a-1",
+                    "agent_session_id": "session-123",
+                    "level": "info",
+                    "event": "phase_started",
+                    "occurred_at": "2026-05-20T00:00:00Z",
+                },
+            ],
+        }
+        mock_resp = _mock_response(json_data=coord_payload)
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = mock_resp
+            _configure_mock_client(MockClient, instance)
+            resp = admin_client.get(
+                f"{API_PREFIX}/agent-logs/by-session/session-123?limit=250"
+            )
+        assert resp.status_code == 200
+        assert resp.json() == coord_payload
+        called_url = instance.get.call_args.args[0]
+        assert called_url.endswith("/coord/agent-logs/by-session/session-123")
+        called_params = instance.get.call_args.kwargs.get("params", {})
+        assert called_params.get("limit") == 250
+
+    def test_agent_logs_by_session_no_params(self, admin_client: TestClient):
+        """No params forwarded when none provided."""
+        mock_resp = _mock_response(json_data={"logs": []})
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = mock_resp
+            _configure_mock_client(MockClient, instance)
+            resp = admin_client.get(f"{API_PREFIX}/agent-logs/by-session/session-456")
+        assert resp.status_code == 200
+        called_params = instance.get.call_args.kwargs.get("params")
+        assert called_params is None
+
+    def test_agent_logs_recent(self, admin_client: TestClient):
+        """Wave 3b — fleet-wide recent timeline."""
+        coord_payload = {
+            "logs": [
+                {
+                    "log_id": "l-2",
+                    "agent_id": "a-2",
+                    "level": "warn",
+                    "event": "claim_expired",
+                    "occurred_at": "2026-05-20T00:01:00Z",
+                },
+                {
+                    "log_id": "l-3",
+                    "agent_id": "a-3",
+                    "level": "info",
+                    "event": "boot",
+                    "occurred_at": "2026-05-20T00:00:30Z",
+                },
+            ]
+        }
+        mock_resp = _mock_response(json_data=coord_payload)
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = mock_resp
+            _configure_mock_client(MockClient, instance)
+            resp = admin_client.get(
+                f"{API_PREFIX}/agent-logs/recent?limit=200&level=info"
+            )
+        assert resp.status_code == 200
+        assert resp.json() == coord_payload
+        called_url = instance.get.call_args.args[0]
+        assert called_url.endswith("/coord/agent-logs/recent")
+        called_params = instance.get.call_args.kwargs.get("params", {})
+        assert called_params.get("limit") == 200
+        assert called_params.get("level") == "info"
+
+    def test_agent_logs_recent_with_since(self, admin_client: TestClient):
+        """since filter is forwarded verbatim."""
+        mock_resp = _mock_response(json_data={"logs": []})
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = mock_resp
+            _configure_mock_client(MockClient, instance)
+            resp = admin_client.get(
+                f"{API_PREFIX}/agent-logs/recent?since=2026-05-19T00%3A00%3A00Z"
+            )
+        assert resp.status_code == 200
+        called_params = instance.get.call_args.kwargs.get("params", {})
+        assert called_params.get("since") == "2026-05-19T00:00:00Z"
+
+    def test_agent_logs_by_session_non_admin_forbidden(self, user_client: TestClient):
+        resp = user_client.get(f"{API_PREFIX}/agent-logs/by-session/s-1")
+        assert resp.status_code == 403
+
+    def test_agent_logs_recent_non_admin_forbidden(self, user_client: TestClient):
+        resp = user_client.get(f"{API_PREFIX}/agent-logs/recent")
+        assert resp.status_code == 403
 
     def test_memory_list(self, admin_client: TestClient):
         coord_payload = {"entries": [{"name": "proj_x", "latest_version": 3}]}

@@ -194,9 +194,7 @@ class TestGetAgent:
         instance.get.assert_not_called()
 
     def test_coord_404_passed_through(self, admin_client: TestClient):
-        mock_resp = _mock_response(
-            status_code=404, text='{"error": "agent not found"}'
-        )
+        mock_resp = _mock_response(status_code=404, text='{"error": "agent not found"}')
         with _patch_httpx() as MockClient:
             instance = AsyncMock()
             instance.get.return_value = mock_resp
