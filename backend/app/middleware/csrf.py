@@ -5,7 +5,7 @@ from fastapi import HTTPException, Request, status
 from fastapi.responses import Response
 
 # CSRF token storage (use Redis in production)
-csrf_tokens = {}
+csrf_tokens: dict[str, str] = {}
 
 
 def generate_csrf_token(session_id: str) -> str:

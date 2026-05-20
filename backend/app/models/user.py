@@ -102,12 +102,13 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         foreign_keys="AuditLog.user_id",
         cascade="all, delete-orphan",
     )
-    subscription = relationship(
-        "Subscription",
-        back_populates="user",
-        uselist=False,
-        cascade="all, delete-orphan",
-    )
+    # Subscription model was carved out to qontinui-cloud-control in
+    # 03b28e0e ("Step 3b: carve cloud-control out of qontinui-web") but
+    # this relationship reference was left behind. SQLAlchemy mapper
+    # init then fails on first access to a User-touching query — health
+    # endpoints work (no User access), but POST /api/v1/auth/jwt/login
+    # explodes with HTTP 500 + "expression 'Subscription' failed to
+    # locate a name". Removed to unblock login on the AWS staging cutover.
     device_sessions = relationship(
         "DeviceSession", back_populates="user", cascade="all, delete-orphan"
     )
