@@ -403,6 +403,10 @@ async def get_claims_alerts(
 # - GET    /operations/agent-logs/recent                 — Wave 3b
 # - GET    /operations/memory/list                       — Wave-3 prep
 # - GET    /operations/memory/{name}                     — Wave-3 prep
+# - GET    /operations/memory/{name}/version/{version}    — Wave-3c
+# - POST   /operations/memory/upsert                      — Wave-3c
+# - DELETE /operations/memory/{name}                      — Wave-3c (soft-delete)
+# - POST   /operations/memory/{name}/restore              — Wave-3c
 
 
 # ---- Plans (Phase 2 substrate — coord.plans is canonical per Q7) --------
@@ -724,3 +728,101 @@ async def get_agent(
     stay agent→coord direct.
     """
     return await _proxy_coord_get(f"/agents/{agent_id}")
+
+
+# ---- Wave-3c memory browser (mutation surface) ---------------------------
+#
+# Plan ``2026-05-19-coordinator-production-readiness.md`` Phase 6.
+# Resolved decision Q3 — event-sourced LWW with full version history.
+# Resolved decision Q8 — dual-write + 30-day reversible window
+# (coord is the canonical store, per-machine FS is the backup).
+#
+# All endpoints below mutate or read historical memory state and are
+# admin-gated.
+
+
+async def _proxy_coord_delete(path: str) -> Any:
+    """Proxy a DELETE request to coord and return the JSON body.
+
+    Mirrors ``_proxy_coord_get`` / ``_proxy_coord_post`` for the
+    tombstone-soft-delete path (coord retains the row + version history;
+    DELETE only sets a tombstone marker per Q3's event-sourced shape).
+    """
+    url = f"{settings.COORD_URL}{path}"
+    async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
+        try:
+            resp = await client.delete(url)
+        except httpx.ConnectError:
+            raise HTTPException(
+                status_code=502,
+                detail="coord is not reachable",
+            )
+        except httpx.TimeoutException:
+            raise HTTPException(
+                status_code=504,
+                detail="timeout waiting for coord",
+            )
+    if resp.status_code >= 400:
+        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+    # Coord may return 204 No Content for delete; tolerate empty bodies.
+    if resp.status_code == 204 or not resp.content:
+        return {"status": "ok"}
+    return resp.json()
+
+
+@router.get("/memory/{name}/version/{version}")
+async def get_memory_version(
+    name: str,
+    version: int,
+    _admin: Any = Depends(require_admin),
+) -> Any:
+    """Return a specific historical version of a memory entry.
+
+    Per Q3, every write appends an immutable new version row; the
+    dashboard's version-history dropdown drives this endpoint to render
+    older content (read-only).
+    """
+    return await _proxy_coord_get(f"/coord/memory/{name}/version/{version}")
+
+
+@router.post("/memory/upsert")
+async def post_memory_upsert(
+    body: dict[str, Any],
+    _admin: Any = Depends(require_admin),
+) -> Any:
+    """Upsert a memory entry (creates a new immutable version row).
+
+    Body shape (coord): ``{"name", "content", "type"?, "description"?,
+    "written_by_agent"?, "written_by_device"?}``. Coord stamps the
+    monotonic version number + ``written_at``.
+    """
+    return await _proxy_coord_post("/coord/memory/upsert", body)
+
+
+@router.delete("/memory/{name}")
+async def delete_memory_entry(
+    name: str,
+    _admin: Any = Depends(require_admin),
+) -> Any:
+    """Soft-delete (tombstone) a memory entry.
+
+    Per Q3 the row + version history is retained; coord only sets a
+    tombstone marker so reads filter the entry out but ``restore`` can
+    revive it.
+    """
+    return await _proxy_coord_delete(f"/coord/memory/{name}")
+
+
+@router.post("/memory/{name}/restore")
+async def post_memory_restore(
+    name: str,
+    body: dict[str, Any],
+    _admin: Any = Depends(require_admin),
+) -> Any:
+    """Restore a memory entry to a previous version.
+
+    Body shape: ``{"version": <int>}``. Coord copies the selected
+    version's content into a fresh write (new version number), so the
+    history line stays append-only.
+    """
+    return await _proxy_coord_post(f"/coord/memory/{name}/restore", body)

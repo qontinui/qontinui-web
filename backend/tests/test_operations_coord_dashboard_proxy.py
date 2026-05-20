@@ -605,3 +605,149 @@ class TestAgentLogsAndMemoryEndpoints:
     def test_memory_list_non_admin_forbidden(self, user_client: TestClient):
         resp = user_client.get(f"{API_PREFIX}/memory/list")
         assert resp.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Wave-3c memory browser mutation surface
+# ---------------------------------------------------------------------------
+
+
+class TestMemoryMutationEndpoints:
+    """Coverage for the Phase 6 memory-browser mutation surface.
+
+    These endpoints (``GET /memory/{name}/version/{version}``,
+    ``POST /memory/upsert``, ``DELETE /memory/{name}``,
+    ``POST /memory/{name}/restore``) round out the Wave-3c memory
+    browser per resolved decisions Q3 (event-sourced LWW + version
+    history) and Q8 (dual-write + 30-day reversible window).
+
+    All endpoints are admin-gated; coverage exercises both happy paths
+    and the non-admin 403 branch.
+    """
+
+    def test_get_memory_version(self, admin_client: TestClient):
+        coord_payload = {
+            "name": "proj_x",
+            "version": 2,
+            "content": "...v2 markdown...",
+            "written_at": "2026-05-19T00:00:00Z",
+        }
+        mock_resp = _mock_response(json_data=coord_payload)
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = mock_resp
+            _configure_mock_client(MockClient, instance)
+            resp = admin_client.get(f"{API_PREFIX}/memory/proj_x/version/2")
+        assert resp.status_code == 200
+        assert resp.json() == coord_payload
+        called_url = instance.get.call_args.args[0]
+        assert called_url.endswith("/coord/memory/proj_x/version/2")
+
+    def test_get_memory_version_non_admin_forbidden(self, user_client: TestClient):
+        resp = user_client.get(f"{API_PREFIX}/memory/proj_x/version/2")
+        assert resp.status_code == 403
+
+    def test_post_memory_upsert(self, admin_client: TestClient):
+        coord_payload = {
+            "name": "proj_x",
+            "version": 3,
+            "written_at": "2026-05-20T00:00:00Z",
+        }
+        mock_resp = _mock_response(json_data=coord_payload)
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.post.return_value = mock_resp
+            _configure_mock_client(MockClient, instance)
+            resp = admin_client.post(
+                f"{API_PREFIX}/memory/upsert",
+                json={
+                    "name": "proj_x",
+                    "content": "new content",
+                    "type": "project",
+                    "description": "updated proj x",
+                },
+            )
+        assert resp.status_code == 200
+        assert resp.json() == coord_payload
+        called_url = instance.post.call_args.args[0]
+        assert called_url.endswith("/coord/memory/upsert")
+        called_body = instance.post.call_args.kwargs.get("json", {})
+        assert called_body.get("name") == "proj_x"
+        assert called_body.get("content") == "new content"
+
+    def test_post_memory_upsert_non_admin_forbidden(self, user_client: TestClient):
+        resp = user_client.post(
+            f"{API_PREFIX}/memory/upsert",
+            json={"name": "x", "content": "y"},
+        )
+        assert resp.status_code == 403
+
+    def test_delete_memory_entry(self, admin_client: TestClient):
+        coord_payload = {"name": "proj_x", "tombstoned": True}
+        mock_resp = _mock_response(json_data=coord_payload)
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.delete.return_value = mock_resp
+            _configure_mock_client(MockClient, instance)
+            resp = admin_client.delete(f"{API_PREFIX}/memory/proj_x")
+        assert resp.status_code == 200
+        assert resp.json() == coord_payload
+        called_url = instance.delete.call_args.args[0]
+        assert called_url.endswith("/coord/memory/proj_x")
+
+    def test_delete_memory_entry_204_no_content(self, admin_client: TestClient):
+        # Coord may return 204 No Content; the proxy synthesises a
+        # status:ok body so the operator UI always has something to
+        # render.
+        mock_resp = MagicMock(spec=httpx.Response)
+        mock_resp.status_code = 204
+        mock_resp.content = b""
+        mock_resp.text = ""
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.delete.return_value = mock_resp
+            _configure_mock_client(MockClient, instance)
+            resp = admin_client.delete(f"{API_PREFIX}/memory/proj_x")
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "ok"}
+
+    def test_delete_memory_entry_non_admin_forbidden(self, user_client: TestClient):
+        resp = user_client.delete(f"{API_PREFIX}/memory/proj_x")
+        assert resp.status_code == 403
+
+    def test_post_memory_restore(self, admin_client: TestClient):
+        coord_payload = {
+            "name": "proj_x",
+            "restored_from_version": 2,
+            "new_head_version": 4,
+        }
+        mock_resp = _mock_response(json_data=coord_payload)
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.post.return_value = mock_resp
+            _configure_mock_client(MockClient, instance)
+            resp = admin_client.post(
+                f"{API_PREFIX}/memory/proj_x/restore",
+                json={"version": 2},
+            )
+        assert resp.status_code == 200
+        assert resp.json() == coord_payload
+        called_url = instance.post.call_args.args[0]
+        assert called_url.endswith("/coord/memory/proj_x/restore")
+        called_body = instance.post.call_args.kwargs.get("json", {})
+        assert called_body.get("version") == 2
+
+    def test_post_memory_restore_non_admin_forbidden(self, user_client: TestClient):
+        resp = user_client.post(
+            f"{API_PREFIX}/memory/proj_x/restore",
+            json={"version": 2},
+        )
+        assert resp.status_code == 403
+
+    def test_delete_memory_coord_unreachable(self, admin_client: TestClient):
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.delete.side_effect = httpx.ConnectError("refused")
+            _configure_mock_client(MockClient, instance)
+            resp = admin_client.delete(f"{API_PREFIX}/memory/proj_x")
+        assert resp.status_code == 502

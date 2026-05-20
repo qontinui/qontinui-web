@@ -546,6 +546,221 @@ test.describe("Admin - Coord agents (logs)", () => {
   });
 });
 
+test.describe("Admin - Coord memory browser (Wave 3c)", () => {
+  // Plan `2026-05-19-coordinator-production-readiness.md` Phase 6.
+  //
+  // Memory browser lives at /admin/coord/memory and exercises three
+  // mock-driven journeys: list-with-filter, detail-renders-markdown +
+  // version-dropdown, and restore-workflow. All API traffic is
+  // intercepted via page.route() so the tests don't require coord +
+  // backend to be live.
+
+  const MEMORY_LIST_PAYLOAD = {
+    entries: [
+      {
+        name: "proj_alpha",
+        type: "project",
+        version: 3,
+        description: "Project Alpha — the canonical example.",
+        written_at: "2026-05-20T00:00:00Z",
+        written_by_agent: "agent-a",
+      },
+      {
+        name: "feedback_beta",
+        type: "feedback",
+        version: 1,
+        description: "Beta feedback memo.",
+        written_at: "2026-05-18T00:00:00Z",
+        written_by_agent: "agent-b",
+      },
+    ],
+    count: 2,
+  };
+
+  const MEMORY_DETAIL_PAYLOAD = {
+    name: "proj_alpha",
+    type: "project",
+    version: 3,
+    content: "# Project Alpha\n\nCanonical example with **markdown** body.",
+    description: "Project Alpha — the canonical example.",
+    written_at: "2026-05-20T00:00:00Z",
+    written_by_agent: "agent-a",
+    written_by_device: "dev-a",
+    history: [
+      { version: 3, written_at: "2026-05-20T00:00:00Z" },
+      { version: 2, written_at: "2026-05-19T00:00:00Z" },
+      { version: 1, written_at: "2026-05-18T00:00:00Z" },
+    ],
+  };
+
+  const MEMORY_VERSION_PAYLOAD = {
+    name: "proj_alpha",
+    version: 2,
+    content: "# Project Alpha (v2)\n\nThe historical body.",
+    type: "project",
+    written_at: "2026-05-19T00:00:00Z",
+    written_by_agent: "agent-a",
+  };
+
+  test("memory list loads + filters by name prefix", async ({ page }) => {
+    await page.route("**/api/v1/operations/memory/list", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(MEMORY_LIST_PAYLOAD),
+      });
+    });
+
+    await page.goto("/admin/coord/memory");
+    await page.waitForLoadState("domcontentloaded");
+    await page.waitForTimeout(2000);
+
+    const hasCoordHeading =
+      (await page
+        .getByRole("heading", { name: "Coord operator console", exact: true })
+        .count()) > 0;
+    if (!hasCoordHeading) {
+      // Non-superuser path; nothing more to assert here. The shell tests
+      // above already verified the redirect.
+      return;
+    }
+
+    await expect(page.getByTestId("coord-memory-page")).toBeVisible();
+    await expect(page.getByTestId("coord-nav-memory")).toBeVisible();
+
+    // Both rows render initially.
+    const cards = page.getByTestId("coord-memory-card");
+    await expect(cards).toHaveCount(2);
+
+    // Name-prefix filter narrows to one row.
+    await page.getByTestId("coord-memory-name-prefix").fill("proj_");
+    await page.waitForTimeout(300);
+    await expect(page.getByTestId("coord-memory-card")).toHaveCount(1);
+    await expect(
+      page.getByTestId("coord-memory-card-name")
+    ).toContainText("proj_alpha");
+  });
+
+  test("memory detail renders markdown + version dropdown", async ({
+    page,
+  }) => {
+    await page.route(
+      "**/api/v1/operations/memory/proj_alpha",
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(MEMORY_DETAIL_PAYLOAD),
+        });
+      }
+    );
+
+    await page.goto("/admin/coord/memory/proj_alpha");
+    await page.waitForLoadState("domcontentloaded");
+    await page.waitForTimeout(2000);
+
+    const hasCoordHeading =
+      (await page
+        .getByRole("heading", { name: "Coord operator console", exact: true })
+        .count()) > 0;
+    if (!hasCoordHeading) {
+      return;
+    }
+
+    await expect(page.getByTestId("coord-memory-detail-page")).toBeVisible();
+    // Markdown content rendered (heading + bold) into the rendered area.
+    const rendered = page.getByTestId("coord-memory-rendered");
+    await expect(rendered).toBeVisible();
+    await expect(rendered).toContainText("Project Alpha");
+    await expect(rendered.locator("h1")).toBeVisible();
+
+    // Frontmatter sidebar visible.
+    await expect(page.getByTestId("coord-memory-frontmatter")).toBeVisible();
+
+    // Version dropdown renders (3 history entries).
+    await expect(page.getByTestId("coord-memory-history")).toBeVisible();
+    await expect(
+      page.getByTestId("coord-memory-version-select")
+    ).toBeVisible();
+  });
+
+  test("restore workflow round-trip (mock the API)", async ({ page }) => {
+    let restoreCalled = false;
+    let restoreBody: unknown = null;
+
+    await page.route(
+      "**/api/v1/operations/memory/proj_alpha/version/2",
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(MEMORY_VERSION_PAYLOAD),
+        });
+      }
+    );
+    await page.route(
+      "**/api/v1/operations/memory/proj_alpha/restore",
+      async (route) => {
+        restoreCalled = true;
+        try {
+          restoreBody = JSON.parse(route.request().postData() ?? "{}");
+        } catch {
+          restoreBody = null;
+        }
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            name: "proj_alpha",
+            restored_from_version: 2,
+            new_head_version: 4,
+          }),
+        });
+      }
+    );
+    // Detail-page redirect target after the restore action.
+    await page.route(
+      "**/api/v1/operations/memory/proj_alpha",
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(MEMORY_DETAIL_PAYLOAD),
+        });
+      }
+    );
+
+    await page.goto("/admin/coord/memory/proj_alpha/version/2");
+    await page.waitForLoadState("domcontentloaded");
+    await page.waitForTimeout(2000);
+
+    const hasCoordHeading =
+      (await page
+        .getByRole("heading", { name: "Coord operator console", exact: true })
+        .count()) > 0;
+    if (!hasCoordHeading) {
+      return;
+    }
+
+    await expect(page.getByTestId("coord-memory-version-page")).toBeVisible();
+    await expect(
+      page.getByTestId("coord-memory-version-content")
+    ).toContainText("Project Alpha (v2)");
+
+    // Open confirm dialog + confirm.
+    await page.getByTestId("coord-memory-restore-btn").click();
+    await expect(
+      page.getByTestId("coord-memory-restore-dialog")
+    ).toBeVisible();
+    await page.getByTestId("coord-memory-restore-confirm").click();
+
+    // Wait for the POST to fire + the redirect back to the detail page.
+    await page.waitForURL(/\/admin\/coord\/memory\/proj_alpha$/);
+    expect(restoreCalled).toBeTruthy();
+    expect(restoreBody).toEqual({ version: 2 });
+  });
+});
+
 test.describe("Admin - Region Analysis", () => {
   test("should load region analysis page without errors", async ({ page }) => {
     await page.goto("/admin/region-analysis");
