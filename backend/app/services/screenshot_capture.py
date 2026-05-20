@@ -126,7 +126,9 @@ class ScreenshotCapture:
 
         # Fall back to screenshot dimensions if available
         if self._cached_screenshot:
-            return self._cached_screenshot.size
+            # PIL Image.size is `tuple[int, int]` but typed as Any in the
+            # stubs available here — surgical ignore for the baseline error.
+            return self._cached_screenshot.size  # type: ignore[no-any-return]
 
         return None
 
