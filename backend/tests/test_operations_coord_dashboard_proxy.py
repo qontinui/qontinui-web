@@ -31,7 +31,6 @@ import pytest
 from fastapi import FastAPI, HTTPException, status
 from fastapi.testclient import TestClient
 
-
 # Stable tenant_id the in-test resolver returns for the "happy path"
 # fixture; tests assert the X-Qontinui-Tenant-Id header carries it.
 _FIXTURE_TENANT_ID = UUID("11111111-2222-3333-4444-555555555555")
@@ -56,6 +55,8 @@ def _build_test_app(*, resolves_tenant: bool = True) -> FastAPI:
     )
     from app.api.v1.endpoints.operations import (
         get_tenant_id,
+    )
+    from app.api.v1.endpoints.operations import (
         router as operations_router,
     )
 
@@ -478,15 +479,11 @@ class TestAgentLogsAndMemoryEndpoints:
             instance = AsyncMock()
             instance.get.return_value = mock_resp
             _configure_mock_client(MockClient, instance)
-            resp = client.get(
-                f"{API_PREFIX}/agent-logs/recent?limit=200&level=info"
-            )
+            resp = client.get(f"{API_PREFIX}/agent-logs/recent?limit=200&level=info")
         assert resp.status_code == 200
         _assert_tenant_header_forwarded(instance.get.call_args)
 
-    def test_agent_logs_recent_tenant_not_resolved(
-        self, unresolved_client: TestClient
-    ):
+    def test_agent_logs_recent_tenant_not_resolved(self, unresolved_client: TestClient):
         resp = unresolved_client.get(f"{API_PREFIX}/agent-logs/recent")
         assert resp.status_code == 403
 
