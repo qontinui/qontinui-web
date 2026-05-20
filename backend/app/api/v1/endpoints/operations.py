@@ -14,13 +14,13 @@ new ``runners`` table.
 """
 
 from typing import Any
+from uuid import UUID
 
 import httpx
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.admin_deps import require_admin
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.api.v1.endpoints.devices import _device_to_wire as _runner_to_wire
 from app.core.config import settings
@@ -33,14 +33,59 @@ from app.schemas.dev_dashboard import (
     RunnerHeartbeat,
     RunnerTaskRun,
 )
+from app.services.coord_operator_resolver import resolve_tenant_for_user
 from app.services.dev_dashboard_service import get_fleet_registry
 
 # Timeout for coord proxy reads. The merge queue is a small JSON payload
 # served from PG; if coord takes longer than 5s something is wrong.
 _COORD_TIMEOUT = httpx.Timeout(5.0)
 
+# Header coord uses to scope every SQL query on the dashboard's data
+# tables (coord.plans, coord.agent_*, coord.memories, coord.primary_trees,
+# coord.agent_worktrees). Coord-side enforcement lives in
+# `qontinui-coord/src/tenant_scope.rs`. Failing closed: web rejects
+# the request with 403 ``tenant_not_resolved`` before it ever hits coord.
+TENANT_HEADER = "X-Qontinui-Tenant-Id"
+
 logger = structlog.get_logger(__name__)
 router = APIRouter()
+
+
+# ---- Tenant resolution dependency ---------------------------------------
+#
+# Every dashboard endpoint that proxies to coord depends on this. It
+# replaces the old ``require_admin`` posture — instead of "must be a
+# superuser," the new rule is "any authenticated user, scoped to their
+# resolved tenant." The dependency resolves the user → operator →
+# tenant_id chain and returns the UUID; handlers forward it as the
+# ``X-Qontinui-Tenant-Id`` header on the underlying coord call.
+#
+# The operator-management surfaces (``/admin/coord/operators/*``,
+# ``/admin/coord/audit/*``) — when they land — will stay
+# `require_role("admin")`-gated, not this dependency. They live in a
+# different file and aren't part of the operations dashboard.
+
+
+async def get_tenant_id(
+    current_user: UserModel = Depends(get_current_active_user_async),
+    db: AsyncSession = Depends(get_async_db),
+) -> UUID:
+    """Dependency: resolve the current user's tenant_id (UUID).
+
+    See ``app.services.coord_operator_resolver`` for the resolution
+    policy. Raises 403 ``tenant_not_resolved`` if the user isn't linked
+    to a coord operator row (and the bootstrap fallback also misses).
+    """
+    return await resolve_tenant_for_user(current_user, db)
+
+
+def _tenant_headers(tenant_id: UUID) -> dict[str, str]:
+    """Build the request-headers dict carrying the tenant scope.
+
+    Centralised so adding a future header (e.g. ``X-Qontinui-Operator-Id``
+    for audit-log stamping) is a one-line change.
+    """
+    return {TENANT_HEADER: str(tenant_id)}
 
 
 # ---- Cross-machine beacon (unauth, LAN-only — kept verbatim) -------------
@@ -191,18 +236,30 @@ async def remove_runner(
 # Per plans/2026-05-18-coordination-layer-demos.md §5.2.1.
 
 
-async def _proxy_coord_get(path: str, *, params: dict[str, Any] | None = None) -> Any:
+async def _proxy_coord_get(
+    path: str,
+    *,
+    params: dict[str, Any] | None = None,
+    tenant_id: UUID | None = None,
+) -> Any:
     """Proxy a GET request to coord and return the JSON body.
 
     ``params`` is forwarded as the query string when set — the merge
     queue endpoint takes none, but the claims dashboard endpoints
     (Phase 5 of plan 2026-05-18-agent-spawn-coordination.md) take
     ``kind``, ``prefix``, ``limit``, ``since`` filters.
+
+    ``tenant_id`` — when set, the ``X-Qontinui-Tenant-Id`` header is
+    injected so coord can scope every SQL query on the dashboard's
+    data tables. Fleet-wide / staff-only endpoints (``/merge/queue``,
+    ``/claims/*``) leave it ``None``; those callers are coord-staff
+    only and intentionally tenant-blind in the pilot.
     """
     url = f"{settings.COORD_URL}{path}"
+    headers = _tenant_headers(tenant_id) if tenant_id is not None else None
     async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
         try:
-            resp = await client.get(url, params=params)
+            resp = await client.get(url, params=params, headers=headers)
         except httpx.ConnectError:
             raise HTTPException(
                 status_code=502,
@@ -235,12 +292,21 @@ async def get_merge_proposal(
     return await _proxy_coord_get(f"/merge/{proposal_id}")
 
 
-async def _proxy_coord_post(path: str, body: Any) -> Any:
-    """Proxy a POST request to coord and return the JSON body."""
+async def _proxy_coord_post(
+    path: str,
+    body: Any,
+    *,
+    tenant_id: UUID | None = None,
+) -> Any:
+    """Proxy a POST request to coord and return the JSON body.
+
+    ``tenant_id`` — see ``_proxy_coord_get``.
+    """
     url = f"{settings.COORD_URL}{path}"
+    headers = _tenant_headers(tenant_id) if tenant_id is not None else None
     async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
         try:
-            resp = await client.post(url, json=body)
+            resp = await client.post(url, json=body, headers=headers)
         except httpx.ConnectError:
             raise HTTPException(
                 status_code=502,
@@ -377,12 +443,19 @@ async def get_claims_alerts(
     return filtered
 
 
-# ---- Coord readiness dashboard proxy (Wave 2 — admin-gated) --------------
+# ---- Coord readiness dashboard proxy (Wave 2 — tenant-scoped) ------------
 #
 # Plan ``2026-05-19-coordinator-production-readiness.md`` Phase 2. Adds
 # the browser-side operator console at ``/admin/coord/*``. ALL endpoints
-# in this section are admin-gated (``require_admin``) — the operator
-# console is fleet-mutating and read-amplifying surface, not user-scoped.
+# in this section are tenant-scoped via ``get_tenant_id`` (resolves
+# the current user's coord operator row → home tenant_id, injects
+# ``X-Qontinui-Tenant-Id`` on the coord call so coord-side handlers
+# filter every SQL query). Replaces the prior ``require_admin`` gate;
+# the dashboard is now usable by any authenticated qontinui user against
+# their own tenant. The operator-management surfaces (when they land at
+# ``/admin/coord/operators/*`` + ``/admin/coord/audit/*``) keep a separate
+# admin-role gate — they're qontinui-staff fleet-wide views, not the
+# user-scoped dashboard.
 #
 # Routes (read-only unless noted):
 #
@@ -416,47 +489,53 @@ async def get_claims_alerts(
 async def list_coord_plans(
     status: str | None = Query(default=None, description="Filter by status."),
     limit: int | None = Query(default=None, ge=1, le=500),
-    _admin: Any = Depends(require_admin),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
-    """List entries from ``coord.plans`` via coord."""
+    """List entries from ``coord.plans`` via coord (tenant-scoped)."""
     params: dict[str, Any] = {}
     if status is not None:
         params["status"] = status
     if limit is not None:
         params["limit"] = limit
-    return await _proxy_coord_get("/coord/plans", params=params or None)
+    return await _proxy_coord_get(
+        "/coord/plans", params=params or None, tenant_id=tenant_id
+    )
 
 
 @router.get("/plans/{slug}")
 async def get_coord_plan(
     slug: str,
-    _admin: Any = Depends(require_admin),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
-    """Return a single plan from ``coord.plans``."""
-    return await _proxy_coord_get(f"/coord/plans/{slug}")
+    """Return a single plan from ``coord.plans`` (tenant-scoped)."""
+    return await _proxy_coord_get(f"/coord/plans/{slug}", tenant_id=tenant_id)
 
 
 @router.get("/plans/{slug}/history")
 async def get_coord_plan_history(
     slug: str,
-    _admin: Any = Depends(require_admin),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
-    """Return the status history timeline for a plan."""
-    return await _proxy_coord_get(f"/coord/plans/{slug}/history")
+    """Return the status history timeline for a plan (tenant-scoped)."""
+    return await _proxy_coord_get(
+        f"/coord/plans/{slug}/history", tenant_id=tenant_id
+    )
 
 
 @router.post("/plans/{slug}/transition")
 async def post_coord_plan_transition(
     slug: str,
     body: dict[str, Any],
-    _admin: Any = Depends(require_admin),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
-    """Transition a plan to a new status.
+    """Transition a plan to a new status (tenant-scoped).
 
     Body shape (coord): ``{"status": "<new_status>", "note": "<optional>"}``.
     Audit trail lives in ``coord.plan_status_history``.
     """
-    return await _proxy_coord_post(f"/coord/plans/{slug}/transition", body)
+    return await _proxy_coord_post(
+        f"/coord/plans/{slug}/transition", body, tenant_id=tenant_id
+    )
 
 
 # ---- Primary trees (Phase 1 substrate) -----------------------------------
@@ -465,18 +544,20 @@ async def post_coord_plan_transition(
 @router.get("/trees/by-device/{device_id}")
 async def get_trees_by_device(
     device_id: str,
-    _admin: Any = Depends(require_admin),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
-    """Return primary-tree rows for a device from ``coord.primary_trees``."""
-    return await _proxy_coord_get(f"/coord/trees/by-device/{device_id}")
+    """Return primary-tree rows for a device (tenant-scoped)."""
+    return await _proxy_coord_get(
+        f"/coord/trees/by-device/{device_id}", tenant_id=tenant_id
+    )
 
 
 @router.get("/trees/contention")
 async def get_trees_contention(
-    _admin: Any = Depends(require_admin),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
-    """Return primary-tree contention view across the fleet."""
-    return await _proxy_coord_get("/coord/trees/contention")
+    """Return primary-tree contention view across the fleet (tenant-scoped)."""
+    return await _proxy_coord_get("/coord/trees/contention", tenant_id=tenant_id)
 
 
 # ---- Alerts (full rollup; sibling of /claims/alerts) ---------------------
@@ -487,21 +568,23 @@ async def get_coord_alerts(
     include_resolved: bool = Query(default=False),
     severity: str | None = Query(default=None),
     kind: str | None = Query(default=None),
-    _admin: Any = Depends(require_admin),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Return the full ``coord.alerts`` rollup with optional filters.
 
     Sibling of ``/operations/claims/alerts`` (which filters to
     ``alert_key`` prefix ``claim-``). This endpoint exposes ALL alert
     kinds (claim / conflict / stale_wip / health) for the dashboard's
-    Alerts page.
+    Alerts page. Tenant-scoped — the underlying ``coord.alerts`` rollup
+    is fleet-wide today but the tenant header lets coord-side enforcement
+    filter once the alert producer stamps a tenant_id per row.
     """
     params: dict[str, Any] = {"include_resolved": include_resolved}
     if severity is not None:
         params["severity"] = severity
     if kind is not None:
         params["kind"] = kind
-    return await _proxy_coord_get("/coord/alerts", params=params)
+    return await _proxy_coord_get("/coord/alerts", params=params, tenant_id=tenant_id)
 
 
 # ---- Fleet health --------------------------------------------------------
@@ -509,10 +592,10 @@ async def get_coord_alerts(
 
 @router.get("/fleet/health")
 async def get_fleet_health(
-    _admin: Any = Depends(require_admin),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
-    """Return the fleet-health rollup from coord (`coord.fleet_health`)."""
-    return await _proxy_coord_get("/coord/fleet/health")
+    """Return the fleet-health rollup from coord (tenant-scoped)."""
+    return await _proxy_coord_get("/coord/fleet/health", tenant_id=tenant_id)
 
 
 # ---- Wave-3 prep (decision queue + agent-logs + memory) ------------------
@@ -525,16 +608,18 @@ async def get_fleet_health(
 
 @router.get("/agent-questions/pending")
 async def get_pending_agent_questions(
-    _admin: Any = Depends(require_admin),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Return pending agent questions awaiting an operator response."""
-    return await _proxy_coord_get("/coord/agent-questions/pending")
+    return await _proxy_coord_get(
+        "/coord/agent-questions/pending", tenant_id=tenant_id
+    )
 
 
 @router.get("/agent-questions/answered")
 async def get_answered_agent_questions(
     limit: int | None = Query(default=None, ge=1, le=500),
-    _admin: Any = Depends(require_admin),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Return recently-answered agent questions.
 
@@ -545,14 +630,16 @@ async def get_answered_agent_questions(
     if limit is not None:
         params["limit"] = limit
     return await _proxy_coord_get(
-        "/coord/agent-questions/answered", params=params or None
+        "/coord/agent-questions/answered",
+        params=params or None,
+        tenant_id=tenant_id,
     )
 
 
 @router.get("/agent-questions/by-session/{session_id}")
 async def get_agent_questions_by_session(
     session_id: str,
-    _admin: Any = Depends(require_admin),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Return all questions tied to a single ``agent_session_id``.
 
@@ -560,13 +647,15 @@ async def get_agent_questions_by_session(
     pending + answered rows so the session-lineage view can show the
     operator-decision arm in line with the other UNION arms.
     """
-    return await _proxy_coord_get(f"/coord/agent-questions/by-session/{session_id}")
+    return await _proxy_coord_get(
+        f"/coord/agent-questions/by-session/{session_id}", tenant_id=tenant_id
+    )
 
 
 @router.get("/agent-questions/{question_id}")
 async def get_agent_question(
     question_id: str,
-    _admin: Any = Depends(require_admin),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Return a single agent-question row (pending or answered).
 
@@ -574,18 +663,22 @@ async def get_agent_question(
     can render the full question + context + options without first
     fetching the pending list.
     """
-    return await _proxy_coord_get(f"/coord/agent-questions/{question_id}")
+    return await _proxy_coord_get(
+        f"/coord/agent-questions/{question_id}", tenant_id=tenant_id
+    )
 
 
 @router.post("/agent-questions/{question_id}/respond")
 async def post_agent_question_response(
     question_id: str,
     body: dict[str, Any],
-    _admin: Any = Depends(require_admin),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Operator answers an agent question."""
     return await _proxy_coord_post(
-        f"/coord/agent-questions/{question_id}/respond", body
+        f"/coord/agent-questions/{question_id}/respond",
+        body,
+        tenant_id=tenant_id,
     )
 
 
@@ -594,7 +687,7 @@ async def get_agent_logs_by_agent(
     agent_id: str,
     limit: int | None = Query(default=None, ge=1, le=2000),
     since: str | None = Query(default=None),
-    _admin: Any = Depends(require_admin),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Return ``coord.agent_logs`` rows for a single agent_id."""
     params: dict[str, Any] = {}
@@ -605,6 +698,7 @@ async def get_agent_logs_by_agent(
     return await _proxy_coord_get(
         f"/coord/agent-logs/by-agent/{agent_id}",
         params=params or None,
+        tenant_id=tenant_id,
     )
 
 
@@ -613,7 +707,7 @@ async def get_agent_logs_by_session(
     session_id: str,
     limit: int | None = Query(default=None, ge=1, le=2000),
     since: str | None = Query(default=None),
-    _admin: Any = Depends(require_admin),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Return ``coord.agent_logs`` rows for a single agent_session_id.
 
@@ -630,6 +724,7 @@ async def get_agent_logs_by_session(
     return await _proxy_coord_get(
         f"/coord/agent-logs/by-session/{session_id}",
         params=params or None,
+        tenant_id=tenant_id,
     )
 
 
@@ -638,7 +733,7 @@ async def get_agent_logs_recent(
     limit: int | None = Query(default=None, ge=1, le=2000),
     since: str | None = Query(default=None),
     level: str | None = Query(default=None, description="Filter by min level."),
-    _admin: Any = Depends(require_admin),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Return the fleet-wide recent agent_logs timeline.
 
@@ -657,24 +752,25 @@ async def get_agent_logs_recent(
     return await _proxy_coord_get(
         "/coord/agent-logs/recent",
         params=params or None,
+        tenant_id=tenant_id,
     )
 
 
 @router.get("/memory/list")
 async def get_memory_list(
-    _admin: Any = Depends(require_admin),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """List entries from the canonical memory substrate."""
-    return await _proxy_coord_get("/coord/memory/list")
+    return await _proxy_coord_get("/coord/memory/list", tenant_id=tenant_id)
 
 
 @router.get("/memory/{name}")
 async def get_memory_entry(
     name: str,
-    _admin: Any = Depends(require_admin),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Return a single memory entry (latest version) by name."""
-    return await _proxy_coord_get(f"/coord/memory/{name}")
+    return await _proxy_coord_get(f"/coord/memory/{name}", tenant_id=tenant_id)
 
 
 # ---- Wave 4 — Spawn-from-Plan ---------------------------------------------
@@ -702,7 +798,7 @@ async def get_memory_entry(
 @router.post("/agents/spawn")
 async def post_agents_spawn(
     body: dict[str, Any],
-    _admin: Any = Depends(require_admin),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Proxy ``POST /agents/spawn`` to coord (Wave 4 spawn-from-plan).
 
@@ -712,13 +808,13 @@ async def post_agents_spawn(
     the agent JWT directly — the receiving runner picks up the new
     agent through the ``events.agent.spawned`` event coord publishes.
     """
-    return await _proxy_coord_post("/agents/spawn", body)
+    return await _proxy_coord_post("/agents/spawn", body, tenant_id=tenant_id)
 
 
 @router.get("/agents/{agent_id}")
 async def get_agent(
     agent_id: str,
-    _admin: Any = Depends(require_admin),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Return a single spawned agent's status row from coord.
 
@@ -727,7 +823,7 @@ async def get_agent(
     leaving the page. Read-only — mutating routes (steal, kill, ...)
     stay agent→coord direct.
     """
-    return await _proxy_coord_get(f"/agents/{agent_id}")
+    return await _proxy_coord_get(f"/agents/{agent_id}", tenant_id=tenant_id)
 
 
 # ---- Wave-3c memory browser (mutation surface) ---------------------------
@@ -741,7 +837,11 @@ async def get_agent(
 # admin-gated.
 
 
-async def _proxy_coord_delete(path: str) -> Any:
+async def _proxy_coord_delete(
+    path: str,
+    *,
+    tenant_id: UUID | None = None,
+) -> Any:
     """Proxy a DELETE request to coord and return the JSON body.
 
     Mirrors ``_proxy_coord_get`` / ``_proxy_coord_post`` for the
@@ -749,9 +849,10 @@ async def _proxy_coord_delete(path: str) -> Any:
     DELETE only sets a tombstone marker per Q3's event-sourced shape).
     """
     url = f"{settings.COORD_URL}{path}"
+    headers = _tenant_headers(tenant_id) if tenant_id is not None else None
     async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
         try:
-            resp = await client.delete(url)
+            resp = await client.delete(url, headers=headers)
         except httpx.ConnectError:
             raise HTTPException(
                 status_code=502,
@@ -774,7 +875,7 @@ async def _proxy_coord_delete(path: str) -> Any:
 async def get_memory_version(
     name: str,
     version: int,
-    _admin: Any = Depends(require_admin),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Return a specific historical version of a memory entry.
 
@@ -782,13 +883,15 @@ async def get_memory_version(
     dashboard's version-history dropdown drives this endpoint to render
     older content (read-only).
     """
-    return await _proxy_coord_get(f"/coord/memory/{name}/version/{version}")
+    return await _proxy_coord_get(
+        f"/coord/memory/{name}/version/{version}", tenant_id=tenant_id
+    )
 
 
 @router.post("/memory/upsert")
 async def post_memory_upsert(
     body: dict[str, Any],
-    _admin: Any = Depends(require_admin),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Upsert a memory entry (creates a new immutable version row).
 
@@ -796,13 +899,15 @@ async def post_memory_upsert(
     "written_by_agent"?, "written_by_device"?}``. Coord stamps the
     monotonic version number + ``written_at``.
     """
-    return await _proxy_coord_post("/coord/memory/upsert", body)
+    return await _proxy_coord_post(
+        "/coord/memory/upsert", body, tenant_id=tenant_id
+    )
 
 
 @router.delete("/memory/{name}")
 async def delete_memory_entry(
     name: str,
-    _admin: Any = Depends(require_admin),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Soft-delete (tombstone) a memory entry.
 
@@ -810,14 +915,16 @@ async def delete_memory_entry(
     tombstone marker so reads filter the entry out but ``restore`` can
     revive it.
     """
-    return await _proxy_coord_delete(f"/coord/memory/{name}")
+    return await _proxy_coord_delete(
+        f"/coord/memory/{name}", tenant_id=tenant_id
+    )
 
 
 @router.post("/memory/{name}/restore")
 async def post_memory_restore(
     name: str,
     body: dict[str, Any],
-    _admin: Any = Depends(require_admin),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Restore a memory entry to a previous version.
 
@@ -825,4 +932,6 @@ async def post_memory_restore(
     version's content into a fresh write (new version number), so the
     history line stays append-only.
     """
-    return await _proxy_coord_post(f"/coord/memory/{name}/restore", body)
+    return await _proxy_coord_post(
+        f"/coord/memory/{name}/restore", body, tenant_id=tenant_id
+    )

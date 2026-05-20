@@ -2,55 +2,79 @@
 
 Plan ``2026-05-19-coordinator-production-readiness.md`` Phase 4 (Wave 4).
 
-Two admin-gated endpoints under ``/api/v1/operations``:
+Two tenant-scoped endpoints under ``/api/v1/operations``:
 
   - ``POST /agents/spawn``      → coord ``POST /agents/spawn``
   - ``GET  /agents/{agent_id}`` → coord ``GET  /agents/{agent_id}``
 
-Mirrors ``test_operations_coord_dashboard_proxy.py``: minimal FastAPI
-app + mocked ``httpx.AsyncClient`` so no live coord is needed. Both
-``require_admin`` (superuser) gating and the body/path pass-through
-are covered.
+Refactor ``coord_tenant_scope_columns``: the prior ``require_admin``
+(superuser) gate is replaced by ``get_tenant_id`` which resolves the
+current user → tenant_id and forwards ``X-Qontinui-Tenant-Id`` to
+coord. Tests assert the tenant header reaches coord and that the
+unresolved-tenant path returns 403 ``tenant_not_resolved``.
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, status
 from fastapi.testclient import TestClient
 
 
-def _build_test_app(*, admin: bool = True, authenticated: bool = True) -> FastAPI:
+_FIXTURE_TENANT_ID = UUID("11111111-2222-3333-4444-555555555555")
+TENANT_HEADER = "X-Qontinui-Tenant-Id"
+
+
+def _build_test_app(*, resolves_tenant: bool = True) -> FastAPI:
     from app.api.deps import (
+        get_async_db,
         get_current_active_user_async,
         get_current_user_async,
     )
-    from app.api.v1.endpoints.operations import router as operations_router
+    from app.api.v1.endpoints.operations import (
+        get_tenant_id,
+        router as operations_router,
+    )
 
     test_app = FastAPI()
-    if authenticated:
-        mock_user = MagicMock()
-        mock_user.id = uuid4()
-        mock_user.email = ("admin" if admin else "user") + "@example.com"
-        mock_user.is_active = True
-        mock_user.is_verified = True
-        mock_user.is_superuser = admin
-        test_app.dependency_overrides[get_current_active_user_async] = lambda: mock_user
-        test_app.dependency_overrides[get_current_user_async] = lambda: mock_user
+    mock_user = MagicMock()
+    mock_user.id = uuid4()
+    mock_user.email = "tenant.user@example.com"
+    mock_user.is_active = True
+    mock_user.is_verified = True
+    mock_user.is_superuser = False
+    test_app.dependency_overrides[get_current_active_user_async] = lambda: mock_user
+    test_app.dependency_overrides[get_current_user_async] = lambda: mock_user
+    test_app.dependency_overrides[get_async_db] = lambda: None
+
+    if resolves_tenant:
+
+        async def _resolver() -> UUID:
+            return _FIXTURE_TENANT_ID
+
+    else:
+
+        async def _resolver() -> UUID:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="tenant_not_resolved",
+            )
+
+    test_app.dependency_overrides[get_tenant_id] = _resolver
     test_app.include_router(operations_router, prefix="/api/v1/operations")
     return test_app
 
 
 @pytest.fixture()
-def admin_client() -> TestClient:
-    return TestClient(_build_test_app(admin=True))
+def client() -> TestClient:
+    return TestClient(_build_test_app(resolves_tenant=True))
 
 
 @pytest.fixture()
-def user_client() -> TestClient:
-    return TestClient(_build_test_app(admin=False))
+def unresolved_client() -> TestClient:
+    return TestClient(_build_test_app(resolves_tenant=False))
 
 
 def _mock_response(status_code: int = 200, json_data=None, text: str = "") -> MagicMock:
@@ -71,6 +95,12 @@ def _configure_mock_client(MockClient, mock_instance):
     MockClient.return_value = mock_instance
 
 
+def _assert_tenant_header(call) -> None:
+    headers = call.kwargs.get("headers")
+    assert headers is not None
+    assert headers.get(TENANT_HEADER) == str(_FIXTURE_TENANT_ID)
+
+
 API_PREFIX = "/api/v1/operations"
 
 
@@ -80,7 +110,7 @@ API_PREFIX = "/api/v1/operations"
 
 
 class TestPostAgentsSpawn:
-    def test_admin_can_spawn(self, admin_client: TestClient):
+    def test_authenticated_user_can_spawn(self, client: TestClient):
         coord_payload = {
             "agent_id": "agent-deadbeef",
             "agent_session_id": "00000000-0000-0000-0000-000000000abc",
@@ -104,35 +134,32 @@ class TestPostAgentsSpawn:
             instance.post.return_value = mock_resp
             _configure_mock_client(MockClient, instance)
 
-            resp = admin_client.post(f"{API_PREFIX}/agents/spawn", json=body)
+            resp = client.post(f"{API_PREFIX}/agents/spawn", json=body)
 
         assert resp.status_code == 200
         assert resp.json() == coord_payload
 
-        # Confirm coord URL + JSON body pass through unchanged.
         called_url = instance.post.call_args.args[0]
         assert called_url.endswith("/agents/spawn")
         called_json = instance.post.call_args.kwargs.get("json")
         assert called_json == body
+        _assert_tenant_header(instance.post.call_args)
 
-    def test_non_admin_is_forbidden(self, user_client: TestClient):
-        # require_admin returns 403 for a non-superuser; coord should
-        # never be called.
+    def test_unresolved_tenant_is_forbidden(self, unresolved_client: TestClient):
         with _patch_httpx() as MockClient:
             instance = AsyncMock()
             _configure_mock_client(MockClient, instance)
 
-            resp = user_client.post(
+            resp = unresolved_client.post(
                 f"{API_PREFIX}/agents/spawn",
                 json={"plan_slug": "x", "device_id": "y"},
             )
 
         assert resp.status_code == 403
+        assert resp.json()["detail"] == "tenant_not_resolved"
         instance.post.assert_not_called()
 
-    def test_coord_400_passed_through(self, admin_client: TestClient):
-        # coord rejects (e.g. unknown plan, no device available) → the
-        # proxy preserves status code so the operator UI can surface it.
+    def test_coord_400_passed_through(self, client: TestClient):
         mock_resp = _mock_response(
             status_code=400, text='{"error": "unknown plan_slug"}'
         )
@@ -140,18 +167,18 @@ class TestPostAgentsSpawn:
             instance = AsyncMock()
             instance.post.return_value = mock_resp
             _configure_mock_client(MockClient, instance)
-            resp = admin_client.post(
+            resp = client.post(
                 f"{API_PREFIX}/agents/spawn",
                 json={"plan_slug": "bogus"},
             )
         assert resp.status_code == 400
 
-    def test_coord_unreachable_returns_502(self, admin_client: TestClient):
+    def test_coord_unreachable_returns_502(self, client: TestClient):
         with _patch_httpx() as MockClient:
             instance = AsyncMock()
             instance.post.side_effect = httpx.ConnectError("refused")
             _configure_mock_client(MockClient, instance)
-            resp = admin_client.post(
+            resp = client.post(
                 f"{API_PREFIX}/agents/spawn",
                 json={"plan_slug": "x"},
             )
@@ -164,7 +191,7 @@ class TestPostAgentsSpawn:
 
 
 class TestGetAgent:
-    def test_admin_can_fetch(self, admin_client: TestClient):
+    def test_authenticated_user_can_fetch(self, client: TestClient):
         coord_payload = {
             "agent_id": "agent-deadbeef",
             "agent_session_id": "00000000-0000-0000-0000-000000000abc",
@@ -178,26 +205,27 @@ class TestGetAgent:
             instance.get.return_value = mock_resp
             _configure_mock_client(MockClient, instance)
 
-            resp = admin_client.get(f"{API_PREFIX}/agents/agent-deadbeef")
+            resp = client.get(f"{API_PREFIX}/agents/agent-deadbeef")
 
         assert resp.status_code == 200
         assert resp.json() == coord_payload
         called_url = instance.get.call_args.args[0]
         assert called_url.endswith("/agents/agent-deadbeef")
+        _assert_tenant_header(instance.get.call_args)
 
-    def test_non_admin_is_forbidden(self, user_client: TestClient):
+    def test_unresolved_tenant_is_forbidden(self, unresolved_client: TestClient):
         with _patch_httpx() as MockClient:
             instance = AsyncMock()
             _configure_mock_client(MockClient, instance)
-            resp = user_client.get(f"{API_PREFIX}/agents/agent-x")
+            resp = unresolved_client.get(f"{API_PREFIX}/agents/agent-x")
         assert resp.status_code == 403
         instance.get.assert_not_called()
 
-    def test_coord_404_passed_through(self, admin_client: TestClient):
+    def test_coord_404_passed_through(self, client: TestClient):
         mock_resp = _mock_response(status_code=404, text='{"error": "agent not found"}')
         with _patch_httpx() as MockClient:
             instance = AsyncMock()
             instance.get.return_value = mock_resp
             _configure_mock_client(MockClient, instance)
-            resp = admin_client.get(f"{API_PREFIX}/agents/nonexistent")
+            resp = client.get(f"{API_PREFIX}/agents/nonexistent")
         assert resp.status_code == 404
