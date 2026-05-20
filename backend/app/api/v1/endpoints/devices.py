@@ -54,6 +54,7 @@ from app.schemas.device import (
     PairConfirmRequest,
     PairConfirmResponse,
 )
+from app.services.coord_operator_resolver import resolve_tenant_for_user
 from app.services.runner_websocket_manager import get_runner_websocket_manager
 from app.services.strategy import strategy_client
 
@@ -230,15 +231,23 @@ async def list_connections(
 )
 async def pair_confirm(
     *,
+    db: AsyncSession = Depends(get_async_db),
     current_user: UserModel = Depends(get_current_active_user_async),
     payload: PairConfirmRequest,
 ) -> Any:
     """Complete an OAuth-loopback pairing flow.
 
-    Forwards ``(state, user_id)`` to coord's ``POST
+    Forwards ``(state, user_id, tenant_id)`` to coord's ``POST
     /coord/devices/pair-complete``; returns the issued device-token JWT
     and ``device_id`` so the browser can redirect the runner's localhost
     callback handler.
+
+    Phase 2 of the default-tenant-propagation plan
+    (``D:/qontinui-root/plans/2026-05-20-default-tenant-propagation.md``):
+    resolves the calling user's tenant_id via
+    :func:`resolve_tenant_for_user` BEFORE the outbound POST and
+    forwards it to coord. The 403 ``tenant_not_resolved`` raised by the
+    resolver propagates as-is.
     """
     if not strategy_client.enabled:
         # Reuse the StrategyClient's service-token plumbing for the
@@ -254,11 +263,17 @@ async def pair_confirm(
             ),
         )
 
+    # Resolve tenant_id BEFORE the outbound call; let 403
+    # `tenant_not_resolved` propagate. This is the same resolver the
+    # `/api/v1/operations/*` proxy uses (PR #66 / readiness Wave 3c).
+    tenant_id = await resolve_tenant_for_user(current_user, db)
+
     coord_url = settings.COORD_URL.rstrip("/")
     headers = await strategy_client._headers(str(current_user.id))  # noqa: SLF001
     body: dict[str, Any] = {
         "state": payload.state,
         "user_id": str(current_user.id),
+        "tenant_id": str(tenant_id),
     }
     if payload.device_name:
         body["device_name"] = payload.device_name
