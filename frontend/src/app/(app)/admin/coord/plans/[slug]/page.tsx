@@ -143,7 +143,7 @@ export default function CoordPlanDetailPage() {
 
   return (
     <div
-      className="p-6 space-y-4 max-w-5xl mx-auto"
+      className="p-3 sm:p-6 space-y-4 max-w-5xl mx-auto"
       data-testid="coord-plan-detail-page"
     >
       <div className="flex items-center gap-2">

@@ -114,7 +114,7 @@ export default function CoordQuestionsPage() {
   }, [fetchAll, fetchPending]);
 
   return (
-    <div className="p-6 space-y-4" data-testid="coord-questions-page">
+    <div className="p-3 sm:p-6 space-y-4" data-testid="coord-questions-page">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
