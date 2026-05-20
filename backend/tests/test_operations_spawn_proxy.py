@@ -22,7 +22,6 @@ import pytest
 from fastapi import FastAPI, HTTPException, status
 from fastapi.testclient import TestClient
 
-
 _FIXTURE_TENANT_ID = UUID("11111111-2222-3333-4444-555555555555")
 TENANT_HEADER = "X-Qontinui-Tenant-Id"
 
@@ -35,6 +34,8 @@ def _build_test_app(*, resolves_tenant: bool = True) -> FastAPI:
     )
     from app.api.v1.endpoints.operations import (
         get_tenant_id,
+    )
+    from app.api.v1.endpoints.operations import (
         router as operations_router,
     )
 

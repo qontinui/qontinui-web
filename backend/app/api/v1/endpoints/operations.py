@@ -517,9 +517,7 @@ async def get_coord_plan_history(
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Return the status history timeline for a plan (tenant-scoped)."""
-    return await _proxy_coord_get(
-        f"/coord/plans/{slug}/history", tenant_id=tenant_id
-    )
+    return await _proxy_coord_get(f"/coord/plans/{slug}/history", tenant_id=tenant_id)
 
 
 @router.post("/plans/{slug}/transition")
@@ -611,9 +609,7 @@ async def get_pending_agent_questions(
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Return pending agent questions awaiting an operator response."""
-    return await _proxy_coord_get(
-        "/coord/agent-questions/pending", tenant_id=tenant_id
-    )
+    return await _proxy_coord_get("/coord/agent-questions/pending", tenant_id=tenant_id)
 
 
 @router.get("/agent-questions/answered")
@@ -899,9 +895,7 @@ async def post_memory_upsert(
     "written_by_agent"?, "written_by_device"?}``. Coord stamps the
     monotonic version number + ``written_at``.
     """
-    return await _proxy_coord_post(
-        "/coord/memory/upsert", body, tenant_id=tenant_id
-    )
+    return await _proxy_coord_post("/coord/memory/upsert", body, tenant_id=tenant_id)
 
 
 @router.delete("/memory/{name}")
@@ -915,9 +909,7 @@ async def delete_memory_entry(
     tombstone marker so reads filter the entry out but ``restore`` can
     revive it.
     """
-    return await _proxy_coord_delete(
-        f"/coord/memory/{name}", tenant_id=tenant_id
-    )
+    return await _proxy_coord_delete(f"/coord/memory/{name}", tenant_id=tenant_id)
 
 
 @router.post("/memory/{name}/restore")
