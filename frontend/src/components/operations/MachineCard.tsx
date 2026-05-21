@@ -191,8 +191,13 @@ function HealthDot({
 }
 
 export function MachineCard({ machine }: MachineCardProps) {
-  const { hostname, runners, claudeSessions, currentActivity, currentlyEditing } =
-    machine;
+  const {
+    hostname,
+    runners,
+    claudeSessions,
+    currentActivity,
+    currentlyEditing,
+  } = machine;
 
   // Determine overall machine health from derivedStatus
   const healthyRunners = runners.filter((r) => r.derivedStatus === "healthy");

@@ -15,20 +15,20 @@ import {
  */
 describe("extractSymbol", () => {
   it("returns the last colon-separated component", () => {
-    expect(
-      extractSymbol("qontinui-runner:src/main.rs:run_loop"),
-    ).toBe("run_loop");
+    expect(extractSymbol("qontinui-runner:src/main.rs:run_loop")).toBe(
+      "run_loop"
+    );
   });
 
   it("handles Windows-style backslash paths in the file segment", () => {
-    expect(
-      extractSymbol("qontinui-runner:src\\main.rs:run_loop"),
-    ).toBe("run_loop");
+    expect(extractSymbol("qontinui-runner:src\\main.rs:run_loop")).toBe(
+      "run_loop"
+    );
   });
 
   it("handles symbols with underscores and digits", () => {
     expect(
-      extractSymbol("qontinui-web:backend/app/services/foo.py:_do_thing_v2"),
+      extractSymbol("qontinui-web:backend/app/services/foo.py:_do_thing_v2")
     ).toBe("_do_thing_v2");
   });
 

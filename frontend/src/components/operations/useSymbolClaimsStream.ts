@@ -23,7 +23,7 @@ const log = createLogger("SymbolClaimsStream");
  */
 export function groupAndCapSymbolClaims(
   holders: SymbolClaim[],
-  topN: number = SYMBOL_CLAIMS_TOP_N,
+  topN: number = SYMBOL_CLAIMS_TOP_N
 ): Map<string, SymbolClaim[]> {
   const out = new Map<string, SymbolClaim[]>();
   for (const h of holders) {
@@ -67,7 +67,7 @@ interface UseSymbolClaimsStreamResult {
  */
 export function useSymbolClaimsStream(): UseSymbolClaimsStreamResult {
   const [byMachine, setByMachine] = useState<Map<string, SymbolClaim[]>>(
-    () => new Map(),
+    () => new Map()
   );
   const [error, setError] = useState<string | null>(null);
 
@@ -131,8 +131,7 @@ export function useSymbolClaimsStream(): UseSymbolClaimsStreamResult {
       }
     };
     document.addEventListener("visibilitychange", onVisibility);
-    return () =>
-      document.removeEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
   }, [fetchOnce, startPolling, stopPolling]);
 
   return {

@@ -34,7 +34,7 @@ import type {
 function buildMachineGroups(
   fleet: FleetStatus,
   deviceStatusByHost: Map<string, DeviceStatus>,
-  symbolClaimsByMachine: Map<string, SymbolClaim[]>,
+  symbolClaimsByMachine: Map<string, SymbolClaim[]>
 ): MachineGroup[] {
   const byHost = new Map<string, MachineGroup>();
 
@@ -44,9 +44,7 @@ function buildMachineGroups(
   // is independent of the agent's /coord/status writer), so we
   // pre-resolve hostname → machine_id via device_status to look up
   // claims by hostname.
-  const resolveClaims = (
-    activity: DeviceStatus | undefined,
-  ): SymbolClaim[] => {
+  const resolveClaims = (activity: DeviceStatus | undefined): SymbolClaim[] => {
     if (!activity) return [];
     return symbolClaimsByMachine.get(activity.device_id) ?? [];
   };
@@ -202,7 +200,7 @@ export function FleetOverview() {
         ? buildMachineGroups(
             fleet,
             deviceStatus.byHostname,
-            symbolClaims.byMachine,
+            symbolClaims.byMachine
           )
         : [],
     [fleet, deviceStatus.byHostname, symbolClaims.byMachine]

@@ -41,9 +41,7 @@ function mockRunner(id = "r1"): Runner {
   } as unknown as Runner;
 }
 
-function baseGroup(
-  overrides: Partial<MachineGroup> = {},
-): MachineGroup {
+function baseGroup(overrides: Partial<MachineGroup> = {}): MachineGroup {
   return {
     hostname: "test-host",
     runners: [mockRunner()],
@@ -58,7 +56,7 @@ function renderCard(group: MachineGroup) {
   return render(
     <TooltipProvider>
       <MachineCard machine={group} />
-    </TooltipProvider>,
+    </TooltipProvider>
   );
 }
 
@@ -66,14 +64,14 @@ describe("MachineCard — Phase 4.4 currentlyEditing sub-line", () => {
   it("renders nothing when currentlyEditing is undefined", () => {
     renderCard(baseGroup());
     expect(
-      document.querySelector("[data-operations-currently-editing]"),
+      document.querySelector("[data-operations-currently-editing]")
     ).toBeNull();
   });
 
   it("renders nothing when currentlyEditing is an empty list", () => {
     renderCard(baseGroup({ currentlyEditing: [] }));
     expect(
-      document.querySelector("[data-operations-currently-editing]"),
+      document.querySelector("[data-operations-currently-editing]")
     ).toBeNull();
   });
 
@@ -84,10 +82,10 @@ describe("MachineCard — Phase 4.4 currentlyEditing sub-line", () => {
           symbolClaim("repo:src/main.rs:foo", 290),
           symbolClaim("repo:src/lib.rs:bar", 280),
         ],
-      }),
+      })
     );
     const line = document.querySelector(
-      "[data-operations-currently-editing-line]",
+      "[data-operations-currently-editing-line]"
     );
     expect(line).not.toBeNull();
     expect(line!.textContent).toContain("Editing:");
@@ -97,18 +95,18 @@ describe("MachineCard — Phase 4.4 currentlyEditing sub-line", () => {
 
   it("appends '+N more' when more than 5 claims are held", () => {
     const claims: SymbolClaim[] = Array.from({ length: 7 }, (_, i) =>
-      symbolClaim(`repo:src/file${i}.rs:sym${i}`, 200 - i),
+      symbolClaim(`repo:src/file${i}.rs:sym${i}`, 200 - i)
     );
     renderCard(baseGroup({ currentlyEditing: claims }));
     const line = document.querySelector(
-      "[data-operations-currently-editing-line]",
+      "[data-operations-currently-editing-line]"
     );
     expect(line).not.toBeNull();
     // 7 claims, top-5 rendered, 2 in overflow.
     expect(line!.textContent).toContain("+2 more");
     // Stamps the total count for telemetry / UI-Bridge assertions.
     const wrapper = document.querySelector(
-      "[data-operations-currently-editing]",
+      "[data-operations-currently-editing]"
     );
     expect(wrapper?.getAttribute("data-claim-count")).toBe("7");
   });
@@ -118,10 +116,10 @@ describe("MachineCard — Phase 4.4 currentlyEditing sub-line", () => {
     renderCard(
       baseGroup({
         currentlyEditing: [symbolClaim(`repo:src/x.rs:${longName}`, 200)],
-      }),
+      })
     );
     const line = document.querySelector(
-      "[data-operations-currently-editing-line]",
+      "[data-operations-currently-editing-line]"
     );
     expect(line).not.toBeNull();
     // The full string isn't present; the truncated form ends in U+2026.
@@ -144,13 +142,13 @@ describe("MachineCard — Phase 4.4 currentlyEditing sub-line", () => {
           updated_at: new Date().toISOString(),
         },
         currentlyEditing: [symbolClaim("repo:src/main.rs:run", 270)],
-      }),
+      })
     );
     expect(
-      document.querySelector("[data-operations-current-activity]"),
+      document.querySelector("[data-operations-current-activity]")
     ).not.toBeNull();
     expect(
-      document.querySelector("[data-operations-currently-editing]"),
+      document.querySelector("[data-operations-currently-editing]")
     ).not.toBeNull();
   });
 });

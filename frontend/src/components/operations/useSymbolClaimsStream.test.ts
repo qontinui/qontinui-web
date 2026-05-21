@@ -5,7 +5,7 @@ import type { SymbolClaim } from "./types";
 function claim(
   machine_id: string,
   resource_key: string,
-  ttl_seconds: number,
+  ttl_seconds: number
 ): SymbolClaim {
   return { kind: "symbol", machine_id, resource_key, ttl_seconds };
 }
@@ -39,7 +39,7 @@ describe("groupAndCapSymbolClaims", () => {
 
   it("caps each group to top-5 by default", () => {
     const holders = Array.from({ length: 8 }, (_, i) =>
-      claim("m-a", `r:f:sym${i}`, i * 10),
+      claim("m-a", `r:f:sym${i}`, i * 10)
     );
     const out = groupAndCapSymbolClaims(holders);
     const list = out.get("m-a")!;
@@ -50,7 +50,7 @@ describe("groupAndCapSymbolClaims", () => {
 
   it("respects a custom topN", () => {
     const holders = Array.from({ length: 4 }, (_, i) =>
-      claim("m-a", `r:f:sym${i}`, i),
+      claim("m-a", `r:f:sym${i}`, i)
     );
     const out = groupAndCapSymbolClaims(holders, 2);
     expect(out.get("m-a")).toHaveLength(2);
