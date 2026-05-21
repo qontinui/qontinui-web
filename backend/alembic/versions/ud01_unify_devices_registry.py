@@ -718,14 +718,57 @@ def upgrade() -> None:
     #    ``device_session.py`` would collide. The operator's "clean
     #    code" priority favored a distinct name (``DeviceConnection`` /
     #    ``device_connection.py``) over the schema-only hack.
+
+    # Step 7a — apply the device-id remap to runner_sessions before
+    # the column rename. Multiple ``auth.runners`` rows on the same
+    # hostname collapsed into a single ``coord.devices`` row (the
+    # ``hostname_match_prefer_machine_id`` strategy in Step 2); the
+    # losing UUIDs are recorded in ``coord._devices_migration_remap``
+    # (schema ``coord``, columns ``legacy_runner_id`` -> ``device_id``).
+    # Without this UPDATE those session rows still carry the LOSING
+    # runner UUIDs in ``runner_id``, and the FK creation in Step 7e
+    # fails with ForeignKeyViolation because those UUIDs are not in
+    # ``coord.devices``.
+    #
+    # Empirical case that surfaced this on the 2026-05-18 canonical-PG
+    # run: 7 ``auth.runners`` on hostname ``spaceship`` collapsed to a
+    # single ``coord.devices`` row; the other 6 runners' sessions
+    # orphaned. The original ad-hoc workaround was
+    # ``TRUNCATE auth.runner_sessions CASCADE`` (lost 205 dev sessions
+    # + 9 dependent test tables). This step is the proper fix —
+    # follow-up to task #31.
+    op.execute(
+        "UPDATE auth.runner_sessions rs "
+        "SET runner_id = m.device_id "
+        "FROM coord._devices_migration_remap m "
+        "WHERE m.legacy_runner_id = rs.runner_id"
+    )
+
+    # Step 7b — delete sessions whose runner has no surviving device.
+    # These are rows from ``auth.runners`` IDs that never matched any
+    # ``coord.machines`` hostname AND were not collapsed via remap —
+    # fully orphaned. Keeping them would violate the FK created in
+    # Step 7e. Bias: drop the session, keep the migration green. A
+    # stranded device that later re-registers via the hostname path
+    # gets re-paired with a fresh session.
+    op.execute(
+        "DELETE FROM auth.runner_sessions "
+        "WHERE runner_id NOT IN (SELECT device_id FROM coord.devices)"
+    )
+
+    # Step 7c — rename column runner_id → device_id.
     op.execute(
         "ALTER TABLE auth.runner_sessions "
         "RENAME COLUMN runner_id TO device_id"
     )
+    # Step 7d — drop the old FK to auth.runners.
     op.execute(
         "ALTER TABLE auth.runner_sessions "
         "DROP CONSTRAINT IF EXISTS runner_sessions_runner_id_fkey"
     )
+    # Step 7e — relocate to coord schema, rename, attach the new FK.
+    # Steps 7a+7b ensured every device_id is present in coord.devices,
+    # so the FK creation no longer fails.
     op.execute(
         "ALTER TABLE auth.runner_sessions SET SCHEMA coord"
     )
