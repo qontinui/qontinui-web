@@ -413,6 +413,32 @@ async def patch_pr_merge_repo_profile(
     )
 
 
+@router.get("/pr-merge/graph")
+async def get_pr_merge_graph(
+    repo: str,
+    pr: int,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """PR Merge Orchestrator Phase 5 D5.2 — cross-repo dependency
+    graph for a PR's connected component, tenant-scoped.
+
+    Coord returns ``{nodes, edges, topo_order, cycle_detected,
+    cycle_members}`` — the frontend renders this as a DAG via dagre
+    + the `@xyflow/react` workspace dep already present in
+    ``frontend/package.json``.
+
+    Cross-tenant edges are never traversed coord-side; the
+    ``X-Qontinui-Tenant-Id`` header injected here is what enforces
+    scoping. Two tenants viewing the same repo see disjoint graphs
+    in the v1 one-repo-one-tenant model.
+    """
+    return await _proxy_coord_get(
+        "/pr-merge/graph",
+        params={"repo": repo, "pr": pr},
+        tenant_id=tenant_id,
+    )
+
+
 async def _proxy_coord_post(
     path: str,
     body: Any,

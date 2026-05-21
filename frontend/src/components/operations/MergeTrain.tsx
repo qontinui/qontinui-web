@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { GitMerge, AlertTriangle, ExternalLink } from "lucide-react";
+import { GitMerge, AlertTriangle, ExternalLink, GitBranch } from "lucide-react";
 import { createLogger } from "@/lib/logger";
 import { OPERATIONS_API, relativeTime } from "./utils";
 import type {
@@ -415,6 +415,28 @@ export function MergeTrain() {
             ))}
           </div>
         )}
+        {/* PR Merge Orchestrator Phase 5 D5.5 — link to the dedicated
+            cross-repo dependency DAG view. Sibling MergeDependencyGraph
+            component is rendered on the same operations page below the
+            MergeTrain card. */}
+        <div className="mt-4 pt-3 border-t border-border/40">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1 flex items-center gap-1">
+            <GitBranch className="h-3 w-3" />
+            Cross-repo dependencies
+          </h4>
+          <p className="text-xs text-muted-foreground">
+            See the{" "}
+            <a
+              href="#merge-dep-graph"
+              className="underline hover:text-foreground"
+            >
+              dependency graph
+            </a>{" "}
+            below for the connected component of any PR. Topological
+            auto-merge is enforced upstream-first; cycle members are
+            flagged red.
+          </p>
+        </div>
       </CardContent>
     </Card>
   );

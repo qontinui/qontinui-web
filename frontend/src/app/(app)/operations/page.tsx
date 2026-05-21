@@ -7,6 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   FleetOverview,
   LandedFeaturesPanel,
+  MergeDependencyGraph,
   MergeTrain,
 } from "@/components/operations";
 import { Activity } from "lucide-react";
@@ -50,6 +51,15 @@ export default function OperationsPage() {
            * features via embedded iframes (§5.2.2).
            */}
           <MergeTrain />
+          {/*
+           * PR Merge Orchestrator Phase 5 D5.5 — cross-repo
+           * dependency DAG. Operator inputs (repo, pr) to render the
+           * connected component. Anchor id matches the in-link from
+           * MergeTrain.tsx's "Cross-repo dependencies" section.
+           */}
+          <div id="merge-dep-graph">
+            <MergeDependencyGraph />
+          </div>
           <FleetOverview />
           <LandedFeaturesPanel />
         </div>
