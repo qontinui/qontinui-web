@@ -39,24 +39,50 @@ async def register_device(
     restate_healthy: bool,
     os: str | None = None,
     os_version: str | None = None,
+    device_id: UUID | None = None,
 ) -> Device:
     """Register (or update) a user-paired device.
 
-    Idempotent on ``(user_id, name)``: if a device with the same name
-    already exists for this user, its metadata is refreshed rather than
-    creating a duplicate. Sets ``capability_user_paired = true`` and
+    When ``device_id`` is supplied (the canonical post-unified-devices
+    case — coord's pair-cli or pair-complete mints a JWT whose
+    ``device_id`` claim the WS handshake forwards here), the upsert is
+    keyed on ``device_id`` and a freshly-created row is bound to that
+    exact identity (overriding the model's ``default=uuid4``). This
+    honors the unified-devices contract: one ``coord.devices`` row per
+    physical device, identified by the machine.json UUID coord assigned
+    at pair time. The row's ``user_id`` and ``name`` are refreshed from
+    the JWT-asserted values on every call, since coord is the identity
+    authority.
+
+    When ``device_id`` is ``None`` (legacy test-only path via
+    :func:`runner_crud.register_runner`), the upsert falls back to the
+    pre-unified-devices ``(user_id, name)`` key. New rows in that path
+    get a server-generated ``device_id`` from the model's
+    ``default=uuid4`` — the resulting row will NOT match any
+    coord-asserted device identity, which is acceptable for test
+    fixtures that don't go through coord pairing.
+
+    Both paths set ``capability_user_paired = true`` and
     ``derived_status = 'healthy'``.
     """
-    query = select(Device).where(
-        Device.user_id == user_id,
-        Device.name == name,
-    )
+    if device_id is not None:
+        query = select(Device).where(Device.device_id == device_id)
+    else:
+        query = select(Device).where(
+            Device.user_id == user_id,
+            Device.name == name,
+        )
     result = await db.execute(query)
     existing = result.scalar_one_or_none()
 
     now = utc_now()
 
     if existing is not None:
+        # When called from the WS handshake the JWT-asserted user_id /
+        # name supersede whatever the row had — coord is the identity
+        # authority. ``device_id`` is the PK and never updated here.
+        existing.user_id = user_id
+        existing.name = name
         existing.hostname = hostname
         existing.port = port
         existing.capabilities = capabilities
@@ -73,22 +99,25 @@ async def register_device(
         await db.refresh(existing)
         return existing
 
-    record = Device(
-        user_id=user_id,
-        name=name,
-        hostname=hostname,
-        port=port,
-        capabilities=capabilities,
-        restate_enabled=restate_enabled,
-        restate_healthy=restate_healthy,
-        last_heartbeat=now,
-        state="healthy",
-        derived_status="healthy",
-        capability_user_paired=True,
-        capability_web_controlled=True,
-        os=os,
-        os_version=os_version,
-    )
+    record_kwargs: dict[str, object] = {
+        "user_id": user_id,
+        "name": name,
+        "hostname": hostname,
+        "port": port,
+        "capabilities": capabilities,
+        "restate_enabled": restate_enabled,
+        "restate_healthy": restate_healthy,
+        "last_heartbeat": now,
+        "state": "healthy",
+        "derived_status": "healthy",
+        "capability_user_paired": True,
+        "capability_web_controlled": True,
+        "os": os,
+        "os_version": os_version,
+    }
+    if device_id is not None:
+        record_kwargs["device_id"] = device_id
+    record = Device(**record_kwargs)
     db.add(record)
     await db.commit()
     await db.refresh(record)

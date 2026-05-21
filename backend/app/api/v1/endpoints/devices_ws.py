@@ -183,8 +183,19 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
     connection_pk: int | None = None
     try:
         async with AsyncSessionLocal() as db:
+            # Key the upsert on the JWT-asserted ``token_device_id``
+            # (coord's identity authority) rather than ``(user_id, name)``.
+            # This honors the unified-devices contract: one
+            # ``coord.devices`` row per physical device, identified by
+            # the machine.json UUID coord assigned at pair time. Prior
+            # to this change the upsert was keyed on ``(user_id, name)``
+            # and ``register_device`` ignored the JWT's ``device_id``
+            # entirely, so every temp runner spawn / re-named pair flow
+            # created a fresh row with a web-generated UUID — orphaning
+            # coord's pair-time row.
             device_row = await device_crud.register_device(
                 db,
+                device_id=token_device_id,
                 user_id=user_id,
                 name=name,
                 hostname=hostname,
@@ -195,16 +206,6 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
                 os=os_name,
                 os_version=os_version,
             )
-
-            # Token-asserted device_id must match the registered row's
-            # device_id (since register_device upserts by (user_id, name)
-            # it's the same row coord paired). Defensive cross-check.
-            if device_row.device_id != token_device_id:
-                logger.warning(
-                    "devices_ws_token_device_id_mismatch",
-                    token_device_id=str(token_device_id),
-                    registered_device_id=str(device_row.device_id),
-                )
 
             connection_record = await device_connection_crud.create_connection_record(
                 db,
