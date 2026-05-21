@@ -85,7 +85,9 @@ def unresolved_client() -> TestClient:
     return TestClient(_build_test_app(resolves_tenant=False))
 
 
-def _mock_response(status_code: int = 200, json_data: Any = None, text: str = "") -> MagicMock:
+def _mock_response(
+    status_code: int = 200, json_data: Any = None, text: str = ""
+) -> MagicMock:
     resp = MagicMock(spec=httpx.Response)
     resp.status_code = status_code
     resp.json.return_value = json_data
@@ -166,9 +168,7 @@ class TestGetDeviceStatus:
             instance = AsyncMock()
             instance.get.return_value = mock_resp
             _configure_mock_client(MockClient, instance)
-            resp = client.get(
-                f"{API_PREFIX}/device-status?since=2026-05-21T00:00:00Z"
-            )
+            resp = client.get(f"{API_PREFIX}/device-status?since=2026-05-21T00:00:00Z")
         assert resp.status_code == 200
         called_params = instance.get.call_args.kwargs.get("params", {})
         assert called_params.get("since") == "2026-05-21T00:00:00Z"
@@ -248,20 +248,17 @@ class TestDeviceStatusServiceModule:
             }
         )
 
-        with patch(
-            "app.services.coord_device_status.settings"
-        ) as mock_settings, patch(
-            "app.services.coord_device_status.httpx.AsyncClient"
-        ) as MockClient:
+        with (
+            patch("app.services.coord_device_status.settings") as mock_settings,
+            patch("app.services.coord_device_status.httpx.AsyncClient") as MockClient,
+        ):
             mock_settings.COORD_ADMIN_SECRET = "test-admin-secret"
             mock_settings.COORD_URL = "http://localhost:9870"
             instance = AsyncMock()
             instance.post.return_value = mock_resp
             _configure_mock_client(MockClient, instance)
 
-            token = asyncio.run(
-                mint_device_status_token(tenant_id=_FIXTURE_TENANT_ID)
-            )
+            token = asyncio.run(mint_device_status_token(tenant_id=_FIXTURE_TENANT_ID))
 
         assert token == "fake.jwt.token"
         # Verify coord saw the tenant_id in the JSON body and the
@@ -280,11 +277,10 @@ class TestDeviceStatusServiceModule:
 
         mock_resp = _mock_response(status_code=401, text='{"error":"bad secret"}')
 
-        with patch(
-            "app.services.coord_device_status.settings"
-        ) as mock_settings, patch(
-            "app.services.coord_device_status.httpx.AsyncClient"
-        ) as MockClient:
+        with (
+            patch("app.services.coord_device_status.settings") as mock_settings,
+            patch("app.services.coord_device_status.httpx.AsyncClient") as MockClient,
+        ):
             mock_settings.COORD_ADMIN_SECRET = "test-admin-secret"
             mock_settings.COORD_URL = "http://localhost:9870"
             instance = AsyncMock()
@@ -292,9 +288,7 @@ class TestDeviceStatusServiceModule:
             _configure_mock_client(MockClient, instance)
 
             with pytest.raises(CoordDeviceStatusMintFailedError):
-                asyncio.run(
-                    mint_device_status_token(tenant_id=_FIXTURE_TENANT_ID)
-                )
+                asyncio.run(mint_device_status_token(tenant_id=_FIXTURE_TENANT_ID))
 
     def test_ws_url_translates_http_to_ws(self) -> None:
         from app.services.coord_device_status import build_device_status_ws_url
@@ -408,21 +402,27 @@ class TestDeviceStatusWsBridge:
         async def fake_resolve_tenant_for_user(user: Any, db: Any) -> UUID:
             return _FIXTURE_TENANT_ID
 
-        with patch(
-            "app.api.v1.endpoints.operations.get_current_user_from_ws",
-            fake_get_user_from_ws,
-        ), patch(
-            "app.api.v1.endpoints.operations.AsyncSessionLocal",
-            lambda: _FakeSession(),
-        ), patch(
-            "app.api.v1.endpoints.operations.resolve_tenant_for_user",
-            fake_resolve_tenant_for_user,
-        ), patch(
-            "app.api.v1.endpoints.operations.mint_device_status_token",
-            fake_mint,
-        ), patch(
-            "app.api.v1.endpoints.operations.websockets_connect",
-            fake_connect,
+        with (
+            patch(
+                "app.api.v1.endpoints.operations.get_current_user_from_ws",
+                fake_get_user_from_ws,
+            ),
+            patch(
+                "app.api.v1.endpoints.operations.AsyncSessionLocal",
+                lambda: _FakeSession(),
+            ),
+            patch(
+                "app.api.v1.endpoints.operations.resolve_tenant_for_user",
+                fake_resolve_tenant_for_user,
+            ),
+            patch(
+                "app.api.v1.endpoints.operations.mint_device_status_token",
+                fake_mint,
+            ),
+            patch(
+                "app.api.v1.endpoints.operations.websockets_connect",
+                fake_connect,
+            ),
         ):
             with ws_client.websocket_connect(
                 f"{API_PREFIX}/device-status/ws?token=session-jwt"
@@ -493,21 +493,27 @@ class TestDeviceStatusWsBridge:
         async def fake_resolve_tenant_for_user(user: Any, db: Any) -> UUID:
             return _FIXTURE_TENANT_ID
 
-        with patch(
-            "app.api.v1.endpoints.operations.get_current_user_from_ws",
-            fake_get_user_from_ws,
-        ), patch(
-            "app.api.v1.endpoints.operations.AsyncSessionLocal",
-            lambda: _FakeSession(),
-        ), patch(
-            "app.api.v1.endpoints.operations.resolve_tenant_for_user",
-            fake_resolve_tenant_for_user,
-        ), patch(
-            "app.api.v1.endpoints.operations.mint_device_status_token",
-            fake_mint,
-        ), patch(
-            "app.api.v1.endpoints.operations.websockets_connect",
-            fake_connect,
+        with (
+            patch(
+                "app.api.v1.endpoints.operations.get_current_user_from_ws",
+                fake_get_user_from_ws,
+            ),
+            patch(
+                "app.api.v1.endpoints.operations.AsyncSessionLocal",
+                lambda: _FakeSession(),
+            ),
+            patch(
+                "app.api.v1.endpoints.operations.resolve_tenant_for_user",
+                fake_resolve_tenant_for_user,
+            ),
+            patch(
+                "app.api.v1.endpoints.operations.mint_device_status_token",
+                fake_mint,
+            ),
+            patch(
+                "app.api.v1.endpoints.operations.websockets_connect",
+                fake_connect,
+            ),
         ):
             with ws_client.websocket_connect(
                 f"{API_PREFIX}/device-status/ws?token=session-jwt"

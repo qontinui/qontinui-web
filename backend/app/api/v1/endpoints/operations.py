@@ -1220,7 +1220,9 @@ async def get_device_status(
     except httpx.ConnectError as exc:
         raise HTTPException(status_code=502, detail="coord is not reachable") from exc
     except httpx.TimeoutException as exc:
-        raise HTTPException(status_code=504, detail="timeout waiting for coord") from exc
+        raise HTTPException(
+            status_code=504, detail="timeout waiting for coord"
+        ) from exc
     except httpx.HTTPStatusError as exc:
         raise HTTPException(
             status_code=exc.response.status_code, detail=exc.response.text
@@ -1280,16 +1282,12 @@ async def websocket_device_status(
         async with AsyncSessionLocal() as db:
             tenant_id = await resolve_tenant_for_user(user, db)
     except HTTPException as http_exc:
-        await websocket.send_json(
-            {"type": "error", "error": http_exc.detail}
-        )
+        await websocket.send_json({"type": "error", "error": http_exc.detail})
         await websocket.close(code=1008, reason=str(http_exc.detail))
         return
     except Exception as exc:  # noqa: BLE001
         logger.error("device_status_ws_tenant_lookup_failed", error=str(exc))
-        await websocket.send_json(
-            {"type": "error", "error": "Tenant lookup failed"}
-        )
+        await websocket.send_json({"type": "error", "error": "Tenant lookup failed"})
         await websocket.close(code=1011, reason="Tenant lookup failed")
         return
 
@@ -1410,9 +1408,7 @@ async def websocket_device_status(
             try:
                 await upstream.close()
             except Exception as exc:  # noqa: BLE001
-                logger.debug(
-                    "device_status_ws_upstream_close_failed", error=str(exc)
-                )
+                logger.debug("device_status_ws_upstream_close_failed", error=str(exc))
         if websocket.client_state == WebSocketState.CONNECTED:
             try:
                 await websocket.close()
