@@ -10,7 +10,14 @@ obtained via the OAuth-loopback pairing flow (``POST
 
 This module fetches coord's JWKS (``GET {COORD_URL}/coord/auth/jwks``)
 on demand, caches it for 1 hour, and verifies presented device-token
-JWTs using ``python-jose`` (already a backend dependency).
+JWTs using ``PyJWT`` (with the ``cryptography`` backend, required for
+the ``EdDSA`` / Ed25519 algorithm coord uses to sign).
+
+We use PyJWT instead of ``python-jose`` because the latter does not
+support ``EdDSA`` (see ``python-jose`` ``ALGORITHMS.SUPPORTED`` — no
+``EdDSA`` entry; surfaced as ``JWKError: Unable to find an algorithm
+for key`` against any coord-minted token). PyJWT 2.x supports the
+``OKP`` key type + ``EdDSA`` algorithm natively via ``cryptography``.
 
 Failure mode (per plan): if JWKS is unreachable on cold start, REJECT
 all WS handshakes with a clear log. Never silently fall back to
@@ -24,9 +31,13 @@ import time
 from typing import Any
 
 import httpx
+import jwt as pyjwt
 import structlog
-from jose import jwt
-from jose.exceptions import JWKError, JWTError
+from jwt.exceptions import (
+    InvalidTokenError,
+    PyJWKError,
+    PyJWTError,
+)
 
 from app.core.config import settings
 
@@ -34,6 +45,16 @@ logger = structlog.get_logger(__name__)
 
 # JWKS cache TTL (1h per plan).
 _JWKS_TTL_S = 3600
+
+# Clock-skew tolerance for ``iat`` / ``exp`` validation. Coord and web
+# may run on different machines (or in different docker containers on
+# one machine, each with its own clock), and ``iat`` is truncated to
+# whole seconds by coord — both factors can push a freshly-minted JWT
+# into the "future" by up to ~1s from web's perspective. Standard
+# JWT distributed-deployment practice is 30-60s; we pick 30s as a
+# floor that covers normal NTP-drift but still rejects the obvious
+# bad case (clocks hours apart).
+_CLOCK_SKEW_LEEWAY_S = 30
 
 
 class CoordJWKSUnavailableError(RuntimeError):
@@ -132,20 +153,48 @@ class CoordJWKSClient:
         except Exception as exc:  # defensive
             raise CoordJWKSUnavailableError(str(exc)) from exc
 
+        # Parse the header to pick the right JWK by ``kid``. This is
+        # signature-unverified; we only trust the resulting ``kid`` for
+        # key-lookup, and PyJWT.decode below re-validates the algorithm
+        # against our allowlist before doing any crypto.
         try:
-            # python-jose accepts the JWKS dict directly via the `key`
-            # parameter; it picks the matching JWK by `kid` from the
-            # token header. Algorithm allowlist mirrors coord's
-            # JWT issuance (HMAC-rejecting; key-pair only).
-            claims = jwt.decode(
+            header = pyjwt.get_unverified_header(token)
+        except InvalidTokenError as exc:
+            raise CoordTokenInvalidError(f"token header malformed: {exc}") from exc
+
+        kid = header.get("kid")
+        if not kid:
+            raise CoordTokenInvalidError("token header missing 'kid'")
+
+        jwk_dict = next(
+            (k for k in jwks.get("keys", []) if k.get("kid") == kid),
+            None,
+        )
+        if jwk_dict is None:
+            raise CoordTokenInvalidError(f"no JWK with kid={kid!r} in coord JWKS")
+
+        # Materialize the JWK into a key object PyJWT can use. PyJWK
+        # accepts our dict shape directly (``kty``/``crv``/``x``/``alg``)
+        # and routes to the right backend (``Ed25519PublicKey`` for OKP).
+        try:
+            jwk = pyjwt.PyJWK(jwk_dict)
+        except PyJWKError as exc:
+            raise CoordTokenInvalidError(f"JWK materialization failed: {exc}") from exc
+
+        # Algorithm allowlist mirrors coord's possible signing
+        # algorithms (currently only EdDSA, but we accept the broader
+        # asymmetric set so a future RS256/ES256 cutover doesn't need a
+        # paired web-side deploy). HMAC-family algorithms are
+        # deliberately excluded — coord is a key-pair issuer.
+        try:
+            claims = pyjwt.decode(
                 token,
-                jwks,
-                algorithms=["RS256", "ES256", "EdDSA"],
+                jwk.key,
+                algorithms=["EdDSA", "RS256", "ES256"],
                 options={"verify_aud": False},
+                leeway=_CLOCK_SKEW_LEEWAY_S,
             )
-        except JWKError as exc:
-            raise CoordTokenInvalidError(f"JWKS key error: {exc}") from exc
-        except JWTError as exc:
+        except PyJWTError as exc:
             raise CoordTokenInvalidError(f"token verification failed: {exc}") from exc
 
         if not isinstance(claims, dict):

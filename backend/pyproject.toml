@@ -20,6 +20,15 @@ sqlalchemy = "^2.0.43"
 uvicorn = {extras = ["standard"], version = "^0.38"}
 pydantic = "^2.11.9"
 python-jose = "^3.5.0"
+# PyJWT for the EdDSA path in app/services/coord_jwks.py — python-jose
+# 3.x does not support EdDSA (no entry in ALGORITHMS.SUPPORTED), so
+# coord-issued device-token JWTs need PyJWT (with its cryptography
+# backend) to verify. Kept alongside python-jose because the other
+# callers (app/api/deps.py, app/core/tokens.py, app/services/auth/
+# token_service.py) still sign/verify user-auth JWTs with RS256/HS256
+# via jose. PyJWT's [crypto] extra is shorthand for cryptography,
+# which is already a direct/transitive dep of the auth stack.
+pyjwt = {extras = ["crypto"], version = "^2.12"}
 passlib = {extras = ["bcrypt"], version = "^1.7.4"}
 bcrypt = "^5"
 python-multipart = ">=0.0.9"
