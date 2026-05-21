@@ -164,8 +164,23 @@ class Device(Base):
     role: Mapped[str | None] = mapped_column(String, nullable=True)
     cpu_cores: Mapped[int | None] = mapped_column(Integer, nullable=True)
     memory_gb: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    disk_total_gb: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    disk_reserved_gb: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # ``disk_total_gb`` + ``disk_reserved_gb`` are BIGINT in the migration
+    # (alembic/versions/ud01_unify_devices_registry.py:239-244). ``disk_total_gb``
+    # is nullable; ``disk_reserved_gb`` is NOT NULL DEFAULT 0. The Python-side
+    # ``default=0`` on ``disk_reserved_gb`` is load-bearing: without it,
+    # SQLAlchemy emits an explicit ``NULL`` in the INSERT when the application
+    # omits the column (devices_ws.py's runner_info handler does), which
+    # overrides the server-side default and trips the NOT NULL constraint
+    # (asyncpg.exceptions.NotNullViolationError, surfaced 2026-05-21 by the
+    # post-unified-devices live-stack smoke after the JWT path was unblocked
+    # by qontinui-web #184).
+    disk_total_gb: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    disk_reserved_gb: Mapped[int] = mapped_column(
+        BigInteger,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
     max_concurrent_agents: Mapped[int | None] = mapped_column(Integer, nullable=True)
     max_concurrent_builds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     budget_updated_at: Mapped[datetime | None] = mapped_column(
