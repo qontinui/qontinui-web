@@ -57,6 +57,44 @@ export interface DeviceStatusResponse {
 }
 
 /**
+ * One row from `GET /coord/claims/list?kind=symbol` — a live symbol
+ * claim held by a machine's tree-sitter `symbol_watcher` daemon
+ * (qontinui-supervisor Phase 4.1). Plan
+ * `2026-05-21-coordination-improvements.md` Phase 4.4 surfaces these as
+ * a "currently editing" sub-line on each `MachineCard`.
+ *
+ * Wire shape mirrors coord's `ClaimHolder`:
+ *
+ * - `machine_id` — UUID of the holding machine. Joins to the
+ *   `coord.devices` table; matches `DeviceStatus.device_id` for the
+ *   same machine.
+ * - `resource_key` — `<repo>:<file>:<symbol-name>` format set by the
+ *   symbol_watcher daemon.
+ * - `ttl_seconds` — remaining TTL on the Redis key. Coord defaults
+ *   `Symbol` claims to 300s; the dashboard sorts top-N by this value
+ *   so the freshest edit floats to the front.
+ *
+ * Coord does NOT echo `acquired_at`; the dashboard derives "how long
+ * ago did this edit start?" via `(default_ttl - ttl_seconds)` if it
+ * ever needs to render age.
+ */
+export interface SymbolClaim {
+  kind: "symbol";
+  resource_key: string;
+  machine_id: string;
+  ttl_seconds: number;
+}
+
+/** Wire shape returned by `GET /api/v1/operations/symbol-claims` (which
+ *  proxies coord's `/coord/claims/list?kind=symbol`). */
+export interface SymbolClaimsResponse {
+  kind: "symbol";
+  prefix: string;
+  holders: SymbolClaim[];
+  truncated: boolean;
+}
+
+/**
  * Fleet status payload — directly serializes from the unified Runner
  * entity plus a hostname → Claude-session map.
  */
@@ -100,4 +138,14 @@ export interface MachineGroup {
   runners: Runner[];
   claudeSessions: ClaudeSessionInfo[];
   currentActivity?: DeviceStatus;
+  /**
+   * Up to 5 live symbol claims for this machine, sorted by `ttl_seconds`
+   * descending (freshest first). Plan
+   * `2026-05-21-coordination-improvements.md` Phase 4.4. Joined from
+   * `useSymbolClaimsStream()` by `machine_id ↔ DeviceStatus.device_id`.
+   *
+   * Empty array when no symbol_watcher daemon is reporting for this
+   * machine; the `MachineCard` hides the sub-line entirely in that case.
+   */
+  currentlyEditing?: SymbolClaim[];
 }
