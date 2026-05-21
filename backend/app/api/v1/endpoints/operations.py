@@ -292,6 +292,22 @@ async def get_merge_proposal(
     return await _proxy_coord_get(f"/merge/{proposal_id}")
 
 
+@router.get("/pr-merge/prs")
+async def get_pr_merge_prs(
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> Any:
+    """PR Merge Orchestrator Phase 1 D1.6 + D1.7 -- proxy coord's
+    ``GET /pr-merge/prs`` (read-only list of all open PRs joined to
+    per-(repo, head_sha) CI lifecycle).
+
+    Anonymous in the pilot, mirroring ``/merge/queue`` per coord's
+    routes.rs comment ("§4.5 anonymous in the pilot"). The web side
+    still requires an authenticated dashboard user; coord-side
+    tenant scoping arrives in Phase 2.
+    """
+    return await _proxy_coord_get("/pr-merge/prs")
+
+
 async def _proxy_coord_post(
     path: str,
     body: Any,

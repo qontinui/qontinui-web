@@ -44,6 +44,61 @@ export interface QueueResponse {
   proposals: ProposalDetail[];
 }
 
+// ============================================================================
+// PR Merge Orchestrator Phase 1 D1.6 + D1.7 — PR Outer State wire types.
+//
+// Mirrors coord's `GET /pr-merge/prs` response (see
+// `qontinui-coord/src/pr_merge.rs::PrRow` / `PrListResponse`). Joined to
+// per-(repo, head_sha) lifecycle from `coord.pr_check_runs`. The MergeTrain
+// dashboard renders this alongside the existing `coord.merge_proposals`
+// stream so an operator sees BOTH the outer PR state (mergeable,
+// mergeStateStatus, reviewDecision) AND the inner proposal lifecycle
+// (queued -> dry-rebasing -> ... -> merged) in one card.
+// ============================================================================
+
+/** GitHub's PR-level merge state status -- values per the GraphQL enum. */
+export type MergeStateStatus =
+  | "CLEAN"
+  | "DIRTY"
+  | "UNSTABLE"
+  | "BLOCKED"
+  | "BEHIND"
+  | "UNKNOWN"
+  | "DRAFT"
+  | string; // tolerate future enum additions
+
+/** GitHub's reviewDecision enum (or null when no reviews required). */
+export type ReviewDecision =
+  | "APPROVED"
+  | "REVIEW_REQUIRED"
+  | "CHANGES_REQUESTED"
+  | string;
+
+export interface PrRow {
+  repo: string;
+  pr_number: number;
+  branch: string;
+  base_branch: string;
+  head_sha: string;
+  pr_state: "open" | "draft" | "closed" | "merged" | string;
+  mergeable: boolean | null;
+  merge_state_status: MergeStateStatus | null;
+  review_decision: ReviewDecision | null;
+  required_checks_satisfied: boolean | null;
+  last_refreshed_at: string | null;
+  last_predicate_eval_at: string | null;
+  /** "pending" | "complete" -- matches pr_state::compute_lifecycle_and_conclusion. */
+  ci_lifecycle: "pending" | "complete" | string | null;
+  /** "success" | "failure" | null. */
+  ci_conclusion: "success" | "failure" | string | null;
+  correlation_id: string | null;
+}
+
+export interface PrListResponse {
+  prs: PrRow[];
+  total: number;
+}
+
 // ----------------------------------------------------------------------------
 // Demo-feature catalog
 // ----------------------------------------------------------------------------
