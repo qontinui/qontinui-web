@@ -308,6 +308,113 @@ async def get_pr_merge_prs(
     return await _proxy_coord_get("/pr-merge/prs")
 
 
+# ---- PR Merge Orchestrator Phase 2 D2.4 — per-tenant settings ------------
+#
+# Five endpoints, each tenant-scoped via ``get_tenant_id``. The
+# ``X-Qontinui-Tenant-Id`` header propagates to coord; the coord-side
+# TenantId extractor (``src/tenant_scope.rs``) parses it into a UUID
+# and feeds every SELECT/UPDATE in ``src/pr_merge/settings_routes.rs``.
+#
+# Coord-side endpoints are anonymous (pilot posture, same as
+# ``/pr-merge/prs``); the web side enforces authentication +
+# tenant resolution before forwarding.
+
+
+async def _proxy_coord_patch(
+    path: str,
+    body: Any,
+    *,
+    tenant_id: UUID | None = None,
+) -> Any:
+    """Proxy a PATCH request to coord. Returns the JSON body.
+
+    Used by the PR Merge Orchestrator Phase 2 settings endpoints
+    (``PATCH /pr-merge/settings`` + ``PATCH /pr-merge/repos/:repo/profile``).
+    Same posture as ``_proxy_coord_post`` — tenant header,
+    timeout/connect-error mapping. Sticking to the existing httpx
+    pattern keeps the proxy footprint minimal.
+    """
+    url = f"{settings.COORD_URL}{path}"
+    headers = _tenant_headers(tenant_id) if tenant_id is not None else None
+    async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
+        try:
+            resp = await client.patch(url, json=body, headers=headers)
+        except httpx.ConnectError:
+            raise HTTPException(
+                status_code=502,
+                detail="coord is not reachable",
+            )
+        except httpx.TimeoutException:
+            raise HTTPException(
+                status_code=504,
+                detail="timeout waiting for coord",
+            )
+    if resp.status_code >= 400:
+        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+    return resp.json()
+
+
+@router.get("/pr-merge/settings")
+async def get_pr_merge_settings(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Tenant-scoped read of the per-tenant merge settings. Returns the
+    resolved EffectiveProfile (global → tenant tier, no per-repo
+    overrides applied)."""
+    return await _proxy_coord_get("/pr-merge/settings", tenant_id=tenant_id)
+
+
+@router.patch("/pr-merge/settings")
+async def patch_pr_merge_settings(
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """UPSERT the tenant-level merge settings. Coord audits the change
+    + publishes a Redis pubsub invalidation. Returns the post-write
+    EffectiveProfile."""
+    return await _proxy_coord_patch(
+        "/pr-merge/settings", body, tenant_id=tenant_id
+    )
+
+
+@router.get("/pr-merge/repos")
+async def get_pr_merge_repos(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """List the tenant's repos with framework-signal chips +
+    profile_source provenance. Drives the per-repo override-card list
+    on the Merge Orchestration → Settings page."""
+    return await _proxy_coord_get("/pr-merge/repos", tenant_id=tenant_id)
+
+
+@router.get("/pr-merge/repos/{repo:path}/profile")
+async def get_pr_merge_repo_profile(
+    repo: str,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Resolved per-(tenant, repo) settings — three-tier
+    (global → tenant → repo) layered. The ``repo`` is the
+    ``owner/name`` form; the ``:path`` converter lets FastAPI accept
+    the ``/`` inline without URL-encoding."""
+    return await _proxy_coord_get(
+        f"/pr-merge/repos/{repo}/profile", tenant_id=tenant_id
+    )
+
+
+@router.patch("/pr-merge/repos/{repo:path}/profile")
+async def patch_pr_merge_repo_profile(
+    repo: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """UPSERT the per-repo override row. Coord stamps
+    ``profile_source='user_edit'``, audits the change, and publishes
+    invalidation. Returns the post-write EffectiveProfile."""
+    return await _proxy_coord_patch(
+        f"/pr-merge/repos/{repo}/profile", body, tenant_id=tenant_id
+    )
+
+
 async def _proxy_coord_post(
     path: str,
     body: Any,
