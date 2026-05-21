@@ -112,9 +112,7 @@ class TestGetSymbolClaims:
         called_params = instance.get.call_args.kwargs.get("params", {})
         assert called_params.get("limit") == 25
 
-    def test_machine_id_filter_applied_client_side(
-        self, auth_client: TestClient
-    ):
+    def test_machine_id_filter_applied_client_side(self, auth_client: TestClient):
         """``machine_id`` filter narrows the response after coord returns.
 
         Coord's ``/coord/claims/list`` doesn't support a holder filter,
@@ -152,9 +150,7 @@ class TestGetSymbolClaims:
             instance = AsyncMock()
             instance.get.return_value = mock_resp
             _configure_mock_client(MockClient, instance)
-            resp = auth_client.get(
-                f"{API_PREFIX}/symbol-claims?machine_id={target}"
-            )
+            resp = auth_client.get(f"{API_PREFIX}/symbol-claims?machine_id={target}")
         assert resp.status_code == 200
         body = resp.json()
         held_machines = {h["machine_id"] for h in body["holders"]}
@@ -178,9 +174,7 @@ class TestGetSymbolClaims:
         assert resp.status_code == 504
 
     def test_coord_400_passed_through(self, auth_client: TestClient):
-        mock_resp = _mock_response(
-            status_code=400, text='{"error": "redis down"}'
-        )
+        mock_resp = _mock_response(status_code=400, text='{"error": "redis down"}')
         with _patch_httpx() as MockClient:
             instance = AsyncMock()
             instance.get.return_value = mock_resp
