@@ -1,0 +1,82 @@
+﻿{
+    "version":  "1.0",
+    "id":  "contexts",
+    "name":  "Contexts",
+    "states":  [
+                   {
+                       "id":  "ctx-page-structure",
+                       "name":  "Page Structure",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "heading",
+                                                    "text":  "Contexts"
+                                                },
+                                                {
+                                                    "role":  "list"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "New Context"
+                                                }
+                                            ],
+                       "description":  "Core structural elements of the Contexts page including heading, sidebar list, and new context button.",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "ctx-sidebar-state",
+                       "name":  "Sidebar State",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "New Context"
+                                                },
+                                                {
+                                                    "role":  "searchbox"
+                                                }
+                                            ],
+                       "description":  "Interactive state of sidebar controls including the new context button and search input.",
+                       "precondition":  "Page has loaded with no prior search state; search input is present",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "ctx-page-purpose",
+                       "name":  "Page Purpose",
+                       "requiredElements":  [
+                                                {
+                                                    "text":  "Contexts"
+                                                },
+                                                {
+                                                    "text":  "Content"
+                                                },
+                                                {
+                                                    "text":  "Auto-Include Rules"
+                                                }
+                                            ],
+                       "description":  "The Contexts page lets users create and manage reusable AI context documents that provide domain knowledge for workflow prompts. Each context has a name, description, markdown content, scope, and optional auto-include rules that automatically attach the context when matching keywords or action types are detected.",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   }
+               ],
+    "transitions":  [
+
+                    ],
+    "provenance":  {
+                       "source":  "migrated",
+                       "appId":  "qontinui-web"
+                   },
+    "description":  "Contexts page — create and manage AI context documents for workflow prompts",
+    "metadata":  {
+                     "tags":  [
+                                  "contexts",
+                                  "knowledge-base",
+                                  "auto-include",
+                                  "builder",
+                                  "tier-2"
+                              ]
+                 }
+}

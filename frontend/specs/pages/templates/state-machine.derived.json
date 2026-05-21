@@ -1,0 +1,75 @@
+﻿{
+    "version":  "1.0",
+    "id":  "templates",
+    "name":  "StepBuilders",
+    "states":  [
+                   {
+                       "id":  "tmpl-page-structure",
+                       "name":  "Page Structure",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "heading",
+                                                    "text":  "Step Builders"
+                                                },
+                                                {
+                                                    "role":  "link",
+                                                    "text":  "Tests"
+                                                }
+                                            ],
+                       "description":  "Core structural elements that must be present on the Step Builders page for it to be functional.",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "tmpl-card-state",
+                       "name":  "Card State",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "link",
+                                                    "text":  "Tests"
+                                                },
+                                                {
+                                                    "role":  "link",
+                                                    "text":  "Checks"
+                                                }
+                                            ],
+                       "description":  "Builder cards should be interactive links with descriptive content so users know what each builder does.",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "tmpl-page-purpose",
+                       "name":  "Page Purpose",
+                       "requiredElements":  [
+                                                {
+                                                    "text":  "Step Builders"
+                                                },
+                                                {
+                                                    "text":  "Tests"
+                                                }
+                                            ],
+                       "description":  "The Step Builders page is a navigation hub that provides quick access to specialized editors for building individual workflow steps. Each builder card represents a different step type (Tests, Checks, Playwright Tests, Shell Commands, Contexts, Tasks) and links to its dedicated editor.",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   }
+               ],
+    "transitions":  [
+
+                    ],
+    "provenance":  {
+                       "source":  "migrated",
+                       "appId":  "qontinui-web"
+                   },
+    "description":  "Step Builders page — navigation hub for specialized workflow step editors",
+    "metadata":  {
+                     "tags":  [
+                                  "step-builders",
+                                  "navigation",
+                                  "hub",
+                                  "tier-2"
+                              ]
+                 }
+}

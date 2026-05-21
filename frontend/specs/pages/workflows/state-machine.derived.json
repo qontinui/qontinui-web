@@ -1,0 +1,220 @@
+﻿{
+    "version":  "1.0",
+    "id":  "workflows",
+    "name":  "WorkflowBuilder",
+    "states":  [
+                   {
+                       "id":  "wf-page-structure",
+                       "name":  "Page Structure",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "heading",
+                                                    "text":  "Workflows"
+                                                },
+                                                {
+                                                    "role":  "complementary"
+                                                },
+                                                {
+                                                    "role":  "main"
+                                                }
+                                            ],
+                       "description":  "Core layout elements of the Workflow Builder page: heading, sidebar, and main content area",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "wf-sidebar-elements",
+                       "name":  "Sidebar Elements",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "searchbox"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "New"
+                                                }
+                                            ],
+                       "description":  "Sidebar controls for managing workflows: search input, new workflow button, and workflow list items",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "wf-sidebar-state",
+                       "name":  "Sidebar Interactive State",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "New"
+                                                },
+                                                {
+                                                    "role":  "searchbox"
+                                                }
+                                            ],
+                       "description":  "Interactive state of sidebar controls: new button always enabled, search input starts empty",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "wf-ai-panel-presence",
+                       "name":  "AI Generate Panel Presence",
+                       "requiredElements":  [
+                                                {
+                                                    "text":  "Generate Workflow with AI"
+                                                },
+                                                {
+                                                    "role":  "textbox"
+                                                }
+                                            ],
+                       "description":  "AI Generate panel elements visible when no workflow is selected (default landing state)",
+                       "precondition":  "No workflow is selected in the sidebar (default landing state)",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "wf-ai-panel-form",
+                       "name":  "AI Generate Panel Form Validation",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Generate"
+                                                },
+                                                {
+                                                    "role":  "textbox"
+                                                }
+                                            ],
+                       "description":  "AI Generate panel form behavior: Generate button disabled when prompt is empty, enabled when prompt has content",
+                       "precondition":  "AI panel is showing and prompt textarea is empty",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "wf-editor-presence",
+                       "name":  "Workflow Editor Presence",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Run"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Save"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Export"
+                                                }
+                                            ],
+                       "description":  "Editor toolbar buttons (Run, Save, Export) visible when a workflow is loaded",
+                       "precondition":  "A workflow is selected and loaded in the editor",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "wf-editor-state",
+                       "name":  "Workflow Editor State",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Run"
+                                                }
+                                            ],
+                       "description":  "Editor state when a workflow is loaded: Run button enabled, phase sections present",
+                       "precondition":  "A workflow is loaded in the editor",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "wf-phase-sections",
+                       "name":  "Phase Sections",
+                       "requiredElements":  [
+                                                {
+                                                    "text":  "Setup"
+                                                },
+                                                {
+                                                    "text":  "Verification"
+                                                },
+                                                {
+                                                    "text":  "Agentic"
+                                                },
+                                                {
+                                                    "text":  "Completion"
+                                                }
+                                            ],
+                       "description":  "All four workflow phase sections are present when a workflow is loaded: Setup, Verification, Agentic, Completion",
+                       "precondition":  "A workflow is loaded in the editor",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "wf-page-purpose",
+                       "name":  "Page Purpose",
+                       "requiredElements":  [
+                                                {
+                                                    "text":  "Workflows"
+                                                },
+                                                {
+                                                    "text":  "Setup"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Run"
+                                                },
+                                                {
+                                                    "text":  "Generate Workflow with AI"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Export"
+                                                }
+                                            ],
+                       "description":  "The Workflow Builder is the core authoring environment where users design, edit, and execute multi-phase AI automation workflows. Each workflow consists of four execution phases (setup, verification, agentic, completion) with individually configurable steps. Users can manage a library of workflows in the sidebar, run them directly from the editor, and export/import workflows as JSON.",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "wf-accessibility",
+                       "name":  "Accessibility",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "main"
+                                                },
+                                                {
+                                                    "role":  "complementary"
+                                                },
+                                                {
+                                                    "role":  "searchbox"
+                                                }
+                                            ],
+                       "description":  "Accessibility requirements: ARIA roles for landmark regions, keyboard-accessible controls",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   }
+               ],
+    "transitions":  [
+
+                    ],
+    "provenance":  {
+                       "source":  "migrated",
+                       "appId":  "qontinui-web"
+                   },
+    "description":  "Workflow Builder page — the primary authoring environment for creating multi-phase AI automation workflows",
+    "metadata":  {
+                     "tags":  [
+                                  "workflow-builder",
+                                  "editor",
+                                  "multi-phase",
+                                  "ai-generation",
+                                  "tier-1"
+                              ]
+                 }
+}

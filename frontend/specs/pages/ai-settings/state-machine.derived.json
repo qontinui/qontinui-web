@@ -1,0 +1,98 @@
+﻿{
+    "version":  "1.0",
+    "id":  "ai-settings",
+    "name":  "AiSettings",
+    "states":  [
+                   {
+                       "id":  "aisettings-page-structure",
+                       "name":  "Page Structure",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "heading",
+                                                    "text":  "AI Providers"
+                                                },
+                                                {
+                                                    "text":  "Claude CLI"
+                                                },
+                                                {
+                                                    "text":  "Claude API"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Save Settings"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Test Connection"
+                                                }
+                                            ],
+                       "description":  "Core structural elements of the AI Settings page including heading, provider option cards, and action buttons.",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "aisettings-form-state",
+                       "name":  "Form State",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Save Settings"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Test Connection"
+                                                },
+                                                {
+                                                    "text":  "Claude CLI"
+                                                }
+                                            ],
+                       "description":  "Interactive state of the AI Settings form controls including buttons and provider selection.",
+                       "precondition":  "Page has fully loaded with provider options rendered",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "aisettings-page-purpose",
+                       "name":  "Page Purpose",
+                       "requiredElements":  [
+                                                {
+                                                    "text":  "Claude CLI"
+                                                },
+                                                {
+                                                    "text":  "AI Providers"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Test Connection"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Save Settings"
+                                                }
+                                            ],
+                       "description":  "The AI Settings page lets users configure which AI provider powers workflow execution. Users choose between Claude CLI, Claude API, Gemini CLI, or Gemini API, then configure provider-specific settings including API keys, model selection, execution modes, and timeouts. A test connection feature validates the configuration.",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   }
+               ],
+    "transitions":  [
+
+                    ],
+    "provenance":  {
+                       "source":  "migrated",
+                       "appId":  "qontinui-web"
+                   },
+    "description":  "AI Settings page — configure AI provider selection, credentials, and model settings",
+    "metadata":  {
+                     "tags":  [
+                                  "settings",
+                                  "ai-providers",
+                                  "configuration",
+                                  "credentials",
+                                  "tier-1"
+                              ]
+                 }
+}

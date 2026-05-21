@@ -2,9 +2,10 @@
  * discovered-specs.ts
  *
  * Universal (server + client) runtime spec loader. Replaces the build-time
- * `getAllSpecs()` registry with a fetch from the runner's Spec API
- * (`GET http://localhost:9876/spec/list`), with module-singleton caching
- * and automatic SSE-driven invalidation on `spec.changed`.
+ * `getAllSpecs()` registry with a fetch from the runner's multi-tenant Spec
+ * API (`GET http://localhost:9876/apps/qontinui-web/spec/list`), with
+ * module-singleton caching and automatic SSE-driven invalidation on
+ * `spec.changed`.
  *
  * This module has zero React imports and no `"use client"` directive, so
  * it can be imported from server-side code (Next.js Route Handlers, RSC,
@@ -23,8 +24,10 @@
 
 import type { DiscoveredSpec } from "@/lib/spec-prompt-builder";
 
-const SPEC_LIST_URL = "http://localhost:9876/spec/list";
-const SPEC_SUBSCRIBE_URL = "http://localhost:9876/spec/subscribe";
+// spec-multi-app Stream F.4: the runner's Spec API is multi-tenant since
+// 2026-05-20. Web specs are addressed via the `qontinui-web` app id.
+const SPEC_LIST_URL = "http://localhost:9876/apps/qontinui-web/spec/list";
+const SPEC_SUBSCRIBE_URL = "http://localhost:9876/apps/qontinui-web/spec/subscribe";
 
 // =============================================================================
 // Module-scoped state

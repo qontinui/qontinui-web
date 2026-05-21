@@ -1,294 +1,297 @@
-{
-  "version": "1.0",
-  "id": "vga-runs-vga-runs",
-  "name": "VgaRunsIndexPage",
-  "states": [
-    {
-      "id": "page-structure",
-      "name": "Page Structure & Layout",
-      "requiredElements": [
-        {
-          "role": "heading",
-          "text": "VGA runs"
-        },
-        {
-          "accessibleName": "Back to VGA landing"
-        },
-        {
-          "accessibleName": "Back to VGA landing"
-        },
-        {
-          "textContains": "total"
-        },
-        {
-          "role": "main"
-        }
-      ],
-      "description": "Top-level layout: a sticky header with back-to-/vga link, heading, and total badge; a scrollable main area with a filters card followed by the runs table card. The viewport height is clamped to `calc(100vh-44px)` so the inner main section scrolls independently of the app shell.",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "filters-card",
-      "name": "Filters Card",
-      "requiredElements": [
-        {
-          "id": "filter-status"
-        },
-        {
-          "id": "filter-status"
-        },
-        {
-          "id": "filter-target"
-        },
-        {
-          "id": "filter-target"
-        },
-        {
-          "id": "filter-since"
-        },
-        {
-          "id": "filter-until"
-        },
-        {
-          "role": "button",
-          "text": "Reset"
-        },
-        {
-          "role": "button",
-          "text": "Reset"
-        }
-      ],
-      "description": "The filters card exposes four filters: status (Select), target_process (free-text Input with exact-match semantics), since (date Input), until (date Input), plus a Reset button. Changing any filter resets page to 1 and triggers a fresh /api/vga/runs query.",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "runs-table",
-      "name": "Runs Table",
-      "requiredElements": [
-        {
-          "role": "columnheader",
-          "text": "Run"
-        },
-        {
-          "role": "table"
-        },
-        {
-          "role": "row"
-        },
-        {
-          "role": "row"
-        },
-        {
-          "role": "row"
-        },
-        {
-          "role": "row"
-        },
-        {
-          "role": "row"
-        }
-      ],
-      "description": "When runs exist, a 6-column table renders the current page of results: Run id (truncated to first 8 chars, linked to /vga/runs/[runId]), State machine name, Target process, Status badge, Started-at (locale datetime), Duration. Rows are ordered by started_at DESC.",
-      "precondition": "At least one run row is rendered (data.runs.length > 0)",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "status-badges",
-      "name": "Run Status Badges",
-      "requiredElements": [
-        {
-          "text": "Succeeded"
-        },
-        {
-          "text": "Failed"
-        },
-        {
-          "text": "Drifted"
-        },
-        {
-          "text": "Running"
-        },
-        {
-          "text": "Succeeded"
-        }
-      ],
-      "description": "Each row's Status cell renders a Badge whose variant encodes status. The statusTone helper maps: succeeded|success→secondary, failed→destructive, drifted→outline, running→default, any other→outline. The label shown capitalizes the first letter except for unknown statuses which pass through raw.",
-      "precondition": "At least one run with status in {succeeded, success} is visible on the current page",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "lifecycle-states",
-      "name": "Loading / Empty / Error Lifecycle",
-      "requiredElements": [
-        {
-          "tagName": "svg"
-        },
-        {
-          "text": "No runs match these filters."
-        },
-        {
-          "textContains": "Failed to load runs"
-        },
-        {
-          "tagName": "main"
-        }
-      ],
-      "description": "The runs card renders one of four mutually exclusive sub-states based on the React Query status: isLoading → spinner, error → red error line, empty → muted 'No runs match these filters.', populated → table + pagination.",
-      "precondition": "The page has just mounted and no data has arrived yet",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "pagination",
-      "name": "Pagination Controls",
-      "requiredElements": [
-        {
-          "textContains": " of "
-        },
-        {
-          "accessibleName": "Previous page"
-        },
-        {
-          "accessibleName": "Next page"
-        },
-        {
-          "accessibleName": "Next page"
-        },
-        {
-          "accessibleName": "Previous page"
-        }
-      ],
-      "description": "When the table is populated, a footer row shows the current window and Prev/Next controls. The controls are disabled at the ends of the range. PAGE_SIZE is 50.",
-      "precondition": "At least one run row is rendered (populated state)",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "url-state-sync",
-      "name": "URL ↔ Filter State Sync",
-      "requiredElements": [
-        {
-          "id": "filter-status"
-        },
-        {
-          "id": "filter-target"
-        },
-        {
-          "id": "filter-target"
-        },
-        {
-          "id": "filter-target"
-        }
-      ],
-      "description": "The four filters plus the page index are mirrored into the URL query string. A shared link or bookmark must reproduce the exact filtered view. Sync is bidirectional via a single `lastSyncedRef` to prevent the state→URL effect from stomping params the user navigated in with.",
-      "precondition": "The page is loaded with no query string",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "api-contract",
-      "name": "GET /api/vga/runs contract",
-      "requiredElements": [
-        {
-          "role": "table"
-        },
-        {
-          "role": "table"
-        },
-        {
-          "textContains": " total"
-        },
-        {
-          "role": "table"
-        },
-        {
-          "role": "table"
-        },
-        {
-          "role": "main"
-        }
-      ],
-      "description": "The page is backed by the Next.js route handler at /api/vga/runs which executes a single SELECT over runner.vga_runs LEFT JOIN runner.vga_state_machines. The contract is observable from the page: the table's column values come directly from the row shape, totals come from COUNT(*) OVER(), filter params shape the WHERE clause.",
-      "precondition": "At least one run row is rendered",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "visual-design",
-      "name": "Visual Design & Typography",
-      "requiredElements": [
-        {
-          "role": "heading",
-          "text": "VGA runs"
-        },
-        {
-          "role": "heading",
-          "text": "VGA runs"
-        },
-        {
-          "role": "row"
-        },
-        {
-          "role": "cell"
-        },
-        {
-          "text": "No runs match these filters."
-        }
-      ],
-      "description": "Typography and color follow the theme tokens (bg-background, border-border, text-foreground, text-muted-foreground). The page header uses the same layout pattern as /vga to keep the two pages visually coherent.",
-      "precondition": "At least one run row is rendered",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "accessibility",
-      "name": "Accessibility",
-      "requiredElements": [
-        {
-          "id": "filter-target"
-        },
-        {
-          "accessibleName": "Next page"
-        },
-        {
-          "accessibleName": "Back to VGA landing"
-        },
-        {
-          "role": "row"
-        }
-      ],
-      "description": "Semantic HTML (h1, table with th scope, labeled form controls), aria-labels on icon-only buttons, keyboard-focus affordances.",
-      "precondition": "At least one run row is rendered (populated state)",
-      "provenance": {
-        "source": "migrated"
-      }
-    }
-  ],
-  "transitions": [],
-  "provenance": {
-    "source": "migrated"
-  },
-  "description": "Paginated index of VGA (Visual GUI Automation) runs. Shows one row per row of runner.vga_runs joined to runner.vga_state_machines on state_machine_id. Columns: truncated run id linking to /vga/runs/[runId], state machine name, target process, status badge, started-at timestamp, duration. Supports filtering by status, target_process (exact match), and started_at date range (since/until). Filter state is mirrored into the URL query string so a reload or shared link restores the view. Pagination: 50 rows/page; total row count is computed server-side via COUNT(*) OVER() in the same query as the page slice. This page is the user's window into the Python VGA worker's execution history — the canonical place to see which runs succeeded, failed, drifted, or are still running for a given app.",
-  "metadata": {
-    "tags": [
-      "vga",
-      "runs-index",
-      "paginated-table",
-      "filterable",
-      "url-backed-state"
-    ]
-  }
+﻿{
+    "version":  "1.0",
+    "id":  "vga-runs-vga-runs",
+    "name":  "VgaRunsIndexPage",
+    "states":  [
+                   {
+                       "id":  "page-structure",
+                       "name":  "Page Structure \u0026 Layout",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "heading",
+                                                    "text":  "VGA runs"
+                                                },
+                                                {
+                                                    "accessibleName":  "Back to VGA landing"
+                                                },
+                                                {
+                                                    "accessibleName":  "Back to VGA landing"
+                                                },
+                                                {
+                                                    "textContains":  "total"
+                                                },
+                                                {
+                                                    "role":  "main"
+                                                }
+                                            ],
+                       "description":  "Top-level layout: a sticky header with back-to-/vga link, heading, and total badge; a scrollable main area with a filters card followed by the runs table card. The viewport height is clamped to `calc(100vh-44px)` so the inner main section scrolls independently of the app shell.",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "filters-card",
+                       "name":  "Filters Card",
+                       "requiredElements":  [
+                                                {
+                                                    "id":  "filter-status"
+                                                },
+                                                {
+                                                    "id":  "filter-status"
+                                                },
+                                                {
+                                                    "id":  "filter-target"
+                                                },
+                                                {
+                                                    "id":  "filter-target"
+                                                },
+                                                {
+                                                    "id":  "filter-since"
+                                                },
+                                                {
+                                                    "id":  "filter-until"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Reset"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Reset"
+                                                }
+                                            ],
+                       "description":  "The filters card exposes four filters: status (Select), target_process (free-text Input with exact-match semantics), since (date Input), until (date Input), plus a Reset button. Changing any filter resets page to 1 and triggers a fresh /api/vga/runs query.",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "runs-table",
+                       "name":  "Runs Table",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "columnheader",
+                                                    "text":  "Run"
+                                                },
+                                                {
+                                                    "role":  "table"
+                                                },
+                                                {
+                                                    "role":  "row"
+                                                },
+                                                {
+                                                    "role":  "row"
+                                                },
+                                                {
+                                                    "role":  "row"
+                                                },
+                                                {
+                                                    "role":  "row"
+                                                },
+                                                {
+                                                    "role":  "row"
+                                                }
+                                            ],
+                       "description":  "When runs exist, a 6-column table renders the current page of results: Run id (truncated to first 8 chars, linked to /vga/runs/[runId]), State machine name, Target process, Status badge, Started-at (locale datetime), Duration. Rows are ordered by started_at DESC.",
+                       "precondition":  "At least one run row is rendered (data.runs.length \u003e 0)",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "status-badges",
+                       "name":  "Run Status Badges",
+                       "requiredElements":  [
+                                                {
+                                                    "text":  "Succeeded"
+                                                },
+                                                {
+                                                    "text":  "Failed"
+                                                },
+                                                {
+                                                    "text":  "Drifted"
+                                                },
+                                                {
+                                                    "text":  "Running"
+                                                },
+                                                {
+                                                    "text":  "Succeeded"
+                                                }
+                                            ],
+                       "description":  "Each row\u0027s Status cell renders a Badge whose variant encodes status. The statusTone helper maps: succeeded|success→secondary, failed→destructive, drifted→outline, running→default, any other→outline. The label shown capitalizes the first letter except for unknown statuses which pass through raw.",
+                       "precondition":  "At least one run with status in {succeeded, success} is visible on the current page",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "lifecycle-states",
+                       "name":  "Loading / Empty / Error Lifecycle",
+                       "requiredElements":  [
+                                                {
+                                                    "tagName":  "svg"
+                                                },
+                                                {
+                                                    "text":  "No runs match these filters."
+                                                },
+                                                {
+                                                    "textContains":  "Failed to load runs"
+                                                },
+                                                {
+                                                    "tagName":  "main"
+                                                }
+                                            ],
+                       "description":  "The runs card renders one of four mutually exclusive sub-states based on the React Query status: isLoading → spinner, error → red error line, empty → muted \u0027No runs match these filters.\u0027, populated → table + pagination.",
+                       "precondition":  "The page has just mounted and no data has arrived yet",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "pagination",
+                       "name":  "Pagination Controls",
+                       "requiredElements":  [
+                                                {
+                                                    "textContains":  " of "
+                                                },
+                                                {
+                                                    "accessibleName":  "Previous page"
+                                                },
+                                                {
+                                                    "accessibleName":  "Next page"
+                                                },
+                                                {
+                                                    "accessibleName":  "Next page"
+                                                },
+                                                {
+                                                    "accessibleName":  "Previous page"
+                                                }
+                                            ],
+                       "description":  "When the table is populated, a footer row shows the current window and Prev/Next controls. The controls are disabled at the ends of the range. PAGE_SIZE is 50.",
+                       "precondition":  "At least one run row is rendered (populated state)",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "url-state-sync",
+                       "name":  "URL ↔ Filter State Sync",
+                       "requiredElements":  [
+                                                {
+                                                    "id":  "filter-status"
+                                                },
+                                                {
+                                                    "id":  "filter-target"
+                                                },
+                                                {
+                                                    "id":  "filter-target"
+                                                },
+                                                {
+                                                    "id":  "filter-target"
+                                                }
+                                            ],
+                       "description":  "The four filters plus the page index are mirrored into the URL query string. A shared link or bookmark must reproduce the exact filtered view. Sync is bidirectional via a single `lastSyncedRef` to prevent the state→URL effect from stomping params the user navigated in with.",
+                       "precondition":  "The page is loaded with no query string",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "api-contract",
+                       "name":  "GET /api/vga/runs contract",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "table"
+                                                },
+                                                {
+                                                    "role":  "table"
+                                                },
+                                                {
+                                                    "textContains":  " total"
+                                                },
+                                                {
+                                                    "role":  "table"
+                                                },
+                                                {
+                                                    "role":  "table"
+                                                },
+                                                {
+                                                    "role":  "main"
+                                                }
+                                            ],
+                       "description":  "The page is backed by the Next.js route handler at /api/vga/runs which executes a single SELECT over runner.vga_runs LEFT JOIN runner.vga_state_machines. The contract is observable from the page: the table\u0027s column values come directly from the row shape, totals come from COUNT(*) OVER(), filter params shape the WHERE clause.",
+                       "precondition":  "At least one run row is rendered",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "visual-design",
+                       "name":  "Visual Design \u0026 Typography",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "heading",
+                                                    "text":  "VGA runs"
+                                                },
+                                                {
+                                                    "role":  "heading",
+                                                    "text":  "VGA runs"
+                                                },
+                                                {
+                                                    "role":  "row"
+                                                },
+                                                {
+                                                    "role":  "cell"
+                                                },
+                                                {
+                                                    "text":  "No runs match these filters."
+                                                }
+                                            ],
+                       "description":  "Typography and color follow the theme tokens (bg-background, border-border, text-foreground, text-muted-foreground). The page header uses the same layout pattern as /vga to keep the two pages visually coherent.",
+                       "precondition":  "At least one run row is rendered",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "accessibility",
+                       "name":  "Accessibility",
+                       "requiredElements":  [
+                                                {
+                                                    "id":  "filter-target"
+                                                },
+                                                {
+                                                    "accessibleName":  "Next page"
+                                                },
+                                                {
+                                                    "accessibleName":  "Back to VGA landing"
+                                                },
+                                                {
+                                                    "role":  "row"
+                                                }
+                                            ],
+                       "description":  "Semantic HTML (h1, table with th scope, labeled form controls), aria-labels on icon-only buttons, keyboard-focus affordances.",
+                       "precondition":  "At least one run row is rendered (populated state)",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   }
+               ],
+    "transitions":  [
+
+                    ],
+    "provenance":  {
+                       "source":  "migrated",
+                       "appId":  "qontinui-web"
+                   },
+    "description":  "Paginated index of VGA (Visual GUI Automation) runs. Shows one row per row of runner.vga_runs joined to runner.vga_state_machines on state_machine_id. Columns: truncated run id linking to /vga/runs/[runId], state machine name, target process, status badge, started-at timestamp, duration. Supports filtering by status, target_process (exact match), and started_at date range (since/until). Filter state is mirrored into the URL query string so a reload or shared link restores the view. Pagination: 50 rows/page; total row count is computed server-side via COUNT(*) OVER() in the same query as the page slice. This page is the user\u0027s window into the Python VGA worker\u0027s execution history — the canonical place to see which runs succeeded, failed, drifted, or are still running for a given app.",
+    "metadata":  {
+                     "tags":  [
+                                  "vga",
+                                  "runs-index",
+                                  "paginated-table",
+                                  "filterable",
+                                  "url-backed-state"
+                              ]
+                 }
 }

@@ -1,0 +1,89 @@
+﻿{
+    "version":  "1.0",
+    "id":  "statistics",
+    "name":  "Statistics",
+    "states":  [
+                   {
+                       "id":  "stats-page-structure",
+                       "name":  "Page Structure",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "heading",
+                                                    "text":  "Statistics"
+                                                },
+                                                {
+                                                    "text":  "Total Runs"
+                                                },
+                                                {
+                                                    "text":  "Avg Duration"
+                                                },
+                                                {
+                                                    "text":  "Success Rate"
+                                                },
+                                                {
+                                                    "text":  "Status Breakdown"
+                                                }
+                                            ],
+                       "description":  "Core structural elements of the Statistics page including heading, summary metric cards, and status breakdown section.",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "stats-metrics-state",
+                       "name":  "Metrics State",
+                       "requiredElements":  [
+                                                {
+                                                    "text":  "Total Runs"
+                                                },
+                                                {
+                                                    "text":  "Success Rate"
+                                                },
+                                                {
+                                                    "text":  "Recent Runs"
+                                                }
+                                            ],
+                       "description":  "State consistency of metric values and table structure on the statistics dashboard.",
+                       "precondition":  "Page has loaded with statistics data available",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "stats-page-purpose",
+                       "name":  "Page Purpose",
+                       "requiredElements":  [
+                                                {
+                                                    "text":  "Statistics"
+                                                },
+                                                {
+                                                    "text":  "Status Breakdown"
+                                                },
+                                                {
+                                                    "text":  "Recent Runs"
+                                                }
+                                            ],
+                       "description":  "The Statistics page provides performance analytics for workflow executions. It displays summary metrics (total runs, average duration, success rate, total time), a status breakdown with visual distribution bars, and a recent runs table comparing each run\u0027s duration against the average. A performance view adds time-range filtering and detailed metric cards.",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   }
+               ],
+    "transitions":  [
+
+                    ],
+    "provenance":  {
+                       "source":  "migrated",
+                       "appId":  "qontinui-web"
+                   },
+    "description":  "Statistics page — execution performance analytics and metrics dashboard",
+    "metadata":  {
+                     "tags":  [
+                                  "statistics",
+                                  "analytics",
+                                  "performance",
+                                  "metrics",
+                                  "tier-2"
+                              ]
+                 }
+}

@@ -1,994 +1,997 @@
-{
-  "version": "1.0",
-  "id": "automation-builder-ui-bridge-states-ui-bridge-states",
-  "name": "UIBridgeStateMachinePage",
-  "states": [
-    {
-      "id": "sm-page-structure",
-      "name": "Page Structure",
-      "requiredElements": [
-        {
-          "role": "heading",
-          "text": "State Machine"
-        },
-        {
-          "text": "Select configuration"
-        },
-        {
-          "role": "button",
-          "text": "Refresh"
-        },
-        {
-          "text": "Select configuration"
-        }
-      ],
-      "description": "Core structural elements of the State Machine page: heading with Network icon, config selector dropdown, refresh button, and tab navigation bar with 6 tabs.",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "sm-tab-navigation",
-      "name": "Tab Navigation",
-      "requiredElements": [
-        {
-          "role": "button",
-          "text": "Discovery"
-        },
-        {
-          "role": "button",
-          "text": "Graph Editor"
-        },
-        {
-          "role": "button",
-          "text": "State View"
-        },
-        {
-          "role": "button",
-          "text": "Transitions"
-        },
-        {
-          "role": "button",
-          "text": "Pathfinding"
-        },
-        {
-          "role": "button",
-          "text": "Export"
-        },
-        {
-          "role": "button",
-          "text": "Discovery"
-        }
-      ],
-      "description": "The page provides 6 tabs for different aspects of state machine management: Discovery, Graph Editor, State View, Transitions, Pathfinding, and Export. Each tab has an icon and label, rendered as plain buttons with active/inactive styling.",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "sm-visual-design-header",
-      "name": "Visual Design — Header & Navigation",
-      "requiredElements": [
-        {
-          "role": "heading",
-          "text": "State Machine"
-        },
-        {
-          "tagName": "svg"
-        },
-        {
-          "role": "heading",
-          "text": "State Machine"
-        },
-        {
-          "role": "button",
-          "text": "Discovery"
-        },
-        {
-          "role": "button",
-          "text": "Discovery"
-        }
-      ],
-      "description": "Style guide for the page header and tab navigation bar. The header uses border-b border-border-primary with bg-surface-primary background. Tab bar sits below the header with matching styling.",
-      "precondition": "Page has loaded",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "sm-text-visibility",
-      "name": "Text Visibility & Contrast",
-      "requiredElements": [
-        {
-          "role": "heading",
-          "text": "State Machine"
-        },
-        {
-          "role": "button",
-          "text": "Discovery"
-        },
-        {
-          "text": "Select a project"
-        },
-        {
-          "text": "states"
-        },
-        {
-          "text": "Export"
-        },
-        {
-          "text": "confidence"
-        }
-      ],
-      "description": "Ensures all text elements on the page are visible and readable against their backgrounds. This is a known recurring issue — foreground colors sometimes match background colors, making text invisible.",
-      "precondition": "No project is selected",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "sm-no-project-state",
-      "name": "No Project Selected State",
-      "requiredElements": [
-        {
-          "text": "Select a project"
-        }
-      ],
-      "description": "When no project is selected in the automation store, all tabs display a centered message instructing the user to select a project. The page header and tabs remain visible.",
-      "precondition": "No project is currently selected in the automation store",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "sm-no-config-state",
-      "name": "No Configuration Selected State",
-      "requiredElements": [
-        {
-          "text": "Select a configuration to view the state graph"
-        },
-        {
-          "text": "Select a configuration to view states"
-        },
-        {
-          "text": "Select a configuration to view transitions"
-        },
-        {
-          "text": "Select a configuration to use pathfinding"
-        },
-        {
-          "text": "Select a configuration to export"
-        }
-      ],
-      "description": "When a project is selected but no configuration is chosen, tabs that require a config should show clear instructive empty states. Discovery tab shows its collection UI instead.",
-      "precondition": "A project is selected but no configuration is chosen, and Graph Editor tab is active",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "sm-discovery-runner-connection",
-      "name": "Discovery — Runner Connection",
-      "requiredElements": [
-        {
-          "text": "Connect to SDK App"
-        },
-        {
-          "role": "button",
-          "text": "Scan"
-        },
-        {
-          "text": "No runners detected"
-        },
-        {
-          "text": "Click Scan"
-        },
-        {
-          "textContains": "Connected:"
-        },
-        {
-          "textContains": "Local Runner"
-        }
-      ],
-      "description": "Phase 1 of discovery: connecting to a runner and finding SDK-instrumented apps. The user selects a runner from a dropdown (local runner auto-detected), scans for apps, and connects to one. Shows a green banner when connected.",
-      "precondition": "Discovery tab is active and a project is selected",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "sm-discovery-collection",
-      "name": "Discovery — Data Collection",
-      "requiredElements": [
-        {
-          "role": "button",
-          "text": "Explore"
-        },
-        {
-          "role": "button",
-          "text": "Record"
-        },
-        {
-          "role": "button",
-          "text": "Start Recording"
-        },
-        {
-          "role": "button",
-          "text": "Capture Now"
-        },
-        {
-          "text": "Capture snapshots"
-        },
-        {
-          "role": "button",
-          "textContains": "Stop Recording"
-        },
-        {
-          "textContains": "snapshots"
-        },
-        {
-          "role": "button",
-          "text": "Explore"
-        }
-      ],
-      "description": "Phase 2 of discovery: collecting render snapshots from the connected SDK app via automated exploration (Explore tab) or manual recording (Record tab). Collection tabs only appear when an SDK app is connected.",
-      "precondition": "Discovery tab is active and an SDK app is connected",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "sm-discovery-results",
-      "name": "Discovery — State Discovery & Save",
-      "requiredElements": [
-        {
-          "text": "Render Logs Collected"
-        },
-        {
-          "role": "button",
-          "text": "Discover States"
-        },
-        {
-          "role": "button",
-          "text": "Start Over"
-        },
-        {
-          "text": "Configuration Name"
-        },
-        {
-          "role": "button",
-          "text": "Save to Project"
-        },
-        {
-          "text": "Discovery Complete"
-        }
-      ],
-      "description": "Phase 3 of discovery: running the state discovery algorithm on collected renders, previewing discovered states with confidence scores, naming the configuration, and saving to the project. The discovery phase calls POST /api/v1/state-discovery/ui-bridge/discover-states with the renders and strategy='auto'.",
-      "precondition": "Discovery tab is active and render logs have been collected (via explore or record)",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "sm-discovery-results-preview",
-      "name": "Discovery — Results Preview",
-      "requiredElements": [
-        {
-          "textContains": "states"
-        },
-        {
-          "textContains": "elements"
-        },
-        {
-          "textContains": "renders"
-        },
-        {
-          "textContains": "strategy"
-        },
-        {
-          "textContains": "confidence"
-        }
-      ],
-      "description": "After discovery completes, the results card shows discovered state count, element count, render count, strategy badge, and a scrollable preview list of states with confidence scores.",
-      "precondition": "Discovery has completed successfully",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "sm-discovery-state-grouping",
-      "name": "State Discovery — Grouping Correctness",
-      "requiredElements": [
-        {
-          "role": "button",
-          "text": "State View"
-        },
-        {
-          "role": "button",
-          "text": "Graph Editor"
-        },
-        {
-          "textContains": "elements"
-        },
-        {
-          "textContains": "confidence"
-        },
-        {
-          "textContains": "states"
-        }
-      ],
-      "description": "After running state discovery, the page displays the discovered states. Each state represents a distinct UI configuration defined by which interactive elements appear together (co-occurrence). The correctness of the grouping algorithm is verifiable by examining the discovery results and the states displayed in the Graph Editor and State View tabs after saving.",
-      "precondition": "A configuration with discovered states is loaded (select a config in the dropdown)",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "sm-discovery-persistence",
-      "name": "Discovery — State Persistence",
-      "requiredElements": [
-        {
-          "text": "Discovery"
-        },
-        {
-          "role": "button",
-          "text": "Save to Project"
-        }
-      ],
-      "description": "Discovery state (renders, discovery results, config name) is persisted to localStorage per project. Navigating away and returning to the Discovery tab should restore the previous discovery state.",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "sm-graph-editor",
-      "name": "Graph Editor",
-      "requiredElements": [
-        {
-          "role": "button",
-          "text": "Fit to view"
-        },
-        {
-          "role": "button",
-          "text": "Re-layout"
-        },
-        {
-          "role": "button",
-          "text": "Add Transition"
-        },
-        {
-          "text": "states"
-        },
-        {
-          "role": "button",
-          "text": "Graph Editor"
-        },
-        {
-          "role": "button",
-          "text": "Graph Editor"
-        }
-      ],
-      "description": "The Graph Editor tab provides a ReactFlow-based visual canvas showing states as nodes and transitions as edges. Users can select nodes/edges, create transitions via the Add Transition button or by dragging elements between state nodes, and view state/transition details in side panels.",
-      "precondition": "Graph Editor tab is active and a configuration is selected",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "sm-graph-state-nodes",
-      "name": "Graph — State Nodes",
-      "requiredElements": [
-        {
-          "role": "button",
-          "text": "Graph Editor"
-        },
-        {
-          "text": "START"
-        },
-        {
-          "role": "button",
-          "text": "Graph Editor"
-        },
-        {
-          "role": "button",
-          "text": "Graph Editor"
-        }
-      ],
-      "description": "Each state is rendered as a ReactFlow node showing the state name, element grid with type-colored tiles, confidence badge, element count, and connection indicators. The initial state shows a gold 'START' badge.",
-      "precondition": "Graph Editor tab is active and a configuration with states is loaded",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "sm-state-panel",
-      "name": "State Detail Panel",
-      "requiredElements": [
-        {
-          "role": "textbox"
-        },
-        {
-          "role": "button",
-          "text": "Save Changes"
-        },
-        {
-          "role": "button",
-          "text": "Save Changes"
-        }
-      ],
-      "description": "When a state is selected in the Graph Editor, a side panel (w-80, border-l, bg-surface-primary) shows editable state details: name, description, state ID, confidence, elements list, render count, and domain knowledge.",
-      "precondition": "A state is selected in the Graph Editor",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "sm-state-view",
-      "name": "State View Tab",
-      "requiredElements": [
-        {
-          "role": "button",
-          "text": "State View"
-        },
-        {
-          "role": "button",
-          "text": "State View"
-        },
-        {
-          "role": "button",
-          "text": "State View"
-        }
-      ],
-      "description": "The State View tab shows a list/grid of all states in the selected configuration using the shared StateViewPanel component from @qontinui/workflow-ui/state-machine. Allows browsing states and their elements without the graph complexity.",
-      "precondition": "State View tab is active and a configuration with states is selected",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "sm-transition-editor",
-      "name": "Transition Editor",
-      "requiredElements": [
-        {
-          "text": "Open Settings"
-        },
-        {
-          "text": "From States"
-        },
-        {
-          "text": "Activate States"
-        },
-        {
-          "text": "Exit States"
-        },
-        {
-          "role": "button",
-          "text": "Add"
-        },
-        {
-          "role": "button",
-          "text": "Create"
-        }
-      ],
-      "description": "The transition editor panel allows creating and editing transitions with: name, from/activate/exit states (toggle buttons with color coding), action sequence with 19+ action types, path cost, and stays_visible flag. Opens as a w-80 side panel in the Graph Editor.",
-      "precondition": "The transition editor panel is open (via Add Transition or clicking an edge)",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "sm-transition-actions",
-      "name": "Transition — Action Types",
-      "requiredElements": [
-        {
-          "text": "click"
-        },
-        {
-          "text": "Element ID"
-        },
-        {
-          "text": "Text to type"
-        },
-        {
-          "text": "URL"
-        },
-        {
-          "text": "Delay"
-        }
-      ],
-      "description": "Transitions support 19+ action types that define what happens during state changes. Each action type has specific parameters. These map to the UIBridgeRuntime action handlers in the qontinui library.",
-      "precondition": "The transition editor is open and at least one action exists",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "sm-transitions-panel",
-      "name": "Transitions List Panel",
-      "requiredElements": [
-        {
-          "text": "Search transitions"
-        },
-        {
-          "text": "Transitions"
-        },
-        {
-          "text": "Select a transition to view its details"
-        },
-        {
-          "text": "Action Playback"
-        }
-      ],
-      "description": "The Transitions tab shows a searchable, filterable list of all transitions with action type icons, from/to state labels, and an action playback visualization with play/pause controls.",
-      "precondition": "Transitions tab is active and a configuration is selected",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "sm-pathfinding",
-      "name": "Pathfinding",
-      "requiredElements": [
-        {
-          "text": "From States"
-        },
-        {
-          "text": "Target States"
-        },
-        {
-          "role": "button",
-          "text": "Find Path"
-        },
-        {
-          "text": "Path found"
-        },
-        {
-          "text": "No path found"
-        },
-        {
-          "role": "button",
-          "text": "Find Path"
-        }
-      ],
-      "description": "The Pathfinding tab allows users to select 'from' states (currently active) and 'target' states (to reach), then find the optimal transition path using the multistate library's pathfinding algorithms. Results show step-by-step transitions with costs. Found paths can be highlighted on the Graph Editor.",
-      "precondition": "Pathfinding tab is active and a configuration with states is selected",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "sm-export",
-      "name": "Export",
-      "requiredElements": [
-        {
-          "role": "heading",
-          "text": "Export"
-        },
-        {
-          "role": "button",
-          "text": "Download JSON"
-        },
-        {
-          "role": "button",
-          "text": "Push to Runner"
-        },
-        {
-          "textContains": "transitions"
-        },
-        {
-          "textContains": "UIBridgeRuntime.from_dict()"
-        }
-      ],
-      "description": "The Export tab allows downloading the state machine as JSON (compatible with UIBridgeRuntime.from_dict()) or pushing it directly to the qontinui-runner. Shows config name, state count, and transition count.",
-      "precondition": "Export tab is active and a configuration is selected",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "sm-creation-flow",
-      "name": "State Machine Creation Flow",
-      "requiredElements": [
-        {
-          "text": "Discovery"
-        },
-        {
-          "text": "Select configuration"
-        },
-        {
-          "text": "Add Transition"
-        },
-        {
-          "text": "Find Path"
-        },
-        {
-          "text": "Download JSON"
-        }
-      ],
-      "description": "End-to-end creation of a state machine: (1) connect to SDK app via runner, (2) collect renders by exploration or recording, (3) run discovery algorithm, (4) preview and name the configuration, (5) save to project. After saving, the configuration appears in the config selector dropdown and can be edited in Graph Editor.",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "sm-data-model",
-      "name": "State Machine Data Model",
-      "requiredElements": [
-        {
-          "role": "heading",
-          "text": "State Machine"
-        },
-        {
-          "role": "heading",
-          "text": "State Machine"
-        },
-        {
-          "role": "button",
-          "text": "Discover States"
-        }
-      ],
-      "description": "Semantic specification of the state machine data model as visible on the page. Each state has: id, name, element_ids (UI Bridge element identifiers), confidence score. Each transition has: from_states, activate_states, exit_states, actions list, path_cost, stays_visible. The discovery algorithm determines states by element co-occurrence patterns.",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "sm-visual-design-discovery",
-      "name": "Visual Design — Discovery Panel",
-      "requiredElements": [
-        {
-          "text": "Connect to SDK App"
-        },
-        {
-          "textContains": "Connected:"
-        },
-        {
-          "role": "button",
-          "text": "Discover States"
-        },
-        {
-          "textContains": "UIBridgeRuntime"
-        }
-      ],
-      "description": "Style guide for the discovery panel components: cards, badges, buttons, and connection status indicators.",
-      "precondition": "Discovery tab is active",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "sm-graph-drag-drop",
-      "name": "Graph — Element Drag & Drop",
-      "requiredElements": [
-        {
-          "role": "button",
-          "text": "Graph Editor"
-        },
-        {
-          "role": "button",
-          "text": "Graph Editor"
-        }
-      ],
-      "description": "Elements can be dragged between state nodes in the Graph Editor to create transitions or reassign elements. The useElementDrag hook manages drag state, drop targets, and resulting operations.",
-      "precondition": "Graph Editor is active with a configuration that has multiple states with elements",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "sm-state-view-features",
-      "name": "State View — Rich Features",
-      "requiredElements": [
-        {
-          "role": "textbox"
-        },
-        {
-          "role": "button",
-          "text": "Spatial"
-        },
-        {
-          "role": "list"
-        },
-        {
-          "role": "list"
-        },
-        {
-          "role": "list"
-        },
-        {
-          "role": "list"
-        }
-      ],
-      "description": "The State View tab uses the shared StateViewPanel component which provides dual view modes (list and spatial canvas), search/filter, element grouping by type with colored badges, confidence color coding, domain knowledge display, acceptance criteria, and transition counts per state.",
-      "precondition": "State View tab is active with a loaded config containing multiple states",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "sm-transitions-playback",
-      "name": "Transitions — Action Playback Animation",
-      "requiredElements": [
-        {
-          "role": "button",
-          "text": "Transitions"
-        },
-        {
-          "role": "combobox"
-        },
-        {
-          "role": "button",
-          "text": "Transitions"
-        },
-        {
-          "role": "button",
-          "text": "Transitions"
-        },
-        {
-          "role": "combobox"
-        }
-      ],
-      "description": "The Transitions tab uses the shared TransitionsPanel which includes a full action playback animation system. When a transition with actions is selected, controls allow playing, pausing, stepping through, and adjusting speed of an animated visualization of each action in the sequence.",
-      "precondition": "A transition with multiple actions is selected and playback has started",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "sm-state-detail-editing",
-      "name": "State Detail — Editing Features",
-      "requiredElements": [
-        {
-          "role": "textbox"
-        },
-        {
-          "role": "button",
-          "text": "Add"
-        },
-        {
-          "role": "textbox"
-        },
-        {
-          "role": "button",
-          "text": "Save Changes"
-        },
-        {
-          "role": "button",
-          "text": "Graph Editor"
-        }
-      ],
-      "description": "The StateDetailPanel (shown as a side panel when a state is selected in the Graph Editor) provides editing for state metadata, acceptance criteria, domain knowledge, and element management with change detection.",
-      "precondition": "A state is selected in the Graph Editor and the detail side panel is visible",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "sm-graph-keyboard-shortcuts",
-      "name": "Graph — Keyboard Shortcuts",
-      "requiredElements": [
-        {
-          "role": "button"
-        },
-        {
-          "role": "button",
-          "text": "Graph Editor"
-        },
-        {
-          "role": "button",
-          "text": "Graph Editor"
-        },
-        {
-          "role": "button",
-          "text": "Graph Editor"
-        }
-      ],
-      "description": "The Graph Editor (StateMachineGraphView) supports keyboard shortcuts for navigation, layout, and selection. A '?' toggle (top-right) reveals the shortcut overlay listing all available keys.",
-      "precondition": "Graph Editor tab is active with a loaded config",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "sm-discovery-algorithm-details",
-      "name": "Discovery Algorithm — Element Classification & Co-occurrence",
-      "requiredElements": [
-        {
-          "role": "list"
-        },
-        {
-          "role": "list"
-        },
-        {
-          "textContains": "strategy"
-        },
-        {
-          "role": "list"
-        },
-        {
-          "role": "list"
-        }
-      ],
-      "description": "The state discovery algorithm (qontinui core library's FingerprintStrategy) classifies elements by type and position, then groups them into states using co-occurrence analysis. This group specifies the algorithm's classification and grouping behavior as visible in the discovery results displayed on the page.",
-      "precondition": "Discovery has completed and states are visible",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "sm-fingerprint-recording",
-      "name": "Fingerprint-Based Recording (SdkRecordingPanel)",
-      "requiredElements": [
-        {
-          "textContains": "State Machine Recording"
-        },
-        {
-          "role": "button",
-          "textContains": "Record"
-        },
-        {
-          "role": "button",
-          "textContains": "Stop"
-        },
-        {
-          "textContains": "Extracted Variables"
-        },
-        {
-          "role": "button",
-          "textContains": "Discover State Machine"
-        },
-        {
-          "textContains": "State Machine Discovered"
-        }
-      ],
-      "description": "The SDK Recording Panel provides WebSocket-based fingerprint recording for UI Bridge-connected apps. It captures user interactions, computes element fingerprints, and produces a CooccurrenceExport for direct state machine bootstrapping — bypassing the snapshot-based discovery flow.",
-      "precondition": "An SDK app is connected and the Record tab is selected in the Discovery panel",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "sm-recording-graph-visualization",
-      "name": "Recording State Graph Visualization",
-      "requiredElements": [
-        {
-          "role": "graphics-document"
-        },
-        {
-          "role": "graphics-document"
-        },
-        {
-          "role": "graphics-document"
-        }
-      ],
-      "description": "After fingerprint-based recording pipeline produces results, a compact graph visualization shows discovered states as nodes and transitions as edges. Uses @xyflow/react with dagre layout.",
-      "precondition": "Pipeline processing completed with at least 1 non-global state and 1 transition",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "sm-playbook-generation",
-      "name": "Playbook Generation from Recording",
-      "requiredElements": [
-        {
-          "textContains": "Generated Playbook"
-        },
-        {
-          "tagName": "pre"
-        },
-        {
-          "role": "button",
-          "textContains": "Copy"
-        }
-      ],
-      "description": "After pipeline processing with playbook generation enabled, the SdkRecordingPanel displays the generated playbook markdown content with a copy-to-clipboard button.",
-      "precondition": "Pipeline processing completed with playbook generation enabled",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "sm-experience-memory",
-      "name": "Experience Memory (Past Recording Sessions)",
-      "requiredElements": [
-        {
-          "textContains": "Past recordings for this app"
-        },
-        {
-          "textContains": "incremental merge"
-        }
-      ],
-      "description": "When connecting to an app with previous recording sessions, the SdkRecordingPanel shows past session history to inform the user and enable incremental recording.",
-      "precondition": "SDK app is connected and the app has previous recording sessions stored in PostgreSQL",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "sm-recording-pipeline-correctness",
-      "name": "Recording Pipeline — State Discovery Correctness",
-      "requiredElements": [
-        {
-          "textContains": "State Machine Discovered"
-        },
-        {
-          "textContains": "State Machine Discovered"
-        },
-        {
-          "textContains": "State Machine Discovered"
-        },
-        {
-          "textContains": "states"
-        }
-      ],
-      "description": "The fingerprint recording pipeline (RecordingPipeline.process_recording) discovers states via FingerprintStateDiscovery and transitions via TransitionDetector. These assertions verify that the pipeline output displayed on the page is correct.",
-      "precondition": "Pipeline processing has completed with at least 1 state",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "sm-state-machine-graph-tab",
-      "name": "State Machine Graph Tab (StateMachineViewer)",
-      "requiredElements": [
-        {
-          "role": "tab",
-          "textContains": "Graph"
-        },
-        {
-          "textContains": "State Transition Graph"
-        },
-        {
-          "role": "graphics-document"
-        }
-      ],
-      "description": "The StateMachineViewer component now has a Graph tab as its first (default) tab, rendering an interactive state transition graph using @xyflow/react and dagre layout.",
-      "precondition": "StateMachineViewer is rendered with a StateDiscoveryResult",
-      "provenance": {
-        "source": "migrated"
-      }
-    },
-    {
-      "id": "sm-recording-indicator",
-      "name": "Floating Recording Indicator",
-      "requiredElements": [
-        {
-          "textContains": "Recording"
-        },
-        {
-          "role": "button"
-        },
-        {
-          "textContains": "Recording"
-        }
-      ],
-      "description": "A floating recording indicator appears in the bottom-right corner of the app when any UI Bridge recording session is active. It polls SDK WebSocket ports and provides a quick stop button.",
-      "precondition": "A fingerprint recording is active on a connected SDK app",
-      "provenance": {
-        "source": "migrated"
-      }
-    }
-  ],
-  "transitions": [],
-  "provenance": {
-    "source": "migrated"
-  },
-  "description": "UI Bridge State Machine page — visual editor for discovering, creating, and managing state machines from UI Bridge-instrumented applications. Covers the full state machine creation lifecycle: SDK connection, state discovery (element co-occurrence analysis), graph editing, transition creation with action sequences, pathfinding (Dijkstra/BFS/A*), and export. The page is the primary interface for the qontinui library's state discovery algorithms, and this spec defines both UI correctness and algorithm output correctness.",
-  "metadata": {
-    "tags": [
-      "state-machine",
-      "ui-bridge",
-      "discovery",
-      "graph-editor",
-      "transitions",
-      "pathfinding",
-      "automation",
-      "recording",
-      "fingerprint-recording",
-      "playbook-generation",
-      "experience-memory",
-      "tier-1"
-    ]
-  }
+﻿{
+    "version":  "1.0",
+    "id":  "automation-builder-ui-bridge-states-ui-bridge-states",
+    "name":  "UIBridgeStateMachinePage",
+    "states":  [
+                   {
+                       "id":  "sm-page-structure",
+                       "name":  "Page Structure",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "heading",
+                                                    "text":  "State Machine"
+                                                },
+                                                {
+                                                    "text":  "Select configuration"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Refresh"
+                                                },
+                                                {
+                                                    "text":  "Select configuration"
+                                                }
+                                            ],
+                       "description":  "Core structural elements of the State Machine page: heading with Network icon, config selector dropdown, refresh button, and tab navigation bar with 6 tabs.",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "sm-tab-navigation",
+                       "name":  "Tab Navigation",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Discovery"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Graph Editor"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "State View"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Transitions"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Pathfinding"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Export"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Discovery"
+                                                }
+                                            ],
+                       "description":  "The page provides 6 tabs for different aspects of state machine management: Discovery, Graph Editor, State View, Transitions, Pathfinding, and Export. Each tab has an icon and label, rendered as plain buttons with active/inactive styling.",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "sm-visual-design-header",
+                       "name":  "Visual Design — Header \u0026 Navigation",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "heading",
+                                                    "text":  "State Machine"
+                                                },
+                                                {
+                                                    "tagName":  "svg"
+                                                },
+                                                {
+                                                    "role":  "heading",
+                                                    "text":  "State Machine"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Discovery"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Discovery"
+                                                }
+                                            ],
+                       "description":  "Style guide for the page header and tab navigation bar. The header uses border-b border-border-primary with bg-surface-primary background. Tab bar sits below the header with matching styling.",
+                       "precondition":  "Page has loaded",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "sm-text-visibility",
+                       "name":  "Text Visibility \u0026 Contrast",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "heading",
+                                                    "text":  "State Machine"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Discovery"
+                                                },
+                                                {
+                                                    "text":  "Select a project"
+                                                },
+                                                {
+                                                    "text":  "states"
+                                                },
+                                                {
+                                                    "text":  "Export"
+                                                },
+                                                {
+                                                    "text":  "confidence"
+                                                }
+                                            ],
+                       "description":  "Ensures all text elements on the page are visible and readable against their backgrounds. This is a known recurring issue — foreground colors sometimes match background colors, making text invisible.",
+                       "precondition":  "No project is selected",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "sm-no-project-state",
+                       "name":  "No Project Selected State",
+                       "requiredElements":  [
+                                                {
+                                                    "text":  "Select a project"
+                                                }
+                                            ],
+                       "description":  "When no project is selected in the automation store, all tabs display a centered message instructing the user to select a project. The page header and tabs remain visible.",
+                       "precondition":  "No project is currently selected in the automation store",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "sm-no-config-state",
+                       "name":  "No Configuration Selected State",
+                       "requiredElements":  [
+                                                {
+                                                    "text":  "Select a configuration to view the state graph"
+                                                },
+                                                {
+                                                    "text":  "Select a configuration to view states"
+                                                },
+                                                {
+                                                    "text":  "Select a configuration to view transitions"
+                                                },
+                                                {
+                                                    "text":  "Select a configuration to use pathfinding"
+                                                },
+                                                {
+                                                    "text":  "Select a configuration to export"
+                                                }
+                                            ],
+                       "description":  "When a project is selected but no configuration is chosen, tabs that require a config should show clear instructive empty states. Discovery tab shows its collection UI instead.",
+                       "precondition":  "A project is selected but no configuration is chosen, and Graph Editor tab is active",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "sm-discovery-runner-connection",
+                       "name":  "Discovery — Runner Connection",
+                       "requiredElements":  [
+                                                {
+                                                    "text":  "Connect to SDK App"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Scan"
+                                                },
+                                                {
+                                                    "text":  "No runners detected"
+                                                },
+                                                {
+                                                    "text":  "Click Scan"
+                                                },
+                                                {
+                                                    "textContains":  "Connected:"
+                                                },
+                                                {
+                                                    "textContains":  "Local Runner"
+                                                }
+                                            ],
+                       "description":  "Phase 1 of discovery: connecting to a runner and finding SDK-instrumented apps. The user selects a runner from a dropdown (local runner auto-detected), scans for apps, and connects to one. Shows a green banner when connected.",
+                       "precondition":  "Discovery tab is active and a project is selected",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "sm-discovery-collection",
+                       "name":  "Discovery — Data Collection",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Explore"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Record"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Start Recording"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Capture Now"
+                                                },
+                                                {
+                                                    "text":  "Capture snapshots"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "textContains":  "Stop Recording"
+                                                },
+                                                {
+                                                    "textContains":  "snapshots"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Explore"
+                                                }
+                                            ],
+                       "description":  "Phase 2 of discovery: collecting render snapshots from the connected SDK app via automated exploration (Explore tab) or manual recording (Record tab). Collection tabs only appear when an SDK app is connected.",
+                       "precondition":  "Discovery tab is active and an SDK app is connected",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "sm-discovery-results",
+                       "name":  "Discovery — State Discovery \u0026 Save",
+                       "requiredElements":  [
+                                                {
+                                                    "text":  "Render Logs Collected"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Discover States"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Start Over"
+                                                },
+                                                {
+                                                    "text":  "Configuration Name"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Save to Project"
+                                                },
+                                                {
+                                                    "text":  "Discovery Complete"
+                                                }
+                                            ],
+                       "description":  "Phase 3 of discovery: running the state discovery algorithm on collected renders, previewing discovered states with confidence scores, naming the configuration, and saving to the project. The discovery phase calls POST /api/v1/state-discovery/ui-bridge/discover-states with the renders and strategy=\u0027auto\u0027.",
+                       "precondition":  "Discovery tab is active and render logs have been collected (via explore or record)",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "sm-discovery-results-preview",
+                       "name":  "Discovery — Results Preview",
+                       "requiredElements":  [
+                                                {
+                                                    "textContains":  "states"
+                                                },
+                                                {
+                                                    "textContains":  "elements"
+                                                },
+                                                {
+                                                    "textContains":  "renders"
+                                                },
+                                                {
+                                                    "textContains":  "strategy"
+                                                },
+                                                {
+                                                    "textContains":  "confidence"
+                                                }
+                                            ],
+                       "description":  "After discovery completes, the results card shows discovered state count, element count, render count, strategy badge, and a scrollable preview list of states with confidence scores.",
+                       "precondition":  "Discovery has completed successfully",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "sm-discovery-state-grouping",
+                       "name":  "State Discovery — Grouping Correctness",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "State View"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Graph Editor"
+                                                },
+                                                {
+                                                    "textContains":  "elements"
+                                                },
+                                                {
+                                                    "textContains":  "confidence"
+                                                },
+                                                {
+                                                    "textContains":  "states"
+                                                }
+                                            ],
+                       "description":  "After running state discovery, the page displays the discovered states. Each state represents a distinct UI configuration defined by which interactive elements appear together (co-occurrence). The correctness of the grouping algorithm is verifiable by examining the discovery results and the states displayed in the Graph Editor and State View tabs after saving.",
+                       "precondition":  "A configuration with discovered states is loaded (select a config in the dropdown)",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "sm-discovery-persistence",
+                       "name":  "Discovery — State Persistence",
+                       "requiredElements":  [
+                                                {
+                                                    "text":  "Discovery"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Save to Project"
+                                                }
+                                            ],
+                       "description":  "Discovery state (renders, discovery results, config name) is persisted to localStorage per project. Navigating away and returning to the Discovery tab should restore the previous discovery state.",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "sm-graph-editor",
+                       "name":  "Graph Editor",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Fit to view"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Re-layout"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Add Transition"
+                                                },
+                                                {
+                                                    "text":  "states"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Graph Editor"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Graph Editor"
+                                                }
+                                            ],
+                       "description":  "The Graph Editor tab provides a ReactFlow-based visual canvas showing states as nodes and transitions as edges. Users can select nodes/edges, create transitions via the Add Transition button or by dragging elements between state nodes, and view state/transition details in side panels.",
+                       "precondition":  "Graph Editor tab is active and a configuration is selected",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "sm-graph-state-nodes",
+                       "name":  "Graph — State Nodes",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Graph Editor"
+                                                },
+                                                {
+                                                    "text":  "START"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Graph Editor"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Graph Editor"
+                                                }
+                                            ],
+                       "description":  "Each state is rendered as a ReactFlow node showing the state name, element grid with type-colored tiles, confidence badge, element count, and connection indicators. The initial state shows a gold \u0027START\u0027 badge.",
+                       "precondition":  "Graph Editor tab is active and a configuration with states is loaded",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "sm-state-panel",
+                       "name":  "State Detail Panel",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "textbox"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Save Changes"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Save Changes"
+                                                }
+                                            ],
+                       "description":  "When a state is selected in the Graph Editor, a side panel (w-80, border-l, bg-surface-primary) shows editable state details: name, description, state ID, confidence, elements list, render count, and domain knowledge.",
+                       "precondition":  "A state is selected in the Graph Editor",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "sm-state-view",
+                       "name":  "State View Tab",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "State View"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "State View"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "State View"
+                                                }
+                                            ],
+                       "description":  "The State View tab shows a list/grid of all states in the selected configuration using the shared StateViewPanel component from @qontinui/workflow-ui/state-machine. Allows browsing states and their elements without the graph complexity.",
+                       "precondition":  "State View tab is active and a configuration with states is selected",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "sm-transition-editor",
+                       "name":  "Transition Editor",
+                       "requiredElements":  [
+                                                {
+                                                    "text":  "Open Settings"
+                                                },
+                                                {
+                                                    "text":  "From States"
+                                                },
+                                                {
+                                                    "text":  "Activate States"
+                                                },
+                                                {
+                                                    "text":  "Exit States"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Add"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Create"
+                                                }
+                                            ],
+                       "description":  "The transition editor panel allows creating and editing transitions with: name, from/activate/exit states (toggle buttons with color coding), action sequence with 19+ action types, path cost, and stays_visible flag. Opens as a w-80 side panel in the Graph Editor.",
+                       "precondition":  "The transition editor panel is open (via Add Transition or clicking an edge)",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "sm-transition-actions",
+                       "name":  "Transition — Action Types",
+                       "requiredElements":  [
+                                                {
+                                                    "text":  "click"
+                                                },
+                                                {
+                                                    "text":  "Element ID"
+                                                },
+                                                {
+                                                    "text":  "Text to type"
+                                                },
+                                                {
+                                                    "text":  "URL"
+                                                },
+                                                {
+                                                    "text":  "Delay"
+                                                }
+                                            ],
+                       "description":  "Transitions support 19+ action types that define what happens during state changes. Each action type has specific parameters. These map to the UIBridgeRuntime action handlers in the qontinui library.",
+                       "precondition":  "The transition editor is open and at least one action exists",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "sm-transitions-panel",
+                       "name":  "Transitions List Panel",
+                       "requiredElements":  [
+                                                {
+                                                    "text":  "Search transitions"
+                                                },
+                                                {
+                                                    "text":  "Transitions"
+                                                },
+                                                {
+                                                    "text":  "Select a transition to view its details"
+                                                },
+                                                {
+                                                    "text":  "Action Playback"
+                                                }
+                                            ],
+                       "description":  "The Transitions tab shows a searchable, filterable list of all transitions with action type icons, from/to state labels, and an action playback visualization with play/pause controls.",
+                       "precondition":  "Transitions tab is active and a configuration is selected",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "sm-pathfinding",
+                       "name":  "Pathfinding",
+                       "requiredElements":  [
+                                                {
+                                                    "text":  "From States"
+                                                },
+                                                {
+                                                    "text":  "Target States"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Find Path"
+                                                },
+                                                {
+                                                    "text":  "Path found"
+                                                },
+                                                {
+                                                    "text":  "No path found"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Find Path"
+                                                }
+                                            ],
+                       "description":  "The Pathfinding tab allows users to select \u0027from\u0027 states (currently active) and \u0027target\u0027 states (to reach), then find the optimal transition path using the multistate library\u0027s pathfinding algorithms. Results show step-by-step transitions with costs. Found paths can be highlighted on the Graph Editor.",
+                       "precondition":  "Pathfinding tab is active and a configuration with states is selected",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "sm-export",
+                       "name":  "Export",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "heading",
+                                                    "text":  "Export"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Download JSON"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Push to Runner"
+                                                },
+                                                {
+                                                    "textContains":  "transitions"
+                                                },
+                                                {
+                                                    "textContains":  "UIBridgeRuntime.from_dict()"
+                                                }
+                                            ],
+                       "description":  "The Export tab allows downloading the state machine as JSON (compatible with UIBridgeRuntime.from_dict()) or pushing it directly to the qontinui-runner. Shows config name, state count, and transition count.",
+                       "precondition":  "Export tab is active and a configuration is selected",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "sm-creation-flow",
+                       "name":  "State Machine Creation Flow",
+                       "requiredElements":  [
+                                                {
+                                                    "text":  "Discovery"
+                                                },
+                                                {
+                                                    "text":  "Select configuration"
+                                                },
+                                                {
+                                                    "text":  "Add Transition"
+                                                },
+                                                {
+                                                    "text":  "Find Path"
+                                                },
+                                                {
+                                                    "text":  "Download JSON"
+                                                }
+                                            ],
+                       "description":  "End-to-end creation of a state machine: (1) connect to SDK app via runner, (2) collect renders by exploration or recording, (3) run discovery algorithm, (4) preview and name the configuration, (5) save to project. After saving, the configuration appears in the config selector dropdown and can be edited in Graph Editor.",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "sm-data-model",
+                       "name":  "State Machine Data Model",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "heading",
+                                                    "text":  "State Machine"
+                                                },
+                                                {
+                                                    "role":  "heading",
+                                                    "text":  "State Machine"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Discover States"
+                                                }
+                                            ],
+                       "description":  "Semantic specification of the state machine data model as visible on the page. Each state has: id, name, element_ids (UI Bridge element identifiers), confidence score. Each transition has: from_states, activate_states, exit_states, actions list, path_cost, stays_visible. The discovery algorithm determines states by element co-occurrence patterns.",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "sm-visual-design-discovery",
+                       "name":  "Visual Design — Discovery Panel",
+                       "requiredElements":  [
+                                                {
+                                                    "text":  "Connect to SDK App"
+                                                },
+                                                {
+                                                    "textContains":  "Connected:"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Discover States"
+                                                },
+                                                {
+                                                    "textContains":  "UIBridgeRuntime"
+                                                }
+                                            ],
+                       "description":  "Style guide for the discovery panel components: cards, badges, buttons, and connection status indicators.",
+                       "precondition":  "Discovery tab is active",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "sm-graph-drag-drop",
+                       "name":  "Graph — Element Drag \u0026 Drop",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Graph Editor"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Graph Editor"
+                                                }
+                                            ],
+                       "description":  "Elements can be dragged between state nodes in the Graph Editor to create transitions or reassign elements. The useElementDrag hook manages drag state, drop targets, and resulting operations.",
+                       "precondition":  "Graph Editor is active with a configuration that has multiple states with elements",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "sm-state-view-features",
+                       "name":  "State View — Rich Features",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "textbox"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Spatial"
+                                                },
+                                                {
+                                                    "role":  "list"
+                                                },
+                                                {
+                                                    "role":  "list"
+                                                },
+                                                {
+                                                    "role":  "list"
+                                                },
+                                                {
+                                                    "role":  "list"
+                                                }
+                                            ],
+                       "description":  "The State View tab uses the shared StateViewPanel component which provides dual view modes (list and spatial canvas), search/filter, element grouping by type with colored badges, confidence color coding, domain knowledge display, acceptance criteria, and transition counts per state.",
+                       "precondition":  "State View tab is active with a loaded config containing multiple states",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "sm-transitions-playback",
+                       "name":  "Transitions — Action Playback Animation",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Transitions"
+                                                },
+                                                {
+                                                    "role":  "combobox"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Transitions"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Transitions"
+                                                },
+                                                {
+                                                    "role":  "combobox"
+                                                }
+                                            ],
+                       "description":  "The Transitions tab uses the shared TransitionsPanel which includes a full action playback animation system. When a transition with actions is selected, controls allow playing, pausing, stepping through, and adjusting speed of an animated visualization of each action in the sequence.",
+                       "precondition":  "A transition with multiple actions is selected and playback has started",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "sm-state-detail-editing",
+                       "name":  "State Detail — Editing Features",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "textbox"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Add"
+                                                },
+                                                {
+                                                    "role":  "textbox"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Save Changes"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Graph Editor"
+                                                }
+                                            ],
+                       "description":  "The StateDetailPanel (shown as a side panel when a state is selected in the Graph Editor) provides editing for state metadata, acceptance criteria, domain knowledge, and element management with change detection.",
+                       "precondition":  "A state is selected in the Graph Editor and the detail side panel is visible",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "sm-graph-keyboard-shortcuts",
+                       "name":  "Graph — Keyboard Shortcuts",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "button"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Graph Editor"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Graph Editor"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Graph Editor"
+                                                }
+                                            ],
+                       "description":  "The Graph Editor (StateMachineGraphView) supports keyboard shortcuts for navigation, layout, and selection. A \u0027?\u0027 toggle (top-right) reveals the shortcut overlay listing all available keys.",
+                       "precondition":  "Graph Editor tab is active with a loaded config",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "sm-discovery-algorithm-details",
+                       "name":  "Discovery Algorithm — Element Classification \u0026 Co-occurrence",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "list"
+                                                },
+                                                {
+                                                    "role":  "list"
+                                                },
+                                                {
+                                                    "textContains":  "strategy"
+                                                },
+                                                {
+                                                    "role":  "list"
+                                                },
+                                                {
+                                                    "role":  "list"
+                                                }
+                                            ],
+                       "description":  "The state discovery algorithm (qontinui core library\u0027s FingerprintStrategy) classifies elements by type and position, then groups them into states using co-occurrence analysis. This group specifies the algorithm\u0027s classification and grouping behavior as visible in the discovery results displayed on the page.",
+                       "precondition":  "Discovery has completed and states are visible",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "sm-fingerprint-recording",
+                       "name":  "Fingerprint-Based Recording (SdkRecordingPanel)",
+                       "requiredElements":  [
+                                                {
+                                                    "textContains":  "State Machine Recording"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "textContains":  "Record"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "textContains":  "Stop"
+                                                },
+                                                {
+                                                    "textContains":  "Extracted Variables"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "textContains":  "Discover State Machine"
+                                                },
+                                                {
+                                                    "textContains":  "State Machine Discovered"
+                                                }
+                                            ],
+                       "description":  "The SDK Recording Panel provides WebSocket-based fingerprint recording for UI Bridge-connected apps. It captures user interactions, computes element fingerprints, and produces a CooccurrenceExport for direct state machine bootstrapping — bypassing the snapshot-based discovery flow.",
+                       "precondition":  "An SDK app is connected and the Record tab is selected in the Discovery panel",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "sm-recording-graph-visualization",
+                       "name":  "Recording State Graph Visualization",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "graphics-document"
+                                                },
+                                                {
+                                                    "role":  "graphics-document"
+                                                },
+                                                {
+                                                    "role":  "graphics-document"
+                                                }
+                                            ],
+                       "description":  "After fingerprint-based recording pipeline produces results, a compact graph visualization shows discovered states as nodes and transitions as edges. Uses @xyflow/react with dagre layout.",
+                       "precondition":  "Pipeline processing completed with at least 1 non-global state and 1 transition",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "sm-playbook-generation",
+                       "name":  "Playbook Generation from Recording",
+                       "requiredElements":  [
+                                                {
+                                                    "textContains":  "Generated Playbook"
+                                                },
+                                                {
+                                                    "tagName":  "pre"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "textContains":  "Copy"
+                                                }
+                                            ],
+                       "description":  "After pipeline processing with playbook generation enabled, the SdkRecordingPanel displays the generated playbook markdown content with a copy-to-clipboard button.",
+                       "precondition":  "Pipeline processing completed with playbook generation enabled",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "sm-experience-memory",
+                       "name":  "Experience Memory (Past Recording Sessions)",
+                       "requiredElements":  [
+                                                {
+                                                    "textContains":  "Past recordings for this app"
+                                                },
+                                                {
+                                                    "textContains":  "incremental merge"
+                                                }
+                                            ],
+                       "description":  "When connecting to an app with previous recording sessions, the SdkRecordingPanel shows past session history to inform the user and enable incremental recording.",
+                       "precondition":  "SDK app is connected and the app has previous recording sessions stored in PostgreSQL",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "sm-recording-pipeline-correctness",
+                       "name":  "Recording Pipeline — State Discovery Correctness",
+                       "requiredElements":  [
+                                                {
+                                                    "textContains":  "State Machine Discovered"
+                                                },
+                                                {
+                                                    "textContains":  "State Machine Discovered"
+                                                },
+                                                {
+                                                    "textContains":  "State Machine Discovered"
+                                                },
+                                                {
+                                                    "textContains":  "states"
+                                                }
+                                            ],
+                       "description":  "The fingerprint recording pipeline (RecordingPipeline.process_recording) discovers states via FingerprintStateDiscovery and transitions via TransitionDetector. These assertions verify that the pipeline output displayed on the page is correct.",
+                       "precondition":  "Pipeline processing has completed with at least 1 state",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "sm-state-machine-graph-tab",
+                       "name":  "State Machine Graph Tab (StateMachineViewer)",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "tab",
+                                                    "textContains":  "Graph"
+                                                },
+                                                {
+                                                    "textContains":  "State Transition Graph"
+                                                },
+                                                {
+                                                    "role":  "graphics-document"
+                                                }
+                                            ],
+                       "description":  "The StateMachineViewer component now has a Graph tab as its first (default) tab, rendering an interactive state transition graph using @xyflow/react and dagre layout.",
+                       "precondition":  "StateMachineViewer is rendered with a StateDiscoveryResult",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "sm-recording-indicator",
+                       "name":  "Floating Recording Indicator",
+                       "requiredElements":  [
+                                                {
+                                                    "textContains":  "Recording"
+                                                },
+                                                {
+                                                    "role":  "button"
+                                                },
+                                                {
+                                                    "textContains":  "Recording"
+                                                }
+                                            ],
+                       "description":  "A floating recording indicator appears in the bottom-right corner of the app when any UI Bridge recording session is active. It polls SDK WebSocket ports and provides a quick stop button.",
+                       "precondition":  "A fingerprint recording is active on a connected SDK app",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   }
+               ],
+    "transitions":  [
+
+                    ],
+    "provenance":  {
+                       "source":  "migrated",
+                       "appId":  "qontinui-web"
+                   },
+    "description":  "UI Bridge State Machine page — visual editor for discovering, creating, and managing state machines from UI Bridge-instrumented applications. Covers the full state machine creation lifecycle: SDK connection, state discovery (element co-occurrence analysis), graph editing, transition creation with action sequences, pathfinding (Dijkstra/BFS/A*), and export. The page is the primary interface for the qontinui library\u0027s state discovery algorithms, and this spec defines both UI correctness and algorithm output correctness.",
+    "metadata":  {
+                     "tags":  [
+                                  "state-machine",
+                                  "ui-bridge",
+                                  "discovery",
+                                  "graph-editor",
+                                  "transitions",
+                                  "pathfinding",
+                                  "automation",
+                                  "recording",
+                                  "fingerprint-recording",
+                                  "playbook-generation",
+                                  "experience-memory",
+                                  "tier-1"
+                              ]
+                 }
 }

@@ -1,0 +1,168 @@
+﻿{
+    "version":  "1.0",
+    "id":  "snapshot-post-capture",
+    "name":  "SnapshotTestGenerator",
+    "states":  [
+                   {
+                       "id":  "stg-post-capture-elements-tab",
+                       "name":  "Post-Capture: Elements Tab",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "textbox"
+                                                },
+                                                {
+                                                    "text":  "buttons|inputs|links|selects|textareas|others"
+                                                },
+                                                {
+                                                    "text":  "Type|Role|Visible|Enabled"
+                                                }
+                                            ],
+                       "description":  "After capturing a snapshot, the Elements tab should show captured elements in a browsable tree",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "stg-post-capture-connected-state",
+                       "name":  "Post-Capture: Connected State",
+                       "requiredElements":  [
+                                                {
+                                                    "text":  "Connected"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Capture Snapshot"
+                                                },
+                                                {
+                                                    "text":  "Tab:"
+                                                },
+                                                {
+                                                    "role":  "button"
+                                                }
+                                            ],
+                       "description":  "After capturing, the connection status should show \u0027Connected\u0027 and the capture button should be enabled",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "stg-test-specs-tab",
+                       "name":  "Test Specs Tab",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Generate Specs"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Filter"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Enable All"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Disable All"
+                                                },
+                                                {
+                                                    "text":  "No test specifications yet"
+                                                }
+                                            ],
+                       "description":  "Verify the Test Specs tab UI structure and generate button",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "stg-post-generate-specs",
+                       "name":  "Post-Generate: Spec Groups",
+                       "requiredElements":  [
+                                                {
+                                                    "text":  "Element Presence"
+                                                },
+                                                {
+                                                    "text":  "State Consistency"
+                                                },
+                                                {
+                                                    "text":  "specs.*assertions enabled"
+                                                }
+                                            ],
+                       "description":  "After clicking Generate Specs, verify spec groups are created with proper structure",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "stg-output-tab",
+                       "name":  "Output Tab",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Export JSON"
+                                                },
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Copy"
+                                                },
+                                                {
+                                                    "text":  "Generate test specifications to see output"
+                                                },
+                                                {
+                                                    "text":  "\"version\": \"1.0.0\""
+                                                },
+                                                {
+                                                    "text":  "groups.*assertions"
+                                                }
+                                            ],
+                       "description":  "Verify the Output tab shows export and copy functionality",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "stg-snapshot-comparison",
+                       "name":  "Snapshot Comparison",
+                       "requiredElements":  [
+                                                {
+                                                    "role":  "button",
+                                                    "text":  "Compare to Previous"
+                                                }
+                                            ],
+                       "description":  "Verify the Compare to Previous feature works after a second snapshot capture",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   },
+                   {
+                       "id":  "stg-annotation-editor",
+                       "name":  "Annotation Editor",
+                       "requiredElements":  [
+                                                {
+                                                    "text":  "% annotated"
+                                                }
+                                            ],
+                       "description":  "Verify the Annotations tab shows coverage dashboard and editing UI",
+                       "provenance":  {
+                                          "source":  "migrated"
+                                      }
+                   }
+               ],
+    "transitions":  [
+
+                    ],
+    "provenance":  {
+                       "source":  "migrated",
+                       "appId":  "qontinui-web"
+                   },
+    "description":  "Snapshot Test Generator AFTER a successful snapshot capture — verifies that captured data populates correctly, tabs work, and generation flow completes",
+    "metadata":  {
+                     "tags":  [
+                                  "test-generator",
+                                  "snapshot",
+                                  "tier-1",
+                                  "post-capture",
+                                  "generation-flow"
+                              ]
+                 }
+}
