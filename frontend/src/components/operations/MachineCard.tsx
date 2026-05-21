@@ -7,9 +7,9 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Monitor, Laptop, Terminal, Cpu, Circle } from "lucide-react";
+import { Monitor, Laptop, Terminal, Cpu, Circle, Activity } from "lucide-react";
 import { relativeTime } from "./utils";
-import type { MachineGroup } from "./types";
+import type { DeviceStatus, MachineGroup } from "./types";
 
 interface MachineCardProps {
   machine: MachineGroup;
@@ -34,6 +34,85 @@ function osBadgeVariant(os: string): "default" | "secondary" | "outline" {
   if (lower === "windows" || lower.startsWith("win")) return "default";
   if (lower === "macos" || lower === "darwin") return "secondary";
   return "outline";
+}
+
+/**
+ * Sub-line rendered just under the machine header showing what the
+ * machine is doing right now (Phase 1.3 of
+ * `2026-05-21-coordination-improvements.md`).
+ *
+ * Joins on the `coord.device_status` row whose hostname matches this
+ * `MachineGroup`. Format:
+ *
+ *     <task name> · <repo>/<branch> · phase X/Y · <age>s ago
+ *
+ * Each segment is omitted when its source field is absent — a row
+ * with only `current_task` set renders just "<task name> · <age>s ago".
+ * Subtle text-muted-foreground styling matches the existing summary
+ * footer and runner-row metadata.
+ */
+function CurrentActivityLine({ activity }: { activity: DeviceStatus }) {
+  const segments: string[] = [];
+
+  if (activity.current_task) {
+    segments.push(activity.current_task);
+  }
+
+  if (activity.current_repo && activity.current_branch) {
+    segments.push(`${activity.current_repo}/${activity.current_branch}`);
+  } else if (activity.current_repo) {
+    segments.push(activity.current_repo);
+  } else if (activity.current_branch) {
+    segments.push(activity.current_branch);
+  }
+
+  // `details.phase` is the convention `/implement-plan` Step 0.5 +
+  // Step 0.6 use (plan Phase 1.4). Tolerate either a string ("2/5")
+  // or a number+total shape.
+  const phase = activity.details?.["phase"];
+  if (typeof phase === "string" && phase.length > 0) {
+    segments.push(`phase ${phase}`);
+  }
+
+  if (segments.length === 0 && !activity.free_text) {
+    // Nothing meaningful to show — hide the row entirely. The agent
+    // posted to /coord/status but cleared all fields (e.g. on
+    // release-time UPSERT, Phase 1.4).
+    return null;
+  }
+
+  return (
+    <div
+      className="flex items-start gap-2 px-2 py-1.5 rounded-md bg-muted/30 text-xs"
+      data-operations-current-activity
+      data-hostname={activity.hostname ?? ""}
+    >
+      <Activity
+        className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5"
+        aria-hidden
+      />
+      <div className="flex-1 min-w-0">
+        <div
+          className="truncate text-foreground/90"
+          data-operations-current-activity-line
+        >
+          {segments.join(" · ")}
+          {segments.length > 0 && activity.free_text ? " · " : ""}
+          {activity.free_text ? (
+            <span className="italic text-muted-foreground">
+              {activity.free_text}
+            </span>
+          ) : null}
+        </div>
+        <span
+          className="text-[10px] text-muted-foreground tabular-nums"
+          title={new Date(activity.updated_at).toLocaleString()}
+        >
+          {relativeTime(activity.updated_at)}
+        </span>
+      </div>
+    </div>
+  );
 }
 
 function HealthDot({
@@ -62,7 +141,7 @@ function HealthDot({
 }
 
 export function MachineCard({ machine }: MachineCardProps) {
-  const { hostname, runners, claudeSessions } = machine;
+  const { hostname, runners, claudeSessions, currentActivity } = machine;
 
   // Determine overall machine health from derivedStatus
   const healthyRunners = runners.filter((r) => r.derivedStatus === "healthy");
@@ -104,6 +183,11 @@ export function MachineCard({ machine }: MachineCardProps) {
       </CardHeader>
 
       <CardContent className="space-y-3 pb-0">
+        {/* Phase 1.3 — live device-status sub-line. */}
+        {currentActivity ? (
+          <CurrentActivityLine activity={currentActivity} />
+        ) : null}
+
         {/* Runner instances */}
         <div>
           <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">

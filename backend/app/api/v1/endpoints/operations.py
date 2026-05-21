@@ -13,18 +13,41 @@ cross-machine beacon path. Phase 5 cleanup may collapse them into the
 new ``runners`` table.
 """
 
+import asyncio
+import json
 from typing import Any
 from uuid import UUID
 
 import httpx
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query
+import websockets
+import websockets.exceptions
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.websockets import WebSocketState
 
-from app.api.deps import get_async_db, get_current_active_user_async
+# websockets.connect IS a top-level export in 16.x (verified via
+# `dir(websockets)`), but it's a lazy import the mypy stubs don't
+# resolve. The explicit re-import below is the type-checker affordance;
+# at runtime the symbol is identical to `websockets.connect`.
+from websockets.asyncio.client import connect as websockets_connect  # noqa: E402
+
+from app.api.deps import (
+    get_async_db,
+    get_current_active_user_async,
+    get_current_user_from_ws,
+)
 from app.api.v1.endpoints.devices import _device_to_wire as _runner_to_wire
 from app.core.config import settings
 from app.crud import runner_crud
+from app.db.session import AsyncSessionLocal
 from app.models.user import User as UserModel
 from app.schemas.dev_dashboard import (
     AggregatedTaskRuns,
@@ -32,6 +55,13 @@ from app.schemas.dev_dashboard import (
     RegisteredRunner,
     RunnerHeartbeat,
     RunnerTaskRun,
+)
+from app.services.coord_device_status import (
+    CoordDeviceStatusDisabledError,
+    CoordDeviceStatusMintFailedError,
+    build_device_status_ws_url,
+    fetch_device_status,
+    mint_device_status_token,
 )
 from app.services.coord_operator_resolver import resolve_tenant_for_user
 from app.services.dev_dashboard_service import get_fleet_registry
@@ -1143,3 +1173,244 @@ async def post_memory_restore(
     return await _proxy_coord_post(
         f"/coord/memory/{name}/restore", body, tenant_id=tenant_id
     )
+
+
+# ---- Device-status surface (Phase 1.3) ----------------------------------
+#
+# Plan: `D:/qontinui-root/plans/2026-05-21-coordination-improvements.md`
+# Phase 1.3. Two endpoints back the live `currentActivity` sub-line on
+# each `MachineCard` in the operations dashboard:
+#
+#   1. `GET /operations/device-status`       — tenant-scoped REST proxy.
+#                                               Used for the initial
+#                                               seed and as a polling
+#                                               fallback when the WS
+#                                               is offline.
+#   2. `WS  /operations/device-status/ws`    — bridges browser to
+#                                               coord's per-tenant
+#                                               typed `/ws/device-status`.
+#
+# The WS bridge mints a coord service JWT carrying the operator's
+# resolved tenant_id (see `app.services.coord_device_status`), opens
+# the upstream WS, subscribes to `device_status:<tenant_uuid>`, and
+# forwards `device_status.changed` frames to the browser.
+
+
+@router.get("/device-status")
+async def get_device_status(
+    since: str | None = Query(
+        default=None,
+        description="RFC 3339 timestamp; only rows updated at-or-after are returned.",
+    ),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return live ``coord.device_status`` rows scoped to the caller's tenant.
+
+    Response shape::
+
+        { "devices": [StatusRow, ...], "count": <int> }
+
+    The list is unsorted from coord; clients render in arbitrary order
+    (the `MachineCard` consumer keys on hostname). When the caller's
+    tenant has no devices reporting, ``devices`` is an empty list and
+    ``count`` is zero — never 4xx.
+    """
+    try:
+        return await fetch_device_status(tenant_id=tenant_id, since=since)
+    except httpx.ConnectError as exc:
+        raise HTTPException(status_code=502, detail="coord is not reachable") from exc
+    except httpx.TimeoutException as exc:
+        raise HTTPException(
+            status_code=504, detail="timeout waiting for coord"
+        ) from exc
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(
+            status_code=exc.response.status_code, detail=exc.response.text
+        ) from exc
+
+
+@router.websocket("/device-status/ws")
+async def websocket_device_status(
+    websocket: WebSocket,
+) -> None:
+    """Bridge browser ↔ coord's typed `/ws/device-status` channel.
+
+    Per-connection flow:
+
+    1. Browser opens `WS /api/v1/operations/device-status/ws?token=<jwt>`.
+       Auth: the same JWT used elsewhere on the operations surface
+       (cookie-based session token; mirrors `runner_status_ws.py`).
+    2. We resolve the caller's tenant_id (same path as
+       `/operations/device-status`).
+    3. We mint a tenant-scoped coord service JWT via
+       `POST /coord/auth/service-token` (admin-secret-gated).
+    4. We open the upstream WS at `wss://<coord>/ws/device-status?token=<minted>`
+       and subscribe to `device_status:<tenant_id>`.
+    5. Every `{"kind":"device_status.changed","row":...}` frame from
+       coord is forwarded verbatim to the browser.
+
+    Disconnect / failure handling:
+
+    - Browser drops → close upstream, exit.
+    - Coord upstream drops → close browser with 1011 so the browser-
+      side hook can reconnect; client-side handles exponential backoff
+      (see `useDeviceStatusStream` on the frontend).
+    - Coord unreachable / mint failed → close browser with 1011 + an
+      error frame so the frontend can fall back to polling.
+    """
+    await websocket.accept()
+
+    # --- Browser-side auth ------------------------------------------------
+    token = websocket.query_params.get("token")
+    if not token:
+        await websocket.send_json(
+            {"type": "error", "error": "Missing authentication token"}
+        )
+        await websocket.close(code=1008, reason="Missing authentication token")
+        return
+
+    try:
+        user = await get_current_user_from_ws(token)
+    except Exception as exc:  # noqa: BLE001 — auth diagnostics live in deps
+        logger.warning("device_status_ws_auth_failed", error=str(exc))
+        await websocket.send_json({"type": "error", "error": "Authentication failed"})
+        await websocket.close(code=1008, reason="Authentication failed")
+        return
+
+    # --- Tenant resolution + token mint ----------------------------------
+    try:
+        async with AsyncSessionLocal() as db:
+            tenant_id = await resolve_tenant_for_user(user, db)
+    except HTTPException as http_exc:
+        await websocket.send_json({"type": "error", "error": http_exc.detail})
+        await websocket.close(code=1008, reason=str(http_exc.detail))
+        return
+    except Exception as exc:  # noqa: BLE001
+        logger.error("device_status_ws_tenant_lookup_failed", error=str(exc))
+        await websocket.send_json({"type": "error", "error": "Tenant lookup failed"})
+        await websocket.close(code=1011, reason="Tenant lookup failed")
+        return
+
+    try:
+        coord_token = await mint_device_status_token(tenant_id=tenant_id)
+    except CoordDeviceStatusDisabledError as exc:
+        logger.warning(
+            "device_status_ws_disabled",
+            user_id=str(user.id),
+            reason=str(exc),
+        )
+        await websocket.send_json(
+            {
+                "type": "error",
+                "error": "Coord integration disabled — fall back to REST polling.",
+            }
+        )
+        await websocket.close(code=1011, reason="Coord integration disabled")
+        return
+    except CoordDeviceStatusMintFailedError as exc:
+        logger.error(
+            "device_status_ws_mint_failed",
+            user_id=str(user.id),
+            error=str(exc),
+        )
+        await websocket.send_json({"type": "error", "error": "Token mint failed"})
+        await websocket.close(code=1011, reason="Token mint failed")
+        return
+
+    upstream_url = build_device_status_ws_url(coord_token)
+    subscribe_topic = f"device_status:{tenant_id}"
+
+    # --- Upstream bridge --------------------------------------------------
+    upstream: Any = None
+    try:
+        try:
+            upstream = await websockets_connect(upstream_url, open_timeout=10)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "device_status_ws_upstream_connect_failed",
+                user_id=str(user.id),
+                error=str(exc),
+            )
+            await websocket.send_json(
+                {"type": "error", "error": "Upstream coord WS unreachable"}
+            )
+            await websocket.close(code=1011, reason="Upstream WS unreachable")
+            return
+
+        # Send the typed subscribe message (coord won't push diffs
+        # until it receives this).
+        await upstream.send(
+            json.dumps({"action": "subscribe", "topic": subscribe_topic})
+        )
+
+        # Forward both directions: upstream → browser is the hot path
+        # (device_status.changed frames). Browser → upstream stays open
+        # only so close-frames propagate; we don't forward arbitrary
+        # browser payloads (the subscription is fixed per-connection).
+        async def pump_upstream_to_browser() -> None:
+            try:
+                async for message in upstream:
+                    if websocket.client_state != WebSocketState.CONNECTED:
+                        break
+                    # Coord sends Text frames; the websockets lib gives
+                    # us str directly. Forward verbatim — the browser
+                    # parses the JSON.
+                    if isinstance(message, bytes):
+                        message = message.decode("utf-8")
+                    await websocket.send_text(message)
+            except websockets.exceptions.ConnectionClosed:
+                pass
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "device_status_ws_upstream_pump_error",
+                    user_id=str(user.id),
+                    error=str(exc),
+                )
+
+        async def pump_browser_to_upstream() -> None:
+            try:
+                while True:
+                    # We only need to detect disconnect; the subscription
+                    # is fixed so any received frame is informational
+                    # (likely a ping/pong from a JS WS lib).
+                    await websocket.receive_text()
+            except WebSocketDisconnect:
+                pass
+            except Exception as exc:  # noqa: BLE001
+                logger.debug(
+                    "device_status_ws_browser_pump_exit",
+                    user_id=str(user.id),
+                    error=str(exc),
+                )
+
+        # Race the two pumps — whichever side closes first ends the
+        # bridge. asyncio.wait+FIRST_COMPLETED + cancel the rest.
+        upstream_task = asyncio.create_task(pump_upstream_to_browser())
+        browser_task = asyncio.create_task(pump_browser_to_upstream())
+        done, pending = await asyncio.wait(
+            {upstream_task, browser_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        for task in pending:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            except Exception as exc:  # noqa: BLE001
+                logger.debug(
+                    "device_status_ws_task_cancel_exception",
+                    user_id=str(user.id),
+                    error=str(exc),
+                )
+    finally:
+        if upstream is not None:
+            try:
+                await upstream.close()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("device_status_ws_upstream_close_failed", error=str(exc))
+        if websocket.client_state == WebSocketState.CONNECTED:
+            try:
+                await websocket.close()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("device_status_ws_close_failed", error=str(exc))

@@ -15,8 +15,10 @@ import {
 import { MachineCard } from "./MachineCard";
 import { DeviceStatusTile } from "./DeviceStatusTile";
 import { TaskRunCard } from "./TaskRunCard";
+import { useDeviceStatusStream } from "./useDeviceStatusStream";
 import { OPERATIONS_API, POLL_INTERVAL_MS, relativeTime } from "./utils";
 import type {
+  DeviceStatus,
   FleetStatus,
   AggregatedTaskRuns,
   MachineGroup,
@@ -27,7 +29,10 @@ import type {
 // Helper: build machine groups from fleet status
 // ============================================================================
 
-function buildMachineGroups(fleet: FleetStatus): MachineGroup[] {
+function buildMachineGroups(
+  fleet: FleetStatus,
+  deviceStatusByHost: Map<string, DeviceStatus>,
+): MachineGroup[] {
   const byHost = new Map<string, MachineGroup>();
 
   for (const runner of fleet.runners) {
@@ -38,6 +43,7 @@ function buildMachineGroups(fleet: FleetStatus): MachineGroup[] {
         hostname,
         runners: [],
         claudeSessions: fleet.claude_sessions[hostname] ?? [],
+        currentActivity: deviceStatusByHost.get(hostname),
       };
       byHost.set(hostname, group);
     }
@@ -51,6 +57,23 @@ function buildMachineGroups(fleet: FleetStatus): MachineGroup[] {
         hostname,
         runners: [],
         claudeSessions: sessions,
+        currentActivity: deviceStatusByHost.get(hostname),
+      });
+    }
+  }
+
+  // ...and any hostnames that ONLY appear in device_status (an agent
+  // posted to /coord/status from a machine that's not running a runner
+  // and has no CC session detected). Surface them so the operator
+  // sees the device-status row in context rather than hidden inside
+  // the bottom-of-page DeviceStatusTile alone.
+  for (const [hostname, currentActivity] of deviceStatusByHost.entries()) {
+    if (!byHost.has(hostname)) {
+      byHost.set(hostname, {
+        hostname,
+        runners: [],
+        claudeSessions: [],
+        currentActivity,
       });
     }
   }
@@ -149,9 +172,11 @@ export function FleetOverview() {
     return () => clearInterval(interval);
   }, [fetchData]);
 
+  const deviceStatus = useDeviceStatusStream();
+
   const machineGroups = useMemo(
-    () => (fleet ? buildMachineGroups(fleet) : []),
-    [fleet]
+    () => (fleet ? buildMachineGroups(fleet, deviceStatus.byHostname) : []),
+    [fleet, deviceStatus.byHostname]
   );
 
   const runningTasks: RunnerTaskRun[] = useMemo(
