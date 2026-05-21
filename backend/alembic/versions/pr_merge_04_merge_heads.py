@@ -34,10 +34,7 @@ revision: str = "pr_merge_04_merge_heads"
 # Single-line tuple is intentional — the ``alembic-graph-pr.yml``
 # gate's offline parser regex matches ``^down_revision: ... = (...)$``
 # on one line. Mirror of ``wave_6_02_merge_heads`` shape.
-down_revision: tuple[str, str] = (
-    "pr_merge_03_merge_decisions",
-    "pr_merge_03_pr_dependencies",
-)
+down_revision: tuple[str, str] = ("pr_merge_03_merge_decisions", "pr_merge_03_pr_dependencies")
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
