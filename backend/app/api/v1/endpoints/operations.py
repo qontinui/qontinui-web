@@ -469,6 +469,129 @@ async def get_pr_merge_escalations(
     )
 
 
+# ---- PR Merge Orchestrator Phase 8 D8.0 + D8.2 + D8.3 — onboarding --------
+#
+# Four proxies. precondition-status drives the wizard's polling loop on
+# step 2 ("Sign into Claude Code"); audit spawns the repo-auditor + waits
+# for STARTER_PROFILE; accept persists the (possibly hand-edited) profile;
+# profile-callback is the auditor-agent's write-back surface.
+
+
+@router.get("/pr-merge/onboarding/precondition-status")
+async def get_pr_merge_onboarding_precondition(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return ``{paired, claude_code_available, ready}`` for the calling
+    tenant. Drives the onboarding wizard's polling loop on step 2 (the
+    "Sign into Claude Code on your device" verification step).
+    """
+    return await _proxy_coord_get(
+        "/pr-merge/onboarding/precondition-status",
+        tenant_id=tenant_id,
+    )
+
+
+@router.post("/pr-merge/onboarding/audit")
+async def post_pr_merge_onboarding_audit(
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Spawn the repo-auditor subagent for the named repo + wait for the
+    STARTER_PROFILE. On precondition miss (no audit-capable device)
+    coord returns 409 with body ``{"error": "no_audit_capable_device",
+    "next_step": "pair_device"}`` — the dashboard surfaces this as a
+    redirect back to the pairing wizard, not a generic error toast.
+    """
+    return await _proxy_coord_post(
+        "/pr-merge/onboarding/audit",
+        body,
+        tenant_id=tenant_id,
+    )
+
+
+@router.post("/pr-merge/onboarding/accept")
+async def post_pr_merge_onboarding_accept(
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """UPSERT ``coord.tenant_repo_profiles`` with
+    ``profile_source='audit'`` + the (possibly hand-edited) starter
+    profile. Stamps ``coord.operator_audit`` + publishes settings cache
+    invalidation.
+    """
+    return await _proxy_coord_post(
+        "/pr-merge/onboarding/accept",
+        body,
+        tenant_id=tenant_id,
+    )
+
+
+# ---- PR Merge Orchestrator Phase 8 D8.6 — Suggestions inbox ------------
+
+
+@router.get("/pr-merge/suggestions")
+async def get_pr_merge_suggestions(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """List pending drift-suggestion + audit-stale alerts for the
+    calling tenant. Drives the MergeTrain "Suggestions" section.
+    """
+    return await _proxy_coord_get(
+        "/pr-merge/suggestions",
+        tenant_id=tenant_id,
+    )
+
+
+@router.post("/pr-merge/suggestions/{alert_id}/accept")
+async def post_pr_merge_suggestion_accept(
+    alert_id: int,
+    body: dict[str, Any] | None = None,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Apply the suggestion's ``proposed_diff`` to settings + resolve
+    the alert + write a ``drift_suggestion_accepted`` user_override
+    row (closes the feedback loop).
+    """
+    return await _proxy_coord_post(
+        f"/pr-merge/suggestions/{alert_id}/accept",
+        body or {},
+        tenant_id=tenant_id,
+    )
+
+
+@router.post("/pr-merge/suggestions/{alert_id}/reject")
+async def post_pr_merge_suggestion_reject(
+    alert_id: int,
+    body: dict[str, Any] | None = None,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Resolve the alert with ``resolution_action='rejected'`` + write
+    a ``drift_suggestion_rejected`` user_override row (signal: don't
+    re-propose this kind for N days).
+    """
+    return await _proxy_coord_post(
+        f"/pr-merge/suggestions/{alert_id}/reject",
+        body or {},
+        tenant_id=tenant_id,
+    )
+
+
+@router.post("/pr-merge/suggestions/{alert_id}/mute")
+async def post_pr_merge_suggestion_mute(
+    alert_id: int,
+    body: dict[str, Any] | None = None,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Mute the suggestion kind for ``body.days`` days (default 30).
+    Stored in ``coord.tenant_merge_settings.suggestion_mutes`` JSONB.
+    """
+    return await _proxy_coord_post(
+        f"/pr-merge/suggestions/{alert_id}/mute",
+        body or {},
+        tenant_id=tenant_id,
+    )
+
+
 @router.post("/pr-merge/escalations/{alert_id}/decide")
 async def post_pr_merge_escalation_decide(
     alert_id: int,

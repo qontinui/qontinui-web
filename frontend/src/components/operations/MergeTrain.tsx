@@ -23,6 +23,8 @@ import type {
   ProposalDetail,
   ProposalStatus,
   QueueResponse,
+  SuggestionListResponse,
+  SuggestionRow,
 } from "./mergeTypes";
 
 const log = createLogger("MergeTrain");
@@ -383,6 +385,92 @@ function EscalationCard({ esc, onDecide, busy }: EscalationCardProps) {
 // Section
 // ----------------------------------------------------------------------------
 
+// ----------------------------------------------------------------------------
+// PR Merge Orchestrator Phase 8 D8.6 -- Suggestion card.
+//
+// One card per pending suggestion in the dashboard's Suggestions inbox.
+// Renders rationale + supporting-overrides + Accept / Reject / Mute buttons.
+// Submit POSTs to /pr-merge/suggestions/:alert_id/{accept,reject,mute}.
+// ----------------------------------------------------------------------------
+
+interface SuggestionCardProps {
+  sug: SuggestionRow;
+  busy: boolean;
+  onAction: (
+    alertId: number,
+    action: "accept" | "reject" | "mute",
+    body?: Record<string, unknown>
+  ) => void;
+}
+
+function SuggestionCard({ sug, busy, onAction }: SuggestionCardProps) {
+  const subject = sug.detail.subject ?? sug.detail.repo ?? "";
+  const rationale = sug.detail.rationale ?? sug.summary;
+  const kindLabel =
+    sug.kind === "profile_audit_stale"
+      ? "AUDIT STALE"
+      : sug.detail.suggestion_kind?.replace(/_/g, " ").toUpperCase() ??
+        "DRIFT";
+  return (
+    <div
+      className="border border-blue-500/30 bg-blue-500/5 rounded-md p-3 space-y-2"
+      data-suggestion-id={sug.alert_id}
+      data-suggestion-kind={sug.detail.suggestion_kind ?? sug.kind}
+    >
+      <div className="flex items-center gap-2">
+        <Badge
+          variant="outline"
+          className="font-mono text-[10px] uppercase tracking-wide"
+        >
+          {kindLabel}
+        </Badge>
+        {subject && (
+          <span className="text-xs text-muted-foreground font-mono truncate">
+            {subject}
+          </span>
+        )}
+        <span className="ml-auto text-[10px] text-muted-foreground tabular-nums">
+          {relativeTime(sug.first_seen_at)}
+        </span>
+      </div>
+      <p className="text-xs">{rationale}</p>
+      {Array.isArray(sug.detail.supporting_overrides) &&
+        sug.detail.supporting_overrides.length > 0 && (
+          <p className="text-[11px] text-muted-foreground">
+            Supported by {sug.detail.supporting_overrides.length} override
+            {sug.detail.supporting_overrides.length === 1 ? "" : "s"}.
+          </p>
+        )}
+      <div className="flex gap-2 pt-1">
+        <Button
+          size="sm"
+          variant="default"
+          disabled={busy}
+          onClick={() => onAction(sug.alert_id, "accept")}
+        >
+          Accept
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy}
+          onClick={() => onAction(sug.alert_id, "reject")}
+        >
+          Reject
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={busy}
+          onClick={() => onAction(sug.alert_id, "mute", { days: 30 })}
+        >
+          Mute 30d
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function MergeTrain() {
   const [proposals, setProposals] = useState<ProposalDetail[] | null>(null);
   // PR Merge Orchestrator Phase 1 D1.6 -- outer PR-level state list.
@@ -390,6 +478,9 @@ export function MergeTrain() {
   // PR Merge Orchestrator Phase 6 D6.2 -- pending escalations list.
   const [escalations, setEscalations] = useState<EscalationRow[] | null>(null);
   const [decideBusy, setDecideBusy] = useState<number | null>(null);
+  // PR Merge Orchestrator Phase 8 D8.6 -- pending suggestions list.
+  const [suggestions, setSuggestions] = useState<SuggestionRow[] | null>(null);
+  const [suggestionBusy, setSuggestionBusy] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -493,6 +584,70 @@ export function MergeTrain() {
     [fetchEscalations]
   );
 
+  // PR Merge Orchestrator Phase 8 D8.6 -- fetch pending suggestions.
+  // Drift suggestions + audit-stale alerts. Best-effort, 404-tolerant.
+  const fetchSuggestions = useCallback(async () => {
+    try {
+      const res = await fetch(`${OPERATIONS_API}/pr-merge/suggestions`, {
+        credentials: "include",
+      });
+      if (!res.ok) {
+        if (res.status === 404) {
+          if (!cleanedUpRef.current) setSuggestions([]);
+          return;
+        }
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const body = (await res.json()) as
+        | SuggestionListResponse
+        | SuggestionRow[];
+      const list = Array.isArray(body) ? body : body.suggestions ?? [];
+      if (!cleanedUpRef.current) {
+        setSuggestions(list);
+      }
+    } catch (err) {
+      log.warn("fetchSuggestions failed", err);
+      if (!cleanedUpRef.current) setSuggestions([]);
+    }
+  }, []);
+
+  // PR Merge Orchestrator Phase 8 D8.6 -- Accept / Reject / Mute handlers.
+  const onSuggestionAction = useCallback(
+    async (
+      alertId: number,
+      action: "accept" | "reject" | "mute",
+      body?: Record<string, unknown>
+    ) => {
+      setSuggestionBusy(alertId);
+      try {
+        const res = await fetch(
+          `${OPERATIONS_API}/pr-merge/suggestions/${alertId}/${action}`,
+          {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body ?? {}),
+          }
+        );
+        if (!res.ok) {
+          const text = await res.text();
+          log.warn(`suggestion ${action} failed`, res.status, text);
+          if (!cleanedUpRef.current)
+            setError(`Suggestion ${action} failed: HTTP ${res.status}`);
+          return;
+        }
+        await fetchSuggestions();
+      } catch (err) {
+        log.warn(`suggestion ${action} threw`, err);
+        if (!cleanedUpRef.current)
+          setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        if (!cleanedUpRef.current) setSuggestionBusy(null);
+      }
+    },
+    [fetchSuggestions]
+  );
+
   // PR Merge Orchestrator Phase 1 D1.6 -- fetch the outer PR list. Best-effort:
   // a failure here does NOT clear `error` (the queue fetch owns that) so the
   // user always sees the more-actionable proposal-side error if both fail.
@@ -537,8 +692,12 @@ export function MergeTrain() {
       // Phase 6 D6.2: escalations can fire on the same events (a
       // failing check_run can trigger a specialist run that escalates).
       fetchEscalations();
+      // Phase 8 D8.6: suggestions are background-watcher-emitted, not
+      // event-driven, so this fetch is a low-stakes refresh — it catches
+      // newly-emitted drift suggestions on the same WS-driven tick.
+      fetchSuggestions();
     }, REFETCH_DEBOUNCE_MS);
-  }, [fetchQueue, fetchPrs, fetchEscalations]);
+  }, [fetchQueue, fetchPrs, fetchEscalations, fetchSuggestions]);
 
   const connectWs = useCallback(() => {
     if (cleanedUpRef.current || document.hidden) return;
@@ -595,10 +754,12 @@ export function MergeTrain() {
     fetchQueue();
     fetchPrs();
     fetchEscalations();
+    fetchSuggestions();
     const pollId = setInterval(() => {
       fetchQueue();
       fetchPrs();
       fetchEscalations();
+      fetchSuggestions();
     }, POLL_INTERVAL_MS);
     connectWs();
     return () => {
@@ -608,7 +769,7 @@ export function MergeTrain() {
       if (reconnectRef.current) clearTimeout(reconnectRef.current);
       if (wsRef.current) wsRef.current.close();
     };
-  }, [fetchQueue, fetchPrs, fetchEscalations, connectWs]);
+  }, [fetchQueue, fetchPrs, fetchEscalations, fetchSuggestions, connectWs]);
 
   // PR Merge Orchestrator Phase 1 D1.6 -- decide whether to render the PR
   // Outer State sub-section. We render the heading + content only when BOTH
@@ -632,6 +793,9 @@ export function MergeTrain() {
   }, [escalations]);
   const showEscalationsSection =
     activeEscalations !== null && activeEscalations.length > 0;
+  // PR Merge Orchestrator Phase 8 D8.6 -- Suggestions inbox visibility.
+  const showSuggestionsSection =
+    suggestions !== null && suggestions.length > 0;
 
   return (
     <Card className="mb-4">
@@ -649,6 +813,30 @@ export function MergeTrain() {
       <CardContent>
         {error && (
           <p className="text-xs text-red-300 mb-2">{error}</p>
+        )}
+        {showSuggestionsSection && suggestions && (
+          <div className="mb-4">
+            <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2 flex items-center gap-1">
+              <ShieldAlert className="h-3 w-3" />
+              Suggestions
+              <Badge
+                variant="outline"
+                className="ml-2 font-mono text-[10px] normal-case"
+              >
+                {suggestions.length}
+              </Badge>
+            </h4>
+            <div className="space-y-2">
+              {suggestions.map((sug) => (
+                <SuggestionCard
+                  key={sug.alert_id}
+                  sug={sug}
+                  busy={suggestionBusy === sug.alert_id}
+                  onAction={onSuggestionAction}
+                />
+              ))}
+            </div>
+          </div>
         )}
         {showEscalationsSection && activeEscalations && (
           <div className="mb-4">
