@@ -14,12 +14,19 @@
  * All other routes are handled by the SDK's route matcher.
  *
  * Local pre/post-processing (this module):
- * - Paths the SDK route matcher would 404 on but that callers commonly hit
- *   (`/ai/idle-status`, `/control/tabs`, `/control/page-health`,
- *   `/sdk/network-requests`) are rewritten to HTTP 503 with a structured
- *   `NO_BROWSER_CONNECTED` body rather than a bare 404. This avoids
- *   misleading 404s from probes that are really "no browser attached"
- *   conditions.
+ * - Paths that match neither `UI_BRIDGE_ROUTES` (the SDK's canonical
+ *   route contract) nor the relay-transport set above would otherwise
+ *   produce a bare HTTP 404 from the SDK. We short-circuit them to HTTP
+ *   503 with `{success:false, code:"NO_BROWSER_CONNECTED", ...}` so
+ *   callers reading `success`/`code` get a structured signal instead of
+ *   404. Notable paths in this bucket (iter 2 + iter 4): `/ai/idle-status`,
+ *   `/ai/find` aliases, `/control/page-health`, `/control/tabs`,
+ *   `/sdk/*`, `/control/network/*` stub routes.
+ *
+ *   The proxy auto-tracks the SDK contract: when the SDK adds a route to
+ *   `UI_BRIDGE_ROUTES`, the proxy stops 503-ing it and forwards instead —
+ *   no allow-list maintenance required.
+ *
  * - For `/control/snapshot`, when the SDK returns `success:true` but the
  *   snapshot is stale AND empty (no browser actually attached, just a
  *   cached empty payload), the response is rewritten to
@@ -30,6 +37,7 @@
 import {
   createNextRouteHandlers,
   SSEManager,
+  UI_BRIDGE_ROUTES,
 } from "@qontinui/ui-bridge/server";
 import { handlers, relay } from "@/lib/ui-bridge/relay";
 import { NextRequest } from "next/server";
@@ -50,26 +58,80 @@ const routeHandlers = createNextRouteHandlers(handlers, {
 // Wrap handlers to adapt from Next.js 15 async params to the expected sync params
 type NextContext = { params: Promise<{ path: string[] }> };
 
+type HttpMethod = "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
+
 /**
- * Paths the underlying SDK route matcher does not define but that callers
- * (page-health probes, multi-tab debug UI, runner SDK shims) regularly hit.
- * When we see one of these, we short-circuit the SDK and return either:
- *   - HTTP 503 with `{success:false, code:"NO_BROWSER_CONNECTED", ...}`
- *     when no browser SDK client is attached to the relay, OR
- *   - HTTP 503 with the same shape when a client IS attached (the route
- *     still doesn't exist in the SDK, so we cannot forward), with the
- *     message specialized to the path.
- * In both cases the response shape is structured JSON, never a bare 404.
- *
- * These four paths are matched exactly (no prefix matching) — adding new
- * entries is a deliberate one-line change.
+ * Compile a UI_BRIDGE_ROUTES entry (e.g. `/control/element/:id/state`) to an
+ * anchored regex matching concrete request paths. Mirrors the SDK's
+ * `findMatchingRoute` so we stay byte-compatible with what the SDK accepts —
+ * if the SDK would match, so do we; if it wouldn't, neither do we.
  */
-const MISSING_BRIDGE_PATHS: ReadonlySet<string> = new Set([
-  "/ai/idle-status",
-  "/control/tabs",
-  "/control/page-health",
-  "/sdk/network-requests",
-]);
+function compileRouteRegex(routePath: string): RegExp {
+  const source = routePath
+    .replace(/:[^/]+/g, "([^/]+)")
+    .replace(/\//g, "\\/");
+  return new RegExp(`^${source}$`);
+}
+
+interface CompiledRoute {
+  method: HttpMethod;
+  regex: RegExp;
+}
+
+const COMPILED_SDK_ROUTES: readonly CompiledRoute[] = UI_BRIDGE_ROUTES.map(
+  (route) => ({
+    method: route.method as HttpMethod,
+    regex: compileRouteRegex(route.path),
+  }),
+);
+
+/**
+ * Relay-transport paths the SDK's `handleRelayRoute` claims before the
+ * UI_BRIDGE_ROUTES matcher runs. None of these appear in UI_BRIDGE_ROUTES,
+ * so we list them explicitly. Order doesn't matter — these are checked
+ * in `isKnownRoute` alongside the SDK routes.
+ *
+ * Sources (SDK 0.8.0, `dist/server/nextjs.mjs::handleRelayRoute`):
+ *   - GET  /commands/stream             (SSE command delivery)
+ *   - POST /commands                    (browser command responses)
+ *   - GET  /health, GET /status         (transport diagnostics)
+ *   - GET  /tabs, GET /tabs/wait        (tab info / blocking wait)
+ *   - POST /tabs/:id/activate           (CDP tab activate)
+ *   - POST /tabs/:id/close              (CDP tab close)
+ *   - GET  /control/events/stream       (SSE)
+ *   - GET  /control/changes/stream      (SSE)
+ *
+ * `POST /heartbeat` is intentionally also in UI_BRIDGE_ROUTES, so it's
+ * already covered by COMPILED_SDK_ROUTES.
+ */
+const RELAY_TRANSPORT_ROUTES: readonly CompiledRoute[] = [
+  { method: "GET", regex: /^\/commands\/stream$/ },
+  { method: "POST", regex: /^\/commands$/ },
+  { method: "GET", regex: /^\/health$/ },
+  { method: "GET", regex: /^\/status$/ },
+  { method: "GET", regex: /^\/tabs$/ },
+  { method: "GET", regex: /^\/tabs\/wait$/ },
+  { method: "POST", regex: /^\/tabs\/([^/]+)\/activate$/ },
+  { method: "POST", regex: /^\/tabs\/([^/]+)\/close$/ },
+  { method: "GET", regex: /^\/control\/events\/stream$/ },
+  { method: "GET", regex: /^\/control\/changes\/stream$/ },
+];
+
+/**
+ * True when `path` + `method` would be claimed either by the SDK's
+ * `UI_BRIDGE_ROUTES` matcher OR by the relay-transport handler. False
+ * means the SDK would 404; the proxy translates that to a structured
+ * `NO_BROWSER_CONNECTED` 503.
+ */
+function isKnownRoute(path: string, method: HttpMethod): boolean {
+  for (const route of COMPILED_SDK_ROUTES) {
+    if (route.method === method && route.regex.test(path)) return true;
+  }
+  for (const route of RELAY_TRANSPORT_ROUTES) {
+    if (route.method === method && route.regex.test(path)) return true;
+  }
+  return false;
+}
 
 function noBrowserResponse(path: string): Response {
   return new Response(
@@ -157,8 +219,13 @@ async function wrapHandler(
   const params = await context.params;
   const path = resolvePath(params);
 
-  // Pre-process: short-circuit known-missing routes regardless of method.
-  if (MISSING_BRIDGE_PATHS.has(path)) {
+  // Pre-process: short-circuit routes the SDK would 404 on. We surface a
+  // structured 503 NO_BROWSER_CONNECTED instead of a bare 404 so callers
+  // reading `success`/`code` (page-health probes, runner SDK shims,
+  // multi-tab debug UI) get a meaningful signal. The check is derived from
+  // UI_BRIDGE_ROUTES + the relay-transport set — no hardcoded allow-list,
+  // so the proxy auto-tracks new SDK routes as the SDK ships them.
+  if (!isKnownRoute(path, method)) {
     return noBrowserResponse(path);
   }
 
