@@ -160,6 +160,46 @@ export interface EscalationListResponse {
   total: number;
 }
 
+// ============================================================================
+// PR Merge Orchestrator Phase 8 D8.6 — Suggestions inbox wire types.
+//
+// Mirrors coord's `GET /pr-merge/suggestions` response (see
+// `qontinui-coord/src/pr_merge/suggestions_routes.rs`). Drift suggestions
+// (kind='profile_drift_suggestion') AND audit-stale alerts
+// (kind='profile_audit_stale') ride the same card list. Per-card Accept
+// / Reject / Mute-for-30-days buttons hit `POST /pr-merge/suggestions/:id/{accept,reject,mute}`.
+// ============================================================================
+
+export type SuggestionKind = "profile_drift_suggestion" | "profile_audit_stale";
+
+/** One pending suggestion / audit-stale alert. The drift watcher's
+ *  detail JSON exposes `suggestion_kind`, `subject`, `rationale`,
+ *  `supporting_overrides`, and `proposed_diff`. */
+export interface SuggestionRow {
+  alert_id: number;
+  kind: SuggestionKind;
+  severity: "info" | "warning" | "critical";
+  summary: string;
+  detail: {
+    tenant_id?: string;
+    suggestion_kind?: string;
+    subject?: string;
+    rationale?: string;
+    supporting_overrides?: string[];
+    proposed_diff?: Record<string, unknown>;
+    repo?: string;
+    trigger?: string;
+    since_last_audit_days?: number;
+  };
+  first_seen_at: string;
+  last_seen_at: string;
+}
+
+export interface SuggestionListResponse {
+  suggestions: SuggestionRow[];
+  total: number;
+}
+
 // ----------------------------------------------------------------------------
 // Demo-feature catalog
 // ----------------------------------------------------------------------------

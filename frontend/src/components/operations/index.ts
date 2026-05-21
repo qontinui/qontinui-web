@@ -3,6 +3,7 @@ export { LandedFeaturesPanel } from "./LandedFeaturesPanel";
 export { MachineCard } from "./MachineCard";
 export { DeviceStatusTile } from "./DeviceStatusTile";
 export { MergeDependencyGraph } from "./MergeDependencyGraph";
+export { MergeOrchestrationOnboarding } from "./MergeOrchestrationOnboarding";
 export { MergeTrain } from "./MergeTrain";
 export { TaskRunCard } from "./TaskRunCard";
 export { OutputViewer } from "./OutputViewer";
