@@ -37,6 +37,53 @@ export function deviceStatusWsUrl(token: string): string {
   return `${wsBase}/device-status/ws?token=${encodeURIComponent(token)}`;
 }
 
+/**
+ * REST endpoint for the Phase 4.4 symbol-claims surface. Proxies coord's
+ * `/coord/claims/list?kind=symbol` so the dashboard can render the
+ * per-machine "currently editing" sub-line without the browser hitting
+ * coord cross-origin. No tenant scoping in the pilot (matches Phase 4.3
+ * design note); coord-side scoping is a follow-up.
+ */
+export const SYMBOL_CLAIMS_API = `${OPERATIONS_API}/symbol-claims`;
+
+/**
+ * Polling interval for `useSymbolClaimsStream` in milliseconds.
+ * Coord defaults `Symbol` claims to 300s TTL; 30s polling is fresh
+ * enough to surface edits within ~1 frame and slow enough to keep
+ * coord's Redis SCAN budget unbothered. A WS push channel is a
+ * follow-up — symbol claims churn at human-typing cadence, not the
+ * sub-second cadence that justified WS for device_status.
+ */
+export const SYMBOL_CLAIMS_POLL_MS = 30_000;
+
+/** Maximum symbol claims to render per machine in the MachineCard
+ *  sub-line. Anything beyond is summarized with a "+N more" indicator. */
+export const SYMBOL_CLAIMS_TOP_N = 5;
+
+/** Maximum visible length of an extracted symbol name in the sub-line.
+ *  Longer names get truncated with an ellipsis to keep the card stable. */
+export const SYMBOL_NAME_MAX_LEN = 30;
+
+/**
+ * Extract the symbol name from a `<repo>:<file>:<symbol>` resource_key.
+ *
+ * Per the qontinui-supervisor `symbol_watcher` convention, the symbol
+ * name is the LAST colon-separated component. Windows paths in the
+ * `file` segment can contain backslashes but never colons (colons in
+ * Windows paths are only legal as the drive separator at position 1,
+ * which the daemon canonicalizes out), so split-by-`:` is unambiguous.
+ *
+ * Falls back to the full resource_key when there's no colon — defensive
+ * against bad upstream data, never crashes the render path.
+ */
+export function extractSymbol(resourceKey: string): string {
+  const idx = resourceKey.lastIndexOf(":");
+  const name = idx === -1 ? resourceKey : resourceKey.slice(idx + 1);
+  if (name.length <= SYMBOL_NAME_MAX_LEN) return name;
+  // U+2026 HORIZONTAL ELLIPSIS keeps the visual width tight.
+  return name.slice(0, SYMBOL_NAME_MAX_LEN - 1) + "…";
+}
+
 /** Polling interval in milliseconds. */
 export const POLL_INTERVAL_MS = 5_000;
 

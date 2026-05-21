@@ -16,6 +16,7 @@ import { MachineCard } from "./MachineCard";
 import { DeviceStatusTile } from "./DeviceStatusTile";
 import { TaskRunCard } from "./TaskRunCard";
 import { useDeviceStatusStream } from "./useDeviceStatusStream";
+import { useSymbolClaimsStream } from "./useSymbolClaimsStream";
 import { OPERATIONS_API, POLL_INTERVAL_MS, relativeTime } from "./utils";
 import type {
   DeviceStatus,
@@ -23,6 +24,7 @@ import type {
   AggregatedTaskRuns,
   MachineGroup,
   RunnerTaskRun,
+  SymbolClaim,
 } from "./types";
 
 // ============================================================================
@@ -32,18 +34,34 @@ import type {
 function buildMachineGroups(
   fleet: FleetStatus,
   deviceStatusByHost: Map<string, DeviceStatus>,
+  symbolClaimsByMachine: Map<string, SymbolClaim[]>,
 ): MachineGroup[] {
   const byHost = new Map<string, MachineGroup>();
+
+  // The symbol-claims map is keyed by machine_id (UUID); the MachineGroup
+  // is keyed by hostname. Symbol claims arrive from coord BEFORE the
+  // matching device_status row (the supervisor's symbol_watcher daemon
+  // is independent of the agent's /coord/status writer), so we
+  // pre-resolve hostname → machine_id via device_status to look up
+  // claims by hostname.
+  const resolveClaims = (
+    activity: DeviceStatus | undefined,
+  ): SymbolClaim[] => {
+    if (!activity) return [];
+    return symbolClaimsByMachine.get(activity.device_id) ?? [];
+  };
 
   for (const runner of fleet.runners) {
     const hostname = runner.hostname ?? "unknown";
     let group = byHost.get(hostname);
     if (!group) {
+      const activity = deviceStatusByHost.get(hostname);
       group = {
         hostname,
         runners: [],
         claudeSessions: fleet.claude_sessions[hostname] ?? [],
-        currentActivity: deviceStatusByHost.get(hostname),
+        currentActivity: activity,
+        currentlyEditing: resolveClaims(activity),
       };
       byHost.set(hostname, group);
     }
@@ -53,11 +71,13 @@ function buildMachineGroups(
   // Also add hostnames that only have Claude sessions (no runner)
   for (const [hostname, sessions] of Object.entries(fleet.claude_sessions)) {
     if (!byHost.has(hostname)) {
+      const activity = deviceStatusByHost.get(hostname);
       byHost.set(hostname, {
         hostname,
         runners: [],
         claudeSessions: sessions,
-        currentActivity: deviceStatusByHost.get(hostname),
+        currentActivity: activity,
+        currentlyEditing: resolveClaims(activity),
       });
     }
   }
@@ -74,6 +94,7 @@ function buildMachineGroups(
         runners: [],
         claudeSessions: [],
         currentActivity,
+        currentlyEditing: resolveClaims(currentActivity),
       });
     }
   }
@@ -173,10 +194,18 @@ export function FleetOverview() {
   }, [fetchData]);
 
   const deviceStatus = useDeviceStatusStream();
+  const symbolClaims = useSymbolClaimsStream();
 
   const machineGroups = useMemo(
-    () => (fleet ? buildMachineGroups(fleet, deviceStatus.byHostname) : []),
-    [fleet, deviceStatus.byHostname]
+    () =>
+      fleet
+        ? buildMachineGroups(
+            fleet,
+            deviceStatus.byHostname,
+            symbolClaims.byMachine,
+          )
+        : [],
+    [fleet, deviceStatus.byHostname, symbolClaims.byMachine]
   );
 
   const runningTasks: RunnerTaskRun[] = useMemo(

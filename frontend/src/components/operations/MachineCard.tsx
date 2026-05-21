@@ -7,9 +7,17 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Monitor, Laptop, Terminal, Cpu, Circle, Activity } from "lucide-react";
-import { relativeTime } from "./utils";
-import type { DeviceStatus, MachineGroup } from "./types";
+import {
+  Monitor,
+  Laptop,
+  Terminal,
+  Cpu,
+  Circle,
+  Activity,
+  FileCode2,
+} from "lucide-react";
+import { extractSymbol, relativeTime, SYMBOL_CLAIMS_TOP_N } from "./utils";
+import type { DeviceStatus, MachineGroup, SymbolClaim } from "./types";
 
 interface MachineCardProps {
   machine: MachineGroup;
@@ -115,6 +123,48 @@ function CurrentActivityLine({ activity }: { activity: DeviceStatus }) {
   );
 }
 
+/**
+ * Sub-line rendered just under `CurrentActivityLine` showing which
+ * symbols the machine is currently editing. Plan
+ * `2026-05-21-coordination-improvements.md` Phase 4.4.
+ *
+ * Source: `ClaimKind::Symbol` claims from coord's `/coord/claims/list`,
+ * joined client-side by `machine_id ↔ DeviceStatus.device_id`. The
+ * qontinui-supervisor `symbol_watcher` daemon (Phase 4.1) acquires
+ * these on every tree-sitter-detected symbol edit; coord defaults
+ * Symbol TTL to 300s.
+ *
+ * Renders up to `SYMBOL_CLAIMS_TOP_N` symbol names sorted by TTL desc
+ * (freshest edit first). Names longer than `SYMBOL_NAME_MAX_LEN` are
+ * truncated with an ellipsis. When more than `SYMBOL_CLAIMS_TOP_N`
+ * claims are held, appends "+N more".
+ */
+function CurrentlyEditingLine({ claims }: { claims: SymbolClaim[] }) {
+  if (claims.length === 0) return null;
+  const visible = claims.slice(0, SYMBOL_CLAIMS_TOP_N);
+  const overflow = Math.max(0, claims.length - SYMBOL_CLAIMS_TOP_N);
+  const summary = visible.map((c) => extractSymbol(c.resource_key)).join(", ");
+  return (
+    <div
+      className="flex items-start gap-2 px-2 py-1 text-xs text-muted-foreground"
+      data-operations-currently-editing
+      data-claim-count={claims.length}
+    >
+      <FileCode2 className="h-3.5 w-3.5 shrink-0 mt-0.5" aria-hidden />
+      <div
+        className="flex-1 min-w-0 truncate"
+        data-operations-currently-editing-line
+      >
+        <span className="text-foreground/70">Editing: </span>
+        <span className="font-mono">{summary}</span>
+        {overflow > 0 ? (
+          <span className="text-muted-foreground/80"> · +{overflow} more</span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function HealthDot({
   healthy,
   heartbeat,
@@ -141,7 +191,8 @@ function HealthDot({
 }
 
 export function MachineCard({ machine }: MachineCardProps) {
-  const { hostname, runners, claudeSessions, currentActivity } = machine;
+  const { hostname, runners, claudeSessions, currentActivity, currentlyEditing } =
+    machine;
 
   // Determine overall machine health from derivedStatus
   const healthyRunners = runners.filter((r) => r.derivedStatus === "healthy");
@@ -186,6 +237,11 @@ export function MachineCard({ machine }: MachineCardProps) {
         {/* Phase 1.3 — live device-status sub-line. */}
         {currentActivity ? (
           <CurrentActivityLine activity={currentActivity} />
+        ) : null}
+
+        {/* Phase 4.4 — live symbol-claims sub-line. */}
+        {currentlyEditing && currentlyEditing.length > 0 ? (
+          <CurrentlyEditingLine claims={currentlyEditing} />
         ) : null}
 
         {/* Runner instances */}

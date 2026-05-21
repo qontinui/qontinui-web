@@ -1175,6 +1175,82 @@ async def post_memory_restore(
     )
 
 
+# ---- Symbol-claims surface (Phase 4.4) ----------------------------------
+#
+# Plan: `D:/qontinui-root/plans/2026-05-21-coordination-improvements.md`
+# Phase 4.4. Drives the "currently editing" sub-line on each
+# `MachineCard`. The tree-sitter `symbol_watcher` daemon (Phase 4.1,
+# qontinui-supervisor) posts `ClaimKind::Symbol` claims as agents edit
+# local files; coord stores them in Redis with a 300s default TTL.
+#
+# This endpoint is a thin proxy to coord's `/coord/claims/list` with
+# `kind=symbol` pinned. Optional `?machine_id` filter is forwarded so a
+# future per-machine view can fan out without changing the proxy.
+#
+# Tenant scoping is intentionally absent here, mirroring the existing
+# `/operations/claims/list` posture (Phase 5 of plan
+# `2026-05-18-agent-spawn-coordination.md`). Per the Phase 4.3 design
+# note: "tenant scoping on symbol claims is a follow-up; for now,
+# render the full operator's view across all machines they have access
+# to." When coord-side tenant scoping lands, the proxy + frontend can
+# pivot to `tenant_id = Depends(get_tenant_id)` without breaking the
+# wire shape.
+
+
+@router.get("/symbol-claims")
+async def get_symbol_claims(
+    machine_id: str | None = Query(
+        default=None,
+        description="When set, return only claims held by this machine_id (UUID).",
+    ),
+    limit: int | None = Query(default=None, ge=1, le=500),
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> Any:
+    """Proxy ``GET /coord/claims/list?kind=symbol`` for the dashboard.
+
+    Response shape (coord ``ListResponse``):
+
+        {
+            "kind": "symbol",
+            "prefix": "<echo>",
+            "holders": [
+                {
+                    "kind": "symbol",
+                    "resource_key": "<repo>:<file>:<symbol>",
+                    "machine_id": "<uuid>",
+                    "ttl_seconds": <int>
+                },
+                ...
+            ],
+            "truncated": <bool>
+        }
+
+    Optional ``machine_id`` filter is applied client-side after coord
+    returns (coord's ``/coord/claims/list`` doesn't accept a machine
+    filter directly — prefix matches on resource_key, not on holder).
+    The dashboard groups client-side anyway; this filter is for
+    targeted CLI / curl consumers.
+    """
+    params: dict[str, Any] = {"kind": "symbol", "prefix": ""}
+    if limit is not None:
+        params["limit"] = limit
+    payload = await _proxy_coord_get("/coord/claims/list", params=params)
+
+    if machine_id is not None and isinstance(payload, dict):
+        holders = payload.get("holders", [])
+        if isinstance(holders, list):
+            payload = {
+                **payload,
+                "holders": [
+                    h
+                    for h in holders
+                    if isinstance(h, dict)
+                    and str(h.get("machine_id", "")) == machine_id
+                ],
+            }
+    return payload
+
+
 # ---- Device-status surface (Phase 1.3) ----------------------------------
 #
 # Plan: `D:/qontinui-root/plans/2026-05-21-coordination-improvements.md`
