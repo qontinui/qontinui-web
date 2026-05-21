@@ -372,9 +372,7 @@ async def patch_pr_merge_settings(
     """UPSERT the tenant-level merge settings. Coord audits the change
     + publishes a Redis pubsub invalidation. Returns the post-write
     EffectiveProfile."""
-    return await _proxy_coord_patch(
-        "/pr-merge/settings", body, tenant_id=tenant_id
-    )
+    return await _proxy_coord_patch("/pr-merge/settings", body, tenant_id=tenant_id)
 
 
 @router.get("/pr-merge/repos")
