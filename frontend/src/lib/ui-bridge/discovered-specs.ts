@@ -29,6 +29,39 @@ import type { DiscoveredSpec } from "@/lib/spec-prompt-builder";
 const SPEC_LIST_URL = "http://localhost:9876/apps/qontinui-web/spec/list";
 const SPEC_SUBSCRIBE_URL = "http://localhost:9876/apps/qontinui-web/spec/subscribe";
 
+/**
+ * The runner only runs on the operator's local machine. Production
+ * deployments (demo.staging.qontinui.io, qontinui.io) have no
+ * `localhost:9876` to talk to, and the browser's CORS policy blocks
+ * cross-origin fetches to loopback from non-localhost origins with a
+ * loud console error (`Permission was denied for this request to
+ * access the loopback address space`).
+ *
+ * Gate the fetch + SSE on whether the page itself is loaded from
+ * localhost. In production builds, the spec cache stays empty and
+ * subscribers see `loading=false, specs=[]` immediately — same shape
+ * as a successful empty fetch.
+ *
+ * This is a runtime gate (not NODE_ENV) because the same bundle is
+ * shipped to dev preview deploys and to production aliases; what
+ * matters is whether the browser CAN reach the runner, which is a
+ * function of the page's own origin.
+ */
+function isRunnerReachable(): boolean {
+  if (typeof window === "undefined") {
+    // SSR / RSC: no browser, no point. The runner is also not
+    // reachable from server-side fetch when the server is in a
+    // datacenter, so skip too.
+    return false;
+  }
+  const origin = window.location.origin;
+  return (
+    origin.startsWith("http://localhost") ||
+    origin.startsWith("http://127.0.0.1") ||
+    origin.startsWith("http://[::1]")
+  );
+}
+
 // =============================================================================
 // Module-scoped state
 // =============================================================================
@@ -62,6 +95,11 @@ function initSseOnce(): void {
   if (typeof window === "undefined" || typeof EventSource === "undefined") {
     // SSR or environment without EventSource — skip cleanly. The cache
     // simply won't auto-invalidate. Explicit refresh() still works.
+    return;
+  }
+
+  if (!isRunnerReachable()) {
+    // Production origin — no local runner to subscribe to. Skip.
     return;
   }
 
@@ -101,6 +139,12 @@ interface SpecListResponse {
 }
 
 async function fetchSpecs(): Promise<DiscoveredSpec[]> {
+  if (!isRunnerReachable()) {
+    // Production / cross-origin context — no runner to fetch from.
+    // Return empty rather than triggering a loud CORS error in the
+    // browser console.
+    return [];
+  }
   const response = await fetch(SPEC_LIST_URL, {
     method: "GET",
     headers: { Accept: "application/json" },
