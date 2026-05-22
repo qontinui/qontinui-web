@@ -1,30 +1,47 @@
 """
 Centralized test credentials configuration.
 
-This file is the SINGLE SOURCE OF TRUTH for local development credentials.
-All test files, seed scripts, and development tools should import from here.
+This module exposes the local development credentials. The actual values
+live in ONE place — ``qontinui-web/dev-credentials.json`` (the repo-root
+single source of truth) — and are loaded at import time below. The same
+JSON is read by the TypeScript side
+(``frontend/tests/e2e/test-credentials.ts``), so the two cannot drift.
 
 IMPORTANT: These credentials are ONLY for local development and testing.
 They must NEVER be used in production environments.
 
-When modifying credentials here, you MUST also update:
-1. qontinui-web/frontend/.env.local (NEXT_PUBLIC_DEV_EMAIL, NEXT_PUBLIC_DEV_PASSWORD)
-2. qontinui-runner/.env (VITE_DEV_EMAIL, VITE_DEV_PASSWORD)
-3. qontinui-web/frontend/tests/e2e/test-credentials.ts
-4. Run reset_local_password.py to update database passwords
+To change the dev password:
+  1. Edit ``dev-credentials.json`` (this is the ONLY value to change).
+  2. Run ``backend/reset_local_password.py`` to re-hash existing local
+     DB users.
+The gitignored local env files (``frontend/.env.local``,
+``qontinui-runner/.env``) are per-developer machine config — update them
+to match if your local web/runner auto-login relies on them. The drift
+guard (``scripts/check_dev_credentials_drift.py``) fails CI if a literal
+credential is hardcoded anywhere instead of read from the JSON.
 """
 
-# Standard development password - use this for ALL dev users
-# This makes it easy to switch between accounts during development
-STANDARD_DEV_PASSWORD = "dev123"
+import json
+from pathlib import Path
 
-# Primary development user - used for BOTH runner AND web during development
-# This is the single default user for all local development
-DEV_USER_EMAIL = "josh@qontinui.io"
-DEV_USER_USERNAME = "josh"
-DEV_USER_PASSWORD = STANDARD_DEV_PASSWORD
-DEV_USER_IS_SUPERUSER = True
-DEV_USER_IS_VERIFIED = True
+# Repo root = .../qontinui-web. This file is at
+# qontinui-web/backend/app/core/test_credentials.py → parents[3] is the root.
+_CREDENTIALS_PATH = Path(__file__).resolve().parents[3] / "dev-credentials.json"
+
+with _CREDENTIALS_PATH.open(encoding="utf-8") as _f:
+    _CREDS = json.load(_f)
+
+# Standard development password - use this for ALL dev users.
+# Sourced from dev-credentials.json; do NOT hardcode a literal here.
+STANDARD_DEV_PASSWORD: str = _CREDS["password"]
+
+# Primary development user - used for BOTH runner AND web during development.
+# This is the single default user for all local development.
+DEV_USER_EMAIL: str = _CREDS["email"]
+DEV_USER_USERNAME: str = _CREDS["username"]
+DEV_USER_PASSWORD: str = STANDARD_DEV_PASSWORD
+DEV_USER_IS_SUPERUSER: bool = _CREDS["is_superuser"]
+DEV_USER_IS_VERIFIED: bool = _CREDS["is_verified"]
 
 
 def get_dev_credentials() -> dict:
