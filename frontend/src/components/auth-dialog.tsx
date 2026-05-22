@@ -1,12 +1,6 @@
 "use client";
 
-import { useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useAuth } from "@/contexts/auth-context";
-import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -14,17 +8,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { toast } from "sonner";
-import {
-  loginFormSchema,
-  registerFormSchema,
-  type LoginFormData,
-  type RegisterFormData,
-} from "@/lib/schemas";
+import { AuthForm } from "@/components/auth-form";
+import type { User } from "@/types/auth-types";
 
 interface AuthDialogProps {
   open: boolean;
@@ -37,73 +22,16 @@ export function AuthDialog({
   onOpenChange,
   defaultTab = "signin",
 }: AuthDialogProps) {
-  const { login, register: registerUser } = useAuth();
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
 
-  // Login form with Zod validation
-  const loginForm = useForm<LoginFormData>({
-    resolver: zodResolver(loginFormSchema),
-    defaultValues: {
-      username: "",
-      password: "",
-      remember_me: false,
-    },
-  });
-
-  // Register form with Zod validation
-  const registerForm = useForm<RegisterFormData>({
-    resolver: zodResolver(registerFormSchema),
-    defaultValues: {
-      email: "",
-      username: "",
-      password: "",
-      confirmPassword: "",
-      full_name: "",
-    },
-  });
-
-  const handleLogin = async (data: LoginFormData) => {
-    setLoading(true);
-    try {
-      const user = await login(data.username, data.password, data.remember_me);
-      toast.success("Logged in successfully");
-      onOpenChange(false);
-      loginForm.reset();
-      // Redirect to admin page if superuser, otherwise dashboard
-      // Dashboard redirect handles product mode routing
-      if (user?.is_superuser) {
-        router.push("/admin");
-      } else {
-        router.push("/dashboard");
-      }
-    } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : "Login failed");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleRegister = async (data: RegisterFormData) => {
-    setLoading(true);
-    try {
-      await registerUser(
-        data.email,
-        data.username,
-        data.password,
-        data.full_name
-      );
-      toast.success("Account created successfully");
-      onOpenChange(false);
-      registerForm.reset();
-      // Dashboard redirect handles product mode routing
+  const handleSuccess = (user: User) => {
+    onOpenChange(false);
+    // Redirect to admin page if superuser, otherwise dashboard.
+    // Dashboard handles further product-mode routing.
+    if (user?.is_superuser) {
+      router.push("/admin");
+    } else {
       router.push("/dashboard");
-    } catch (error: unknown) {
-      toast.error(
-        error instanceof Error ? error.message : "Registration failed"
-      );
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -117,166 +45,11 @@ export function AuthDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs
-          defaultValue={defaultTab === "signup" ? "register" : "login"}
-          className="w-full"
-        >
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="login">Login</TabsTrigger>
-            <TabsTrigger value="register">Register</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="login">
-            <form
-              onSubmit={loginForm.handleSubmit(handleLogin)}
-              className="space-y-4"
-            >
-              <div className="space-y-2">
-                <Label htmlFor="login-username">Username</Label>
-                <Input
-                  id="login-username"
-                  type="text"
-                  placeholder="your_username"
-                  {...loginForm.register("username")}
-                  disabled={loading}
-                />
-                {loginForm.formState.errors.username && (
-                  <p className="text-sm text-red-500">
-                    {loginForm.formState.errors.username.message}
-                  </p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="login-password">Password</Label>
-                <Input
-                  id="login-password"
-                  type="password"
-                  {...loginForm.register("password")}
-                  disabled={loading}
-                />
-                {loginForm.formState.errors.password && (
-                  <p className="text-sm text-red-500">
-                    {loginForm.formState.errors.password.message}
-                  </p>
-                )}
-              </div>
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="remember-me"
-                  checked={loginForm.watch("remember_me")}
-                  onCheckedChange={(checked) => {
-                    loginForm.setValue("remember_me", checked as boolean);
-                  }}
-                  disabled={loading}
-                />
-                <Label
-                  htmlFor="remember-me"
-                  className="text-sm font-normal cursor-pointer"
-                >
-                  Remember me for 90 days
-                </Label>
-              </div>
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? "Signing in..." : "Sign In"}
-              </Button>
-              <div className="text-center mt-4">
-                <Link
-                  href="/forgot-password"
-                  className="text-sm text-muted-foreground hover:text-primary"
-                  onClick={() => onOpenChange(false)}
-                >
-                  Forgot your password?
-                </Link>
-              </div>
-            </form>
-          </TabsContent>
-
-          <TabsContent value="register">
-            <form
-              onSubmit={registerForm.handleSubmit(handleRegister)}
-              className="space-y-4"
-            >
-              <div className="space-y-2">
-                <Label htmlFor="register-email">Email</Label>
-                <Input
-                  id="register-email"
-                  type="email"
-                  placeholder="you@example.com"
-                  {...registerForm.register("email")}
-                  disabled={loading}
-                />
-                {registerForm.formState.errors.email && (
-                  <p className="text-sm text-red-500">
-                    {registerForm.formState.errors.email.message}
-                  </p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="register-username">Username</Label>
-                <Input
-                  id="register-username"
-                  type="text"
-                  placeholder="your_username"
-                  {...registerForm.register("username")}
-                  disabled={loading}
-                />
-                {registerForm.formState.errors.username && (
-                  <p className="text-sm text-red-500">
-                    {registerForm.formState.errors.username.message}
-                  </p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="register-fullname">Full Name (optional)</Label>
-                <Input
-                  id="register-fullname"
-                  type="text"
-                  placeholder="John Doe"
-                  {...registerForm.register("full_name")}
-                  disabled={loading}
-                />
-                {registerForm.formState.errors.full_name && (
-                  <p className="text-sm text-red-500">
-                    {registerForm.formState.errors.full_name.message}
-                  </p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="register-password">Password</Label>
-                <Input
-                  id="register-password"
-                  type="password"
-                  {...registerForm.register("password")}
-                  disabled={loading}
-                />
-                {registerForm.formState.errors.password && (
-                  <p className="text-sm text-red-500">
-                    {registerForm.formState.errors.password.message}
-                  </p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="register-confirm-password">
-                  Confirm Password
-                </Label>
-                <Input
-                  id="register-confirm-password"
-                  type="password"
-                  {...registerForm.register("confirmPassword")}
-                  disabled={loading}
-                />
-                {registerForm.formState.errors.confirmPassword && (
-                  <p className="text-sm text-red-500">
-                    {registerForm.formState.errors.confirmPassword.message}
-                  </p>
-                )}
-              </div>
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? "Creating account..." : "Create Account"}
-              </Button>
-            </form>
-          </TabsContent>
-        </Tabs>
+        <AuthForm
+          mode={defaultTab}
+          onSuccess={handleSuccess}
+          onForgotPasswordClick={() => onOpenChange(false)}
+        />
       </DialogContent>
     </Dialog>
   );
