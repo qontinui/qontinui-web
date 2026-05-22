@@ -88,6 +88,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const channelRef = useRef<BroadcastChannel | null>(null);
   const hasAttemptedDevLogin = useRef(false);
+  const hasAttemptedRestore = useRef(false);
 
   useEffect(() => {
     checkAuth();
@@ -193,6 +194,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(currentUser);
       } else {
         logger.debug("No valid auth token found");
+
+        // Cookie-based session restore: on a fresh load the in-memory tokens
+        // and the `is_authenticated` flag are gone, but valid HttpOnly auth
+        // cookies may still establish a session on the backend. Optimistically
+        // probe /users/me once per mount. This recovers refresh/deep-link
+        // sessions that the flag-only fast path would otherwise bounce to
+        // /login (the dev auto-login effect can't help on a production build).
+        if (!hasAttemptedRestore.current) {
+          hasAttemptedRestore.current = true;
+          logger.debug(
+            "Attempting cookie-based session restore via getCurrentUser..."
+          );
+          try {
+            const restoredUser = await authService.getCurrentUser();
+            logger.info(
+              "Cookie-based session restore succeeded for user:",
+              restoredUser.username
+            );
+            setUser(restoredUser);
+            // Persist the auth flag so subsequent loads take the fast path.
+            authService.setAuthenticated();
+          } catch (restoreError) {
+            // No valid cookie session (e.g. 401). Leave the user logged-out.
+            // IMPORTANT: do NOT call authService.logout() here — a failed
+            // optimistic probe must not trigger logout side-effects (backend
+            // logout call / unrelated state clearing).
+            logger.debug(
+              "Cookie-based session restore did not establish a session:",
+              restoreError
+            );
+          }
+        }
       }
     } catch (error) {
       logger.error("Auth check failed:", error);

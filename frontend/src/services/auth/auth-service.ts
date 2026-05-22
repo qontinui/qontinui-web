@@ -246,6 +246,19 @@ export class AuthService {
   }
 
   /**
+   * Persist the authentication flag without setting tokens.
+   *
+   * Used by the auth context's cookie-based session restore: when a fresh
+   * load has valid HttpOnly cookies but no `is_authenticated` flag,
+   * getCurrentUser() succeeds via the cookies and we persist the flag so
+   * subsequent loads take the fast path. This intentionally sets only the
+   * UI auth flag — actual tokens remain in HttpOnly cookies.
+   */
+  setAuthenticated(): void {
+    this.tokenManager.setAuthenticated();
+  }
+
+  /**
    * Check if access token is expired
    */
   isAccessTokenExpired(): boolean {
