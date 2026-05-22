@@ -1,26 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { useAuth } from "@/contexts/auth-context";
+import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RunnerMonitor, SessionHistory } from "@/components/runner";
 import { Activity, History } from "lucide-react";
 
 export default function RunnerPage() {
-  const { user, loading: authLoading } = useAuth();
-  const router = useRouter();
   const [activeTab, setActiveTab] = useState("monitor");
-
-  useEffect(() => {
-    if (!authLoading && !user) {
-      router.push("/");
-    }
-  }, [user, authLoading, router]);
-
-  if (!user) {
-    return null;
-  }
 
   return (
     <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">

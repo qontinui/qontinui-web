@@ -29,20 +29,15 @@ export default function CoordLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, loading: authLoading } = useAuth();
+  const { user } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    if (!authLoading && !user) {
-      router.push("/");
-      return;
-    }
-    if (!authLoading && user && !user.is_superuser) {
+    if (user && !user.is_superuser) {
       toast.error("Access denied - Admin privileges required");
       router.push("/build/workflows");
-      return;
     }
-  }, [user, authLoading, router]);
+  }, [user, router]);
 
   if (!user?.is_superuser) {
     return null;

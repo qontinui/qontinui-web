@@ -26,7 +26,6 @@
 
 import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, CheckCircle2, Loader2, Server } from "lucide-react";
 import { createRunnerToken } from "@/lib/api/runner_tokens";
@@ -45,7 +44,6 @@ function formatYmd(now: Date): string {
 export default function ConnectRunnerPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user, loading: authLoading } = useAuth();
 
   const state = searchParams?.get("state") ?? "";
   const callback = searchParams?.get("callback") ?? "";
@@ -119,21 +117,6 @@ export default function ConnectRunnerPage() {
   const handleCancel = () => {
     router.push("/runners");
   };
-
-  if (authLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-white">
-        <Loader2 className="w-6 h-6 animate-spin" />
-      </div>
-    );
-  }
-
-  if (!user) {
-    // Send the user to login, preserving the current URL so they come back here.
-    const nextPath = `/connect-runner?${searchParams?.toString() ?? ""}`;
-    router.push(`/?next=${encodeURIComponent(nextPath)}`);
-    return null;
-  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-surface-raised to-surface-canvas text-white">

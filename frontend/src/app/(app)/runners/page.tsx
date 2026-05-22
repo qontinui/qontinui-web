@@ -5,11 +5,10 @@ import { useRouter } from "next/navigation";
 import { usePageSpecs } from "@/hooks/usePageSpecs";
 import { useDiscoveredSpec } from "@/lib/ui-bridge/use-discovered-specs";
 import type { SpecConfig } from "@qontinui/ui-bridge/specs";
-import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Loader2, Monitor, History, KeyRound } from "lucide-react";
+import { ArrowLeft, Monitor, History, KeyRound } from "lucide-react";
 import { ActiveConnectionsList } from "@/components/runners/ActiveConnectionsList";
 import { ConnectionHistoryTable } from "@/components/runners/ConnectionHistoryTable";
 import { RunnerTokenList } from "@/components/server-runners/RunnerTokenList";
@@ -20,7 +19,6 @@ export default function RunnersPage() {
   usePageSpecs(
     discoveredSpec ? { runners: discoveredSpec.config as SpecConfig } : {}
   );
-  const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState("online");
 
@@ -29,24 +27,6 @@ export default function RunnersPage() {
   const handleBackToDashboard = () => {
     router.push("/build/workflows");
   };
-
-  // Show loading while auth is checking
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" />
-          <div className="text-lg text-muted-foreground">Loading...</div>
-        </div>
-      </div>
-    );
-  }
-
-  // Don't render anything if no user (will redirect)
-  if (!user) {
-    router.push("/");
-    return null;
-  }
 
   const onlineCount = onlineRunners?.length || 0;
 

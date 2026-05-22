@@ -2,38 +2,18 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, Suspense } from "react";
+import { Suspense } from "react";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
-import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { DeficiencyList } from "@/components/testing/DeficiencyList";
 import { TrendingUp, BarChart3 } from "lucide-react";
 
 function ProjectDeficienciesPageContent() {
-  const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();
   const projectId = params.projectId as string;
   const testRunId = searchParams.get("run");
-
-  useEffect(() => {
-    if (!authLoading && !user) {
-      router.push("/");
-    }
-  }, [user, authLoading, router]);
-
-  if (authLoading) {
-    return (
-      <div className="h-[calc(100vh-44px)] flex items-center justify-center bg-background">
-        <div className="text-lg text-muted-foreground">Loading...</div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return null;
-  }
 
   return (
     <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">

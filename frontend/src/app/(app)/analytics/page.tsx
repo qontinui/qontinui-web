@@ -4,7 +4,6 @@ export const dynamic = "force-dynamic";
 
 import { useEffect, useState } from "react";
 import dynamicImport from "next/dynamic";
-import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { analyticsService } from "@/services/service-factory";
 import { Activity, FolderOpen, HardDrive, Clock } from "lucide-react";
@@ -44,8 +43,7 @@ const ActivityTimeline = dynamicImport(
 );
 
 export default function AnalyticsPage() {
-  const { user, loading: authLoading } = useAuth();
-  const router = useRouter();
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [usageSummary, setUsageSummary] = useState({
     api_calls_today: 0,
@@ -73,15 +71,10 @@ export default function AnalyticsPage() {
   >([]);
 
   useEffect(() => {
-    if (!authLoading && !user) {
-      router.push("/");
-      return;
-    }
-
     if (user) {
       loadAnalytics();
     }
-  }, [user, authLoading, router]);
+  }, [user]);
 
   const loadAnalytics = async () => {
     try {
@@ -212,16 +205,6 @@ export default function AnalyticsPage() {
     if (diffInDays === 1) return "1d ago";
     return `${diffInDays}d ago`;
   };
-
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-lg text-muted-foreground">Loading...</div>
-        </div>
-      </div>
-    );
-  }
 
   if (!user) {
     return null;

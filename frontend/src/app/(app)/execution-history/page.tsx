@@ -3,8 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { useState, useEffect, useMemo, useCallback, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useAuth } from "@/contexts/auth-context";
+import { useSearchParams } from "next/navigation";
 import { useProject } from "@/hooks/automation/useProject";
 import { useExecutionWorkflows, useExecutionRuns } from "@/hooks/useExecution";
 import { RequireProject } from "@/components/require-project";
@@ -82,8 +81,6 @@ function getStatusIcon(status: string) {
 }
 
 function ExecutionHistoryPageContent() {
-  const { user, loading: authLoading } = useAuth();
-  const router = useRouter();
   const searchParams = useSearchParams();
   const { projectId: storeProjectId } = useProject();
 
@@ -126,13 +123,6 @@ function ExecutionHistoryPageContent() {
     return runsData?.runs || [];
   }, [runsData]);
 
-  // Handle auth redirect
-  useEffect(() => {
-    if (!authLoading && !user) {
-      router.push("/");
-    }
-  }, [user, authLoading, router]);
-
   // Change workflow and reset run selection together
   const handleWorkflowChange = useCallback((workflow: string | null) => {
     setSelectedWorkflow(workflow);
@@ -154,20 +144,6 @@ function ExecutionHistoryPageContent() {
     }
     window.history.replaceState({}, "", url.toString());
   }, [selectedWorkflow, selectedRunId]);
-
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-lg text-muted-foreground">Loading...</div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return null;
-  }
 
   return (
     <RequireProject pageName="Execution History">

@@ -2,9 +2,8 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState, Suspense } from "react";
+import { useState, Suspense } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -26,7 +25,6 @@ import { TestRunCard } from "@/components/testing/TestRunCard";
 import { useTestRuns } from "@/hooks/useTesting";
 
 function ProjectLiveTestingPageContent() {
-  const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();
@@ -52,12 +50,6 @@ function ProjectLiveTestingPageContent() {
         : (statusFilter as "running" | "completed" | "failed"),
   });
 
-  useEffect(() => {
-    if (!authLoading && !user) {
-      router.push("/");
-    }
-  }, [user, authLoading, router]);
-
   const handleTestComplete = () => {
     refetchTestRuns();
   };
@@ -71,18 +63,6 @@ function ProjectLiveTestingPageContent() {
   const handleStartNewTest = () => {
     log.debug("Start new test");
   };
-
-  if (authLoading) {
-    return (
-      <div className="h-[calc(100vh-44px)] flex items-center justify-center bg-background">
-        <div className="text-lg text-muted-foreground">Loading...</div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return null;
-  }
 
   return (
     <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">

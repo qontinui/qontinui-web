@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, CalendarClock, Loader2 } from "lucide-react";
 import { ScheduledRunsTable } from "@/components/server-runners/ScheduledRunsTable";
@@ -10,7 +9,6 @@ import { getWorkflow } from "@/lib/api/unified-workflows";
 import type { UnifiedWorkflow } from "@/types/unified-workflow";
 
 export default function WorkflowSchedulesPage() {
-  const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const params = useParams();
   const workflowId = params?.id ? String(params.id) : null;
@@ -27,17 +25,12 @@ export default function WorkflowSchedulesPage() {
       .finally(() => setWorkflowLoading(false));
   }, [workflowId]);
 
-  if (authLoading || workflowLoading) {
+  if (workflowLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin" />
       </div>
     );
-  }
-
-  if (!user) {
-    router.push("/");
-    return null;
   }
 
   if (!workflowId) {

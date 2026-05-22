@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { useOrganization } from "@/hooks/useOrganization";
 import { organizationService } from "@/services/service-factory";
@@ -13,7 +13,6 @@ import type {
 } from "@/types/collaboration";
 
 export function useMembersPage() {
-  const router = useRouter();
   const params = useParams();
   const orgId = params?.id as string;
 
@@ -29,12 +28,6 @@ export function useMembersPage() {
 
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!authLoading && !user) {
-      router.push("/");
-    }
-  }, [user, authLoading, router]);
 
   useEffect(() => {
     if (!orgId || !user) return;

@@ -1,7 +1,13 @@
 "use client";
 
-import React, { Suspense } from "react";
+import React, { Suspense, useEffect } from "react";
 import nextDynamic from "next/dynamic";
+import {
+  useRouter,
+  usePathname,
+  useSearchParams,
+} from "next/navigation";
+import { Loader2 } from "lucide-react";
 import { AutomationProvider } from "@/contexts/automation-context/AutomationProviderV2";
 import { OrganizationProvider } from "@/contexts/organization-context";
 import { RealtimeConnectionsProvider } from "@/contexts/realtime-connections-context";
@@ -57,6 +63,38 @@ function SidebarSkeleton({ isCollapsed }: { isCollapsed: boolean }) {
   );
 }
 
+function AuthLoadingShell() {
+  return (
+    <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="text-center">
+        <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" />
+        <div className="text-lg text-muted-foreground">Loading...</div>
+      </div>
+    </div>
+  );
+}
+
+function AppAuthGate({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    if (loading) return;
+    if (user) return;
+    const query = searchParams?.toString();
+    const next = query ? `${pathname}?${query}` : pathname;
+    router.replace(`/login?next=${encodeURIComponent(next ?? "/")}`);
+  }, [loading, user, pathname, searchParams, router]);
+
+  if (loading || !user) {
+    return <AuthLoadingShell />;
+  }
+
+  return <>{children}</>;
+}
+
 function AppLayoutContent({ children }: { children: React.ReactNode }) {
   const { isCollapsed } = useSidebar();
   const { user } = useAuth();
@@ -98,22 +136,24 @@ export default function AppLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <OrganizationProvider>
-      <RealtimeConnectionsProvider>
-        <ActiveRunnerProvider>
-          <SidebarProvider>
-            <ProductModeProvider>
-              <AutomationProvider>
-                <TabStateProvider>
-                  <AppInitializer>
-                    <AppLayoutContent>{children}</AppLayoutContent>
-                  </AppInitializer>
-                </TabStateProvider>
-              </AutomationProvider>
-            </ProductModeProvider>
-          </SidebarProvider>
-        </ActiveRunnerProvider>
-      </RealtimeConnectionsProvider>
-    </OrganizationProvider>
+    <AppAuthGate>
+      <OrganizationProvider>
+        <RealtimeConnectionsProvider>
+          <ActiveRunnerProvider>
+            <SidebarProvider>
+              <ProductModeProvider>
+                <AutomationProvider>
+                  <TabStateProvider>
+                    <AppInitializer>
+                      <AppLayoutContent>{children}</AppLayoutContent>
+                    </AppInitializer>
+                  </TabStateProvider>
+                </AutomationProvider>
+              </ProductModeProvider>
+            </SidebarProvider>
+          </ActiveRunnerProvider>
+        </RealtimeConnectionsProvider>
+      </OrganizationProvider>
+    </AppAuthGate>
   );
 }

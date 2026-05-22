@@ -17,8 +17,6 @@ import { IntegrationTestRunsList } from "./_components/IntegrationTestRunsList";
 
 export default function IntegrationTestingPage() {
   const {
-    user,
-    authLoading,
     projectId,
     projectLoading,
     workflows,
@@ -43,19 +41,6 @@ export default function IntegrationTestingPage() {
   } = useIntegrationTestRuns();
 
   const nameMap = useNameMap();
-
-  if (authLoading) {
-    return (
-      <div className="h-[calc(100vh-44px)] flex items-center justify-center bg-background">
-        <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-primary" />
-        <div className="text-lg text-muted-foreground">Loading...</div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return null;
-  }
 
   return (
     <RequireProject pageName="Integration Testing">

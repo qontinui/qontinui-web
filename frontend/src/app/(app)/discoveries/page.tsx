@@ -1,8 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { useAuth } from "@/contexts/auth-context";
 import { useProjects } from "@/hooks/use-projects";
 import { usePendingDiscoveriesCount } from "@/hooks/useDiscoveries";
 import { Badge } from "@/components/ui/badge";
@@ -15,32 +13,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { DiscoveriesList } from "@/components/discoveries/DiscoveriesList";
-import { Loader2, Clock, Check, X, FolderOpen } from "lucide-react";
+import { Clock, Check, X, FolderOpen } from "lucide-react";
 import type { DiscoveryStatus } from "@/types/discoveries";
 
 export default function DiscoveriesPage() {
-  const { user, loading: authLoading } = useAuth();
-  const router = useRouter();
-
   const [activeTab, setActiveTab] = useState<DiscoveryStatus>("pending");
   const [selectedProject, setSelectedProject] = useState<string>("all");
 
   const { data: projects = [] } = useProjects();
   const { data: pendingCount } = usePendingDiscoveriesCount();
-
-  if (authLoading) {
-    return (
-      <div className="h-[calc(100vh-44px)] flex items-center justify-center bg-background">
-        <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" />
-        <div className="text-lg text-muted-foreground">Loading...</div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    router.push("/");
-    return null;
-  }
 
   const pendingCountValue = pendingCount?.count || 0;
 

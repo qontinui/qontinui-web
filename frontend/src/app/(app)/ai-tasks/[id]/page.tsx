@@ -23,8 +23,6 @@ import VerificationResultsTab from "./VerificationResultsTab";
 
 export default function AITaskDetailPage() {
   const {
-    user,
-    authLoading,
     taskId,
     task,
     isLoading,
@@ -36,20 +34,6 @@ export default function AITaskDetailPage() {
   const [activeTab, setActiveTab] = useState("sessions");
   const sessions = useExpandableSet();
   const findings = useExpandableSet();
-
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-lg text-muted-foreground">Loading...</div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return null;
-  }
 
   return (
     <RequireProject pageName="AI Task Details">

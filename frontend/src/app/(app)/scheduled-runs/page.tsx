@@ -2,37 +2,21 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
-import { CalendarClock, Loader2 } from "lucide-react";
+import { CalendarClock } from "lucide-react";
 import { ScheduledRunsTable } from "@/components/server-runners/ScheduledRunsTable";
 import { listWorkflows } from "@/lib/api/unified-workflows";
 import type { UnifiedWorkflow } from "@/types/unified-workflow";
 
 export default function ScheduledRunsPage() {
-  const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [workflows, setWorkflows] = useState<UnifiedWorkflow[]>([]);
 
   useEffect(() => {
-    if (!user) return;
     listWorkflows()
       .then(setWorkflows)
       .catch(() => setWorkflows([]));
-  }, [user]);
-
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin" />
-      </div>
-    );
-  }
-
-  if (!user) {
-    router.push("/");
-    return null;
-  }
+  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-surface-raised to-surface-canvas text-white">

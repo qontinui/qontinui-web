@@ -12,8 +12,7 @@
  * 2. Live mode: Connect to runner via WebSocket for real-time perception
  */
 
-import { useEffect, useState, Suspense, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useState, Suspense, useMemo } from "react";
 import { useAuth } from "@/contexts/auth-context";
 import { useAutomation } from "@/contexts/automation-context";
 import { Card, CardContent } from "@/components/ui/card";
@@ -31,8 +30,7 @@ import { ActiveStatesPanel } from "./_components/ActiveStatesPanel";
 import { PlaybackControls } from "./_components/PlaybackControls";
 
 export default function WorkflowVisualizationPage() {
-  const { user, loading: authLoading } = useAuth();
-  const router = useRouter();
+  const { user } = useAuth();
   const { projectId } = useAutomation();
 
   // Live mode state
@@ -113,17 +111,6 @@ export default function WorkflowVisualizationPage() {
     () => Array.from(liveActiveStateIds),
     [liveActiveStateIds]
   );
-
-  // Auth protection
-  useEffect(() => {
-    if (!authLoading && !user) {
-      router.push("/");
-    }
-  }, [user, authLoading, router]);
-
-  if (!user) {
-    return null;
-  }
 
   return (
     <Suspense

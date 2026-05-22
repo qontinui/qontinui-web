@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -83,8 +82,7 @@ interface AllocationResult {
 // ----------------------------------------------------------------------------
 
 export default function DemoControlPage() {
-  const { user, loading: authLoading } = useAuth();
-  const router = useRouter();
+  const { user } = useAuth();
 
   const [runners, setRunners] = useState<FleetRunner[] | null>(null);
   const [primaryMachineId, setPrimaryMachineId] = useState<string>("");
@@ -92,12 +90,6 @@ export default function DemoControlPage() {
   const [parentSha, setParentSha] = useState<string>("main");
   const [launching, setLaunching] = useState(false);
   const [results, setResults] = useState<AllocationResult[]>([]);
-
-  useEffect(() => {
-    if (!authLoading && !user) {
-      router.push("/");
-    }
-  }, [user, authLoading, router]);
 
   // Fetch fleet to populate machine pickers.
   useEffect(() => {

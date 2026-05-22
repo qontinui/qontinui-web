@@ -22,22 +22,17 @@ import type {
 import type { User } from "@/types/auth-types";
 
 export default function ProfilePage() {
-  const { user, loading: authLoading, updateUser } = useAuth();
+  const { user, updateUser } = useAuth();
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [storageUsage, setStorageUsage] = useState<StorageUsage | null>(null);
   const [activities, setActivities] = useState<ActivityLog[]>([]);
 
   useEffect(() => {
-    if (!authLoading && !user) {
-      router.push("/login");
-      return;
-    }
-
     if (user) {
       loadProfileData();
     }
-  }, [user, authLoading, router]);
+  }, [user]);
 
   const loadProfileData = async () => {
     try {
@@ -76,18 +71,6 @@ export default function ProfilePage() {
     await profileService.deleteAvatar();
   };
 
-  // Show loading while auth is checking
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-lg text-muted-foreground">Loading...</div>
-        </div>
-      </div>
-    );
-  }
-
-  // Don't render anything if no user (will redirect)
   if (!user) {
     return null;
   }
