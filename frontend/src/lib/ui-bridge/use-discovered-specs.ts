@@ -24,6 +24,12 @@ import {
   __shouldTriggerInitialLoad,
 } from "./discovered-specs";
 
+// Stable reference for the empty case. Returning a fresh `[]` from the hook
+// when the cache is null caused infinite re-render loops in any consumer that
+// memo'd on the array identity (notably useSpecSourceState, which feeds the
+// /build/workflows AiGeneratePanel). One module-level constant fixes it.
+const EMPTY_SPECS: readonly DiscoveredSpec[] = Object.freeze([]);
+
 // Re-exported for client-side ergonomics. Server-side callers must
 // import from `./discovered-specs` instead — this module is `"use client"`.
 export {
@@ -68,7 +74,7 @@ export function useDiscoveredSpecs(): UseDiscoveredSpecsResult {
   };
 
   return {
-    specs: snapshot.specs ?? [],
+    specs: snapshot.specs ?? (EMPTY_SPECS as DiscoveredSpec[]),
     loading: snapshot.loading,
     error: snapshot.error,
     refresh,
