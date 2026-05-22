@@ -1,0 +1,177 @@
+name: Spec CI
+
+# Spec CI replaces Playwright E2E as the on-PR merge gate. Playwright E2E
+# moves to nightly-only via the matching change in e2e-tests.yml.
+#
+# Pipeline:
+#   1. Install deps + build the frontend.
+#   2. Start the dev server (next dev).
+#   3. Run Playwright-driven Spec-CI executor against every IR spec under
+#      `frontend/specs/pages/`. The executor signs in via the backend auth
+#      API once (cookies attach to the browser context), then for each
+#      spec navigates to its route, injects the IR, drives transitions
+#      via ui-bridge-auto's in-browser executor, and records pass/fail.
+#   4. Gate: fail iff minMatchRate < 0.8 OR transitionPassRate < 1.0
+#      OR any spec errored.
+#
+# Why not run the qontinui-runner in CI? Spec-CI's only dependency on the
+# runner in dev is the multi-tenant Spec API for file storage; in CI the
+# IR specs are in the repo and ui-bridge-auto runs natively in the
+# browser. Skipping the runner removes the Tauri+xvfb burden and keeps
+# CI fast — sub-5-minute runs vs Playwright E2E's hour+.
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+
+concurrency:
+  group: spec-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  spec-ci:
+    name: Spec CI
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    env:
+      NEXT_PUBLIC_API_URL: https://api.qontinui.io
+      QONTINUI_API_BASE_URL: https://api.qontinui.io
+      QONTINUI_TEST_AUTO_LOGIN_EMAIL: ${{ secrets.SPEC_CI_AUTH_EMAIL }}
+      QONTINUI_TEST_AUTO_LOGIN_PASSWORD: ${{ secrets.SPEC_CI_AUTH_PASSWORD }}
+
+    steps:
+      - name: Checkout qontinui-web
+        uses: actions/checkout@v5
+
+      # The frontend has path deps on @qontinui/* sibling packages (shared-types,
+      # ui-bridge, ui-bridge-auto, design-tokens, navigation, workflow-utils,
+      # workflow-ui). They're all under github.com/qontinui/* (public), so the
+      # default GITHUB_TOKEN (scoped to this repo) can read them — backend-tests.yml
+      # uses the same pattern. Clone them shallowly so npm/pnpm sees the on-disk
+      # paths the workspace's `link:` deps expect.
+      - name: Clone sibling @qontinui packages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          for spec in \
+            "qontinui/qontinui-schemas" \
+            "qontinui/ui-bridge" \
+            "qontinui/ui-bridge-auto" \
+          ; do
+            repo_name="${spec#*/}"
+            git clone --depth 1 \
+              "https://x-access-token:${GH_TOKEN}@github.com/${spec}.git" \
+              "../${repo_name}"
+          done
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      # Build each sibling so the `dist/` artifacts the frontend imports exist.
+      # Order matters: shared-types is a transitive dep of ui-bridge and
+      # ui-bridge-auto.
+      - name: Build sibling packages
+        run: |
+          set -euo pipefail
+          for dir in ../qontinui-schemas/ts ../ui-bridge ../ui-bridge-auto; do
+            if [ -f "$dir/package.json" ]; then
+              echo "::group::Build $dir"
+              (cd "$dir" && pnpm install --prefer-offline --no-frozen-lockfile && pnpm run build)
+              echo "::endgroup::"
+            fi
+          done
+
+      - name: Install frontend deps
+        working-directory: ./frontend
+        run: pnpm install --frozen-lockfile
+
+      # Playwright's browser binaries aren't part of the npm install. Install
+      # Chromium only — the spec-ci executor doesn't need Firefox/WebKit.
+      - name: Install Playwright Chromium
+        working-directory: ./frontend
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Build frontend
+        working-directory: ./frontend
+        run: pnpm run build
+
+      # `next start` serves the production build — faster + more representative
+      # of the user-facing app than `next dev`. The background-task pattern
+      # mirrors what backend-tests.yml does for the FastAPI server.
+      - name: Start frontend (next start)
+        working-directory: ./frontend
+        run: |
+          pnpm exec next start -p 3001 -H 0.0.0.0 > frontend.log 2>&1 &
+          echo "FRONTEND_PID=$!" >> "$GITHUB_ENV"
+          for i in $(seq 1 30); do
+            if curl -s -o /dev/null -w "%{http_code}" http://localhost:3001/login | grep -qE "^(200|307)$"; then
+              echo "frontend up after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+          curl -s -o /dev/null -w "frontend status: %{http_code}\n" http://localhost:3001/login
+
+      - name: Run Spec CI
+        working-directory: ./frontend
+        run: |
+          pnpm exec tsx tests/spec-ci/run-spec-ci.ts \
+            --base-url http://localhost:3001 \
+            --api-base https://api.qontinui.io \
+            --output spec-ci-report.json
+
+      - name: Tear down frontend
+        if: always()
+        run: |
+          if [ -n "${FRONTEND_PID:-}" ]; then
+            kill "$FRONTEND_PID" 2>/dev/null || true
+          fi
+
+      - name: Upload Spec CI report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spec-ci-report
+          path: frontend/spec-ci-report.json
+          retention-days: 30
+
+      - name: Upload frontend log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-log
+          path: frontend/frontend.log
+          retention-days: 7
+
+      # Summarize for the PR check page.
+      - name: Summarize
+        if: always()
+        run: |
+          if [ -f frontend/spec-ci-report.json ]; then
+            echo "## Spec CI Summary" >> "$GITHUB_STEP_SUMMARY"
+            jq -r '
+              "- specs: \(.specCount)",
+              "- full_match: \(.summary.fullMatch)",
+              "- partial_match: \(.summary.partialMatch)",
+              "- no_match: \(.summary.noMatch)",
+              "- error: \(.summary.error)",
+              "- minMatchRate: \(.summary.minMatchRate)",
+              "- meanMatchRate: \(.summary.meanMatchRate)",
+              "- transitionPassRate: \(.summary.transitionPassRate)"
+            ' frontend/spec-ci-report.json >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Failing specs:" >> "$GITHUB_STEP_SUMMARY"
+            jq -r '.specs[] | select(.matchOutcome != "full_match") | "- \(.specId) (\(.matchOutcome), matchRate=\(.matchRate))"' frontend/spec-ci-report.json >> "$GITHUB_STEP_SUMMARY" || true
+          fi
