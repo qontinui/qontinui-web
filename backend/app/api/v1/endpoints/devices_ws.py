@@ -362,6 +362,25 @@ async def _route_device_message(
         await manager.send_terminal_response_to_mobiles(device_id, msg)
         return
 
+    # Runner-emitted reply types for mobile terminal request/response RPCs.
+    # The runner's `mcp/backend_relay.rs::handle_terminal_*` handlers produce
+    # these in reply to `terminal_list` / `terminal_create` / `terminal_close`
+    # / `terminal_buffer` over the device WS. Without this branch the responses
+    # fell through to `devices_ws_unhandled_message` and were silently dropped,
+    # so the mobile `RemoteTerminalClient.sendRequest` always timed out — the
+    # exact bug the iter-3 mobile WS URL rename surfaced. Errors that carry a
+    # `request_id` are correlated terminal-RPC failures (e.g. unknown
+    # terminal_id) and must reach the mobile so `pendingRequests` can reject
+    # promptly rather than spinning until the 10s timeout.
+    if msg_type in {
+        "terminal_sessions",
+        "terminal_created",
+        "terminal_closed",
+        "terminal_buffer_response",
+    } or (msg_type == "error" and msg.get("request_id") is not None):
+        await manager.send_terminal_response_to_mobiles(device_id, msg)
+        return
+
     logger.debug(
         "devices_ws_unhandled_message",
         device_id=str(device_id),
