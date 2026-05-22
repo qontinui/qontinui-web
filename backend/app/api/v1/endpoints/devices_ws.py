@@ -417,10 +417,27 @@ async def _cleanup(
     try:
         async with AsyncSessionLocal() as db:
             row = await device_crud.get_device(db, device_id) if device_id else None
-            if row is not None:
+            # Only clear ws_session_id if it still points at OUR connection.
+            # If the runner reconnected (creating a newer DeviceConnection
+            # row and overwriting ws_session_id) before this handler ran,
+            # blindly setting it to None here stomps the live session and
+            # gives every consumer of GET /api/v1/devices a false
+            # `wsConnected: false` until the runner's next reconnect cycle —
+            # observed 2026-05-22 as a runner/backend wsConnected mismatch
+            # with fresh heartbeats arriving from a session whose
+            # ws_session_id pointer had been wiped by an older finally
+            # block.
+            if row is not None and row.ws_session_id == connection_pk:
                 row.ws_session_id = None
                 row.ws_connected_at = None
                 await db.commit()
+            elif row is not None and row.ws_session_id is not None:
+                logger.info(
+                    "devices_ws_skip_clear_session_id_superseded",
+                    device_id=str(device_id),
+                    our_connection_pk=connection_pk,
+                    current_session_id=row.ws_session_id,
+                )
     except Exception as e:
         logger.error(
             "devices_ws_clear_session_id_failed",
