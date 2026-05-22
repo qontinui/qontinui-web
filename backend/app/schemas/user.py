@@ -28,6 +28,8 @@ class UserRead(schemas.BaseUser[uuid.UUID]):
     preferences: UserPreferences | None = None
     created_at: IsoDatetime
     updated_at: IsoDatetime
+    tenant_id: uuid.UUID | None = None
+    tenant_slug: str | None = None
 
 
 class UserCreate(schemas.BaseUserCreate):
