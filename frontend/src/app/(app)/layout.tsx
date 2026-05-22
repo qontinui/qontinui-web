@@ -12,6 +12,7 @@ import { AutomationProvider } from "@/contexts/automation-context/AutomationProv
 import { OrganizationProvider } from "@/contexts/organization-context";
 import { RealtimeConnectionsProvider } from "@/contexts/realtime-connections-context";
 import { ActiveRunnerProvider } from "@/contexts/active-runner-context";
+import { TenantProvider } from "@/contexts/tenant-context";
 import { SidebarProvider, useSidebar } from "@/contexts/sidebar-context";
 import { TabStateProvider } from "@/contexts/tab-state-context";
 import { ProductModeProvider } from "@/contexts/product-mode-context";
@@ -140,6 +141,7 @@ export default function AppLayout({
       <OrganizationProvider>
         <RealtimeConnectionsProvider>
           <ActiveRunnerProvider>
+            <TenantProvider>
             <SidebarProvider>
               <ProductModeProvider>
                 <AutomationProvider>
@@ -151,6 +153,7 @@ export default function AppLayout({
                 </AutomationProvider>
               </ProductModeProvider>
             </SidebarProvider>
+            </TenantProvider>
           </ActiveRunnerProvider>
         </RealtimeConnectionsProvider>
       </OrganizationProvider>
