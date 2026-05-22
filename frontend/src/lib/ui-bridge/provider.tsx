@@ -38,6 +38,14 @@ import { useDiscoveredSpecs } from "./use-discovered-specs";
 
 const isDev = process.env.NODE_ENV === "development";
 
+// Production opt-in for the UI Bridge command relay. When this env var is
+// set at build time (e.g. for staging deploys driven by /manual-test-coord),
+// the CommandRelayListener mounts even though NODE_ENV is "production".
+// Without it, production tabs never register with the bridge and any
+// /control/* command fails with "No browser connected".
+const remoteCommandsOptIn =
+  process.env.NEXT_PUBLIC_UI_BRIDGE_REMOTE_COMMANDS === "1";
+
 /**
  * Feature configuration for UI Bridge
  * Render logging is always enabled for state discovery.
@@ -112,7 +120,8 @@ interface UIBridgeWrapperProps {
   children: React.ReactNode;
   /**
    * Enable remote command listening for automation.
-   * Defaults to true in development.
+   * Defaults to true in development, or in production when
+   * NEXT_PUBLIC_UI_BRIDGE_REMOTE_COMMANDS=1 is set at build time.
    */
   enableRemoteCommands?: boolean;
 }
@@ -131,7 +140,7 @@ interface UIBridgeWrapperProps {
  */
 export function UIBridgeWrapper({
   children,
-  enableRemoteCommands = isDev,
+  enableRemoteCommands = isDev || remoteCommandsOptIn,
 }: UIBridgeWrapperProps) {
   const bufferRef = useRef<BridgeEvent[]>([]);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
