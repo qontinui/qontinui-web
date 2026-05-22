@@ -56,8 +56,7 @@ class PairCode(Base):
         String(6),
         primary_key=True,
         comment=(
-            "Uppercase 6-char code from the 32-char unambiguous alphabet "
-            "(no 0/O/1/I)."
+            "Uppercase 6-char code from the 32-char unambiguous alphabet (no 0/O/1/I)."
         ),
     )
 

@@ -130,7 +130,10 @@ async def redeem_pair_code_endpoint(
         if existing is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail={"code": "pair_code_not_found", "message": "Pair code not found."},
+                detail={
+                    "code": "pair_code_not_found",
+                    "message": "Pair code not found.",
+                },
             )
         if existing.redeemed_at is not None:
             raise HTTPException(

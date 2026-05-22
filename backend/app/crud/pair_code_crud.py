@@ -141,8 +141,7 @@ async def mint_pair_code(
             continue
 
     raise RuntimeError(
-        f"failed to mint pair code after {MAX_MINT_RETRIES} attempts: "
-        f"{last_exc}"
+        f"failed to mint pair code after {MAX_MINT_RETRIES} attempts: {last_exc}"
     )
 
 
@@ -167,11 +166,7 @@ async def get_redeemable(db: AsyncSession, code: str) -> PairCode | None:
     redeem attempts for the same code serialize on the row, and the
     second caller sees ``redeemed_at`` set and aborts.
     """
-    stmt = (
-        select(PairCode)
-        .where(PairCode.code == code)
-        .with_for_update()
-    )
+    stmt = select(PairCode).where(PairCode.code == code).with_for_update()
     row = (await db.execute(stmt)).scalar_one_or_none()
     if row is None:
         return None

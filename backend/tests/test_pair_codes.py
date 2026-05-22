@@ -244,17 +244,13 @@ def _build_test_app(
         mock_user.is_active = True
         mock_user.is_verified = True
         mock_user.is_superuser = False
-        test_app.dependency_overrides[get_current_active_user_async] = (
-            lambda: mock_user
-        )
+        test_app.dependency_overrides[get_current_active_user_async] = lambda: mock_user
 
     async def _db_override():
         yield db_session
 
     test_app.dependency_overrides[get_async_db] = _db_override
-    test_app.include_router(
-        pair_codes_router, prefix="/api/v1/devices/pair-codes"
-    )
+    test_app.include_router(pair_codes_router, prefix="/api/v1/devices/pair-codes")
     return test_app
 
 
@@ -306,9 +302,7 @@ class TestRedeemEndpoint:
             "exp": 1234567890,
         }
 
-        app = _build_test_app(
-            db_session=async_db_session, user_id=test_user.id
-        )
+        app = _build_test_app(db_session=async_db_session, user_id=test_user.id)
         transport = httpx.ASGITransport(app=app)
 
         # Capture the body coord sees so we can assert tenant_id pass-through.
@@ -403,9 +397,7 @@ class TestRedeemEndpoint:
             async_db_session, row=row, device_id=_FIXTURE_DEVICE_ID
         )
 
-        app = _build_test_app(
-            db_session=async_db_session, user_id=test_user.id
-        )
+        app = _build_test_app(db_session=async_db_session, user_id=test_user.id)
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(
             transport=transport, base_url="http://test"
@@ -435,9 +427,7 @@ class TestRedeemEndpoint:
         row.expires_at = datetime.now(UTC) - timedelta(seconds=1)
         await async_db_session.flush()
 
-        app = _build_test_app(
-            db_session=async_db_session, user_id=test_user.id
-        )
+        app = _build_test_app(db_session=async_db_session, user_id=test_user.id)
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(
             transport=transport, base_url="http://test"
@@ -479,6 +469,5 @@ class TestRedeemEndpoint:
                 },
             )
         assert resp.status_code == 404, (
-            f"redeem must be unauthenticated; got {resp.status_code}: "
-            f"{resp.text}"
+            f"redeem must be unauthenticated; got {resp.status_code}: {resp.text}"
         )

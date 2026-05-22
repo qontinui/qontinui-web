@@ -41,9 +41,7 @@ class PairCodeMintOut(BaseModel):
         ...,
         min_length=6,
         max_length=6,
-        description=(
-            "Uppercase 6-char code from the 32-char unambiguous alphabet."
-        ),
+        description=("Uppercase 6-char code from the 32-char unambiguous alphabet."),
     )
     expires_at: IsoDatetime = Field(
         ...,
@@ -65,9 +63,7 @@ class PairCodeRedeemIn(BaseModel):
 
     device_id: UUID = Field(
         ...,
-        description=(
-            "Stable device UUID the runner generated on first launch."
-        ),
+        description=("Stable device UUID the runner generated on first launch."),
     )
     hostname: str = Field(
         ...,
