@@ -4,9 +4,10 @@ import { useEffect, useState } from "react";
 import { useRunnerHealth, runnerApi, type DeviceInfo } from "@/lib/runner-api";
 import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
 import { useAuth } from "@/contexts/auth-context";
+import { useOrganization } from "@/contexts/organization-context";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, User, Wifi, Tag, ExternalLink } from "lucide-react";
+import { Loader2, User, Wifi, Tag, ExternalLink, Building2 } from "lucide-react";
 import Link from "next/link";
 
 export default function AccountSettingsPage() {
@@ -16,6 +17,7 @@ export default function AccountSettingsPage() {
     data: health,
   } = useRunnerHealth();
   const { user } = useAuth();
+  const { currentOrganization } = useOrganization();
   const [deviceInfo, setDeviceInfo] = useState<DeviceInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [runnerName, setRunnerName] = useState("");
@@ -68,17 +70,17 @@ export default function AccountSettingsPage() {
         </p>
       </div>
 
-      {/* User Info */}
-      {user && (
+      {/* Signed in as — identity + tenant */}
+      {user ? (
         <div className="rounded-lg border border-border">
           <div className="px-4 py-3 border-b border-border bg-muted/50">
-            <h3 className="text-sm font-medium">User Account</h3>
+            <h3 className="text-sm font-medium">Signed in as</h3>
             <p className="text-xs text-muted-foreground">
-              Your qontinui.io account information
+              Your account and active tenant
             </p>
           </div>
           <div className="p-4 space-y-3">
-            <div className="grid grid-cols-[120px_1fr] gap-y-2 text-sm">
+            <div className="grid grid-cols-[140px_1fr] gap-y-2 text-sm">
               <span
                 data-content-role="label"
                 data-content-label="email label"
@@ -127,6 +129,45 @@ export default function AccountSettingsPage() {
                   </span>
                 </>
               )}
+
+              <span
+                data-content-role="label"
+                data-content-label="tenant label"
+                className="text-muted-foreground flex items-center gap-1.5"
+              >
+                <Building2 className="size-3.5" />
+                Tenant
+              </span>
+              <span
+                data-content-role="body-text"
+                data-content-label="tenant name"
+                className="text-foreground"
+              >
+                {currentOrganization?.name ?? (
+                  <span className="text-muted-foreground italic">
+                    Personal (default)
+                  </span>
+                )}
+              </span>
+
+              <span
+                data-content-role="label"
+                data-content-label="tenant id label"
+                className="text-muted-foreground"
+              >
+                Tenant ID
+              </span>
+              <span
+                data-content-role="body-text"
+                data-content-label="tenant id value"
+                className="text-foreground font-mono text-xs truncate"
+              >
+                {currentOrganization?.id ?? (
+                  <span className="text-muted-foreground italic font-sans">
+                    Not assigned
+                  </span>
+                )}
+              </span>
             </div>
 
             <div className="pt-2 border-t border-border">
@@ -138,6 +179,25 @@ export default function AccountSettingsPage() {
                 Manage account in Profile
               </Link>
             </div>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-border">
+          <div className="px-4 py-3 border-b border-border bg-muted/50">
+            <h3 className="text-sm font-medium">Signed in as</h3>
+            <p className="text-xs text-muted-foreground">
+              You are not signed in
+            </p>
+          </div>
+          <div className="p-4 space-y-2 text-sm text-muted-foreground">
+            <p>Sign in to view your account info.</p>
+            <Link
+              href="/login"
+              className="inline-flex items-center gap-1.5 text-sm text-primary hover:text-primary/80 transition-colors"
+            >
+              <ExternalLink className="size-3.5" />
+              Go to sign in
+            </Link>
           </div>
         </div>
       )}
