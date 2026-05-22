@@ -88,3 +88,51 @@ class PairConfirmResponse(BaseModel):
     device_id: UUID
     token: str = Field(..., description="Coord-issued device-token JWT.")
     state: str = Field(..., description="Echoed pairing-flow nonce.")
+
+
+class PairCliRequest(BaseModel):
+    """Request body for ``POST /api/v1/devices/pair-cli``.
+
+    Headless analogue of the browser-mediated pair-confirm flow: the
+    runner authenticates with its existing user access token (no browser
+    redirect) and asks the web backend to mint a device-token JWT via
+    coord. The backend resolves the calling user's ``tenant_id`` and
+    proxies the request to coord's ``POST /coord/devices/pair-cli``.
+
+    The runner sends the same ``(device_id, hostname, name)`` triple it
+    used to send directly to coord; ``tenant_id`` and ``user_id`` are
+    injected server-side so the runner never has to know about tenancy.
+    """
+
+    device_id: UUID = Field(
+        ...,
+        description="Stable device UUID the runner generated on first launch.",
+    )
+    hostname: str = Field(
+        ...,
+        min_length=1,
+        max_length=255,
+        description="Runner's hostname (used for display + audit).",
+    )
+    name: str | None = Field(
+        default=None,
+        max_length=255,
+        description="Optional display name; defaults to hostname server-side.",
+    )
+
+
+class PairCliResponse(BaseModel):
+    """Response body for ``POST /api/v1/devices/pair-cli``.
+
+    Mirrors :class:`PairConfirmResponse` minus the ``state`` echo
+    (headless flow has no pairing nonce), plus a ``user_id`` echo so the
+    runner-side ``PairCompleteResponse`` decoder (which has been
+    ``{token, user_id, device_id?}`` shaped since the unify-devices
+    migration) doesn't need a new variant. The runner stores the
+    returned ``token`` as its device-JWT and uses it on the
+    ``/api/v1/devices/ws`` connection.
+    """
+
+    device_id: UUID
+    token: str = Field(..., description="Coord-issued device-token JWT.")
+    user_id: UUID = Field(..., description="Calling user's UUID, echoed for the runner's decoder.")

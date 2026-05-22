@@ -51,6 +51,8 @@ from app.schemas.device import (
     DeviceConnectionResponse,
     DispatchDeviceRequest,
     DispatchDeviceResponse,
+    PairCliRequest,
+    PairCliResponse,
     PairConfirmRequest,
     PairConfirmResponse,
 )
@@ -341,6 +343,121 @@ async def pair_confirm(
         device_id=device_uuid,
         token=str(coord_token),
         state=payload.state,
+    )
+
+
+@router.post(
+    "/pair-cli",
+    response_model=PairCliResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def pair_cli(
+    *,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(get_current_active_user_async),
+    payload: PairCliRequest,
+) -> Any:
+    """Headless analogue of :func:`pair_confirm`.
+
+    The runner POSTs here with its existing user access-token in
+    ``Authorization: Bearer …`` (the same token it just exchanged via
+    ``/api/v1/auth/jwt/login``) and the ``(device_id, hostname, name)``
+    triple it already knows. The backend resolves the calling user's
+    ``tenant_id`` via :func:`resolve_tenant_for_user` and forwards to
+    coord's ``POST /coord/devices/pair-cli`` with ``tenant_id`` +
+    ``user_id`` added.
+
+    This replaces the runner's previous direct call to coord, which
+    omitted ``tenant_id`` and started getting rejected with 422 after
+    coord's Phase 2 default-tenant-propagation made it required (plan
+    ``D:/qontinui-root/plans/2026-05-20-default-tenant-propagation.md``).
+    Keeping tenant resolution server-side means runners stay agnostic of
+    tenancy — the same architecture pair-confirm has used since Wave 3c.
+    """
+    if not strategy_client.enabled:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Coord integration disabled (COORD_ADMIN_SECRET unset); "
+                "device pairing unavailable."
+            ),
+        )
+
+    tenant_id = await resolve_tenant_for_user(current_user, db)
+
+    coord_url = settings.COORD_URL.rstrip("/")
+    headers = await strategy_client._headers(str(current_user.id))  # noqa: SLF001
+    body: dict[str, Any] = {
+        "device_id": str(payload.device_id),
+        "hostname": payload.hostname,
+        "name": payload.name or payload.hostname,
+        "user_id": str(current_user.id),
+        "tenant_id": str(tenant_id),
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                f"{coord_url}/coord/devices/pair-cli",
+                headers=headers,
+                json=body,
+            )
+    except httpx.HTTPError as exc:
+        logger.error(
+            "pair_cli_coord_transport_failed",
+            user_id=str(current_user.id),
+            error=str(exc),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Coord unreachable.",
+        ) from exc
+
+    if resp.status_code not in (200, 201):
+        logger.warning(
+            "pair_cli_coord_rejected",
+            user_id=str(current_user.id),
+            status=resp.status_code,
+            body=resp.text[:500],
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"coord_status": resp.status_code, "coord_body": resp.text[:500]},
+        )
+
+    try:
+        coord_body = resp.json()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Coord pair-cli returned non-JSON.",
+        ) from exc
+
+    coord_device_id = coord_body.get("device_id")
+    coord_token = coord_body.get("token")
+    if not coord_device_id or not coord_token:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Coord pair-cli response missing device_id/token.",
+        )
+
+    try:
+        device_uuid = UUID(str(coord_device_id))
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Coord pair-cli returned malformed device_id.",
+        ) from exc
+
+    logger.info(
+        "pair_cli_completed",
+        user_id=str(current_user.id),
+        device_id=str(device_uuid),
+    )
+    return PairCliResponse(
+        device_id=device_uuid,
+        token=str(coord_token),
+        user_id=current_user.id,
     )
 
 
