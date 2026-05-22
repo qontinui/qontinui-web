@@ -88,6 +88,7 @@ from app.models.organization import (
     TeamMember,
     TeamRole,
 )
+from app.models.pair_code import PairCode
 from app.models.path_discovery import PathDiscovery
 from app.models.phase_result import PhaseResult
 from app.models.project import Project
@@ -310,6 +311,8 @@ __all__ = [
     "DeviceConnection",
     # Unified device registry (coord.devices)
     "Device",
+    # Single-use pair codes (auth.pair_codes — 5-min TTL paste-pair)
+    "PairCode",
     # Scheduled Workflow Runs (cron-driven dispatch — Phase 3D)
     "ScheduledWorkflowRun",
     # Phase Results (server-mode runner phase-completion records)
