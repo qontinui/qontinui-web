@@ -35,9 +35,10 @@ import type {
   VariableChangesResponse,
   WorkflowVariable,
 } from "@/types/workflow-variables";
+import { httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
 
-// Use empty string for relative URLs that go through Next.js proxy
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
+const API_BASE_URL = ApiConfig.API_BASE_URL;
 
 /**
  * Query keys for organizing cache
@@ -56,14 +57,8 @@ export const workflowVariableKeys = {
  * Fetch current variables for a workflow run
  */
 async function fetchVariables(runId: string): Promise<VariablesResponse> {
-  const response = await fetch(
-    `${API_BASE_URL}/api/v1/workflow-runs/${runId}/variables`,
-    {
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-      },
-    }
+  const response = await httpClient.fetch(
+    `${API_BASE_URL}/api/v1/workflow-runs/${runId}/variables`
   );
 
   if (!response.ok) {
@@ -79,14 +74,8 @@ async function fetchVariables(runId: string): Promise<VariablesResponse> {
 async function fetchVariableHistory(
   runId: string
 ): Promise<VariableChangesResponse> {
-  const response = await fetch(
-    `${API_BASE_URL}/api/v1/workflow-runs/${runId}/variable-changes`,
-    {
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-      },
-    }
+  const response = await httpClient.fetch(
+    `${API_BASE_URL}/api/v1/workflow-runs/${runId}/variable-changes`
   );
 
   if (!response.ok) {

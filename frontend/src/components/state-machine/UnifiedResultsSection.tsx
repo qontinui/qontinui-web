@@ -54,8 +54,10 @@ import {
   SOURCE_TYPE_COLORS,
 } from "@/types/state-machine";
 import { StateMachineViewer } from "./StateMachineViewer";
+import { httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE_URL = ApiConfig.API_BASE_URL;
 
 interface UnifiedResultsSectionProps {
   results: StateDiscoveryResultSummary[];
@@ -107,9 +109,8 @@ export function UnifiedResultsSection({
 
     setIsExporting(true);
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/v1/projects/${projectId}/state-discovery-results/${selectedResult.id}/export`,
-        { credentials: "include" }
+      const response = await httpClient.fetch(
+        `${API_BASE_URL}/api/v1/projects/${projectId}/state-discovery-results/${selectedResult.id}/export`
       );
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);

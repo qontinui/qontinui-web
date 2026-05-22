@@ -19,12 +19,14 @@
  */
 
 import { useEffect, useState } from "react";
+import { httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
 
 export const HEARTBEAT_INTERVAL_MS = 30_000;
 
 /** Path on the web backend. The proxy in
  *  `backend/app/api/v1/endpoints/strategy.py` forwards to coord. */
-const HEARTBEAT_PATH = "/api/v1/strategy/presence/heartbeat";
+const HEARTBEAT_PATH = `${ApiConfig.API_BASE_URL}/api/v1/strategy/presence/heartbeat`;
 
 export interface HeartbeatResponse {
   doc_id: string;
@@ -40,10 +42,8 @@ export interface HeartbeatResponse {
 export async function sendHeartbeat(
   docName: string,
 ): Promise<HeartbeatResponse | null> {
-  const res = await fetch(HEARTBEAT_PATH, {
+  const res = await httpClient.fetch(HEARTBEAT_PATH, {
     method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ doc_name: docName }),
   });
   if (!res.ok) return null;

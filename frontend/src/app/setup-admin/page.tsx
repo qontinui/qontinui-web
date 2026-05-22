@@ -3,6 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
 import {
   Card,
   CardContent,
@@ -20,11 +22,10 @@ export default function SetupAdmin() {
     setResult("");
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-      const response = await fetch(`${apiUrl}/api/v1/users/me/claim-admin`, {
-        method: "POST",
-        credentials: "include",
-      });
+      const response = await httpClient.fetch(
+        `${ApiConfig.API_BASE_URL}/api/v1/users/me/claim-admin`,
+        { method: "POST" }
+      );
 
       const data = await response.json();
 
