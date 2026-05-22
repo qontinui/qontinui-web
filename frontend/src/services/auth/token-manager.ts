@@ -38,6 +38,16 @@ export class TokenManager {
   }
 
   /**
+   * Persist the authentication flag without setting tokens.
+   *
+   * Used by cookie-based session restore when a valid HttpOnly-cookie session
+   * is confirmed but no in-memory tokens exist (e.g. after a page refresh).
+   */
+  setAuthenticated(): void {
+    this.storage.setAuthenticated();
+  }
+
+  /**
    * Clear all tokens
    */
   clearTokens(): void {

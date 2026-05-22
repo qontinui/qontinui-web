@@ -41,6 +41,19 @@ export class TokenStorage {
   }
 
   /**
+   * Set the authentication flag in localStorage without touching tokens.
+   *
+   * Used by cookie-based session restore: when valid HttpOnly cookies
+   * establish a session on a fresh load (no in-memory tokens), we persist
+   * this flag so subsequent loads take the fast path. Mirrors the flag write
+   * in saveAccessToken() but does not require an access token.
+   */
+  setAuthenticated(): void {
+    if (typeof window === "undefined") return;
+    localStorage.setItem(this.AUTHENTICATED_KEY, "true");
+  }
+
+  /**
    * Save refresh token in memory for token refresh requests.
    */
   saveRefreshToken(token?: string): void {
