@@ -11,7 +11,8 @@ import React, {
 } from "react";
 import type { Runner } from "@qontinui/shared-types";
 import type { RunnerStatusEvent } from "@qontinui/shared-types/tauri-events";
-import { runnerService } from "@/services/service-factory";
+import { runnerService, httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
 import { createLogger } from "@/lib/logger";
 
 const log = createLogger("RealtimeConnections");
@@ -152,9 +153,9 @@ export function RealtimeConnectionsProvider({
     // Get access token from the ws-token API route (reads HttpOnly cookie server-side)
     let token: string | null = null;
     try {
-      const response = await fetch("/api/v1/ws-token", {
-        credentials: "include",
-      });
+      const response = await httpClient.fetch(
+        `${ApiConfig.API_BASE_URL}/api/v1/ws-token`
+      );
       if (response.ok) {
         const data = await response.json();
         token = data.token || null;

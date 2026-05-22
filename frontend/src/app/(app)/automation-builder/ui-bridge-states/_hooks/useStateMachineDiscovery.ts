@@ -2,7 +2,11 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { toast } from "sonner";
+import { httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
 import type { UIBridgeDiscoveryResult } from "../../extraction/_types";
+
+const API = `${ApiConfig.API_BASE_URL}/api/v1`;
 
 interface DiscoverAndSaveResponse {
   config: {
@@ -124,12 +128,10 @@ export function useStateMachineDiscovery(projectId: string | null) {
 
     setIsDiscovering(true);
     try {
-      const res = await fetch(
-        "/api/v1/state-discovery/ui-bridge/discover-states",
+      const res = await httpClient.fetch(
+        `${API}/state-discovery/ui-bridge/discover-states`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
           body: JSON.stringify({
             renders,
             include_html_ids: true,
@@ -172,12 +174,10 @@ export function useStateMachineDiscovery(projectId: string | null) {
 
     setIsSaving(true);
     try {
-      const res = await fetch(
-        `/api/v1/projects/${projectId}/ui-bridge-discover`,
+      const res = await httpClient.fetch(
+        `${API}/projects/${projectId}/ui-bridge-discover`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
           body: JSON.stringify({
             renders,
             include_html_ids: true,

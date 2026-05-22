@@ -3,7 +3,10 @@ import { toast } from "sonner";
 import type { ExtractionState } from "./useExtractionState";
 import type { DiscoveredState, SavedState } from "../_types";
 import { createLogger } from "@/lib/logger";
+import { httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
 const logger = createLogger("UseDiscoveryConfig");
+const API = `${ApiConfig.API_BASE_URL}/api/v1`;
 
 interface UseDiscoveryConfigArgs {
   projectId: string | null;
@@ -26,9 +29,8 @@ export function useDiscoveryConfig({
 
     stateRef.current.setIsLoadingConfigs(true);
     try {
-      const response = await fetch(
-        `/api/v1/projects/${projectId}/ui-bridge-configs`,
-        { credentials: "include" }
+      const response = await httpClient.fetch(
+        `${API}/projects/${projectId}/ui-bridge-configs`
       );
 
       if (response.ok) {
@@ -56,9 +58,8 @@ export function useDiscoveryConfig({
 
       stateRef.current.setIsLoadingConfigs(true);
       try {
-        const response = await fetch(
-          `/api/v1/projects/${projectId}/ui-bridge-configs/${configId}`,
-          { credentials: "include" }
+        const response = await httpClient.fetch(
+          `${API}/projects/${projectId}/ui-bridge-configs/${configId}`
         );
 
         if (!response.ok) {
@@ -122,12 +123,10 @@ export function useDiscoveryConfig({
 
     stateRef.current.setIsDiscovering(true);
     try {
-      const response = await fetch(
-        "/api/v1/state-discovery/ui-bridge/discover-states",
+      const response = await httpClient.fetch(
+        `${API}/state-discovery/ui-bridge/discover-states`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
           body: JSON.stringify({
             renders: rendersToAnalyze,
             include_html_ids: false,
@@ -181,12 +180,10 @@ export function useDiscoveryConfig({
 
     currentState.setIsSaving(true);
     try {
-      const response = await fetch(
-        `/api/v1/projects/${projectId}/ui-bridge-discover`,
+      const response = await httpClient.fetch(
+        `${API}/projects/${projectId}/ui-bridge-discover`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
           body: JSON.stringify({
             config_name: currentState.configName,
             renders: currentState.rendersToAnalyze,
@@ -255,12 +252,10 @@ export function useDiscoveryConfig({
       const { currentSavedConfigId, stateUuidMap } = stateRef.current;
       if (currentSavedConfigId && projectId && stateUuidMap[stateId]) {
         try {
-          await fetch(
-            `/api/v1/projects/${projectId}/ui-bridge-configs/${currentSavedConfigId}/states/${stateUuidMap[stateId]}`,
+          await httpClient.fetch(
+            `${API}/projects/${projectId}/ui-bridge-configs/${currentSavedConfigId}/states/${stateUuidMap[stateId]}`,
             {
               method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              credentials: "include",
               body: JSON.stringify({ description }),
             }
           );

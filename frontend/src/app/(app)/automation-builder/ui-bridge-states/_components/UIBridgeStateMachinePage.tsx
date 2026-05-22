@@ -22,6 +22,8 @@ import {
   ArrowRightLeft,
 } from "lucide-react";
 import { toast } from "sonner";
+import { httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
 import { useUIBridgeStateMachine } from "../_hooks/useUIBridgeStateMachine";
 import { useUIBridgeTransitions } from "../_hooks/useUIBridgeTransitions";
 import { useExportStateMachine } from "../_hooks/useExportStateMachine";
@@ -113,12 +115,10 @@ export function UIBridgeStateMachinePage() {
     async (stateId: string, updates: StateMachineStateUpdate) => {
       if (!sm.projectId || !sm.selectedConfigId) return;
       try {
-        const res = await fetch(
-          `/api/v1/projects/${sm.projectId}/ui-bridge-configs/${sm.selectedConfigId}/states/${stateId}`,
+        const res = await httpClient.fetch(
+          `${ApiConfig.API_BASE_URL}/api/v1/projects/${sm.projectId}/ui-bridge-configs/${sm.selectedConfigId}/states/${stateId}`,
           {
             method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
             body: JSON.stringify(updates),
           }
         );

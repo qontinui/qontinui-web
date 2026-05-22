@@ -1,9 +1,6 @@
-import { authService } from "@/services/service-factory";
+import { authService, tokenManager } from "@/services/service-factory";
 import { TokenValidator } from "@/services/auth/token-validator";
 import { csrfService } from "@/services/csrf-service";
-import { createLogger } from "@/lib/logger";
-
-const log = createLogger("ApiClient");
 import type {
   User,
   Project,
@@ -232,11 +229,17 @@ class ApiClient {
     // - This prevents race conditions where both frontend and backend try to refresh simultaneously
     // - Backend sets new tokens via X-New-Access-Token and X-New-Refresh-Token headers
     //
-    // HttpOnly Cookie Security:
-    // - Tokens are stored in HttpOnly cookies (XSS protection)
-    // - Browser automatically sends cookies with credentials: 'include'
-    // - No Authorization header needed
-    log.debug("Using HttpOnly cookie authentication");
+    // Dual-mode auth:
+    // - Local (same-origin backend): HttpOnly cookies carry the session;
+    //   Authorization header is harmless extra info.
+    // - Remote (NEXT_PUBLIC_API_URL points off-localhost, e.g. AWS staging):
+    //   browser refuses to attach *.qontinui.io cookies to localhost:3001
+    //   requests, so the in-memory + sessionStorage Bearer token is the only
+    //   working auth path. Same shape as services/http-client.ts.
+    const accessToken = tokenManager.getAccessToken();
+    if (accessToken) {
+      headers["Authorization"] = `Bearer ${accessToken}`;
+    }
 
     // Add CSRF token for state-changing requests
     const csrfToken = csrfService.getToken();

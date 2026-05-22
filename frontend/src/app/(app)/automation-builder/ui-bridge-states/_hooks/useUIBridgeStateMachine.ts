@@ -3,7 +3,11 @@
 import { useState, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import { useAutomationStore } from "@/stores/automation";
+import { httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
 import type { ConfigWithStatesAndTransitions } from "../_types";
+
+const API = `${ApiConfig.API_BASE_URL}/api/v1`;
 
 interface SavedConfig {
   id: string;
@@ -31,11 +35,8 @@ export function useUIBridgeStateMachine() {
   const loadConfigs = useCallback(async () => {
     if (!projectId) return;
     try {
-      const res = await fetch(
-        `/api/v1/projects/${projectId}/ui-bridge-configs`,
-        {
-          credentials: "include",
-        }
+      const res = await httpClient.fetch(
+        `${API}/projects/${projectId}/ui-bridge-configs`
       );
       if (res.ok) {
         const data = await res.json();
@@ -52,9 +53,8 @@ export function useUIBridgeStateMachine() {
       if (!projectId) return;
       setIsLoading(true);
       try {
-        const res = await fetch(
-          `/api/v1/projects/${projectId}/ui-bridge-configs/${configId}/full`,
-          { credentials: "include" }
+        const res = await httpClient.fetch(
+          `${API}/projects/${projectId}/ui-bridge-configs/${configId}/full`
         );
         if (res.ok) {
           const data: ConfigWithStatesAndTransitions = await res.json();

@@ -10,11 +10,13 @@ import React, {
   useSyncExternalStore,
 } from "react";
 import { useAuth } from "@/contexts/auth-context";
+import { httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
 
 export type ProductMode = "ai" | "visual";
 
 const STORAGE_KEY = "qontinui-product-mode";
-const API_BASE = "/api/v1/users/me/preferences";
+const API_BASE = `${ApiConfig.API_BASE_URL}/api/v1/users/me/preferences`;
 
 interface ProductModeContextValue {
   mode: ProductMode;
@@ -31,10 +33,7 @@ async function fetchProductModePreference(
   signal: AbortSignal
 ): Promise<ProductMode | null> {
   try {
-    const res = await fetch(API_BASE, {
-      credentials: "include",
-      signal,
-    });
+    const res = await httpClient.fetch(API_BASE, { signal });
     if (!res.ok) return null;
     const prefs = await res.json();
     if (prefs?.product_mode === "ai" || prefs?.product_mode === "visual") {
@@ -109,14 +108,14 @@ export function ProductModeProvider({
     localStorage.setItem(STORAGE_KEY, newMode);
 
     // Persist to server in background
-    fetch(API_BASE, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ product_mode: newMode }),
-    }).catch(() => {
-      // Silently ignore — localStorage is the fallback
-    });
+    httpClient
+      .fetch(API_BASE, {
+        method: "PUT",
+        body: JSON.stringify({ product_mode: newMode }),
+      })
+      .catch(() => {
+        // Silently ignore — localStorage is the fallback
+      });
   }, []);
 
   return (

@@ -2,14 +2,21 @@
  * Strategy Collaboration API (Phase 1 + 2.3).
  *
  * Proxies to the backend `/api/v1/strategy/*`, which forwards to
- * qontinui-coord behind the service-account bridge. Cookie auth
- * (relative fetch) — same pattern as the other domain api modules.
+ * qontinui-coord behind the service-account bridge. Goes through
+ * httpClient.fetch so Authorization: Bearer is attached in remote/staging
+ * mode (cross-origin cookies don't work there) while local cookie auth
+ * keeps working.
  *
  * Phase 1: read-only doc proxy
  * Phase 2.3: thread/post/mention CRUD + @mention user lookups
  *
  * Real-time refresh (WS subscriptions) is Phase 2.4 — not wired here.
  */
+
+import { httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
+
+const API = `${ApiConfig.API_BASE_URL}/api/v1`;
 
 export interface StrategyProvenance {
   commit_sha: string;
@@ -90,34 +97,29 @@ async function unwrap<T>(response: Response): Promise<T> {
 
 const jsonInit = (method: string, body?: unknown): RequestInit => ({
   method,
-  credentials: "include",
-  headers: { "Content-Type": "application/json" },
   body: body === undefined ? undefined : JSON.stringify(body),
 });
 
 // --- Phase 1 ---------------------------------------------------------------
 
 export async function listStrategyDocs(): Promise<StrategyDocSummary[]> {
-  const res = await fetch("/api/v1/strategy/docs", {
-    credentials: "include",
-  });
+  const res = await httpClient.fetch(`${API}/strategy/docs`);
   const body = await unwrap<{ docs: StrategyDocSummary[] }>(res);
   return body.docs;
 }
 
 export async function getStrategyDoc(name: string): Promise<StrategyDoc> {
-  const res = await fetch(`/api/v1/strategy/docs/${encodeURIComponent(name)}`, {
-    credentials: "include",
-  });
+  const res = await httpClient.fetch(
+    `${API}/strategy/docs/${encodeURIComponent(name)}`
+  );
   return unwrap<StrategyDoc>(res);
 }
 
 // --- Phase 2.3 threads + posts --------------------------------------------
 
 export async function listThreads(docName: string): Promise<StrategyThread[]> {
-  const res = await fetch(
-    `/api/v1/strategy/docs/${encodeURIComponent(docName)}/threads`,
-    { credentials: "include" }
+  const res = await httpClient.fetch(
+    `${API}/strategy/docs/${encodeURIComponent(docName)}/threads`
   );
   const body = await unwrap<
     | { items: StrategyThread[] }
@@ -138,8 +140,8 @@ export async function createThread(
   docName: string,
   payload: { title: string; anchor?: string | null; body_markdown: string }
 ): Promise<StrategyThreadDetail> {
-  const res = await fetch(
-    `/api/v1/strategy/docs/${encodeURIComponent(docName)}/threads`,
+  const res = await httpClient.fetch(
+    `${API}/strategy/docs/${encodeURIComponent(docName)}/threads`,
     jsonInit("POST", payload)
   );
   return unwrap<StrategyThreadDetail>(res);
@@ -148,9 +150,8 @@ export async function createThread(
 export async function getThread(
   threadId: string
 ): Promise<StrategyThreadDetail> {
-  const res = await fetch(
-    `/api/v1/strategy/threads/${encodeURIComponent(threadId)}`,
-    { credentials: "include" }
+  const res = await httpClient.fetch(
+    `${API}/strategy/threads/${encodeURIComponent(threadId)}`
   );
   return unwrap<StrategyThreadDetail>(res);
 }
@@ -159,8 +160,8 @@ export async function createPost(
   threadId: string,
   payload: { body_markdown: string; parent_post_id?: string | null }
 ): Promise<StrategyPost> {
-  const res = await fetch(
-    `/api/v1/strategy/threads/${encodeURIComponent(threadId)}/posts`,
+  const res = await httpClient.fetch(
+    `${API}/strategy/threads/${encodeURIComponent(threadId)}/posts`,
     jsonInit("POST", payload)
   );
   return unwrap<StrategyPost>(res);
@@ -170,17 +171,17 @@ export async function editPost(
   postId: string,
   body_markdown: string
 ): Promise<StrategyPost> {
-  const res = await fetch(
-    `/api/v1/strategy/posts/${encodeURIComponent(postId)}`,
+  const res = await httpClient.fetch(
+    `${API}/strategy/posts/${encodeURIComponent(postId)}`,
     jsonInit("PATCH", { body_markdown })
   );
   return unwrap<StrategyPost>(res);
 }
 
 export async function softDeletePost(postId: string): Promise<void> {
-  const res = await fetch(
-    `/api/v1/strategy/posts/${encodeURIComponent(postId)}`,
-    { method: "DELETE", credentials: "include" }
+  const res = await httpClient.fetch(
+    `${API}/strategy/posts/${encodeURIComponent(postId)}`,
+    { method: "DELETE" }
   );
   if (!res.ok) {
     let detail = `Request failed (${res.status})`;
@@ -195,8 +196,8 @@ export async function softDeletePost(postId: string): Promise<void> {
 }
 
 export async function resolveThread(threadId: string): Promise<StrategyThread> {
-  const res = await fetch(
-    `/api/v1/strategy/threads/${encodeURIComponent(threadId)}/resolve`,
+  const res = await httpClient.fetch(
+    `${API}/strategy/threads/${encodeURIComponent(threadId)}/resolve`,
     jsonInit("POST")
   );
   return unwrap<StrategyThread>(res);
@@ -205,9 +206,7 @@ export async function resolveThread(threadId: string): Promise<StrategyThread> {
 // --- Phase 2.3 mentions ---------------------------------------------------
 
 export async function listUnreadMentions(): Promise<StrategyMention[]> {
-  const res = await fetch("/api/v1/strategy/mentions/unread", {
-    credentials: "include",
-  });
+  const res = await httpClient.fetch(`${API}/strategy/mentions/unread`);
   const body = await unwrap<
     | { items: StrategyMention[] }
     | { mentions: StrategyMention[] }
@@ -221,8 +220,8 @@ export async function listUnreadMentions(): Promise<StrategyMention[]> {
 }
 
 export async function markMentionRead(mentionId: string): Promise<void> {
-  const res = await fetch(
-    `/api/v1/strategy/mentions/${encodeURIComponent(mentionId)}/mark-read`,
+  const res = await httpClient.fetch(
+    `${API}/strategy/mentions/${encodeURIComponent(mentionId)}/mark-read`,
     jsonInit("POST")
   );
   if (!res.ok) {
@@ -248,8 +247,8 @@ export async function markMentionRead(mentionId: string): Promise<void> {
  * naturally idempotent).
  */
 export async function markPostMentionsRead(postId: string): Promise<number> {
-  const res = await fetch(
-    `/api/v1/strategy/posts/${encodeURIComponent(postId)}/mentions/mark-read`,
+  const res = await httpClient.fetch(
+    `${API}/strategy/posts/${encodeURIComponent(postId)}/mentions/mark-read`,
     jsonInit("POST")
   );
   const body = await unwrap<{ post_id: string; marked_read: number }>(res);
@@ -263,9 +262,7 @@ export async function searchUsers(
   limit = 10
 ): Promise<UserSummary[]> {
   const params = new URLSearchParams({ q: query, limit: String(limit) });
-  const res = await fetch(`/api/v1/users/search?${params.toString()}`, {
-    credentials: "include",
-  });
+  const res = await httpClient.fetch(`${API}/users/search?${params.toString()}`);
   return unwrap<UserSummary[]>(res);
 }
 
@@ -273,8 +270,6 @@ export async function lookupUsers(ids: string[]): Promise<UserSummary[]> {
   const unique = Array.from(new Set(ids)).filter(Boolean);
   if (unique.length === 0) return [];
   const params = new URLSearchParams({ ids: unique.join(",") });
-  const res = await fetch(`/api/v1/users/lookup?${params.toString()}`, {
-    credentials: "include",
-  });
+  const res = await httpClient.fetch(`${API}/users/lookup?${params.toString()}`);
   return unwrap<UserSummary[]>(res);
 }

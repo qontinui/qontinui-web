@@ -3,6 +3,8 @@
 import { useState, useCallback } from "react";
 import { toast } from "sonner";
 import { useAutomationStore } from "@/stores/automation";
+import { httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
 import type { StateMachineExportFormat } from "../_types";
 
 const RUNNER_URL = "http://localhost:9876";
@@ -17,9 +19,8 @@ export function useExportStateMachine(configId: string | null) {
       if (!projectId || !configId) return null;
       setIsExporting(true);
       try {
-        const res = await fetch(
-          `/api/v1/projects/${projectId}/ui-bridge-configs/${configId}/export`,
-          { credentials: "include" }
+        const res = await httpClient.fetch(
+          `${ApiConfig.API_BASE_URL}/api/v1/projects/${projectId}/ui-bridge-configs/${configId}/export`
         );
         if (res.ok) {
           const data: StateMachineExportFormat = await res.json();

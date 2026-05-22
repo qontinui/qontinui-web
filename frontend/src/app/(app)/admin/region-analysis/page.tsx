@@ -10,6 +10,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { toast } from "sonner";
+import { httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -86,10 +88,11 @@ export default function RegionAnalysisPage() {
   const loadAnnotationSets = async () => {
     try {
       setIsLoadingSets(true);
-      // Use relative URL through Next.js proxy with credentials for cookie auth
-      const response = await fetch("/api/v1/annotations/sets", {
-        credentials: "include",
-      });
+      // httpClient.fetch sends Authorization Bearer + credentials; works
+      // both cookie-auth (local) and Bearer (remote/staging) modes.
+      const response = await httpClient.fetch(
+        `${ApiConfig.API_BASE_URL}/api/v1/annotations/sets`
+      );
 
       if (!response.ok) {
         throw new Error("Failed to load annotation sets");

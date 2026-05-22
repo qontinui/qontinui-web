@@ -57,6 +57,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ApiConfig } from "@/services/api-config";
+import { httpClient } from "@/services/service-factory";
 
 const SESSIONS_POLL_MS = 10_000;
 const LIVE_LINEAGE_POLL_MS = 5_000;
@@ -252,9 +253,7 @@ function LineagePanel({
 
   const fetchData = useCallback(async () => {
     try {
-      const res = await fetch(`${API}/${sessionId}/lineage`, {
-        credentials: "include",
-      });
+      const res = await httpClient.fetch(`${API}/${sessionId}/lineage`);
       if (!res.ok) {
         const body = await res.text();
         throw new Error(`HTTP ${res.status}: ${body.slice(0, 120)}`);
@@ -523,7 +522,7 @@ export default function AgentSessionsDashboard() {
       if (filters.since.trim())
         url.searchParams.set("since", filters.since.trim());
       url.searchParams.set("limit", "200");
-      const res = await fetch(url.toString(), { credentials: "include" });
+      const res = await httpClient.fetch(url.toString());
       if (!res.ok) {
         const body = await res.text();
         throw new Error(`HTTP ${res.status}: ${body.slice(0, 120)}`);

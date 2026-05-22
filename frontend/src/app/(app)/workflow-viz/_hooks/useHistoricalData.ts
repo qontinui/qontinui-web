@@ -1,9 +1,11 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
 import type { ImageRecognitionEvent } from "@/hooks/useExecutionEvents";
 import type { TestRunSummary, HistoricalResult } from "../types";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE_URL = ApiConfig.API_BASE_URL;
 
 export function useHistoricalData(
   projectId: string | null | undefined,
@@ -24,9 +26,8 @@ export function useHistoricalData(
 
     setLoadingTestRuns(true);
     try {
-      const res = await fetch(
-        `${API_BASE_URL}/api/v1/testing/runs?project_id=${projectId}&limit=50&sort_order=desc`,
-        { credentials: "include" }
+      const res = await httpClient.fetch(
+        `${API_BASE_URL}/api/v1/testing/runs?project_id=${projectId}&limit=50&sort_order=desc`
       );
       if (!res.ok) throw new Error("Failed to fetch test runs");
       const data = (await res.json()) as {
@@ -52,9 +53,8 @@ export function useHistoricalData(
     useQuery({
       queryKey: ["historical-results", selectedTestRunId],
       queryFn: async () => {
-        const res = await fetch(
-          `${API_BASE_URL}/api/v1/historical/test-run/${selectedTestRunId}`,
-          { credentials: "include" }
+        const res = await httpClient.fetch(
+          `${API_BASE_URL}/api/v1/historical/test-run/${selectedTestRunId}`
         );
         if (!res.ok) throw new Error("Failed to fetch historical results");
         const data = (await res.json()) as {
