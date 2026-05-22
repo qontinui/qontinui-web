@@ -391,7 +391,7 @@ jobs:
           alembic upgrade heads
 
       # The auth.setup.ts Playwright fixture logs in as the canonical dev
-      # user (josh@qontinui.io / dev123 — see frontend/tests/e2e/test-credentials.ts).
+      # user defined in dev-credentials.json (see frontend/tests/e2e/test-credentials.ts).
       # Migrations only create empty tables; nothing else seeds users in CI.
       # create_admin.py is idempotent and pulls credentials from the same
       # source of truth (app.core.test_credentials.get_admin_credentials).

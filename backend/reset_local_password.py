@@ -51,7 +51,11 @@ try:
         for email in users_to_reset:
             result = conn.execute(
                 text(
-                    "UPDATE users SET hashed_password = :password WHERE email = :email RETURNING username, email"
+                    # Schema-qualified: this codebase keeps users in the `auth`
+                    # schema (see forbid-public-schema CI), not `public`. An
+                    # unqualified `UPDATE users` resolves via search_path to
+                    # public.users and fails with UndefinedTable.
+                    "UPDATE auth.users SET hashed_password = :password WHERE email = :email RETURNING username, email"
                 ),
                 {"password": hashed_password, "email": email},
             )

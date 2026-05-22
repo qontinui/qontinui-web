@@ -1,8 +1,9 @@
 """
 Seed the dev test user for E2E tests.
 
-Playwright's `auth.setup.ts` logs in as `josh@qontinui.io` / `dev123`
-(see `frontend/tests/e2e/test-credentials.ts`). On a fresh CI database
+Playwright's `auth.setup.ts` logs in as the dev user defined in
+`dev-credentials.json` (the cross-repo single source of truth; see
+`frontend/tests/e2e/test-credentials.ts`). On a fresh CI database
 the `users` table is empty, so the login 401s and every downstream
 test that depends on `[setup]` fails.
 
