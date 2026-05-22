@@ -1,7 +1,7 @@
 """workflow mirror — project.workflows table
 
 Revision ID: workflow_mirror_2026_05_23
-Revises: coord_session_substrate
+Revises: pair_codes_table
 Create Date: 2026-05-23
 
 Phase 3 of the
@@ -33,7 +33,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "workflow_mirror_2026_05_23"
-down_revision: str = "coord_session_substrate"
+down_revision: str = "pair_codes_table"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
