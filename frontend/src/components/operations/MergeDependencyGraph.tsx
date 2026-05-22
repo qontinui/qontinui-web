@@ -61,6 +61,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertTriangle, GitBranch, RefreshCw } from "lucide-react";
 import { createLogger } from "@/lib/logger";
+import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_API } from "./utils";
 
 const log = createLogger("MergeDependencyGraph");
@@ -268,9 +269,7 @@ export function MergeDependencyGraph({
     setError(null);
     try {
       const params = new URLSearchParams({ repo, pr: String(prNum) });
-      const res = await fetch(`${OPERATIONS_API}/pr-merge/graph?${params.toString()}`, {
-        credentials: "include",
-      });
+      const res = await httpClient.fetch(`${OPERATIONS_API}/pr-merge/graph?${params.toString()}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
       const body = (await res.json()) as GraphResponse;
       setGraph(body);

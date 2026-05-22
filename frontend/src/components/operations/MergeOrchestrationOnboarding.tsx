@@ -22,6 +22,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
 import { createLogger } from "@/lib/logger";
+import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_API } from "./utils";
 
 const log = createLogger("MergeOrchestrationOnboarding");
@@ -99,10 +100,8 @@ function PairDeviceStep({
         device_hostname: "operator-workstation",
         web_pair_url: `${window.location.origin}/operations/pair-runner`,
       };
-      const res = await fetch(`${OPERATIONS_API}/coord/devices/pair-start`, {
+      const res = await httpClient.fetch(`${OPERATIONS_API}/coord/devices/pair-start`, {
         method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -258,10 +257,8 @@ function AuditStep({ ready }: AuditStepProps) {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`${OPERATIONS_API}/pr-merge/onboarding/audit`, {
+      const res = await httpClient.fetch(`${OPERATIONS_API}/pr-merge/onboarding/audit`, {
         method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ repo: repo.trim() }),
       });
       if (!res.ok) {
@@ -293,12 +290,10 @@ function AuditStep({ ready }: AuditStepProps) {
     setAcceptBusy(true);
     setError(null);
     try {
-      const res = await fetch(
+      const res = await httpClient.fetch(
         `${OPERATIONS_API}/pr-merge/onboarding/accept`,
         {
           method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             repo: auditResult.repo,
             profile: editedProfile,
@@ -552,9 +547,8 @@ export function MergeOrchestrationOnboarding() {
 
   const pollStatus = useCallback(async () => {
     try {
-      const res = await fetch(
-        `${OPERATIONS_API}/pr-merge/onboarding/precondition-status`,
-        { credentials: "include" }
+      const res = await httpClient.fetch(
+        `${OPERATIONS_API}/pr-merge/onboarding/precondition-status`
       );
       if (!res.ok) {
         if (res.status === 404) {

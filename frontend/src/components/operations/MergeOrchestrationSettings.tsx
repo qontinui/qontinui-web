@@ -36,6 +36,7 @@ import {
   Activity,
 } from "lucide-react";
 import { createLogger } from "@/lib/logger";
+import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_API } from "./utils";
 
 const log = createLogger("MergeOrchestrationSettings");
@@ -211,10 +212,8 @@ function TenantDefaultsCard({
       } else {
         body.rulebook_overrides = null;
       }
-      const res = await fetch(`${OPERATIONS_API}/pr-merge/settings`, {
+      const res = await httpClient.fetch(`${OPERATIONS_API}/pr-merge/settings`, {
         method: "PATCH",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
       if (!res.ok) {
@@ -419,7 +418,7 @@ function RepoOverrideCard({
   useEffect(() => {
     let cancelled = false;
     const url = `${OPERATIONS_API}/pr-merge/repos/${repoRow.repo}/profile`;
-    fetch(url, { credentials: "include" })
+    httpClient.fetch(url)
       .then(async (res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return (await res.json()) as RepoProfileResponse;
@@ -462,10 +461,8 @@ function RepoOverrideCard({
         dryRunOverride === "inherit" ? null : dryRunOverride === "true";
 
       const url = `${OPERATIONS_API}/pr-merge/repos/${repoRow.repo}/profile`;
-      const res = await fetch(url, {
+      const res = await httpClient.fetch(url, {
         method: "PATCH",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
       if (!res.ok) {
@@ -671,10 +668,8 @@ function KillSwitchCard({
     if (!ok) return;
     setSubmitting(true);
     try {
-      const res = await fetch(`${OPERATIONS_API}/pr-merge/kill-switch`, {
+      const res = await httpClient.fetch(`${OPERATIONS_API}/pr-merge/kill-switch`, {
         method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ scope: "tenant", reason: reason.trim() }),
       });
       if (!res.ok) {
@@ -965,9 +960,9 @@ export function MergeOrchestrationSettings() {
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      fetch(`${OPERATIONS_API}/pr-merge/settings`, { credentials: "include" }),
-      fetch(`${OPERATIONS_API}/pr-merge/repos`, { credentials: "include" }),
-      fetch(`${OPERATIONS_API}/pr-merge/slo`, { credentials: "include" }),
+      httpClient.fetch(`${OPERATIONS_API}/pr-merge/settings`),
+      httpClient.fetch(`${OPERATIONS_API}/pr-merge/repos`),
+      httpClient.fetch(`${OPERATIONS_API}/pr-merge/slo`),
     ])
       .then(async ([s, r, sl]) => {
         if (!s.ok) throw new Error(`settings: HTTP ${s.status}`);

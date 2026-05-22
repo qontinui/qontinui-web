@@ -5,6 +5,25 @@ export class ApiConfig {
   static readonly API_BASE_URL =
     process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+  /**
+   * True when API_BASE_URL points at a non-localhost host (e.g. staging /
+   * production on AWS). Switches the frontend into Bearer-only auth mode:
+   * the access token from the login response is held client-side (memory +
+   * sessionStorage) and sent as Authorization: Bearer on every request via
+   * HttpClient.
+   *
+   * The HttpOnly-cookie path remains the local-dev default because browsers
+   * refuse to attach cross-origin cookies set on a different domain
+   * (cookies on *.qontinui.io don't ride along on requests from
+   * http://localhost:3001). This flag controls sessionStorage persistence
+   * of the Bearer token (so login survives page reloads even without a
+   * cookie fallback).
+   */
+  static readonly IS_REMOTE_BACKEND =
+    !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/.test(
+      `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/`
+    );
+
   // Runner URL for local automation (pattern matching, state discovery, extraction)
   // The runner provides a unified API that calls the qontinui library via IPC
   // Use 127.0.0.1 instead of localhost to force IPv4 (runner only listens on IPv4)

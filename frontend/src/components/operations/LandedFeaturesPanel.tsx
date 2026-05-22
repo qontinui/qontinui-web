@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Sparkles, Hourglass } from "lucide-react";
+import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_API } from "./utils";
 import {
   DEMO_FEATURES,
@@ -94,9 +95,7 @@ export function LandedFeaturesPanel() {
 
   const tick = useCallback(async () => {
     try {
-      const res = await fetch(`${OPERATIONS_API}/merge/queue`, {
-        credentials: "include",
-      });
+      const res = await httpClient.fetch(`${OPERATIONS_API}/merge/queue`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = (await res.json()) as QueueResponse | ProposalDetail[];
       const list = Array.isArray(body) ? body : body.proposals ?? [];

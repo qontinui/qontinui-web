@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Loader2 } from "lucide-react";
+import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_API, POLL_INTERVAL_MS } from "./utils";
 
 interface OutputViewerProps {
@@ -25,7 +26,7 @@ export function OutputViewer({ runnerId, taskRunId }: OutputViewerProps) {
   const fetchOutput = useCallback(async () => {
     try {
       const url = `${OPERATIONS_API}/fleet/runners/${encodeURIComponent(runnerId)}/output?task_run_id=${encodeURIComponent(taskRunId)}&tail_chars=8000`;
-      const res = await fetch(url);
+      const res = await httpClient.fetch(url);
 
       if (!res.ok) {
         const text = await res.text().catch(() => "Unknown error");
