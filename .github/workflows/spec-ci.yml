@@ -47,28 +47,6 @@ jobs:
       - name: Checkout qontinui-web
         uses: actions/checkout@v5
 
-      # The frontend has path deps on @qontinui/* sibling packages (shared-types,
-      # ui-bridge, ui-bridge-auto, design-tokens, navigation, workflow-utils,
-      # workflow-ui). They're all under github.com/qontinui/* (public), so the
-      # default GITHUB_TOKEN (scoped to this repo) can read them — backend-tests.yml
-      # uses the same pattern. Clone them shallowly so npm/pnpm sees the on-disk
-      # paths the workspace's `link:` deps expect.
-      - name: Clone sibling @qontinui packages
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          for spec in \
-            "qontinui/qontinui-schemas" \
-            "qontinui/ui-bridge" \
-            "qontinui/ui-bridge-auto" \
-          ; do
-            repo_name="${spec#*/}"
-            git clone --depth 1 \
-              "https://x-access-token:${GH_TOKEN}@github.com/${spec}.git" \
-              "../${repo_name}"
-          done
-
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -79,20 +57,12 @@ jobs:
         with:
           version: 10
 
-      # Build each sibling so the `dist/` artifacts the frontend imports exist.
-      # Order matters: shared-types is a transitive dep of ui-bridge and
-      # ui-bridge-auto.
-      - name: Build sibling packages
-        run: |
-          set -euo pipefail
-          for dir in ../qontinui-schemas/ts ../ui-bridge ../ui-bridge-auto; do
-            if [ -f "$dir/package.json" ]; then
-              echo "::group::Build $dir"
-              (cd "$dir" && pnpm install --prefer-offline --no-frozen-lockfile && pnpm run build)
-              echo "::endgroup::"
-            fi
-          done
-
+      # @qontinui/* packages (shared-types, ui-bridge, ui-bridge-auto,
+      # design-tokens, navigation, workflow-utils, workflow-ui) are
+      # published to npm — frontend/package.json declares them with
+      # version ranges, not link: paths. No sibling clone or build step
+      # needed; pnpm pulls published artifacts. The dev-link overlay
+      # (qontinui-claude-config/scripts/dev-link.ps1) is dev-only.
       - name: Install frontend deps
         working-directory: ./frontend
         run: pnpm install --frozen-lockfile
