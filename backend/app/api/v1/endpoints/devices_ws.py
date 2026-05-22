@@ -183,8 +183,19 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
     connection_pk: int | None = None
     try:
         async with AsyncSessionLocal() as db:
+            # Key the upsert on the JWT-asserted ``token_device_id``
+            # (coord's identity authority) rather than ``(user_id, name)``.
+            # This honors the unified-devices contract: one
+            # ``coord.devices`` row per physical device, identified by
+            # the machine.json UUID coord assigned at pair time. Prior
+            # to this change the upsert was keyed on ``(user_id, name)``
+            # and ``register_device`` ignored the JWT's ``device_id``
+            # entirely, so every temp runner spawn / re-named pair flow
+            # created a fresh row with a web-generated UUID — orphaning
+            # coord's pair-time row.
             device_row = await device_crud.register_device(
                 db,
+                device_id=token_device_id,
                 user_id=user_id,
                 name=name,
                 hostname=hostname,
@@ -195,16 +206,6 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
                 os=os_name,
                 os_version=os_version,
             )
-
-            # Token-asserted device_id must match the registered row's
-            # device_id (since register_device upserts by (user_id, name)
-            # it's the same row coord paired). Defensive cross-check.
-            if device_row.device_id != token_device_id:
-                logger.warning(
-                    "devices_ws_token_device_id_mismatch",
-                    token_device_id=str(token_device_id),
-                    registered_device_id=str(device_row.device_id),
-                )
 
             connection_record = await device_connection_crud.create_connection_record(
                 db,
@@ -416,10 +417,27 @@ async def _cleanup(
     try:
         async with AsyncSessionLocal() as db:
             row = await device_crud.get_device(db, device_id) if device_id else None
-            if row is not None:
+            # Only clear ws_session_id if it still points at OUR connection.
+            # If the runner reconnected (creating a newer DeviceConnection
+            # row and overwriting ws_session_id) before this handler ran,
+            # blindly setting it to None here stomps the live session and
+            # gives every consumer of GET /api/v1/devices a false
+            # `wsConnected: false` until the runner's next reconnect cycle —
+            # observed 2026-05-22 as a runner/backend wsConnected mismatch
+            # with fresh heartbeats arriving from a session whose
+            # ws_session_id pointer had been wiped by an older finally
+            # block.
+            if row is not None and row.ws_session_id == connection_pk:
                 row.ws_session_id = None
                 row.ws_connected_at = None
                 await db.commit()
+            elif row is not None and row.ws_session_id is not None:
+                logger.info(
+                    "devices_ws_skip_clear_session_id_superseded",
+                    device_id=str(device_id),
+                    our_connection_pk=connection_pk,
+                    current_session_id=row.ws_session_id,
+                )
     except Exception as e:
         logger.error(
             "devices_ws_clear_session_id_failed",
