@@ -1,8 +1,5 @@
 "use client";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { useAuth } from "@/contexts/auth-context";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   FleetOverview,
@@ -13,19 +10,6 @@ import {
 import { Activity } from "lucide-react";
 
 export default function OperationsPage() {
-  const { user, loading: authLoading } = useAuth();
-  const router = useRouter();
-
-  useEffect(() => {
-    if (!authLoading && !user) {
-      router.push("/");
-    }
-  }, [user, authLoading, router]);
-
-  if (!user) {
-    return null;
-  }
-
   return (
     <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
       <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">

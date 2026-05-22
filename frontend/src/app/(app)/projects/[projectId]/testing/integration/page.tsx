@@ -3,8 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { useEffect, useState, useCallback } from "react";
-import { useRouter, useParams } from "next/navigation";
-import { useAuth } from "@/contexts/auth-context";
+import { useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -33,8 +32,6 @@ import type {
 type ViewMode = "list" | "detail" | "visual";
 
 export default function IntegrationTestPage() {
-  const { user, loading: authLoading } = useAuth();
-  const router = useRouter();
   const params = useParams();
   const projectId = params.projectId as string;
 
@@ -73,12 +70,8 @@ export default function IntegrationTestPage() {
   }, [projectId]);
 
   useEffect(() => {
-    if (!authLoading && !user) {
-      router.push("/");
-    } else if (user) {
-      fetchRuns();
-    }
-  }, [user, authLoading, router, fetchRuns]);
+    fetchRuns();
+  }, [fetchRuns]);
 
   const loadRunDetails = async (runId: string) => {
     try {
@@ -135,19 +128,6 @@ export default function IntegrationTestPage() {
   const toggleViewMode = () => {
     setViewMode((prev) => (prev === "detail" ? "visual" : "detail"));
   };
-
-  if (authLoading) {
-    return (
-      <div className="h-[calc(100vh-44px)] flex items-center justify-center bg-background">
-        <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-primary" />
-        <div className="text-lg text-muted-foreground">Loading...</div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return null;
-  }
 
   return (
     <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">

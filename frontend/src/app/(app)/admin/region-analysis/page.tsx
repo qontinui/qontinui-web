@@ -38,7 +38,7 @@ interface AnnotationSet {
 }
 
 export default function RegionAnalysisPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user } = useAuth();
   const router = useRouter();
   const [token, setToken] = useState<string>("");
 
@@ -56,24 +56,17 @@ export default function RegionAnalysisPage() {
     "run"
   );
 
-  // Protection
   useEffect(() => {
-    if (!authLoading && !user) {
-      router.push("/");
-      return;
-    }
-
-    if (!authLoading && user && !user.is_superuser) {
+    if (user && !user.is_superuser) {
       toast.error("Access denied - Admin privileges required");
       router.push("/build/workflows");
       return;
     }
 
-    // Set token ready flag for loading annotation sets
     if (user) {
       setToken("cookie-auth");
     }
-  }, [user, authLoading, router]);
+  }, [user, router]);
 
   // Load annotation sets
   useEffect(() => {

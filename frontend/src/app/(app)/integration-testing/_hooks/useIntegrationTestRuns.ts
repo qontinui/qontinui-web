@@ -1,5 +1,4 @@
 import { useEffect, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { createLogger } from "@/lib/logger";
 
@@ -17,8 +16,7 @@ import type {
 } from "@/types/integration-testing";
 
 export function useIntegrationTestRuns() {
-  const { user, loading: authLoading } = useAuth();
-  const router = useRouter();
+  const { user } = useAuth();
   const { projectId } = useProject();
   const { workflows } = useWorkflows();
   const states = useAutomationStore((s) => s.states);
@@ -67,14 +65,12 @@ export function useIntegrationTestRuns() {
   }, [projectId]);
 
   useEffect(() => {
-    if (!authLoading && !user) {
-      router.push("/");
-    } else if (user && projectId) {
+    if (user && projectId) {
       fetchRuns();
     } else if (user && !projectId) {
       setLoading(false);
     }
-  }, [user, authLoading, router, fetchRuns, projectId]);
+  }, [user, fetchRuns, projectId]);
 
   useEffect(() => {
     if (workflows.length > 0 && selectedWorkflowId === null && !loading) {
@@ -211,8 +207,6 @@ export function useIntegrationTestRuns() {
   const dismissError = () => setError(null);
 
   return {
-    user,
-    authLoading,
     projectId,
     projectLoading,
     workflows,

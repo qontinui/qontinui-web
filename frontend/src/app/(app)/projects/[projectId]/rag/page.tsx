@@ -2,20 +2,18 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RAGDashboardHeader } from "@/components/rag-dashboard/RAGDashboardHeader";
 import { RAGEmbeddingsList } from "@/components/rag-dashboard/RAGEmbeddingsList";
 import { RAGJobsList } from "@/components/rag-dashboard/RAGJobsList";
 import { RAGSearchPanel } from "@/components/rag-dashboard/RAGSearchPanel";
-import { ArrowLeft, Database, History, Search, Loader2 } from "lucide-react";
+import { ArrowLeft, Database, History, Search } from "lucide-react";
 import { useRAGDashboard } from "@/hooks/useRAGDashboard";
 
 export default function RAGDashboardPage() {
-  const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const params = useParams();
   const projectId = params.projectId as string;
@@ -23,27 +21,6 @@ export default function RAGDashboardPage() {
   const [activeTab, setActiveTab] = useState("elements");
 
   const { data: dashboard, isLoading, error } = useRAGDashboard(projectId);
-
-  useEffect(() => {
-    if (!authLoading && !user) {
-      router.push("/");
-    }
-  }, [user, authLoading, router]);
-
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-brand-primary mx-auto mb-2" />
-          <div className="text-lg text-muted-foreground">Loading...</div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return null;
-  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-surface-canvas via-[#0F0F10] to-surface-canvas text-white">

@@ -2,9 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { TestRunDetails } from "@/components/testing/TestRunDetails";
 import { StateGraphVisualization } from "@/components/testing/StateGraphVisualization";
@@ -13,36 +11,11 @@ import { RequireProject } from "@/components/require-project";
 import { ArrowLeft } from "lucide-react";
 
 export default function TestRunDetailPage() {
-  const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const params = useParams();
   const runId = params.id as string;
 
   const { data: run } = useTestRun(runId);
-
-  useEffect(() => {
-    if (!authLoading && !user) {
-      router.push("/");
-    }
-  }, [user, authLoading, router]);
-
-  if (authLoading) {
-    return (
-      <div className="h-[calc(100vh-44px)] flex items-center justify-center bg-background">
-        <div
-          data-content-role="status"
-          data-content-label="loading state"
-          className="text-lg text-muted-foreground"
-        >
-          Loading...
-        </div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return null;
-  }
 
   return (
     <RequireProject pageName="Test Run Details">

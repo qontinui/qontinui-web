@@ -2,37 +2,17 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, Suspense } from "react";
+import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { TestRunsList } from "@/components/testing/TestRunsList";
 import { RequireProject } from "@/components/require-project";
 import { ArrowLeft } from "lucide-react";
 
 function TestRunsPageContent() {
-  const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const projectId = searchParams.get("project");
-
-  useEffect(() => {
-    if (!authLoading && !user) {
-      router.push("/");
-    }
-  }, [user, authLoading, router]);
-
-  if (authLoading) {
-    return (
-      <div className="h-[calc(100vh-44px)] flex items-center justify-center bg-background">
-        <div className="text-lg text-muted-foreground">Loading...</div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return null;
-  }
 
   return (
     <RequireProject pageName="Test Runs">

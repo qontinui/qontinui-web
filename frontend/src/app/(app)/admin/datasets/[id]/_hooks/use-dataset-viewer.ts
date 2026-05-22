@@ -100,18 +100,12 @@ export function useDatasetViewer(): DatasetViewerState & DatasetViewerActions {
   // Effects
   // ---------------------------------------------------------------------------
 
-  // Auth protection
   useEffect(() => {
-    if (!authLoading && !user) {
-      router.push("/");
-      return;
-    }
-    if (!authLoading && user && !user.is_superuser) {
+    if (user && !user.is_superuser) {
       toast.error("Access denied - Admin privileges required");
       router.push("/build/workflows");
-      return;
     }
-  }, [user, authLoading, router]);
+  }, [user, router]);
 
   // Load dataset
   useEffect(() => {

@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useAuth } from "@/contexts/auth-context";
 import { useAutomation } from "@/contexts/automation-context";
 import {
   useProjects,
@@ -39,7 +38,6 @@ interface Project {
 }
 
 export default function VisualAutomationDashboard() {
-  const { user, loading: authLoading } = useAuth();
   const {
     projectId: contextProjectId,
     setProjectId,
@@ -207,16 +205,6 @@ export default function VisualAutomationDashboard() {
     };
     input.click();
   };
-
-  if (authLoading) {
-    return (
-      <div className="h-[calc(100vh-44px)] flex items-center justify-center bg-background">
-        <div className="text-text-muted">Loading...</div>
-      </div>
-    );
-  }
-
-  if (!user) return null;
 
   return (
     <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden text-white">

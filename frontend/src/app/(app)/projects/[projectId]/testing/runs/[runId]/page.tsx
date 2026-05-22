@@ -2,9 +2,8 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState } from "react";
-import { useRouter, useParams } from "next/navigation";
-import { useAuth } from "@/contexts/auth-context";
+import { useState } from "react";
+import { useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Download } from "lucide-react";
@@ -19,8 +18,6 @@ import { DeficienciesTab } from "./_components/DeficienciesTab";
 import { ScreenshotDialog } from "./_components/ScreenshotDialog";
 
 export default function TestRunDetailPage() {
-  const { user, loading: authLoading } = useAuth();
-  const router = useRouter();
   const params = useParams();
   const runId = params.runId as string;
 
@@ -28,28 +25,18 @@ export default function TestRunDetailPage() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const liveStatus = useTestRunWebSocket(runId, run?.status, refetch);
 
-  useEffect(() => {
-    if (!authLoading && !user) {
-      router.push("/");
-    }
-  }, [user, authLoading, router]);
-
   const handleExport = () => {
     if (!run) return;
     const url = `${ApiConfig.getBaseUrl()}/api/v1/testing/runs/${runId}/export?format=json`;
     window.open(url, "_blank", "noopener,noreferrer");
   };
 
-  if (authLoading || isLoading) {
+  if (isLoading) {
     return (
       <div className="h-[calc(100vh-44px)] flex items-center justify-center bg-background">
         <div className="text-lg text-muted-foreground">Loading...</div>
       </div>
     );
-  }
-
-  if (!user) {
-    return null;
   }
 
   if (!run) {

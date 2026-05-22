@@ -2,9 +2,8 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useAuth } from "@/contexts/auth-context";
+import { useState, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -242,8 +241,6 @@ function StatsCards({ projectId }: { projectId?: string }) {
 }
 
 function IssuesPageContent() {
-  const { user, loading: authLoading } = useAuth();
-  const router = useRouter();
   const searchParams = useSearchParams();
 
   const [filters, setFilters] = useState<IssueFilters>({
@@ -255,12 +252,6 @@ function IssuesPageContent() {
   const { data: issuesData, isLoading, refetch } = useIssues(filters);
   const { data: projects } = useProjects();
   const updateIssueMutation = useUpdateIssue();
-
-  useEffect(() => {
-    if (!authLoading && !user) {
-      router.push("/");
-    }
-  }, [user, authLoading, router]);
 
   const handleStatusChange = async (
     id: string,
@@ -276,18 +267,6 @@ function IssuesPageContent() {
       console.error("Failed to update issue:", error);
     }
   };
-
-  if (authLoading) {
-    return (
-      <div className="h-[calc(100vh-44px)] flex items-center justify-center bg-background">
-        <div className="text-lg text-muted-foreground">Loading...</div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return null;
-  }
 
   const issues = issuesData?.issues || [];
   const sortedIssues = [...issues].sort((a, b) => {

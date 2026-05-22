@@ -4,7 +4,6 @@ export const dynamic = "force-dynamic";
 
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -34,7 +33,6 @@ import type {
 } from "@/types/task-runs";
 
 function AITasksPageContent() {
-  const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const projectId = searchParams.get("project");
@@ -48,12 +46,6 @@ function AITasksPageContent() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
   const { data, isLoading, error, refetch } = useBackendTaskRuns(filters);
-
-  useEffect(() => {
-    if (!authLoading && !user) {
-      router.push("/");
-    }
-  }, [user, authLoading, router]);
 
   useEffect(() => {
     if (projectId) {
@@ -140,20 +132,6 @@ function AITasksPageContent() {
     const remainingMinutes = minutes % 60;
     return `${hours}h ${remainingMinutes}m`;
   };
-
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-lg text-muted-foreground">Loading...</div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return null;
-  }
 
   const tasks = data?.tasks || [];
   const pagination = data?.pagination;

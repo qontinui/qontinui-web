@@ -2,9 +2,8 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { TestRunsList } from "@/components/testing/TestRunsList";
 import nextDynamic from "next/dynamic";
@@ -30,7 +29,6 @@ import {
 } from "lucide-react";
 
 export default function ProjectTestingDashboard() {
-  const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const params = useParams();
   const projectId = params.projectId as string;
@@ -38,24 +36,6 @@ export default function ProjectTestingDashboard() {
   const [selectedView, setSelectedView] = useState<
     "overview" | "live" | "trends" | "reliability"
   >("overview");
-
-  useEffect(() => {
-    if (!authLoading && !user) {
-      router.push("/");
-    }
-  }, [user, authLoading, router]);
-
-  if (authLoading) {
-    return (
-      <div className="h-[calc(100vh-44px)] flex items-center justify-center bg-background">
-        <div className="text-lg text-muted-foreground">Loading...</div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return null;
-  }
 
   return (
     <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">

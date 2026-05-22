@@ -34,7 +34,7 @@ import { DatasetExportDialog } from "@/components/datasets/DatasetExportDialog";
 import type { Dataset } from "@/types/dataset";
 
 export default function DatasetsPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user } = useAuth();
   const router = useRouter();
 
   const [datasets, setDatasets] = useState<Dataset[]>([]);
@@ -44,19 +44,12 @@ export default function DatasetsPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<Dataset | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  // Auth protection
   useEffect(() => {
-    if (!authLoading && !user) {
-      router.push("/");
-      return;
-    }
-
-    if (!authLoading && user && !user.is_superuser) {
+    if (user && !user.is_superuser) {
       toast.error("Access denied - Admin privileges required");
       router.push("/build/workflows");
-      return;
     }
-  }, [user, authLoading, router]);
+  }, [user, router]);
 
   const loadDatasets = useCallback(async () => {
     setLoading(true);
@@ -71,12 +64,11 @@ export default function DatasetsPage() {
     }
   }, []);
 
-  // Load datasets
   useEffect(() => {
-    if (!authLoading && user?.is_superuser) {
+    if (user?.is_superuser) {
       loadDatasets();
     }
-  }, [authLoading, user, loadDatasets]);
+  }, [user, loadDatasets]);
 
   const handleDelete = async () => {
     if (!deleteConfirm) return;
@@ -117,15 +109,6 @@ export default function DatasetsPage() {
         return "bg-muted";
     }
   };
-
-  // Don't render until auth is confirmed
-  if (authLoading) {
-    return (
-      <div className="h-[calc(100vh-44px)] flex items-center justify-center bg-background">
-        <p className="text-muted-foreground">Loading...</p>
-      </div>
-    );
-  }
 
   if (!user?.is_superuser) {
     return null;
