@@ -88,6 +88,7 @@ async def read_users_me(
         }
     )
 
+
 # FastAPI-Users routers
 # NOTE: We use custom auth routes (login, logout, refresh) in jwt.py instead of
 # fastapi-users auto-generated routes because we need HttpOnly cookie support.
