@@ -217,6 +217,7 @@ from app.models.visual_comparison_result import (
 )
 from app.models.workflow_event import WorkflowEvent, WorkflowEventType
 from app.models.workflow_execution_history import WorkflowExecutionHistory
+from app.models.workflow_mirror import WorkflowMirror
 from app.models.workflow_step_type import (
     GuiActionTypeConfig,
     StepTypeConfig,
@@ -471,6 +472,7 @@ __all__ = [
     "WorkflowPhaseConfig",
     # Unified Workflows (workflow definitions - source of truth)
     "UnifiedWorkflow",
+    "WorkflowMirror",
     # Skills (user-created parameterized step templates)
     "Skill",
     # Known Issues (verified/discovered issues tracked across executions)
