@@ -65,6 +65,7 @@ from app.api.v1.endpoints import (
     library,
     notifications,
     operations,
+    pair_codes,
     phase_results,
     project_files,
     project_images,
@@ -174,6 +175,12 @@ api_router.include_router(videos.router, prefix="/videos", tags=["videos"])
 # ``/api/v1/runners/*`` (rename, no deprecation alias) in favour of
 # ``/api/v1/devices/*``.
 api_router.include_router(devices.router, prefix="/devices", tags=["devices"])
+# Single-use pair codes (Phase 2a.1) — mounted under /devices/pair-codes.
+# Sits next to devices.router because the redeem endpoint is the runner's
+# entry point and lives in the same conceptual namespace.
+api_router.include_router(
+    pair_codes.router, prefix="/devices/pair-codes", tags=["pair-codes"]
+)
 # Unified device-side WebSocket — coord-issued device-token JWT auth.
 api_router.include_router(
     devices_ws.router, prefix="/devices", tags=["devices-websocket"]
