@@ -144,8 +144,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
 
         setUser(null);
-        logger.info("Redirecting to home page due to session expiry");
-        window.location.href = "/";
+        logger.info("Redirecting to /login due to session expiry");
+        window.location.href = "/login";
       };
 
       logger.debug("Registering session-expired event listener");
