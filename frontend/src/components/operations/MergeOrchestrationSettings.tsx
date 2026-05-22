@@ -29,7 +29,12 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { AlertTriangle, Settings as SettingsIcon } from "lucide-react";
+import {
+  AlertTriangle,
+  Settings as SettingsIcon,
+  Power,
+  Activity,
+} from "lucide-react";
 import { createLogger } from "@/lib/logger";
 import { OPERATIONS_API } from "./utils";
 
@@ -78,6 +83,51 @@ interface TenantRepoRow {
 interface TenantReposResponse {
   repos: TenantRepoRow[];
   total: number;
+}
+
+// ----------------------------------------------------------------------------
+// Phase 9 D9.6 — SLO dashboard wire types
+// ----------------------------------------------------------------------------
+
+interface SloWindowMetrics {
+  auto_merge_success_rate: number | null;
+  escalation_rate: number | null;
+  post_merge_verification_lag_p95_seconds: number | null;
+  author_feedback_latency_p95_seconds: number | null;
+  operator_override_rate: number | null;
+  shadow_vs_live_agreement_rate: number | null;
+  total_decisions: number;
+  shadow_decisions: number;
+}
+
+interface RepoSlo {
+  repo: string;
+  current_rollout_state: "dry_run" | "shadow" | "live";
+  windows: {
+    last_7d: SloWindowMetrics;
+    last_30d: SloWindowMetrics;
+  };
+}
+
+interface KillSwitchHistoryRow {
+  fired_at: string;
+  scope: string;
+  reason: string | null;
+  previous_state: string | null;
+}
+
+interface SloResponse {
+  tenant_id: string;
+  repos: RepoSlo[];
+  kill_switch_history_last_30d: KillSwitchHistoryRow[];
+  generated_at: string;
+}
+
+interface KillSwitchResponse {
+  scope: string;
+  previous_state: string | null;
+  new_state: string;
+  affected_repos: string[];
 }
 
 // ----------------------------------------------------------------------------
@@ -584,12 +634,331 @@ function parseFloatOrThrow(field: string, raw: string): number {
 }
 
 // ----------------------------------------------------------------------------
+// Phase 9 D9.4 — Emergency kill-switch button
+// ----------------------------------------------------------------------------
+
+/// Single-purpose card: a red "Emergency stop" button that POSTs
+/// /pr-merge/kill-switch and surfaces the response. Confirmation modal
+/// (browser-native confirm()) guards against accidental clicks — the
+/// dashboard's primary UI control for D9.4.
+function KillSwitchCard({
+  onKilled,
+}: {
+  onKilled: () => void;
+}) {
+  const [reason, setReason] = useState<string>("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [lastResponse, setLastResponse] = useState<KillSwitchResponse | null>(
+    null
+  );
+
+  const handleClick = useCallback(async () => {
+    setError(null);
+    if (reason.trim().length === 0) {
+      setError("Reason is required.");
+      return;
+    }
+    // Browser-native confirm() — minimal-dependency confirmation modal.
+    // Phase 9 D9.4 calls for "confirmation modal" without specifying
+    // the implementation; window.confirm() is the smallest-blast-radius
+    // path that meets the surface-before-bypass discipline.
+    const ok = window.confirm(
+      "Flip rollout_state for the entire tenant to dry_run. " +
+        "In-flight merges will drain; new PRs will not auto-merge. " +
+        "Proceed?"
+    );
+    if (!ok) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch(`${OPERATIONS_API}/pr-merge/kill-switch`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scope: "tenant", reason: reason.trim() }),
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        throw new Error(`HTTP ${res.status}${body ? `: ${body}` : ""}`);
+      }
+      const data = (await res.json()) as KillSwitchResponse;
+      setLastResponse(data);
+      setReason("");
+      onKilled();
+    } catch (err) {
+      log.warn("kill-switch failed", err);
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }, [reason, onKilled]);
+
+  return (
+    <Card
+      className="border-red-500/60"
+      data-testid="kill-switch-card"
+    >
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-base text-red-300">
+          <Power className="h-4 w-4" />
+          Emergency stop
+        </CardTitle>
+        <p className="text-xs text-muted-foreground mt-1">
+          Flip every repo this tenant owns to <code>rollout_state=dry_run</code>.
+          In-flight merges drain naturally; the orchestrator stops firing new
+          merges immediately. Use when a calibration regression is firing
+          unwanted merges. The action is auditable + reversible (re-enable via
+          tenant settings above).
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="space-y-1">
+          <Label htmlFor="kill-switch-reason">Reason (required)</Label>
+          <Input
+            id="kill-switch-reason"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="e.g. specialist confidence calibration regressed; investigating"
+            data-testid="kill-switch-reason"
+          />
+        </div>
+        {error && (
+          <p className="text-xs text-red-300 flex items-center gap-1">
+            <AlertTriangle className="h-3 w-3" />
+            {error}
+          </p>
+        )}
+        {lastResponse && (
+          <p
+            className="text-xs text-amber-300"
+            data-testid="kill-switch-last-response"
+          >
+            Kill switch fired — previous_state=
+            <code>{lastResponse.previous_state ?? "(null)"}</code>, new_state=
+            <code>{lastResponse.new_state}</code>, affected_repos=
+            {lastResponse.affected_repos.length}.
+          </p>
+        )}
+        <Button
+          variant="destructive"
+          onClick={handleClick}
+          disabled={submitting}
+          data-testid="kill-switch-fire"
+        >
+          {submitting ? "Firing..." : "Fire kill switch"}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ----------------------------------------------------------------------------
+// Phase 9 D9.6 — SLO Dashboard
+// ----------------------------------------------------------------------------
+
+/// Color a metric based on threshold bands (green=good, yellow=warn,
+/// red=alarm). The plan's §8 success metrics drive the thresholds.
+function ratingColor(
+  value: number | null,
+  goodAtOrAbove: number,
+  warnAtOrAbove: number
+): string {
+  if (value === null) return "text-muted-foreground";
+  if (value >= goodAtOrAbove) return "text-green-400";
+  if (value >= warnAtOrAbove) return "text-amber-300";
+  return "text-red-300";
+}
+
+/// Inverse coloring — lower is better (override rate, escalation rate).
+function ratingColorInverse(
+  value: number | null,
+  goodAtOrBelow: number,
+  warnAtOrBelow: number
+): string {
+  if (value === null) return "text-muted-foreground";
+  if (value <= goodAtOrBelow) return "text-green-400";
+  if (value <= warnAtOrBelow) return "text-amber-300";
+  return "text-red-300";
+}
+
+function fmtRate(value: number | null): string {
+  if (value === null) return "—";
+  return `${(value * 100).toFixed(1)}%`;
+}
+
+function fmtSecs(value: number | null): string {
+  if (value === null) return "—";
+  return `${value.toFixed(1)}s`;
+}
+
+function RolloutStateBadge({ state }: { state: string }) {
+  const color =
+    state === "live"
+      ? "border-green-500/60 text-green-300"
+      : state === "shadow"
+        ? "border-amber-500/60 text-amber-300"
+        : "border-red-500/60 text-red-300";
+  return (
+    <Badge variant="outline" className={`uppercase tracking-wide ${color}`}>
+      {state.replace("_", "-")}
+    </Badge>
+  );
+}
+
+function SloRepoCard({ slo }: { slo: RepoSlo }) {
+  const w = slo.windows.last_7d;
+  const w30 = slo.windows.last_30d;
+  return (
+    <Card data-testid={`slo-repo-card-${slo.repo}`}>
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center justify-between text-sm font-mono">
+          <span>{slo.repo}</span>
+          <RolloutStateBadge state={slo.current_rollout_state} />
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2 text-xs">
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <p className="text-muted-foreground">Auto-merge success</p>
+            <p
+              className={ratingColor(
+                w.auto_merge_success_rate,
+                0.95,
+                0.85
+              )}
+            >
+              {fmtRate(w.auto_merge_success_rate)} (7d)
+            </p>
+          </div>
+          <div>
+            <p className="text-muted-foreground">Operator override</p>
+            <p
+              className={ratingColorInverse(
+                w.operator_override_rate,
+                0.05,
+                0.1
+              )}
+            >
+              {fmtRate(w.operator_override_rate)} (7d)
+            </p>
+          </div>
+          <div>
+            <p className="text-muted-foreground">Escalation</p>
+            <p className={ratingColorInverse(w.escalation_rate, 0.1, 0.25)}>
+              {fmtRate(w.escalation_rate)} (7d)
+            </p>
+          </div>
+          <div>
+            <p className="text-muted-foreground">Shadow↔live agree</p>
+            <p
+              className={ratingColor(
+                w.shadow_vs_live_agreement_rate,
+                0.95,
+                0.85
+              )}
+            >
+              {fmtRate(w.shadow_vs_live_agreement_rate)} (7d)
+            </p>
+          </div>
+          <div>
+            <p className="text-muted-foreground">Verify lag p95</p>
+            <p className="text-foreground">
+              {fmtSecs(w.post_merge_verification_lag_p95_seconds)}
+            </p>
+          </div>
+          <div>
+            <p className="text-muted-foreground">Author feedback p95</p>
+            <p className="text-foreground">
+              {fmtSecs(w.author_feedback_latency_p95_seconds)}
+            </p>
+          </div>
+        </div>
+        <p className="text-muted-foreground pt-1 border-t border-border/40">
+          {w.total_decisions} decision(s) in 7d ({w.shadow_decisions} shadow) /{" "}
+          {w30.total_decisions} in 30d ({w30.shadow_decisions} shadow).
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function SloDashboardCard({ data }: { data: SloResponse | null }) {
+  if (data === null) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Activity className="h-4 w-4" />
+            SLO Dashboard
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Skeleton className="h-24 w-full" />
+        </CardContent>
+      </Card>
+    );
+  }
+  return (
+    <Card data-testid="slo-dashboard-card">
+      <CardHeader>
+        <CardTitle className="flex items-center justify-between text-base">
+          <span className="flex items-center gap-2">
+            <Activity className="h-4 w-4" />
+            SLO Dashboard
+          </span>
+          <Badge variant="outline" className="font-mono text-xs">
+            {data.repos.length} repo(s)
+          </Badge>
+        </CardTitle>
+        <p className="text-xs text-muted-foreground mt-1">
+          Per-(tenant, repo) rollout metrics, 7-day windows. Thresholds from
+          plan §8: ≥95% auto-merge / ≤5% override / ≥95% shadow agreement
+          before promoting from <code>shadow</code> to <code>live</code>.
+        </p>
+      </CardHeader>
+      <CardContent>
+        {data.repos.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            No repos onboarded yet. Connect a repo via the Onboarding wizard.
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            {data.repos.map((r) => (
+              <SloRepoCard key={r.repo} slo={r} />
+            ))}
+          </div>
+        )}
+        {data.kill_switch_history_last_30d.length > 0 && (
+          <div className="mt-4 pt-3 border-t border-border/40">
+            <p className="text-xs font-medium mb-2">
+              Kill switch history (last 30d)
+            </p>
+            <ul className="space-y-1 text-xs">
+              {data.kill_switch_history_last_30d.slice(0, 5).map((h, i) => (
+                <li key={i} className="text-muted-foreground">
+                  <span className="font-mono text-foreground">
+                    {new Date(h.fired_at).toISOString().slice(0, 19)}Z
+                  </span>{" "}
+                  — scope=<code>{h.scope}</code>
+                  {h.reason && ` — ${h.reason}`}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ----------------------------------------------------------------------------
 // Top-level component
 // ----------------------------------------------------------------------------
 
 export function MergeOrchestrationSettings() {
   const [profile, setProfile] = useState<EffectiveProfile | null>(null);
   const [repos, setRepos] = useState<TenantRepoRow[] | null>(null);
+  const [slo, setSlo] = useState<SloResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reloadCounter, setReloadCounter] = useState(0);
 
@@ -598,16 +967,27 @@ export function MergeOrchestrationSettings() {
     Promise.all([
       fetch(`${OPERATIONS_API}/pr-merge/settings`, { credentials: "include" }),
       fetch(`${OPERATIONS_API}/pr-merge/repos`, { credentials: "include" }),
+      fetch(`${OPERATIONS_API}/pr-merge/slo`, { credentials: "include" }),
     ])
-      .then(async ([s, r]) => {
+      .then(async ([s, r, sl]) => {
         if (!s.ok) throw new Error(`settings: HTTP ${s.status}`);
         if (!r.ok) throw new Error(`repos: HTTP ${r.status}`);
+        // SLO is best-effort — a failure (e.g. coord down) shouldn't
+        // block the rest of the page from rendering.
         const sb = (await s.json()) as TenantSettingsResponse;
         const rb = (await r.json()) as TenantReposResponse;
         if (cancelled) return;
         setProfile(sb.profile);
         setRepos(rb.repos);
         setError(null);
+        if (sl.ok) {
+          const slBody = (await sl.json()) as SloResponse;
+          if (!cancelled) setSlo(slBody);
+        } else {
+          // Log but don't propagate to top-level error banner — the
+          // SLO card surfaces its own loading state.
+          log.warn("slo fetch failed", await sl.text().catch(() => "?"));
+        }
       })
       .catch((err) => {
         if (cancelled) return;
@@ -649,6 +1029,10 @@ export function MergeOrchestrationSettings() {
           </CardContent>
         </Card>
       )}
+      {/* Phase 9 D9.4 — Emergency kill switch (red border, prominent). */}
+      <KillSwitchCard onKilled={triggerReload} />
+      {/* Phase 9 D9.6 — SLO Dashboard. */}
+      <SloDashboardCard data={slo} />
       {profile === null ? (
         <Card>
           <CardContent className="pt-4">
