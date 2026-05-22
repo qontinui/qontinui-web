@@ -642,7 +642,15 @@ async def runner_proxy(
     """
     user_id = str(user.id)
 
-    # Find the runner port from the unified runners table.
+    # Find the runner port from the unified device registry.
+    #
+    # The Unified Devices Registry migration (Phase 5/8 of
+    # ``D:/qontinui-root/plans/2026-05-18-unified-devices-registry.md``)
+    # renamed ``auth.runners`` → ``coord.devices``. The ``port``,
+    # ``user_id``, ``ws_session_id`` and ``ws_connected_at`` columns
+    # carried over unchanged. We additionally filter on
+    # ``capability_user_paired`` so we only consider user-paired runners
+    # (not coord-only fleet devices that share the unified table).
     runner_port = 9876  # default
     try:
         from sqlalchemy import text
@@ -652,8 +660,10 @@ async def runner_proxy(
         async with AsyncSessionLocal() as db:
             result = await db.execute(
                 text(
-                    "SELECT port FROM runners "
-                    "WHERE user_id = :uid AND ws_session_id IS NOT NULL "
+                    "SELECT port FROM coord.devices "
+                    "WHERE user_id = :uid "
+                    "  AND capability_user_paired = true "
+                    "  AND ws_session_id IS NOT NULL "
                     "ORDER BY ws_connected_at DESC NULLS LAST LIMIT 1"
                 ),
                 {"uid": user_id},
