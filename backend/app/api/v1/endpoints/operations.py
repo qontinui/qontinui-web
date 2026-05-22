@@ -622,6 +622,69 @@ async def post_pr_merge_suggestion_mute(
     )
 
 
+# ---- Phase 9 D9.4 + D9.6 — rollout substrate proxies ----------------------
+#
+# Two endpoints proxying the coord-side ``src/pr_merge/rollout_routes.rs``
+# (kill-switch) + ``src/pr_merge/slo_routes.rs`` (SLO dashboard). Both
+# tenant-scoped via the ``X-Qontinui-Tenant-Id`` header.
+
+
+@router.post("/pr-merge/kill-switch")
+async def post_pr_merge_kill_switch(
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Emergency-stop: flip the calling tenant's rollout_state to
+    ``dry_run``. Body shape::
+
+        {
+            "scope": "tenant" | "repo:<owner/name>",
+            "reason": "<operator's stated reason>"
+        }
+
+    Coord:
+    1. Verifies the tenant owns the repo (when scope=repo).
+    2. UPDATE ``coord.tenant_merge_settings.rollout_state='dry_run'``
+       (scope=tenant) or ``coord.tenant_repo_profiles.rollout_state=
+       'dry_run'`` (scope=repo).
+    3. Invalidates the settings cache (process-local + Redis pubsub).
+    4. INSERTs a ``coord.user_overrides(override_kind=
+       'kill_switch_activated')`` row.
+    5. INSERTs a ``coord.alerts(kind='kill_switch_fired',
+       severity='warning')`` row.
+    6. Stamps ``auth_sso::audit_mutation``.
+
+    Returns ``{ "scope", "previous_state", "new_state", "affected_repos" }``.
+    """
+    return await _proxy_coord_post(
+        "/pr-merge/kill-switch",
+        body,
+        tenant_id=tenant_id,
+    )
+
+
+@router.get("/pr-merge/slo")
+async def get_pr_merge_slo(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Per-tenant SLO dashboard — per-(tenant, repo) metrics over the
+    last 7/30 days.
+
+    Returns ``{ "tenant_id", "repos": [...], "kill_switch_history_last_30d":
+    [...], "generated_at" }`` where each repo carries
+    ``current_rollout_state`` + 7/30 day windows of
+    ``auto_merge_success_rate``, ``escalation_rate``,
+    ``operator_override_rate``, ``shadow_vs_live_agreement_rate``,
+    ``total_decisions``, ``shadow_decisions``.
+
+    Drives MergeOrchestrationSettings.tsx's SLO Dashboard section.
+    """
+    return await _proxy_coord_get(
+        "/pr-merge/slo",
+        tenant_id=tenant_id,
+    )
+
+
 @router.post("/pr-merge/escalations/{alert_id}/decide")
 async def post_pr_merge_escalation_decide(
     alert_id: int,
