@@ -40,7 +40,7 @@
     "@next/third-parties": "^15.5.12",
     "@qontinui/design-tokens": "^1.0.0",
     "@qontinui/shared-types": "^0.4.0",
-    "@qontinui/ui-bridge": "^0.8.0",
+    "@qontinui/ui-bridge": "^0.8.1",
     "@qontinui/ui-bridge-auto": "^0.1.5",
     "@qontinui/workflow-ui": "^0.1.0",
     "@qontinui/workflow-utils": "^0.1.0",
