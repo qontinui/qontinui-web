@@ -135,4 +135,6 @@ class PairCliResponse(BaseModel):
 
     device_id: UUID
     token: str = Field(..., description="Coord-issued device-token JWT.")
-    user_id: UUID = Field(..., description="Calling user's UUID, echoed for the runner's decoder.")
+    user_id: UUID = Field(
+        ..., description="Calling user's UUID, echoed for the runner's decoder."
+    )
