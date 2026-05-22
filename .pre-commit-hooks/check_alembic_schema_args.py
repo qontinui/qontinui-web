@@ -142,11 +142,20 @@ _DDL_PATTERNS = [
             re.IGNORECASE,
         ),
     ),
-    # CREATE [UNIQUE] INDEX [IF NOT EXISTS] <idxname> ON [ONLY] <table>
+    # CREATE [UNIQUE] INDEX [CONCURRENTLY] [IF NOT EXISTS] <idxname> ON [ONLY] <table>
+    #
+    # Anchored on the full `CREATE INDEX … ON` shape so we don't false-flag
+    # `INSERT … ON CONFLICT (col)` — which matches a bare `\bON … \(`.
+    # The 2026-05-21 pr-merge phase 2 migration worked around the bare
+    # version with an f-string wrapper; this anchored shape lets future
+    # migrations write `INSERT … ON CONFLICT (col) DO …` in plain strings.
     (
         "INDEX ON",
         re.compile(
-            r"\bON\s+(?:ONLY\s+)?(?P<ident>"
+            r"\bCREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:CONCURRENTLY\s+)?"
+            r"(?:IF\s+NOT\s+EXISTS\s+)?"
+            + _IDENT
+            + r"\s+ON\s+(?:ONLY\s+)?(?P<ident>"
             + _IDENT
             + r"(?:\s*\.\s*"
             + _IDENT
