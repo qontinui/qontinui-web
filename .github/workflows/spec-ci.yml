@@ -50,65 +50,33 @@ jobs:
       - name: Checkout qontinui-web
         uses: actions/checkout@v5
 
-      # The frontend has path deps on @qontinui/* sibling packages (shared-types,
-      # ui-bridge, ui-bridge-auto, design-tokens, navigation, workflow-utils,
-      # workflow-ui). They're all under github.com/qontinui/* (public), so the
-      # default GITHUB_TOKEN (scoped to this repo) can read them — backend-tests.yml
-      # uses the same pattern. Clone them shallowly so npm/pnpm sees the on-disk
-      # paths the workspace's `link:` deps expect.
-      - name: Clone sibling @qontinui packages
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          for spec in \
-            "qontinui/qontinui-schemas" \
-            "qontinui/ui-bridge" \
-            "qontinui/ui-bridge-auto" \
-          ; do
-            repo_name="${spec#*/}"
-            git clone --depth 1 \
-              "https://x-access-token:${GH_TOKEN}@github.com/${spec}.git" \
-              "../${repo_name}"
-          done
-
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
-      # Build each sibling so the `dist/` artifacts the frontend imports exist.
-      # Order matters: shared-types is a transitive dep of ui-bridge and
-      # ui-bridge-auto.
-      - name: Build sibling packages
-        run: |
-          set -euo pipefail
-          for dir in ../qontinui-schemas/ts ../ui-bridge ../ui-bridge-auto; do
-            if [ -f "$dir/package.json" ]; then
-              echo "::group::Build $dir"
-              (cd "$dir" && pnpm install --prefer-offline --no-frozen-lockfile && pnpm run build)
-              echo "::endgroup::"
-            fi
-          done
-
+      # @qontinui/* packages (shared-types, ui-bridge, ui-bridge-auto,
+      # design-tokens, navigation, workflow-utils, workflow-ui) are
+      # published to npm — frontend/package.json declares them with
+      # version ranges, not link: paths. No sibling clone needed; npm
+      # pulls published artifacts. The dev-link overlay
+      # (qontinui-claude-config/scripts/dev-link.ps1) is dev-only.
       - name: Install frontend deps
         working-directory: ./frontend
-        run: pnpm install --frozen-lockfile
+        run: npm ci
 
-      # Playwright's browser binaries aren't part of the npm install. Install
-      # Chromium only — the spec-ci executor doesn't need Firefox/WebKit.
+      # Playwright's browser binaries aren't part of the npm install.
+      # Install Chromium only — the spec-ci executor doesn't need
+      # Firefox/WebKit.
       - name: Install Playwright Chromium
         working-directory: ./frontend
-        run: pnpm exec playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium
 
       - name: Build frontend
         working-directory: ./frontend
-        run: pnpm run build
+        run: npm run build
 
       # `next start` serves the production build — faster + more representative
       # of the user-facing app than `next dev`. The background-task pattern
@@ -116,7 +84,7 @@ jobs:
       - name: Start frontend (next start)
         working-directory: ./frontend
         run: |
-          pnpm exec next start -p 3001 -H 0.0.0.0 > frontend.log 2>&1 &
+          npx next start -p 3001 -H 0.0.0.0 > frontend.log 2>&1 &
           echo "FRONTEND_PID=$!" >> "$GITHUB_ENV"
           for i in $(seq 1 30); do
             if curl -s -o /dev/null -w "%{http_code}" http://localhost:3001/login | grep -qE "^(200|307)$"; then
@@ -130,7 +98,7 @@ jobs:
       - name: Run Spec CI
         working-directory: ./frontend
         run: |
-          pnpm exec tsx tests/spec-ci/run-spec-ci.ts \
+          npx tsx tests/spec-ci/run-spec-ci.ts \
             --base-url http://localhost:3001 \
             --api-base https://api.qontinui.io \
             --output spec-ci-report.json

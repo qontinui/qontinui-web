@@ -221,6 +221,41 @@ async function evaluateSpec(
           }
           const ns = W.__qontinuiSpecCi__;
 
+          // Normalize legacy spec shape. The qontinui-web frontend ships 19
+          // pre-IR-v1.0 specs that put requiredElements directly on each
+          // state instead of state.assertions[].target.criteria. The
+          // adapter (qontinui-schemas/ts/src/ui-bridge-ir/adapter.ts) maps
+          // state.assertions and crashes if it's undefined. Synthesize
+          // assertions from requiredElements before adapting so legacy
+          // specs work alongside modern ones. Modern specs already have
+          // assertions populated; this is a no-op for them.
+          const doc = irDoc as {
+            states?: Array<{
+              id: string;
+              assertions?: Array<unknown>;
+              requiredElements?: Array<unknown>;
+            }>;
+            transitions?: Array<unknown>;
+          };
+          for (const state of doc.states ?? []) {
+            if (!state.assertions || state.assertions.length === 0) {
+              const required = state.requiredElements ?? [];
+              state.assertions = required.map((crit, idx) => ({
+                id: `${state.id}-elem-${idx}`,
+                description: `Synthesized from legacy requiredElements[${idx}]`,
+                category: "element-presence",
+                severity: "critical",
+                assertionType: "exists",
+                target: { type: "search", criteria: crit, label: "" },
+                source: "migrated",
+                reviewed: false,
+                enabled: true,
+              }));
+            }
+          }
+          // Adapter also requires top-level transitions to be an array.
+          if (!doc.transitions) doc.transitions = [];
+
           const adapted = ns.adaptIRDocumentToWorkflowConfig(irDoc);
           const machine = new ns.StateMachine();
           machine.defineStates(adapted.states);
