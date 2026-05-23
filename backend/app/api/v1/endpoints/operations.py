@@ -30,6 +30,8 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
+from fastapi.responses import StreamingResponse
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.websockets import WebSocketState
 
@@ -1699,3 +1701,195 @@ async def websocket_device_status(
                 await websocket.close()
             except Exception as exc:  # noqa: BLE001
                 logger.debug("device_status_ws_close_failed", error=str(exc))
+
+
+# ---- Coord-Native Session Coordination — Phase 5 ------------------------
+#
+# Plan: `D:/qontinui-root/qontinui-dev-notes/plans/2026-05-22-coord-native-session-coordination.md`
+# Phase 5. The dashboard `/sessions` panel reads from coord's
+# `/sessions` REST + SSE surface (Phase 1 SHIPPED, LIVE at
+# `coord.staging.qontinui.io`).
+#
+# We proxy from the web backend so the browser gets:
+#   1. Same-origin requests (no CORS to coord required).
+#   2. Tenant scoping via the resolved operator → tenant_id (the
+#      header-driven dependency below).
+#   3. A future hook for RBAC + audit if Phase 5/7 grows teeth.
+#
+# Endpoints:
+#   GET    /api/v1/operations/sessions[?scope=active|all&since=...]
+#   GET    /api/v1/operations/sessions/{id}
+#   GET    /api/v1/operations/sessions/{id}/events                 (SSE)
+#   POST   /api/v1/operations/sessions/{id}/steal { reason, machine_id }
+#   DELETE /api/v1/operations/sessions/{id}
+#   GET    /api/v1/operations/tenants                              (list)
+#
+# `GET /sessions/.../events` is an SSE proxy; the upstream coord stream
+# is open until the browser disconnects. The proxy must NOT buffer —
+# we use httpx streaming + StreamingResponse to keep the byte path
+# tight.
+
+
+@router.get("/sessions")
+async def list_coord_sessions(
+    scope: str | None = Query(
+        default=None,
+        description="`active` (default) | `all` — passthrough to coord.",
+    ),
+    since: str | None = Query(
+        default=None,
+        description="RFC 3339 timestamp; only rows updated at-or-after are returned.",
+    ),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """List active (default) or all sessions for the caller's tenant.
+
+    Wire shape from coord::
+
+        { "count": <int>, "scope": "<active|all>", "sessions": [SessionRow, ...] }
+
+    Where ``SessionRow`` matches ``qontinui-coord/src/sessions.rs::SessionRow``.
+    """
+    params: dict[str, Any] = {"tenant_id": str(tenant_id)}
+    if scope is not None:
+        params["scope"] = scope
+    if since is not None:
+        params["since"] = since
+    return await _proxy_coord_get("/sessions", params=params)
+
+
+@router.get("/sessions/{session_id}")
+async def get_coord_session(
+    session_id: UUID,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Fetch a single session row by id (read-only).
+
+    Coord's `GET /sessions/:id` is not separately exposed today; we
+    derive the row from `GET /sessions?scope=all&tenant_id=...` and
+    filter client-side. Cheap because the tenant list is small in
+    pilot and the row is small.
+    """
+    payload = await _proxy_coord_get(
+        "/sessions",
+        params={"tenant_id": str(tenant_id), "scope": "all"},
+    )
+    sessions = payload.get("sessions", []) if isinstance(payload, dict) else []
+    for row in sessions:
+        if isinstance(row, dict) and str(row.get("id", "")) == str(session_id):
+            return row
+    raise HTTPException(status_code=404, detail="session not found")
+
+
+@router.get("/sessions/{session_id}/events")
+async def stream_coord_session_events(
+    session_id: UUID,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Stream session events as Server-Sent Events.
+
+    Bridges to coord's `GET /sessions/:id/events` (SSE). The upstream
+    stream emits a replay of the last 100 events followed by a
+    JetStream live-tail subscription for the same session.
+
+    Tenant scoping: tenant_id is resolved server-side; coord ignores
+    `X-Qontinui-Tenant-Id` on this route today (sessions endpoints
+    are anonymous in pilot) but the header is forwarded for the
+    Phase 6 hardening pass.
+    """
+    url = f"{settings.COORD_URL}/sessions/{session_id}/events"
+    headers = _tenant_headers(tenant_id)
+
+    async def _proxy() -> Any:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(None, connect=5.0),
+        ) as client:
+            async with client.stream("GET", url, headers=headers) as upstream:
+                if upstream.status_code >= 400:
+                    body = await upstream.aread()
+                    raise HTTPException(
+                        status_code=upstream.status_code,
+                        detail=body.decode("utf-8", "ignore"),
+                    )
+                async for chunk in upstream.aiter_raw():
+                    yield chunk
+
+    return StreamingResponse(
+        _proxy(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.post("/sessions/{session_id}/steal")
+async def steal_coord_session(
+    session_id: UUID,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Steal a session's claim (Phase 6 wires the dashboard UI; the
+    proxy lives here so the byte-paths are stable from Phase 5)."""
+    return await _proxy_coord_post(
+        f"/sessions/{session_id}/steal", body, tenant_id=tenant_id
+    )
+
+
+@router.delete("/sessions/{session_id}")
+async def close_coord_session(
+    session_id: UUID,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Close a session (DELETE → `state='closed'`, releases claim)."""
+    return await _proxy_coord_delete(f"/sessions/{session_id}", tenant_id=tenant_id)
+
+
+@router.get("/tenants")
+async def list_user_tenants(
+    current_user: UserModel = Depends(get_current_active_user_async),
+    db: AsyncSession = Depends(get_async_db),
+) -> dict[str, Any]:
+    """Return the tenants the current operator belongs to.
+
+    Today the resolver yields a single tenant per user — see
+    ``coord_operator_resolver.resolve_tenant_for_user``. The endpoint
+    still returns a list so the frontend `TenantSwitcher` can render
+    the multi-tenant UX uniformly when the resolver grows wider
+    membership in Phase 7 / SSO.
+
+    Wire shape::
+
+        { "tenants": [ { "id": "<uuid>", "slug": "<str>", "name": "<str>" } ],
+          "active_tenant_id": "<uuid>" }
+    """
+    tenant_id = await resolve_tenant_for_user(current_user, db)
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT id, slug, name
+                FROM coord.tenants
+                WHERE id = :id
+                LIMIT 1
+                """
+            ),
+            {"id": str(tenant_id)},
+        )
+    ).first()
+    if row is None:
+        return {
+            "tenants": [{"id": str(tenant_id), "slug": "personal", "name": "Personal"}],
+            "active_tenant_id": str(tenant_id),
+        }
+    return {
+        "tenants": [
+            {
+                "id": str(row[0]),
+                "slug": str(row[1]) if row[1] is not None else "",
+                "name": str(row[2]) if row[2] is not None else "",
+            }
+        ],
+        "active_tenant_id": str(tenant_id),
+    }

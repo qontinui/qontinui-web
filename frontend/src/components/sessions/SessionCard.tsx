@@ -1,0 +1,220 @@
+"use client";
+
+import Link from "next/link";
+import {
+  Terminal,
+  Bot,
+  Workflow,
+  PlayCircle,
+  Bug,
+  Activity,
+  GitBranch,
+  Cpu,
+} from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { relativeTime } from "@/components/operations/utils";
+import { classifyHeartbeat } from "./types";
+import type { SessionRow, SessionIntent } from "./types";
+
+interface SessionCardProps {
+  session: SessionRow;
+  /** Resolves a device_id (UUID) to a human-readable hostname. */
+  hostnameFor?: (deviceId: string) => string | undefined;
+}
+
+const KIND_ICON: Record<string, React.ElementType> = {
+  terminal_shell: Terminal,
+  terminal_claude: Bot,
+  agentic: Bot,
+  workflow: Workflow,
+  automation: PlayCircle,
+  debug: Bug,
+};
+
+const KIND_LABEL: Record<string, string> = {
+  terminal_shell: "Shell",
+  terminal_claude: "Claude",
+  agentic: "Agentic",
+  workflow: "Workflow",
+  automation: "Automation",
+  debug: "Debug",
+};
+
+function heartbeatBadgeClass(
+  health: ReturnType<typeof classifyHeartbeat>
+): string {
+  switch (health) {
+    case "fresh":
+      return "border-green-500/40 text-green-400 bg-green-500/5";
+    case "stale":
+      return "border-yellow-500/50 text-yellow-300 bg-yellow-500/10";
+    case "dead":
+      return "border-red-500/60 text-red-300 bg-red-500/10";
+    case "unknown":
+      return "border-border text-muted-foreground bg-muted/10";
+  }
+}
+
+function heartbeatLabel(
+  health: ReturnType<typeof classifyHeartbeat>,
+  lastHeartbeatAt: string | null
+): string {
+  switch (health) {
+    case "fresh":
+      return `Heartbeat ${relativeTime(lastHeartbeatAt)}`;
+    case "stale":
+      return `Stale (3 missed) — ${relativeTime(lastHeartbeatAt)}`;
+    case "dead":
+      return `Auto-close pending — ${relativeTime(lastHeartbeatAt)}`;
+    case "unknown":
+      return "No heartbeat yet";
+  }
+}
+
+function stateBadgeClass(state: string): string {
+  switch (state) {
+    case "active":
+      return "border-blue-500/40 text-blue-300 bg-blue-500/10";
+    case "pending_resolution":
+      return "border-orange-500/50 text-orange-300 bg-orange-500/10";
+    case "stale":
+      return "border-yellow-500/50 text-yellow-300 bg-yellow-500/10";
+    case "closed":
+      return "border-border text-muted-foreground bg-muted/10";
+    default:
+      return "border-border text-muted-foreground";
+  }
+}
+
+function getIntentPurpose(intent: SessionRow["intent"]): string {
+  if (intent && typeof intent === "object" && "purpose" in intent) {
+    const p = (intent as SessionIntent).purpose;
+    if (typeof p === "string" && p.length > 0) return p;
+  }
+  return "(no purpose declared)";
+}
+
+export function SessionCard({ session, hostnameFor }: SessionCardProps) {
+  const Icon = KIND_ICON[session.session_kind] ?? Cpu;
+  const kindLabel = KIND_LABEL[session.session_kind] ?? session.session_kind;
+  const health = classifyHeartbeat(session.last_heartbeat_at);
+  const hostname = hostnameFor?.(session.device_id);
+  const identity = hostname ?? `${session.device_id.slice(0, 8)}…`;
+
+  const purpose = getIntentPurpose(session.intent);
+  const repo = session.repo;
+  const branch = session.branch;
+
+  return (
+    <Link
+      href={`/sessions/${session.id}`}
+      className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-xl"
+      data-ui-bridge-id="sessions.card-link"
+      data-session-id={session.id}
+    >
+      <Card
+        className="transition-shadow hover:shadow-lg gap-2 py-3"
+        data-ui-bridge-id="sessions.card"
+        data-session-state={session.state}
+        data-session-kind={session.session_kind}
+      >
+        <CardContent className="space-y-2">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className="font-medium truncate"
+                    data-ui-bridge-id="sessions.card-host"
+                  >
+                    {identity}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent
+                  side="top"
+                  className="font-mono text-[11px]"
+                >
+                  device_id {session.device_id}
+                </TooltipContent>
+              </Tooltip>
+              <Badge
+                variant="outline"
+                className="text-[10px] px-1.5 py-0"
+                data-ui-bridge-id="sessions.card-kind"
+              >
+                {kindLabel}
+              </Badge>
+            </div>
+            <Badge
+              variant="outline"
+              className={`text-[10px] px-1.5 py-0 ${stateBadgeClass(session.state)}`}
+              data-ui-bridge-id="sessions.card-state"
+            >
+              {session.state}
+            </Badge>
+          </div>
+
+          <p
+            className="text-sm text-foreground/90 line-clamp-2"
+            data-ui-bridge-id="sessions.card-purpose"
+            title={purpose}
+          >
+            {purpose}
+          </p>
+
+          {(repo || branch) && (
+            <div
+              className="flex items-center gap-1 text-xs text-muted-foreground"
+              data-ui-bridge-id="sessions.card-repo-branch"
+            >
+              <GitBranch className="h-3 w-3" />
+              <span className="font-mono truncate">
+                {repo ?? "(no repo)"}
+                {branch ? ` · ${branch}` : ""}
+              </span>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground pt-1 border-t border-border">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span data-ui-bridge-id="sessions.card-started-at">
+                  Started {relativeTime(session.started_at)}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                {session.started_at
+                  ? new Date(session.started_at).toLocaleString()
+                  : "never"}
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge
+                  variant="outline"
+                  className={`text-[10px] px-1.5 py-0 gap-1 ${heartbeatBadgeClass(health)}`}
+                  data-ui-bridge-id="sessions.card-heartbeat"
+                  data-heartbeat-health={health}
+                >
+                  <Activity className="h-2.5 w-2.5" />
+                  {relativeTime(session.last_heartbeat_at)}
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                {heartbeatLabel(health, session.last_heartbeat_at)}
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        </CardContent>
+      </Card>
+    </Link>
+  );
+}
