@@ -32,9 +32,13 @@ const API = `${ApiConfig.API_BASE_URL}/api/v1/operations`;
 const POLL_INTERVAL_MS = 15_000;
 
 interface MemoryListResponse {
+  /** Canonical envelope key (matches `qontinui_types::memory::MemoryListResponse`). */
+  items?: CoordMemoryRow[];
+  /** Pre-Phase-6 legacy aliases — coord older than 2026-05-22 returned these. */
   entries?: CoordMemoryRow[];
   memories?: CoordMemoryRow[];
   count?: number;
+  limit?: number;
 }
 
 function uniqueTypes(rows: CoordMemoryRow[]): string[] {
@@ -76,7 +80,7 @@ export default function CoordMemoryListPage() {
 
   const allRows = useMemo<CoordMemoryRow[]>(() => {
     if (!data) return [];
-    return data.entries ?? data.memories ?? [];
+    return data.items ?? data.entries ?? data.memories ?? [];
   }, [data]);
 
   const availableTypes = useMemo(() => uniqueTypes(allRows), [allRows]);

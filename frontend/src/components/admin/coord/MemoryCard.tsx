@@ -14,16 +14,22 @@ import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { BookOpen } from "lucide-react";
+import type { MemorySummary } from "@qontinui/shared-types";
 
-export interface CoordMemoryRow {
-  name: string;
-  description?: string | null;
-  type?: string | null;
-  version?: number | null;
-  written_at?: string | null;
+/**
+ * Wire-format row for the coord memory list view. Sources both the
+ * `/coord/memory/list` summary projection (no `content`) and the
+ * `/coord/memory/:name` full row — the dashboard only renders the
+ * fields they have in common, so a permissive shape covering both
+ * keeps the card reusable. `MemorySummary` is the canonical promoted
+ * type (qontinui-schemas/rust/src/memory.rs).
+ */
+export type CoordMemoryRow = MemorySummary & {
+  /** Only present when this row came from `/coord/memory/:name` (full
+   * `MemoryRow` shape) — the list endpoint strips these. */
   written_by_agent?: string | null;
   written_by_device?: string | null;
-}
+};
 
 function typeVariant(
   type?: string | null

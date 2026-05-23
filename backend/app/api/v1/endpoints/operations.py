@@ -66,6 +66,17 @@ from app.services.coord_device_status import (
 from app.services.coord_operator_resolver import resolve_tenant_for_user
 from app.services.dev_dashboard_service import get_fleet_registry
 
+# Canonical wire-format DTOs for `/operations/memory/*` proxy routes —
+# promoted to qontinui-schemas in plan
+# ``2026-05-22-memories-on-coord-cross-machine.md`` Phase 6 so coord,
+# runner-side memory bridge, and qontinui-web all share one shape.
+from qontinui_schemas.generated.per_type.memory_upsert_request import (
+    MemoryUpsertRequest,
+)
+from qontinui_schemas.generated.per_type.memory_restore_request import (
+    MemoryRestoreRequest,
+)
+
 # Timeout for coord proxy reads. The merge queue is a small JSON payload
 # served from PG; if coord takes longer than 5s something is wrong.
 _COORD_TIMEOUT = httpx.Timeout(5.0)
@@ -1318,16 +1329,24 @@ async def get_memory_version(
 
 @router.post("/memory/upsert")
 async def post_memory_upsert(
-    body: dict[str, Any],
+    body: MemoryUpsertRequest,
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Upsert a memory entry (creates a new immutable version row).
 
     Body shape (coord): ``{"name", "content", "type"?, "description"?,
     "written_by_agent"?, "written_by_device"?}``. Coord stamps the
-    monotonic version number + ``written_at``.
+    monotonic version number + ``written_at``. Validated against the
+    canonical wire-format schema
+    (`qontinui_schemas.generated.per_type.memory_upsert_request`)
+    promoted in plan
+    ``2026-05-22-memories-on-coord-cross-machine.md`` Phase 6.
     """
-    return await _proxy_coord_post("/coord/memory/upsert", body, tenant_id=tenant_id)
+    return await _proxy_coord_post(
+        "/coord/memory/upsert",
+        body.model_dump(exclude_none=True),
+        tenant_id=tenant_id,
+    )
 
 
 @router.delete("/memory/{name}")
@@ -1347,17 +1366,21 @@ async def delete_memory_entry(
 @router.post("/memory/{name}/restore")
 async def post_memory_restore(
     name: str,
-    body: dict[str, Any],
+    body: MemoryRestoreRequest,
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Restore a memory entry to a previous version.
 
-    Body shape: ``{"version": <int>}``. Coord copies the selected
-    version's content into a fresh write (new version number), so the
-    history line stays append-only.
+    Body shape: ``{"version": <int>, "written_by_agent"?, "written_by_device"?}``.
+    Coord copies the selected version's content into a fresh write (new
+    version number), so the history line stays append-only. Validated
+    against the canonical wire-format schema
+    (`qontinui_schemas.generated.per_type.memory_restore_request`).
     """
     return await _proxy_coord_post(
-        f"/coord/memory/{name}/restore", body, tenant_id=tenant_id
+        f"/coord/memory/{name}/restore",
+        body.model_dump(exclude_none=True),
+        tenant_id=tenant_id,
     )
 
 
