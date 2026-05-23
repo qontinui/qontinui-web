@@ -85,7 +85,6 @@ export function SpecCiInit() {
           },
           findAllElements: (query: unknown) => {
             const elements = liveRegistry.getAllElements();
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             return elements
               .filter(
                 (el) =>
