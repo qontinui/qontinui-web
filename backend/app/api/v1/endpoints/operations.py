@@ -31,6 +31,17 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from fastapi.responses import StreamingResponse
+from qontinui_schemas.generated.per_type.memory_restore_request import (
+    MemoryRestoreRequest,
+)
+
+# Canonical wire-format DTOs for `/operations/memory/*` proxy routes —
+# promoted to qontinui-schemas in plan
+# ``2026-05-22-memories-on-coord-cross-machine.md`` Phase 6 so coord,
+# runner-side memory bridge, and qontinui-web all share one shape.
+from qontinui_schemas.generated.per_type.memory_upsert_request import (
+    MemoryUpsertRequest,
+)
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.websockets import WebSocketState
@@ -67,17 +78,6 @@ from app.services.coord_device_status import (
 )
 from app.services.coord_operator_resolver import resolve_tenant_for_user
 from app.services.dev_dashboard_service import get_fleet_registry
-
-# Canonical wire-format DTOs for `/operations/memory/*` proxy routes —
-# promoted to qontinui-schemas in plan
-# ``2026-05-22-memories-on-coord-cross-machine.md`` Phase 6 so coord,
-# runner-side memory bridge, and qontinui-web all share one shape.
-from qontinui_schemas.generated.per_type.memory_upsert_request import (
-    MemoryUpsertRequest,
-)
-from qontinui_schemas.generated.per_type.memory_restore_request import (
-    MemoryRestoreRequest,
-)
 
 # Timeout for coord proxy reads. The merge queue is a small JSON payload
 # served from PG; if coord takes longer than 5s something is wrong.
