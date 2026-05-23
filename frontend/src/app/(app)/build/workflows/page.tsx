@@ -5,6 +5,7 @@ import { usePageSpecs } from "@/hooks/usePageSpecs";
 import { useDiscoveredSpec } from "@/lib/ui-bridge/use-discovered-specs";
 import type { SpecConfig } from "@qontinui/ui-bridge/specs";
 import { useUnifiedWorkflows } from "@/lib/api/unified-workflows";
+import { useWorkflowMirror } from "@/lib/api/workflow-mirror";
 import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
 import { WorkflowBuilderProvider } from "@/components/workflow-builder/WorkflowBuilderContext";
 import { AiGeneratePanel } from "@/components/workflow-builder/AiGeneratePanel";
@@ -21,10 +22,22 @@ function BuildWorkflowsPageContent() {
   usePageSpecs(
     discoveredSpec ? { workflows: discoveredSpec.config as SpecConfig } : {}
   );
+  // Runner reachability — used for per-row Run button enable/disable, NOT
+  // for gating the list. List comes from the web-PG mirror via
+  // useWorkflowMirror, which is reachable as long as the web backend is up.
   const { isOffline } = useUnifiedWorkflows();
+  const { data: mirrorList } = useWorkflowMirror();
   const [selectedWorkflow, setSelectedWorkflow] =
     useState<UnifiedWorkflow | null>(null);
   const [isSidebarCreating, setIsSidebarCreating] = useState(false);
+
+  // Render the runner-offline shell ONLY when the mirror has no rows and
+  // the runner is unreachable — i.e. there's nothing to browse anywhere.
+  // With mirror rows present we render the list with Run buttons disabled
+  // + a tooltip when the runner is offline; editing still works (it
+  // writes through the runner once it comes back).
+  const showFullOfflineState =
+    isOffline && Array.isArray(mirrorList) && mirrorList.length === 0;
 
   // Load workflow passed from chat page via sessionStorage
   useEffect(() => {
@@ -79,7 +92,7 @@ function BuildWorkflowsPageContent() {
         />
 
         <div className="flex-1 min-w-0 overflow-y-auto">
-          {isOffline ? (
+          {showFullOfflineState ? (
             <RunnerOfflineState />
           ) : selectedWorkflow ? (
             <div className="p-6">

@@ -2,14 +2,31 @@
 
 import { Workflow } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import type { UnifiedWorkflow } from "@/types/unified-workflow";
+
+/**
+ * Minimal row shape — matches both the web-PG mirror's list payload AND
+ * the legacy UnifiedWorkflow shape so the same component renders either.
+ *
+ * Step count is computed only when ``definition`` (full UnifiedWorkflow)
+ * is present; the mirror list omits ``definition`` to keep payloads
+ * light. When omitted we don't render the step-count badge.
+ */
+interface WorkflowRowLike {
+  id: string;
+  name: string;
+  description?: string;
+  setupSteps?: unknown[];
+  verificationSteps?: unknown[];
+  agenticSteps?: unknown[];
+  completionSteps?: unknown[];
+}
 
 export function WorkflowListItem({
   workflow,
   isSelected,
   onClick,
 }: {
-  workflow: UnifiedWorkflow;
+  workflow: WorkflowRowLike;
   isSelected: boolean;
   onClick: () => void;
 }) {
@@ -18,6 +35,11 @@ export function WorkflowListItem({
     (workflow.verificationSteps?.length ?? 0) +
     (workflow.agenticSteps?.length ?? 0) +
     (workflow.completionSteps?.length ?? 0);
+  const hasStepData =
+    workflow.setupSteps !== undefined ||
+    workflow.verificationSteps !== undefined ||
+    workflow.agenticSteps !== undefined ||
+    workflow.completionSteps !== undefined;
 
   return (
     <div
@@ -42,11 +64,13 @@ export function WorkflowListItem({
           {workflow.description}
         </p>
       )}
-      <div className="flex items-center gap-2 mt-1.5 ml-6">
-        <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-          {stepCount} step{stepCount !== 1 ? "s" : ""}
-        </Badge>
-      </div>
+      {hasStepData && (
+        <div className="flex items-center gap-2 mt-1.5 ml-6">
+          <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+            {stepCount} step{stepCount !== 1 ? "s" : ""}
+          </Badge>
+        </div>
+      )}
     </div>
   );
 }

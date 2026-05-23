@@ -4,6 +4,10 @@ import { useState, useMemo } from "react";
 import { useUIComponent } from "@qontinui/ui-bridge";
 import * as workflowApi from "@/lib/api/unified-workflows";
 import { useUnifiedWorkflows } from "@/lib/api/unified-workflows";
+import {
+  useWorkflowMirror,
+  getMirrorWorkflow,
+} from "@/lib/api/workflow-mirror";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,30 +39,56 @@ export function WorkflowListSidebar({
   onRunWorkflow: (workflowId: string) => void;
   onCreatingChange?: (creating: boolean) => void;
 }) {
+  // The list comes from the web-PG mirror — the runner writes through on
+  // every local CRUD, so the mirror is the always-reachable browseable
+  // surface even when the runner is offline. Editing + dispatch still
+  // route through the runner via workflowApi below.
   const {
-    data: workflows,
+    data: mirrorRows,
     isLoading,
     error,
     refetch,
-  } = useUnifiedWorkflows();
+  } = useWorkflowMirror();
+  // ``isOffline`` from useUnifiedWorkflows drives the per-row Run button's
+  // enabled/disabled state — when the runner can't be reached, dispatch
+  // would fail, so we surface that as a visibly-disabled action with a
+  // tooltip rather than letting the click hit a dead endpoint.
+  const { refetch: refetchRunner, isOffline: runnerIsOffline } =
+    useUnifiedWorkflows();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const filteredWorkflows = useMemo(() => {
-    if (!workflows) return [];
-    if (!searchQuery.trim()) return workflows;
-    const q = searchQuery.toLowerCase();
-    return workflows.filter(
-      (w) =>
-        w.name.toLowerCase().includes(q) ||
-        (w.description ?? "").toLowerCase().includes(q)
-    );
-  }, [workflows, searchQuery]);
+    if (!mirrorRows) return [];
+    const filtered = !searchQuery.trim()
+      ? mirrorRows
+      : mirrorRows.filter((w) =>
+          w.name.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+    return filtered;
+  }, [mirrorRows, searchQuery]);
+
+  // Resolve a mirror row id to a full UnifiedWorkflow for the editor.
+  // The mirror's list payload omits the full ``definition`` to keep
+  // payloads light; we fetch detail on-click.
+  const handleSelectFromMirror = async (id: string) => {
+    try {
+      const detail = await getMirrorWorkflow(id);
+      onSelectWorkflow(detail.definition);
+    } catch (err) {
+      console.error("[WorkflowListSidebar] Mirror detail failed:", err);
+      toast.error(
+        err instanceof Error ? err.message : "Failed to load workflow"
+      );
+    }
+  };
 
   const handleCreateWorkflow = async () => {
     onCreatingChange?.(true);
     try {
+      // Create still flows through the runner (it's the SoT for
+      // execution + writes through to the mirror after success).
       const newWorkflow = await workflowApi.createWorkflow({
         name: "New Workflow",
         description: "",
@@ -68,6 +98,7 @@ export function WorkflowListSidebar({
         completionSteps: [],
       });
       await refetch();
+      await refetchRunner();
       onSelectWorkflow(newWorkflow);
       toast.success("Workflow created");
     } catch {
@@ -79,11 +110,14 @@ export function WorkflowListSidebar({
 
   const handleDeleteWorkflow = async (id: string) => {
     try {
+      // Delete via the runner; the runner write-throughs the deletion to
+      // the mirror automatically. We refetch both to refresh local state.
       await workflowApi.deleteWorkflow(id);
       if (selectedWorkflowId === id) {
         onDeselectWorkflow();
       }
       await refetch();
+      await refetchRunner();
       toast.success("Workflow deleted");
     } catch (err) {
       console.error("[WorkflowListSidebar] Delete failed:", err);
@@ -97,6 +131,7 @@ export function WorkflowListSidebar({
     try {
       const duplicated = await workflowApi.duplicateWorkflow(id);
       await refetch();
+      await refetchRunner();
       onSelectWorkflow(duplicated);
       toast.success("Workflow duplicated");
     } catch {
@@ -112,6 +147,7 @@ export function WorkflowListSidebar({
         onDeselectWorkflow();
       }
       await refetch();
+      await refetchRunner();
       setSelectionMode(false);
       setSelectedIds(new Set());
       toast.success(`Deleted ${ids.length} workflow(s)`);
@@ -153,7 +189,7 @@ export function WorkflowListSidebar({
           // passing parameters, so we cannot accept a specific workflow ID here.
           // To select a specific workflow, use the sidebar UI directly.
           if (filteredWorkflows.length > 0) {
-            onSelectWorkflow(filteredWorkflows[0]!);
+            await handleSelectFromMirror(filteredWorkflows[0]!.id);
           } else {
             console.warn("[WorkflowListSidebar] Cannot select: no workflows available");
           }
@@ -179,8 +215,8 @@ export function WorkflowListSidebar({
             Workflows
           </span>
           <div className="flex items-center gap-1">
-            <Badge variant="outline" className={`text-[10px] px-1.5 py-0${!workflows ? ' invisible' : ''}`}>
-              {workflows?.length ?? 0}
+            <Badge variant="outline" className={`text-[10px] px-1.5 py-0${!mirrorRows ? ' invisible' : ''}`}>
+              {mirrorRows?.length ?? 0}
             </Badge>
             <div className="flex items-center gap-1 min-w-[60px] justify-end">
               {selectionMode ? (
@@ -210,7 +246,7 @@ export function WorkflowListSidebar({
                   size="icon"
                   className="h-5 w-5 text-text-muted"
                   onClick={() => setSelectionMode(true)}
-                  disabled={!workflows || workflows.length === 0}
+                  disabled={!mirrorRows || mirrorRows.length === 0}
                   title="Select for batch delete"
                 >
                   <CheckSquare className="size-3" />
@@ -277,14 +313,14 @@ export function WorkflowListSidebar({
                   if (selectionMode) {
                     toggleSelection(workflow.id);
                   } else {
-                    onSelectWorkflow(workflow);
+                    void handleSelectFromMirror(workflow.id);
                   }
                 }}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); (() => {
                   if (selectionMode) {
                     toggleSelection(workflow.id);
                   } else {
-                    onSelectWorkflow(workflow);
+                    void handleSelectFromMirror(workflow.id);
                   }
                 })(); } }}
               >
@@ -310,12 +346,17 @@ export function WorkflowListSidebar({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-5 w-5 text-text-muted hover:text-green-400"
+                    className="h-5 w-5 text-text-muted hover:text-green-400 disabled:opacity-40 disabled:cursor-not-allowed"
+                    disabled={runnerIsOffline}
                     onClick={(e) => {
                       e.stopPropagation();
                       onRunWorkflow(workflow.id);
                     }}
-                    title="Run workflow"
+                    title={
+                      runnerIsOffline
+                        ? "No runner connected"
+                        : "Run workflow"
+                    }
                   >
                     <Play className="size-3" />
                   </Button>
