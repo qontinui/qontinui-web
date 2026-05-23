@@ -41,6 +41,7 @@ import {
 } from "@qontinui/ui-bridge/server";
 import { handlers, relay } from "@/lib/ui-bridge/relay";
 import { NextRequest } from "next/server";
+import { passThroughBody } from "./body-passthrough";
 
 const sseManager = new SSEManager();
 
@@ -229,7 +230,14 @@ async function wrapHandler(
     return noBrowserResponse(path);
   }
 
-  const response = await handler(request, { params: { path: params.path.join("/") } });
+  // Body-preservation pass-through: re-wrap any POST/PUT/PATCH so the SDK's
+  // `request.json()` sees the inbound body byte-for-byte with an explicit
+  // `Content-Type: application/json` header. Closes the field-strip class
+  // of bug observed on Vercel deploys where e.g. a `{text:"X"}` body
+  // arrived at the relay with `text` missing.
+  const forwardRequest = await passThroughBody(request, method);
+
+  const response = await handler(forwardRequest, { params: { path: params.path.join("/") } });
 
   // Post-process: rewrite stale+empty snapshots.
   if (method === "GET" && path === "/control/snapshot") {
