@@ -117,9 +117,40 @@ jobs:
           docker push "${{ steps.ecr.outputs.uri }}"
           docker push "${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:${GITHUB_SHA}"
 
-      # The task-def's container image is pinned to :staging by terraform,
-      # so ECS pulls the freshly-pushed image on the next run-task. No
-      # task-def revision update is required.
+      # Register a fresh task-def revision pinned to THIS run's SHA image and
+      # run that revision explicitly. Do NOT rely on the family's latest
+      # revision pointing at a current image: on 2026-05-23 the live
+      # qontinui-staging-migrator task-def had drifted to a pinned SHA tag
+      # (`qontinui-migrator:721ebf8`, pre-`pair_codes_table`) while this
+      # workflow dutifully pushed fresh `:staging` images that run-task never
+      # used. The migrator silently no-op'd ("DB already at head") for a full
+      # day, stranding staging at `coord_session_substrate` and 500ing the
+      # pair-codes mint endpoint. Pinning the just-pushed SHA here makes the
+      # migrate run self-sufficient and immune to task-def image drift —
+      # mirrors staging-web-deploy.yml's deploy step.
+      - name: Register task-def revision (fresh SHA image)
+        id: taskdef
+        run: |
+          NEW_IMAGE="${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:${GITHUB_SHA}"
+          aws ecs describe-task-definition --task-definition "${ECS_TASK_FAMILY}" \
+            --region "${AWS_REGION}" --query 'taskDefinition' --output json > td.json
+          python3 - "$NEW_IMAGE" <<'PY'
+          import json, sys
+          new_image = sys.argv[1]
+          td = json.load(open("td.json"))
+          for c in td["containerDefinitions"]:
+              if "qontinui-migrator" in c.get("image", ""):
+                  c["image"] = new_image
+          for k in ("taskDefinitionArn", "revision", "status", "requiresAttributes",
+                    "compatibilities", "registeredAt", "registeredBy", "deregisteredAt"):
+              td.pop(k, None)
+          json.dump(td, open("td-new.json", "w"))
+          PY
+          NEW_TD=$(aws ecs register-task-definition --cli-input-json file://td-new.json \
+            --region "${AWS_REGION}" --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "Registered $NEW_TD (image $NEW_IMAGE)"
+          echo "arn=$NEW_TD" >> "$GITHUB_OUTPUT"
+
       - name: Run migrator task
         id: runtask
         run: |
@@ -130,7 +161,7 @@ jobs:
 
           TASK_ARN=$(aws ecs run-task \
             --cluster "${ECS_CLUSTER}" \
-            --task-definition "${ECS_TASK_FAMILY}" \
+            --task-definition "${{ steps.taskdef.outputs.arn }}" \
             --launch-type FARGATE \
             --network-configuration "awsvpcConfiguration={subnets=${SUBNETS_JSON},securityGroups=[${ECS_SECURITY_GROUP}],assignPublicIp=DISABLED}" \
             --started-by "github-actions-${GITHUB_RUN_ID}" \
