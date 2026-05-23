@@ -1,0 +1,273 @@
+{
+  "version": "1.0",
+  "id": "settings",
+  "name": "Settings",
+  "description": "Settings page for the qontinui-web app. Navigating to /settings redirects to /settings/account, so this snapshot rendered the Account section. The page is a tabbed settings surface (Account, AI Providers, Advanced AI, Self-Healing, Playwright, Mobile, Storage, etc.) with the Account pane showing 'Signed in as' identity fields, a 'Connected Runner' status block, and a 'Runner Name' field. This spec asserts the section/field structure (tab labels, section headings, field labels) — never the actual account values (email, username, tenant, device id), which are PII / per-environment data.",
+  "provenance": {
+    "source": "ai-generated",
+    "appId": "qontinui-web"
+  },
+  "metadata": {
+    "tags": ["settings", "account", "form"]
+  },
+  "states": [
+    {
+      "id": "settings-account-section",
+      "name": "Account section header",
+      "description": "The Account settings pane header. Asserts the section heading and its descriptive subtitle. Values are PII and intentionally not asserted.",
+      "assertions": [
+        {
+          "id": "settings-account-section-elem-0",
+          "description": "Account section h2 heading anchors the pane.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "heading-2-account" },
+            "label": "Account section heading"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "settings-account-section-elem-1",
+          "description": "Account subtitle describes connection status and identity.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "content-paragraph-connection-status-an-0" },
+            "label": "Account connection/identity subtitle"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "settings-account-section-elem-2",
+          "description": "'Signed in as' identity sub-section heading is present.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "heading-3-signed-in-as" },
+            "label": "Signed in as heading"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
+    {
+      "id": "settings-identity-fields",
+      "name": "Identity field labels",
+      "description": "Field labels in the 'Signed in as' block — Email, Username, Tenant, Tenant ID. Asserts the label structure only; the corresponding value spans hold PII and are not asserted.",
+      "assertions": [
+        {
+          "id": "settings-identity-fields-elem-0",
+          "description": "Email field label is present.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "content-label-email-label-0" },
+            "label": "Email field label"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "settings-identity-fields-elem-1",
+          "description": "Username field label is present.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "content-label-username-label-2" },
+            "label": "Username field label"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "settings-identity-fields-elem-2",
+          "description": "Tenant field label is present.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "content-label-tenant-label-4" },
+            "label": "Tenant field label"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "settings-identity-fields-elem-3",
+          "description": "Tenant ID field label is present.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "content-label-tenant-id-label-6" },
+            "label": "Tenant ID field label"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
+    {
+      "id": "settings-connected-runner",
+      "name": "Connected Runner block",
+      "description": "The 'Connected Runner' status sub-section and its descriptive field labels (Device Name, Platform, Device ID) plus the Runner Name field. Asserts label/heading structure; runner values (device name, platform, device id) are environment-specific and not asserted.",
+      "assertions": [
+        {
+          "id": "settings-connected-runner-elem-0",
+          "description": "'Connected Runner' sub-section heading is present.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "heading-3-connected-runner" },
+            "label": "Connected Runner heading"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "settings-connected-runner-elem-1",
+          "description": "Device Name field label is present.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "content-label-device-name-label-0" },
+            "label": "Device Name label"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "settings-connected-runner-elem-2",
+          "description": "Platform field label is present.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "content-label-platform-label-2" },
+            "label": "Platform label"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "settings-connected-runner-elem-3",
+          "description": "Runner Name field input is present so the operator can name the runner instance.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "input-my-runner" },
+            "label": "Runner Name input"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
+    {
+      "id": "settings-section-tabs",
+      "name": "Settings section tabs",
+      "description": "The settings page's own left-pane tab navigation (distinct from the global app shell sidebar). Asserts a representative set of section tabs is present so a missing/renamed settings section is caught. Uses the primary tab-button ids.",
+      "assertions": [
+        {
+          "id": "settings-section-tabs-elem-0",
+          "description": "Account tab is present.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "button-account-0" },
+            "label": "Account tab"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "settings-section-tabs-elem-1",
+          "description": "AI Providers tab is present.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "button-ai-providers-1" },
+            "label": "AI Providers tab"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "settings-section-tabs-elem-2",
+          "description": "Storage tab is present.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "button-storage-11" },
+            "label": "Storage tab"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "settings-section-tabs-elem-3",
+          "description": "Debug tab is present.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "button-debug-14" },
+            "label": "Debug tab"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    }
+  ],
+  "transitions": []
+}

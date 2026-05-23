@@ -1,0 +1,134 @@
+{
+  "version": "1.0",
+  "id": "marketplace",
+  "name": "Marketplace",
+  "description": "Marketplace page for the qontinui-web app. This snapshot captured the project-gated empty state (no project selected this session): an onboarding panel prompting the operator to create a first project before the Marketplace feature is available. Asserts the empty-state structure — heading, explanatory message, and the create-project call to action.",
+  "provenance": { "source": "ai-generated", "appId": "qontinui-web" },
+  "metadata": { "tags": ["marketplace", "empty-state", "onboarding"] },
+  "states": [
+    {
+      "id": "marketplace-empty-heading",
+      "name": "Empty-state heading",
+      "description": "Project-gated empty state heading shown when no project is selected.",
+      "assertions": [
+        {
+          "id": "marketplace-empty-heading-elem-0",
+          "description": "h4 'No projects yet' heading anchors the empty state.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "heading-4-no-projects-yet" }, "label": "No projects yet heading" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "marketplace-empty-heading-elem-1",
+          "description": "Heading text reads 'No projects yet' (role+text cross-check on the same h4).",
+          "category": "text-content",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "role": "heading", "text": "No projects yet" }, "label": "Empty-state heading by role+text" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "marketplace-empty-heading-elem-2",
+          "description": "Empty-state heading is a heading-role element (structural anchor).",
+          "category": "accessibility",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "heading-4-no-projects-yet", "role": "heading" }, "label": "Empty-state heading role" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
+    {
+      "id": "marketplace-empty-message",
+      "name": "Empty-state message",
+      "description": "Explanatory copy telling the operator that a project is required to access the Marketplace.",
+      "assertions": [
+        {
+          "id": "marketplace-empty-message-elem-0",
+          "description": "Explanatory paragraph is rendered.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "content-paragraph-create-your-first-pr-0" }, "label": "Empty-state message" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "marketplace-empty-message-elem-1",
+          "description": "Heading remains co-present above the message for context.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "heading-4-no-projects-yet" }, "label": "No projects yet heading" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "marketplace-empty-message-elem-2",
+          "description": "Create-project CTA is co-present beneath the message.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "link-create-first-project" }, "label": "Create First Project link" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
+    {
+      "id": "marketplace-empty-cta",
+      "name": "Create-project call to action",
+      "description": "Primary action that lets the operator leave the empty state by creating a first project.",
+      "assertions": [
+        {
+          "id": "marketplace-empty-cta-elem-0",
+          "description": "Create First Project link is present.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "link-create-first-project" }, "label": "Create First Project link" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "marketplace-empty-cta-elem-1",
+          "description": "Create First Project link is reachable by role+text.",
+          "category": "text-content",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "role": "link", "text": "Create First Project" }, "label": "Create First Project by role+text" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "marketplace-empty-cta-elem-2",
+          "description": "CTA is a link-role element (structural/accessibility anchor).",
+          "category": "accessibility",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "link-create-first-project", "role": "link" }, "label": "Create First Project link role" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    }
+  ],
+  "transitions": []
+}

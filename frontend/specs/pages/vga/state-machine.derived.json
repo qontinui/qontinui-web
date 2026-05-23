@@ -1,0 +1,145 @@
+{
+  "version": "1.0",
+  "id": "vga",
+  "name": "Vga",
+  "description": "The VGA (Visual GUI Automation) state machines page for the qontinui-web app. Lists the project's visual GUI automation state machines, with a type filter and a create-new entry point. This spec asserts the page header, the create actions, and the filter control — structure only, never specific state-machine rows (data-driven).",
+  "provenance": {
+    "source": "ai-generated",
+    "appId": "qontinui-web"
+  },
+  "metadata": {
+    "tags": ["vga", "visual-gui-automation", "state-machines"]
+  },
+  "states": [
+    {
+      "id": "vga-header",
+      "name": "Page header",
+      "description": "Top-of-page heading naming the VGA state machines view.",
+      "assertions": [
+        {
+          "id": "vga-header-elem-0",
+          "description": "h1 'VGA state machines' heading anchors the page.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "heading-1-vga-state-machines", "role": "heading" },
+            "label": "VGA state machines heading"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "vga-header-elem-1",
+          "description": "Heading text reads 'VGA state machines' (role+text cross-check).",
+          "category": "text-content",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "heading", "text": "VGA state machines" },
+            "label": "VGA heading by role+text"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
+    {
+      "id": "vga-create-actions",
+      "name": "Create state machine actions",
+      "description": "Entry points for creating a new VGA state machine — the header link and the primary create button.",
+      "assertions": [
+        {
+          "id": "vga-create-actions-elem-0",
+          "description": "Create-new link routes to the VGA state-machine builder.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "link-create-a-new-vga-state-machine", "role": "link" },
+            "label": "Create state machine link"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "vga-create-actions-elem-1",
+          "description": "Primary 'Create state machine' button is present.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "button-create-state-machine", "role": "button" },
+            "label": "Create state machine button"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "vga-create-actions-elem-2",
+          "description": "Create button reads 'Create state machine' (role+text cross-check).",
+          "category": "text-content",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "button", "text": "Create state machine" },
+            "label": "Create button by role+text"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
+    {
+      "id": "vga-filter",
+      "name": "State-machine filter",
+      "description": "Type/status filter combobox that scopes the listed state machines (defaults to 'All').",
+      "assertions": [
+        {
+          "id": "vga-filter-elem-0",
+          "description": "Filter combobox is present.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "combobox-all", "role": "combobox" },
+            "label": "State-machine filter"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "vga-filter-elem-1",
+          "description": "Filter defaults to the 'All' option (role+text cross-check).",
+          "category": "element-state",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "combobox", "text": "All" },
+            "label": "All filter by role+text"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    }
+  ],
+  "transitions": []
+}

@@ -1,0 +1,175 @@
+{
+  "version": "1.0",
+  "id": "recordings",
+  "name": "Recordings",
+  "description": "Recordings page for the qontinui-web app. Recordings is project-gated: with no project selected the page renders a 'No projects yet' empty state prompting the operator to create their first project before recordings become available. This spec asserts that project-gated empty-state structure (heading, explanatory copy, and the create-first-project call-to-action).",
+  "provenance": {
+    "source": "ai-generated",
+    "appId": "qontinui-web"
+  },
+  "metadata": {
+    "tags": ["recordings", "empty-state", "project-gated"]
+  },
+  "states": [
+    {
+      "id": "recordings-empty-state",
+      "name": "No project selected (empty state)",
+      "description": "Rendered when no project exists/selected. The recordings feature is gated behind project selection, so the page surfaces a create-first-project prompt instead of recording rows.",
+      "assertions": [
+        {
+          "id": "recordings-empty-state-elem-0",
+          "description": "Empty-state heading 'No projects yet' anchors the gated view.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "heading-4-no-projects-yet" },
+            "label": "No projects yet heading"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "recordings-empty-state-elem-1",
+          "description": "Explanatory paragraph ties the gate to the Recordings feature ('Create your first project to access Recordings').",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "content-paragraph-create-your-first-pr-0" },
+            "label": "Create-first-project explanatory copy"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "recordings-empty-state-elem-2",
+          "description": "Primary call-to-action link routes the operator to project creation.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "link-create-first-project" },
+            "label": "Create First Project link"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
+    {
+      "id": "recordings-cta-label",
+      "name": "Create-first-project CTA label",
+      "description": "Cross-checks the call-to-action link's role and visible label so a relabel or role regression on the gated empty state is caught.",
+      "assertions": [
+        {
+          "id": "recordings-cta-label-elem-0",
+          "description": "CTA link exists by id.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "link-create-first-project" },
+            "label": "Create First Project link"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "recordings-cta-label-elem-1",
+          "description": "CTA exposes link role with the 'Create First Project' accessible label (role+text cross-check).",
+          "category": "accessibility",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "link", "text": "Create First Project" },
+            "label": "Create First Project by role+text"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "recordings-cta-label-elem-2",
+          "description": "Heading text reads 'No projects yet'.",
+          "category": "text-content",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "heading", "text": "No projects yet" },
+            "label": "No projects yet by role+text"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
+    {
+      "id": "recordings-gate-copy",
+      "name": "Gate explanatory copy",
+      "description": "Confirms the project-gate explanatory paragraph is present and names the Recordings feature, distinguishing this gated render from other empty pages.",
+      "assertions": [
+        {
+          "id": "recordings-gate-copy-elem-0",
+          "description": "Explanatory paragraph element exists by id.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "content-paragraph-create-your-first-pr-0" },
+            "label": "Gate explanatory paragraph"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "recordings-gate-copy-elem-1",
+          "description": "Paragraph copy mentions 'Recordings', proving this is the recordings gate (not a generic empty page).",
+          "category": "text-content",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "content-paragraph-create-your-first-pr-0", "text_contains": "Recordings" },
+            "label": "Gate copy references Recordings"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "recordings-gate-copy-elem-2",
+          "description": "Empty-state heading is present alongside the explanatory copy.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "heading-4-no-projects-yet" },
+            "label": "No projects yet heading"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    }
+  ],
+  "transitions": []
+}
