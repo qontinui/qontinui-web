@@ -17,7 +17,7 @@
  * browser stays same-origin.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -32,6 +32,7 @@ import {
   Bug,
   Cpu,
   Activity as ActivityIcon,
+  Swords,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -39,12 +40,14 @@ import { Badge } from "@/components/ui/badge";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { relativeTime } from "@/components/operations/utils";
-import {
-  closeSession,
-  getSession,
-  subscribeSessionEvents,
-} from "./api";
+import { closeSession, getSession, subscribeSessionEvents } from "./api";
 import { classifyHeartbeat } from "./types";
+import { StealModal, getDashboardMachineId } from "./StealModal";
+import {
+  filterEventsByPolicy,
+  type ClaimStolenPayload,
+  type ClaimStealVisibility,
+} from "./visibility";
 import type { SessionEventRow, SessionRow, SessionIntent } from "./types";
 
 interface SessionDetailProps {
@@ -92,6 +95,12 @@ export function SessionDetail({ sessionId, hostnameFor }: SessionDetailProps) {
   const [closing, setClosing] = useState(false);
   const [closeError, setCloseError] = useState<string | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
+  const [stealOpen, setStealOpen] = useState(false);
+
+  // The dashboard browser identifies as its own machine_id for steal
+  // accounting. Resolved once per tab via sessionStorage so all steal
+  // events from this tab share a single id.
+  const dashboardMachineId = useMemo(() => getDashboardMachineId(), []);
 
   // Fetch the session row.
   useEffect(() => {
@@ -103,9 +112,7 @@ export function SessionDetail({ sessionId, hostnameFor }: SessionDetailProps) {
         setError(null);
       } catch (err) {
         if ((err as { name?: string })?.name === "AbortError") return;
-        setError(
-          err instanceof Error ? err.message : "failed to load session"
-        );
+        setError(err instanceof Error ? err.message : "failed to load session");
       } finally {
         setLoading(false);
       }
@@ -150,6 +157,20 @@ export function SessionDetail({ sessionId, hostnameFor }: SessionDetailProps) {
       setClosing(false);
     }
   }, [session]);
+
+  // Filter the event stream by tenant policy. Each `claim_stolen`
+  // event carries a `policy` field in its payload (set by coord at
+  // emit time, see `qontinui-coord/src/sessions.rs::post_steal`).
+  // Other event kinds are always visible. Lives BEFORE the early
+  // returns so hook order stays stable across renders.
+  const visibleEvents = useMemo(
+    () =>
+      filterEventsByPolicy(events, {
+        viewerMachineId: dashboardMachineId,
+        sessionDeviceId: session?.device_id,
+      }),
+    [events, dashboardMachineId, session?.device_id]
+  );
 
   if (loading) {
     return (
@@ -208,20 +229,31 @@ export function SessionDetail({ sessionId, hostnameFor }: SessionDetailProps) {
               {session.state}
             </Badge>
             {session.state !== "closed" && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={onClose}
-                disabled={closing}
-                data-ui-bridge-id="sessions.detail-close"
-              >
-                {closing ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <Power className="h-4 w-4 mr-2" />
-                )}
-                Close session
-              </Button>
+              <>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={() => setStealOpen(true)}
+                  data-ui-bridge-id="sessions.detail-steal"
+                >
+                  <Swords className="h-4 w-4 mr-2" />
+                  Steal claim
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={onClose}
+                  disabled={closing}
+                  data-ui-bridge-id="sessions.detail-close"
+                >
+                  {closing ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Power className="h-4 w-4 mr-2" />
+                  )}
+                  Close session
+                </Button>
+              </>
             )}
           </div>
         </div>
@@ -367,14 +399,25 @@ export function SessionDetail({ sessionId, hostnameFor }: SessionDetailProps) {
           </CardContent>
         </Card>
 
-        {/* Events timeline */}
+        {/* Events timeline — claim_stolen rows are filtered per
+            tenant policy (`claim_steal_visibility`) using the
+            stealer + victim machine_ids embedded in the event
+            payload by coord. See `./visibility.ts`. */}
         <Card data-ui-bridge-id="sessions.detail-events">
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
               Events
               <Badge variant="outline" className="text-[10px]">
-                {events.length}
+                {visibleEvents.length}
               </Badge>
+              {visibleEvents.length !== events.length && (
+                <Badge
+                  variant="outline"
+                  className="text-[10px] text-muted-foreground"
+                >
+                  {events.length - visibleEvents.length} hidden
+                </Badge>
+              )}
               {streamError && (
                 <Badge variant="destructive" className="text-[10px]">
                   stream error
@@ -383,11 +426,11 @@ export function SessionDetail({ sessionId, hostnameFor }: SessionDetailProps) {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {events.length === 0 ? (
+            {visibleEvents.length === 0 ? (
               <p className="text-xs italic text-muted-foreground">
-                No events yet. The SSE stream replays the last 100
-                events and then live-tails — events arrive within
-                seconds of the source machine emitting them.
+                No events yet. The SSE stream replays the last 100 events and
+                then live-tails — events arrive within seconds of the source
+                machine emitting them.
               </p>
             ) : (
               <ScrollArea className="max-h-[400px] pr-3">
@@ -395,7 +438,7 @@ export function SessionDetail({ sessionId, hostnameFor }: SessionDetailProps) {
                   className="space-y-1.5"
                   data-ui-bridge-id="sessions.detail-events-list"
                 >
-                  {events.map((evt) => (
+                  {visibleEvents.map((evt) => (
                     <li
                       key={evt.seq}
                       className="rounded-md border border-border/40 bg-muted/20 px-3 py-2"
@@ -417,10 +460,18 @@ export function SessionDetail({ sessionId, hostnameFor }: SessionDetailProps) {
                           seq {evt.seq} · {relativeTime(evt.occurred_at)}
                         </span>
                       </div>
-                      {evt.payload && Object.keys(evt.payload).length > 0 && (
-                        <pre className="mt-2 text-[10px] font-mono text-muted-foreground/90 whitespace-pre-wrap break-all">
-                          {JSON.stringify(evt.payload, null, 2)}
-                        </pre>
+                      {evt.event_kind === "claim_stolen" ? (
+                        <ClaimStolenRow
+                          payload={evt.payload as ClaimStolenPayload}
+                          hostnameFor={hostnameFor}
+                        />
+                      ) : (
+                        evt.payload &&
+                        Object.keys(evt.payload).length > 0 && (
+                          <pre className="mt-2 text-[10px] font-mono text-muted-foreground/90 whitespace-pre-wrap break-all">
+                            {JSON.stringify(evt.payload, null, 2)}
+                          </pre>
+                        )
                       )}
                     </li>
                   ))}
@@ -430,6 +481,66 @@ export function SessionDetail({ sessionId, hostnameFor }: SessionDetailProps) {
           </CardContent>
         </Card>
       </div>
+
+      <StealModal
+        open={stealOpen}
+        onOpenChange={setStealOpen}
+        session={session}
+        hostnameFor={hostnameFor}
+        onSucceeded={() => {
+          // Re-fetch the row; coord may have moved state to
+          // `pending_resolution` and emitted the steal event.
+          void getSession(session.id)
+            .then(setSession)
+            .catch(() => {});
+        }}
+      />
     </TooltipProvider>
+  );
+}
+
+/**
+ * Pretty-renderer for `claim_stolen` event payloads. Coord emits the
+ * payload as
+ *
+ *   { event_kind, session_id, tenant_id, originating_machine_id,
+ *     stealing_machine_id, reason, policy }
+ *
+ * (See `qontinui-coord/src/sessions.rs::post_steal`.)
+ */
+function ClaimStolenRow({
+  payload,
+  hostnameFor,
+}: {
+  payload: ClaimStolenPayload;
+  hostnameFor?: (deviceId: string) => string | undefined;
+}) {
+  const stealer = payload.stealing_machine_id ?? "(unknown)";
+  const victim = payload.originating_machine_id ?? "(unknown)";
+  const stealerHost = hostnameFor?.(stealer) ?? `${stealer.slice(0, 8)}…`;
+  const victimHost = hostnameFor?.(victim) ?? `${victim.slice(0, 8)}…`;
+  const policyTag = (payload.policy as ClaimStealVisibility | undefined) ?? "—";
+
+  return (
+    <div
+      className="mt-2 space-y-1.5 text-xs"
+      data-ui-bridge-id="sessions.detail-claim-stolen"
+    >
+      <p>
+        <span className="font-mono text-red-300">{stealerHost}</span> stole from{" "}
+        <span className="font-mono text-muted-foreground">{victimHost}</span>
+      </p>
+      {payload.reason && (
+        <blockquote
+          className="border-l-2 border-red-500/40 pl-2 italic text-muted-foreground"
+          data-ui-bridge-id="sessions.detail-claim-stolen-reason"
+        >
+          “{payload.reason}”
+        </blockquote>
+      )}
+      <p className="text-[10px] text-muted-foreground">
+        policy: <code className="font-mono">{policyTag}</code>
+      </p>
+    </div>
   );
 }
