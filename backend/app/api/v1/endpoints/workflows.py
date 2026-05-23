@@ -194,10 +194,7 @@ async def sync_workflow_mirror(
         return WorkflowMirrorRead.model_validate(row)
 
     # Update path. Reject if the caller doesn't own the row.
-    if (
-        existing.owner_user_id != device.user.id
-        or existing.tenant_id != tenant_id
-    ):
+    if existing.owner_user_id != device.user.id or existing.tenant_id != tenant_id:
         # Don't disclose existence — return 404.
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
