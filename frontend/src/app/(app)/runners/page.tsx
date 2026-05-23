@@ -6,10 +6,12 @@ import { usePageSpecs } from "@/hooks/usePageSpecs";
 import { useDiscoveredSpec } from "@/lib/ui-bridge/use-discovered-specs";
 import type { SpecConfig } from "@qontinui/ui-bridge/specs";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Monitor, History, KeyRound } from "lucide-react";
-import { ActiveConnectionsList } from "@/components/runners/ActiveConnectionsList";
+import { RegisteredDevicesList } from "@/components/runners/RegisteredDevicesList";
 import { ConnectionHistoryTable } from "@/components/runners/ConnectionHistoryTable";
 import { RunnerTokenList } from "@/components/server-runners/RunnerTokenList";
 import { PairCodeMintCard } from "@/components/server-runners/PairCodeMintCard";
@@ -21,7 +23,8 @@ export default function RunnersPage() {
     discoveredSpec ? { runners: discoveredSpec.config as SpecConfig } : {}
   );
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState("online");
+  const [activeTab, setActiveTab] = useState("devices");
+  const [showOnlyOnline, setShowOnlyOnline] = useState(false);
 
   const { runners: onlineRunners } = useRealtimeConnections();
 
@@ -68,8 +71,8 @@ export default function RunnersPage() {
         <div className="mb-8">
           <h2 className="text-3xl font-bold mb-2">Manage Runners</h2>
           <p className="text-text-muted">
-            Online runners, session history, and the auth tokens runners use to
-            register themselves.
+            All paired devices, session history, and the auth tokens runners
+            use to register themselves.
           </p>
         </div>
 
@@ -80,9 +83,9 @@ export default function RunnersPage() {
           className="space-y-6"
         >
           <TabsList className="bg-surface-raised border border-border-subtle">
-            <TabsTrigger value="online" className="gap-2">
+            <TabsTrigger value="devices" className="gap-2">
               <Monitor className="w-4 h-4" />
-              Online Runners
+              Devices
               {onlineCount > 0 && (
                 <Badge
                   variant="outline"
@@ -102,18 +105,30 @@ export default function RunnersPage() {
             </TabsTrigger>
           </TabsList>
 
-          {/* Tab 1: Online Runners */}
-          <TabsContent value="online" className="space-y-6">
-            <div className="flex justify-between items-center">
+          {/* Tab 1: Devices (all registered, with online-only toggle) */}
+          <TabsContent value="devices" className="space-y-6">
+            <div className="flex justify-between items-center gap-4 flex-wrap">
               <div>
-                <h3 className="text-xl font-semibold">Online Runners</h3>
+                <h3 className="text-xl font-semibold">Devices</h3>
                 <p className="text-sm text-text-muted">
-                  Runners reachable right now — anything healthy, degraded, or
-                  starting.
+                  All devices paired to this account — online and offline.
                 </p>
               </div>
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="devices-online-only"
+                  checked={showOnlyOnline}
+                  onCheckedChange={setShowOnlyOnline}
+                />
+                <Label
+                  htmlFor="devices-online-only"
+                  className="text-sm cursor-pointer"
+                >
+                  Online only
+                </Label>
+              </div>
             </div>
-            <ActiveConnectionsList />
+            <RegisteredDevicesList showOnlyOnline={showOnlyOnline} />
           </TabsContent>
 
           {/* Tab 2: Session History */}

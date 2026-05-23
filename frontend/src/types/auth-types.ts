@@ -16,6 +16,8 @@ export interface User {
   preferences?: UserPreferences | null;
   created_at: string;
   updated_at: string;
+  tenant_id?: string | null;
+  tenant_slug?: string | null;
 }
 
 export interface LoginRequest {

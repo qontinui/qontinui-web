@@ -92,6 +92,11 @@ const nextConfig = {
         destination: '/admin/architecture',
         permanent: false,
       },
+      {
+        source: '/workflows',
+        destination: '/build/workflows',
+        permanent: false,
+      },
     ]
   },
   eslint: {

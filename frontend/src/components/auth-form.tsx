@@ -128,11 +128,11 @@ export function AuthForm({
       className="space-y-4"
     >
       <div className="space-y-2">
-        <Label htmlFor="login-username">Username</Label>
+        <Label htmlFor="login-username">Email or username</Label>
         <Input
           id="login-username"
           type="text"
-          placeholder="your_username"
+          placeholder="you@example.com or your_username"
           {...loginForm.register("username")}
           disabled={loading}
         />

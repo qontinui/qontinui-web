@@ -28,8 +28,8 @@ export class RunnerService {
    */
   async getRunners(status?: string): Promise<Runner[]> {
     const url = status
-      ? `${this.baseUrl}/runners?status=${encodeURIComponent(status)}`
-      : `${this.baseUrl}/runners`;
+      ? `${this.baseUrl}/devices?status=${encodeURIComponent(status)}`
+      : `${this.baseUrl}/devices`;
     const response = await this.httpClient.fetch(url);
 
     if (!response.ok) {
@@ -41,7 +41,7 @@ export class RunnerService {
 
   async getRunner(runnerId: string): Promise<Runner> {
     const response = await this.httpClient.fetch(
-      `${this.baseUrl}/runners/${runnerId}`
+      `${this.baseUrl}/devices/${runnerId}`
     );
     if (!response.ok) {
       throw new Error("Failed to fetch runner");
@@ -51,7 +51,7 @@ export class RunnerService {
 
   async deleteRunner(runnerId: string): Promise<void> {
     const response = await this.httpClient.fetch(
-      `${this.baseUrl}/runners/${runnerId}`,
+      `${this.baseUrl}/devices/${runnerId}`,
       { method: "DELETE" }
     );
 
@@ -72,7 +72,7 @@ export class RunnerService {
     body: DispatchPayload
   ): Promise<DispatchResult> {
     const response = await this.httpClient.fetch(
-      `${this.baseUrl}/runners/${runnerId}/dispatch`,
+      `${this.baseUrl}/devices/${runnerId}/dispatch`,
       {
         method: "POST",
         body: JSON.stringify(body),
@@ -102,7 +102,7 @@ export class RunnerService {
     if (filters.end_date) params.set("end_date", filters.end_date);
     if (filters.runner_id) params.set("runner_id", filters.runner_id);
 
-    const url = `${this.baseUrl}/runners/sessions${
+    const url = `${this.baseUrl}/devices/connections${
       params.toString() ? `?${params.toString()}` : ""
     }`;
     const response = await this.httpClient.fetch(url);

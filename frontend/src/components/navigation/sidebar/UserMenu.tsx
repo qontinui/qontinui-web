@@ -17,11 +17,25 @@ import {
 
 export interface UserMenuProps {
   isCollapsed: boolean;
-  user: { username?: string; email: string } | null;
+  user: {
+    username?: string;
+    email: string;
+    tenant_id?: string | null;
+    tenant_slug?: string | null;
+  } | null;
   onLogout: () => void;
   onExport: () => void;
   onImport: () => void;
   onDocs: () => void;
+}
+
+function formatTenant(
+  tenantSlug: string | null | undefined,
+  tenantId: string | null | undefined,
+): string {
+  if (tenantSlug) return tenantSlug;
+  if (tenantId) return tenantId;
+  return "(not assigned)";
 }
 
 export function UserMenu({
@@ -37,6 +51,8 @@ export function UserMenu({
   const initials = user.username
     ? user.username.slice(0, 2).toUpperCase()
     : user.email.slice(0, 2).toUpperCase();
+
+  const tenantLabel = formatTenant(user.tenant_slug, user.tenant_id);
 
   if (isCollapsed) {
     return (
@@ -65,6 +81,12 @@ export function UserMenu({
           <div className="px-2 py-1.5">
             <p className="text-sm font-medium">{user.username || user.email}</p>
             <p className="text-xs text-text-muted">{user.email}</p>
+            <p
+              className="mt-1 truncate text-xs text-text-muted"
+              data-testid="user-menu-tenant"
+            >
+              Tenant: <span className="font-mono">{tenantLabel}</span>
+            </p>
           </div>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={onExport}>
@@ -119,6 +141,17 @@ export function UserMenu({
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-56">
+        <div className="px-2 py-1.5">
+          <p className="text-sm font-medium">{user.username || user.email}</p>
+          <p className="text-xs text-text-muted">{user.email}</p>
+          <p
+            className="mt-1 truncate text-xs text-text-muted"
+            data-testid="user-menu-tenant"
+          >
+            Tenant: <span className="font-mono">{tenantLabel}</span>
+          </p>
+        </div>
+        <DropdownMenuSeparator />
         <DropdownMenuItem onClick={onExport}>
           <Download className="mr-2 size-4" />
           Export Project
