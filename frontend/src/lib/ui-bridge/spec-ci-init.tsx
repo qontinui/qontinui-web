@@ -152,7 +152,7 @@ export function SpecCiInit() {
           getRegistry: () => registry,
           getActionExecutor: () => actionExecutor,
         };
-      } catch (err) {
+      } catch (_err) {
         // Silent — Spec CI is dev/test-only. A console.warn would be
         // noise in any browser session a spec author opens, and
         // run-spec-ci.ts already surfaces the gap via the executor's
