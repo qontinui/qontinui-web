@@ -1804,13 +1804,12 @@ async def stream_coord_session_events(
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(None, connect=5.0),
         ) as client:
-            async with client.stream(
-                "GET", url, headers=headers
-            ) as upstream:
+            async with client.stream("GET", url, headers=headers) as upstream:
                 if upstream.status_code >= 400:
                     body = await upstream.aread()
                     raise HTTPException(
-                        status_code=upstream.status_code, detail=body.decode("utf-8", "ignore")
+                        status_code=upstream.status_code,
+                        detail=body.decode("utf-8", "ignore"),
                     )
                 async for chunk in upstream.aiter_raw():
                     yield chunk
@@ -1844,9 +1843,7 @@ async def close_coord_session(
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Close a session (DELETE → `state='closed'`, releases claim)."""
-    return await _proxy_coord_delete(
-        f"/sessions/{session_id}", tenant_id=tenant_id
-    )
+    return await _proxy_coord_delete(f"/sessions/{session_id}", tenant_id=tenant_id)
 
 
 @router.get("/tenants")
@@ -1883,9 +1880,7 @@ async def list_user_tenants(
     ).first()
     if row is None:
         return {
-            "tenants": [
-                {"id": str(tenant_id), "slug": "personal", "name": "Personal"}
-            ],
+            "tenants": [{"id": str(tenant_id), "slug": "personal", "name": "Personal"}],
             "active_tenant_id": str(tenant_id),
         }
     return {
