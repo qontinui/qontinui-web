@@ -8,7 +8,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
-RUN git clone --depth 1 https://github.com/qontinui/qontinui-schemas.git
+# Cache-bust keyed on the upstream qontinui-schemas commit. Without an ARG
+# referenced here, Docker caches this clone layer indefinitely and silently
+# bakes a stale schemas snapshot into the image. That exact trap crash-looped
+# staging on 2026-05-23: schemas #58 added the memory shared types at 03:27,
+# but the 08:17 web image reused a pre-#58 cached clone and boot-failed on
+# `ModuleNotFoundError: qontinui_schemas.generated.per_type.memory_upsert_request`.
+# The deploy workflow passes the resolved main SHA, so the layer re-clones only
+# when schemas actually moves. A full (non-shallow) clone is required so an
+# arbitrary commit SHA can be checked out. Defaults to `main` so a plain local
+# `docker build` (no --build-arg) still produces a current image.
+ARG SCHEMAS_SHA=main
+RUN git clone https://github.com/qontinui/qontinui-schemas.git \
+    && git -C qontinui-schemas checkout "$SCHEMAS_SHA"
 
 
 # Stage 2: runtime image

@@ -1,0 +1,199 @@
+name: Deploy Web Backend to Staging
+
+# Builds the qontinui-web backend image and rolls it onto the staging ECS
+# service (cluster qontinui-staging, service "web", region us-east-1). Mirrors
+# the trigger model + AWS plumbing of staging-migrate.yml so staging's two
+# halves — DB schema and the running image — deploy on the same cadence.
+#
+# Triggers:
+#   - push to main when backend code / Dockerfile / deps change
+#   - nightly schedule — the structural catch for "schemas moved, web didn't".
+#     The 2026-05-23 outage was exactly this: qontinui-schemas #58 landed the
+#     memory shared types, no web commit followed, so neither push nor dispatch
+#     would rebuild — and the live image kept boot-failing. A nightly
+#     schemas-SHA-cache-busted rebuild closes that drift class without anyone
+#     having to notice.
+#   - workflow_dispatch — redeploy a specific state / force a fresh schemas
+#     pull on demand.
+#
+# Safety: the ECS service has its deployment circuit breaker enabled
+# (enable+rollback). A crash-looping image auto-rolls-back to the prior
+# task-def revision instead of flapping. The "Verify rollout" step below turns
+# that silent rollback into a hard CI failure so a bad build is loud, not
+# masked by a green services-stable wait.
+#
+# Memory: proj_web_main_blocked_schemas_memory_drift — the manual-build era this
+# workflow ends. The Dockerfile's `git clone qontinui-schemas` RUN layer is the
+# staleness trap; this workflow passes SCHEMAS_SHA to bust it deterministically.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/staging-web-deploy.yml'
+  schedule:
+    - cron: '0 3 * * *'  # daily 03:00 UTC — catches schemas-only drift
+  workflow_dispatch:
+
+# One staging-web deploy at a time; the latest commit's image is the one that
+# should win. An interrupted deploy leaves the service on its prior stable
+# revision (circuit breaker), so cancel-in-progress is safe.
+concurrency:
+  group: staging-web-deploy
+  cancel-in-progress: true
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: qontinui-web-backend
+  ECS_CLUSTER: ${{ secrets.STAGING_ECS_CLUSTER }}
+  ECS_SERVICE: web
+  ECS_CONTAINER: web
+  ECS_TASK_FAMILY: qontinui-staging-web
+  STAGING_HEALTH_URL: https://demo.staging.qontinui.io/api/v1/health
+
+jobs:
+  deploy:
+    name: Build, push, deploy web backend
+    runs-on: ubuntu-latest
+    environment: staging
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out qontinui-web
+        uses: actions/checkout@v5
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Resolve ECR registry
+        id: ecr
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          REGISTRY="$ACCOUNT_ID.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          echo "registry=$REGISTRY" >> "$GITHUB_OUTPUT"
+
+      # The backend Dockerfile clones qontinui-schemas itself inside a build
+      # stage (no sibling checkout needed). We resolve schemas' main SHA here
+      # and pass it as SCHEMAS_SHA so the clone layer's cache key tracks the
+      # real upstream commit — the layer re-clones iff schemas moved.
+      - name: Resolve qontinui-schemas main SHA
+        id: schemas
+        run: |
+          SHA=$(git ls-remote https://github.com/qontinui/qontinui-schemas.git refs/heads/main | cut -f1)
+          if [ -z "$SHA" ]; then echo "::error::could not resolve qontinui-schemas main SHA"; exit 1; fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "qontinui-schemas main = $SHA"
+
+      - name: Login to ECR
+        run: |
+          aws ecr get-login-password --region "${AWS_REGION}" \
+            | docker login --username AWS --password-stdin "${{ steps.ecr.outputs.registry }}"
+
+      # Context is backend/ — the Dockerfile COPYs pyproject/poetry.lock and the
+      # app tree from there and clones schemas in-image. Tag both the immutable
+      # commit SHA (the task-def will pin this) and :staging (a convenience
+      # pointer so :staging never lags the live service again).
+      - name: Build backend image
+        run: |
+          docker buildx build \
+            --platform linux/amd64 \
+            -f backend/Dockerfile \
+            --build-arg SCHEMAS_SHA=${{ steps.schemas.outputs.sha }} \
+            -t "${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:${GITHUB_SHA}" \
+            -t "${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:staging" \
+            --load \
+            backend
+
+      - name: Push backend image
+        run: |
+          docker push "${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:${GITHUB_SHA}"
+          docker push "${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:staging"
+
+      # Register a new immutable task-def revision pinned to the commit SHA
+      # image (not :staging) so each deploy is a distinct, traceable revision
+      # and circuit-breaker rollback has a clean prior target.
+      - name: Register task-def revision + update service
+        id: deploy
+        run: |
+          NEW_IMAGE="${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:${GITHUB_SHA}"
+          aws ecs describe-task-definition \
+            --task-definition "${ECS_TASK_FAMILY}" \
+            --region "${AWS_REGION}" \
+            --query 'taskDefinition' --output json > td.json
+
+          python3 - "$NEW_IMAGE" <<'PY'
+          import json, sys
+          new_image = sys.argv[1]
+          td = json.load(open("td.json"))
+          # Repoint any container that runs the web backend image; tolerant of
+          # the container being renamed.
+          for c in td["containerDefinitions"]:
+              if "qontinui-web-backend" in c.get("image", ""):
+                  c["image"] = new_image
+          # Strip read-only fields register-task-definition rejects.
+          for k in ("taskDefinitionArn", "revision", "status", "requiresAttributes",
+                    "compatibilities", "registeredAt", "registeredBy", "deregisteredAt"):
+              td.pop(k, None)
+          json.dump(td, open("td-new.json", "w"))
+          PY
+
+          NEW_TD=$(aws ecs register-task-definition \
+            --cli-input-json file://td-new.json \
+            --region "${AWS_REGION}" \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "Registered $NEW_TD"
+          echo "new_td=$NEW_TD" >> "$GITHUB_OUTPUT"
+
+          aws ecs update-service \
+            --cluster "${ECS_CLUSTER}" \
+            --service "${ECS_SERVICE}" \
+            --task-definition "$NEW_TD" \
+            --region "${AWS_REGION}" >/dev/null
+          echo "Service update requested -> $NEW_TD"
+
+      - name: Wait for service to stabilize
+        run: |
+          aws ecs wait services-stable \
+            --cluster "${ECS_CLUSTER}" \
+            --services "${ECS_SERVICE}" \
+            --region "${AWS_REGION}"
+
+      # services-stable also returns green AFTER a circuit-breaker rollback (the
+      # service is "stable" on the OLD revision). Compare the live task-def to
+      # the one we registered: a mismatch means our image crash-looped and was
+      # rolled back — fail loudly with the crash log.
+      - name: Verify rollout (catch circuit-breaker rollback)
+        run: |
+          LIVE_TD=$(aws ecs describe-services \
+            --cluster "${ECS_CLUSTER}" --services "${ECS_SERVICE}" \
+            --region "${AWS_REGION}" \
+            --query 'services[0].taskDefinition' --output text)
+          EXPECTED="${{ steps.deploy.outputs.new_td }}"
+          echo "live=$LIVE_TD expected=$EXPECTED"
+          if [ "$LIVE_TD" != "$EXPECTED" ]; then
+            echo "::error::Circuit breaker rolled the deploy back (live=$LIVE_TD). The new image likely crash-looped on boot. Recent web container log:"
+            STREAM=$(aws logs describe-log-streams --log-group-name "/ecs/qontinui-staging/web" \
+              --region "${AWS_REGION}" --order-by LastEventTime --descending --max-items 1 \
+              --query 'logStreams[0].logStreamName' --output text)
+            aws logs get-log-events --log-group-name "/ecs/qontinui-staging/web" \
+              --log-stream-name "$STREAM" --region "${AWS_REGION}" --limit 40 \
+              --query 'events[].message' --output text 2>/dev/null | tail -40 || true
+            exit 1
+          fi
+
+      - name: Smoke staging health endpoint
+        run: |
+          for i in 1 2 3 4 5; do
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' "${STAGING_HEALTH_URL}" || echo 000)
+            echo "attempt $i: ${STAGING_HEALTH_URL} -> $CODE"
+            [ "$CODE" = "200" ] && exit 0
+            sleep 10
+          done
+          echo "::error::staging health endpoint never returned 200"
+          exit 1
