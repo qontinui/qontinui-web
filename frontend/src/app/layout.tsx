@@ -8,6 +8,7 @@ import { UIBridgeWrapper, RenderLogWrapper } from "@/lib/ui-bridge";
 import { QueryProvider } from "@/lib/providers/query-provider";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { DevDebugInit } from "@/components/dev-debug-init";
+import { SpecCiInit } from "@/lib/ui-bridge/spec-ci-init";
 import { ClientOverlays } from "@/components/ClientOverlays";
 import { WorkflowUIProvider } from "@/lib/providers/workflow-ui-provider";
 import { BuildRefreshBanner } from "@/components/BuildRefreshBanner";
@@ -71,6 +72,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <DevDebugInit />
+        <SpecCiInit />
         <ErrorBoundary>
           <QueryProvider>
             <AuthProvider>
