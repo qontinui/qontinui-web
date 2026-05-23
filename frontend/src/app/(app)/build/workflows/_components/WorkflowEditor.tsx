@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { generateStepId, type UnifiedStep, type WorkflowPhase } from "@/types/unified-workflow";
 import { PhaseStepRenderer } from "./PhaseStepRenderer";
 import { DispatchWorkflowButton } from "@/components/server-runners/DispatchWorkflowButton";
+import { RunOnRunnerButton } from "@/components/runners";
 import {
   Play,
   Download,
@@ -241,6 +242,9 @@ export function WorkflowEditor({
               workflowName={state.workflow.name}
               className="h-8"
             />
+          )}
+          {state.workflow.id && (
+            <RunOnRunnerButton workflowId={state.workflow.id} />
           )}
           {state.workflow.id && (
             <Button
