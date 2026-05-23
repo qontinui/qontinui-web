@@ -4,8 +4,10 @@
 
 import type { TestCase, TestResult } from "@/services/workflow-testing-service";
 import type { Workflow } from "@/lib/action-schema/action-types";
+import { httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE_URL = ApiConfig.API_BASE_URL;
 
 /**
  * Execute a workflow test case
@@ -16,12 +18,8 @@ export async function runWorkflowTest(
   projectId: string
 ): Promise<TestResult> {
   // Create a test run
-  const runResponse = await fetch(`${API_BASE_URL}/api/v1/testing/runs`, {
+  const runResponse = await httpClient.fetch(`${API_BASE_URL}/api/v1/testing/runs`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    credentials: "include",
     body: JSON.stringify({
       project_id: projectId,
       run_name: `Test: ${testCase.name}`,
@@ -85,12 +83,8 @@ export async function runWorkflowTest(
       new Date(endTime).getTime() - new Date(startTime).getTime();
 
     // Complete the test run
-    await fetch(`${API_BASE_URL}/api/v1/testing/runs/${runId}/complete`, {
+    await httpClient.fetch(`${API_BASE_URL}/api/v1/testing/runs/${runId}/complete`, {
       method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      credentials: "include",
       body: JSON.stringify({
         status: allAssertionsPassed ? "completed" : "failed",
         ended_at: endTime,
@@ -137,12 +131,8 @@ export async function runWorkflowTest(
       new Date(endTime).getTime() - new Date(startTime).getTime();
 
     // Mark test run as failed
-    await fetch(`${API_BASE_URL}/api/v1/testing/runs/${runId}/complete`, {
+    await httpClient.fetch(`${API_BASE_URL}/api/v1/testing/runs/${runId}/complete`, {
       method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      credentials: "include",
       body: JSON.stringify({
         status: "failed",
         ended_at: endTime,

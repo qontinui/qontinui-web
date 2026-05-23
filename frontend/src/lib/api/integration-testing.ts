@@ -6,6 +6,10 @@ import type {
   MockExecutionResponse,
   StateScreenshotListResponse,
 } from "@/types/integration-testing";
+import { httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
+
+const API = `${ApiConfig.API_BASE_URL}/api`;
 
 /**
  * Execute a mock workflow using historical data.
@@ -14,12 +18,8 @@ import type {
 export async function executeMockWorkflow(
   request: MockExecutionRequest
 ): Promise<MockExecutionResponse> {
-  const response = await fetch("/api/integration-testing/execute", {
+  const response = await httpClient.fetch(`${API}/integration-testing/execute`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    credentials: "include",
     body: JSON.stringify(request),
   });
 
@@ -43,11 +43,8 @@ export async function getStateScreenshots(
     params.set("active_states", activeStates.join(","));
   }
 
-  const response = await fetch(
-    `/api/integration-testing/snapshots/${runId}/screenshots?${params}`,
-    {
-      credentials: "include",
-    }
+  const response = await httpClient.fetch(
+    `${API}/integration-testing/snapshots/${runId}/screenshots?${params}`
   );
 
   if (!response.ok) {
@@ -64,7 +61,7 @@ export function getScreenshotUrl(
   runId: string,
   screenshotPath: string
 ): string {
-  return `/api/integration-testing/snapshots/${runId}/screenshot/${screenshotPath}`;
+  return `${API}/integration-testing/snapshots/${runId}/screenshot/${screenshotPath}`;
 }
 
 // PDF Report Types
@@ -88,12 +85,8 @@ export interface PDFReportOptions {
 export async function generatePDFReport(
   options: PDFReportOptions
 ): Promise<Blob> {
-  const response = await fetch("/api/integration-testing/reports/pdf", {
+  const response = await httpClient.fetch(`${API}/integration-testing/reports/pdf`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    credentials: "include",
     body: JSON.stringify({
       execution_result: options.executionResult,
       screenshots_dir: options.screenshotsDir,

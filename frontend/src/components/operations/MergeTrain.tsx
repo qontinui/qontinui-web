@@ -13,6 +13,7 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { createLogger } from "@/lib/logger";
+import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_API, relativeTime } from "./utils";
 import type {
   EscalationAlternative,
@@ -491,9 +492,7 @@ export function MergeTrain() {
 
   const fetchQueue = useCallback(async () => {
     try {
-      const res = await fetch(`${OPERATIONS_API}/merge/queue`, {
-        credentials: "include",
-      });
+      const res = await httpClient.fetch(`${OPERATIONS_API}/merge/queue`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = (await res.json()) as QueueResponse | ProposalDetail[];
       // Coord returns {proposals: [...]}; tolerate either shape.
@@ -516,9 +515,8 @@ export function MergeTrain() {
   // the escalations section in that case.
   const fetchEscalations = useCallback(async () => {
     try {
-      const res = await fetch(
-        `${OPERATIONS_API}/pr-merge/escalations?include_resolved=false`,
-        { credentials: "include" }
+      const res = await httpClient.fetch(
+        `${OPERATIONS_API}/pr-merge/escalations?include_resolved=false`
       );
       if (!res.ok) {
         if (res.status === 404) {
@@ -552,12 +550,10 @@ export function MergeTrain() {
     ) => {
       setDecideBusy(alertId);
       try {
-        const res = await fetch(
+        const res = await httpClient.fetch(
           `${OPERATIONS_API}/pr-merge/escalations/${alertId}/decide`,
           {
             method: "POST",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               resolution_action: action,
               rationale: `Operator chose ${action} via dashboard`,
@@ -588,9 +584,7 @@ export function MergeTrain() {
   // Drift suggestions + audit-stale alerts. Best-effort, 404-tolerant.
   const fetchSuggestions = useCallback(async () => {
     try {
-      const res = await fetch(`${OPERATIONS_API}/pr-merge/suggestions`, {
-        credentials: "include",
-      });
+      const res = await httpClient.fetch(`${OPERATIONS_API}/pr-merge/suggestions`);
       if (!res.ok) {
         if (res.status === 404) {
           if (!cleanedUpRef.current) setSuggestions([]);
@@ -620,12 +614,10 @@ export function MergeTrain() {
     ) => {
       setSuggestionBusy(alertId);
       try {
-        const res = await fetch(
+        const res = await httpClient.fetch(
           `${OPERATIONS_API}/pr-merge/suggestions/${alertId}/${action}`,
           {
             method: "POST",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body ?? {}),
           }
         );
@@ -653,9 +645,7 @@ export function MergeTrain() {
   // user always sees the more-actionable proposal-side error if both fail.
   const fetchPrs = useCallback(async () => {
     try {
-      const res = await fetch(`${OPERATIONS_API}/pr-merge/prs`, {
-        credentials: "include",
-      });
+      const res = await httpClient.fetch(`${OPERATIONS_API}/pr-merge/prs`);
       if (!res.ok) {
         // 404 here means the coord backend hasn't been deployed with the
         // Phase 1 endpoint yet -- silently skip rendering the outer card.

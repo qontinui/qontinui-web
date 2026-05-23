@@ -2,6 +2,7 @@
 // Service for Integration Testing API calls to runner
 
 import { ApiConfig } from "./api-config";
+import { httpClient } from "@/services/service-factory";
 import type {
   IntegrationTestResponse,
   IntegrationTestRunListResponse,
@@ -320,15 +321,8 @@ class IntegrationTestingService {
       offset: offset.toString(),
     });
 
-    const response = await fetch(
-      `/api/v1/execution/runs?project_id=${projectId}&${params.toString()}`,
-      {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: "include",
-      }
+    const response = await httpClient.fetch(
+      `${ApiConfig.API_BASE_URL}/api/v1/execution/runs?project_id=${projectId}&${params.toString()}`
     );
 
     if (!response.ok) {
@@ -377,13 +371,9 @@ class IntegrationTestingService {
   async getIntegrationTestResult(
     runId: string
   ): Promise<IntegrationTestResponse> {
-    const response = await fetch(`/api/v1/execution/runs/${runId}`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      credentials: "include",
-    });
+    const response = await httpClient.fetch(
+      `${ApiConfig.API_BASE_URL}/api/v1/execution/runs/${runId}`
+    );
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));

@@ -9,7 +9,8 @@ import React, {
   useRef,
 } from "react";
 import { createLogger } from "@/lib/logger";
-import { authService } from "@/services/service-factory";
+import { authService, httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
 import { User } from "@/types/auth-types";
 import { pageStateDB } from "@/stores/page-state";
 import { clearExtractionConfig } from "@/hooks/use-extraction-config";
@@ -428,18 +429,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return null;
       }
 
-      // Fetch a short-lived runner token from the backend
-      // This is needed because tokens are stored in HttpOnly cookies (XSS protection)
-      // and cannot be accessed by JavaScript. The runner-token endpoint generates
-      // a 5-minute token specifically for runner API calls.
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-      const response = await fetch(`${apiUrl}/api/v1/auth/runner-token`, {
-        method: "POST",
-        credentials: "include", // Include HttpOnly cookies for authentication
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
+      // Fetch a short-lived runner token from the backend. Goes through
+      // httpClient.fetch so the Bearer header is attached in remote/staging
+      // mode where HttpOnly cookies can't cross origins.
+      const response = await httpClient.fetch(
+        `${ApiConfig.API_BASE_URL}/api/v1/auth/runner-token`,
+        { method: "POST" }
+      );
 
       if (!response.ok) {
         logger.error("Failed to get runner token:", response.status);

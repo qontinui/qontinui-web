@@ -14,6 +14,10 @@ import type {
   CreateRunnerTokenResponse,
   RunnerToken,
 } from "@/types/server-runner";
+import { httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
+
+const API = `${ApiConfig.API_BASE_URL}/api/v1`;
 
 async function handleResponse<T>(
   response: Response,
@@ -43,10 +47,8 @@ async function handleResponse<T>(
 export async function createRunnerToken(
   data: CreateRunnerTokenRequest
 ): Promise<CreateRunnerTokenResponse> {
-  const response = await fetch(`/api/v1/devices/pair-confirm`, {
+  const response = await httpClient.fetch(`${API}/devices/pair-confirm`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
     body: JSON.stringify(data),
   });
   return handleResponse<CreateRunnerTokenResponse>(
@@ -57,9 +59,7 @@ export async function createRunnerToken(
 
 /** List the user's device tokens (hashes never leak). */
 export async function listRunnerTokens(): Promise<RunnerToken[]> {
-  const response = await fetch(`/api/v1/devices/tokens`, {
-    credentials: "include",
-  });
+  const response = await httpClient.fetch(`${API}/devices/tokens`);
   return handleResponse<RunnerToken[]>(
     response,
     "Failed to list device tokens"
@@ -68,9 +68,8 @@ export async function listRunnerTokens(): Promise<RunnerToken[]> {
 
 /** Revoke a device token. */
 export async function revokeRunnerToken(tokenId: string): Promise<void> {
-  const response = await fetch(`/api/v1/devices/tokens/${tokenId}`, {
+  const response = await httpClient.fetch(`${API}/devices/tokens/${tokenId}`, {
     method: "DELETE",
-    credentials: "include",
   });
   await handleResponse<void>(response, "Failed to revoke device token");
 }

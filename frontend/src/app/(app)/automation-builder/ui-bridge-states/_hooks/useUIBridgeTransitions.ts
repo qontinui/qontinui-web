@@ -3,11 +3,15 @@
 import { useCallback } from "react";
 import { toast } from "sonner";
 import { useAutomationStore } from "@/stores/automation";
+import { httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
 import type {
   StateMachineTransitionCreate,
   StateMachineTransitionUpdate,
   StateMachineTransition,
 } from "../_types";
+
+const API = `${ApiConfig.API_BASE_URL}/api/v1`;
 
 export function useUIBridgeTransitions(configId: string | null) {
   const projectId = useAutomationStore((s) => s.projectId);
@@ -18,12 +22,10 @@ export function useUIBridgeTransitions(configId: string | null) {
     ): Promise<StateMachineTransition | null> => {
       if (!projectId || !configId) return null;
       try {
-        const res = await fetch(
-          `/api/v1/projects/${projectId}/ui-bridge-configs/${configId}/transitions`,
+        const res = await httpClient.fetch(
+          `${API}/projects/${projectId}/ui-bridge-configs/${configId}/transitions`,
           {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
             body: JSON.stringify(data),
           }
         );
@@ -51,12 +53,10 @@ export function useUIBridgeTransitions(configId: string | null) {
     ): Promise<StateMachineTransition | null> => {
       if (!projectId || !configId) return null;
       try {
-        const res = await fetch(
-          `/api/v1/projects/${projectId}/ui-bridge-configs/${configId}/transitions/${transitionId}`,
+        const res = await httpClient.fetch(
+          `${API}/projects/${projectId}/ui-bridge-configs/${configId}/transitions/${transitionId}`,
           {
             method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
             body: JSON.stringify(data),
           }
         );
@@ -81,11 +81,10 @@ export function useUIBridgeTransitions(configId: string | null) {
     async (transitionId: string): Promise<boolean> => {
       if (!projectId || !configId) return false;
       try {
-        const res = await fetch(
-          `/api/v1/projects/${projectId}/ui-bridge-configs/${configId}/transitions/${transitionId}`,
+        const res = await httpClient.fetch(
+          `${API}/projects/${projectId}/ui-bridge-configs/${configId}/transitions/${transitionId}`,
           {
             method: "DELETE",
-            credentials: "include",
           }
         );
         if (res.ok || res.status === 204) {

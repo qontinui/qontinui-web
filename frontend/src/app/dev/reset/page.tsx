@@ -15,6 +15,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation } from "@tanstack/react-query";
 import { createLogger } from "@/lib/logger";
+import { httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
 
 const log = createLogger("DevReset");
 
@@ -66,9 +68,8 @@ export default function DevResetPage() {
 
     // Clear cookies by calling logout endpoint (clears HttpOnly cookies)
     try {
-      await fetch("/api/v1/auth/jwt/logout", {
+      await httpClient.fetch(`${ApiConfig.API_BASE_URL}/api/v1/auth/jwt/logout`, {
         method: "POST",
-        credentials: "include",
       });
       log.debug("Logout endpoint called (HttpOnly cookies cleared)");
     } catch (_e) {

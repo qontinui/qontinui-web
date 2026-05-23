@@ -6,7 +6,10 @@ import { useRealtimeConnections } from "@/hooks/useRealtimeConnections";
 import type { ExtractionState } from "./useExtractionState";
 import type { RenderLogEntry, RenderLogSession } from "../_types";
 import { createLogger } from "@/lib/logger";
+import { httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
 const logger = createLogger("UseUIBridgeSection");
+const API = `${ApiConfig.API_BASE_URL}/api/v1`;
 
 interface UseUIBridgeSectionArgs {
   state: ExtractionState;
@@ -104,9 +107,7 @@ export function useUIBridgeSection({
   const loadRenderLogSessions = useCallback(async () => {
     stateRef.current.setIsLoadingSessions(true);
     try {
-      const response = await fetch("/api/v1/render-logs/sessions?limit=20", {
-        credentials: "include",
-      });
+      const response = await httpClient.fetch(`${API}/render-logs/sessions?limit=20`);
 
       if (response.ok) {
         const sessions: RenderLogSession[] = await response.json();
@@ -127,9 +128,8 @@ export function useUIBridgeSection({
     stateRef.current.setIsLoadingSessionRenders(true);
     stateRef.current.setSelectedSessionId(sessionId);
     try {
-      const listResponse = await fetch(
-        `/api/v1/render-logs?session_id=${sessionId}&page_size=200`,
-        { credentials: "include" }
+      const listResponse = await httpClient.fetch(
+        `${API}/render-logs?session_id=${sessionId}&page_size=200`
       );
 
       if (!listResponse.ok) {
@@ -139,9 +139,8 @@ export function useUIBridgeSection({
       const listData = await listResponse.json();
       const renders: RenderLogEntry[] = [];
       for (const summary of listData.items) {
-        const detailResponse = await fetch(
-          `/api/v1/render-logs/${summary.id}`,
-          { credentials: "include" }
+        const detailResponse = await httpClient.fetch(
+          `${API}/render-logs/${summary.id}`
         );
         if (detailResponse.ok) {
           const detail = await detailResponse.json();

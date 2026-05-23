@@ -10,7 +10,7 @@
  */
 
 import { csrfService } from "@/services/csrf-service";
-import { authService } from "@/services/service-factory";
+import { authService, tokenManager } from "@/services/service-factory";
 import type {
   TemplateCategory,
   MarketplaceTemplateDetail,
@@ -45,6 +45,12 @@ class WorkflowTemplatesApiClient {
       ...(options.headers as Record<string, string>),
     };
 
+    // Dual-mode auth: cookies (local) + Bearer (remote/cross-origin staging).
+    const accessToken = tokenManager.getAccessToken();
+    if (accessToken) {
+      headers["Authorization"] = `Bearer ${accessToken}`;
+    }
+
     // Add CSRF token for state-changing requests
     const csrfToken = csrfService.getToken();
     if (
@@ -64,10 +70,19 @@ class WorkflowTemplatesApiClient {
     if (response.status === 401) {
       const refreshed = await authService.refreshAccessToken();
       if (refreshed) {
-        // Retry the request
+        // Re-derive Authorization from the freshly-refreshed token before
+        // the retry, otherwise we'd send the same stale Bearer that just
+        // 401'd. The CSRF + Content-Type headers stay valid.
+        const retryHeaders = { ...headers };
+        const newToken = tokenManager.getAccessToken();
+        if (newToken) {
+          retryHeaders["Authorization"] = `Bearer ${newToken}`;
+        } else {
+          delete retryHeaders["Authorization"];
+        }
         return fetch(`${API_BASE_URL}/api/v1${url}`, {
           ...options,
-          headers,
+          headers: retryHeaders,
           credentials: "include",
         });
       }

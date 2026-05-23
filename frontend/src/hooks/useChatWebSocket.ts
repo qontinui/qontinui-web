@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import type { AiSessionState, AiMessage } from "@qontinui/shared-types";
 import { parseOutputLog } from "@qontinui/workflow-utils";
 import { createLogger } from "@/lib/logger";
+import { httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
 
 const log = createLogger("useChatWebSocket");
 
@@ -69,9 +71,9 @@ export function useChatWebSocket({
 
     let token: string | null = null;
     try {
-      const response = await fetch("/api/v1/ws-token", {
-        credentials: "include",
-      });
+      const response = await httpClient.fetch(
+        `${ApiConfig.API_BASE_URL}/api/v1/ws-token`
+      );
       if (response.ok) {
         const data = await response.json();
         token = data.token || null;

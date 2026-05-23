@@ -13,8 +13,10 @@ import {
   toStateDiscoveryResult,
   toStateDiscoveryResultSummary,
 } from "@/types/state-machine";
+import { httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE_URL = ApiConfig.API_BASE_URL;
 
 interface UseStateDiscoveryResultsOptions {
   projectId: string | null;
@@ -63,9 +65,8 @@ export function useStateDiscoveryResults({
     setError(null);
 
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/v1/projects/${projectId}/state-discovery-results`,
-        { credentials: "include" }
+      const response = await httpClient.fetch(
+        `${API_BASE_URL}/api/v1/projects/${projectId}/state-discovery-results`
       );
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -92,9 +93,8 @@ export function useStateDiscoveryResults({
       setDetailError(null);
 
       try {
-        const response = await fetch(
-          `${API_BASE_URL}/api/v1/projects/${projectId}/state-discovery-results/${resultId}`,
-          { credentials: "include" }
+        const response = await httpClient.fetch(
+          `${API_BASE_URL}/api/v1/projects/${projectId}/state-discovery-results/${resultId}`
         );
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -124,9 +124,9 @@ export function useStateDiscoveryResults({
       if (!projectId) return;
 
       try {
-        const response = await fetch(
+        const response = await httpClient.fetch(
           `${API_BASE_URL}/api/v1/projects/${projectId}/state-discovery-results/${resultId}`,
-          { method: "DELETE", credentials: "include" }
+          { method: "DELETE" }
         );
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);

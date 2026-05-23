@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createLogger } from "@/lib/logger";
+import { httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
 import {
   DEVICE_STATUS_API,
   DEVICE_STATUS_POLL_FALLBACK_MS,
@@ -87,7 +89,7 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
 
   const seedFromRest = useCallback(async (): Promise<void> => {
     try {
-      const resp = await fetch(DEVICE_STATUS_API, { credentials: "include" });
+      const resp = await httpClient.fetch(DEVICE_STATUS_API);
       if (!resp.ok) {
         throw new Error(`HTTP ${resp.status}`);
       }
@@ -152,9 +154,9 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
     // `/api/v1/devices/status` consumer uses.
     let token: string | null = null;
     try {
-      const tokResp = await fetch("/api/v1/ws-token", {
-        credentials: "include",
-      });
+      const tokResp = await httpClient.fetch(
+        `${ApiConfig.API_BASE_URL}/api/v1/ws-token`
+      );
       if (tokResp.ok) {
         const data = (await tokResp.json()) as { token?: string };
         token = data.token ?? null;

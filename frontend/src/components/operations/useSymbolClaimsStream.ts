@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createLogger } from "@/lib/logger";
+import { httpClient } from "@/services/service-factory";
 import {
   SYMBOL_CLAIMS_API,
   SYMBOL_CLAIMS_POLL_MS,
@@ -76,7 +77,7 @@ export function useSymbolClaimsStream(): UseSymbolClaimsStreamResult {
 
   const fetchOnce = useCallback(async (): Promise<void> => {
     try {
-      const resp = await fetch(SYMBOL_CLAIMS_API, { credentials: "include" });
+      const resp = await httpClient.fetch(SYMBOL_CLAIMS_API);
       if (!resp.ok) {
         throw new Error(`HTTP ${resp.status}`);
       }

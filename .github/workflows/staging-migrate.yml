@@ -1,0 +1,181 @@
+name: Apply Migrations to Staging RDS
+
+# Auto-runs `alembic upgrade head` against the staging canonical DB by building
+# the migrator image and dispatching the ECS task. The migrator image is the
+# one defined in qontinui-stack/migrator/ — it embeds the full alembic chain
+# from backend/alembic + the qontinui-schemas dependency at build time.
+#
+# Triggers:
+#   - push to main when alembic chain or backend pyproject changes
+#   - workflow_dispatch for manual catch-up runs (schemas-only drift, etc.)
+#   - nightly schedule so schema drift never accumulates more than ~24h
+#
+# The migrator entrypoint is idempotent — if the DB is already at head it
+# exits 0 without writing. Cost of an unnecessary run is ~3 min CI + a few
+# seconds of Fargate; cheaper than a drift incident.
+#
+# Memory: proj_staging_pg_schema_drift_2026-05-22 — the manual-only model
+# this workflow replaces silently broke /coord/status + the multi-tenant
+# audit INSERT path. Auto-deploy of migrations is the documented fix.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/alembic/**'
+      - 'backend/pyproject.toml'
+      - 'backend/poetry.lock'
+  schedule:
+    - cron: '0 3 * * *'  # daily 03:00 UTC catches schemas-only drifts
+  workflow_dispatch:
+
+# Migrator runs as a one-shot ECS task; concurrent runs are safe (alembic
+# acquires its own advisory lock on the DB) but pointless. Cancel-in-progress
+# keeps the latest commit's chain authoritative.
+concurrency:
+  group: staging-migrate
+  cancel-in-progress: true
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: qontinui-migrator
+  IMAGE_TAG: staging
+  ECS_CLUSTER: ${{ secrets.STAGING_ECS_CLUSTER }}
+  ECS_TASK_FAMILY: qontinui-staging-migrator
+  ECS_SUBNETS: ${{ secrets.STAGING_PRIVATE_SUBNET_IDS }}
+  ECS_SECURITY_GROUP: ${{ secrets.STAGING_CLIENT_SG_ID }}
+
+jobs:
+  migrate:
+    name: Build, push, run migrator
+    runs-on: ubuntu-latest
+    environment: staging
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out qontinui-web
+        uses: actions/checkout@v5
+
+      # The migrator Dockerfile uses qontinui-root as build context (one
+      # level up from any sibling repo's checkout). Sibling-checkout pattern
+      # mirrors backend-deploy-production.yml and the runner CI.
+      - name: Check out qontinui-stack + qontinui-schemas siblings
+        working-directory: ${{ github.workspace }}/..
+        run: |
+          git clone --depth 1 https://github.com/qontinui/qontinui-stack.git
+          git clone --depth 1 https://github.com/qontinui/qontinui-schemas.git
+        shell: bash
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Resolve ECR registry
+        id: ecr
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          REGISTRY="$ACCOUNT_ID.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          echo "registry=$REGISTRY" >> "$GITHUB_OUTPUT"
+          echo "uri=$REGISTRY/${ECR_REPOSITORY}:${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure ECR repository exists
+        run: |
+          aws ecr describe-repositories \
+            --repository-names "${ECR_REPOSITORY}" \
+            --region "${AWS_REGION}" >/dev/null 2>&1 \
+          || aws ecr create-repository \
+            --repository-name "${ECR_REPOSITORY}" \
+            --region "${AWS_REGION}" \
+            --image-scanning-configuration scanOnPush=true >/dev/null
+
+      - name: Login to ECR
+        run: |
+          aws ecr get-login-password --region "${AWS_REGION}" \
+            | docker login --username AWS --password-stdin "${{ steps.ecr.outputs.registry }}"
+
+      # Build context = parent of qontinui-web checkout (i.e. the directory
+      # containing qontinui-web/, qontinui-stack/, qontinui-schemas/). The
+      # Dockerfile COPYs from qontinui-web/backend/{alembic,app}/ and from
+      # qontinui-schemas/ relative to that context.
+      - name: Build migrator image
+        working-directory: ${{ github.workspace }}/..
+        run: |
+          docker buildx build \
+            --platform linux/amd64 \
+            -f qontinui-stack/migrator/Dockerfile \
+            -t "${{ steps.ecr.outputs.uri }}" \
+            -t "${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:${GITHUB_SHA}" \
+            --load \
+            .
+
+      - name: Push migrator image
+        run: |
+          docker push "${{ steps.ecr.outputs.uri }}"
+          docker push "${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:${GITHUB_SHA}"
+
+      # The task-def's container image is pinned to :staging by terraform,
+      # so ECS pulls the freshly-pushed image on the next run-task. No
+      # task-def revision update is required.
+      - name: Run migrator task
+        id: runtask
+        run: |
+          # Convert comma-separated subnet list into JSON array literal for
+          # the awsvpcConfiguration argument. STAGING_PRIVATE_SUBNET_IDS is
+          # stored as e.g. "subnet-aaaa,subnet-bbbb".
+          SUBNETS_JSON=$(echo "${ECS_SUBNETS}" | python3 -c 'import sys,json; print(json.dumps([s.strip() for s in sys.stdin.read().split(",") if s.strip()]))')
+
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "${ECS_CLUSTER}" \
+            --task-definition "${ECS_TASK_FAMILY}" \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=${SUBNETS_JSON},securityGroups=[${ECS_SECURITY_GROUP}],assignPublicIp=DISABLED}" \
+            --started-by "github-actions-${GITHUB_RUN_ID}" \
+            --query 'tasks[0].taskArn' \
+            --output text)
+
+          if [ -z "${TASK_ARN}" ] || [ "${TASK_ARN}" = "None" ]; then
+            echo "::error::run-task returned no taskArn"
+            exit 1
+          fi
+          echo "task_arn=${TASK_ARN}" >> "$GITHUB_OUTPUT"
+          echo "Started ${TASK_ARN}"
+
+      - name: Wait for task to stop
+        run: |
+          aws ecs wait tasks-stopped \
+            --cluster "${ECS_CLUSTER}" \
+            --tasks "${{ steps.runtask.outputs.task_arn }}"
+
+      - name: Report exit code + tail logs
+        run: |
+          TASK_DESC=$(aws ecs describe-tasks \
+            --cluster "${ECS_CLUSTER}" \
+            --tasks "${{ steps.runtask.outputs.task_arn }}" \
+            --query 'tasks[0]')
+
+          EXIT_CODE=$(echo "$TASK_DESC" | python3 -c 'import sys,json; t=json.load(sys.stdin); c=t.get("containers",[{}])[0]; print(c.get("exitCode") if c.get("exitCode") is not None else "null")')
+          STOP_REASON=$(echo "$TASK_DESC" | python3 -c 'import sys,json; t=json.load(sys.stdin); print(t.get("stoppedReason") or "")')
+
+          echo "exitCode=${EXIT_CODE}"
+          echo "stoppedReason=${STOP_REASON}"
+
+          # CloudWatch logs (last 100 events) for diagnostic capture in the
+          # workflow run output. The log group + stream naming is
+          # /ecs/qontinui-staging/migrator + migrator/migrator/<task-id>.
+          TASK_ID=$(echo "${{ steps.runtask.outputs.task_arn }}" | awk -F/ '{print $NF}')
+          aws logs get-log-events \
+            --log-group-name "/ecs/qontinui-staging/migrator" \
+            --log-stream-name "migrator/migrator/${TASK_ID}" \
+            --limit 100 \
+            --query 'events[].message' \
+            --output text 2>/dev/null \
+            || echo "(log stream not yet flushed)"
+
+          if [ "${EXIT_CODE}" != "0" ]; then
+            echo "::error::Migrator exited with code ${EXIT_CODE} (reason: ${STOP_REASON})"
+            exit 1
+          fi

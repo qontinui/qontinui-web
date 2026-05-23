@@ -23,6 +23,7 @@ import React, {
 } from "react";
 import { usePathname } from "next/navigation";
 import { createLogger } from "@/lib/logger";
+import { httpClient } from "@/services/service-factory";
 
 const log = createLogger("RenderLogContext");
 
@@ -319,12 +320,8 @@ export function RenderLogProvider({ children }: { children: React.ReactNode }) {
           element_count: snapshot.totalElements,
         };
 
-        const response = await fetch(`${API_BASE_URL}/api/v1/render-logs`, {
+        const response = await httpClient.fetch(`${API_BASE_URL}/api/v1/render-logs`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          credentials: "include",
           body: JSON.stringify(payload),
         });
 

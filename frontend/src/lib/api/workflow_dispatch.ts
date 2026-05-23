@@ -8,6 +8,8 @@
  */
 
 import type { DispatchRequest, DispatchResponse } from "@/types/server-runner";
+import { httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
 
 /** Thrown when the dispatch backend returns a known error status. */
 export class DispatchError extends Error {
@@ -38,12 +40,13 @@ export async function dispatchWorkflow(
   runnerId: string,
   data: DispatchRequest
 ): Promise<DispatchResponse> {
-  const response = await fetch(`/api/v1/devices/${runnerId}/dispatch`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-    body: JSON.stringify(data),
-  });
+  const response = await httpClient.fetch(
+    `${ApiConfig.API_BASE_URL}/api/v1/devices/${runnerId}/dispatch`,
+    {
+      method: "POST",
+      body: JSON.stringify(data),
+    }
+  );
 
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));

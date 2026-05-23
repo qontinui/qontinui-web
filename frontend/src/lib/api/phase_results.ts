@@ -7,6 +7,10 @@
  */
 
 import type { PhaseResult } from "@/types/server-runner";
+import { httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
+
+const API = `${ApiConfig.API_BASE_URL}/api/v1`;
 
 async function handleResponse<T>(
   response: Response,
@@ -30,9 +34,7 @@ export async function listPhaseResults(
   executionId: string
 ): Promise<PhaseResult[]> {
   const params = new URLSearchParams({ execution_id: executionId });
-  const response = await fetch(`/api/v1/phase-results?${params.toString()}`, {
-    credentials: "include",
-  });
+  const response = await httpClient.fetch(`${API}/phase-results?${params.toString()}`);
   return handleResponse<PhaseResult[]>(
     response,
     "Failed to list phase results"
@@ -41,8 +43,6 @@ export async function listPhaseResults(
 
 /** Get a single phase result by id. */
 export async function getPhaseResult(id: string): Promise<PhaseResult> {
-  const response = await fetch(`/api/v1/phase-results/${id}`, {
-    credentials: "include",
-  });
+  const response = await httpClient.fetch(`${API}/phase-results/${id}`);
   return handleResponse<PhaseResult>(response, "Failed to load phase result");
 }

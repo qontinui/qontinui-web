@@ -6,7 +6,7 @@
  */
 
 import { createLogger } from "@/lib/logger";
-import { authService } from "@/services/service-factory";
+import { authService, tokenManager } from "@/services/service-factory";
 import { TokenValidator } from "@/services/auth/token-validator";
 import { csrfService } from "@/services/csrf-service";
 
@@ -77,11 +77,16 @@ class ApiClient {
     // - This prevents race conditions where both frontend and backend try to refresh simultaneously
     // - Backend sets new tokens via X-New-Access-Token and X-New-Refresh-Token headers
     //
-    // HttpOnly Cookie Security:
-    // - Tokens are stored in HttpOnly cookies (XSS protection)
-    // - Browser automatically sends cookies with credentials: 'include'
-    // - No Authorization header needed
-    logger.debug("Using HttpOnly cookie authentication");
+    // Dual-mode auth (same as services/http-client.ts):
+    // - Local: HttpOnly cookies carry the session.
+    // - Remote (NEXT_PUBLIC_API_URL off-localhost): Bearer token is the only
+    //   working path (cookies are not cross-origin deliverable). Token is
+    //   restored from sessionStorage by TokenStorage's constructor when in
+    //   ApiConfig.IS_REMOTE_BACKEND mode.
+    const accessToken = tokenManager.getAccessToken();
+    if (accessToken) {
+      headers["Authorization"] = `Bearer ${accessToken}`;
+    }
 
     // Add CSRF token for state-changing requests
     const csrfToken = csrfService.getToken();

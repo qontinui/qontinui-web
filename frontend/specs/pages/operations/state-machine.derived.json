@@ -1,0 +1,303 @@
+{
+  "version": "1.0",
+  "id": "operations",
+  "name": "Operations",
+  "description": "Cross-machine fleet view for the qontinui-web app. Surfaces the live device-status tile (coord-driven), a cross-repo dependency-graph entry point, and the merge-train header. When the operations backend at localhost:8000 is unreachable the page renders an HTTP-401/connection-error panel in place of the merge-train data; that error path is covered by its own state.",
+  "provenance": {
+    "source": "ai-generated",
+    "appId": "qontinui-web"
+  },
+  "metadata": {
+    "tags": ["operations", "fleet", "coord", "merge-train"]
+  },
+  "states": [
+    {
+      "id": "operations-header",
+      "name": "Page header",
+      "description": "Top-of-page banner — always rendered regardless of backend availability or auth tier.",
+      "assertions": [
+        {
+          "id": "operations-header-elem-0",
+          "description": "h1 Operations heading anchors the page.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "heading-1-operations" },
+            "label": "Operations page heading"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "operations-header-elem-1",
+          "description": "Heading text reads 'Operations' (role+text cross-check on the same h1).",
+          "category": "text-content",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "heading", "text": "Operations" },
+            "label": "Operations heading by role+text"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "operations-header-elem-2",
+          "description": "Cross-machine subtitle paragraph anchors the page's purpose.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "content-paragraph-cross-machine-fleet-0" },
+            "label": "Cross-machine fleet subtitle"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
+    {
+      "id": "operations-cross-repo-deps",
+      "name": "Cross-repo dependency-graph entry point",
+      "description": "Operator-driven cross-repo dependency-graph mini-form (PR Merge Orchestrator Phase 5 D5.5). Always rendered — no auth gating, no data dependency.",
+      "assertions": [
+        {
+          "id": "operations-cross-repo-deps-elem-0",
+          "description": "Section h4 names the cross-repo dependencies panel.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "heading-4-cross-repo-dependencies" },
+            "label": "Cross-repo dependencies heading"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "operations-cross-repo-deps-elem-1",
+          "description": "Inline link routes to the full dependency-graph view.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "link-dependency-graph" },
+            "label": "Dependency-graph link"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "operations-cross-repo-deps-elem-2",
+          "description": "Repo (owner/name) text input is present so the operator can select a connected component.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "dep-graph-repo" },
+            "label": "Repo input"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "operations-cross-repo-deps-elem-3",
+          "description": "PR number input completes the (repo, pr) tuple.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "dep-graph-pr" },
+            "label": "PR number input"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "operations-cross-repo-deps-elem-4",
+          "description": "Submit button loads the connected component into the embedded graph.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "button-load-graph" },
+            "label": "Load graph button"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
+    {
+      "id": "operations-device-status-tile",
+      "name": "Device status tile",
+      "description": "Voluntary 'what is each machine doing right now' broadcast surfaced from GET /coord/status (proxied via /coord-api/status) and live-updated via the coord WebSocket on events.coord.machine_status_updated. Asserts the tile's structural anchors — the heading, the refresh-status button, the row container, and the WS-vs-polling connection indicator — not specific machine rows (which vary per fleet state).",
+      "assertions": [
+        {
+          "id": "operations-device-status-tile-elem-0",
+          "description": "Tile root section is rendered.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "operations.device-status-tile" },
+            "label": "Device status tile section"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "operations-device-status-tile-elem-1",
+          "description": "h2 names the tile 'Device status'.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "heading-2-device-status" },
+            "label": "Device status heading"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "operations-device-status-tile-elem-2",
+          "description": "Refresh-status button is reachable by operators when WS is down or stale.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "operations.device-status-refresh" },
+            "label": "Refresh device status button"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "operations-device-status-tile-elem-3",
+          "description": "Connection-state indicator (live vs polling-fallback) is mounted next to the tile header.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "operations.device-status-connection" },
+            "label": "Connection state badge"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "operations-device-status-tile-elem-4",
+          "description": "Row container ul anchors any machine rows the tile renders. Asserts container shape only; row count varies per fleet state.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "operations.device-status-list" },
+            "label": "Device status row list"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
+    {
+      "id": "operations-backend-unreachable",
+      "name": "Operations API unreachable (HTTP 401 / connection error)",
+      "description": "Rendered when the operations REST API at localhost:8000 returns a non-2xx (commonly HTTP 401 for an unauthenticated session, or a connection refused). Replaces the merge-train data panels with a clear error banner pointing at the failing dependency. State-recommender selects this state only when the live page is in the error mode; healthy fleet runs match the other states instead.",
+      "assertions": [
+        {
+          "id": "operations-backend-unreachable-elem-0",
+          "description": "Top-line error heading 'Backend Unreachable'.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "content-paragraph-backend-unreachable-0" },
+            "label": "Backend Unreachable banner"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "operations-backend-unreachable-elem-1",
+          "description": "Diagnostic line names the operations API + HTTP status code.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "content-paragraph-operations-api-unrea-1" },
+            "label": "Operations API diagnostic line"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "operations-backend-unreachable-elem-2",
+          "description": "Recovery hint instructs the operator to run the backend on localhost:8000.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "content-paragraph-make-sure-the-backen-2" },
+            "label": "Recovery hint paragraph"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "operations-backend-unreachable-elem-3",
+          "description": "Code-block highlights the expected backend endpoint (localhost:8000).",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "content-code-block-localhost8000-0" },
+            "label": "Backend endpoint code block"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    }
+  ],
+  "transitions": []
+}

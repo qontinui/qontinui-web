@@ -9,9 +9,11 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { PythonFile } from "@/components/code-execution/PythonFileBrowser";
+import { httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
 
 // Use empty string for relative URLs through Next.js proxy for proper cookie forwarding
-const API_BASE_URL = "";
+const API_BASE_URL = ApiConfig.API_BASE_URL;
 
 interface ListFilesResponse {
   files: Array<{
@@ -63,15 +65,8 @@ export function useCodeExecutionFiles(
     setError(null);
 
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/v1/code-execution/files/list?project_id=${projectId}`,
-        {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          credentials: "include", // Include cookies for authentication
-        }
+      const response = await httpClient.fetch(
+        `${API_BASE_URL}/api/v1/code-execution/files/list?project_id=${projectId}`
       );
 
       if (!response.ok) {
@@ -123,14 +118,10 @@ export function useCodeExecutionFiles(
       }
 
       try {
-        const response = await fetch(
+        const response = await httpClient.fetch(
           `${API_BASE_URL}/api/v1/code-execution/files/validate`,
           {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            credentials: "include",
             body: JSON.stringify({
               project_id: projectId,
               file_path: filePath,

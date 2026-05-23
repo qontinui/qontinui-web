@@ -28,26 +28,24 @@ import type {
   IssueSeverity,
 } from "@/types/generated/execution";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import { httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
+
+const API_BASE = ApiConfig.API_BASE_URL;
 
 /**
- * Helper to make API requests with authentication
+ * Helper to make API requests via the shared HttpClient.
  *
- * Uses credentials: 'include' to send HttpOnly cookies automatically.
- * This is the secure authentication method used by the app.
+ * HttpClient injects Authorization: Bearer when a token is in memory
+ * (required for cross-origin staging-mode where HttpOnly cookies don't
+ * deliver) and sends credentials: "include" so the cookie path keeps
+ * working in local-mode. Single auth code path for both.
  */
 async function fetchWithAuth<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const response = await fetch(`${API_BASE}${endpoint}`, {
-    ...options,
-    credentials: "include", // Send HttpOnly auth cookies
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
-  });
+  const response = await httpClient.fetch(`${API_BASE}${endpoint}`, options);
 
   if (!response.ok) {
     const error = await response

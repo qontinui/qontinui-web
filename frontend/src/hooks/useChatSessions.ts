@@ -1,4 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
+import { httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
 
 export interface ChatSession {
   id: string;
@@ -25,9 +27,9 @@ export function useChatSessions() {
   return useQuery({
     queryKey: chatSessionsKeys.list(),
     queryFn: async (): Promise<ChatSessionsResponse> => {
-      const response = await fetch("/api/v1/chat/sessions", {
-        credentials: "include",
-      });
+      const response = await httpClient.fetch(
+        `${ApiConfig.API_BASE_URL}/api/v1/chat/sessions`
+      );
       if (!response.ok) {
         throw new Error(`Failed to fetch chat sessions: ${response.status}`);
       }

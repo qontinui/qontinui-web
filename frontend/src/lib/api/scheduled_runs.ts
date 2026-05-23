@@ -11,6 +11,10 @@ import type {
   ScheduledWorkflowRun,
   UpdateScheduledRunRequest,
 } from "@/types/server-runner";
+import { httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
+
+const API = `${ApiConfig.API_BASE_URL}/api/v1`;
 
 async function handleResponse<T>(
   response: Response,
@@ -40,8 +44,8 @@ export async function listScheduledRuns(
   const params = new URLSearchParams();
   if (workflowId) params.append("workflow_id", workflowId);
   const qs = params.toString();
-  const url = `/api/v1/scheduled-runs${qs ? `?${qs}` : ""}`;
-  const response = await fetch(url, { credentials: "include" });
+  const url = `${API}/scheduled-runs${qs ? `?${qs}` : ""}`;
+  const response = await httpClient.fetch(url);
   return handleResponse<ScheduledWorkflowRun[]>(
     response,
     "Failed to list scheduled runs"
@@ -51,9 +55,7 @@ export async function listScheduledRuns(
 export async function getScheduledRun(
   id: string
 ): Promise<ScheduledWorkflowRun> {
-  const response = await fetch(`/api/v1/scheduled-runs/${id}`, {
-    credentials: "include",
-  });
+  const response = await httpClient.fetch(`${API}/scheduled-runs/${id}`);
   return handleResponse<ScheduledWorkflowRun>(
     response,
     "Failed to load scheduled run"
@@ -63,10 +65,8 @@ export async function getScheduledRun(
 export async function createScheduledRun(
   data: CreateScheduledRunRequest
 ): Promise<ScheduledWorkflowRun> {
-  const response = await fetch(`/api/v1/scheduled-runs`, {
+  const response = await httpClient.fetch(`${API}/scheduled-runs`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
     body: JSON.stringify(data),
   });
   return handleResponse<ScheduledWorkflowRun>(
@@ -79,10 +79,8 @@ export async function updateScheduledRun(
   id: string,
   data: UpdateScheduledRunRequest
 ): Promise<ScheduledWorkflowRun> {
-  const response = await fetch(`/api/v1/scheduled-runs/${id}`, {
+  const response = await httpClient.fetch(`${API}/scheduled-runs/${id}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
     body: JSON.stringify(data),
   });
   return handleResponse<ScheduledWorkflowRun>(
@@ -92,9 +90,8 @@ export async function updateScheduledRun(
 }
 
 export async function deleteScheduledRun(id: string): Promise<void> {
-  const response = await fetch(`/api/v1/scheduled-runs/${id}`, {
+  const response = await httpClient.fetch(`${API}/scheduled-runs/${id}`, {
     method: "DELETE",
-    credentials: "include",
   });
   await handleResponse<void>(response, "Failed to delete scheduled run");
 }
@@ -106,9 +103,8 @@ export async function deleteScheduledRun(id: string): Promise<void> {
 export async function runScheduledRunNow(
   id: string
 ): Promise<DispatchResponse> {
-  const response = await fetch(`/api/v1/scheduled-runs/${id}/run-now`, {
+  const response = await httpClient.fetch(`${API}/scheduled-runs/${id}/run-now`, {
     method: "POST",
-    credentials: "include",
   });
   return handleResponse<DispatchResponse>(
     response,

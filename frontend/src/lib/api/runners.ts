@@ -10,12 +10,16 @@
  */
 
 import type { Runner } from "@qontinui/shared-types";
+import { httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
 import type {
   RunnerSessionFilters,
   RunnerSessionsResponse,
   DispatchPayload,
   DispatchResult,
 } from "@/types/runner";
+
+const API = `${ApiConfig.API_BASE_URL}/api/v1`;
 
 async function handleResponse<T>(
   response: Response,
@@ -41,25 +45,22 @@ async function handleResponse<T>(
  */
 export async function listRunners(status?: string): Promise<Runner[]> {
   const url = status
-    ? `/api/v1/devices?status=${encodeURIComponent(status)}`
-    : `/api/v1/devices`;
-  const response = await fetch(url, { credentials: "include" });
+    ? `${API}/devices?status=${encodeURIComponent(status)}`
+    : `${API}/devices`;
+  const response = await httpClient.fetch(url);
   return handleResponse<Runner[]>(response, "Failed to list runners");
 }
 
 /** Get details for a single runner by UUID. */
 export async function getRunner(runnerId: string): Promise<Runner> {
-  const response = await fetch(`/api/v1/devices/${runnerId}`, {
-    credentials: "include",
-  });
+  const response = await httpClient.fetch(`${API}/devices/${runnerId}`);
   return handleResponse<Runner>(response, "Failed to load runner");
 }
 
 /** Deregister a runner. Closes its WebSocket and removes it from the fleet. */
 export async function deleteRunner(runnerId: string): Promise<void> {
-  const response = await fetch(`/api/v1/devices/${runnerId}`, {
+  const response = await httpClient.fetch(`${API}/devices/${runnerId}`, {
     method: "DELETE",
-    credentials: "include",
   });
   await handleResponse<void>(response, "Failed to deregister runner");
 }
@@ -72,10 +73,8 @@ export async function dispatchToRunner(
   runnerId: string,
   body: DispatchPayload
 ): Promise<DispatchResult> {
-  const response = await fetch(`/api/v1/devices/${runnerId}/dispatch`, {
+  const response = await httpClient.fetch(`${API}/devices/${runnerId}/dispatch`, {
     method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   return handleResponse<DispatchResult>(
@@ -100,10 +99,10 @@ export async function listRunnerSessions(
   if (filters.end_date) params.set("end_date", filters.end_date);
   if (filters.runner_id) params.set("runner_id", filters.runner_id);
 
-  const url = `/api/v1/devices/sessions${
+  const url = `${API}/devices/sessions${
     params.toString() ? `?${params.toString()}` : ""
   }`;
-  const response = await fetch(url, { credentials: "include" });
+  const response = await httpClient.fetch(url);
   return handleResponse<RunnerSessionsResponse>(
     response,
     "Failed to load runner sessions"

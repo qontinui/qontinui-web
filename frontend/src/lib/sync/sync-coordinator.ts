@@ -19,6 +19,8 @@
  */
 
 import { projectLogger } from "@/lib/project-logger";
+import { tokenManager } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
 import {
   createSyncStateMachine,
   type SyncStateMachine,
@@ -723,10 +725,11 @@ class SyncCoordinatorImpl {
       projectId: this.config.projectId,
     });
 
-    // Use fetch with keepalive for reliable delivery during page unload
-    const backendUrl =
-      process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-    const url = `${backendUrl}/api/v1/projects/${this.config.projectId}`;
+    // Use raw fetch with keepalive for reliable delivery during page unload —
+    // HttpClient uses AbortController + 60s timeout which would interfere with
+    // the unload-window contract. Manually inject Authorization Bearer to
+    // match HttpClient's behaviour cross-origin.
+    const url = `${ApiConfig.API_BASE_URL}/api/v1/projects/${this.config.projectId}`;
 
     // Include expected version for conditional update
     const expectedVersion = this.versionTracker.getExpectedVersion();
@@ -735,11 +738,17 @@ class SyncCoordinatorImpl {
         ? `${url}?expected_version=${expectedVersion}`
         : url;
 
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    const accessToken = tokenManager.getAccessToken();
+    if (accessToken) {
+      headers["Authorization"] = `Bearer ${accessToken}`;
+    }
+
     fetch(urlWithVersion, {
       method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers,
       body: JSON.stringify({ configuration: config }),
       keepalive: true,
       credentials: "include",

@@ -2,6 +2,10 @@ import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { QontinuiSettings, defaultSettings } from "../settings-types";
 import type { UpdateSettingFn } from "../settings-types";
+import { httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
+
+const SETTINGS_BASE = `${ApiConfig.API_BASE_URL}/api/v1/settings`;
 
 export function useSettings() {
   const [settings, setSettings] = useState<QontinuiSettings>(defaultSettings);
@@ -14,9 +18,7 @@ export function useSettings() {
   const loadSettings = async () => {
     try {
       setLoading(true);
-      const response = await fetch("/api/v1/settings/", {
-        credentials: "include",
-      });
+      const response = await httpClient.fetch(`${SETTINGS_BASE}/`);
       if (response.ok) {
         const data = await response.json();
         setSettings(data);
@@ -32,12 +34,8 @@ export function useSettings() {
   const saveSettings = async () => {
     try {
       setLoading(true);
-      const response = await fetch("/api/v1/settings/", {
+      const response = await httpClient.fetch(`${SETTINGS_BASE}/`, {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: "include",
         body: JSON.stringify(settings),
       });
       if (response.ok) {
@@ -56,9 +54,8 @@ export function useSettings() {
   const resetSettings = async () => {
     try {
       setLoading(true);
-      const response = await fetch("/api/v1/settings/reset", {
+      const response = await httpClient.fetch(`${SETTINGS_BASE}/reset`, {
         method: "POST",
-        credentials: "include",
       });
       if (response.ok) {
         const data = await response.json();
@@ -77,9 +74,9 @@ export function useSettings() {
 
   const exportSettings = async () => {
     try {
-      const response = await fetch("/api/v1/settings/export?format=yaml", {
-        credentials: "include",
-      });
+      const response = await httpClient.fetch(
+        `${SETTINGS_BASE}/export?format=yaml`
+      );
       if (response.ok) {
         const data = await response.json();
         const blob = new Blob([data.content], { type: "text/yaml" });

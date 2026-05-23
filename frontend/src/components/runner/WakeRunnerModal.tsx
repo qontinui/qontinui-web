@@ -20,6 +20,8 @@ import {
 } from "@/components/ui/tooltip";
 import { useRealtimeConnectionsContext } from "@/contexts/realtime-connections-context";
 import { createLogger } from "@/lib/logger";
+import { httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
 import type { RunnerStatusEvent } from "@qontinui/shared-types/tauri-events";
 
 const log = createLogger("WakeRunnerModal");
@@ -134,9 +136,9 @@ export function WakeRunnerModal({
 
     const open_ws = async () => {
       try {
-        const resp = await fetch("/api/v1/ws-token", {
-          credentials: "include",
-        });
+        const resp = await httpClient.fetch(
+          `${ApiConfig.API_BASE_URL}/api/v1/ws-token`
+        );
         if (!resp.ok) return;
         const data = await resp.json();
         const token: string | undefined = data?.token;
@@ -190,12 +192,10 @@ export function WakeRunnerModal({
         reason: "frontend dispatch",
       };
       if (taskId) body.task_id = taskId;
-      const resp = await fetch(
-        `/api/v1/runner/${encodeURIComponent(userId)}/wake`,
+      const resp = await httpClient.fetch(
+        `${ApiConfig.API_BASE_URL}/api/v1/runner/${encodeURIComponent(userId)}/wake`,
         {
           method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         }
       );

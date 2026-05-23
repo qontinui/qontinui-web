@@ -9,6 +9,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Rocket, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { OPERATIONS_API } from "@/components/operations/utils";
+import { httpClient } from "@/services/service-factory";
 
 // ----------------------------------------------------------------------------
 // Demo intent catalog — the 3 deterministic features per
@@ -97,9 +98,7 @@ export default function DemoControlPage() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`${OPERATIONS_API}/fleet`, {
-          credentials: "include",
-        });
+        const res = await httpClient.fetch(`${OPERATIONS_API}/fleet`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const body = (await res.json()) as FleetResponse;
         if (cancelled) return;
@@ -135,10 +134,8 @@ export default function DemoControlPage() {
 
     const settled = await Promise.allSettled(
       assignments.map(async ({ intent, machine_id }) => {
-        const res = await fetch(`${OPERATIONS_API}/agents/allocate`, {
+        const res = await httpClient.fetch(`${OPERATIONS_API}/agents/allocate`, {
           method: "POST",
-          credentials: "include",
-          headers: { "content-type": "application/json" },
           body: JSON.stringify({
             machine_id,
             repos: [{ repo: "qontinui-web", parent_sha: parentSha }],

@@ -7,8 +7,10 @@
 
 import type { AnnotatedElement } from "@/stores/extraction-annotation-store";
 import type { ElementAnnotation } from "@/types/extraction";
+import { httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE = ApiConfig.API_BASE_URL;
 
 /**
  * Request payload for saving annotations
@@ -120,14 +122,10 @@ export async function saveAnnotations(
       states: [],
     };
 
-    const response = await fetch(
+    const response = await httpClient.fetch(
       `${API_BASE}/api/v1/extractions/${extractionId}/annotations`,
       {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: "include",
         body: JSON.stringify(payload),
       }
     );
@@ -164,12 +162,8 @@ export async function loadAnnotations(extractionId: string): Promise<{
   error?: string;
 }> {
   try {
-    const response = await fetch(
-      `${API_BASE}/api/v1/extractions/${extractionId}/annotations`,
-      {
-        method: "GET",
-        credentials: "include",
-      }
+    const response = await httpClient.fetch(
+      `${API_BASE}/api/v1/extractions/${extractionId}/annotations`
     );
 
     if (!response.ok) {

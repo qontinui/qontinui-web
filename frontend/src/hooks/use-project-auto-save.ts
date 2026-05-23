@@ -18,7 +18,8 @@
 
 import { useEffect, useCallback, useState, useRef } from "react";
 import { useAutomation } from "@/contexts/automation-context";
-import { projectService } from "@/services/service-factory";
+import { projectService, httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
 import { syncCoordinator, type SyncStatus } from "@/lib/sync";
 import { projectLogger } from "@/lib/project-logger";
 import { getProjectLoader } from "@/lib/project/project-loader";
@@ -114,21 +115,14 @@ export function useProjectAutoSave({
 
       try {
         // Build URL with expected_version for conditional update
-        const baseUrl =
-          process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-        let url = `${baseUrl}/api/v1/projects/${currentProjectId}`;
+        let url = `${ApiConfig.API_BASE_URL}/api/v1/projects/${currentProjectId}`;
         if (expectedVersion !== null) {
           url += `?expected_version=${expectedVersion}`;
         }
 
-        // Use fetch with credentials: "include" for cookie-based auth
-        const response = await fetch(url, {
+        const response = await httpClient.fetch(url, {
           method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
           body: JSON.stringify({ configuration: typedConfig }),
-          credentials: "include",
         });
 
         if (response.ok) {

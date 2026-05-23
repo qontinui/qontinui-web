@@ -2,7 +2,10 @@ import { useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import type { ExtractionState } from "./useExtractionState";
 import { createLogger } from "@/lib/logger";
+import { httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
 const logger = createLogger("UseDomainKnowledge");
+const API = `${ApiConfig.API_BASE_URL}/api/v1`;
 
 interface UseDomainKnowledgeArgs {
   projectId: string | null;
@@ -21,9 +24,8 @@ export function useDomainKnowledge({
 
     state.setIsLoadingKnowledge(true);
     try {
-      const response = await fetch(
-        `/api/v1/projects/${projectId}/domain-knowledge`,
-        { credentials: "include" }
+      const response = await httpClient.fetch(
+        `${API}/projects/${projectId}/domain-knowledge`
       );
 
       if (response.ok) {
@@ -47,12 +49,10 @@ export function useDomainKnowledge({
 
     state.setIsCreatingKnowledge(true);
     try {
-      const response = await fetch(
-        `/api/v1/projects/${projectId}/domain-knowledge`,
+      const response = await httpClient.fetch(
+        `${API}/projects/${projectId}/domain-knowledge`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
           body: JSON.stringify({
             title: state.newKnowledgeTitle,
             content: state.newKnowledgeContent,
@@ -94,12 +94,10 @@ export function useDomainKnowledge({
       }
 
       try {
-        const response = await fetch(
-          `/api/v1/projects/${projectId}/ui-bridge-configs/${state.currentSavedConfigId}/states/${state.stateUuidMap[state.selectedStateId]}/knowledge`,
+        const response = await httpClient.fetch(
+          `${API}/projects/${projectId}/ui-bridge-configs/${state.currentSavedConfigId}/states/${state.stateUuidMap[state.selectedStateId]}/knowledge`,
           {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
             body: JSON.stringify({ knowledge_id: knowledgeId, order: 0 }),
           }
         );
@@ -154,9 +152,9 @@ export function useDomainKnowledge({
       }
 
       try {
-        await fetch(
-          `/api/v1/projects/${projectId}/ui-bridge-configs/${state.currentSavedConfigId}/states/${state.stateUuidMap[state.selectedStateId]}/knowledge/${knowledgeId}`,
-          { method: "DELETE", credentials: "include" }
+        await httpClient.fetch(
+          `${API}/projects/${projectId}/ui-bridge-configs/${state.currentSavedConfigId}/states/${state.stateUuidMap[state.selectedStateId]}/knowledge/${knowledgeId}`,
+          { method: "DELETE" }
         );
 
         state.setDiscoveryResult((prev) => {
