@@ -33,6 +33,7 @@ import {
   Cpu,
   Activity as ActivityIcon,
   Swords,
+  ArrowRightLeft,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -43,6 +44,7 @@ import { relativeTime } from "@/components/operations/utils";
 import { closeSession, getSession, subscribeSessionEvents } from "./api";
 import { classifyHeartbeat } from "./types";
 import { StealModal, getDashboardMachineId } from "./StealModal";
+import { HandoffModal, type HandoffTarget } from "./HandoffModal";
 import {
   filterEventsByPolicy,
   type ClaimStolenPayload,
@@ -53,6 +55,14 @@ import type { SessionEventRow, SessionRow, SessionIntent } from "./types";
 interface SessionDetailProps {
   sessionId: string;
   hostnameFor?: (deviceId: string) => string | undefined;
+  /**
+   * Candidate machines this session can be handed off to ("Continue
+   * elsewhere"). Derived by the page from the live device-status
+   * stream. The session's own device is filtered out by the modal.
+   * Omitted → the handoff button still renders but the picker shows
+   * "no other machines online".
+   */
+  handoffTargets?: HandoffTarget[];
 }
 
 const KIND_ICON: Record<string, React.ElementType> = {
@@ -87,7 +97,11 @@ function getIntent(intent: SessionRow["intent"]): SessionIntent {
   return { purpose: "" };
 }
 
-export function SessionDetail({ sessionId, hostnameFor }: SessionDetailProps) {
+export function SessionDetail({
+  sessionId,
+  hostnameFor,
+  handoffTargets = [],
+}: SessionDetailProps) {
   const [session, setSession] = useState<SessionRow | null>(null);
   const [events, setEvents] = useState<SessionEventRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -96,6 +110,7 @@ export function SessionDetail({ sessionId, hostnameFor }: SessionDetailProps) {
   const [closeError, setCloseError] = useState<string | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
   const [stealOpen, setStealOpen] = useState(false);
+  const [handoffOpen, setHandoffOpen] = useState(false);
 
   // The dashboard browser identifies as its own machine_id for steal
   // accounting. Resolved once per tab via sessionStorage so all steal
@@ -230,6 +245,15 @@ export function SessionDetail({ sessionId, hostnameFor }: SessionDetailProps) {
             </Badge>
             {session.state !== "closed" && (
               <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setHandoffOpen(true)}
+                  data-ui-bridge-id="sessions.detail-handoff"
+                >
+                  <ArrowRightLeft className="h-4 w-4 mr-2" />
+                  Continue elsewhere
+                </Button>
                 <Button
                   size="sm"
                   variant="destructive"
@@ -490,6 +514,22 @@ export function SessionDetail({ sessionId, hostnameFor }: SessionDetailProps) {
         onSucceeded={() => {
           // Re-fetch the row; coord may have moved state to
           // `pending_resolution` and emitted the steal event.
+          void getSession(session.id)
+            .then(setSession)
+            .catch(() => {});
+        }}
+      />
+
+      <HandoffModal
+        open={handoffOpen}
+        onOpenChange={setHandoffOpen}
+        session={session}
+        candidates={handoffTargets}
+        onSucceeded={() => {
+          // Re-fetch the row; the source session closes once the target
+          // runner materializes the child, so the state moves to
+          // `closed`. The handoff_request event also appears in the
+          // timeline via the live SSE tail.
           void getSession(session.id)
             .then(setSession)
             .catch(() => {});

@@ -37,6 +37,18 @@ export default function SessionDetailPage() {
     return (deviceId: string) => byId.get(deviceId);
   }, [deviceStatus.byHostname]);
 
+  // Candidate handoff targets — every online device in the live
+  // status stream. The HandoffModal filters out the session's own
+  // device; coord also rejects a self-handoff with a 400.
+  const handoffTargets = useMemo(
+    () =>
+      Array.from(deviceStatus.byHostname.values()).map((row) => ({
+        device_id: row.device_id,
+        hostname: row.hostname ?? "",
+      })),
+    [deviceStatus.byHostname]
+  );
+
   if (!user) return null;
 
   // Next.js's `useParams` returns string | string[] | undefined.
@@ -74,6 +86,7 @@ export default function SessionDetailPage() {
           <SessionDetail
             sessionId={sessionId}
             hostnameFor={hostnameFor}
+            handoffTargets={handoffTargets}
           />
         </div>
       </ScrollArea>
