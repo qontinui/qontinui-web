@@ -13,25 +13,30 @@
  *
  * All other routes are handled by the SDK's route matcher.
  *
- * Local pre/post-processing (this module):
+ * Local pre-processing (this module):
  * - Paths that match neither `UI_BRIDGE_ROUTES` (the SDK's canonical
  *   route contract) nor the relay-transport set above would otherwise
  *   produce a bare HTTP 404 from the SDK. We short-circuit them to HTTP
  *   503 with `{success:false, code:"NO_BROWSER_CONNECTED", ...}` so
  *   callers reading `success`/`code` get a structured signal instead of
- *   404. Notable paths in this bucket (iter 2 + iter 4): `/ai/idle-status`,
- *   `/ai/find` aliases, `/control/page-health`, `/control/tabs`,
- *   `/sdk/*`, `/control/network/*` stub routes.
+ *   404. Notable paths in this bucket (iter 2 + iter 4): `/ai/find`
+ *   aliases, `/control/page-health`, `/control/tabs`, `/sdk/*`,
+ *   `/control/network/*` stub routes.
  *
  *   The proxy auto-tracks the SDK contract: when the SDK adds a route to
  *   `UI_BRIDGE_ROUTES`, the proxy stops 503-ing it and forwards instead —
  *   no allow-list maintenance required.
  *
- * - For `/control/snapshot`, when the SDK returns `success:true` but the
- *   snapshot is stale AND empty (no browser actually attached, just a
- *   cached empty payload), the response is rewritten to
- *   `{success:false, code:"NO_BROWSER", ...}` so callers don't confuse
- *   "no browser" with "page has no elements".
+ * - Routes that DO exist in `UI_BRIDGE_ROUTES` but whose SDK handler
+ *   cannot meaningfully respond without a live browser SDK client (the
+ *   handler would return `success:true` with empty data, an
+ *   `UB-ELEM-NOT-FOUND` for any id, or `UB-ACTION-TIMEOUT` after the
+ *   relay-wait window expires) are short-circuited to the same
+ *   `NO_BROWSER_CONNECTED` 503 envelope when no relay client is
+ *   currently attached. The enumerated set lives in
+ *   `BROWSER_REQUIRED_ROUTES` and currently covers
+ *   `/control/{components,snapshot,discover}`,
+ *   `/control/element/:id`, `/ai/wait-for-element`, `/ai/idle-status`.
  */
 
 import {
@@ -87,25 +92,48 @@ const COMPILED_SDK_ROUTES: readonly CompiledRoute[] = UI_BRIDGE_ROUTES.map(
 );
 
 /**
- * Routes the SDK answers from local in-process state (component registry,
- * etc.) rather than the browser-side SDK channel. The handler returns
- * `success:true` with an empty payload whenever the registry is empty,
- * which is indistinguishable from "no browser is connected" — callers
- * reading `success` boolean cannot tell the two cases apart.
+ * Routes that require a live browser SDK client to produce a meaningful
+ * response. When no relay client is attached (no WebSocket clients AND
+ * no SSE listeners), the SDK's handler can only do one of three things,
+ * all of which break the structured-error contract callers expect:
  *
- * For these routes, when no relay client is actually attached (no
- * WebSocket clients AND no SSE listeners), the empty registry IS the
- * "no browser" signal. We short-circuit them to `NO_BROWSER_CONNECTED`
- * 503 so callers get the same structured signal as the sibling routes
- * gated by `isKnownRoute` / `noBrowserResponse`.
+ *   1. Read from a server-side registry populated by browser-side SDK
+ *      calls — returns `success:true` with empty payload, indistinguishable
+ *      from "browser connected, registry empty".
+ *      Examples: `GET /control/components`, `POST /control/discover` (alias
+ *      of `find`), `GET /control/snapshot`.
+ *   2. Look up by id in an empty registry — returns
+ *      `success:false code:UB-ELEM-NOT-FOUND`, indistinguishable from
+ *      "browser connected, that specific id absent".
+ *      Examples: `GET /control/element/:id`.
+ *   3. `relayCommand` to the browser and wait for a response that never
+ *      arrives — returns `success:false code:UB-ACTION-TIMEOUT` after the
+ *      wait window expires.
+ *      Examples: `POST /ai/wait-for-element`, `GET /ai/idle-status`.
  *
- * The set is intentionally narrow: only routes whose payload is sourced
- * from a browser-populated registry belong here. Routes whose payload
+ * For these routes the empty registry / not-found / timeout response IS
+ * the "no browser" signal. We short-circuit them to a structured
+ * `NO_BROWSER_CONNECTED` 503 so callers reading `success`/`code` get the
+ * same canonical envelope as the sibling routes gated by `isKnownRoute`
+ * / `noBrowserResponse` (and as the SDK-404 fallthrough path).
+ *
+ * The set is intentionally narrow: only routes whose semantics genuinely
+ * need a live browser-side SDK client belong here. Routes whose payload
  * is populated server-side regardless of browser connection (spec
- * discovery, app-info, etc.) must NOT be added.
+ * discovery, app-info, transport diagnostics, etc.) must NOT be added.
  */
-const BROWSER_REGISTRY_ROUTES: readonly CompiledRoute[] = [
+const BROWSER_REQUIRED_ROUTES: readonly CompiledRoute[] = [
+  // Registry-backed (class 1): server-side reads of browser-populated state.
   { method: "GET", regex: /^\/control\/components$/ },
+  { method: "GET", regex: /^\/control\/snapshot$/ },
+  { method: "POST", regex: /^\/control\/discover$/ },
+  // ID-lookup-backed (class 2): empty registry == NOT_FOUND for any id.
+  { method: "GET", regex: /^\/control\/element\/([^/]+)$/ },
+  // Relay-backed (class 3): handler awaits a browser response that
+  // never arrives, currently returning UB-ACTION-TIMEOUT after the
+  // wait window.
+  { method: "POST", regex: /^\/ai\/wait-for-element$/ },
+  { method: "GET", regex: /^\/ai\/idle-status$/ },
 ];
 
 /**
@@ -157,12 +185,13 @@ function isKnownRoute(path: string, method: HttpMethod): boolean {
 }
 
 /**
- * True when `path` + `method` is a registry-backed route that should
+ * True when `path` + `method` is a route that requires a live browser
+ * SDK client to produce a meaningful response, so the proxy should
  * surface `NO_BROWSER_CONNECTED` when no relay client is currently
- * attached. See `BROWSER_REGISTRY_ROUTES` for rationale.
+ * attached. See `BROWSER_REQUIRED_ROUTES` for rationale.
  */
-function isBrowserRegistryRoute(path: string, method: HttpMethod): boolean {
-  for (const route of BROWSER_REGISTRY_ROUTES) {
+function isBrowserRequiredRoute(path: string, method: HttpMethod): boolean {
+  for (const route of BROWSER_REQUIRED_ROUTES) {
     if (route.method === method && route.regex.test(path)) return true;
   }
   return false;
@@ -193,62 +222,6 @@ function noBrowserResponse(path: string): Response {
   );
 }
 
-/**
- * Rewrites a successful snapshot response into a `NO_BROWSER` failure when
- * the snapshot is stale AND empty. Other successful responses pass through
- * unchanged. Returns the original `response` if no rewrite applies.
- *
- * Reads the body as text first and re-emits, so we don't lose unknown
- * fields (timestamp, _meta, etc.).
- */
-async function rewriteStaleEmptySnapshot(response: Response): Promise<Response> {
-  if (response.status !== 200) return response;
-  const ct = response.headers.get("Content-Type") ?? "";
-  if (!ct.includes("application/json")) return response;
-
-  // Cloning is cheap and lets us fall back to the original if parsing fails.
-  let body: unknown;
-  try {
-    body = await response.clone().json();
-  } catch {
-    return response;
-  }
-
-  if (
-    body === null ||
-    typeof body !== "object" ||
-    (body as { success?: unknown }).success !== true
-  ) {
-    return response;
-  }
-
-  const obj = body as {
-    success: true;
-    data?: { elements?: unknown[] };
-    _meta?: { stale?: boolean };
-  };
-
-  const isStale = obj._meta?.stale === true;
-  const elements = Array.isArray(obj.data?.elements) ? obj.data!.elements : null;
-  const isEmpty = elements !== null && elements.length === 0;
-
-  if (!isStale || !isEmpty) return response;
-
-  const rewritten = {
-    success: false as const,
-    code: "NO_BROWSER",
-    message: "snapshot stale — no browser session",
-    data: { elements: [] as unknown[] },
-  };
-
-  return new Response(JSON.stringify(rewritten), {
-    // Keep 200 so existing callers that branch only on `success` boolean
-    // continue to read the body; the `code` field is the canonical signal.
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
-}
-
 function resolvePath(params: { path: string[] }): string {
   return "/" + params.path.join("/");
 }
@@ -275,15 +248,14 @@ async function wrapHandler(
     return noBrowserResponse(path);
   }
 
-  // Pre-process: short-circuit registry-backed routes when no browser is
-  // connected. These routes (currently `GET /control/components`) read
-  // from a server-side registry populated by browser-side SDK calls; with
-  // no relay client attached the registry is always empty and the SDK
-  // returns `success:true, data:{components:[]}` — indistinguishable
-  // from "browser connected, no components registered". Mirror the
-  // unknown-route gate so callers reading `success`/`code` get a
-  // structured `NO_BROWSER_CONNECTED` 503 instead.
-  if (isBrowserRegistryRoute(path, method) && noRelayClientsConnected()) {
+  // Pre-process: short-circuit browser-required routes when no browser
+  // is connected. The SDK handlers behind these paths can't distinguish
+  // "no browser attached" from their natural empty/not-found/timeout
+  // response; mirror the unknown-route gate so callers reading
+  // `success`/`code` get a single canonical `NO_BROWSER_CONNECTED` 503
+  // envelope across the board. See `BROWSER_REQUIRED_ROUTES` for the
+  // three handler classes this covers.
+  if (isBrowserRequiredRoute(path, method) && noRelayClientsConnected()) {
     return noBrowserResponse(path);
   }
 
@@ -294,14 +266,7 @@ async function wrapHandler(
   // arrived at the relay with `text` missing.
   const forwardRequest = await passThroughBody(request, method);
 
-  const response = await handler(forwardRequest, { params: { path: params.path.join("/") } });
-
-  // Post-process: rewrite stale+empty snapshots.
-  if (method === "GET" && path === "/control/snapshot") {
-    return rewriteStaleEmptySnapshot(response);
-  }
-
-  return response;
+  return handler(forwardRequest, { params: { path: params.path.join("/") } });
 }
 
 export async function GET(
