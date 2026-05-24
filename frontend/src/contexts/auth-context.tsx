@@ -262,8 +262,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (user) {
       logger.debug("Dev mode: Already authenticated, skipping auto-login");
       if (window.location.pathname === "/") {
-        const dest = user.is_superuser ? "/admin" : "/build/workflows";
-        window.location.href = dest;
+        // Always land on the general AI-Dev home, never the admin-only hub.
+        window.location.href = "/build/workflows";
       }
       return;
     }
@@ -297,12 +297,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .then((loggedInUser) => {
         logger.info("Dev mode auto-login successful");
         setUser(loggedInUser);
-        // Redirect to dashboard after dev auto-login
+        // Redirect to the general AI-Dev home after dev auto-login. Never
+        // the admin-only hub, regardless of superuser status.
         if (window.location.pathname === "/") {
-          const dest = loggedInUser.is_superuser
-            ? "/admin"
-            : "/build/workflows";
-          window.location.href = dest;
+          window.location.href = "/build/workflows";
         }
       })
       .catch((err: unknown) => {
