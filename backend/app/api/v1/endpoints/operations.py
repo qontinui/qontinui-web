@@ -1435,6 +1435,71 @@ async def get_federation_report_detail(
     )
 
 
+# ---- GitOp federation feed proxy ----------------------------------------
+#
+# Plan `2026-05-24-federation-verify-and-gitop.md` Phase 7 — the
+# `/admin/coord/git-ops` dashboard backend. Three read-only proxy
+# endpoints that forward to coord's git-ops feed:
+#
+# - `/operations/git-ops/list`                  → coord `/coord/git-ops/list`
+# - `/operations/git-ops/by-session/{session_id}` → coord `/coord/git-ops/by-session/{session_id}`
+# - `/operations/git-ops/branches`              → coord `/coord/git-ops/branches`
+#
+# Git ops (commit/checkout/branch_create/merge/rebase/push/…) are
+# observed by the runner's GitOpBridge (notify-watch + the pre-push hook)
+# and submitted to coord directly; these proxies only serve the
+# dashboard read path. Tenant resolution + the `X-Qontinui-Tenant-Id`
+# header forwarding are identical to the memory-federation block above —
+# `get_tenant_id` resolves the caller's tenant and `_proxy_coord_get`
+# injects the header so coord scopes every SQL query on `coord.git_ops`.
+
+
+@router.get("/git-ops/list")
+async def get_git_ops_list(
+    repo: str | None = None,
+    branch: str | None = None,
+    since: str | None = None,
+    limit: int = Query(default=50, le=200),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """List GitOp records from coord (paginated, filterable).
+
+    Forwards the optional ``repo`` / ``branch`` / ``since`` filters and
+    the ``limit`` cap to coord, which scopes the query to the caller's
+    tenant via the injected ``X-Qontinui-Tenant-Id`` header.
+    """
+    params: dict[str, str] = {}
+    if repo:
+        params["repo"] = repo
+    if branch:
+        params["branch"] = branch
+    if since:
+        params["since"] = since
+    params["limit"] = str(limit)
+    return await _proxy_coord_get(
+        "/coord/git-ops/list", tenant_id=tenant_id, params=params
+    )
+
+
+@router.get("/git-ops/by-session/{session_id}")
+async def get_git_ops_by_session(
+    session_id: str,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return the GitOp records for a single runner session from coord."""
+    return await _proxy_coord_get(
+        f"/coord/git-ops/by-session/{session_id}", tenant_id=tenant_id
+    )
+
+
+@router.get("/git-ops/branches")
+async def get_git_ops_branches(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return the current branch-per-device summary from coord."""
+    return await _proxy_coord_get("/coord/git-ops/branches", tenant_id=tenant_id)
+
+
 # ---- Symbol-claims surface (Phase 4.4) ----------------------------------
 #
 # Plan: `D:/qontinui-root/plans/2026-05-21-coordination-improvements.md`
