@@ -14,7 +14,7 @@
     {
       "id": "operations-header",
       "name": "Page header",
-      "description": "Top-of-page banner — always rendered regardless of backend availability or fleet state.",
+      "description": "Top-of-page banner - always rendered regardless of backend availability or fleet state.",
       "assertions": [
         {
           "id": "operations-header-elem-0",
@@ -52,7 +52,7 @@
     {
       "id": "operations-cross-repo-deps",
       "name": "Cross-repo dependency-graph entry point",
-      "description": "Operator-driven cross-repo dependency-graph mini-form (PR Merge Orchestrator Phase 5 D5.5). Always rendered — no auth gating, no data dependency.",
+      "description": "Operator-driven cross-repo dependency-graph mini-form (PR Merge Orchestrator Phase 5 D5.5). Always rendered - no auth gating, no data dependency.",
       "assertions": [
         {
           "id": "operations-cross-repo-deps-elem-0",
@@ -135,7 +135,7 @@
     {
       "id": "operations-device-status-tile",
       "name": "Device status tile",
-      "description": "Voluntary 'what is each machine doing right now' broadcast surfaced from GET /coord/status (proxied via /coord-api/status) and live-updated via the coord WebSocket. Asserts the tile's structural anchors — the section root, the heading, the WS-vs-polling connection indicator, and the refresh-status button — not specific machine rows (which vary per fleet state).",
+      "description": "Voluntary 'what is each machine doing right now' broadcast surfaced from GET /coord/status (proxied via /coord-api/status) and live-updated via the coord WebSocket. Asserts the tile's structural anchors - the section root, the heading, the WS-vs-polling connection indicator, and the refresh-status button - not specific machine rows (which vary per fleet state).",
       "assertions": [
         {
           "id": "operations-device-status-tile-elem-0",

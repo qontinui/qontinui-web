@@ -2,7 +2,7 @@
   "version": "1.0",
   "id": "strategy",
   "name": "Strategy",
-  "description": "Project Strategy page for the qontinui-web app. A two-pane document browser: a left navigation listing the strategy documents (Project Strategy, Load-Bearing Architectural Decisions, Business Goals, Customer Context, Human Preferences, Strategic Priorities) and a right detail pane that renders the selected document (defaulting to the first document). This spec asserts the always-present document navigation and index — structure, not document contents.",
+  "description": "Project Strategy page for the qontinui-web app. A two-pane document browser: a left navigation listing the strategy documents (Project Strategy, Load-Bearing Architectural Decisions, Business Goals, Customer Context, Human Preferences, Strategic Priorities) and a right detail pane that renders the selected document (defaulting to the first document). This spec asserts the always-present document navigation and index - structure, not document contents.",
   "provenance": {
     "source": "ai-generated",
     "appId": "qontinui-web"
@@ -133,50 +133,50 @@
       "provenance": { "source": "ai-generated" }
     },
     {
-      "id": "strategy-document-index",
-      "name": "Document index list items",
-      "description": "The document index list entries in the left pane. These persist regardless of which document is open in the detail pane, so they are matched by role+text (listitem) for stability across selections.",
+      "id": "strategy-document-viewer",
+      "name": "Document detail pane",
+      "description": "The right-pane document viewer. The /strategy index deterministically redirects to the first document (README -> 'Project Strategy'), so the viewer renders that document's article. Asserts the stable structural headings of the landing document (title h1 + the README's Files and Update-protocol section headings) - not the prose body, which is product-managed content.",
       "assertions": [
         {
-          "id": "strategy-document-index-elem-0",
-          "description": "Project Strategy document index entry (listitem role+text).",
+          "id": "strategy-document-viewer-elem-0",
+          "description": "Active document title heading (h1) anchors the detail pane.",
           "category": "element-presence",
           "severity": "warning",
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "role": "listitem", "text": "Project Strategy" },
-            "label": "Project Strategy list item"
+            "criteria": { "id": "heading-1-project-strategy" },
+            "label": "Document title heading"
           },
           "source": "ai-generated",
           "reviewed": false,
           "enabled": true
         },
         {
-          "id": "strategy-document-index-elem-1",
-          "description": "Business Goals document index entry (listitem role+text).",
+          "id": "strategy-document-viewer-elem-1",
+          "description": "'Files' section heading in the landing document body.",
           "category": "element-presence",
           "severity": "warning",
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "role": "listitem", "text": "Business Goals" },
-            "label": "Business Goals list item"
+            "criteria": { "id": "heading-2-files" },
+            "label": "Files section heading"
           },
           "source": "ai-generated",
           "reviewed": false,
           "enabled": true
         },
         {
-          "id": "strategy-document-index-elem-2",
-          "description": "Strategic Priorities document index entry (listitem role+text).",
+          "id": "strategy-document-viewer-elem-2",
+          "description": "'Update protocol' section heading in the landing document body.",
           "category": "element-presence",
           "severity": "warning",
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "role": "listitem", "text": "Strategic Priorities" },
-            "label": "Strategic Priorities list item"
+            "criteria": { "id": "heading-2-update-protocol" },
+            "label": "Update protocol section heading"
           },
           "source": "ai-generated",
           "reviewed": false,
