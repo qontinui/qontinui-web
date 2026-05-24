@@ -45,6 +45,7 @@ import { closeSession, getSession, subscribeSessionEvents } from "./api";
 import { classifyHeartbeat } from "./types";
 import { StealModal, getDashboardMachineId } from "./StealModal";
 import { HandoffModal, type HandoffTarget } from "./HandoffModal";
+import { OutputPane } from "./OutputPane";
 import {
   filterEventsByPolicy,
   type ClaimStolenPayload,
@@ -139,6 +140,12 @@ export function SessionDetail({
   useEffect(() => {
     const cleanup = subscribeSessionEvents(sessionId, {
       onEvent: (row) => {
+        // `output_chunk` frames are PTY bytes, not timeline events — they
+        // live in `coord.session_output` (not `session_events`), arrive
+        // only as live frames with no `seq`, and are rendered by the
+        // OutputPane's xterm terminal instead. Drop them here so they
+        // don't pollute the events list.
+        if (row.event_kind === "output_chunk") return;
         setEvents((prev) => {
           // Dedup on (session_id, seq) — backend may replay during
           // reconnect.
@@ -422,6 +429,13 @@ export function SessionDetail({
             )}
           </CardContent>
         </Card>
+
+        {/* Read-only live PTY output pane (Phase 8). Renders the xterm
+            terminal for sessions that opted into `share_output`, and an
+            "output not shared" notice otherwise. Bootstraps from the
+            warm-tier history then live-tails the `output_chunk` SSE
+            frames, de-duping by `chunk_offset`. */}
+        <OutputPane session={session} />
 
         {/* Events timeline — claim_stolen rows are filtered per
             tenant policy (`claim_steal_visibility`) using the
