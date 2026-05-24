@@ -434,6 +434,46 @@ async function main(): Promise<number> {
     ignoreHTTPSErrors: true,
   });
 
+  // Force the product mode (default "visual") so Spec CI evaluates every spec
+  // against the canonical product surface rather than whatever the test
+  // account happens to be set to. Mode resolution in the app is
+  // `initialMode ?? serverMode ?? storedMode`, where `serverMode` comes from
+  // GET /api/v1/users/me/preferences (`product_mode`) and outranks the
+  // localStorage value — so we pin BOTH: seed localStorage for the pre-fetch
+  // render, and intercept the prefs GET to return `product_mode: <mode>`.
+  // The intercept preserves any other preference fields and leaves the staging
+  // account unmutated (no PUT). Override with SPEC_CI_PRODUCT_MODE=ai.
+  const productMode: "ai" | "visual" =
+    process.env.SPEC_CI_PRODUCT_MODE === "ai" ? "ai" : "visual";
+  await context.addInitScript((m) => {
+    try {
+      window.localStorage.setItem("qontinui-product-mode", m as string);
+    } catch {
+      /* localStorage unavailable — intercept below still forces serverMode */
+    }
+  }, productMode);
+  await context.route("**/users/me/preferences", async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    let body: Record<string, unknown> = {};
+    try {
+      const resp = await route.fetch();
+      try {
+        body = (await resp.json()) as Record<string, unknown>;
+      } catch {
+        /* non-JSON / empty body — fall through with {} */
+      }
+    } catch {
+      /* network error — fall through with {} */
+    }
+    body.product_mode = productMode;
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(body),
+    });
+  });
+  process.stderr.write(`[spec-ci] product mode forced to "${productMode}"\n`);
+
   const auth = await programmaticLogin(context, args.apiBase);
   process.stderr.write(
     `[spec-ci] auth: ${auth.ok ? "ok" : `failed (${auth.reason})`}\n`,
