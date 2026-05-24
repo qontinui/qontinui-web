@@ -70,6 +70,10 @@ interface ActiveClaim {
   resource_key: string;
   machine_id: string;
   ttl_seconds: number;
+  // Agent-self-reported free-text status + blocker (coord claim metadata,
+  // surfaced by /coord/claims/list). Optional — older claims have none.
+  status_text?: string | null;
+  blocked_on?: string | null;
 }
 
 interface ActiveClaimsResponse {
@@ -259,6 +263,22 @@ function ActiveClaimsSection() {
                 >
                   <TableCell className="font-mono text-xs">
                     {h.resource_key}
+                    {h.status_text ? (
+                      <div
+                        className="mt-1 font-sans text-xs italic text-muted-foreground whitespace-normal"
+                        data-testid="claims-status-text"
+                      >
+                        {h.status_text}
+                      </div>
+                    ) : null}
+                    {h.blocked_on ? (
+                      <div
+                        className="mt-1 font-sans text-xs font-medium text-amber-600 dark:text-amber-400 whitespace-normal"
+                        data-testid="claims-blocked-on"
+                      >
+                        ⛔ blocked: {h.blocked_on}
+                      </div>
+                    ) : null}
                   </TableCell>
                   <TableCell className="font-mono text-xs">
                     {shortId(h.machine_id)}
