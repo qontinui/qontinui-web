@@ -2,7 +2,7 @@
   "version": "1.0",
   "id": "settings",
   "name": "Settings",
-  "description": "Settings page for the qontinui-web app. Navigating to /settings redirects to /settings/account, so this snapshot rendered the Account section. The page is a tabbed settings surface (Account, AI Providers, Advanced AI, Self-Healing, Playwright, Mobile, Storage, etc.) with the Account pane showing 'Signed in as' identity fields, a 'Connected Runner' status block, and a 'Runner Name' field. This spec asserts the section/field structure (tab labels, section headings, field labels) — never the actual account values (email, username, tenant, device id), which are PII / per-environment data.",
+  "description": "Settings page for the qontinui-web app. Navigating to /settings redirects to /settings/account, so this snapshot rendered the Account section. The page is a tabbed settings surface (Account, AI Providers, Advanced AI, Self-Healing, Playwright, Mobile, Storage, etc.) with the Account pane showing 'Signed in as' identity fields, a 'Connected Runner' status block, and a 'Runner Name' field. This spec asserts the section/field structure (tab labels, section headings, field labels) - never the actual account values (email, username, tenant, device id), which are PII / per-environment data.",
   "provenance": {
     "source": "ai-generated",
     "appId": "qontinui-web"
@@ -67,7 +67,7 @@
     {
       "id": "settings-identity-fields",
       "name": "Identity field labels",
-      "description": "Field labels in the 'Signed in as' block — Email, Username, Tenant, Tenant ID. Asserts the label structure only; the corresponding value spans hold PII and are not asserted.",
+      "description": "Field labels in the 'Signed in as' block - Email, Username, Tenant, Tenant ID. Asserts the label structure only; the corresponding value spans hold PII and are not asserted.",
       "assertions": [
         {
           "id": "settings-identity-fields-elem-0",
@@ -135,7 +135,7 @@
     {
       "id": "settings-connected-runner",
       "name": "Connected Runner block",
-      "description": "The 'Connected Runner' status sub-section and its descriptive field labels (Device Name, Platform, Device ID) plus the Runner Name field. Asserts label/heading structure; runner values (device name, platform, device id) are environment-specific and not asserted.",
+      "description": "The 'Connected Runner' status sub-section: its heading, the connection-status indicator, and the Runner Name field. Authored against the SPEC_CI (ci-bot) account, which has no runner connected - the status reads 'Disconnected' and the device-detail rows (Device Name, Platform, Device ID) are absent. Asserts the always-present heading/status/field structure, never runner values.",
       "assertions": [
         {
           "id": "settings-connected-runner-elem-0",
@@ -154,14 +154,14 @@
         },
         {
           "id": "settings-connected-runner-elem-1",
-          "description": "Device Name field label is present.",
+          "description": "Connection-status indicator is present (reads 'Disconnected' with no runner connected).",
           "category": "element-presence",
           "severity": "warning",
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "content-label-device-name-label-0" },
-            "label": "Device Name label"
+            "criteria": { "id": "content-status-message-connection-status-0" },
+            "label": "Runner connection status"
           },
           "source": "ai-generated",
           "reviewed": false,
@@ -169,14 +169,14 @@
         },
         {
           "id": "settings-connected-runner-elem-2",
-          "description": "Platform field label is present.",
+          "description": "Runner Name field label is present.",
           "category": "element-presence",
           "severity": "warning",
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "content-label-platform-label-2" },
-            "label": "Platform label"
+            "criteria": { "id": "content-label-runner-name-0" },
+            "label": "Runner Name label"
           },
           "source": "ai-generated",
           "reviewed": false,
