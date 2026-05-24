@@ -18,6 +18,7 @@ import {
   BookOpen,
   Boxes,
   FileText,
+  GitMerge,
   History as HistoryIcon,
   Inbox,
   Rocket,
@@ -83,6 +84,12 @@ const PRIMARY_TABS: NavItem[] = [
     label: "Memory",
     icon: BookOpen,
     testId: "coord-nav-memory",
+  },
+  {
+    href: "/admin/coord/federation",
+    label: "Federation",
+    icon: GitMerge,
+    testId: "coord-nav-federation",
   },
   {
     href: "/admin/coord/history",
