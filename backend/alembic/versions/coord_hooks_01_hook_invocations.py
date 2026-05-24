@@ -1,7 +1,7 @@
 """coord hooks 01 hook invocations
 
 Revision ID: coord_hooks_01_hook_invocations
-Revises: workflow_mirror_2026_05_23
+Revises: phase4_touched_hunks
 Create Date: 2026-05-24
 
 Phase 1 of the coord lifecycle-hook taxonomy
@@ -71,7 +71,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_hooks_01_hook_invocations"
-down_revision: str = "workflow_mirror_2026_05_23"
+down_revision: str = "phase4_touched_hunks"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
