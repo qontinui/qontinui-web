@@ -88,9 +88,18 @@ export function useChatWebSocket({
       return;
     }
 
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-    const wsProtocol = apiUrl.startsWith("https") ? "wss" : "ws";
-    const apiHost = apiUrl.replace(/^https?:\/\//, "");
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
+    // Empty apiUrl => same-origin: derive WS origin from window.location.
+    const wsProtocol = apiUrl
+      ? apiUrl.startsWith("https")
+        ? "wss"
+        : "ws"
+      : window.location.protocol === "https:"
+        ? "wss"
+        : "ws";
+    const apiHost = apiUrl
+      ? apiUrl.replace(/^https?:\/\//, "")
+      : window.location.host;
     const wsUrl = `${wsProtocol}://${apiHost}/api/v1/devices/${runnerId}/chat?token=${encodeURIComponent(token)}`;
 
     try {

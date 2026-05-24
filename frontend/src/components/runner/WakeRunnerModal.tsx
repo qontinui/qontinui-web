@@ -144,10 +144,18 @@ export function WakeRunnerModal({
         const token: string | undefined = data?.token;
         if (!token || cancelled) return;
 
-        const apiUrl =
-          process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-        const wsProto = apiUrl.startsWith("https") ? "wss" : "ws";
-        const apiHost = apiUrl.replace(/^https?:\/\//, "");
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
+        // Empty apiUrl => same-origin: derive WS origin from window.location.
+        const wsProto = apiUrl
+          ? apiUrl.startsWith("https")
+            ? "wss"
+            : "ws"
+          : window.location.protocol === "https:"
+            ? "wss"
+            : "ws";
+        const apiHost = apiUrl
+          ? apiUrl.replace(/^https?:\/\//, "")
+          : window.location.host;
         const wsUrl = `${wsProto}://${apiHost}/api/v1/devices/status?token=${encodeURIComponent(token)}`;
 
         ws = new WebSocket(wsUrl);

@@ -164,7 +164,7 @@ function ActiveClaimsSection() {
 
   const fetchData = useCallback(async () => {
     try {
-      const url = new URL(`${API}/list`);
+      const url = new URL(`${API}/list`, window.location.origin);
       url.searchParams.set("kind", kind);
       if (prefix) url.searchParams.set("prefix", prefix);
       const res = await fetch(url.toString());

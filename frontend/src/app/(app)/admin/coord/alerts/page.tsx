@@ -58,7 +58,7 @@ export default function CoordAlertsPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const url = new URL(`${API}/alerts`);
+      const url = new URL(`${API}/alerts`, window.location.origin);
       url.searchParams.set("include_resolved", String(includeResolved));
       if (severity !== "any") url.searchParams.set("severity", severity);
       if (kind !== "any") url.searchParams.set("kind", kind);

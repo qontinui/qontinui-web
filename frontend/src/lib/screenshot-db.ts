@@ -39,7 +39,7 @@ const DB_VERSION = 3; // Version 3: Added s3Key, projectId, urlExpiresAt for URL
 /**
  * Get the backend URL from environment or default
  */
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
 /**
  * Normalize a URL to ensure it's absolute

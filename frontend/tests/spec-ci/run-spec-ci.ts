@@ -186,7 +186,14 @@ async function evaluateSpec(
   };
 
   try {
-    await page.goto(route, { waitUntil: "networkidle", timeout: 20_000 });
+    // `domcontentloaded`, NOT `networkidle`: pages with a persistent
+    // WebSocket / polling connection (runners, chat, …) NEVER reach networkidle,
+    // so it would hang to the timeout and error the spec. domcontentloaded
+    // fires reliably; a fixed settle then lets the in-memory-token re-auth
+    // (is_authenticated flag + refresh cookie) and the data-driven content
+    // render before the matcher snapshots the registry, dodging the load race.
+    await page.goto(route, { waitUntil: "domcontentloaded", timeout: 60_000 });
+    await page.waitForTimeout(2500);
     result.navigatedOk = page.url().includes(route.split("?")[0].replace(baseUrl, "")) || true;
 
     // Inject the IR + run the matcher inside the page. ui-bridge-auto's
@@ -434,12 +441,90 @@ async function main(): Promise<number> {
     ignoreHTTPSErrors: true,
   });
 
-  const auth = await programmaticLogin(context, args.apiBase);
+  // Force the product mode (default "visual") so Spec CI evaluates every spec
+  // against the canonical product surface rather than whatever the test
+  // account happens to be set to. Mode resolution in the app is
+  // `initialMode ?? serverMode ?? storedMode`, where `serverMode` comes from
+  // GET /api/v1/users/me/preferences (`product_mode`) and outranks the
+  // localStorage value — so we pin BOTH: seed localStorage for the pre-fetch
+  // render, and intercept the prefs GET to return `product_mode: <mode>`.
+  // The intercept preserves any other preference fields and leaves the staging
+  // account unmutated (no PUT). Override with SPEC_CI_PRODUCT_MODE=ai.
+  const productMode: "ai" | "visual" =
+    process.env.SPEC_CI_PRODUCT_MODE === "ai" ? "ai" : "visual";
+  await context.addInitScript((m) => {
+    try {
+      window.localStorage.setItem("qontinui-product-mode", m as string);
+      // Access tokens live in-memory (token-storage.ts) and are cleared on
+      // every full navigation; the persistent `is_authenticated` flag is what
+      // the client-side AuthProvider checks pre-mount to decide whether to
+      // refresh-and-stay vs redirect to /login. Seed it on every page load so
+      // each goto re-auths via the refresh cookie instead of bouncing to
+      // /login. (The UI login below establishes the refresh cookie.)
+      window.localStorage.setItem("is_authenticated", "true");
+    } catch {
+      /* localStorage unavailable — intercept below still forces serverMode */
+    }
+  }, productMode);
+  await context.route("**/users/me/preferences", async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    let body: Record<string, unknown> = {};
+    try {
+      const resp = await route.fetch();
+      try {
+        body = (await resp.json()) as Record<string, unknown>;
+      } catch {
+        /* non-JSON / empty body — fall through with {} */
+      }
+    } catch {
+      /* network error — fall through with {} */
+    }
+    body.product_mode = productMode;
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(body),
+    });
+  });
+  process.stderr.write(`[spec-ci] product mode forced to "${productMode}"\n`);
+
+  // api-auth: the API login call (sets cookies on the context). This alone is
+  // NOT enough — it authenticates the APIRequestContext, not the browser app
+  // session (the qontinui-web route guard runs on localhost and never saw it,
+  // which is why every page used to redirect to /login). Kept as a warm-up.
+  // Post to the SAME-ORIGIN proxy (baseUrl, not the absolute apiBase) so the
+  // backend's Set-Cookie lands on localhost:3001 and is shared with the page
+  // cookie jar. Cross-origin (apiBase) would scope the cookie to the API host
+  // and the localhost route guard would never see it.
+  const auth = await programmaticLogin(context, args.baseUrl);
   process.stderr.write(
-    `[spec-ci] auth: ${auth.ok ? "ok" : `failed (${auth.reason})`}\n`,
+    `[spec-ci] api-auth: ${auth.ok ? "ok" : `failed (${auth.reason})`}\n`,
   );
 
   const page = await context.newPage();
+
+  // Confirm the browser app session took. The same-origin `api-auth` login
+  // above sets the session cookie on localhost (via the /api proxy), so a
+  // protected route should render rather than redirect to /login. is_authenticated
+  // is also seeded via addInitScript so the client-side guard refreshes instead
+  // of bouncing.
+  await page.goto(`${args.baseUrl.replace(/\/$/, "")}/operations`, {
+    waitUntil: "domcontentloaded",
+    timeout: 60_000,
+  });
+  const onLogin = page.url().includes("/login");
+  const isAuthFlag = await page
+    .evaluate(() => {
+      try {
+        return window.localStorage.getItem("is_authenticated");
+      } catch {
+        return null;
+      }
+    })
+    .catch(() => null);
+  process.stderr.write(
+    `[spec-ci] app-session: ${onLogin ? "MISSING (redirected to /login)" : "ok"} (is_authenticated=${isAuthFlag}, url=${page.url()})\n`,
+  );
   const results: SpecResult[] = [];
 
   for (let i = 0; i < specs.length; i++) {

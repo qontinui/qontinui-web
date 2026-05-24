@@ -44,7 +44,11 @@ export function useTestRunWebSocket(
     }
 
     const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
-    const wsHost = ApiConfig.getBaseUrl().replace(/^https?:\/\//, "");
+    // Empty base => same-origin: use window.location.host.
+    const apiBase = ApiConfig.getBaseUrl();
+    const wsHost = apiBase
+      ? apiBase.replace(/^https?:\/\//, "")
+      : window.location.host;
     const wsUrl = `${wsProtocol}://${wsHost}/api/v1/testing/runs/${runId}/ws`;
 
     const websocket = new WebSocket(wsUrl);
