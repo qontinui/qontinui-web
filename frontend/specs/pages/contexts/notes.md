@@ -1,3 +1,0 @@
-# Contexts
-
-_(notes)_
