@@ -1846,6 +1846,29 @@ async def close_coord_session(
     return await _proxy_coord_delete(f"/sessions/{session_id}", tenant_id=tenant_id)
 
 
+@router.post("/sessions/{session_id}/handoff")
+async def handoff_coord_session(
+    session_id: UUID,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Hand a session off to another machine ("Continue elsewhere").
+
+    Plan ``2026-05-23-coord-native-sessions-phase-7-10.md`` §Phase 7.
+    Proxies coord's ``POST /sessions/:id/handoff {target_device_id}``,
+    which records a durable ``handoff_request`` event on the source
+    session and publishes the JetStream handoff subject scoped to the
+    target machine. The target runner's receiver loop materializes a
+    child session (``parent_session_id = source``) and closes this one —
+    a one-way move (no live mirror; that's Phase 8).
+
+    Body: ``{ "target_device_id": "<uuid>" }``.
+    """
+    return await _proxy_coord_post(
+        f"/sessions/{session_id}/handoff", body, tenant_id=tenant_id
+    )
+
+
 @router.get("/tenants")
 async def list_user_tenants(
     current_user: UserModel = Depends(get_current_active_user_async),

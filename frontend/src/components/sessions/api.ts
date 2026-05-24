@@ -105,6 +105,38 @@ export async function stealSession(
   return await res.json();
 }
 
+export interface HandoffSessionRequest {
+  /** The device the session should move to. */
+  target_device_id: string;
+}
+
+/**
+ * Hand a session off to another machine ("Continue elsewhere"). Plan
+ * §Phase 7. POSTs `/sessions/:id/handoff`; coord records the durable
+ * `handoff_request` event + publishes the JetStream subject scoped to
+ * the target machine. The target runner materializes a child session
+ * and closes this one — a one-way move.
+ */
+export async function handoffSession(
+  id: string,
+  body: HandoffSessionRequest
+): Promise<unknown> {
+  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(id)}/handoff`;
+  const res = await fetch(url, {
+    ...DEFAULT_INIT,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new SessionsApiError(
+      `POST ${url} failed: ${res.status}`,
+      res.status
+    );
+  }
+  return await res.json();
+}
+
 export async function listTenants(
   signal?: AbortSignal
 ): Promise<TenantListResponse> {
