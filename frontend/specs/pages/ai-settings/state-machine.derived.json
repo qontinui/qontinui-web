@@ -118,35 +118,50 @@
       "provenance": { "source": "ai-generated" }
     },
     {
-      "id": "ai-settings-provider-health",
-      "name": "Provider health section",
-      "description": "Provider-health section — always rendered on the AI Providers panel: the section heading and its circuit-breaker status description.",
+      "id": "ai-settings-claude-cli",
+      "name": "Claude CLI settings section",
+      "description": "Claude CLI Settings section — the static configuration form rendered under the default (recommended) Claude Code CLI provider: the section heading and its Execution Mode control. Always present on the AI Providers panel regardless of provider-health load state.",
       "assertions": [
         {
-          "id": "ai-settings-provider-health-elem-0",
-          "description": "h3 'Provider Health' names the health section.",
+          "id": "ai-settings-claude-cli-elem-0",
+          "description": "h3 'Claude CLI Settings' names the CLI configuration section.",
           "category": "element-presence",
           "severity": "critical",
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "heading-3-provider-health" },
-            "label": "Provider Health heading"
+            "criteria": { "id": "heading-3-claude-cli-settings" },
+            "label": "Claude CLI Settings heading"
           },
           "source": "ai-generated",
           "reviewed": false,
           "enabled": true
         },
         {
-          "id": "ai-settings-provider-health-elem-1",
-          "description": "Description explains the per-provider circuit-breaker status legend.",
+          "id": "ai-settings-claude-cli-elem-1",
+          "description": "Execution Mode label anchors the CLI execution-mode control.",
           "category": "element-presence",
           "severity": "warning",
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "content-paragraph-circuit-breaker-stat-0" },
-            "label": "Circuit-breaker status description"
+            "criteria": { "id": "content-label-execution-mode-0" },
+            "label": "Execution Mode label"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "ai-settings-claude-cli-elem-2",
+          "description": "'Recommended' badge marks the recommended provider in Provider Selection.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "content-badge-recommended-provider-0" },
+            "label": "Recommended provider badge"
           },
           "source": "ai-generated",
           "reviewed": false,

@@ -2,7 +2,7 @@
   "version": "1.0",
   "id": "execute",
   "name": "Execute",
-  "description": "Execute / Workflows page (/execute) — the workflow library and run-builder workspace. Authored against the empty SPEC_CI test account: asserts the always-present structural surface (Workflows heading, the workflow search input, and the drag-from-library hint). Workflow cards and tag-category filters are data-dependent and are NOT asserted.",
+  "description": "Execute / Workflows page (/execute). Authored against the SPEC_CI test account, whose Visual-mode session has no Qontinui Runner connected: the page renders a 'Runner Not Connected' gate in place of the workflow library, instructing the operator to start the Runner desktop app. (The workflow library + run-builder only render once a runner is connected — that is operator-session state, not the CI surface.) Asserts the always-present gate the ci-bot account actually sees.",
   "provenance": {
     "source": "ai-generated",
     "appId": "qontinui-web"
@@ -12,73 +12,50 @@
   },
   "states": [
     {
-      "id": "execute-header",
-      "name": "Workflows header",
-      "description": "Workflow-library header — always rendered regardless of how many workflows exist.",
+      "id": "execute-runner-not-connected",
+      "name": "Runner not connected gate",
+      "description": "Gate shown when no Qontinui Runner is connected to the session (the SPEC_CI test-account default): the 'Runner Not Connected' headline and the start-the-Runner recovery hint that replace the workflow library.",
       "assertions": [
         {
-          "id": "execute-header-elem-0",
-          "description": "h1 Workflows heading anchors the page.",
+          "id": "execute-runner-not-connected-elem-0",
+          "description": "h3 'Runner Not Connected' headlines the gate.",
           "category": "element-presence",
           "severity": "critical",
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "heading-1-workflows" },
-            "label": "Workflows heading"
+            "criteria": { "id": "heading-3-runner-not-connected" },
+            "label": "Runner Not Connected heading"
           },
           "source": "ai-generated",
           "reviewed": false,
           "enabled": true
         },
         {
-          "id": "execute-header-elem-1",
-          "description": "Heading text reads 'Workflows' (role+text cross-check on the same h1).",
+          "id": "execute-runner-not-connected-elem-1",
+          "description": "Heading text reads 'Runner Not Connected' (role+text cross-check on the same h3).",
           "category": "text-content",
           "severity": "critical",
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "role": "heading", "text": "Workflows" },
-            "label": "Workflows heading by role+text"
-          },
-          "source": "ai-generated",
-          "reviewed": false,
-          "enabled": true
-        }
-      ],
-      "provenance": { "source": "ai-generated" }
-    },
-    {
-      "id": "execute-workspace",
-      "name": "Library workspace",
-      "description": "Always-present workspace controls: the workflow search input and the drag-from-library hint that anchors the run-builder canvas.",
-      "assertions": [
-        {
-          "id": "execute-workspace-elem-0",
-          "description": "Search input filters the workflow library.",
-          "category": "element-presence",
-          "severity": "critical",
-          "assertionType": "exists",
-          "target": {
-            "type": "search",
-            "criteria": { "id": "input-search-workflows" },
-            "label": "Workflow search input"
+            "criteria": { "role": "heading", "text": "Runner Not Connected" },
+            "label": "Runner Not Connected heading by role+text"
           },
           "source": "ai-generated",
           "reviewed": false,
           "enabled": true
         },
         {
-          "id": "execute-workspace-elem-1",
-          "description": "Library hint instructs the operator to drag workflows or click Add.",
+          "id": "execute-runner-not-connected-elem-2",
+          "description": "Recovery hint instructs the operator to start the Qontinui Runner desktop app.",
           "category": "element-presence",
           "severity": "warning",
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "content-paragraph-drag-workflows-from-0" },
-            "label": "Drag-workflows hint"
+            "criteria": { "id": "content-paragraph-start-the-qontinui-r-0" },
+            "label": "Start-the-Runner hint"
           },
           "source": "ai-generated",
           "reviewed": false,
