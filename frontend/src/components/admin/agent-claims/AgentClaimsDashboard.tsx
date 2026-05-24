@@ -61,6 +61,14 @@ const KIND_OPTIONS = [
   { value: "ci_wait", label: "ci_wait" },
 ];
 
+const ALERT_FILTER_OPTIONS = [
+  { value: "__all__", label: "all alerts" },
+  { value: "vercel-recovery-", label: "vercel recovery" },
+  { value: "vercel-deploy-stale", label: "vercel deploy stale" },
+  { value: "vercel-build-failed", label: "vercel build failed" },
+  { value: "ecs-image-stale", label: "ecs image stale" },
+];
+
 // ---------------------------------------------------------------------------
 // Wire shapes — mirror the coord JSON exactly
 // ---------------------------------------------------------------------------
@@ -495,6 +503,7 @@ function StaleClaimAlertsSection() {
   const [alerts, setAlerts] = useState<AlertRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [alertFilter, setAlertFilter] = useState("__all__");
 
   const fetchData = useCallback(async () => {
     try {
@@ -524,16 +533,22 @@ function StaleClaimAlertsSection() {
 
   const sorted = useMemo(
     () =>
-      [...alerts].sort((a, b) => {
-        const order = { critical: 0, warning: 1, info: 2 } as Record<
-          string,
-          number
-        >;
-        const ao = order[a.severity.toLowerCase()] ?? 99;
-        const bo = order[b.severity.toLowerCase()] ?? 99;
-        return ao - bo;
-      }),
-    [alerts]
+      [...alerts]
+        .filter(
+          (a) =>
+            alertFilter === "__all__" ||
+            a.alert_key.startsWith(alertFilter)
+        )
+        .sort((a, b) => {
+          const order = { critical: 0, warning: 1, info: 2 } as Record<
+            string,
+            number
+          >;
+          const ao = order[a.severity.toLowerCase()] ?? 99;
+          const bo = order[b.severity.toLowerCase()] ?? 99;
+          return ao - bo;
+        }),
+    [alerts, alertFilter]
   );
 
   return (
@@ -547,7 +562,22 @@ function StaleClaimAlertsSection() {
           </Badge>
         </CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-3">
+        <div className="flex items-center gap-2">
+          <Filter className="h-4 w-4 text-muted-foreground" />
+          <Select value={alertFilter} onValueChange={setAlertFilter}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="filter by alert_key" />
+            </SelectTrigger>
+            <SelectContent>
+              {ALERT_FILTER_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         {error && (
           <p className="text-sm text-destructive">Failed to load: {error}</p>
         )}
