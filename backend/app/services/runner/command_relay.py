@@ -126,6 +126,7 @@ class CommandRelayService:
         *,
         request_id: str,
         timeout_s: float = 30.0,
+        require_local_connection: bool = True,
     ) -> dict[str, Any]:
         """Send a command and synchronously await the matching response.
 
@@ -141,17 +142,30 @@ class CommandRelayService:
                 does not need to pre-populate ``request_id``; it is merged in.
             request_id: Correlation id (UUID4 string is recommended).
             timeout_s: Max seconds to wait for a matching response.
+            require_local_connection: When ``True`` (default), the runner must
+                be registered as connected to *this* process — an in-memory
+                check via the connection registry — or
+                :class:`RunnerNotConnectedError` is raised before publishing.
+                When ``False``, the in-process gate is skipped and the command
+                is published unconditionally, relying on Redis pub/sub routing
+                across replicas plus the dispatch timeout. Set ``False`` when
+                the runner's WS may terminate on a *different* backend replica
+                (e.g. the mobile remote-runner relay) so dispatch is not
+                falsely rejected just because the runner isn't local.
 
         Returns:
             The parsed JSON response dict whose ``request_id`` field matches.
 
         Raises:
             RunnerNotConnectedError: Runner is not registered as connected at
-                dispatch time.
+                dispatch time (only when ``require_local_connection`` is
+                ``True``).
             RunnerCommandTimeoutError: No matching response arrived within
                 ``timeout_s``.
         """
-        if not self._registry.is_runner_connected(runner_id):
+        if require_local_connection and not self._registry.is_runner_connected(
+            runner_id
+        ):
             raise RunnerNotConnectedError(runner_id)
 
         response_channel = f"runner:responses:{runner_id}"
