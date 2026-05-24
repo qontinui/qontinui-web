@@ -78,7 +78,9 @@ async def create_organization(
         description=organization_in.description,
     )
     member_count = await team_member_repo.count_members(db, org.id)
-    logger.info("organization_created", org_id=org.id, slug=slug, user_id=current_user.id)
+    logger.info(
+        "organization_created", org_id=org.id, slug=slug, user_id=current_user.id
+    )
     return _org_response(org, member_count)
 
 
@@ -91,7 +93,9 @@ async def list_user_organizations(
     limit: int = Query(100, ge=1, le=100),
 ) -> Any:
     """List all organizations the current user belongs to."""
-    orgs = await organization_repo.list_by_user(db, current_user.id, offset=skip, limit=limit)
+    orgs = await organization_repo.list_by_user(
+        db, current_user.id, offset=skip, limit=limit
+    )
     result = []
     for org in orgs:
         count = await team_member_repo.count_members(db, org.id)
@@ -110,7 +114,9 @@ async def get_organization(
     org = await organization_repo.get_by_id(db, organization_id)
     if not org:
         raise not_found_error("Organization", "organization")
-    membership = await check_organization_membership(db, current_user.id, organization_id)
+    membership = await check_organization_membership(
+        db, current_user.id, organization_id
+    )
     if not membership:
         raise forbidden_error("You are not a member of this organization")
     count = await team_member_repo.count_members(db, organization_id)
@@ -129,7 +135,9 @@ async def update_organization(
     org = await organization_repo.get_by_id(db, organization_id)
     if not org:
         raise not_found_error("Organization", "organization")
-    if not await can_user_manage_organization(db, current_user.id, organization_id, TeamRole.ADMIN):
+    if not await can_user_manage_organization(
+        db, current_user.id, organization_id, TeamRole.ADMIN
+    ):
         raise forbidden_error("Admin role required to update organization")
 
     update_data = organization_update.model_dump(exclude_unset=True)
@@ -155,7 +163,10 @@ async def delete_organization(
     if org.settings and org.settings.get("is_personal"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"error": "CANNOT_DELETE_PERSONAL", "message": "Personal organizations cannot be deleted"},
+            detail={
+                "error": "CANNOT_DELETE_PERSONAL",
+                "message": "Personal organizations cannot be deleted",
+            },
         )
     await organization_repo.delete(db, org)
     logger.info("organization_deleted", org_id=organization_id, user_id=current_user.id)
@@ -178,7 +189,9 @@ async def list_organization_members(
     """List organization members. User must be a member."""
     if not await check_organization_membership(db, current_user.id, organization_id):
         raise forbidden_error("You are not a member of this organization")
-    members = await team_member_repo.list_by_organization(db, organization_id, offset=skip, limit=limit)
+    members = await team_member_repo.list_by_organization(
+        db, organization_id, offset=skip, limit=limit
+    )
     return [_member_response(m) for m in members]
 
 
@@ -195,18 +208,31 @@ async def add_team_member(
     current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
     """Add a team member. Requires admin role."""
-    if not await can_user_manage_organization(db, current_user.id, organization_id, TeamRole.ADMIN):
+    if not await can_user_manage_organization(
+        db, current_user.id, organization_id, TeamRole.ADMIN
+    ):
         raise forbidden_error("Admin role required to add members")
-    existing = await team_member_repo.get_membership(db, organization_id, member_in.user_id)
+    existing = await team_member_repo.get_membership(
+        db, organization_id, member_in.user_id
+    )
     if existing:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={"error": "ALREADY_MEMBER", "message": "User is already a member"},
         )
     member = await team_member_repo.add_member(
-        db, organization_id, member_in.user_id, member_in.role, invited_by=current_user.id
+        db,
+        organization_id,
+        member_in.user_id,
+        member_in.role,
+        invited_by=current_user.id,
     )
-    logger.info("member_added", org_id=organization_id, user_id=member_in.user_id, role=member_in.role)
+    logger.info(
+        "member_added",
+        org_id=organization_id,
+        user_id=member_in.user_id,
+        role=member_in.role,
+    )
     return _member_response(member)
 
 
@@ -220,7 +246,9 @@ async def update_team_member(
     current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
     """Update team member role. Requires admin role."""
-    if not await can_user_manage_organization(db, current_user.id, organization_id, TeamRole.ADMIN):
+    if not await can_user_manage_organization(
+        db, current_user.id, organization_id, TeamRole.ADMIN
+    ):
         raise forbidden_error("Admin role required to update members")
     member = await team_member_repo.get_membership(db, organization_id, user_id)
     if not member:
@@ -233,7 +261,9 @@ async def update_team_member(
     return _member_response(member)
 
 
-@router.delete("/{organization_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{organization_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT
+)
 async def remove_team_member(
     *,
     db: AsyncSession = Depends(get_async_db),
@@ -243,7 +273,9 @@ async def remove_team_member(
 ) -> None:
     """Remove team member. Admin can remove others; any member can remove themselves."""
     is_self = current_user.id == user_id
-    if not is_self and not await can_user_manage_organization(db, current_user.id, organization_id, TeamRole.ADMIN):
+    if not is_self and not await can_user_manage_organization(
+        db, current_user.id, organization_id, TeamRole.ADMIN
+    ):
         raise forbidden_error("Admin role required to remove other members")
     member = await team_member_repo.get_membership(db, organization_id, user_id)
     if not member:
@@ -251,7 +283,9 @@ async def remove_team_member(
     if member.role == TeamRole.OWNER.value:
         raise forbidden_error("Cannot remove the organization owner")
     await team_member_repo.remove_member(db, member)
-    logger.info("member_removed", org_id=organization_id, user_id=user_id, by=current_user.id)
+    logger.info(
+        "member_removed", org_id=organization_id, user_id=user_id, by=current_user.id
+    )
 
 
 # ============================================================================
@@ -272,13 +306,20 @@ async def create_invitation(
     current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
     """Create an invitation. Requires admin role."""
-    if not await can_user_manage_organization(db, current_user.id, organization_id, TeamRole.ADMIN):
+    if not await can_user_manage_organization(
+        db, current_user.id, organization_id, TeamRole.ADMIN
+    ):
         raise forbidden_error("Admin role required to send invitations")
-    pending = await invitation_repo.get_pending_by_email(db, organization_id, invitation_in.email)
+    pending = await invitation_repo.get_pending_by_email(
+        db, organization_id, invitation_in.email
+    )
     if pending:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={"error": "INVITATION_PENDING", "message": "An invitation is already pending for this email"},
+            detail={
+                "error": "INVITATION_PENDING",
+                "message": "An invitation is already pending for this email",
+            },
         )
     org = await organization_repo.get_by_id(db, organization_id)
     invitation = await invitation_repo.create(
@@ -298,9 +339,13 @@ async def list_invitations(
     limit: int = Query(100, ge=1, le=100),
 ) -> Any:
     """List invitations. Requires admin role."""
-    if not await can_user_manage_organization(db, current_user.id, organization_id, TeamRole.ADMIN):
+    if not await can_user_manage_organization(
+        db, current_user.id, organization_id, TeamRole.ADMIN
+    ):
         raise forbidden_error("Admin role required to view invitations")
-    invitations = await invitation_repo.list_by_organization(db, organization_id, offset=skip, limit=limit)
+    invitations = await invitation_repo.list_by_organization(
+        db, organization_id, offset=skip, limit=limit
+    )
     org = await organization_repo.get_by_id(db, organization_id)
     return [_invitation_response(inv, org) for inv in invitations]
 
@@ -319,24 +364,40 @@ async def accept_invitation(
     if invitation.is_expired:
         raise HTTPException(
             status_code=status.HTTP_410_GONE,
-            detail={"error": "INVITATION_EXPIRED", "message": "This invitation has expired"},
+            detail={
+                "error": "INVITATION_EXPIRED",
+                "message": "This invitation has expired",
+            },
         )
     if invitation.is_accepted:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={"error": "INVITATION_USED", "message": "This invitation has already been accepted"},
+            detail={
+                "error": "INVITATION_USED",
+                "message": "This invitation has already been accepted",
+            },
         )
     if invitation.email != current_user.email:
         raise forbidden_error("This invitation was sent to a different email address")
-    existing = await team_member_repo.get_membership(db, invitation.organization_id, current_user.id)
+    existing = await team_member_repo.get_membership(
+        db, invitation.organization_id, current_user.id
+    )
     if existing:
         await invitation_repo.mark_accepted(db, invitation)
         return _member_response(existing)
     member = await team_member_repo.add_member(
-        db, invitation.organization_id, current_user.id, invitation.role, invited_by=invitation.invited_by
+        db,
+        invitation.organization_id,
+        current_user.id,
+        invitation.role,
+        invited_by=invitation.invited_by,
     )
     await invitation_repo.mark_accepted(db, invitation)
-    logger.info("invitation_accepted", org_id=invitation.organization_id, user_id=current_user.id)
+    logger.info(
+        "invitation_accepted",
+        org_id=invitation.organization_id,
+        user_id=current_user.id,
+    )
     return _member_response(member)
 
 
