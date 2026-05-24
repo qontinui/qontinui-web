@@ -816,6 +816,39 @@ async def get_claims_list(
     return await _proxy_coord_get("/coord/claims/list", params=params)
 
 
+# ---- Coord agent-status proxy (coord-native MCP coordination surface) ----
+#
+# Plan `coord-native-coordination-mcp` Phase 2 (dashboard-render half).
+# Proxies coord's `GET /coord/agent-status` — the work-unit-grain agent
+# status read backed by `coord.agent_status` (the MCP coordination surface
+# `coord_report_status` / `coord_orient` write into this table). The
+# operator dashboard renders it as a *dual-read*: it prefers these
+# structured rows and falls back to `/claims/list` metadata when the tenant
+# has no agent_status rows yet (cutover robustness).
+#
+# Tenant scope differs from coord's claims proxy: coord's /coord/agent-status
+# reads `tenant_id` as a *query param* (the table's tenant_id is NOT NULL),
+# not the `X-Qontinui-Tenant-Id` header. We resolve the caller's tenant via
+# `get_tenant_id` and forward it as the query param.
+
+
+@router.get("/agent-status")
+async def get_agent_status(
+    correlation_topic: str | None = None,
+    tenant_id: UUID = Depends(get_tenant_id),
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> Any:
+    """List active (non-expired) agent_status rows for the caller's tenant.
+
+    Optional ``correlation_topic`` narrows to a single topic. The response
+    envelope mirrors coord: ``{"agents": [...], "count": N}``.
+    """
+    params: dict[str, Any] = {"tenant_id": str(tenant_id)}
+    if correlation_topic is not None:
+        params["correlation_topic"] = correlation_topic
+    return await _proxy_coord_get("/coord/agent-status", params=params)
+
+
 # ---- Coord gates-dashboard proxy ------------------------------------------
 #
 # Plan `2026-05-18-agent-spawn-coordination.md` Phase 5 — first-class
