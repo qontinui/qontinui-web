@@ -1,0 +1,160 @@
+{
+  "version": "1.0",
+  "id": "workflow-viz",
+  "name": "WorkflowViz",
+  "description": "The Workflow Visualization page for the qontinui-web app renders workflow graphs scoped to the active project. When the user has no projects, the page renders a project-gated empty state instructing them to create their first project before Workflow Visualization becomes available. This spec covers that empty (no-project) state, which is what the captured snapshot shows.",
+  "provenance": {
+    "source": "ai-generated",
+    "appId": "qontinui-web"
+  },
+  "metadata": {
+    "tags": ["workflow-viz", "visualization", "empty-state"]
+  },
+  "states": [
+    {
+      "id": "workflow-viz-empty-state",
+      "name": "No projects empty state",
+      "description": "Project-gated empty state shown when the workspace has zero projects. Workflow Visualization is unavailable until a project exists.",
+      "assertions": [
+        {
+          "id": "workflow-viz-empty-state-elem-0",
+          "description": "Empty-state heading 'No projects yet' is rendered.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "heading-4-no-projects-yet", "role": "heading" },
+            "label": "No projects yet heading"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "workflow-viz-empty-state-elem-1",
+          "description": "Explanatory paragraph ties the gate specifically to Workflow Visualization.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "content-paragraph-create-your-first-pr-0" },
+            "label": "Create-first-project explanation"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "workflow-viz-empty-state-elem-2",
+          "description": "Empty-state copy names the Workflow Visualization feature that requires a project.",
+          "category": "text-content",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "content-paragraph-create-your-first-pr-0", "text_contains": "Workflow Visualization" },
+            "label": "Workflow Visualization gate text"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
+    {
+      "id": "workflow-viz-call-to-action",
+      "name": "Create-project call to action",
+      "description": "Primary call-to-action that routes the user into project creation, which unlocks Workflow Visualization.",
+      "assertions": [
+        {
+          "id": "workflow-viz-call-to-action-elem-0",
+          "description": "Create First Project link is present as the primary action.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "link-create-first-project", "role": "link" },
+            "label": "Create First Project link"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "workflow-viz-call-to-action-elem-1",
+          "description": "Action link reads 'Create First Project'.",
+          "category": "text-content",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "link-create-first-project", "text": "Create First Project" },
+            "label": "Create First Project label"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
+    {
+      "id": "workflow-viz-feature-gate",
+      "name": "Feature gate composition",
+      "description": "Structural check that the no-project gate composes its heading, explanation, and action together as a single coherent empty-state block.",
+      "assertions": [
+        {
+          "id": "workflow-viz-feature-gate-elem-0",
+          "description": "Gate heading present.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "heading-4-no-projects-yet" },
+            "label": "Gate heading"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "workflow-viz-feature-gate-elem-1",
+          "description": "Gate action present.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "link-create-first-project" },
+            "label": "Gate action"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "workflow-viz-feature-gate-elem-2",
+          "description": "Gate explanation paragraph present.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "content-paragraph-create-your-first-pr-0" },
+            "label": "Gate explanation"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    }
+  ],
+  "transitions": []
+}

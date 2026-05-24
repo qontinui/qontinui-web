@@ -1,0 +1,190 @@
+{
+  "version": "1.0",
+  "id": "discoveries",
+  "name": "Discoveries",
+  "description": "Discovery review page for the qontinui-web app. Lists discoveries detected by runners and lets the operator accept or reject them. Provides a project filter, a type filter, and a Pending / Accepted / Rejected tab set, with the Pending tab open by default. This spec asserts the page chrome, filters, and tab structure — never specific discovery rows (data-driven). Tabs and tab panels are matched by role+text rather than the underlying Radix ids, which are regenerated on every render.",
+  "provenance": {
+    "source": "ai-generated",
+    "appId": "qontinui-web"
+  },
+  "metadata": {
+    "tags": ["discoveries", "review"]
+  },
+  "states": [
+    {
+      "id": "discoveries-header",
+      "name": "Page header",
+      "description": "Top-of-page heading and intro paragraph.",
+      "assertions": [
+        {
+          "id": "discoveries-header-elem-0",
+          "description": "h1 'Discoveries' heading anchors the page.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "heading-1-discoveries", "role": "heading" },
+            "label": "Discoveries heading"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "discoveries-header-elem-1",
+          "description": "Intro paragraph describing the review-and-approve purpose.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "content-paragraph-review-and-approve-d-0" },
+            "label": "Discoveries intro paragraph"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "discoveries-header-elem-2",
+          "description": "Project filter combobox (defaults to 'All Projects').",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "combobox-all-projects", "role": "combobox" },
+            "label": "Project filter"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
+    {
+      "id": "discoveries-tabs",
+      "name": "Status tabs",
+      "description": "Pending / Accepted / Rejected tab set that segments discoveries by review status. Matched by role+text because the Radix tab ids are non-deterministic across renders.",
+      "assertions": [
+        {
+          "id": "discoveries-tabs-elem-0",
+          "description": "Tablist container for the status tabs.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "generic-pending-accepted-rejected", "role": "tablist" },
+            "label": "Status tablist"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "discoveries-tabs-elem-1",
+          "description": "Pending tab (role+text).",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "tab", "text": "Pending" },
+            "label": "Pending tab"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "discoveries-tabs-elem-2",
+          "description": "Accepted tab (role+text).",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "tab", "text": "Accepted" },
+            "label": "Accepted tab"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "discoveries-tabs-elem-3",
+          "description": "Rejected tab (role+text).",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "tab", "text": "Rejected" },
+            "label": "Rejected tab"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
+    {
+      "id": "discoveries-pending-panel",
+      "name": "Pending discoveries panel",
+      "description": "Default-open tab panel showing pending discoveries to review, plus the type filter that scopes the list. The panel is anchored by its stable section heading rather than the volatile Radix panel id.",
+      "assertions": [
+        {
+          "id": "discoveries-pending-panel-elem-0",
+          "description": "Pending discoveries section heading marks the active panel.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "heading-3-pending-discoveries", "role": "heading" },
+            "label": "Pending Discoveries heading"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "discoveries-pending-panel-elem-1",
+          "description": "Panel intro paragraph explaining the accept/reject decision.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "content-paragraph-review-these-discove-0" },
+            "label": "Pending panel intro paragraph"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "discoveries-pending-panel-elem-2",
+          "description": "Type filter combobox (defaults to 'All Types').",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "combobox-all-types", "role": "combobox" },
+            "label": "Type filter"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    }
+  ],
+  "transitions": []
+}

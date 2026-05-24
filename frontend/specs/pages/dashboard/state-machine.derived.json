@@ -1,0 +1,175 @@
+{
+  "version": "1.0",
+  "id": "dashboard",
+  "name": "Dashboard",
+  "description": "Visual-mode-only page. The /dashboard route is a pure client-side redirect (DashboardRedirect): in Visual product mode it resolves to /tools/visual-automation, in AI Dev mode it resolves to /build/workflows. This spec captures the Visual-mode dashboard surface (the Visual Automation projects landing): the page header, the 'Your Projects' section with its create entry point, and the zero-projects empty state. Structure-only — never asserts specific project rows or counts. Reach this view by switching to Visual mode (toggle id 'button-visual-1') before navigating.",
+  "provenance": {
+    "source": "ai-generated",
+    "appId": "qontinui-web"
+  },
+  "metadata": {
+    "tags": ["dashboard", "visual-mode", "visual-automation", "projects"]
+  },
+  "states": [
+    {
+      "id": "dashboard-header",
+      "name": "Page header",
+      "description": "Top-of-page banner for the Visual-mode dashboard — always rendered regardless of project data.",
+      "assertions": [
+        {
+          "id": "dashboard-header-elem-0",
+          "description": "h1 anchors the page; matched by id.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "heading-1-visual-automation", "role": "heading" },
+            "label": "Visual Automation page heading"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "dashboard-header-elem-1",
+          "description": "Heading text reads 'Visual Automation' (role+text cross-check on the same h1).",
+          "category": "text-content",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "heading", "text": "Visual Automation" },
+            "label": "Visual Automation heading by role+text"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "dashboard-header-elem-2",
+          "description": "Subtitle paragraph anchors the page's purpose.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "content-paragraph-manage-your-gui-auto-0" },
+            "label": "Manage GUI automation subtitle"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
+    {
+      "id": "dashboard-projects-section",
+      "name": "Projects section",
+      "description": "The 'Your Projects' section header and its create-new entry point. Always rendered regardless of how many projects exist; this state asserts the section's structural anchors, never specific project rows.",
+      "assertions": [
+        {
+          "id": "dashboard-projects-section-elem-0",
+          "description": "Section h3 names the projects list.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "heading-3-your-projects", "role": "heading" },
+            "label": "Your Projects heading"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "dashboard-projects-section-elem-1",
+          "description": "Section heading text reads 'Your Projects' (role+text cross-check).",
+          "category": "text-content",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "heading", "text": "Your Projects" },
+            "label": "Your Projects heading by role+text"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "dashboard-projects-section-elem-2",
+          "description": "New Project button is the always-available create entry point in the section header.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "button-new-project", "role": "button" },
+            "label": "New Project button"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
+    {
+      "id": "dashboard-empty-state",
+      "name": "No projects yet (empty state)",
+      "description": "Rendered when the signed-in user has zero visual-automation projects: a placeholder heading, a guiding paragraph, and a primary create-first-project call to action. State-recommender selects this state only when the project list is empty; a populated fleet matches the header/projects-section states instead. Structure-only — no project data.",
+      "assertions": [
+        {
+          "id": "dashboard-empty-state-elem-0",
+          "description": "Empty-state h4 placeholder heading.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "heading-4-no-projects-yet", "role": "heading" },
+            "label": "No projects yet heading"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "dashboard-empty-state-elem-1",
+          "description": "Guiding paragraph prompts the user to create their first project.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "content-paragraph-create-your-first-vi-0" },
+            "label": "Create-your-first-project guidance paragraph"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "dashboard-empty-state-elem-2",
+          "description": "Primary call-to-action button to create the first project.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "button-create-first-project", "role": "button" },
+            "label": "Create First Project button"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    }
+  ],
+  "transitions": []
+}

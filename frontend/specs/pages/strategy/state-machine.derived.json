@@ -1,0 +1,190 @@
+{
+  "version": "1.0",
+  "id": "strategy",
+  "name": "Strategy",
+  "description": "Project Strategy page for the qontinui-web app. A two-pane document browser: a left navigation listing the strategy documents (Project Strategy, Load-Bearing Architectural Decisions, Business Goals, Customer Context, Human Preferences, Strategic Priorities) and a right detail pane that renders the selected document (defaulting to the first document). This spec asserts the always-present document navigation and index — structure, not document contents.",
+  "provenance": {
+    "source": "ai-generated",
+    "appId": "qontinui-web"
+  },
+  "metadata": {
+    "tags": ["strategy", "documents", "navigation"]
+  },
+  "states": [
+    {
+      "id": "strategy-document-nav",
+      "name": "Document navigation list",
+      "description": "Left-pane navigation links that route to each strategy document. Asserts the presence of the core document entry points by their stable link ids.",
+      "assertions": [
+        {
+          "id": "strategy-document-nav-elem-0",
+          "description": "Project Strategy nav link is present.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "link-project-strategy" },
+            "label": "Project Strategy link"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "strategy-document-nav-elem-1",
+          "description": "Load-Bearing Architectural Decisions nav link is present.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "link-load-bearing-architectural-dec" },
+            "label": "Load-Bearing Architectural Decisions link"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "strategy-document-nav-elem-2",
+          "description": "Business Goals nav link is present.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "link-business-goals" },
+            "label": "Business Goals link"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "strategy-document-nav-elem-3",
+          "description": "Customer Context nav link is present.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "link-customer-context" },
+            "label": "Customer Context link"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
+    {
+      "id": "strategy-document-nav-secondary",
+      "name": "Secondary document navigation",
+      "description": "Remaining left-pane navigation links (Human Preferences, Strategic Priorities) plus a role+text cross-check on the first entry, completing coverage of the document set.",
+      "assertions": [
+        {
+          "id": "strategy-document-nav-secondary-elem-0",
+          "description": "Human Preferences nav link is present.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "link-human-preferences" },
+            "label": "Human Preferences link"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "strategy-document-nav-secondary-elem-1",
+          "description": "Strategic Priorities nav link is present.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "link-strategic-priorities" },
+            "label": "Strategic Priorities link"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "strategy-document-nav-secondary-elem-2",
+          "description": "Project Strategy entry exposes link role with its visible label (role+text cross-check).",
+          "category": "accessibility",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "link", "text": "Project Strategy" },
+            "label": "Project Strategy by role+text"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
+    {
+      "id": "strategy-document-index",
+      "name": "Document index list items",
+      "description": "The document index list entries in the left pane. These persist regardless of which document is open in the detail pane, so they are matched by role+text (listitem) for stability across selections.",
+      "assertions": [
+        {
+          "id": "strategy-document-index-elem-0",
+          "description": "Project Strategy document index entry (listitem role+text).",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "listitem", "text": "Project Strategy" },
+            "label": "Project Strategy list item"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "strategy-document-index-elem-1",
+          "description": "Business Goals document index entry (listitem role+text).",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "listitem", "text": "Business Goals" },
+            "label": "Business Goals list item"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "strategy-document-index-elem-2",
+          "description": "Strategic Priorities document index entry (listitem role+text).",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "listitem", "text": "Strategic Priorities" },
+            "label": "Strategic Priorities list item"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    }
+  ],
+  "transitions": []
+}

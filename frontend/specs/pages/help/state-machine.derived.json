@@ -1,0 +1,145 @@
+{
+  "version": "1.0",
+  "id": "help",
+  "name": "Help",
+  "description": "Help & Documentation landing page for the qontinui-web app. Surfaces getting-started topic lists (Getting Started, Core Concepts, Library, Advanced) and external resource links (GitHub repo, documentation site, report issues) for operators learning the platform.",
+  "provenance": { "source": "ai-generated", "appId": "qontinui-web" },
+  "metadata": { "tags": ["help", "documentation"] },
+  "states": [
+    {
+      "id": "help-header",
+      "name": "Page header",
+      "description": "Top-of-page banner that anchors the Help & Documentation page.",
+      "assertions": [
+        {
+          "id": "help-header-elem-0",
+          "description": "h1 Help & Documentation heading anchors the page.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "heading-1-help-documentation" }, "label": "Help & Documentation heading" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "help-header-elem-1",
+          "description": "Heading text reads 'Help & Documentation' (role+text cross-check on the same h1).",
+          "category": "text-content",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "role": "heading", "text": "Help & Documentation" }, "label": "Help heading by role+text" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "help-header-elem-2",
+          "description": "Help & Tutorials launcher button is present in the page chrome.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "button-help-tutorials-1" }, "label": "Help & Tutorials button" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
+    {
+      "id": "help-topic-lists",
+      "name": "Documentation topic lists",
+      "description": "Curated topic list items grouping getting-started, core-concept, and library documentation entry points. Asserts a representative anchor item from each cluster; full list contents are content-driven.",
+      "assertions": [
+        {
+          "id": "help-topic-lists-elem-0",
+          "description": "Getting-started list item links to connecting the desktop runner.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "content-list-item-connect-your-desktop-0" }, "label": "Connect desktop runner topic" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "help-topic-lists-elem-1",
+          "description": "Core-concepts list item covers model-based GUI automation.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "content-list-item-model-based-gui-auto-0" }, "label": "Model-based GUI automation topic" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "help-topic-lists-elem-2",
+          "description": "Library cluster list item covers Workflows.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "content-list-item-workflows-0" }, "label": "Workflows library topic" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "help-topic-lists-elem-3",
+          "description": "Advanced cluster list item covers AI Providers and Advanced AI.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "content-list-item-ai-providers-and-adv-0" }, "label": "AI Providers advanced topic" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
+    {
+      "id": "help-external-links",
+      "name": "External resource links",
+      "description": "Outbound resource links to the GitHub repository, the documentation site, and the issue tracker.",
+      "assertions": [
+        {
+          "id": "help-external-links-elem-0",
+          "description": "GitHub repository link is present.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "link-github-repository" }, "label": "GitHub repository link" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "help-external-links-elem-1",
+          "description": "Documentation site link is present.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "link-documentation-site" }, "label": "Documentation site link" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "help-external-links-elem-2",
+          "description": "Report issues link is present.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "link-report-issues" }, "label": "Report issues link" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    }
+  ],
+  "transitions": []
+}
