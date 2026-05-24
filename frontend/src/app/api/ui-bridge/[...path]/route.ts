@@ -87,6 +87,28 @@ const COMPILED_SDK_ROUTES: readonly CompiledRoute[] = UI_BRIDGE_ROUTES.map(
 );
 
 /**
+ * Routes the SDK answers from local in-process state (component registry,
+ * etc.) rather than the browser-side SDK channel. The handler returns
+ * `success:true` with an empty payload whenever the registry is empty,
+ * which is indistinguishable from "no browser is connected" — callers
+ * reading `success` boolean cannot tell the two cases apart.
+ *
+ * For these routes, when no relay client is actually attached (no
+ * WebSocket clients AND no SSE listeners), the empty registry IS the
+ * "no browser" signal. We short-circuit them to `NO_BROWSER_CONNECTED`
+ * 503 so callers get the same structured signal as the sibling routes
+ * gated by `isKnownRoute` / `noBrowserResponse`.
+ *
+ * The set is intentionally narrow: only routes whose payload is sourced
+ * from a browser-populated registry belong here. Routes whose payload
+ * is populated server-side regardless of browser connection (spec
+ * discovery, app-info, etc.) must NOT be added.
+ */
+const BROWSER_REGISTRY_ROUTES: readonly CompiledRoute[] = [
+  { method: "GET", regex: /^\/control\/components$/ },
+];
+
+/**
  * Relay-transport paths the SDK's `handleRelayRoute` claims before the
  * UI_BRIDGE_ROUTES matcher runs. None of these appear in UI_BRIDGE_ROUTES,
  * so we list them explicitly. Order doesn't matter — these are checked
@@ -132,6 +154,29 @@ function isKnownRoute(path: string, method: HttpMethod): boolean {
     if (route.method === method && route.regex.test(path)) return true;
   }
   return false;
+}
+
+/**
+ * True when `path` + `method` is a registry-backed route that should
+ * surface `NO_BROWSER_CONNECTED` when no relay client is currently
+ * attached. See `BROWSER_REGISTRY_ROUTES` for rationale.
+ */
+function isBrowserRegistryRoute(path: string, method: HttpMethod): boolean {
+  for (const route of BROWSER_REGISTRY_ROUTES) {
+    if (route.method === method && route.regex.test(path)) return true;
+  }
+  return false;
+}
+
+/**
+ * True when no browser tab is currently connected to the relay — neither
+ * via WebSocket nor via SSE. The relay's own `sendCommand` checks the
+ * same predicate (`!sentViaWebSocket && this.tabListeners.size === 0`)
+ * before rejecting non-fire-and-forget commands; we apply the same gate
+ * to the registry-backed set so the silent-success path can't fire.
+ */
+function noRelayClientsConnected(): boolean {
+  return !relay.hasCommandListeners() && relay.getWebSocketClientCount() === 0;
 }
 
 function noBrowserResponse(path: string): Response {
@@ -227,6 +272,18 @@ async function wrapHandler(
   // UI_BRIDGE_ROUTES + the relay-transport set — no hardcoded allow-list,
   // so the proxy auto-tracks new SDK routes as the SDK ships them.
   if (!isKnownRoute(path, method)) {
+    return noBrowserResponse(path);
+  }
+
+  // Pre-process: short-circuit registry-backed routes when no browser is
+  // connected. These routes (currently `GET /control/components`) read
+  // from a server-side registry populated by browser-side SDK calls; with
+  // no relay client attached the registry is always empty and the SDK
+  // returns `success:true, data:{components:[]}` — indistinguishable
+  // from "browser connected, no components registered". Mirror the
+  // unknown-route gate so callers reading `success`/`code` get a
+  // structured `NO_BROWSER_CONNECTED` 503 instead.
+  if (isBrowserRegistryRoute(path, method) && noRelayClientsConnected()) {
     return noBrowserResponse(path);
   }
 
