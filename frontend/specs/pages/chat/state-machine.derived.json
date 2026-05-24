@@ -1,320 +1,180 @@
 {
-    "version":  "1.0",
-    "id":  "chat",
-    "name":  "ChatPage",
-    "states":  [
-                   {
-                       "id":  "chat-page-purpose",
-                       "name":  "Page Purpose",
-                       "requiredElements":  [
-                                                {
-
-                                                },
-                                                {
-
-                                                },
-                                                {
-
-                                                },
-                                                {
-
-                                                },
-                                                {
-
-                                                },
-                                                {
-
-                                                },
-                                                {
-
-                                                },
-                                                {
-
-                                                },
-                                                {
-
-                                                },
-                                                {
-
-                                                },
-                                                {
-
-                                                },
-                                                {
-
-                                                },
-                                                {
-
-                                                },
-                                                {
-
-                                                },
-                                                {
-
-                                                }
-                                            ],
-                       "description":  "The Chat page is a conversational AI interface for planning and prototyping automation workflows. Users start a new chat session with Claude, have a free-form conversation to plan features, discuss architecture, brainstorm ideas, or ask questions, and then generate an executable multi-phase workflow directly from the conversation. The page has two views: a landing page (/chat) for starting new sessions, and an active session view (/chat/[id]) with a split-panel layout for chatting and previewing generated workflows side-by-side.",
-                       "precondition":  "User is on an active chat session page (/chat/[id])",
-                       "provenance":  {
-                                          "source":  "migrated"
-                                      }
-                   },
-                   {
-                       "id":  "chat-landing-structure",
-                       "name":  "Landing Page Structure",
-                       "requiredElements":  [
-                                                {
-
-                                                },
-                                                {
-                                                    "role":  "heading",
-                                                    "text":  "Chat"
-                                                },
-                                                {
-
-                                                },
-                                                {
-
-                                                },
-                                                {
-
-                                                }
-                                            ],
-                       "description":  "Core layout elements of the Chat landing page (/chat): page header with title, runner status, and new chat button; main content area with session list or empty state",
-                       "precondition":  "User is on the /chat landing page",
-                       "provenance":  {
-                                          "source":  "migrated"
-                                      }
-                   },
-                   {
-                       "id":  "chat-session-structure",
-                       "name":  "Session Page Structure",
-                       "requiredElements":  [
-                                                {
-
-                                                },
-                                                {
-
-                                                },
-                                                {
-
-                                                }
-                                            ],
-                       "description":  "Core layout elements of the active chat session page (/chat/[id]): header bar, chat panel (messages + input), and optional workflow preview panel",
-                       "precondition":  "User has navigated to an active chat session (/chat/[id])",
-                       "provenance":  {
-                                          "source":  "migrated"
-                                      }
-                   },
-                   {
-                       "id":  "chat-header-elements",
-                       "name":  "Chat Header Elements",
-                       "requiredElements":  [
-                                                {
-
-                                                },
-                                                {
-
-                                                },
-                                                {
-
-                                                },
-                                                {
-
-                                                },
-                                                {
-
-                                                }
-                                            ],
-                       "description":  "Elements in the session header bar: session name (editable), session state badge, runner status, and close button",
-                       "precondition":  "User is on an active chat session page",
-                       "provenance":  {
-                                          "source":  "migrated"
-                                      }
-                   },
-                   {
-                       "id":  "chat-input-elements",
-                       "name":  "Chat Input Elements",
-                       "requiredElements":  [
-                                                {
-
-                                                },
-                                                {
-
-                                                },
-                                                {
-
-                                                },
-                                                {
-
-                                                },
-                                                {
-
-                                                },
-                                                {
-
-                                                },
-                                                {
-
-                                                }
-                                            ],
-                       "description":  "Elements in the chat input area: message textarea, send/interrupt button, session state label, generate workflow button, and UI Bridge toggle",
-                       "precondition":  "User is on an active chat session page",
-                       "provenance":  {
-                                          "source":  "migrated"
-                                      }
-                   },
-                   {
-                       "id":  "chat-message-elements",
-                       "name":  "Message Area Elements",
-                       "requiredElements":  [
-                                                {
-
-                                                },
-                                                {
-
-                                                },
-                                                {
-
-                                                }
-                                            ],
-                       "description":  "Elements in the chat message display area: scrollable message container, user and AI message bubbles, streaming indicator, and scroll-to-bottom button",
-                       "precondition":  "User is on an active chat session page",
-                       "provenance":  {
-                                          "source":  "migrated"
-                                      }
-                   },
-                   {
-                       "id":  "chat-workflow-panel-elements",
-                       "name":  "Workflow Preview Panel Elements",
-                       "requiredElements":  [
-                                                {
-
-                                                },
-                                                {
-
-                                                },
-                                                {
-
-                                                },
-                                                {
-
-                                                },
-                                                {
-
-                                                },
-                                                {
-
-                                                },
-                                                {
-
-                                                },
-                                                {
-
-                                                }
-                                            ],
-                       "description":  "Elements in the workflow preview panel: panel header with close button, workflow name/description/tags, collapsible phase sections, and action buttons (Execute, Edit, Regenerate, Save)",
-                       "precondition":  "Workflow generation has been triggered (panel is open)",
-                       "provenance":  {
-                                          "source":  "migrated"
-                                      }
-                   },
-                   {
-                       "id":  "chat-landing-state",
-                       "name":  "Landing Page State",
-                       "requiredElements":  [
-                                                {
-
-                                                },
-                                                {
-
-                                                }
-                                            ],
-                       "description":  "Interactive state of landing page controls: New Chat button disabled when runner is offline, enabled when runner is connected",
-                       "precondition":  "Runner is offline (not connected)",
-                       "provenance":  {
-                                          "source":  "migrated"
-                                      }
-                   },
-                   {
-                       "id":  "chat-input-state",
-                       "name":  "Chat Input State",
-                       "requiredElements":  [
-                                                {
-
-                                                },
-                                                {
-
-                                                },
-                                                {
-
-                                                },
-                                                {
-
-                                                }
-                                            ],
-                       "description":  "Interactive state of chat input controls: send button enabled/disabled based on message content and session state, textarea disabled when session is closed or disconnected",
-                       "precondition":  "Session is in \u0027ready\u0027 state and textarea is empty",
-                       "provenance":  {
-                                          "source":  "migrated"
-                                      }
-                   },
-                   {
-                       "id":  "chat-workflow-panel-state",
-                       "name":  "Workflow Panel State",
-                       "requiredElements":  [
-                                                {
-
-                                                },
-                                                {
-
-                                                },
-                                                {
-
-                                                },
-                                                {
-
-                                                }
-                                            ],
-                       "description":  "State consistency for the workflow preview panel: loading state shows spinner, error state shows alert, success state shows phases and action buttons",
-                       "precondition":  "Workflow generation was triggered and is still in progress",
-                       "provenance":  {
-                                          "source":  "migrated"
-                                      }
-                   },
-                   {
-                       "id":  "chat-message-state",
-                       "name":  "Message Display State",
-                       "requiredElements":  [
-                                                {
-                                                    "text":  "Start a conversation with Claude"
-                                                },
-                                                {
-
-                                                }
-                                            ],
-                       "description":  "State consistency for the message display area: empty state when no messages, auto-scroll behavior, streaming content display",
-                       "precondition":  "Chat session is open with no messages",
-                       "provenance":  {
-                                          "source":  "migrated"
-                                      }
-                   }
-               ],
-    "transitions":  [
-
-                    ],
-    "provenance":  {
-                       "source":  "migrated",
-                       "appId":  "qontinui-web"
-                   },
-    "description":  "Chat page — a conversational AI interface where users plan features with Claude and generate executable workflows from natural-language discussions. Covers both the /chat landing page and /chat/[id] active session page.",
-    "metadata":  {
-                     "tags":  [
-                                  "chat",
-                                  "ai-planning",
-                                  "workflow-generation",
-                                  "conversation",
-                                  "tier-1"
-                              ]
-                 }
+  "version": "1.0",
+  "id": "chat",
+  "name": "Chat",
+  "description": "AI planning chat page at /chat. Surfaces the Chat header with its New Chat control, and the empty-conversation panel (Start a Conversation) shown before any chat exists. Asserts structural anchors only.",
+  "provenance": {
+    "source": "ai-generated",
+    "appId": "qontinui-web"
+  },
+  "metadata": {
+    "tags": [
+      "chat",
+      "ai",
+      "planning"
+    ]
+  },
+  "states": [
+    {
+      "id": "chat-header",
+      "name": "Page header",
+      "description": "Top-of-page banner with the New Chat control, always rendered.",
+      "assertions": [
+        {
+          "id": "chat-header-elem-0",
+          "description": "h1 Chat heading anchors the page.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "heading-1-chat"
+            },
+            "label": "Chat heading"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "chat-header-elem-1",
+          "description": "Heading by role+text cross-check.",
+          "category": "text-content",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "role": "heading",
+              "text": "Chat"
+            },
+            "label": "Chat heading by role+text"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "chat-header-elem-2",
+          "description": "Subtitle paragraph describes the page purpose.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "content-paragraph-plan-features-with-c-0"
+            },
+            "label": "Plan-features subtitle"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "chat-header-elem-3",
+          "description": "New Chat button starts a fresh conversation.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "chat-new-btn",
+              "role": "button"
+            },
+            "label": "New Chat button"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": {
+        "source": "ai-generated"
+      }
+    },
+    {
+      "id": "chat-empty",
+      "name": "Start a conversation empty state",
+      "description": "Rendered before any conversation exists; shows the empty-state panel inviting the operator to start chatting.",
+      "assertions": [
+        {
+          "id": "chat-empty-elem-0",
+          "description": "Empty-state h2 reads 'Start a Conversation'.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "heading-2-start-a-conversation"
+            },
+            "label": "Start a Conversation heading"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "chat-empty-elem-1",
+          "description": "Empty-state heading by role+text cross-check.",
+          "category": "text-content",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "role": "heading",
+              "text": "Start a Conversation"
+            },
+            "label": "Start a Conversation by role+text"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "chat-empty-elem-2",
+          "description": "Empty-state guidance paragraph is present.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "content-paragraph-chat-with-ai-to-plan-0"
+            },
+            "label": "Chat-with-AI guidance"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "chat-empty-elem-3",
+          "description": "Start New Chat call-to-action button is present.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "button-start-new-chat",
+              "role": "button"
+            },
+            "label": "Start New Chat button"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": {
+        "source": "ai-generated"
+      }
+    }
+  ],
+  "transitions": []
 }

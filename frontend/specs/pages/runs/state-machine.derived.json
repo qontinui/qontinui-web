@@ -1,83 +1,263 @@
 {
-    "version":  "1.0",
-    "id":  "runs",
-    "name":  "RunHistory",
-    "states":  [
-                   {
-                       "id":  "runs-page-structure",
-                       "name":  "Page Structure",
-                       "requiredElements":  [
-                                                {
-                                                    "role":  "heading",
-                                                    "text":  "Run History"
-                                                },
-                                                {
-
-                                                },
-                                                {
-                                                    "role":  "button",
-                                                    "text":  "All"
-                                                }
-                                            ],
-                       "description":  "Core structural elements required for the Run History page: heading, search input, and status filter controls.",
-                       "provenance":  {
-                                          "source":  "migrated"
-                                      }
-                   },
-                   {
-                       "id":  "runs-table-state",
-                       "name":  "Table State",
-                       "requiredElements":  [
-                                                {
-
-                                                },
-                                                {
-                                                    "text":  "Status"
-                                                }
-                                            ],
-                       "description":  "The runs table and its controls should be in a consistent default state when the page first loads.",
-                       "precondition":  "Page has just loaded with no query parameters",
-                       "provenance":  {
-                                          "source":  "migrated"
-                                      }
-                   },
-                   {
-                       "id":  "runs-page-purpose",
-                       "name":  "Page Purpose",
-                       "requiredElements":  [
-                                                {
-                                                    "text":  "Run History"
-                                                },
-                                                {
-
-                                                },
-                                                {
-                                                    "text":  "Total"
-                                                },
-                                                {
-                                                    "text":  "Status"
-                                                }
-                                            ],
-                       "description":  "The Run History page provides a comprehensive view of all task run executions. Users can search runs by name, filter by status (running, completed, failed, stopped) and type (GUI, AI), view summary statistics, and click into any run for full details. It supports bulk selection and deletion of runs.",
-                       "provenance":  {
-                                          "source":  "migrated"
-                                      }
-                   }
-               ],
-    "transitions":  [
-
-                    ],
-    "provenance":  {
-                       "source":  "migrated",
-                       "appId":  "qontinui-web"
-                   },
-    "description":  "Run History page — browse, search, and filter all task run executions",
-    "metadata":  {
-                     "tags":  [
-                                  "run-history",
-                                  "task-runs",
-                                  "filtering",
-                                  "tier-1"
-                              ]
-                 }
+  "version": "1.0",
+  "id": "runs",
+  "name": "Runs",
+  "description": "Run-history page at /runs. Surfaces the run-history header, the filter/search toolbar (search input, status combobox, GUI/AI source toggles), and the per-run detail tab strip. Asserts structural anchors that are present whether or not the runs API has returned data \u2014 no run rows, counts, or per-run data.",
+  "provenance": {
+    "source": "ai-generated",
+    "appId": "qontinui-web"
+  },
+  "metadata": {
+    "tags": [
+      "runs",
+      "run-history",
+      "filters"
+    ]
+  },
+  "states": [
+    {
+      "id": "runs-header",
+      "name": "Page header",
+      "description": "Top-of-page banner, always rendered.",
+      "assertions": [
+        {
+          "id": "runs-header-elem-0",
+          "description": "h1 Run History heading anchors the page.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "heading-1-run-history"
+            },
+            "label": "Run History heading"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "runs-header-elem-1",
+          "description": "Heading by role+text cross-check.",
+          "category": "text-content",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "role": "heading",
+              "text": "Run History"
+            },
+            "label": "Run History heading by role+text"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "runs-header-elem-2",
+          "description": "Subtitle paragraph describes the page purpose.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "content-paragraph-browse-and-filter-al-0"
+            },
+            "label": "Browse-and-filter subtitle"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "runs-header-elem-3",
+          "description": "Refresh button re-fetches the run list.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "button-refresh",
+              "role": "button"
+            },
+            "label": "Refresh button"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": {
+        "source": "ai-generated"
+      }
+    },
+    {
+      "id": "runs-filter-toolbar",
+      "name": "Filter and search toolbar",
+      "description": "Controls for narrowing the run list. Always rendered.",
+      "assertions": [
+        {
+          "id": "runs-filter-toolbar-elem-0",
+          "description": "Search-by-run-name text input is present.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "input-search-by-run-name-or-workflow"
+            },
+            "label": "Run search input"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "runs-filter-toolbar-elem-1",
+          "description": "Status combobox filters runs by status.",
+          "category": "element-state",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "combobox-all-status",
+              "role": "combobox"
+            },
+            "label": "Status filter combobox"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "runs-filter-toolbar-elem-2",
+          "description": "GUI source-type toggle is present.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "button-gui-1",
+              "role": "button"
+            },
+            "label": "GUI source toggle"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "runs-filter-toolbar-elem-3",
+          "description": "AI source-type toggle is present.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "button-ai-2",
+              "role": "button"
+            },
+            "label": "AI source toggle"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": {
+        "source": "ai-generated"
+      }
+    },
+    {
+      "id": "runs-detail-tabs",
+      "name": "Run detail tab strip",
+      "description": "Per-run inspection tabs. Asserts presence only.",
+      "assertions": [
+        {
+          "id": "runs-detail-tabs-elem-0",
+          "description": "Summary tab anchors the detail strip.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "button-summary-0",
+              "role": "button"
+            },
+            "label": "Summary tab"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "runs-detail-tabs-elem-1",
+          "description": "Actions tab is present.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "button-actions-1",
+              "role": "button"
+            },
+            "label": "Actions tab"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "runs-detail-tabs-elem-2",
+          "description": "Test Results tab is present.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "button-test-results-5",
+              "role": "button"
+            },
+            "label": "Test Results tab"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "runs-detail-tabs-elem-3",
+          "description": "History tab is present.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "button-history-9",
+              "role": "button"
+            },
+            "label": "History tab"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": {
+        "source": "ai-generated"
+      }
+    }
+  ],
+  "transitions": []
 }
