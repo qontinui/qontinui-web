@@ -1472,6 +1472,55 @@ async def post_memory_restore(
     )
 
 
+# ---- Memory federation reports proxy ------------------------------------
+#
+# Plan `2026-05-22-memories-on-coord-cross-machine.md` Phase 2 — the
+# `/admin/coord/federation` dashboard backend. Two read-only proxy
+# endpoints that forward to coord:
+#
+# - `/operations/federation/reports`           → coord `/coord/federation/reports`
+# - `/operations/federation/reports/{report_id}` → coord `/coord/federation/reports/{report_id}`
+#
+# Reports are submitted by the runner's memory bridge directly to coord;
+# these proxies only serve the dashboard read path.
+
+
+@router.get("/federation/reports")
+async def get_federation_reports(
+    device_id: UUID | None = None,
+    session_id: UUID | None = None,
+    has_failures: bool | None = None,
+    since: str | None = None,
+    limit: int = Query(default=50, le=200),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """List memory federation reports from coord (paginated, filterable)."""
+    params: dict[str, str] = {}
+    if device_id:
+        params["device_id"] = str(device_id)
+    if session_id:
+        params["session_id"] = str(session_id)
+    if has_failures is not None:
+        params["has_failures"] = str(has_failures).lower()
+    if since:
+        params["since"] = since
+    params["limit"] = str(limit)
+    return await _proxy_coord_get(
+        "/coord/federation/reports", tenant_id=tenant_id, params=params
+    )
+
+
+@router.get("/federation/reports/{report_id}")
+async def get_federation_report_detail(
+    report_id: UUID,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Single memory federation report detail from coord."""
+    return await _proxy_coord_get(
+        f"/coord/federation/reports/{report_id}", tenant_id=tenant_id
+    )
+
+
 # ---- Symbol-claims surface (Phase 4.4) ----------------------------------
 #
 # Plan: `D:/qontinui-root/plans/2026-05-21-coordination-improvements.md`
