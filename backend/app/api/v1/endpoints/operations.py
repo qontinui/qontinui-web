@@ -816,6 +816,59 @@ async def get_claims_list(
     return await _proxy_coord_get("/coord/claims/list", params=params)
 
 
+# ---- Coord gates-dashboard proxy ------------------------------------------
+#
+# Plan `2026-05-18-agent-spawn-coordination.md` Phase 5 — first-class
+# gates dashboard. Three proxy endpoints:
+#
+# - GET  /operations/gates/list              → coord `/coord/gates`
+# - POST /operations/gates/{gate_id}/approve → coord `/coord/gates/{gate_id}/approve`
+# - POST /operations/gates/{gate_id}/reject  → coord `/coord/gates/{gate_id}/reject`
+
+
+@router.get("/gates/list")
+async def get_gates_list(
+    verdict: str | None = None,
+    claim_kind: str | None = None,
+    resource_key: str | None = None,
+    limit: int | None = None,
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> Any:
+    """List gates, optionally filtered by verdict."""
+    params: dict[str, Any] = {}
+    if verdict is not None:
+        params["verdict"] = verdict
+    if claim_kind is not None:
+        params["claim_kind"] = claim_kind
+    if resource_key is not None:
+        params["resource_key"] = resource_key
+    if limit is not None:
+        params["limit"] = limit
+    return await _proxy_coord_get("/coord/gates", params=params)
+
+
+@router.post("/gates/{gate_id}/approve")
+async def approve_gate(
+    gate_id: str,
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> Any:
+    """Approve an OperatorApproval gate."""
+    return await _proxy_coord_post(f"/coord/gates/{gate_id}/approve", {})
+
+
+@router.post("/gates/{gate_id}/reject")
+async def reject_gate(
+    gate_id: str,
+    reason: str | None = None,
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> Any:
+    """Reject an OperatorApproval gate."""
+    body: dict[str, Any] = {}
+    if reason:
+        body["reason"] = reason
+    return await _proxy_coord_post(f"/coord/gates/{gate_id}/reject", body)
+
+
 @router.get("/claims/recent-conflicts")
 async def get_recent_conflicts(
     limit: int | None = None,

@@ -19,9 +19,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
+  CheckCircle,
   Filter,
   Layers,
   RefreshCw,
+  ShieldAlert,
   ShieldOff,
   TimerOff,
   XCircle,
@@ -51,6 +53,7 @@ import { ApiConfig } from "@/services/api-config";
 
 const POLL_INTERVAL_MS = 10_000;
 const API = `${ApiConfig.API_BASE_URL}/api/v1/operations/claims`;
+const API_GATES = `${ApiConfig.API_BASE_URL}/api/v1/operations/gates`;
 
 const KIND_OPTIONS = [
   { value: "phase", label: "phase" },
@@ -113,6 +116,21 @@ interface AlertRow {
   occurrences?: number;
 }
 
+interface GateEntry {
+  gate_id: string;
+  claim_kind: string | null;
+  resource_key: string | null;
+  plan_id: string | null;
+  phase_name: string | null;
+  predicate: Record<string, unknown>;
+  verdict: "open" | "cleared" | "failed";
+  verdict_reason: string | null;
+  registered_by: string | null;
+  created_at: string;
+  evaluated_at: string | null;
+  cleared_at: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // Tiny helpers
 // ---------------------------------------------------------------------------
@@ -151,11 +169,62 @@ function severityVariant(
   }
 }
 
+function verdictVariant(
+  verdict: string
+): "default" | "destructive" | "secondary" | "outline" {
+  switch (verdict) {
+    case "open":
+      return "default"; // yellow/warning — uses the default badge
+    case "cleared":
+      return "secondary"; // green/success
+    case "failed":
+      return "destructive"; // red
+    default:
+      return "outline";
+  }
+}
+
+function verdictClassName(verdict: string): string {
+  switch (verdict) {
+    case "open":
+      return "bg-yellow-100 text-yellow-800 border-yellow-300";
+    case "cleared":
+      return "bg-green-100 text-green-800 border-green-300";
+    case "failed":
+      return "bg-red-100 text-red-800 border-red-300";
+    default:
+      return "";
+  }
+}
+
+function formatPredicate(pred: Record<string, unknown>): string {
+  switch (pred.kind) {
+    case "pr_merged":
+      return `PR Merged: ${pred.repo} #${pred.pr_number}`;
+    case "deploy_healthy":
+      return `Deploy Healthy: ${pred.service} @ ${pred.expected_rev}`;
+    case "claim_terminal":
+      return `Claim Terminal: ${pred.claim_kind}:${pred.resource_key}`;
+    case "operator_approval":
+      return `Operator Approval: ${pred.prompt}`;
+    case "ci_green":
+      return `CI Green: ${pred.repo} @ ${String(pred.head_sha).slice(0, 7)}`;
+    case "ref_exists":
+      return `Ref Exists: ${pred.repo}:${pred.ref_name}`;
+    default:
+      return JSON.stringify(pred);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Section 1 — Active claims
 // ---------------------------------------------------------------------------
 
-function ActiveClaimsSection() {
+function ActiveClaimsSection({
+  openGateCountsByAnchor,
+}: {
+  openGateCountsByAnchor: Map<string, number>;
+}) {
   const [kind, setKind] = useState("phase");
   const [prefix, setPrefix] = useState("");
   const [data, setData] = useState<ActiveClaimsResponse | null>(null);
@@ -253,10 +322,18 @@ function ActiveClaimsSection() {
                 <TableHead className="w-[120px] text-right">
                   ttl_seconds
                 </TableHead>
+                <TableHead className="w-[80px] text-right">
+                  gates
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data.holders.map((h) => (
+              {data.holders.map((h) => {
+                const gateCount =
+                  openGateCountsByAnchor.get(
+                    `${h.kind}:${h.resource_key}`
+                  ) ?? 0;
+                return (
                 <TableRow
                   key={`${h.kind}:${h.resource_key}`}
                   data-testid="claims-active-row"
@@ -286,8 +363,18 @@ function ActiveClaimsSection() {
                   <TableCell className="text-right text-xs tabular-nums">
                     {h.ttl_seconds}
                   </TableCell>
+                  <TableCell className="text-right">
+                    {gateCount > 0 ? (
+                      <Badge className="bg-yellow-100 text-yellow-800 border-yellow-300">
+                        {gateCount} open
+                      </Badge>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
                 </TableRow>
-              ))}
+                );
+              })}
             </TableBody>
           </Table>
         ) : (
@@ -597,10 +684,257 @@ function StaleClaimAlertsSection() {
 }
 
 // ---------------------------------------------------------------------------
+// Section 5 — Gates
+// ---------------------------------------------------------------------------
+
+function GatesSection({
+  gates,
+  onRefresh,
+}: {
+  gates: GateEntry[];
+  onRefresh: () => void;
+}) {
+  const [loading, setLoading] = useState(true);
+  const [entries, setEntries] = useState<GateEntry[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [actionInFlight, setActionInFlight] = useState<string | null>(null);
+
+  const fetchData = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_GATES}/list`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const body = await res.json();
+      const list: GateEntry[] = Array.isArray(body)
+        ? body
+        : Array.isArray(body.gates)
+        ? body.gates
+        : [];
+      setEntries(list);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+    const interval = setInterval(fetchData, POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [fetchData]);
+
+  // Merge externally-provided gates with self-fetched data.
+  // Use self-fetched entries as canonical (they include all gates,
+  // not just those matching active claims).
+  const allGates = entries.length > 0 ? entries : gates;
+
+  const handleApprove = useCallback(
+    async (gateId: string) => {
+      setActionInFlight(gateId);
+      try {
+        const res = await fetch(`${API_GATES}/${gateId}/approve`, {
+          method: "POST",
+        });
+        if (!res.ok) {
+          const body = await res.text();
+          throw new Error(`HTTP ${res.status}: ${body.slice(0, 120)}`);
+        }
+        // Re-fetch immediately after action
+        await fetchData();
+        onRefresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setActionInFlight(null);
+      }
+    },
+    [fetchData, onRefresh]
+  );
+
+  const handleReject = useCallback(
+    async (gateId: string) => {
+      setActionInFlight(gateId);
+      try {
+        const res = await fetch(`${API_GATES}/${gateId}/reject`, {
+          method: "POST",
+        });
+        if (!res.ok) {
+          const body = await res.text();
+          throw new Error(`HTTP ${res.status}: ${body.slice(0, 120)}`);
+        }
+        await fetchData();
+        onRefresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setActionInFlight(null);
+      }
+    },
+    [fetchData, onRefresh]
+  );
+
+  const openCount = allGates.filter((g) => g.verdict === "open").length;
+
+  return (
+    <Card data-testid="gates-section">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <ShieldAlert className="h-4 w-4 text-yellow-500" />
+          Gates
+          <Badge variant="outline" className="ml-2">
+            {allGates.length}
+          </Badge>
+          {openCount > 0 && (
+            <Badge className="ml-1 bg-yellow-100 text-yellow-800 border-yellow-300">
+              {openCount} open
+            </Badge>
+          )}
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {error && (
+          <p className="text-sm text-destructive">Failed to load: {error}</p>
+        )}
+        {loading && allGates.length === 0 ? (
+          <Skeleton className="h-16 w-full" />
+        ) : allGates.length > 0 ? (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Predicate</TableHead>
+                <TableHead>Anchor</TableHead>
+                <TableHead className="w-[100px]">Verdict</TableHead>
+                <TableHead className="w-[100px]">Evaluated</TableHead>
+                <TableHead className="w-[100px]">Cleared</TableHead>
+                <TableHead className="w-[140px]">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {allGates.map((g) => {
+                const anchor =
+                  g.claim_kind && g.resource_key
+                    ? `${g.claim_kind}:${g.resource_key}`
+                    : g.plan_id && g.phase_name
+                    ? `plan:${g.phase_name}`
+                    : g.plan_id ?? "—";
+                const isOperatorApproval =
+                  g.predicate?.kind === "operator_approval";
+
+                return (
+                  <TableRow key={g.gate_id} data-testid="gates-row">
+                    <TableCell className="text-xs">
+                      {formatPredicate(g.predicate)}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {anchor}
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={verdictVariant(g.verdict)}
+                        className={verdictClassName(g.verdict)}
+                      >
+                        {g.verdict}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {relativeTime(g.evaluated_at)}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {relativeTime(g.cleared_at)}
+                    </TableCell>
+                    <TableCell>
+                      {isOperatorApproval && g.verdict === "open" ? (
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs text-green-700 border-green-300 hover:bg-green-50"
+                            disabled={actionInFlight === g.gate_id}
+                            onClick={() => handleApprove(g.gate_id)}
+                            data-testid="gate-approve-btn"
+                          >
+                            <CheckCircle className="mr-1 h-3 w-3" />
+                            Approve
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs text-red-700 border-red-300 hover:bg-red-50"
+                            disabled={actionInFlight === g.gate_id}
+                            onClick={() => handleReject(g.gate_id)}
+                            data-testid="gate-reject-btn"
+                          >
+                            <XCircle className="mr-1 h-3 w-3" />
+                            Reject
+                          </Button>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">
+                          —
+                        </span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        ) : (
+          <p className="text-sm text-muted-foreground italic">
+            No gates registered.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Composed dashboard
 // ---------------------------------------------------------------------------
 
 export default function AgentClaimsDashboard() {
+  // Top-level gates state so we can cross-reference open gates
+  // with active claims and pass to the GatesSection.
+  const [gates, setGates] = useState<GateEntry[]>([]);
+
+  const fetchGates = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_GATES}/list`);
+      if (!res.ok) return;
+      const body = await res.json();
+      const list: GateEntry[] = Array.isArray(body)
+        ? body
+        : Array.isArray(body.gates)
+        ? body.gates
+        : [];
+      setGates(list);
+    } catch {
+      // Swallow — the GatesSection component has its own error display.
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchGates();
+    const interval = setInterval(fetchGates, POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [fetchGates]);
+
+  // Build a map of open gate counts keyed by "claim_kind:resource_key"
+  // for the active-claims badge overlay (D5.3).
+  const openGateCountsByAnchor = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const g of gates) {
+      if (g.verdict !== "open") continue;
+      if (g.claim_kind && g.resource_key) {
+        const key = `${g.claim_kind}:${g.resource_key}`;
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [gates]);
+
   return (
     <div
       className="space-y-6"
@@ -613,10 +947,11 @@ export default function AgentClaimsDashboard() {
           /api/v1/operations/claims/*
         </code>
       </div>
-      <ActiveClaimsSection />
+      <ActiveClaimsSection openGateCountsByAnchor={openGateCountsByAnchor} />
       <RecentConflictsSection />
       <RecentStealsSection />
       <StaleClaimAlertsSection />
+      <GatesSection gates={gates} onRefresh={fetchGates} />
     </div>
   );
 }
