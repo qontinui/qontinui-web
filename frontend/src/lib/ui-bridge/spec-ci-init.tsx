@@ -103,7 +103,7 @@ export function SpecCiInit() {
             // element's action handler via the SDK channel; in Spec CI
             // where the runner isn't in the loop, the bridge's own
             // command-relay handles in-process dispatch.
-            const url = `/ui-bridge/control/element/${encodeURIComponent(elementId)}/action`;
+            const url = `/api/ui-bridge/control/element/${encodeURIComponent(elementId)}/action`;
             const resp = await fetch(url, {
               method: "POST",
               headers: { "Content-Type": "application/json" },

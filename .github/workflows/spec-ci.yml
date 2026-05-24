@@ -50,6 +50,11 @@ jobs:
       # Gates SpecCiInit's window-exposure to Spec-CI runs only. Production
       # builds (no env var set) get nothing on window.__qontinuiSpecCi__.
       NEXT_PUBLIC_ENABLE_SPEC_CI: "1"
+      # Build-time flag: mounts the in-browser CommandRelayListener in the
+      # prod `next start` bundle so /control/* actions dispatch in-process.
+      # Required for transition specs to execute element actions; no-op for
+      # the current structural (transition-free) specs.
+      NEXT_PUBLIC_UI_BRIDGE_REMOTE_COMMANDS: "1"
 
     steps:
       - name: Checkout qontinui-web
