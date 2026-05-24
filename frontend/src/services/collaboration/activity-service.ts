@@ -83,7 +83,12 @@ export class ActivityService {
     projectId: string,
     options?: ActivityFeedOptions
   ): Promise<Activity[]> {
-    const url = new URL(`${this.apiUrl}/api/v1/projects/${projectId}/activity`);
+    // window.location.origin as base resolves a same-origin relative path when
+    // this.apiUrl is empty; it is ignored when this.apiUrl is already absolute.
+    const url = new URL(
+      `${this.apiUrl}/api/v1/projects/${projectId}/activity`,
+      window.location.origin
+    );
 
     if (options?.limit) {
       url.searchParams.set("limit", options.limit.toString());
@@ -120,7 +125,8 @@ export class ActivityService {
     limit?: number
   ): Promise<Activity[]> {
     const url = new URL(
-      `${this.apiUrl}/api/v1/projects/${projectId}/activity/${resourceType}/${resourceId}`
+      `${this.apiUrl}/api/v1/projects/${projectId}/activity/${resourceType}/${resourceId}`,
+      window.location.origin
     );
 
     if (limit) {
@@ -140,7 +146,10 @@ export class ActivityService {
    * Get user's recent activity across all projects
    */
   async getUserActivity(userId: string, limit?: number): Promise<Activity[]> {
-    const url = new URL(`${this.apiUrl}/api/v1/users/${userId}/activity`);
+    const url = new URL(
+      `${this.apiUrl}/api/v1/users/${userId}/activity`,
+      window.location.origin
+    );
 
     if (limit) {
       url.searchParams.set("limit", limit.toString());
@@ -173,7 +182,8 @@ export class ActivityService {
     }>;
   }> {
     const url = new URL(
-      `${this.apiUrl}/api/v1/projects/${projectId}/activity/stats`
+      `${this.apiUrl}/api/v1/projects/${projectId}/activity/stats`,
+      window.location.origin
     );
 
     if (timeRange) {

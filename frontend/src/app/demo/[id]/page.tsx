@@ -46,7 +46,7 @@ export default function DemoProjectPage() {
   } = useQuery<PublicProject>({
     queryKey: ["publicProject", projectId],
     queryFn: async ({ signal }) => {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
       const response = await fetch(
         `${apiUrl}/api/v1/public/projects/${projectId}`,
         { signal }

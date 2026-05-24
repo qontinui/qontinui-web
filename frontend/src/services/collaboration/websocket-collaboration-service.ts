@@ -293,10 +293,16 @@ export class WebSocketCollaborationService {
    * Build the WebSocket URL
    */
   private buildWebSocketUrl(): string {
-    const baseUrl = ApiConfig.API_BASE_URL.replace("http://", "ws://").replace(
-      "https://",
-      "wss://"
-    );
+    // Empty API_BASE_URL => same-origin: derive the WS origin from
+    // window.location (REST is proxied through Next.js on the same host).
+    const baseUrl = ApiConfig.API_BASE_URL
+      ? ApiConfig.API_BASE_URL.replace("http://", "ws://").replace(
+          "https://",
+          "wss://"
+        )
+      : `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${
+          window.location.host
+        }`;
     const url = new URL(
       `${baseUrl}/api/v1/projects/${this.projectId}/collaboration/ws`
     );

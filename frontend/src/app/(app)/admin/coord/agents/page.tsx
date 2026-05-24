@@ -52,7 +52,7 @@ export default function CoordAgentsRecentPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const url = new URL(`${API}/agent-logs/recent`);
+      const url = new URL(`${API}/agent-logs/recent`, window.location.origin);
       url.searchParams.set("limit", String(RECENT_LIMIT));
       const res = await fetch(url.toString());
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
