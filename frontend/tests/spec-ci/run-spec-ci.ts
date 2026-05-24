@@ -186,17 +186,14 @@ async function evaluateSpec(
   };
 
   try {
-    // 60s (not 20s): staging has real latency and several heavy pages
-    // (chat, runs, wrappers, …) take >20s to reach networkidle. A global bump
-    // beats a per-spec exception list, which rots.
-    await page.goto(route, { waitUntil: "networkidle", timeout: 60_000 });
-    // In-memory access token is cleared by the full navigation; the app
-    // re-auths (via is_authenticated flag + refresh cookie) and then renders
-    // page content from data fetches. networkidle + a short settle lets that
-    // refresh-and-render complete before the matcher snapshots the registry,
-    // dodging a data-loading race that would otherwise look like no_candidates.
-    await page.waitForLoadState("networkidle").catch(() => {});
-    await page.waitForTimeout(1500);
+    // `domcontentloaded`, NOT `networkidle`: pages with a persistent
+    // WebSocket / polling connection (runners, chat, …) NEVER reach networkidle,
+    // so it would hang to the timeout and error the spec. domcontentloaded
+    // fires reliably; a fixed settle then lets the in-memory-token re-auth
+    // (is_authenticated flag + refresh cookie) and the data-driven content
+    // render before the matcher snapshots the registry, dodging the load race.
+    await page.goto(route, { waitUntil: "domcontentloaded", timeout: 60_000 });
+    await page.waitForTimeout(2500);
     result.navigatedOk = page.url().includes(route.split("?")[0].replace(baseUrl, "")) || true;
 
     // Inject the IR + run the matcher inside the page. ui-bridge-auto's
@@ -512,7 +509,7 @@ async function main(): Promise<number> {
   // is also seeded via addInitScript so the client-side guard refreshes instead
   // of bouncing.
   await page.goto(`${args.baseUrl.replace(/\/$/, "")}/operations`, {
-    waitUntil: "networkidle",
+    waitUntil: "domcontentloaded",
     timeout: 60_000,
   });
   const onLogin = page.url().includes("/login");
