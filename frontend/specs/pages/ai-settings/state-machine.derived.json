@@ -1,98 +1,160 @@
 {
-    "version":  "1.0",
-    "id":  "ai-settings",
-    "name":  "AiSettings",
-    "states":  [
-                   {
-                       "id":  "aisettings-page-structure",
-                       "name":  "Page Structure",
-                       "requiredElements":  [
-                                                {
-                                                    "role":  "heading",
-                                                    "text":  "AI Providers"
-                                                },
-                                                {
-                                                    "text":  "Claude CLI"
-                                                },
-                                                {
-                                                    "text":  "Claude API"
-                                                },
-                                                {
-                                                    "role":  "button",
-                                                    "text":  "Save Settings"
-                                                },
-                                                {
-                                                    "role":  "button",
-                                                    "text":  "Test Connection"
-                                                }
-                                            ],
-                       "description":  "Core structural elements of the AI Settings page including heading, provider option cards, and action buttons.",
-                       "provenance":  {
-                                          "source":  "migrated"
-                                      }
-                   },
-                   {
-                       "id":  "aisettings-form-state",
-                       "name":  "Form State",
-                       "requiredElements":  [
-                                                {
-                                                    "role":  "button",
-                                                    "text":  "Save Settings"
-                                                },
-                                                {
-                                                    "role":  "button",
-                                                    "text":  "Test Connection"
-                                                },
-                                                {
-                                                    "text":  "Claude CLI"
-                                                }
-                                            ],
-                       "description":  "Interactive state of the AI Settings form controls including buttons and provider selection.",
-                       "precondition":  "Page has fully loaded with provider options rendered",
-                       "provenance":  {
-                                          "source":  "migrated"
-                                      }
-                   },
-                   {
-                       "id":  "aisettings-page-purpose",
-                       "name":  "Page Purpose",
-                       "requiredElements":  [
-                                                {
-                                                    "text":  "Claude CLI"
-                                                },
-                                                {
-                                                    "text":  "AI Providers"
-                                                },
-                                                {
-                                                    "role":  "button",
-                                                    "text":  "Test Connection"
-                                                },
-                                                {
-                                                    "role":  "button",
-                                                    "text":  "Save Settings"
-                                                }
-                                            ],
-                       "description":  "The AI Settings page lets users configure which AI provider powers workflow execution. Users choose between Claude CLI, Claude API, Gemini CLI, or Gemini API, then configure provider-specific settings including API keys, model selection, execution modes, and timeouts. A test connection feature validates the configuration.",
-                       "provenance":  {
-                                          "source":  "migrated"
-                                      }
-                   }
-               ],
-    "transitions":  [
-
-                    ],
-    "provenance":  {
-                       "source":  "migrated",
-                       "appId":  "qontinui-web"
-                   },
-    "description":  "AI Settings page — configure AI provider selection, credentials, and model settings",
-    "metadata":  {
-                     "tags":  [
-                                  "settings",
-                                  "ai-providers",
-                                  "configuration",
-                                  "credentials",
-                                  "tier-1"
-                              ]
-                 }
+  "version": "1.0",
+  "id": "ai-settings",
+  "name": "AiSettings",
+  "description": "AI Settings page (/settings/ai) — configure the AI provider used for automation and analysis. Authored against the SPEC_CI test account: this is static configuration UI with no per-account data dependency. Asserts the settings nav, the AI Providers panel (the default tab), and the provider-health section. All assertions target always-visible structural elements.",
+  "provenance": {
+    "source": "ai-generated",
+    "appId": "qontinui-web"
+  },
+  "metadata": {
+    "tags": ["ai-settings", "settings", "ai-providers", "tier-1"]
+  },
+  "states": [
+    {
+      "id": "ai-settings-nav",
+      "name": "Settings navigation",
+      "description": "Settings section nav — always rendered: the Settings header plus the AI Providers and Account category tabs.",
+      "assertions": [
+        {
+          "id": "ai-settings-nav-elem-0",
+          "description": "h2 'Settings' names the settings shell.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "heading-2-settings" },
+            "label": "Settings heading"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "ai-settings-nav-elem-1",
+          "description": "'AI Providers' settings tab is present in the nav.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "button-ai-providers-1" },
+            "label": "AI Providers tab"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "ai-settings-nav-elem-2",
+          "description": "'Account' settings tab is present in the nav.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "button-account-0" },
+            "label": "Account tab"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
+    {
+      "id": "ai-settings-providers-panel",
+      "name": "AI Providers panel",
+      "description": "Default AI Providers tab content — the panel heading, its subtitle, and the Provider Selection section.",
+      "assertions": [
+        {
+          "id": "ai-settings-providers-panel-elem-0",
+          "description": "h1 'AI Providers' headlines the panel.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "heading-1-ai-providers" },
+            "label": "AI Providers heading"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "ai-settings-providers-panel-elem-1",
+          "description": "Subtitle states the panel configures the AI provider for automation and analysis.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "content-paragraph-configure-your-ai-pr-0" },
+            "label": "AI Providers subtitle"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "ai-settings-providers-panel-elem-2",
+          "description": "h3 'Provider Selection' names the provider-picker section.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "heading-3-provider-selection" },
+            "label": "Provider Selection heading"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
+    {
+      "id": "ai-settings-provider-health",
+      "name": "Provider health section",
+      "description": "Provider-health section — always rendered on the AI Providers panel: the section heading and its circuit-breaker status description.",
+      "assertions": [
+        {
+          "id": "ai-settings-provider-health-elem-0",
+          "description": "h3 'Provider Health' names the health section.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "heading-3-provider-health" },
+            "label": "Provider Health heading"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "ai-settings-provider-health-elem-1",
+          "description": "Description explains the per-provider circuit-breaker status legend.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "content-paragraph-circuit-breaker-stat-0" },
+            "label": "Circuit-breaker status description"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    }
+  ],
+  "transitions": []
 }

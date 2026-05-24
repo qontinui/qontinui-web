@@ -1,87 +1,92 @@
 {
-    "version":  "1.0",
-    "id":  "execute",
-    "name":  "Execute",
-    "states":  [
-                   {
-                       "id":  "exec-page-structure",
-                       "name":  "Page Structure",
-                       "requiredElements":  [
-                                                {
-                                                    "role":  "heading",
-                                                    "text":  "Execute"
-                                                },
-                                                {
-                                                    "text":  "Workflow Library"
-                                                },
-                                                {
-                                                    "text":  "Sequence Builder"
-                                                }
-                                            ],
-                       "description":  "Core structural elements required for the Execute page to function: heading, library panel, and sequence builder panel.",
-                       "provenance":  {
-                                          "source":  "migrated"
-                                      }
-                   },
-                   {
-                       "id":  "exec-controls-state",
-                       "name":  "Controls State",
-                       "requiredElements":  [
-                                                {
-                                                    "role":  "button",
-                                                    "text":  "Run"
-                                                },
-                                                {
-                                                    "role":  "button",
-                                                    "text":  "Save"
-                                                }
-                                            ],
-                       "description":  "Control buttons should reflect the current state of the sequence builder, ensuring users cannot run an empty sequence.",
-                       "precondition":  "No workflows have been added to the sequence builder",
-                       "provenance":  {
-                                          "source":  "migrated"
-                                      }
-                   },
-                   {
-                       "id":  "exec-page-purpose",
-                       "name":  "Page Purpose",
-                       "requiredElements":  [
-                                                {
-                                                    "text":  "Workflow Library"
-                                                },
-                                                {
-                                                    "text":  "Sequence Builder"
-                                                },
-                                                {
-                                                    "role":  "button",
-                                                    "text":  "Run"
-                                                },
-                                                {
-                                                    "role":  "button",
-                                                    "text":  "Save"
-                                                }
-                                            ],
-                       "description":  "The Execute page lets users queue multiple workflows into an ordered execution sequence, then run them all in batch. Users drag workflows from a searchable library into the sequence builder, reorder them, save named sequences for reuse, and configure stop-on-failure behavior.",
-                       "provenance":  {
-                                          "source":  "migrated"
-                                      }
-                   }
-               ],
-    "transitions":  [
-
-                    ],
-    "provenance":  {
-                       "source":  "migrated",
-                       "appId":  "qontinui-web"
-                   },
-    "description":  "Execute page — batch workflow execution with drag-and-drop sequence building",
-    "metadata":  {
-                     "tags":  [
-                                  "execute",
-                                  "sequence-builder",
-                                  "batch-execution",
-                                  "drag-drop",
-                                  "tier-1"
-                              ]
-                 }
+  "version": "1.0",
+  "id": "execute",
+  "name": "Execute",
+  "description": "Execute / Workflows page (/execute) — the workflow library and run-builder workspace. Authored against the empty SPEC_CI test account: asserts the always-present structural surface (Workflows heading, the workflow search input, and the drag-from-library hint). Workflow cards and tag-category filters are data-dependent and are NOT asserted.",
+  "provenance": {
+    "source": "ai-generated",
+    "appId": "qontinui-web"
+  },
+  "metadata": {
+    "tags": ["execute", "workflows", "run-builder", "tier-1"]
+  },
+  "states": [
+    {
+      "id": "execute-header",
+      "name": "Workflows header",
+      "description": "Workflow-library header — always rendered regardless of how many workflows exist.",
+      "assertions": [
+        {
+          "id": "execute-header-elem-0",
+          "description": "h1 Workflows heading anchors the page.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "heading-1-workflows" },
+            "label": "Workflows heading"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "execute-header-elem-1",
+          "description": "Heading text reads 'Workflows' (role+text cross-check on the same h1).",
+          "category": "text-content",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "heading", "text": "Workflows" },
+            "label": "Workflows heading by role+text"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
+    {
+      "id": "execute-workspace",
+      "name": "Library workspace",
+      "description": "Always-present workspace controls: the workflow search input and the drag-from-library hint that anchors the run-builder canvas.",
+      "assertions": [
+        {
+          "id": "execute-workspace-elem-0",
+          "description": "Search input filters the workflow library.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "input-search-workflows" },
+            "label": "Workflow search input"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "execute-workspace-elem-1",
+          "description": "Library hint instructs the operator to drag workflows or click Add.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "content-paragraph-drag-workflows-from-0" },
+            "label": "Drag-workflows hint"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    }
+  ],
+  "transitions": []
 }

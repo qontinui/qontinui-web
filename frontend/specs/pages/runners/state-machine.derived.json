@@ -1,80 +1,160 @@
 {
-    "version":  "1.0",
-    "id":  "runners",
-    "name":  "Runners",
-    "states":  [
-                   {
-                       "id":  "runners-page-structure",
-                       "name":  "Page Structure",
-                       "requiredElements":  [
-                                                {
-                                                    "role":  "heading",
-                                                    "text":  "Runners"
-                                                },
-                                                {
-                                                    "role":  "tab",
-                                                    "text":  "Active Connections"
-                                                },
-                                                {
-                                                    "role":  "tab",
-                                                    "text":  "Connection History"
-                                                }
-                                            ],
-                       "description":  "Core structural elements required for the Runners page: heading and tab navigation for Active Connections and Connection History.",
-                       "provenance":  {
-                                          "source":  "migrated"
-                                      }
-                   },
-                   {
-                       "id":  "runners-tab-state",
-                       "name":  "Tab State",
-                       "requiredElements":  [
-                                                {
-                                                    "role":  "tab",
-                                                    "text":  "Active Connections"
-                                                },
-                                                {
-                                                    "role":  "tab",
-                                                    "text":  "Connection History"
-                                                }
-                                            ],
-                       "description":  "The tab navigation should default to showing Active Connections as the primary view on page load.",
-                       "precondition":  "Page has just loaded with no tab query parameter",
-                       "provenance":  {
-                                          "source":  "migrated"
-                                      }
-                   },
-                   {
-                       "id":  "runners-page-purpose",
-                       "name":  "Page Purpose",
-                       "requiredElements":  [
-                                                {
-                                                    "text":  "Active Connections"
-                                                },
-                                                {
-                                                    "text":  "Connection History"
-                                                }
-                                            ],
-                       "description":  "The Runners page lets users monitor desktop runner connections and view connection history. It shows which runners are currently active with real-time status indicators, and provides a searchable history of all past connections.",
-                       "provenance":  {
-                                          "source":  "migrated"
-                                      }
-                   }
-               ],
-    "transitions":  [
-
-                    ],
-    "provenance":  {
-                       "source":  "migrated",
-                       "appId":  "qontinui-web"
-                   },
-    "description":  "Runners page — desktop runner connection management and monitoring",
-    "metadata":  {
-                     "tags":  [
-                                  "runners",
-                                  "connection-management",
-                                  "monitoring",
-                                  "tier-2"
-                              ]
-                 }
+  "version": "1.0",
+  "id": "runners",
+  "name": "Runners",
+  "description": "Runner Management page (/runners) — manage paired devices, session history, and auth tokens. Authored against the empty SPEC_CI test account, which has no paired devices: the page renders its header, the tab strip, the Devices panel, and the 'No Registered Devices' empty state with the download-and-pair onboarding steps. Asserts always-present structure, not device rows.",
+  "provenance": {
+    "source": "ai-generated",
+    "appId": "qontinui-web"
+  },
+  "metadata": {
+    "tags": ["runners", "devices", "management", "tier-1"]
+  },
+  "states": [
+    {
+      "id": "runners-header",
+      "name": "Page header",
+      "description": "Top-of-page header — always rendered regardless of how many devices are paired.",
+      "assertions": [
+        {
+          "id": "runners-header-elem-0",
+          "description": "h1 Runner Management heading anchors the page.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "heading-1-runner-management" },
+            "label": "Runner Management heading"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "runners-header-elem-1",
+          "description": "Heading text reads 'Runner Management' (role+text cross-check on the same h1).",
+          "category": "text-content",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "heading", "text": "Runner Management" },
+            "label": "Runner Management heading by role+text"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "runners-header-elem-2",
+          "description": "Tab strip (Devices / Session History / Auth Tokens) scopes the runner-management views.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "generic-devices-session-history-auth-t" },
+            "label": "Runner-management tab strip"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
+    {
+      "id": "runners-devices-panel",
+      "name": "Devices panel",
+      "description": "Devices tab panel header and the online-only filter toggle — always present on the default Devices tab.",
+      "assertions": [
+        {
+          "id": "runners-devices-panel-elem-0",
+          "description": "h3 'Devices' names the devices panel.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "heading-3-devices" },
+            "label": "Devices panel heading"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "runners-devices-panel-elem-1",
+          "description": "Online-only filter switch scopes the device list to online devices.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "devices-online-only" },
+            "label": "Online-only toggle"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
+    {
+      "id": "runners-empty",
+      "name": "No registered devices empty state",
+      "description": "Empty-state slice shown when no devices are paired (the SPEC_CI test-account default): the 'No Registered Devices' headline and the Download Runner onboarding affordance.",
+      "assertions": [
+        {
+          "id": "runners-empty-elem-0",
+          "description": "h3 'No Registered Devices' headlines the empty state.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "heading-3-no-registered-devices" },
+            "label": "No Registered Devices heading"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "runners-empty-elem-1",
+          "description": "Empty-state hint explains no devices are paired yet.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "content-paragraph-you-havent-paired-an-0" },
+            "label": "No-devices hint paragraph"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "runners-empty-elem-2",
+          "description": "Download Runner link starts the pair-a-device onboarding.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "link-download-runner" },
+            "label": "Download Runner link"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    }
+  ],
+  "transitions": []
 }
