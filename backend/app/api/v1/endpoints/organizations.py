@@ -20,7 +20,6 @@ from app.repositories.organization import (
     organization_repo,
     project_stats_repo,
     team_member_repo,
-    user_repo,
 )
 from app.schemas.collaboration import (
     InvitationAccept,
