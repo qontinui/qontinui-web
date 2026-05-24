@@ -4,7 +4,7 @@ Organizations API — full CRUD for organizations, members, invitations, and sta
 Uses the existing repository + permission layers directly (no cloud-control dependency).
 """
 
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 import structlog
@@ -77,9 +77,10 @@ async def create_organization(
         owner_id=current_user.id,
         description=organization_in.description,
     )
-    member_count = await team_member_repo.count_members(db, org.id)
+    org_id = cast(UUID, org.id)
+    member_count = await team_member_repo.count_members(db, org_id)
     logger.info(
-        "organization_created", org_id=org.id, slug=slug, user_id=current_user.id
+        "organization_created", org_id=org_id, slug=slug, user_id=current_user.id
     )
     return _org_response(org, member_count)
 
@@ -98,7 +99,7 @@ async def list_user_organizations(
     )
     result = []
     for org in orgs:
-        count = await team_member_repo.count_members(db, org.id)
+        count = await team_member_repo.count_members(db, cast(UUID, org.id))
         result.append(_org_response(org, count))
     return result
 
@@ -379,18 +380,17 @@ async def accept_invitation(
         )
     if invitation.email != current_user.email:
         raise forbidden_error("This invitation was sent to a different email address")
-    existing = await team_member_repo.get_membership(
-        db, invitation.organization_id, current_user.id
-    )
+    inv_org_id = cast(UUID, invitation.organization_id)
+    existing = await team_member_repo.get_membership(db, inv_org_id, current_user.id)
     if existing:
         await invitation_repo.mark_accepted(db, invitation)
         return _member_response(existing)
     member = await team_member_repo.add_member(
         db,
-        invitation.organization_id,
+        inv_org_id,
         current_user.id,
-        invitation.role,
-        invited_by=invitation.invited_by,
+        cast(str, invitation.role),
+        invited_by=cast(UUID | None, invitation.invited_by),
     )
     await invitation_repo.mark_accepted(db, invitation)
     logger.info(
