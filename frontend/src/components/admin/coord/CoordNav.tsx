@@ -18,6 +18,7 @@ import {
   BookOpen,
   Boxes,
   FileText,
+  GitBranch,
   GitMerge,
   History as HistoryIcon,
   Inbox,
@@ -92,6 +93,12 @@ const PRIMARY_TABS: NavItem[] = [
     testId: "coord-nav-federation",
   },
   {
+    href: "/admin/coord/git-ops",
+    label: "Git Ops",
+    icon: GitBranch,
+    testId: "coord-nav-git-ops",
+  },
+  {
     href: "/admin/coord/history",
     label: "History",
     icon: HistoryIcon,
@@ -151,7 +158,10 @@ export default function CoordNav() {
       <div className="flex items-center gap-1 flex-wrap">
         {PRIMARY_TABS.map(renderItem)}
       </div>
-      <div className="mx-1 sm:mx-3 h-5 w-px bg-border hidden sm:block" aria-hidden />
+      <div
+        className="mx-1 sm:mx-3 h-5 w-px bg-border hidden sm:block"
+        aria-hidden
+      />
       <div className="flex items-center gap-1 flex-wrap">
         <span className="text-xs text-muted-foreground mr-1 hidden sm:inline">
           cross-links:
