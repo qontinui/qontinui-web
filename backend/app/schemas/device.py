@@ -59,9 +59,9 @@ class PairConfirmRequest(BaseModel):
     """Request body for ``POST /api/v1/devices/pair-confirm``.
 
     Issued by the ``/connect-runner`` page after the user clicks
-    "Connect". The web backend forwards ``(state, user_id)`` to coord's
-    ``POST /coord/devices/pair-complete``, which returns the
-    device-token JWT.
+    "Connect". The web backend forwards ``(state, user_id, device_id,
+    web_session_token)`` to coord's ``POST /coord/devices/pair-complete``,
+    which returns the device-token JWT.
     """
 
     state: str = Field(
@@ -69,6 +69,10 @@ class PairConfirmRequest(BaseModel):
         min_length=8,
         max_length=128,
         description="Pairing-flow nonce minted by coord's pair-start endpoint.",
+    )
+    device_id: str = Field(
+        ...,
+        description="Device UUID from machine.json, forwarded by the runner via the redirect URL.",
     )
     device_name: str | None = Field(
         default=None,
