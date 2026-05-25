@@ -427,6 +427,10 @@ function routeForSpec(
     // Unlock 2 create/delete-workflow write spec runs on /automation-builder
     // (with ?project=<fixture> appended because it is in GATED_SPECS).
     "automation-builder-workflow-crud": "/automation-builder",
+    // Smoke-parity: UI Bridge State Machine route (slug != spec id). NOT in
+    // GATED_SPECS — the page's chrome (header + config selector + the six
+    // panel-switch buttons) renders project-independently, so no ?project=.
+    "ui-bridge-states": "/automation-builder/ui-bridge-states",
     // Smoke-parity: NavigationTestGenerator route (slug != spec id). In
     // GATED_SPECS, so ?project=<fixture> is appended below.
     "navigation-test-generator": "/automation-builder/navigation-tests",
