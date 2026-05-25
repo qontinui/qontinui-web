@@ -28,25 +28,33 @@ import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, CheckCircle2, Loader2, Server } from "lucide-react";
-import { createRunnerToken } from "@/lib/api/runner_tokens";
 
 /** Strict regex: 127.0.0.1 on any port, exactly our callback path. */
 const CALLBACK_REGEX =
   /^http:\/\/127\.0\.0\.1:\d+\/auth\/runner-token-callback$/;
-
-function formatYmd(now: Date): string {
-  const y = now.getFullYear().toString().padStart(4, "0");
-  const m = (now.getMonth() + 1).toString().padStart(2, "0");
-  const d = now.getDate().toString().padStart(2, "0");
-  return `${y}${m}${d}`;
-}
 
 export default function ConnectRunnerPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
   const state = searchParams?.get("state") ?? "";
-  const callback = searchParams?.get("callback") ?? "";
+  // Defensive: on Windows, `open::that(url)` → ShellExecuteW can
+  // double-encode the query string (%3A → %253A). The browser then
+  // decodes ONE level (giving us still-encoded "http%3A%2F%2F...").
+  // decodeURIComponent is idempotent on an already-decoded string
+  // that contains no % sequences, so this is safe in both cases.
+  const rawCallback = searchParams?.get("callback") ?? "";
+  const callback = (() => {
+    try {
+      return decodeURIComponent(rawCallback);
+    } catch {
+      return rawCallback;
+    }
+  })();
+  // The runner appends its machine.json UUID as `device_id` to the
+  // redirect URL so the web page can forward it to coord's pair-complete
+  // (which requires it to UPSERT the device row).
+  const deviceId = searchParams?.get("device_id") ?? "";
   // Phase 6: prefer `device_name`; accept legacy `runner_name` so a Phase
   // 6-frontend talking to a pre-Phase-6 runner build still labels the
   // device correctly during the cutover window.
@@ -74,6 +82,12 @@ export default function ConnectRunnerPage() {
           "Invalid callback URL. Only http://127.0.0.1:<port>/auth/runner-token-callback is allowed.",
       };
     }
+    if (!deviceId || deviceId.trim().length === 0) {
+      return {
+        ok: false as const,
+        error: "Missing device_id parameter.",
+      };
+    }
     if (!deviceName || deviceName.trim().length === 0) {
       return {
         ok: false as const,
@@ -81,7 +95,7 @@ export default function ConnectRunnerPage() {
       };
     }
     return { ok: true as const };
-  }, [state, callback, deviceName]);
+  }, [state, callback, deviceId, deviceName]);
 
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -92,16 +106,29 @@ export default function ConnectRunnerPage() {
     setErrorMessage(null);
     setSubmitting(true);
     try {
-      const safeName = deviceName.replace(/[^A-Za-z0-9._-]/g, "-").slice(0, 48);
-      const tokenName = `browser-flow-${safeName || "device"}-${formatYmd(new Date())}`;
-      const result = await createRunnerToken({
-        name: tokenName,
-        expires_in_days: null,
+      // POST to pair-confirm: web backend forwards (state, device_id,
+      // device_name) to coord's pair-complete endpoint, which mints the
+      // device-token JWT and returns {device_id, token, state}.
+      const response = await fetch("/api/v1/devices/pair-confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ state, device_id: deviceId, device_name: deviceName }),
       });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(
+          (body as { detail?: string }).detail ||
+            (body as { message?: string }).message ||
+            `Pair-confirm failed (HTTP ${response.status})`,
+        );
+      }
+      const result: { device_id: string; token: string; state: string } =
+        await response.json();
       const redirectUrl = new URL(callback);
       redirectUrl.searchParams.set("state", state);
-      redirectUrl.searchParams.set("token", result.plain_token);
-      redirectUrl.searchParams.set("token_id", result.token_record.id);
+      redirectUrl.searchParams.set("token", result.token);
+      redirectUrl.searchParams.set("token_id", result.device_id);
       setRedirecting(true);
       // Full navigation (not router.push) — the target is a localhost HTTP
       // server, not part of the Next.js app.
