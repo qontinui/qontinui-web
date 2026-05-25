@@ -78,5 +78,38 @@
       "provenance": { "source": "ai-generated" }
     }
   ],
-  "transitions": []
+  "transitions": [],
+  "apiAssertions": [
+    {
+      "id": "ui-bridge-discover-no-browser-connected",
+      "description": "Ports ui-bridge-search.spec.ts:23 — a headless POST /api/ui-bridge/control/discover (no relay client attached, as in CI) must return the canonical NO_BROWSER_CONNECTED 503 envelope. The endpoint is the catch-all UI-Bridge proxy (src/app/api/ui-bridge/[...path]/route.ts:258 noBrowserResponse); `discover` is in BROWSER_REQUIRED_ROUTES so with no browser attached the proxy short-circuits to {success:false, code:\"NO_BROWSER_CONNECTED\", message}. Issued through the same-origin Next proxy so it sees the page's auth session — the same path the page's SDK uses. Value-level only: this proxy envelope is NOT the runner's canonical UiBridgeResponseEnvelope (which requires requestId/type/timestamp — verified absent here), and no corpus type models the proxy {success,code,message} shape yet (see corpus-promotion follow-up). Provable-red: a regression that dropped the 503 short-circuit (returning 200/404) reds status_code; dropping the structured `code` reds the json_path assertion.",
+      "request": {
+        "method": "POST",
+        "path": "/api/ui-bridge/control/discover",
+        "headers": { "Content-Type": "application/json" },
+        "body": { "text": "Start Extraction", "fuzzy": true }
+      },
+      "effect": "read",
+      "assertions": [
+        { "type": "status_code", "expected": 503, "operator": "equals" },
+        { "type": "json_path", "jsonPath": "$.success", "expected": false, "operator": "equals" },
+        { "type": "json_path", "jsonPath": "$.code", "expected": "NO_BROWSER_CONNECTED", "operator": "equals" }
+      ]
+    },
+    {
+      "id": "ui-bridge-health-envelope",
+      "description": "Ports ui-bridge-search.spec.ts:63 — GET /api/ui-bridge/health returns the SDK health envelope {success:true, data:{responsive:true,...}, uiBridge:{appId:\"qontinui-web\",...}}. Server-side populated (not browser-required), so it resolves in CI with no relay client. Value-level only: the health envelope likewise lacks the runner UiBridgeResponseEnvelope required fields requestId/type/timestamp (verified — would red conforms_to), so no corpus conforms_to is used pending promotion of the SDK HTTP envelope type. Provable-red: a regression that flipped success to false, dropped data.responsive, or changed the appId reds the corresponding json_path assertion.",
+      "request": {
+        "method": "GET",
+        "path": "/api/ui-bridge/health"
+      },
+      "effect": "read",
+      "assertions": [
+        { "type": "status_code", "expected": 200, "operator": "equals" },
+        { "type": "json_path", "jsonPath": "$.success", "expected": true, "operator": "equals" },
+        { "type": "json_path", "jsonPath": "$.data.responsive", "expected": true, "operator": "equals" },
+        { "type": "json_path", "jsonPath": "$.uiBridge.appId", "expected": "qontinui-web", "operator": "equals" }
+      ]
+    }
+  ]
 }
