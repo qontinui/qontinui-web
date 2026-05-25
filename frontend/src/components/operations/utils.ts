@@ -38,6 +38,46 @@ export function deviceStatusWsUrl(token: string): string {
 }
 
 /**
+ * REST endpoint for the CI Status Dashboard surface. Tenant-scoped
+ * server-side via the operator → tenant_id resolver (same as
+ * device-status); the caller doesn't pass tenant_id.
+ * Plan `2026-05-25-ci-status-dashboard-plan.md` Phase 3.
+ */
+export const CI_STATUS_API = `${OPERATIONS_API}/ci-status`;
+
+/**
+ * POST endpoint that arms a `CiGreen` gate for a repo's current main
+ * tip. The web backend resolves the head SHA / tenant and forwards to
+ * coord's `POST /coord/gates/register`. Plan Phase 5.
+ */
+export const CI_STATUS_NOTIFY_API = `${OPERATIONS_API}/ci-status/notify-when-green`;
+
+/**
+ * WebSocket URL for the CI-status push channel. Mirrors
+ * `deviceStatusWsUrl`: bridges to coord's CI-status WS after the web
+ * backend mints a tenant-scoped service JWT. Authenticates via the
+ * `token` query-param (the JS WS API can't set headers on upgrade).
+ */
+export function ciStatusWsUrl(token: string): string {
+  let wsBase: string;
+  if (OPERATIONS_API.startsWith("https://")) {
+    wsBase = "wss://" + OPERATIONS_API.slice("https://".length);
+  } else if (OPERATIONS_API.startsWith("http://")) {
+    wsBase = "ws://" + OPERATIONS_API.slice("http://".length);
+  } else {
+    wsBase = "ws://" + OPERATIONS_API;
+  }
+  return `${wsBase}/ci-status/ws?token=${encodeURIComponent(token)}`;
+}
+
+/**
+ * Polling fallback interval (ms) when the CI-status WS is offline.
+ * Matches `DEVICE_STATUS_POLL_FALLBACK_MS` — CI status changes at
+ * webhook cadence, so 5s is fresh enough without hot-looping coord.
+ */
+export const CI_STATUS_POLL_FALLBACK_MS = 5_000;
+
+/**
  * REST endpoint for the Phase 4.4 symbol-claims surface. Proxies coord's
  * `/coord/claims/list?kind=symbol` so the dashboard can render the
  * per-machine "currently editing" sub-line without the browser hitting

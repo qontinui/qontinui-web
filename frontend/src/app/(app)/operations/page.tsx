@@ -2,6 +2,7 @@
 
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
+  CiStatusPanel,
   FleetOverview,
   LandedFeaturesPanel,
   MergeDependencyGraph,
@@ -44,6 +45,13 @@ export default function OperationsPage() {
           <div id="merge-dep-graph">
             <MergeDependencyGraph />
           </div>
+          {/*
+           * CI Status Dashboard (plan 2026-05-25-ci-status-dashboard).
+           * Per-repo red/amber/green main + open-PR check view, pushed
+           * live via useCiStatusStream, with a per-repo "notify when
+           * green" gate action.
+           */}
+          <CiStatusPanel />
           <FleetOverview />
           <LandedFeaturesPanel />
         </div>

@@ -95,6 +95,60 @@ export interface SymbolClaimsResponse {
 }
 
 /**
+ * Backend main-branch CI verdict for a repo. Mirrors coord's
+ * `MainCiStatus` 3-state enum (`ci_baseline.rs` `main_ci_status`),
+ * lowercased on the wire. There is intentionally **no** `amber` value
+ * here — amber is a frontend-only derivation from open-PR-check counts
+ * (see `CiStatusPanel`), never a backend verdict.
+ */
+export type MainCiVerdict = "green" | "red" | "unknown";
+
+/**
+ * Counts of open-PR check runs for a repo, bucketed by GitHub
+ * `conclusion` (folded server-side from `coord.pr_check_runs`).
+ * `pending` aggregates queued + in_progress (not-yet-concluded) checks.
+ */
+export interface OpenPrCheckCounts {
+  success: number;
+  failure: number;
+  pending: number;
+}
+
+/**
+ * One row of the CI Status Dashboard, one per repo in the caller's
+ * `coord.tenant_repos`. Mirrors coord's `RepoCiRow` returned by
+ * `GET /coord/ci/status` and pushed on the CI-status WS as
+ * `{kind: "ci_status.changed", row}`.
+ *
+ * Plan `2026-05-25-ci-status-dashboard-plan.md` Phases 1–5.
+ */
+export interface RepoCiRow {
+  /** `owner/name` GitHub slug — the per-repo map key. */
+  repo: string;
+  /** Main-branch health straight from `coord.ci_baselines`. */
+  main_verdict: MainCiVerdict;
+  /** Open-PR check counts by conclusion. */
+  open_pr_checks: OpenPrCheckCounts;
+  /** Newest `details_url` across the repo's checks, for deep-linking
+   *  to the GitHub run. Null when no check has reported a URL. */
+  latest_details_url: string | null;
+  /** Current main-tip SHA (from `coord.repo_branches`). Null until the
+   *  first push to main lands; gates the "Notify when green" action
+   *  because the `CiGreen` predicate is SHA-keyed. */
+  main_head_sha: string | null;
+}
+
+/** Wire shape returned by `GET /api/v1/operations/ci-status`. */
+export interface CiStatusResponse {
+  repos: RepoCiRow[];
+}
+
+/** Response from `POST /api/v1/operations/ci-status/notify-when-green`. */
+export interface NotifyWhenGreenResponse {
+  gate_id: string;
+}
+
+/**
  * Fleet status payload — directly serializes from the unified Runner
  * entity plus a hostname → Claude-session map.
  */
