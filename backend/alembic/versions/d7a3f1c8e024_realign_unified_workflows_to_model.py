@@ -58,18 +58,22 @@ down_revision: str | None = "c9e1f5a3b7d2"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# JSON-array / JSON-object columns the consolidation created as ``text``.
-_JSON_COLUMNS = (
-    "tags",
-    "setup_steps",
-    "verification_steps",
-    "agentic_steps",
-    "completion_steps",
-    "health_check_urls",
-    "log_source_selection",
-    "context_ids",
-    "disabled_context_ids",
-)
+# JSON columns the consolidation created as ``text`` (with a ``text``
+# ``server_default``), mapped to the jsonb ``server_default`` the model
+# declares. The text default must be DROPped before the type change —
+# Postgres can't auto-cast a column's DEFAULT to jsonb (only the USING clause
+# converts the row data) — then re-SET as jsonb to match the model.
+_JSON_COLUMN_DEFAULTS = {
+    "tags": "'[]'::jsonb",
+    "setup_steps": "'[]'::jsonb",
+    "verification_steps": "'[]'::jsonb",
+    "agentic_steps": "'[]'::jsonb",
+    "completion_steps": "'[]'::jsonb",
+    "health_check_urls": "'[]'::jsonb",
+    "log_source_selection": "'\"default\"'::jsonb",
+    "context_ids": "'[]'::jsonb",
+    "disabled_context_ids": "'[]'::jsonb",
+}
 
 
 def _retype_id_and_inbound_fks(target_type: str) -> str:
@@ -122,18 +126,38 @@ def upgrade() -> None:
     # PK + all inbound FK columns → uuid (FKs dropped/recreated by discovery).
     op.execute(_retype_id_and_inbound_fks("uuid"))
 
-    # JSON columns → jsonb (empty string → NULL, not a cast error).
-    for col in _JSON_COLUMNS:
+    # JSON columns → jsonb. DROP the text default first (can't auto-cast a
+    # default to jsonb), convert the data (empty string → NULL), then re-SET
+    # the jsonb default the model declares.
+    for col, default in _JSON_COLUMN_DEFAULTS.items():
+        op.execute(
+            f"ALTER TABLE project.unified_workflows ALTER COLUMN {col} DROP DEFAULT"
+        )
         op.execute(
             f"ALTER TABLE project.unified_workflows "
             f"ALTER COLUMN {col} TYPE jsonb USING NULLIF({col}, '')::jsonb"
         )
+        op.execute(
+            f"ALTER TABLE project.unified_workflows "
+            f"ALTER COLUMN {col} SET DEFAULT {default}"
+        )
 
 
 def downgrade() -> None:
-    for col in _JSON_COLUMNS:
+    # Reverse: drop jsonb default, convert back to text, re-set the text
+    # default the consolidation used ('[]' for arrays, '"default"' for
+    # log_source_selection).
+    for col in _JSON_COLUMN_DEFAULTS:
+        text_default = "'\"default\"'" if col == "log_source_selection" else "'[]'"
+        op.execute(
+            f"ALTER TABLE project.unified_workflows ALTER COLUMN {col} DROP DEFAULT"
+        )
         op.execute(
             f"ALTER TABLE project.unified_workflows "
             f"ALTER COLUMN {col} TYPE text USING {col}::text"
+        )
+        op.execute(
+            f"ALTER TABLE project.unified_workflows "
+            f"ALTER COLUMN {col} SET DEFAULT {text_default}"
         )
     op.execute(_retype_id_and_inbound_fks("text"))
