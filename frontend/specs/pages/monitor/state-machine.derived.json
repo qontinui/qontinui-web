@@ -134,7 +134,7 @@
     {
       "id": "monitor-switch-to-session-history",
       "name": "Switch to Session History tab",
-      "description": "Behavioral: clicking the Session History tab swaps the active tabpanel away from the default Live Monitor view — the Live Monitor tabpanel (anchored by its 'Runner Connection' text) unmounts. Read-only navigation between live and history views; no runner state is mutated. Tab matched by role+text (Radix ids are render-volatile). activateStates stays on the always-present header so the post-state is a stable structural anchor. This is the proven Radix-tab click pattern (run 26376164982).",
+      "description": "Behavioral: clicking the Session History tab swaps the active tabpanel away from the default Live Monitor view — the Session History panel mounts, surfacing its 'Execution History' card title. Read-only navigation between live and history views; no runner state is mutated. Tab matched by role+text (Radix ids are render-volatile). The assertion is the appearance of the history-panel-only 'Execution History' content (waitAfter: element appear); activateStates stays on the always-present header so the post-state is a stable structural anchor. This is the proven Radix-tab click pattern (run 26376164982).",
       "fromStates": ["monitor-tabs"],
       "activateStates": ["monitor-header"],
       "exitStates": [],
@@ -144,8 +144,8 @@
           "type": "click",
           "target": { "role": "tab", "text": "Session History" },
           "waitAfter": {
-            "type": "vanish",
-            "query": { "role": "tabpanel", "text_contains": "Runner Connection" },
+            "type": "element",
+            "query": { "text_contains": "Execution History" },
             "timeout": 8000
           }
         }
