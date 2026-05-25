@@ -16,11 +16,7 @@ export type SessionKind =
   | "debug";
 
 /** `coord.sessions.state` enum. snake_case wire form. */
-export type SessionState =
-  | "active"
-  | "pending_resolution"
-  | "stale"
-  | "closed";
+export type SessionState = "active" | "pending_resolution" | "stale" | "closed";
 
 /**
  * Typed session intent stored verbatim in `coord.sessions.intent` (JSONB).
@@ -72,6 +68,55 @@ export interface SessionEventRow {
   event_kind: string;
   payload: Record<string, unknown>;
   occurred_at: string;
+}
+
+/**
+ * One PTY output chunk — Phase 8 of
+ * `2026-05-23-coord-native-sessions-phase-7-10.md`.
+ *
+ * Shared shape across the warm/cold history fetch
+ * (`GET /sessions/:id/output`) and the live-tail `output_chunk` SSE
+ * frames (`GET /sessions/:id/events`). Mirrors
+ * `qontinui-coord/src/sessions.rs::OutputChunk`.
+ *
+ * `chunk_offset` is the runner-side monotonic byte counter for the
+ * session — a stable FIFO key (`PRIMARY KEY (session_id, chunk_offset)`
+ * coord-side) and the de-dupe key the dashboard uses to reconcile the
+ * bootstrap history with the live tail. `payload_b64` decodes to raw
+ * PTY bytes (already redacted runner-side when the session opted in).
+ */
+export interface OutputChunk {
+  chunk_offset: number;
+  payload_b64: string;
+}
+
+/**
+ * Wire shape from `GET /api/v1/operations/sessions/:id/output`.
+ * Matches the coord response envelope in
+ * `qontinui-coord/src/sessions.rs::get_output`.
+ */
+export interface OutputHistoryResponse {
+  session_id: string;
+  tier: "warm" | "cold" | string;
+  chunks: OutputChunk[];
+  count: number;
+}
+
+/**
+ * Live-tail `output_chunk` frame body, as published on the JetStream
+ * session-output subject and surfaced via the `/events` SSE stream's
+ * `event: live` frames. Carries the same `chunk_offset` + `payload_b64`
+ * as a history `OutputChunk`, plus routing identifiers. NOT a
+ * `SessionEventRow` (no `seq` / `occurred_at`) — output chunks live in
+ * `coord.session_output`, not `coord.session_events`, so they never
+ * appear in the events replay. See
+ * `qontinui-coord/src/sessions.rs::post_output`.
+ */
+export interface OutputChunkFrame extends OutputChunk {
+  event_kind: "output_chunk";
+  session_id: string;
+  tenant_id?: string;
+  device_id?: string;
 }
 
 /** Wire shape from `GET /api/v1/operations/tenants`. */

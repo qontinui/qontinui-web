@@ -1981,6 +1981,54 @@ async def get_coord_session(
     raise HTTPException(status_code=404, detail="session not found")
 
 
+@router.get("/sessions/{session_id}/output")
+async def get_coord_session_output(
+    session_id: UUID,
+    tier: str | None = Query(
+        default=None,
+        description="`warm` (default) | `cold` — passthrough to coord.",
+    ),
+    limit: int | None = Query(
+        default=None,
+        description="Max warm-tier chunks to return (warm tier only).",
+    ),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Fetch a session's recorded PTY output (Phase 8 read-only pane).
+
+    Bridges to coord's ``GET /sessions/:id/output[?tier=warm|cold][&limit=N]``.
+    The response envelope is::
+
+        {
+          "session_id": "<uuid>",
+          "tier": "warm" | "cold",
+          "chunks": [ { "chunk_offset": <i64>, "payload_b64": "<base64>" }, ... ],
+          "count": <int>
+        }
+
+    Each chunk's ``payload_b64`` decodes to raw PTY bytes (already redacted
+    runner-side when the session opted into redaction). The dashboard fetches
+    the ``warm`` tier for the xterm bootstrap window then live-tails the
+    ``/sessions/:id/events`` SSE stream (``output_chunk`` frames carry the
+    same ``chunk_offset`` + ``payload_b64`` shape), de-duping by
+    ``chunk_offset``.
+
+    Gated on coord serving the Phase 8 output endpoints (PR #130). Until
+    those are deployed, coord returns an error for this path and the pane
+    renders its empty / unavailable state.
+    """
+    params: dict[str, Any] = {}
+    if tier is not None:
+        params["tier"] = tier
+    if limit is not None:
+        params["limit"] = limit
+    return await _proxy_coord_get(
+        f"/sessions/{session_id}/output",
+        params=params or None,
+        tenant_id=tenant_id,
+    )
+
+
 @router.get("/sessions/{session_id}/events")
 async def stream_coord_session_events(
     session_id: UUID,
