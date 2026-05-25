@@ -41,6 +41,8 @@ import {
   isSameOriginServerError,
   type ServerErrorEntry,
 } from "./server-error-policy";
+import { evaluateApiCheck, type ApiCheckResult } from "./api-contract";
+import { discoverAppRoutes } from "./route-manifest";
 
 // ---------------------------------------------------------------------------
 // Console-error capture (the run-level invariant; see console-policy.ts)
@@ -459,6 +461,54 @@ function substituteSecrets(
   return { doc: cloned, ok: missing.size === 0, missing: [...missing] };
 }
 
+// ---------------------------------------------------------------------------
+// Per-spec route stubs (metadata.routeStubs)
+//
+// Individual IR specs can declare mock responses via `metadata.routeStubs` in
+// their raw JSON. Each stub intercepts a Playwright URL pattern and returns a
+// canned response via `context.route()` / `route.fulfill()`. Applied before the
+// spec's navigation and torn down after evaluation so they don't leak across
+// specs. Uses the same loose `Record<string, unknown>` cast as
+// `requiresUnauthenticated` — no schema change needed.
+// ---------------------------------------------------------------------------
+
+interface RouteStub {
+  urlPattern: string;
+  status?: number;       // default 200
+  contentType?: string;  // default "application/json"
+  body: unknown;         // JSON-serializable response body
+}
+
+function readRouteStubs(doc: Record<string, unknown>): RouteStub[] {
+  const meta = doc.metadata as Record<string, unknown> | undefined;
+  if (!meta?.routeStubs || !Array.isArray(meta.routeStubs)) return [];
+  return meta.routeStubs as RouteStub[];
+}
+
+/**
+ * Apply per-spec route stubs on the given BrowserContext. Returns a teardown
+ * function that unroutes all applied stubs (call in a `finally` block).
+ */
+async function applyRouteStubs(
+  ctx: BrowserContext,
+  stubs: RouteStub[],
+): Promise<() => Promise<void>> {
+  for (const stub of stubs) {
+    await ctx.route(stub.urlPattern, (route) =>
+      route.fulfill({
+        status: stub.status ?? 200,
+        contentType: stub.contentType ?? "application/json",
+        body: JSON.stringify(stub.body),
+      }),
+    );
+  }
+  return async () => {
+    for (const stub of stubs) {
+      await ctx.unroute(stub.urlPattern);
+    }
+  };
+}
+
 function discoverSpecs(specsDir: string): SpecEntry[] {
   if (!existsSync(specsDir)) return [];
   const out: SpecEntry[] = [];
@@ -520,8 +570,25 @@ interface SpecResult {
    * server errors. See server-error-policy.ts.
    */
   serverErrors: ServerErrorEntry[];
+  /** API-contract check results (Phase 1 value-level assertions). */
+  apiAssertions: ApiCheckResult[];
+  /** Fraction of API assertion checks that passed (1.0 = all pass / vacuous). */
+  apiAssertionPassRate: number;
   error: string | null;
   durationMs: number;
+}
+
+// ---------------------------------------------------------------------------
+// Crawl result (Phase 4: spec-less route crawl)
+// ---------------------------------------------------------------------------
+
+interface CrawlResult {
+  route: string;
+  navigatedOk: boolean;
+  consoleErrors: ConsoleErrorEntry[];
+  serverErrors: ServerErrorEntry[];
+  durationMs: number;
+  error: string | null;
 }
 
 /**
@@ -617,6 +684,7 @@ function routeForSpec(
 
 async function evaluateSpec(
   page: Page,
+  requestCtx: import("@playwright/test").APIRequestContext,
   spec: SpecEntry,
   baseUrl: string,
   includeDestructive: boolean,
@@ -636,6 +704,8 @@ async function evaluateSpec(
     transitionPassRate: 0,
     consoleErrors: [],
     serverErrors: [],
+    apiAssertions: [],
+    apiAssertionPassRate: 1,
     error: null,
     durationMs: 0,
   };
@@ -902,6 +972,36 @@ async function evaluateSpec(
     } else {
       result.error = evalResult.error;
     }
+
+    // API contract assertions (Phase 1: value-level only).
+    // Runs OUTSIDE the in-page evaluate block because these are server-side
+    // HTTP requests issued via Playwright's APIRequestContext (which shares
+    // the browser session's auth cookies), not in-browser fetch calls.
+    const apiChecks: unknown[] = Array.isArray((spec.doc as Record<string, unknown>).apiAssertions)
+      ? ((spec.doc as Record<string, unknown>).apiAssertions as unknown[])
+      : [];
+    if (apiChecks.length > 0) {
+      const apiResults: ApiCheckResult[] = [];
+      for (const check of apiChecks as Array<Record<string, unknown>>) {
+        const effect = (check.effect as string) ?? "read";
+        if (effect === "destructive" && !includeDestructive) continue;
+        if (effect === "write" && !includeWrite) continue;
+        const checkResult = await evaluateApiCheck(
+          requestCtx,
+          baseUrl,
+          check as {
+            id: string;
+            request: { method: string; path: string; headers?: Record<string, string>; body?: unknown };
+            assertions: Array<Record<string, unknown>>;
+          },
+        );
+        apiResults.push(checkResult);
+      }
+      result.apiAssertions = apiResults;
+      const total = apiResults.length;
+      const passed = apiResults.filter((r) => r.passed).length;
+      result.apiAssertionPassRate = total === 0 ? 1 : passed / total;
+    }
   } catch (err) {
     result.error = err instanceof Error ? err.message : String(err);
   }
@@ -921,6 +1021,14 @@ interface FullReport {
   authOk: boolean;
   specCount: number;
   specs: SpecResult[];
+  /** Spec-less route crawl results (Phase 4). Informational — not gating. */
+  crawl?: {
+    total: number;
+    visited: number;
+    consoleErrors: number;
+    serverErrors: number;
+    routes: CrawlResult[];
+  };
   summary: {
     fullMatch: number;
     partialMatch: number;
@@ -933,6 +1041,8 @@ interface FullReport {
     consoleErrors: { total: number; bySpec: Record<string, number> };
     /** Run-level same-origin HTTP-500 invariant: total hits + per-spec breakdown. */
     serverErrors: { total: number; bySpec: Record<string, number> };
+    /** Mean API-assertion pass rate across all non-error specs (1.0 = all pass / vacuous). */
+    apiAssertionPassRate: number;
   };
 }
 
@@ -1148,6 +1258,9 @@ async function main(): Promise<number> {
     await unauthContext.route("**/users/me/preferences", prefsIntercept);
     await unauthContext.route("**/operations/ci-status", ciStatusStub);
     await unauthContext.route("**/ws-token", wsTokenStub);
+    // Per-spec route stubs on the unauth context (same pattern as the auth lane).
+    const stubs = readRouteStubs(spec.doc);
+    const teardownStubs = await applyRouteStubs(unauthContext, stubs);
     const unauthPage = await unauthContext.newPage();
     // Same console sink + context marker as the shared authed page, so unauth
     // specs are covered by the run-level invariant (they were the one lane a
@@ -1157,6 +1270,7 @@ async function main(): Promise<number> {
     try {
       return await evaluateSpec(
         unauthPage,
+        unauthContext.request,
         spec,
         args.baseUrl,
         args.includeDestructive,
@@ -1165,6 +1279,7 @@ async function main(): Promise<number> {
         null,
       );
     } finally {
+      await teardownStubs();
       await unauthContext.close();
     }
   };
@@ -1183,9 +1298,21 @@ async function main(): Promise<number> {
     captureCtx.transitionId = "initial-load";
     const consoleBefore = criticalConsole.length;
     const serverBefore = serverErrors.length;
-    const r = unauth
-      ? await runUnauthSpec(spec)
-      : await evaluateSpec(page, spec, args.baseUrl, args.includeDestructive, args.includeWrite, fixtureProjectId);
+    // Per-spec route stubs: apply on the appropriate context before eval,
+    // tear down after. The unauth lane handles its own stubs inside
+    // runUnauthSpec; the auth lane applies them on the shared `context`.
+    let r: SpecResult;
+    if (unauth) {
+      r = await runUnauthSpec(spec);
+    } else {
+      const stubs = readRouteStubs(spec.doc);
+      const teardownStubs = await applyRouteStubs(context, stubs);
+      try {
+        r = await evaluateSpec(page, context.request, spec, args.baseUrl, args.includeDestructive, args.includeWrite, fixtureProjectId);
+      } finally {
+        await teardownStubs();
+      }
+    }
     // Attribute this spec's slice, dropping any author-declared expected errors.
     const expected = readExpectedConsoleErrors(spec.doc);
     r.consoleErrors = criticalConsole
@@ -1200,6 +1327,80 @@ async function main(): Promise<number> {
     results.push(r);
     process.stderr.write(
       `${r.matchOutcome} matchRate=${r.matchRate.toFixed(2)} transitions=${r.transitions.length} passRate=${r.transitionPassRate.toFixed(2)} consoleErrors=${r.consoleErrors.length} serverErrors=${r.serverErrors.length}${r.error ? ` error=${r.error}` : ""}\n`,
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Spec-less route crawl (Phase 4 / GAP-1): visit every app route that has
+  // no IR spec and apply the console-error (C3) and server-error (C4) run-level
+  // invariants. Dynamic routes are skipped for now (would need fixture param
+  // injection + auth-aware navigation). Results are INFORMATIONAL — they do
+  // NOT gate the CI exit code. Once stable after a soak period they can be
+  // promoted to gating.
+  // -------------------------------------------------------------------------
+  const appDir = join(__dirname, "../../src/app");
+  const allRoutes = discoverAppRoutes(appDir);
+
+  // Build the set of routes that already have IR spec coverage. The routeForSpec
+  // function converts spec id → URL path; we normalize to a leading-slash-less
+  // form so the Set lookup is insensitive to leading-slash differences.
+  const specRoutes = new Set(
+    specs.map((s) =>
+      routeForSpec(s.id, "", null).replace(/^\//, ""),
+    ),
+  );
+  const unspecRoutes = allRoutes.filter(
+    (r) => !specRoutes.has(r.path.replace(/^\//, "")),
+  );
+
+  process.stderr.write(
+    `[spec-ci] crawl: ${allRoutes.length} total routes, ${specRoutes.size} spec-covered, ${unspecRoutes.length} unspec'd (${unspecRoutes.filter((r) => r.isDynamic).length} dynamic — skipped)\n`,
+  );
+
+  const crawlResults: CrawlResult[] = [];
+  for (const route of unspecRoutes) {
+    // Skip dynamic routes for now — they would need fixture parameter injection
+    // and the resulting 404-heavy crawl adds noise without signal.
+    if (route.isDynamic) continue;
+
+    const url = `${args.baseUrl.replace(/\/$/, "")}${route.path}`;
+    const started = Date.now();
+    captureCtx.specId = `crawl:${route.path}`;
+    captureCtx.transitionId = "crawl";
+    const consoleBefore = criticalConsole.length;
+    const serverBefore = serverErrors.length;
+
+    try {
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15_000 });
+      // Brief settle for async rendering (shorter than spec eval — crawl is a
+      // smoke check, not a structural match).
+      await page.waitForTimeout(2_000);
+
+      const crawlConsole = criticalConsole.slice(consoleBefore);
+      const crawlServer = serverErrors.slice(serverBefore);
+
+      crawlResults.push({
+        route: route.path,
+        navigatedOk: true,
+        consoleErrors: crawlConsole,
+        serverErrors: crawlServer,
+        durationMs: Date.now() - started,
+        error: null,
+      });
+    } catch (e) {
+      crawlResults.push({
+        route: route.path,
+        navigatedOk: false,
+        consoleErrors: criticalConsole.slice(consoleBefore),
+        serverErrors: serverErrors.slice(serverBefore),
+        durationMs: Date.now() - started,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+
+    const last = crawlResults[crawlResults.length - 1]!;
+    process.stderr.write(
+      `[spec-ci] crawl ${route.path} ${last.navigatedOk ? "ok" : "FAIL"} (${last.durationMs}ms)\n`,
     );
   }
 
@@ -1231,6 +1432,14 @@ async function main(): Promise<number> {
   }
   const serverErrorTotal = results.reduce((s, r) => s + r.serverErrors.length, 0);
 
+  // Run-level API-assertion pass rate (mean across non-error specs).
+  const apiAssertionPassRate =
+    valid.length === 0 ? 1 : valid.reduce((s, r) => s + r.apiAssertionPassRate, 0) / valid.length;
+
+  // Crawl rollup (informational — not included in the CI gate).
+  const crawlConsoleTotal = crawlResults.reduce((s, r) => s + r.consoleErrors.length, 0);
+  const crawlServerTotal = crawlResults.reduce((s, r) => s + r.serverErrors.length, 0);
+
   const report: FullReport = {
     baseUrl: args.baseUrl,
     apiBase: args.apiBase,
@@ -1238,6 +1447,13 @@ async function main(): Promise<number> {
     authOk: auth.ok,
     specCount: specs.length,
     specs: results,
+    crawl: {
+      total: unspecRoutes.filter((r) => !r.isDynamic).length,
+      visited: crawlResults.length,
+      consoleErrors: crawlConsoleTotal,
+      serverErrors: crawlServerTotal,
+      routes: crawlResults,
+    },
     summary: {
       fullMatch,
       partialMatch,
@@ -1248,12 +1464,13 @@ async function main(): Promise<number> {
       transitionPassRate,
       consoleErrors: { total: consoleErrorTotal, bySpec: consoleErrorBySpec },
       serverErrors: { total: serverErrorTotal, bySpec: serverErrorBySpec },
+      apiAssertionPassRate,
     },
   };
 
   writeFileSync(args.output, JSON.stringify(report, null, 2), "utf-8");
   process.stderr.write(
-    `[spec-ci] wrote ${args.output}: ${fullMatch} full, ${partialMatch} partial, ${noMatch} no_match, ${errorCount} error · min ${report.summary.minMatchRate.toFixed(2)} · mean ${report.summary.meanMatchRate.toFixed(2)} · transitionPassRate ${report.summary.transitionPassRate.toFixed(2)} · consoleErrors ${report.summary.consoleErrors.total} · serverErrors ${report.summary.serverErrors.total}\n`,
+    `[spec-ci] wrote ${args.output}: ${fullMatch} full, ${partialMatch} partial, ${noMatch} no_match, ${errorCount} error · min ${report.summary.minMatchRate.toFixed(2)} · mean ${report.summary.meanMatchRate.toFixed(2)} · transitionPassRate ${report.summary.transitionPassRate.toFixed(2)} · consoleErrors ${report.summary.consoleErrors.total} · serverErrors ${report.summary.serverErrors.total} · apiAssertionPassRate ${report.summary.apiAssertionPassRate.toFixed(2)} · crawl ${crawlResults.length} routes, ${crawlConsoleTotal} console, ${crawlServerTotal} server\n`,
   );
 
   // CI gate: fail iff (a) any spec errored, or (b) min match rate < 0.8,
@@ -1263,15 +1480,17 @@ async function main(): Promise<number> {
   // test), or (e) any spec produced a same-origin HTTP-5xx response (the
   // run-level invariant that gives the gate HTTP-RESPONSE visibility — backend
   // 500s a resolved `fetch()` makes invisible to the console listener; see
-  // server-error-policy.ts).
+  // server-error-policy.ts), or (f) API-contract assertions failed.
   const consoleClean = report.summary.consoleErrors.total === 0;
   const serverClean = report.summary.serverErrors.total === 0;
+  const apiContractClean = report.summary.apiAssertionPassRate >= 0.999;
   const passed =
     errorCount === 0 &&
     report.summary.minMatchRate >= 0.8 &&
     report.summary.transitionPassRate >= 0.999 &&
     consoleClean &&
-    serverClean;
+    serverClean &&
+    apiContractClean;
   return passed ? 0 : 1;
 }
 
