@@ -2,44 +2,44 @@
   "version": "1.0",
   "id": "marketplace",
   "name": "Marketplace",
-  "description": "Marketplace page for the qontinui-web app. This snapshot captured the project-gated empty state (no project selected this session): an onboarding panel prompting the operator to create a first project before the Marketplace feature is available. Asserts the empty-state structure — heading, explanatory message, and the create-project call to action.",
+  "description": "Marketplace page for the qontinui-web app. With a project selected (Spec CI seeds an empty 'spec-ci-fixture' project and threads ?project=<id> so the <RequireProject pageName=\"Marketplace\"> gate clears), the page renders its real surface: a 'Marketplace' header with a Publish Package action and a Radix tablist switching between All Packages / Popular / Installed package views. Asserts the page-header and tab structure (data-driven package rows/counts are NOT asserted). The behavioral transition switches tabs and verifies the Radix active-tab state moves.",
   "provenance": { "source": "ai-generated", "appId": "qontinui-web" },
-  "metadata": { "tags": ["marketplace", "empty-state", "onboarding"] },
+  "metadata": { "tags": ["marketplace", "tabs", "radix"] },
   "states": [
     {
-      "id": "marketplace-empty-heading",
-      "name": "Empty-state heading",
-      "description": "Project-gated empty state heading shown when no project is selected.",
+      "id": "marketplace-header",
+      "name": "Page header",
+      "description": "Top-of-page banner anchoring the Marketplace, with the Publish Package action.",
       "assertions": [
         {
-          "id": "marketplace-empty-heading-elem-0",
-          "description": "h4 'No projects yet' heading anchors the empty state.",
+          "id": "marketplace-header-elem-0",
+          "description": "h1 Marketplace heading anchors the page.",
           "category": "element-presence",
           "severity": "critical",
           "assertionType": "exists",
-          "target": { "type": "search", "criteria": { "id": "heading-4-no-projects-yet" }, "label": "No projects yet heading" },
+          "target": { "type": "search", "criteria": { "id": "heading-1-marketplace" }, "label": "Marketplace heading" },
           "source": "ai-generated",
           "reviewed": false,
           "enabled": true
         },
         {
-          "id": "marketplace-empty-heading-elem-1",
-          "description": "Heading text reads 'No projects yet' (role+text cross-check on the same h4).",
+          "id": "marketplace-header-elem-1",
+          "description": "Heading text reads 'Marketplace' (role+text cross-check on the same h1).",
           "category": "text-content",
-          "severity": "warning",
+          "severity": "critical",
           "assertionType": "exists",
-          "target": { "type": "search", "criteria": { "role": "heading", "text": "No projects yet" }, "label": "Empty-state heading by role+text" },
+          "target": { "type": "search", "criteria": { "role": "heading", "text": "Marketplace" }, "label": "Marketplace heading by role+text" },
           "source": "ai-generated",
           "reviewed": false,
           "enabled": true
         },
         {
-          "id": "marketplace-empty-heading-elem-2",
-          "description": "Empty-state heading is a heading-role element (structural anchor).",
-          "category": "accessibility",
+          "id": "marketplace-header-elem-2",
+          "description": "Publish Package action is present in the header.",
+          "category": "element-presence",
           "severity": "warning",
           "assertionType": "exists",
-          "target": { "type": "search", "criteria": { "id": "heading-4-no-projects-yet", "role": "heading" }, "label": "Empty-state heading role" },
+          "target": { "type": "search", "criteria": { "id": "button-publish-package" }, "label": "Publish Package button" },
           "source": "ai-generated",
           "reviewed": false,
           "enabled": true
@@ -48,80 +48,39 @@
       "provenance": { "source": "ai-generated" }
     },
     {
-      "id": "marketplace-empty-message",
-      "name": "Empty-state message",
-      "description": "Explanatory copy telling the operator that a project is required to access the Marketplace.",
+      "id": "marketplace-tabs",
+      "name": "Package view tabs",
+      "description": "Tablist switching between the All Packages, Popular, and Installed package views. The Radix trigger ids embed a render-volatile root id, so tabs are matched by role+text against the stable tablist container.",
       "assertions": [
         {
-          "id": "marketplace-empty-message-elem-0",
-          "description": "Explanatory paragraph is rendered.",
-          "category": "element-presence",
-          "severity": "warning",
-          "assertionType": "exists",
-          "target": { "type": "search", "criteria": { "id": "content-paragraph-create-your-first-pr-0" }, "label": "Empty-state message" },
-          "source": "ai-generated",
-          "reviewed": false,
-          "enabled": true
-        },
-        {
-          "id": "marketplace-empty-message-elem-1",
-          "description": "Heading remains co-present above the message for context.",
-          "category": "element-presence",
-          "severity": "warning",
-          "assertionType": "exists",
-          "target": { "type": "search", "criteria": { "id": "heading-4-no-projects-yet" }, "label": "No projects yet heading" },
-          "source": "ai-generated",
-          "reviewed": false,
-          "enabled": true
-        },
-        {
-          "id": "marketplace-empty-message-elem-2",
-          "description": "Create-project CTA is co-present beneath the message.",
-          "category": "element-presence",
-          "severity": "warning",
-          "assertionType": "exists",
-          "target": { "type": "search", "criteria": { "id": "link-create-first-project" }, "label": "Create First Project link" },
-          "source": "ai-generated",
-          "reviewed": false,
-          "enabled": true
-        }
-      ],
-      "provenance": { "source": "ai-generated" }
-    },
-    {
-      "id": "marketplace-empty-cta",
-      "name": "Create-project call to action",
-      "description": "Primary action that lets the operator leave the empty state by creating a first project.",
-      "assertions": [
-        {
-          "id": "marketplace-empty-cta-elem-0",
-          "description": "Create First Project link is present.",
+          "id": "marketplace-tabs-elem-0",
+          "description": "Tablist container holding the package-view tabs is present.",
           "category": "element-presence",
           "severity": "critical",
           "assertionType": "exists",
-          "target": { "type": "search", "criteria": { "id": "link-create-first-project" }, "label": "Create First Project link" },
+          "target": { "type": "search", "criteria": { "id": "generic-all-packages-popular-installed", "role": "tablist" }, "label": "Marketplace tablist" },
           "source": "ai-generated",
           "reviewed": false,
           "enabled": true
         },
         {
-          "id": "marketplace-empty-cta-elem-1",
-          "description": "Create First Project link is reachable by role+text.",
-          "category": "text-content",
-          "severity": "warning",
+          "id": "marketplace-tabs-elem-1",
+          "description": "All Packages tab is present (matched by role+text — id is radix-volatile).",
+          "category": "element-presence",
+          "severity": "critical",
           "assertionType": "exists",
-          "target": { "type": "search", "criteria": { "role": "link", "text": "Create First Project" }, "label": "Create First Project by role+text" },
+          "target": { "type": "search", "criteria": { "role": "tab", "text_contains": "All Packages" }, "label": "All Packages tab" },
           "source": "ai-generated",
           "reviewed": false,
           "enabled": true
         },
         {
-          "id": "marketplace-empty-cta-elem-2",
-          "description": "CTA is a link-role element (structural/accessibility anchor).",
-          "category": "accessibility",
-          "severity": "warning",
+          "id": "marketplace-tabs-elem-2",
+          "description": "Installed tab is present (matched by role+text — id is radix-volatile).",
+          "category": "element-presence",
+          "severity": "critical",
           "assertionType": "exists",
-          "target": { "type": "search", "criteria": { "id": "link-create-first-project", "role": "link" }, "label": "Create First Project link role" },
+          "target": { "type": "search", "criteria": { "role": "tab", "text_contains": "Installed" }, "label": "Installed tab" },
           "source": "ai-generated",
           "reviewed": false,
           "enabled": true
@@ -130,5 +89,27 @@
       "provenance": { "source": "ai-generated" }
     }
   ],
-  "transitions": []
+  "transitions": [
+    {
+      "id": "marketplace-switch-to-installed-tab",
+      "name": "Switch to Installed tab",
+      "description": "Behavioral: clicking the Installed tab moves the Radix active-tab selection away from the default All Packages view. The assertion is that the Installed tab becomes the selected tab (aria-selected=true) — a deterministic UI-state change that does not depend on any package data and mutates no server state (read-only view switch). Tab matched by role+text (Radix ids are render-volatile). activateStates stays on the always-present header so the post-state is a stable structural anchor. This is the proven Radix-tab click pattern (monitor-switch-to-session-history).",
+      "fromStates": ["marketplace-tabs"],
+      "activateStates": ["marketplace-header"],
+      "exitStates": [],
+      "effect": "read",
+      "actions": [
+        {
+          "type": "click",
+          "target": { "role": "tab", "text_contains": "Installed" },
+          "waitAfter": {
+            "type": "element",
+            "query": { "role": "tab", "text_contains": "Installed", "attributes": { "aria-selected": "true" } },
+            "timeout": 8000
+          }
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    }
+  ]
 }
