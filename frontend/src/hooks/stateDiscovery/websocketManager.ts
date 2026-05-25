@@ -35,9 +35,18 @@ export class StateDiscoveryWebSocketManager {
     this.analysisId = analysisId;
     this.callbacks = callbacks;
 
-    // Construct WebSocket URL
-    const wsProtocol = apiBaseUrl.startsWith("https") ? "wss" : "ws";
-    const wsHost = apiBaseUrl.replace(/^https?:\/\//, "");
+    // Construct WebSocket URL. Empty apiBaseUrl => same-origin: derive the WS
+    // origin from window.location (the absolute base is parsed otherwise).
+    const wsProtocol = apiBaseUrl
+      ? apiBaseUrl.startsWith("https")
+        ? "wss"
+        : "ws"
+      : window.location.protocol === "https:"
+        ? "wss"
+        : "ws";
+    const wsHost = apiBaseUrl
+      ? apiBaseUrl.replace(/^https?:\/\//, "")
+      : window.location.host;
     const wsUrl = `${wsProtocol}://${wsHost}${apiPath}/state-discovery/ws/${analysisId}`;
 
     logger.debug("Connecting:", {

@@ -40,7 +40,25 @@ import type {
   ImageProcessingStatus,
 } from "./api-types";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
+
+/**
+ * Build the `ws(s)://host` origin for a WebSocket URL.
+ *
+ * When API_BASE_URL is set (absolute, e.g. AWS staging) the WS origin is
+ * derived from it. When it is empty (same-origin mode — REST is proxied
+ * through Next.js) there is no absolute base to parse, so the WS origin is
+ * derived from window.location instead.
+ */
+function getWebSocketOrigin(): string {
+  if (API_BASE_URL) {
+    const wsProtocol = API_BASE_URL.startsWith("https") ? "wss" : "ws";
+    const host = API_BASE_URL.replace(/^https?:\/\//, "");
+    return `${wsProtocol}://${host}`;
+  }
+  const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
+  return `${wsProtocol}://${window.location.host}`;
+}
 
 /**
  * ApiClient - Single Responsibility: Handle HTTP requests with authentication
@@ -897,9 +915,7 @@ class ApiClient {
   }
 
   async getRunnerStatusWebSocketUrl(): Promise<string> {
-    const wsProtocol = API_BASE_URL.startsWith("https") ? "wss" : "ws";
-    const url = API_BASE_URL.replace(/^https?:\/\//, "");
-    const baseUrl = `${wsProtocol}://${url}/api/v1/ws/runner/status`;
+    const baseUrl = `${getWebSocketOrigin()}/api/v1/ws/runner/status`;
 
     const token = await this.getWebSocketToken();
     if (token) {
@@ -910,9 +926,7 @@ class ApiClient {
   }
 
   async getMonitorWebSocketUrl(sessionId: string): Promise<string> {
-    const wsProtocol = API_BASE_URL.startsWith("https") ? "wss" : "ws";
-    const url = API_BASE_URL.replace(/^https?:\/\//, "");
-    const baseUrl = `${wsProtocol}://${url}/api/v1/automation/ws/automation/monitor/${sessionId}`;
+    const baseUrl = `${getWebSocketOrigin()}/api/v1/automation/ws/automation/monitor/${sessionId}`;
 
     const token = await this.getWebSocketToken();
     if (token) {

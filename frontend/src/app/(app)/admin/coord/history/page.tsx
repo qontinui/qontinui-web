@@ -40,7 +40,7 @@ function HistorySection({
 
   const fetchData = useCallback(async () => {
     try {
-      const url = new URL(`${API}/plans`);
+      const url = new URL(`${API}/plans`, window.location.origin);
       url.searchParams.set("status", status);
       url.searchParams.set("limit", "50");
       const res = await fetch(url.toString());

@@ -2,8 +2,7 @@ export class ApiConfig {
   // Main API (authentication, users, projects)
   // Use environment variable to call backend directly (required for cookie-based auth)
   // Next.js rewrites don't forward cookies, so direct calls are needed
-  static readonly API_BASE_URL =
-    process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  static readonly API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
   /**
    * True when API_BASE_URL points at a non-localhost host (e.g. staging /
@@ -19,9 +18,13 @@ export class ApiConfig {
    * of the Bearer token (so login survives page reloads even without a
    * cookie fallback).
    */
+  // Empty API_BASE_URL means same-origin (requests go through the Next.js
+  // proxy on the same host), so HttpOnly cookies ride along normally — that
+  // is NOT a remote/cross-origin backend.
   static readonly IS_REMOTE_BACKEND =
+    !!process.env.NEXT_PUBLIC_API_URL &&
     !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/.test(
-      `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/`
+      `${process.env.NEXT_PUBLIC_API_URL}/`
     );
 
   // Runner URL for local automation (pattern matching, state discovery, extraction)

@@ -2,13 +2,17 @@
   "version": "1.0",
   "id": "workflow-viz",
   "name": "WorkflowViz",
-  "description": "The Workflow Visualization page for the qontinui-web app renders workflow graphs scoped to the active project. When the user has no projects, the page renders a project-gated empty state instructing them to create their first project before Workflow Visualization becomes available. This spec covers that empty (no-project) state, which is what the captured snapshot shows.",
+  "description": "The Workflow Visualization page for the qontinui-web app renders workflow graphs scoped to the active project. When the user has no projects, the page renders a project-gated empty state instructing them to create their first project before Workflow Visualization becomes available. This spec covers that empty (no-project) state, which is what the captured snapshot shows. (Spec CI now seeds a fixture project on the ci-bot account, so with no project selected via URL this page renders the 'No project selected' gate rather than the 'No projects yet' first-project gate; assertions updated to the project-exists-but-unselected card.)",
   "provenance": {
     "source": "ai-generated",
     "appId": "qontinui-web"
   },
   "metadata": {
-    "tags": ["workflow-viz", "visualization", "empty-state"]
+    "tags": [
+      "workflow-viz",
+      "visualization",
+      "empty-state"
+    ]
   },
   "states": [
     {
@@ -24,7 +28,10 @@
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "heading-4-no-projects-yet", "role": "heading" },
+            "criteria": {
+              "id": "heading-4-no-project-selected",
+              "role": "heading"
+            },
             "label": "No projects yet heading"
           },
           "source": "ai-generated",
@@ -39,7 +46,9 @@
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "content-paragraph-create-your-first-pr-0" },
+            "criteria": {
+              "id": "content-paragraph-select-or-create-a-p-0"
+            },
             "label": "Create-first-project explanation"
           },
           "source": "ai-generated",
@@ -54,7 +63,10 @@
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "content-paragraph-create-your-first-pr-0", "text_contains": "Workflow Visualization" },
+            "criteria": {
+              "id": "content-paragraph-select-or-create-a-p-0",
+              "text_contains": "Workflow Visualization"
+            },
             "label": "Workflow Visualization gate text"
           },
           "source": "ai-generated",
@@ -62,7 +74,9 @@
           "enabled": true
         }
       ],
-      "provenance": { "source": "ai-generated" }
+      "provenance": {
+        "source": "ai-generated"
+      }
     },
     {
       "id": "workflow-viz-call-to-action",
@@ -77,7 +91,10 @@
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "link-create-first-project", "role": "link" },
+            "criteria": {
+              "id": "link-go-to-dashboard",
+              "role": "link"
+            },
             "label": "Create First Project link"
           },
           "source": "ai-generated",
@@ -92,7 +109,10 @@
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "link-create-first-project", "text": "Create First Project" },
+            "criteria": {
+              "id": "link-go-to-dashboard",
+              "text": "Go to Dashboard"
+            },
             "label": "Create First Project label"
           },
           "source": "ai-generated",
@@ -100,7 +120,9 @@
           "enabled": true
         }
       ],
-      "provenance": { "source": "ai-generated" }
+      "provenance": {
+        "source": "ai-generated"
+      }
     },
     {
       "id": "workflow-viz-feature-gate",
@@ -115,7 +137,9 @@
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "heading-4-no-projects-yet" },
+            "criteria": {
+              "id": "heading-4-no-project-selected"
+            },
             "label": "Gate heading"
           },
           "source": "ai-generated",
@@ -130,7 +154,9 @@
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "link-create-first-project" },
+            "criteria": {
+              "id": "link-go-to-dashboard"
+            },
             "label": "Gate action"
           },
           "source": "ai-generated",
@@ -145,7 +171,9 @@
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "content-paragraph-create-your-first-pr-0" },
+            "criteria": {
+              "id": "content-paragraph-select-or-create-a-p-0"
+            },
             "label": "Gate explanation"
           },
           "source": "ai-generated",
@@ -153,7 +181,9 @@
           "enabled": true
         }
       ],
-      "provenance": { "source": "ai-generated" }
+      "provenance": {
+        "source": "ai-generated"
+      }
     }
   ],
   "transitions": []

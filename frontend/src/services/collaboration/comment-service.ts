@@ -71,7 +71,12 @@ export class CommentService {
     projectId: string,
     workflowId?: string
   ): Promise<Comment[]> {
-    const url = new URL(`${this.apiUrl}/api/v1/projects/${projectId}/comments`);
+    // window.location.origin as base resolves a same-origin relative path when
+    // this.apiUrl is empty; it is ignored when this.apiUrl is already absolute.
+    const url = new URL(
+      `${this.apiUrl}/api/v1/projects/${projectId}/comments`,
+      window.location.origin
+    );
 
     if (workflowId) {
       url.searchParams.set("workflow_id", workflowId);
@@ -321,7 +326,8 @@ export class CommentService {
     workflowId?: string
   ): Promise<Comment[]> {
     const url = new URL(
-      `${this.apiUrl}/api/v1/projects/${projectId}/comments/unresolved`
+      `${this.apiUrl}/api/v1/projects/${projectId}/comments/unresolved`,
+      window.location.origin
     );
 
     if (workflowId) {

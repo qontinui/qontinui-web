@@ -515,7 +515,9 @@ export default function AgentSessionsDashboard() {
 
   const fetchSessions = useCallback(async () => {
     try {
-      const url = new URL(API);
+      // window.location.origin base resolves a same-origin relative API path
+      // (empty API_BASE_URL); ignored when API is already absolute.
+      const url = new URL(API, window.location.origin);
       if (filters.live) url.searchParams.set("live", "true");
       if (filters.user_id.trim())
         url.searchParams.set("user_id", filters.user_id.trim());

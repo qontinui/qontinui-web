@@ -78,7 +78,7 @@ export default function CoordSpawnPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const url = new URL(`${API}/plans`);
+      const url = new URL(`${API}/plans`, window.location.origin);
       if (status && status !== "any") url.searchParams.set("status", status);
       const res = await fetch(url.toString());
       if (!res.ok) throw new Error(`HTTP ${res.status}`);

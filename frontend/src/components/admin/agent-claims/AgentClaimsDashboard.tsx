@@ -19,9 +19,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
+  CheckCircle,
   Filter,
   Layers,
   RefreshCw,
+  ShieldAlert,
   ShieldOff,
   TimerOff,
   XCircle,
@@ -51,6 +53,7 @@ import { ApiConfig } from "@/services/api-config";
 
 const POLL_INTERVAL_MS = 10_000;
 const API = `${ApiConfig.API_BASE_URL}/api/v1/operations/claims`;
+const API_GATES = `${ApiConfig.API_BASE_URL}/api/v1/operations/gates`;
 
 const KIND_OPTIONS = [
   { value: "phase", label: "phase" },
@@ -59,6 +62,14 @@ const KIND_OPTIONS = [
   { value: "worktree", label: "worktree" },
   { value: "alembic_revision", label: "alembic_revision" },
   { value: "ci_wait", label: "ci_wait" },
+];
+
+const ALERT_FILTER_OPTIONS = [
+  { value: "__all__", label: "all alerts" },
+  { value: "vercel-recovery-", label: "vercel recovery" },
+  { value: "vercel-deploy-stale", label: "vercel deploy stale" },
+  { value: "vercel-build-failed", label: "vercel build failed" },
+  { value: "ecs-image-stale", label: "ecs image stale" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -82,6 +93,33 @@ interface ActiveClaimsResponse {
   holders: ActiveClaim[];
   truncated: boolean;
 }
+
+/**
+ * Coord-native MCP coordination surface (Phase 2). One row from
+ * `GET /api/v1/operations/agent-status` → coord `GET /coord/agent-status`,
+ * backed by `coord.agent_status`. Distinct from the legacy claim-metadata
+ * shape (`ActiveClaim`): work-unit-grain, carries structured coordination
+ * free-text + the topic peers collaborate on. The dashboard prefers these
+ * rows and only falls back to the claim path when none exist for the tenant.
+ */
+interface AgentStatusRow {
+  device_id: string;
+  tenant_id: string;
+  correlation_topic: string;
+  work_unit_id: string;
+  status_text: string;
+  blocked_on: string | null;
+  intent_globs: string[] | null;
+  updated_at: string;
+  expires_at: string;
+}
+
+interface AgentStatusResponse {
+  agents: AgentStatusRow[];
+  count: number;
+}
+
+const AGENT_STATUS_API = `${ApiConfig.API_BASE_URL}/api/v1/operations/agent-status`;
 
 interface ConflictEntry {
   recorded_at: string;
@@ -111,6 +149,21 @@ interface AlertRow {
   first_seen_at?: string;
   last_seen_at?: string;
   occurrences?: number;
+}
+
+interface GateEntry {
+  gate_id: string;
+  claim_kind: string | null;
+  resource_key: string | null;
+  plan_id: string | null;
+  phase_name: string | null;
+  predicate: Record<string, unknown>;
+  verdict: "open" | "cleared" | "failed";
+  verdict_reason: string | null;
+  registered_by: string | null;
+  created_at: string;
+  evaluated_at: string | null;
+  cleared_at: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -151,20 +204,110 @@ function severityVariant(
   }
 }
 
+function verdictVariant(
+  verdict: string
+): "default" | "destructive" | "secondary" | "outline" {
+  switch (verdict) {
+    case "open":
+      return "default"; // yellow/warning — uses the default badge
+    case "cleared":
+      return "secondary"; // green/success
+    case "failed":
+      return "destructive"; // red
+    default:
+      return "outline";
+  }
+}
+
+function verdictClassName(verdict: string): string {
+  switch (verdict) {
+    case "open":
+      return "bg-yellow-100 text-yellow-800 border-yellow-300";
+    case "cleared":
+      return "bg-green-100 text-green-800 border-green-300";
+    case "failed":
+      return "bg-red-100 text-red-800 border-red-300";
+    default:
+      return "";
+  }
+}
+
+function formatPredicate(pred: Record<string, unknown>): string {
+  switch (pred.kind) {
+    case "pr_merged":
+      return `PR Merged: ${pred.repo} #${pred.pr_number}`;
+    case "deploy_healthy":
+      return `Deploy Healthy: ${pred.service} @ ${pred.expected_rev}`;
+    case "claim_terminal":
+      return `Claim Terminal: ${pred.claim_kind}:${pred.resource_key}`;
+    case "operator_approval":
+      return `Operator Approval: ${pred.prompt}`;
+    case "ci_green":
+      return `CI Green: ${pred.repo} @ ${String(pred.head_sha).slice(0, 7)}`;
+    case "ref_exists":
+      return `Ref Exists: ${pred.repo}:${pred.ref_name}`;
+    default:
+      return JSON.stringify(pred);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Section 1 — Active claims
 // ---------------------------------------------------------------------------
 
-function ActiveClaimsSection() {
+function ActiveClaimsSection({
+  openGateCountsByAnchor,
+}: {
+  openGateCountsByAnchor: Map<string, number>;
+}) {
   const [kind, setKind] = useState("phase");
   const [prefix, setPrefix] = useState("");
+  // Legacy claim-metadata fallback (current source until cutover completes).
   const [data, setData] = useState<ActiveClaimsResponse | null>(null);
+  // Preferred coord-native source. `null` = not yet resolved / empty for
+  // tenant (→ render the fallback); a non-empty array = render structured.
+  const [agentStatus, setAgentStatus] = useState<AgentStatusRow[] | null>(
+    null
+  );
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
+    // --- Preferred read: coord-native agent_status ----------------------
+    // Best-effort. Any failure (HTTP error, coord unreachable, network)
+    // never surfaces as a dashboard error — we just fall through to the
+    // legacy claim path below so the section never goes blank/500 during
+    // the migration. On success-with-rows we short-circuit the fallback.
+    let usedAgentStatus = false;
     try {
-      const url = new URL(`${API}/list`);
+      const res = await fetch(AGENT_STATUS_API);
+      if (res.ok) {
+        const body: AgentStatusResponse = await res.json();
+        const rows = Array.isArray(body.agents) ? body.agents : [];
+        if (rows.length > 0) {
+          setAgentStatus(rows);
+          setError(null);
+          usedAgentStatus = true;
+        } else {
+          // No agent_status rows for this tenant yet → dual-read fallback.
+          setAgentStatus(null);
+        }
+      } else {
+        setAgentStatus(null);
+      }
+    } catch {
+      // Swallow — fall through to the legacy claim path.
+      setAgentStatus(null);
+    }
+
+    if (usedAgentStatus) {
+      setLoading(false);
+      return;
+    }
+
+    // --- Fallback read: legacy claim metadata ---------------------------
+    try {
+      const url = new URL(`${API}/list`, window.location.origin);
       url.searchParams.set("kind", kind);
       if (prefix) url.searchParams.set("prefix", prefix);
       const res = await fetch(url.toString());
@@ -189,61 +332,135 @@ function ActiveClaimsSection() {
     return () => clearInterval(interval);
   }, [fetchData]);
 
+  const usingAgentStatus = agentStatus !== null && agentStatus.length > 0;
+  const count = usingAgentStatus
+    ? agentStatus.length
+    : data?.holders.length ?? 0;
+
   return (
     <Card data-testid="claims-active-section">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <Layers className="h-4 w-4" />
-          Active claims
-          {data && (
-            <Badge variant="outline" className="ml-2">
-              {data.holders.length}
-              {data.truncated ? "+" : ""}
+          {usingAgentStatus ? "Active agents" : "Active claims"}
+          <Badge variant="outline" className="ml-2">
+            {count}
+            {!usingAgentStatus && data?.truncated ? "+" : ""}
+          </Badge>
+          {usingAgentStatus ? (
+            <Badge variant="secondary" className="ml-1 text-[10px]">
+              coord.agent_status
             </Badge>
-          )}
+          ) : null}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <Filter className="h-4 w-4 text-muted-foreground" />
-          <Select value={kind} onValueChange={setKind}>
-            <SelectTrigger
-              className="w-[180px]"
-              data-testid="claims-active-kind-select"
+        {/* The kind/prefix filter only drives the legacy claim fallback.
+            When the structured agent_status source is live, hide it to
+            avoid implying it filters that table. */}
+        {!usingAgentStatus ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Filter className="h-4 w-4 text-muted-foreground" />
+            <Select value={kind} onValueChange={setKind}>
+              <SelectTrigger
+                className="w-[180px]"
+                data-testid="claims-active-kind-select"
+              >
+                <SelectValue placeholder="kind" />
+              </SelectTrigger>
+              <SelectContent>
+                {KIND_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Input
+              placeholder="resource_key prefix (e.g. plan:my-plan:)"
+              value={prefix}
+              onChange={(e) => setPrefix(e.target.value)}
+              className="max-w-md"
+              data-testid="claims-active-prefix-input"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => fetchData()}
+              data-testid="claims-active-refresh"
             >
-              <SelectValue placeholder="kind" />
-            </SelectTrigger>
-            <SelectContent>
-              {KIND_OPTIONS.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Input
-            placeholder="resource_key prefix (e.g. plan:my-plan:)"
-            value={prefix}
-            onChange={(e) => setPrefix(e.target.value)}
-            className="max-w-md"
-            data-testid="claims-active-prefix-input"
-          />
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => fetchData()}
-            data-testid="claims-active-refresh"
-          >
-            <RefreshCw className="h-3 w-3" />
-          </Button>
-        </div>
+              <RefreshCw className="h-3 w-3" />
+            </Button>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => fetchData()}
+              data-testid="claims-active-refresh"
+            >
+              <RefreshCw className="h-3 w-3" />
+            </Button>
+          </div>
+        )}
 
         {error && (
           <p className="text-sm text-destructive">Failed to load: {error}</p>
         )}
 
-        {loading && !data ? (
+        {loading && !data && !usingAgentStatus ? (
           <Skeleton className="h-24 w-full" />
+        ) : usingAgentStatus ? (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>work_unit_id</TableHead>
+                <TableHead>status</TableHead>
+                <TableHead>topic</TableHead>
+                <TableHead>device</TableHead>
+                <TableHead>blocked_on</TableHead>
+                <TableHead>intent_globs</TableHead>
+                <TableHead className="w-[100px] text-right">updated</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {agentStatus.map((a) => (
+                <TableRow
+                  key={`${a.device_id}:${a.work_unit_id}`}
+                  data-testid="agent-status-row"
+                >
+                  <TableCell className="font-mono text-xs">
+                    {a.work_unit_id}
+                  </TableCell>
+                  <TableCell className="text-xs">{a.status_text}</TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {a.correlation_topic}
+                  </TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {shortId(a.device_id)}
+                  </TableCell>
+                  <TableCell className="text-xs">
+                    {a.blocked_on ? (
+                      <Badge className="bg-red-100 text-red-800 border-red-300">
+                        {a.blocked_on}
+                      </Badge>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="font-mono text-[10px] text-muted-foreground">
+                    {a.intent_globs && a.intent_globs.length > 0
+                      ? a.intent_globs.join(", ")
+                      : "—"}
+                  </TableCell>
+                  <TableCell className="text-right text-xs text-muted-foreground tabular-nums">
+                    {relativeTime(a.updated_at)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         ) : data && data.holders.length > 0 ? (
           <Table>
             <TableHeader>
@@ -253,10 +470,18 @@ function ActiveClaimsSection() {
                 <TableHead className="w-[120px] text-right">
                   ttl_seconds
                 </TableHead>
+                <TableHead className="w-[80px] text-right">
+                  gates
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data.holders.map((h) => (
+              {data.holders.map((h) => {
+                const gateCount =
+                  openGateCountsByAnchor.get(
+                    `${h.kind}:${h.resource_key}`
+                  ) ?? 0;
+                return (
                 <TableRow
                   key={`${h.kind}:${h.resource_key}`}
                   data-testid="claims-active-row"
@@ -286,8 +511,18 @@ function ActiveClaimsSection() {
                   <TableCell className="text-right text-xs tabular-nums">
                     {h.ttl_seconds}
                   </TableCell>
+                  <TableCell className="text-right">
+                    {gateCount > 0 ? (
+                      <Badge className="bg-yellow-100 text-yellow-800 border-yellow-300">
+                        {gateCount} open
+                      </Badge>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
                 </TableRow>
-              ))}
+                );
+              })}
             </TableBody>
           </Table>
         ) : (
@@ -495,6 +730,7 @@ function StaleClaimAlertsSection() {
   const [alerts, setAlerts] = useState<AlertRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [alertFilter, setAlertFilter] = useState("__all__");
 
   const fetchData = useCallback(async () => {
     try {
@@ -524,16 +760,22 @@ function StaleClaimAlertsSection() {
 
   const sorted = useMemo(
     () =>
-      [...alerts].sort((a, b) => {
-        const order = { critical: 0, warning: 1, info: 2 } as Record<
-          string,
-          number
-        >;
-        const ao = order[a.severity.toLowerCase()] ?? 99;
-        const bo = order[b.severity.toLowerCase()] ?? 99;
-        return ao - bo;
-      }),
-    [alerts]
+      [...alerts]
+        .filter(
+          (a) =>
+            alertFilter === "__all__" ||
+            a.alert_key.startsWith(alertFilter)
+        )
+        .sort((a, b) => {
+          const order = { critical: 0, warning: 1, info: 2 } as Record<
+            string,
+            number
+          >;
+          const ao = order[a.severity.toLowerCase()] ?? 99;
+          const bo = order[b.severity.toLowerCase()] ?? 99;
+          return ao - bo;
+        }),
+    [alerts, alertFilter]
   );
 
   return (
@@ -547,7 +789,22 @@ function StaleClaimAlertsSection() {
           </Badge>
         </CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-3">
+        <div className="flex items-center gap-2">
+          <Filter className="h-4 w-4 text-muted-foreground" />
+          <Select value={alertFilter} onValueChange={setAlertFilter}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="filter by alert_key" />
+            </SelectTrigger>
+            <SelectContent>
+              {ALERT_FILTER_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         {error && (
           <p className="text-sm text-destructive">Failed to load: {error}</p>
         )}
@@ -597,10 +854,257 @@ function StaleClaimAlertsSection() {
 }
 
 // ---------------------------------------------------------------------------
+// Section 5 — Gates
+// ---------------------------------------------------------------------------
+
+function GatesSection({
+  gates,
+  onRefresh,
+}: {
+  gates: GateEntry[];
+  onRefresh: () => void;
+}) {
+  const [loading, setLoading] = useState(true);
+  const [entries, setEntries] = useState<GateEntry[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [actionInFlight, setActionInFlight] = useState<string | null>(null);
+
+  const fetchData = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_GATES}/list`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const body = await res.json();
+      const list: GateEntry[] = Array.isArray(body)
+        ? body
+        : Array.isArray(body.gates)
+        ? body.gates
+        : [];
+      setEntries(list);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+    const interval = setInterval(fetchData, POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [fetchData]);
+
+  // Merge externally-provided gates with self-fetched data.
+  // Use self-fetched entries as canonical (they include all gates,
+  // not just those matching active claims).
+  const allGates = entries.length > 0 ? entries : gates;
+
+  const handleApprove = useCallback(
+    async (gateId: string) => {
+      setActionInFlight(gateId);
+      try {
+        const res = await fetch(`${API_GATES}/${gateId}/approve`, {
+          method: "POST",
+        });
+        if (!res.ok) {
+          const body = await res.text();
+          throw new Error(`HTTP ${res.status}: ${body.slice(0, 120)}`);
+        }
+        // Re-fetch immediately after action
+        await fetchData();
+        onRefresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setActionInFlight(null);
+      }
+    },
+    [fetchData, onRefresh]
+  );
+
+  const handleReject = useCallback(
+    async (gateId: string) => {
+      setActionInFlight(gateId);
+      try {
+        const res = await fetch(`${API_GATES}/${gateId}/reject`, {
+          method: "POST",
+        });
+        if (!res.ok) {
+          const body = await res.text();
+          throw new Error(`HTTP ${res.status}: ${body.slice(0, 120)}`);
+        }
+        await fetchData();
+        onRefresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setActionInFlight(null);
+      }
+    },
+    [fetchData, onRefresh]
+  );
+
+  const openCount = allGates.filter((g) => g.verdict === "open").length;
+
+  return (
+    <Card data-testid="gates-section">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <ShieldAlert className="h-4 w-4 text-yellow-500" />
+          Gates
+          <Badge variant="outline" className="ml-2">
+            {allGates.length}
+          </Badge>
+          {openCount > 0 && (
+            <Badge className="ml-1 bg-yellow-100 text-yellow-800 border-yellow-300">
+              {openCount} open
+            </Badge>
+          )}
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {error && (
+          <p className="text-sm text-destructive">Failed to load: {error}</p>
+        )}
+        {loading && allGates.length === 0 ? (
+          <Skeleton className="h-16 w-full" />
+        ) : allGates.length > 0 ? (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Predicate</TableHead>
+                <TableHead>Anchor</TableHead>
+                <TableHead className="w-[100px]">Verdict</TableHead>
+                <TableHead className="w-[100px]">Evaluated</TableHead>
+                <TableHead className="w-[100px]">Cleared</TableHead>
+                <TableHead className="w-[140px]">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {allGates.map((g) => {
+                const anchor =
+                  g.claim_kind && g.resource_key
+                    ? `${g.claim_kind}:${g.resource_key}`
+                    : g.plan_id && g.phase_name
+                    ? `plan:${g.phase_name}`
+                    : g.plan_id ?? "—";
+                const isOperatorApproval =
+                  g.predicate?.kind === "operator_approval";
+
+                return (
+                  <TableRow key={g.gate_id} data-testid="gates-row">
+                    <TableCell className="text-xs">
+                      {formatPredicate(g.predicate)}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {anchor}
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={verdictVariant(g.verdict)}
+                        className={verdictClassName(g.verdict)}
+                      >
+                        {g.verdict}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {relativeTime(g.evaluated_at)}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {relativeTime(g.cleared_at)}
+                    </TableCell>
+                    <TableCell>
+                      {isOperatorApproval && g.verdict === "open" ? (
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs text-green-700 border-green-300 hover:bg-green-50"
+                            disabled={actionInFlight === g.gate_id}
+                            onClick={() => handleApprove(g.gate_id)}
+                            data-testid="gate-approve-btn"
+                          >
+                            <CheckCircle className="mr-1 h-3 w-3" />
+                            Approve
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs text-red-700 border-red-300 hover:bg-red-50"
+                            disabled={actionInFlight === g.gate_id}
+                            onClick={() => handleReject(g.gate_id)}
+                            data-testid="gate-reject-btn"
+                          >
+                            <XCircle className="mr-1 h-3 w-3" />
+                            Reject
+                          </Button>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">
+                          —
+                        </span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        ) : (
+          <p className="text-sm text-muted-foreground italic">
+            No gates registered.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Composed dashboard
 // ---------------------------------------------------------------------------
 
 export default function AgentClaimsDashboard() {
+  // Top-level gates state so we can cross-reference open gates
+  // with active claims and pass to the GatesSection.
+  const [gates, setGates] = useState<GateEntry[]>([]);
+
+  const fetchGates = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_GATES}/list`);
+      if (!res.ok) return;
+      const body = await res.json();
+      const list: GateEntry[] = Array.isArray(body)
+        ? body
+        : Array.isArray(body.gates)
+        ? body.gates
+        : [];
+      setGates(list);
+    } catch {
+      // Swallow — the GatesSection component has its own error display.
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchGates();
+    const interval = setInterval(fetchGates, POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [fetchGates]);
+
+  // Build a map of open gate counts keyed by "claim_kind:resource_key"
+  // for the active-claims badge overlay (D5.3).
+  const openGateCountsByAnchor = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const g of gates) {
+      if (g.verdict !== "open") continue;
+      if (g.claim_kind && g.resource_key) {
+        const key = `${g.claim_kind}:${g.resource_key}`;
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [gates]);
+
   return (
     <div
       className="space-y-6"
@@ -613,10 +1117,11 @@ export default function AgentClaimsDashboard() {
           /api/v1/operations/claims/*
         </code>
       </div>
-      <ActiveClaimsSection />
+      <ActiveClaimsSection openGateCountsByAnchor={openGateCountsByAnchor} />
       <RecentConflictsSection />
       <RecentStealsSection />
       <StaleClaimAlertsSection />
+      <GatesSection gates={gates} onRefresh={fetchGates} />
     </div>
   );
 }

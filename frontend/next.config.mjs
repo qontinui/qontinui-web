@@ -11,7 +11,7 @@ const withBundleAnalyzer = bundleAnalyzer({
 });
 
 // Backend URL: Use environment variable in production, localhost in development
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const BACKEND_URL = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 // qontinui-coord URL — separate axum service (default port 9870). The
 // browser proxies REST through Next.js to avoid CORS; WebSocket

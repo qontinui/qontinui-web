@@ -2,13 +2,17 @@
   "version": "1.0",
   "id": "qa-dashboard",
   "name": "QaDashboard",
-  "description": "QA Dashboard page for the qontinui-web app. The page is project-gated: with no project selected it renders a 'no projects yet' empty state instructing the user to create their first project before the QA dashboard contents become available. This spec captures that project-gated empty state — its heading, explanatory message, and the create-first-project call-to-action — which is the valid structure for an account with no projects.",
+  "description": "QA Dashboard page for the qontinui-web app. The page is project-gated: with no project selected it renders a 'no projects yet' empty state instructing the user to create their first project before the QA dashboard contents become available. This spec captures that project-gated empty state — its heading, explanatory message, and the create-first-project call-to-action — which is the valid structure for an account with no projects. (Spec CI now seeds a fixture project on the ci-bot account, so with no project selected via URL this page renders the 'No project selected' gate rather than the 'No projects yet' first-project gate; assertions updated to the project-exists-but-unselected card.)",
   "provenance": {
     "source": "ai-generated",
     "appId": "qontinui-web"
   },
   "metadata": {
-    "tags": ["qa-dashboard", "qa", "empty-state"]
+    "tags": [
+      "qa-dashboard",
+      "qa",
+      "empty-state"
+    ]
   },
   "states": [
     {
@@ -24,7 +28,9 @@
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "heading-4-no-projects-yet" },
+            "criteria": {
+              "id": "heading-4-no-project-selected"
+            },
             "label": "No projects yet heading"
           },
           "source": "ai-generated",
@@ -39,7 +45,10 @@
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "heading-4-no-projects-yet", "role": "heading" },
+            "criteria": {
+              "id": "heading-4-no-project-selected",
+              "role": "heading"
+            },
             "label": "Empty-state heading by id+role"
           },
           "source": "ai-generated",
@@ -54,7 +63,10 @@
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "role": "heading", "text": "No projects yet" },
+            "criteria": {
+              "role": "heading",
+              "text": "No project selected"
+            },
             "label": "Empty-state heading by role+text"
           },
           "source": "ai-generated",
@@ -62,7 +74,9 @@
           "enabled": true
         }
       ],
-      "provenance": { "source": "ai-generated" }
+      "provenance": {
+        "source": "ai-generated"
+      }
     },
     {
       "id": "qa-dashboard-empty-message",
@@ -77,7 +91,9 @@
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "content-paragraph-create-your-first-pr-0" },
+            "criteria": {
+              "id": "content-paragraph-select-or-create-a-p-0"
+            },
             "label": "Empty-state message paragraph"
           },
           "source": "ai-generated",
@@ -92,7 +108,10 @@
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "content-paragraph-create-your-first-pr-0", "text_contains": "QA Dashboard" },
+            "criteria": {
+              "id": "content-paragraph-select-or-create-a-p-0",
+              "text_contains": "QA Dashboard"
+            },
             "label": "QA-Dashboard-specific empty-state copy"
           },
           "source": "ai-generated",
@@ -107,7 +126,10 @@
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "content-paragraph-create-your-first-pr-0", "text_contains": "Create your first project" },
+            "criteria": {
+              "id": "content-paragraph-select-or-create-a-p-0",
+              "text_contains": "Select or create a project"
+            },
             "label": "Create-project instruction copy"
           },
           "source": "ai-generated",
@@ -115,7 +137,9 @@
           "enabled": true
         }
       ],
-      "provenance": { "source": "ai-generated" }
+      "provenance": {
+        "source": "ai-generated"
+      }
     },
     {
       "id": "qa-dashboard-empty-cta",
@@ -130,7 +154,9 @@
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "link-create-first-project" },
+            "criteria": {
+              "id": "link-go-to-dashboard"
+            },
             "label": "Create First Project link"
           },
           "source": "ai-generated",
@@ -145,7 +171,10 @@
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "link-create-first-project", "role": "link" },
+            "criteria": {
+              "id": "link-go-to-dashboard",
+              "role": "link"
+            },
             "label": "Create-project CTA by id+role"
           },
           "source": "ai-generated",
@@ -160,7 +189,10 @@
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "role": "link", "text": "Create First Project" },
+            "criteria": {
+              "role": "link",
+              "text": "Go to Dashboard"
+            },
             "label": "Create-project CTA by role+text"
           },
           "source": "ai-generated",
@@ -168,7 +200,9 @@
           "enabled": true
         }
       ],
-      "provenance": { "source": "ai-generated" }
+      "provenance": {
+        "source": "ai-generated"
+      }
     }
   ],
   "transitions": []

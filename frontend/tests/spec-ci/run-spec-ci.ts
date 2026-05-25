@@ -89,6 +89,67 @@ async function programmaticLogin(
 }
 
 // ---------------------------------------------------------------------------
+// Fixture project seed (Unlock 1)
+//
+// `<RequireProject>`-gated pages (marketplace, automation-builder, ~40 others)
+// render an empty "No projects yet" gate unless the ci-bot account owns at
+// least one project AND a project is selected. ci-bot's staging account is
+// intentionally empty, so we seed a fixed, EMPTY fixture project once per run.
+//
+// This mirrors the proven idempotent get-or-create shape from
+// `backend/tests/utils/seed_test_project.py` (fixed name, empty configuration),
+// but goes through the staging API as ci-bot (via the same-origin proxy, like
+// `programmaticLogin`) — Spec CI can't touch the DB. The selection half of the
+// gate is satisfied per-spec via the `?project=<id>` URL param (see
+// `routeForSpec` + `GATED_SPECS`), not via provider hydration.
+//
+// Robust by design: a failure here never aborts the run — it logs and returns
+// null, and the gated specs simply fall back to their empty-state assertions.
+// ---------------------------------------------------------------------------
+
+const FIXTURE_PROJECT_NAME = "spec-ci-fixture";
+
+async function seedFixtureProject(
+  context: BrowserContext,
+  apiBase: string,
+): Promise<{ id: string | null; reason: string }> {
+  const base = apiBase.replace(/\/$/, "");
+  try {
+    // Get-or-create on a stable name. List first so re-runs are idempotent and
+    // don't accumulate duplicate fixture projects on the shared account.
+    const listResp = await context.request.get(`${base}/api/v1/projects`);
+    if (listResp.ok()) {
+      const projects = (await listResp.json()) as Array<{ id?: string; name?: string }>;
+      if (Array.isArray(projects)) {
+        const existing = projects.find((p) => p?.name === FIXTURE_PROJECT_NAME);
+        if (existing?.id) {
+          return { id: existing.id, reason: "reused" };
+        }
+      }
+    } else {
+      process.stderr.write(
+        `[spec-ci] seed: list http_${listResp.status()} (continuing to create)\n`,
+      );
+    }
+
+    // Only `name` is required; `configuration` defaults to {} server-side.
+    // Keep the project EMPTY — it's the correct start-state for gated pages.
+    const createResp = await context.request.post(`${base}/api/v1/projects`, {
+      headers: { "Content-Type": "application/json" },
+      data: { name: FIXTURE_PROJECT_NAME },
+    });
+    if (!createResp.ok()) {
+      return { id: null, reason: `create_http_${createResp.status()}` };
+    }
+    const created = (await createResp.json()) as { id?: string };
+    if (created?.id) return { id: created.id, reason: "created" };
+    return { id: null, reason: "create_no_id" };
+  } catch (e) {
+    return { id: null, reason: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Spec discovery
 // ---------------------------------------------------------------------------
 
@@ -151,17 +212,52 @@ interface SpecResult {
 }
 
 /**
+ * Spec ids whose pages are wrapped in `<RequireProject>` and so need the
+ * fixture project SELECTED to render their real (non-empty-gate) content.
+ * For these, `routeForSpec` appends `?project=<fixtureId>` — the verified
+ * selection lever (`require-project.tsx:31-46`: `urlProjectId` satisfies the
+ * "selected" half of the gate alongside the non-empty `useProjects()` list).
+ */
+const GATED_SPECS = new Set<string>(["marketplace", "automation-builder"]);
+
+/**
+ * localStorage key the automation store uses to persist the SELECTED project
+ * (`stores/automation/slices/project-slice.ts:20,62-64`). It survives full
+ * navigations on the same origin, so once one spec selects a project (e.g.
+ * automation-builder's project-loader fires `setProjectId` when visited with
+ * `?project=`), every LATER `<RequireProject>` spec hydrates that selection
+ * and renders real content instead of its expected "No project selected"
+ * gate. We clear this key before each spec navigation so every spec is
+ * order-independent: gated specs without `?project=` deterministically show
+ * the gate, and threaded specs (GATED_SPECS) select via the URL param —
+ * which `require-project.tsx` reads independently of this key.
+ */
+const SELECTED_PROJECT_LS_KEY = "qontinui-selected-project-id";
+
+/**
  * Map a spec id to a URL route. Most ids map 1:1; the two known exceptions
  * (`active-runs` → `/runs/active`, `ai-settings` → `/settings/ai`) are
  * recorded in qontinui-web/CLAUDE.md under "Slug ≠ spec id gotcha".
+ *
+ * For `<RequireProject>`-gated specs (see `GATED_SPECS`), when a seeded
+ * fixture project id is available we append `?project=<id>` so the gate
+ * clears deterministically on page load (no localStorage / provider race).
  */
-function routeForSpec(specId: string, baseUrl: string): string {
+function routeForSpec(
+  specId: string,
+  baseUrl: string,
+  fixtureProjectId: string | null,
+): string {
   const overrides: Record<string, string> = {
     "active-runs": "/runs/active",
     "ai-settings": "/settings/ai",
   };
   const path = overrides[specId] ?? `/${specId}`;
-  return `${baseUrl.replace(/\/$/, "")}${path}`;
+  let url = `${baseUrl.replace(/\/$/, "")}${path}`;
+  if (fixtureProjectId && GATED_SPECS.has(specId)) {
+    url += `?project=${encodeURIComponent(fixtureProjectId)}`;
+  }
+  return url;
 }
 
 async function evaluateSpec(
@@ -169,8 +265,9 @@ async function evaluateSpec(
   spec: SpecEntry,
   baseUrl: string,
   includeDestructive: boolean,
+  fixtureProjectId: string | null,
 ): Promise<SpecResult> {
-  const route = routeForSpec(spec.id, baseUrl);
+  const route = routeForSpec(spec.id, baseUrl, fixtureProjectId);
   const started = Date.now();
   const result: SpecResult = {
     specId: spec.id,
@@ -186,7 +283,33 @@ async function evaluateSpec(
   };
 
   try {
-    await page.goto(route, { waitUntil: "networkidle", timeout: 20_000 });
+    // Reset the persisted project SELECTION before navigating so each spec is
+    // order-independent (see SELECTED_PROJECT_LS_KEY). Without this, a spec that
+    // selects a project (automation-builder's loader on `?project=`) leaks the
+    // selection via localStorage into every LATER <RequireProject> spec, which
+    // then renders real content instead of its expected gate. Wrapped in a
+    // try/catch because the page may not yet have a same-origin document on the
+    // very first spec; the addInitScript + the goto below handle that case.
+    await page
+      .evaluate((key) => {
+        try {
+          window.localStorage.removeItem(key);
+        } catch {
+          /* localStorage unavailable — non-fatal */
+        }
+      }, SELECTED_PROJECT_LS_KEY)
+      .catch(() => {
+        /* no same-origin document yet — fine; cleared on next iteration */
+      });
+
+    // `domcontentloaded`, NOT `networkidle`: pages with a persistent
+    // WebSocket / polling connection (runners, chat, …) NEVER reach networkidle,
+    // so it would hang to the timeout and error the spec. domcontentloaded
+    // fires reliably; a fixed settle then lets the in-memory-token re-auth
+    // (is_authenticated flag + refresh cookie) and the data-driven content
+    // render before the matcher snapshots the registry, dodging the load race.
+    await page.goto(route, { waitUntil: "domcontentloaded", timeout: 60_000 });
+    await page.waitForTimeout(2500);
     result.navigatedOk = page.url().includes(route.split("?")[0].replace(baseUrl, "")) || true;
 
     // Inject the IR + run the matcher inside the page. ui-bridge-auto's
@@ -434,18 +557,107 @@ async function main(): Promise<number> {
     ignoreHTTPSErrors: true,
   });
 
-  const auth = await programmaticLogin(context, args.apiBase);
+  // Force the product mode (default "visual") so Spec CI evaluates every spec
+  // against the canonical product surface rather than whatever the test
+  // account happens to be set to. Mode resolution in the app is
+  // `initialMode ?? serverMode ?? storedMode`, where `serverMode` comes from
+  // GET /api/v1/users/me/preferences (`product_mode`) and outranks the
+  // localStorage value — so we pin BOTH: seed localStorage for the pre-fetch
+  // render, and intercept the prefs GET to return `product_mode: <mode>`.
+  // The intercept preserves any other preference fields and leaves the staging
+  // account unmutated (no PUT). Override with SPEC_CI_PRODUCT_MODE=ai.
+  const productMode: "ai" | "visual" =
+    process.env.SPEC_CI_PRODUCT_MODE === "ai" ? "ai" : "visual";
+  await context.addInitScript((m) => {
+    try {
+      window.localStorage.setItem("qontinui-product-mode", m as string);
+      // Access tokens live in-memory (token-storage.ts) and are cleared on
+      // every full navigation; the persistent `is_authenticated` flag is what
+      // the client-side AuthProvider checks pre-mount to decide whether to
+      // refresh-and-stay vs redirect to /login. Seed it on every page load so
+      // each goto re-auths via the refresh cookie instead of bouncing to
+      // /login. (The UI login below establishes the refresh cookie.)
+      window.localStorage.setItem("is_authenticated", "true");
+    } catch {
+      /* localStorage unavailable — intercept below still forces serverMode */
+    }
+  }, productMode);
+  await context.route("**/users/me/preferences", async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    let body: Record<string, unknown> = {};
+    try {
+      const resp = await route.fetch();
+      try {
+        body = (await resp.json()) as Record<string, unknown>;
+      } catch {
+        /* non-JSON / empty body — fall through with {} */
+      }
+    } catch {
+      /* network error — fall through with {} */
+    }
+    body.product_mode = productMode;
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(body),
+    });
+  });
+  process.stderr.write(`[spec-ci] product mode forced to "${productMode}"\n`);
+
+  // api-auth: the API login call (sets cookies on the context). This alone is
+  // NOT enough — it authenticates the APIRequestContext, not the browser app
+  // session (the qontinui-web route guard runs on localhost and never saw it,
+  // which is why every page used to redirect to /login). Kept as a warm-up.
+  // Post to the SAME-ORIGIN proxy (baseUrl, not the absolute apiBase) so the
+  // backend's Set-Cookie lands on localhost:3001 and is shared with the page
+  // cookie jar. Cross-origin (apiBase) would scope the cookie to the API host
+  // and the localhost route guard would never see it.
+  const auth = await programmaticLogin(context, args.baseUrl);
   process.stderr.write(
-    `[spec-ci] auth: ${auth.ok ? "ok" : `failed (${auth.reason})`}\n`,
+    `[spec-ci] api-auth: ${auth.ok ? "ok" : `failed (${auth.reason})`}\n`,
+  );
+
+  // Seed the fixture project (Unlock 1) so `<RequireProject>`-gated pages
+  // render their real content. Idempotent + non-fatal: if it fails, gated
+  // specs fall back to their empty-state assertions (fixtureProjectId stays
+  // null, so `routeForSpec` omits the `?project=` param). Use the same-origin
+  // proxy (baseUrl) the auth login used, so the session cookie applies.
+  const seed = await seedFixtureProject(context, args.baseUrl);
+  const fixtureProjectId = seed.id;
+  process.stderr.write(
+    `[spec-ci] fixture-project: ${fixtureProjectId ? `${seed.reason} (id=${fixtureProjectId})` : `unavailable (${seed.reason})`}\n`,
   );
 
   const page = await context.newPage();
+
+  // Confirm the browser app session took. The same-origin `api-auth` login
+  // above sets the session cookie on localhost (via the /api proxy), so a
+  // protected route should render rather than redirect to /login. is_authenticated
+  // is also seeded via addInitScript so the client-side guard refreshes instead
+  // of bouncing.
+  await page.goto(`${args.baseUrl.replace(/\/$/, "")}/operations`, {
+    waitUntil: "domcontentloaded",
+    timeout: 60_000,
+  });
+  const onLogin = page.url().includes("/login");
+  const isAuthFlag = await page
+    .evaluate(() => {
+      try {
+        return window.localStorage.getItem("is_authenticated");
+      } catch {
+        return null;
+      }
+    })
+    .catch(() => null);
+  process.stderr.write(
+    `[spec-ci] app-session: ${onLogin ? "MISSING (redirected to /login)" : "ok"} (is_authenticated=${isAuthFlag}, url=${page.url()})\n`,
+  );
   const results: SpecResult[] = [];
 
   for (let i = 0; i < specs.length; i++) {
     const spec = specs[i];
     process.stderr.write(`[spec-ci] ${i + 1}/${specs.length} ${spec.id} … `);
-    const r = await evaluateSpec(page, spec, args.baseUrl, args.includeDestructive);
+    const r = await evaluateSpec(page, spec, args.baseUrl, args.includeDestructive, fixtureProjectId);
     results.push(r);
     process.stderr.write(
       `${r.matchOutcome} matchRate=${r.matchRate.toFixed(2)} transitions=${r.transitions.length} passRate=${r.transitionPassRate.toFixed(2)}${r.error ? ` error=${r.error}` : ""}\n`,

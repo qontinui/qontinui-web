@@ -2,7 +2,7 @@
   "version": "1.0",
   "id": "admin",
   "name": "Admin",
-  "description": "Admin landing redirects to the system architecture view (/admin/architecture). The page documents the unified-runner architecture for the qontinui-web app: a lightweight cloud backend (auth, users, projects, storage, config sync) talking over HTTP/WebSocket to a local qontinui-runner process that owns all heavy compute (Playwright web extraction, OpenCV/template-matching vision, SAM/CLIP/OCR ML models, HAL screen capture, state-machine traversal). The view is organized as tabbed panels (Overview, Runner Detail, Data Flow, Ports & Services) and is intended for operators/admins inspecting how the platform is wired together.",
+  "description": "Admin landing redirects to the system architecture view (/admin/architecture). The page documents the unified-runner architecture for the qontinui-web app: a lightweight cloud backend (auth, users, projects, storage, config sync) talking over HTTP/WebSocket to a local qontinui-runner process that owns all heavy compute (Playwright web extraction, OpenCV/template-matching vision, SAM/CLIP/OCR ML models, HAL screen capture, state-machine traversal). The view is organized as tabbed panels (Overview, Runner Detail, Data Flow, Ports & Services) and is intended for operators/admins inspecting how the platform is wired together. Assertions cover only the account-independent landing panel (/admin/architecture, default Overview tab) — section headings, the tablist + tab labels, the panel container, and the static diagram headings. No data-driven content (agent rows, dataset counts, device lists) is asserted.",
   "provenance": {
     "source": "ai-generated",
     "appId": "qontinui-web"
@@ -14,7 +14,7 @@
     {
       "id": "admin-header",
       "name": "Architecture header",
-      "description": "Top-of-page banner for the admin architecture view: the back-to-admin control, the h1 Architecture heading, and the summary paragraph describing the compute split.",
+      "description": "Top-of-page banner for the admin architecture view: the back-to-admin control and the h1 Architecture heading.",
       "assertions": [
         {
           "id": "admin-header-elem-0",
@@ -39,23 +39,8 @@
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "heading-1-architecture", "role": "heading" },
+            "criteria": { "id": "heading-1-architecture", "role": "heading", "text": "Architecture" },
             "label": "Architecture heading"
-          },
-          "source": "ai-generated",
-          "reviewed": false,
-          "enabled": true
-        },
-        {
-          "id": "admin-header-elem-2",
-          "description": "Summary paragraph explains that heavy compute runs locally through the runner.",
-          "category": "element-presence",
-          "severity": "warning",
-          "assertionType": "exists",
-          "target": {
-            "type": "search",
-            "criteria": { "id": "content-paragraph-all-heavy-compute-pl-0" },
-            "label": "Compute-split summary paragraph"
           },
           "source": "ai-generated",
           "reviewed": false,
@@ -67,11 +52,11 @@
     {
       "id": "admin-tabs",
       "name": "Architecture tabs",
-      "description": "The tab strip switching between the four architecture views: Overview, Runner Detail, Data Flow, and Ports & Services. Asserts the tablist container is mounted.",
+      "description": "The tab strip switching between the four architecture views and the mounted Overview panel. The tablist has a stable generated id; individual tab triggers carry non-deterministic Radix ids so they are matched by role+text. The panel container is matched by role only.",
       "assertions": [
         {
           "id": "admin-tabs-elem-0",
-          "description": "Tablist container with the four architecture tab labels is rendered.",
+          "description": "Tablist container for the four architecture tabs is rendered.",
           "category": "element-presence",
           "severity": "critical",
           "assertionType": "exists",
@@ -86,14 +71,74 @@
         },
         {
           "id": "admin-tabs-elem-1",
-          "description": "Overview tab trigger is present in the architecture tablist (role+text; the Radix tabpanel id is non-deterministic across renders).",
+          "description": "Overview tab trigger (role+text; the Radix tab id regenerates across renders).",
           "category": "element-presence",
-          "severity": "warning",
+          "severity": "critical",
           "assertionType": "exists",
           "target": {
             "type": "search",
             "criteria": { "role": "tab", "text": "Overview" },
             "label": "Overview tab"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "admin-tabs-elem-2",
+          "description": "Runner Detail tab trigger (role+text).",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "tab", "text": "Runner Detail" },
+            "label": "Runner Detail tab"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "admin-tabs-elem-3",
+          "description": "Data Flow tab trigger (role+text).",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "tab", "text": "Data Flow" },
+            "label": "Data Flow tab"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "admin-tabs-elem-4",
+          "description": "Ports & Services tab trigger (role+text).",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "tab", "text": "Ports & Services" },
+            "label": "Ports & Services tab"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "admin-tabs-elem-5",
+          "description": "The active Overview tab panel container is mounted (role only; the Radix panel id regenerates).",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "tabpanel" },
+            "label": "Architecture tab panel"
           },
           "source": "ai-generated",
           "reviewed": false,
@@ -105,7 +150,7 @@
     {
       "id": "admin-cloud-tier",
       "name": "Cloud (lightweight) tier",
-      "description": "The CLOUD column of the architecture diagram: the qontinui-web backend on port 8000, described as auth/users/projects, storage, config sync, and explicitly NO heavy compute.",
+      "description": "The CLOUD column of the Overview architecture diagram: the qontinui-web backend tier on port 8000, described as auth/users/projects, storage, and config sync with no heavy compute.",
       "assertions": [
         {
           "id": "admin-cloud-tier-elem-0",
@@ -115,7 +160,7 @@
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "heading-4-qontinui-web-backend", "role": "heading" },
+            "criteria": { "id": "heading-4-qontinui-web-backend", "role": "heading", "text": "qontinui-web backend" },
             "label": "qontinui-web backend heading"
           },
           "source": "ai-generated",
@@ -130,23 +175,8 @@
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "content-paragraph-port-8000-0" },
+            "criteria": { "id": "content-paragraph-port-8000-0", "text": "Port 8000" },
             "label": "Port 8000 label"
-          },
-          "source": "ai-generated",
-          "reviewed": false,
-          "enabled": true
-        },
-        {
-          "id": "admin-cloud-tier-elem-2",
-          "description": "Cloud tier lists Auth, Users, Projects as a responsibility.",
-          "category": "element-presence",
-          "severity": "warning",
-          "assertionType": "exists",
-          "target": {
-            "type": "search",
-            "criteria": { "id": "content-list-item--auth-users-projects-0", "role": "listitem" },
-            "label": "Auth/Users/Projects list item"
           },
           "source": "ai-generated",
           "reviewed": false,
@@ -158,7 +188,7 @@
     {
       "id": "admin-local-tier",
       "name": "Local (user machine) tier",
-      "description": "The LOCAL column of the architecture diagram: the qontinui-runner process on port 9876 (single entry point for local ops) and the underlying qontinui Python library that performs web extraction, vision, ML, HAL, and state-machine traversal.",
+      "description": "The LOCAL column of the Overview architecture diagram: the qontinui-runner process on port 9876 (single entry point for local ops) and the underlying qontinui Python library that performs web extraction, vision, ML, HAL, and state-machine traversal.",
       "assertions": [
         {
           "id": "admin-local-tier-elem-0",
@@ -168,7 +198,7 @@
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "heading-4-qontinui-runner", "role": "heading" },
+            "criteria": { "id": "heading-4-qontinui-runner", "role": "heading", "text": "qontinui-runner" },
             "label": "qontinui-runner heading"
           },
           "source": "ai-generated",
@@ -183,7 +213,7 @@
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "content-paragraph-port-9876-0" },
+            "criteria": { "id": "content-paragraph-port-9876-0", "text": "Port 9876" },
             "label": "Port 9876 label"
           },
           "source": "ai-generated",
@@ -198,7 +228,7 @@
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "heading-4-qontinui-library", "role": "heading" },
+            "criteria": { "id": "heading-4-qontinui-library", "role": "heading", "text": "qontinui library" },
             "label": "qontinui library heading"
           },
           "source": "ai-generated",
@@ -209,5 +239,27 @@
       "provenance": { "source": "ai-generated" }
     }
   ],
-  "transitions": []
+  "transitions": [
+    {
+      "id": "admin-switch-to-runner-detail",
+      "name": "Switch to Runner Detail tab",
+      "description": "Behavioral: clicking the Runner Detail architecture tab swaps the active tabpanel away from the default Overview — the Overview-only 'qontinui-web backend' tier heading unmounts. Superuser-only page; read-only navigation between architecture views with no side effects. Tab matched by role+text (Radix ids are render-volatile). activateStates stays on the always-present header so the post-state is a stable structural anchor.",
+      "fromStates": ["admin-tabs"],
+      "activateStates": ["admin-header"],
+      "exitStates": [],
+      "effect": "read",
+      "actions": [
+        {
+          "type": "click",
+          "target": { "role": "tab", "text": "Runner Detail" },
+          "waitAfter": {
+            "type": "vanish",
+            "query": { "id": "heading-4-qontinui-web-backend", "role": "heading" },
+            "timeout": 8000
+          }
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    }
+  ]
 }

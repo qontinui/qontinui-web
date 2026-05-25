@@ -2,7 +2,7 @@
   "version": "1.0",
   "id": "dashboard",
   "name": "Dashboard",
-  "description": "Visual-mode-only page. The /dashboard route is a pure client-side redirect (DashboardRedirect): in Visual product mode it resolves to /tools/visual-automation, in AI Dev mode it resolves to /build/workflows. This spec captures the Visual-mode dashboard surface (the Visual Automation projects landing): the page header, the 'Your Projects' section with its create entry point, and the zero-projects empty state. Structure-only — never asserts specific project rows or counts. Reach this view by switching to Visual mode (toggle id 'button-visual-1') before navigating.",
+  "description": "Visual-mode-only page. The /dashboard route is a pure client-side redirect (DashboardRedirect): in Visual product mode it resolves to /tools/visual-automation, in AI Dev mode it resolves to /build/workflows. This spec captures the Visual-mode dashboard surface (the Visual Automation projects landing): the page header, the 'Your Projects' section with its create entry point, and the populated project grid (Spec CI seeds a fixture project, so the grid shows the persistent creation cards plus the fixture card rather than the zero-projects empty state). Structure-only — never asserts specific project rows or counts. Reach this view by switching to Visual mode (toggle id 'button-visual-1') before navigating.",
   "provenance": {
     "source": "ai-generated",
     "appId": "qontinui-web"
@@ -118,50 +118,50 @@
       "provenance": { "source": "ai-generated" }
     },
     {
-      "id": "dashboard-empty-state",
-      "name": "No projects yet (empty state)",
-      "description": "Rendered when the signed-in user has zero visual-automation projects: a placeholder heading, a guiding paragraph, and a primary create-first-project call to action. State-recommender selects this state only when the project list is empty; a populated fleet matches the header/projects-section states instead. Structure-only — no project data.",
+      "id": "dashboard-project-grid",
+      "name": "Populated project grid",
+      "description": "Spec CI seeds an empty 'spec-ci-fixture' project on the ci-bot account, so the Visual-mode dashboard renders a populated project grid: the persistent 'New Project' and 'Import Configuration' creation cards plus the seeded fixture project's own card. (Previously this snapshot captured the zero-projects empty state; the seed legitimately changes the account from empty to one-project.) Structure-only — asserts the persistent creation cards and the known fixture card, never arbitrary project rows or counts.",
       "assertions": [
         {
-          "id": "dashboard-empty-state-elem-0",
-          "description": "Empty-state h4 placeholder heading.",
+          "id": "dashboard-project-grid-elem-0",
+          "description": "'New Project' creation card is present in the grid.",
           "category": "element-presence",
           "severity": "warning",
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "heading-4-no-projects-yet", "role": "heading" },
-            "label": "No projects yet heading"
+            "criteria": { "id": "heading-4-new-project", "role": "heading" },
+            "label": "New Project card heading"
           },
           "source": "ai-generated",
           "reviewed": false,
           "enabled": true
         },
         {
-          "id": "dashboard-empty-state-elem-1",
-          "description": "Guiding paragraph prompts the user to create their first project.",
+          "id": "dashboard-project-grid-elem-1",
+          "description": "'Import Configuration' creation card is present in the grid.",
           "category": "element-presence",
           "severity": "warning",
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "content-paragraph-create-your-first-vi-0" },
-            "label": "Create-your-first-project guidance paragraph"
+            "criteria": { "id": "heading-4-import-configuration", "role": "heading" },
+            "label": "Import Configuration card heading"
           },
           "source": "ai-generated",
           "reviewed": false,
           "enabled": true
         },
         {
-          "id": "dashboard-empty-state-elem-2",
-          "description": "Primary call-to-action button to create the first project.",
+          "id": "dashboard-project-grid-elem-2",
+          "description": "The seeded 'spec-ci-fixture' project card is rendered in the grid.",
           "category": "element-presence",
           "severity": "critical",
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "button-create-first-project", "role": "button" },
-            "label": "Create First Project button"
+            "criteria": { "id": "heading-4-spec-ci-fixture", "role": "heading" },
+            "label": "Fixture project card heading"
           },
           "source": "ai-generated",
           "reviewed": false,

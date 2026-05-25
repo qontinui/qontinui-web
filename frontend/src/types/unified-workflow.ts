@@ -102,8 +102,7 @@ export async function fetchStepTypes(): Promise<Record<
   StepTypeInfo[]
 > | null> {
   try {
-    const API_BASE_URL =
-      process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+    const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
     const response = await fetch(
       `${API_BASE_URL}/api/v1/workflow-config/step-types`,
       { credentials: "include" }

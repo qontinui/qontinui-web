@@ -38,13 +38,23 @@ jobs:
     timeout-minutes: 25
 
     env:
-      NEXT_PUBLIC_API_URL: https://api.qontinui.io
+      # Path A (same-origin): the browser uses RELATIVE API URLs (empty
+      # NEXT_PUBLIC_API_URL) so calls hit the Next.js /api proxy on
+      # localhost:3001 — keeping auth cookies same-origin. The proxy forwards
+      # to the real backend via the server-only BACKEND_URL.
+      NEXT_PUBLIC_API_URL: ""
+      BACKEND_URL: https://api.qontinui.io
       QONTINUI_API_BASE_URL: https://api.qontinui.io
       QONTINUI_TEST_AUTO_LOGIN_EMAIL: ${{ secrets.SPEC_CI_AUTH_EMAIL }}
       QONTINUI_TEST_AUTO_LOGIN_PASSWORD: ${{ secrets.SPEC_CI_AUTH_PASSWORD }}
       # Gates SpecCiInit's window-exposure to Spec-CI runs only. Production
       # builds (no env var set) get nothing on window.__qontinuiSpecCi__.
       NEXT_PUBLIC_ENABLE_SPEC_CI: "1"
+      # Build-time flag: mounts the in-browser CommandRelayListener in the
+      # prod `next start` bundle so /control/* actions dispatch in-process.
+      # Required for transition specs to execute element actions; no-op for
+      # the current structural (transition-free) specs.
+      NEXT_PUBLIC_UI_BRIDGE_REMOTE_COMMANDS: "1"
 
     steps:
       - name: Checkout qontinui-web

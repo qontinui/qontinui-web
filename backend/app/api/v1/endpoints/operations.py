@@ -816,6 +816,92 @@ async def get_claims_list(
     return await _proxy_coord_get("/coord/claims/list", params=params)
 
 
+# ---- Coord agent-status proxy (coord-native MCP coordination surface) ----
+#
+# Plan `coord-native-coordination-mcp` Phase 2 (dashboard-render half).
+# Proxies coord's `GET /coord/agent-status` — the work-unit-grain agent
+# status read backed by `coord.agent_status` (the MCP coordination surface
+# `coord_report_status` / `coord_orient` write into this table). The
+# operator dashboard renders it as a *dual-read*: it prefers these
+# structured rows and falls back to `/claims/list` metadata when the tenant
+# has no agent_status rows yet (cutover robustness).
+#
+# Tenant scope differs from coord's claims proxy: coord's /coord/agent-status
+# reads `tenant_id` as a *query param* (the table's tenant_id is NOT NULL),
+# not the `X-Qontinui-Tenant-Id` header. We resolve the caller's tenant via
+# `get_tenant_id` and forward it as the query param.
+
+
+@router.get("/agent-status")
+async def get_agent_status(
+    correlation_topic: str | None = None,
+    tenant_id: UUID = Depends(get_tenant_id),
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> Any:
+    """List active (non-expired) agent_status rows for the caller's tenant.
+
+    Optional ``correlation_topic`` narrows to a single topic. The response
+    envelope mirrors coord: ``{"agents": [...], "count": N}``.
+    """
+    params: dict[str, Any] = {"tenant_id": str(tenant_id)}
+    if correlation_topic is not None:
+        params["correlation_topic"] = correlation_topic
+    return await _proxy_coord_get("/coord/agent-status", params=params)
+
+
+# ---- Coord gates-dashboard proxy ------------------------------------------
+#
+# Plan `2026-05-18-agent-spawn-coordination.md` Phase 5 — first-class
+# gates dashboard. Three proxy endpoints:
+#
+# - GET  /operations/gates/list              → coord `/coord/gates`
+# - POST /operations/gates/{gate_id}/approve → coord `/coord/gates/{gate_id}/approve`
+# - POST /operations/gates/{gate_id}/reject  → coord `/coord/gates/{gate_id}/reject`
+
+
+@router.get("/gates/list")
+async def get_gates_list(
+    verdict: str | None = None,
+    claim_kind: str | None = None,
+    resource_key: str | None = None,
+    limit: int | None = None,
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> Any:
+    """List gates, optionally filtered by verdict."""
+    params: dict[str, Any] = {}
+    if verdict is not None:
+        params["verdict"] = verdict
+    if claim_kind is not None:
+        params["claim_kind"] = claim_kind
+    if resource_key is not None:
+        params["resource_key"] = resource_key
+    if limit is not None:
+        params["limit"] = limit
+    return await _proxy_coord_get("/coord/gates", params=params)
+
+
+@router.post("/gates/{gate_id}/approve")
+async def approve_gate(
+    gate_id: str,
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> Any:
+    """Approve an OperatorApproval gate."""
+    return await _proxy_coord_post(f"/coord/gates/{gate_id}/approve", {})
+
+
+@router.post("/gates/{gate_id}/reject")
+async def reject_gate(
+    gate_id: str,
+    reason: str | None = None,
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> Any:
+    """Reject an OperatorApproval gate."""
+    body: dict[str, Any] = {}
+    if reason:
+        body["reason"] = reason
+    return await _proxy_coord_post(f"/coord/gates/{gate_id}/reject", body)
+
+
 @router.get("/claims/recent-conflicts")
 async def get_recent_conflicts(
     limit: int | None = None,
@@ -1384,6 +1470,120 @@ async def post_memory_restore(
         body.model_dump(exclude_none=True),
         tenant_id=tenant_id,
     )
+
+
+# ---- Memory federation reports proxy ------------------------------------
+#
+# Plan `2026-05-22-memories-on-coord-cross-machine.md` Phase 2 — the
+# `/admin/coord/federation` dashboard backend. Two read-only proxy
+# endpoints that forward to coord:
+#
+# - `/operations/federation/reports`           → coord `/coord/federation/reports`
+# - `/operations/federation/reports/{report_id}` → coord `/coord/federation/reports/{report_id}`
+#
+# Reports are submitted by the runner's memory bridge directly to coord;
+# these proxies only serve the dashboard read path.
+
+
+@router.get("/federation/reports")
+async def get_federation_reports(
+    device_id: UUID | None = None,
+    session_id: UUID | None = None,
+    has_failures: bool | None = None,
+    since: str | None = None,
+    limit: int = Query(default=50, le=200),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """List memory federation reports from coord (paginated, filterable)."""
+    params: dict[str, str] = {}
+    if device_id:
+        params["device_id"] = str(device_id)
+    if session_id:
+        params["session_id"] = str(session_id)
+    if has_failures is not None:
+        params["has_failures"] = str(has_failures).lower()
+    if since:
+        params["since"] = since
+    params["limit"] = str(limit)
+    return await _proxy_coord_get(
+        "/coord/federation/reports", tenant_id=tenant_id, params=params
+    )
+
+
+@router.get("/federation/reports/{report_id}")
+async def get_federation_report_detail(
+    report_id: UUID,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Single memory federation report detail from coord."""
+    return await _proxy_coord_get(
+        f"/coord/federation/reports/{report_id}", tenant_id=tenant_id
+    )
+
+
+# ---- GitOp federation feed proxy ----------------------------------------
+#
+# Plan `2026-05-24-federation-verify-and-gitop.md` Phase 7 — the
+# `/admin/coord/git-ops` dashboard backend. Three read-only proxy
+# endpoints that forward to coord's git-ops feed:
+#
+# - `/operations/git-ops/list`                  → coord `/coord/git-ops/list`
+# - `/operations/git-ops/by-session/{session_id}` → coord `/coord/git-ops/by-session/{session_id}`
+# - `/operations/git-ops/branches`              → coord `/coord/git-ops/branches`
+#
+# Git ops (commit/checkout/branch_create/merge/rebase/push/…) are
+# observed by the runner's GitOpBridge (notify-watch + the pre-push hook)
+# and submitted to coord directly; these proxies only serve the
+# dashboard read path. Tenant resolution + the `X-Qontinui-Tenant-Id`
+# header forwarding are identical to the memory-federation block above —
+# `get_tenant_id` resolves the caller's tenant and `_proxy_coord_get`
+# injects the header so coord scopes every SQL query on `coord.git_ops`.
+
+
+@router.get("/git-ops/list")
+async def get_git_ops_list(
+    repo: str | None = None,
+    branch: str | None = None,
+    since: str | None = None,
+    limit: int = Query(default=50, le=200),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """List GitOp records from coord (paginated, filterable).
+
+    Forwards the optional ``repo`` / ``branch`` / ``since`` filters and
+    the ``limit`` cap to coord, which scopes the query to the caller's
+    tenant via the injected ``X-Qontinui-Tenant-Id`` header.
+    """
+    params: dict[str, str] = {}
+    if repo:
+        params["repo"] = repo
+    if branch:
+        params["branch"] = branch
+    if since:
+        params["since"] = since
+    params["limit"] = str(limit)
+    return await _proxy_coord_get(
+        "/coord/git-ops/list", tenant_id=tenant_id, params=params
+    )
+
+
+@router.get("/git-ops/by-session/{session_id}")
+async def get_git_ops_by_session(
+    session_id: str,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return the GitOp records for a single runner session from coord."""
+    return await _proxy_coord_get(
+        f"/coord/git-ops/by-session/{session_id}", tenant_id=tenant_id
+    )
+
+
+@router.get("/git-ops/branches")
+async def get_git_ops_branches(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return the current branch-per-device summary from coord."""
+    return await _proxy_coord_get("/coord/git-ops/branches", tenant_id=tenant_id)
 
 
 # ---- Symbol-claims surface (Phase 4.4) ----------------------------------
