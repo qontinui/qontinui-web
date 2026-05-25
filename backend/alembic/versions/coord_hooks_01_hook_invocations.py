@@ -77,6 +77,12 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    # Idempotent: coord's ensure_*_table self-heal (or a prior partial
+    # apply) may have already created this table out-of-band. Skip the
+    # whole body if it exists so `alembic upgrade head` succeeds either
+    # way — the table and its indexes are already present.
+    if sa.inspect(op.get_bind()).has_table("hook_invocations", schema="coord"):
+        return
     op.create_table(
         "hook_invocations",
         sa.Column("unit_id", postgresql.UUID(as_uuid=True), nullable=False),

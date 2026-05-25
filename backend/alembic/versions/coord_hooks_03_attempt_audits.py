@@ -85,6 +85,10 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    # Idempotent: skip if coord self-heal / a prior partial apply already
+    # created this table out-of-band (the table + indexes are present).
+    if sa.inspect(op.get_bind()).has_table("attempt_audits", schema="coord"):
+        return
     op.create_table(
         "attempt_audits",
         sa.Column("unit_id", postgresql.UUID(as_uuid=True), nullable=False),

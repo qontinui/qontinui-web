@@ -79,6 +79,10 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    # Idempotent: skip if coord self-heal / a prior partial apply already
+    # created this table out-of-band (the table + indexes are present).
+    if sa.inspect(op.get_bind()).has_table("handoff_requests", schema="coord"):
+        return
     op.create_table(
         "handoff_requests",
         sa.Column(
