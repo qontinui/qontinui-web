@@ -192,6 +192,18 @@ async def list_devices_endpoint(
     we read locally because canonical PG is shared.
     """
     devices = await device_crud.list_devices(db, current_user.id)
+    if not devices:
+        # Observability only (no response/contract change): a 0-row result
+        # for an authenticated user is otherwise a silent empty list, making
+        # "my phone sees no runners" undiagnosable server-side. Surface the
+        # active filter predicate so the cause (no paired runner for this
+        # user/tenant) is visible in logs.
+        logger.info(
+            "devices.list.empty",
+            user_id=str(current_user.id),
+            email=current_user.email,
+            paired_filter=True,
+        )
     wire = [_device_to_wire(d) for d in devices]
 
     if status_filter:
