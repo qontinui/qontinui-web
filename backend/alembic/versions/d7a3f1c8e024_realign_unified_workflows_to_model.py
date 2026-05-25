@@ -24,18 +24,25 @@ creation AND every ORM-based read on staging (including the dispatch path,
 ``workflow_dispatcher`` → ``select(UnifiedWorkflow)``). Observed on staging
 RDS 2026-05-25 immediately after ``c9e1f5a3b7d2`` added the missing columns.
 
-``id`` is the PRIMARY KEY and is referenced by
-``project.scheduled_workflow_runs.workflow_id`` (FK, ON DELETE CASCADE), so
-the FK is dropped, both endpoints are retyped to uuid, and the FK is
-recreated. The FK is dropped by *discovery* (pg_constraint lookup) so this
-works regardless of the constraint's generated name and is a no-op if the
-FK is absent.
+``id`` is the PRIMARY KEY and is referenced by MULTIPLE inbound foreign
+keys (``project.scheduled_workflow_runs.workflow_id``,
+``project.workflow_versions.workflow_id``, and potentially others created
+directly in SQL rather than via an ORM relationship). Retyping the PK while
+those FKs reference a ``text`` column fails with
+``DatatypeMismatch: ... incompatible types: text and uuid``. So this
+migration discovers EVERY inbound FK generically from ``pg_constraint``,
+captures each definition via ``pg_get_constraintdef``, drops them, retypes
+the PK and every referencing column to uuid, then recreates the FKs exactly
+as they were. This is name- and count-agnostic — it adapts to whatever FKs
+exist on the target DB.
 
 Sibling of the existing ``realign_workflow_variables_to_model``
-(``e2c8b5d1f3a6``) pattern. Idempotent + transactional (asyncpg assumes
+(``e2c8b5d1f3a6``). Idempotent + transactional (asyncpg/psycopg assume
 transactional DDL — a failed cast rolls the whole migration back with no
-data loss). JSON casts use ``NULLIF(col,'')`` so an empty-string value
-becomes NULL rather than failing the ``::jsonb`` cast.
+data loss). ``::uuid`` on an already-uuid column is a harmless self-cast, so
+re-running on an already-correct DB is a no-op. JSON casts use
+``NULLIF(col,'')`` so an empty-string value becomes NULL rather than
+failing the ``::jsonb`` cast.
 
 Revision ID: d7a3f1c8e024
 Revises: c9e1f5a3b7d2
@@ -65,50 +72,57 @@ _JSON_COLUMNS = (
 )
 
 
-def upgrade() -> None:
-    # 1. Drop the inbound FK by discovery (name-agnostic; no-op if absent).
-    op.execute(
-        """
+def _retype_id_and_inbound_fks(target_type: str) -> str:
+    """Build a DO block that drops every inbound FK to
+    ``project.unified_workflows``, retypes the PK + each referencing column
+    to ``target_type``, then recreates the FKs from their captured
+    definitions. ``target_type`` is ``uuid`` (upgrade) or ``text``
+    (downgrade)."""
+    return f"""
         DO $$
-        DECLARE fk_name text;
+        DECLARE
+            fk record;
+            stmt text;
+            recreate text[] := '{{}}';
         BEGIN
-            SELECT conname INTO fk_name
-              FROM pg_constraint
-             WHERE conrelid = 'project.scheduled_workflow_runs'::regclass
-               AND confrelid = 'project.unified_workflows'::regclass
-               AND contype = 'f';
-            IF fk_name IS NOT NULL THEN
+            FOR fk IN
+                SELECT con.conname AS name,
+                       con.conrelid::regclass::text AS tbl,
+                       a.attname AS col,
+                       pg_get_constraintdef(con.oid) AS def
+                  FROM pg_constraint con
+                  JOIN pg_attribute a
+                    ON a.attrelid = con.conrelid
+                   AND a.attnum = ANY (con.conkey)
+                 WHERE con.confrelid = 'project.unified_workflows'::regclass
+                   AND con.contype = 'f'
+            LOOP
+                recreate := array_append(
+                    recreate,
+                    format('ALTER TABLE %s ADD CONSTRAINT %I %s',
+                           fk.tbl, fk.name, fk.def));
+                EXECUTE format('ALTER TABLE %s DROP CONSTRAINT %I',
+                               fk.tbl, fk.name);
                 EXECUTE format(
-                    'ALTER TABLE project.scheduled_workflow_runs DROP CONSTRAINT %I',
-                    fk_name
-                );
-            END IF;
+                    'ALTER TABLE %s ALTER COLUMN %I TYPE {target_type} USING %I::{target_type}',
+                    fk.tbl, fk.col, fk.col);
+            END LOOP;
+
+            EXECUTE 'ALTER TABLE project.unified_workflows '
+                 || 'ALTER COLUMN id TYPE {target_type} USING id::{target_type}';
+
+            FOREACH stmt IN ARRAY recreate LOOP
+                EXECUTE stmt;
+            END LOOP;
         END $$;
-        """
-    )
+    """
 
-    # 2. Retype the PK and its dependent FK column to uuid.
-    #    ``::uuid`` on an already-uuid column is a harmless self-cast.
-    op.execute(
-        "ALTER TABLE project.unified_workflows "
-        "ALTER COLUMN id TYPE uuid USING id::uuid"
-    )
-    op.execute(
-        "ALTER TABLE project.scheduled_workflow_runs "
-        "ALTER COLUMN workflow_id TYPE uuid USING workflow_id::uuid"
-    )
 
-    # 3. Recreate the FK (matches the model: ON DELETE CASCADE). Raw SQL —
-    #    schema-qualified inline (op.create_foreign_key's source_schema=/
-    #    referent_schema= aren't recognised by the consolidation schema gate).
-    op.execute(
-        "ALTER TABLE project.scheduled_workflow_runs "
-        "ADD CONSTRAINT scheduled_workflow_runs_workflow_id_fkey "
-        "FOREIGN KEY (workflow_id) "
-        "REFERENCES project.unified_workflows (id) ON DELETE CASCADE"
-    )
+def upgrade() -> None:
+    # PK + all inbound FK columns → uuid (FKs dropped/recreated by discovery).
+    op.execute(_retype_id_and_inbound_fks("uuid"))
 
-    # 4. Retype the JSON columns to jsonb (empty string → NULL, not a cast error).
+    # JSON columns → jsonb (empty string → NULL, not a cast error).
     for col in _JSON_COLUMNS:
         op.execute(
             f"ALTER TABLE project.unified_workflows "
@@ -117,44 +131,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Revert JSON columns to text.
     for col in _JSON_COLUMNS:
         op.execute(
             f"ALTER TABLE project.unified_workflows "
             f"ALTER COLUMN {col} TYPE text USING {col}::text"
         )
-
-    # Drop FK, revert uuid columns back to text, recreate FK.
-    op.execute(
-        """
-        DO $$
-        DECLARE fk_name text;
-        BEGIN
-            SELECT conname INTO fk_name
-              FROM pg_constraint
-             WHERE conrelid = 'project.scheduled_workflow_runs'::regclass
-               AND confrelid = 'project.unified_workflows'::regclass
-               AND contype = 'f';
-            IF fk_name IS NOT NULL THEN
-                EXECUTE format(
-                    'ALTER TABLE project.scheduled_workflow_runs DROP CONSTRAINT %I',
-                    fk_name
-                );
-            END IF;
-        END $$;
-        """
-    )
-    op.execute(
-        "ALTER TABLE project.scheduled_workflow_runs "
-        "ALTER COLUMN workflow_id TYPE text USING workflow_id::text"
-    )
-    op.execute(
-        "ALTER TABLE project.unified_workflows "
-        "ALTER COLUMN id TYPE text USING id::text"
-    )
-    op.execute(
-        "ALTER TABLE project.scheduled_workflow_runs "
-        "ADD CONSTRAINT scheduled_workflow_runs_workflow_id_fkey "
-        "FOREIGN KEY (workflow_id) "
-        "REFERENCES project.unified_workflows (id) ON DELETE CASCADE"
-    )
+    op.execute(_retype_id_and_inbound_fks("text"))
