@@ -221,6 +221,20 @@ interface SpecResult {
 const GATED_SPECS = new Set<string>(["marketplace", "automation-builder"]);
 
 /**
+ * localStorage key the automation store uses to persist the SELECTED project
+ * (`stores/automation/slices/project-slice.ts:20,62-64`). It survives full
+ * navigations on the same origin, so once one spec selects a project (e.g.
+ * automation-builder's project-loader fires `setProjectId` when visited with
+ * `?project=`), every LATER `<RequireProject>` spec hydrates that selection
+ * and renders real content instead of its expected "No project selected"
+ * gate. We clear this key before each spec navigation so every spec is
+ * order-independent: gated specs without `?project=` deterministically show
+ * the gate, and threaded specs (GATED_SPECS) select via the URL param —
+ * which `require-project.tsx` reads independently of this key.
+ */
+const SELECTED_PROJECT_LS_KEY = "qontinui-selected-project-id";
+
+/**
  * Map a spec id to a URL route. Most ids map 1:1; the two known exceptions
  * (`active-runs` → `/runs/active`, `ai-settings` → `/settings/ai`) are
  * recorded in qontinui-web/CLAUDE.md under "Slug ≠ spec id gotcha".
@@ -269,6 +283,25 @@ async function evaluateSpec(
   };
 
   try {
+    // Reset the persisted project SELECTION before navigating so each spec is
+    // order-independent (see SELECTED_PROJECT_LS_KEY). Without this, a spec that
+    // selects a project (automation-builder's loader on `?project=`) leaks the
+    // selection via localStorage into every LATER <RequireProject> spec, which
+    // then renders real content instead of its expected gate. Wrapped in a
+    // try/catch because the page may not yet have a same-origin document on the
+    // very first spec; the addInitScript + the goto below handle that case.
+    await page
+      .evaluate((key) => {
+        try {
+          window.localStorage.removeItem(key);
+        } catch {
+          /* localStorage unavailable — non-fatal */
+        }
+      }, SELECTED_PROJECT_LS_KEY)
+      .catch(() => {
+        /* no same-origin document yet — fine; cleared on next iteration */
+      });
+
     // `domcontentloaded`, NOT `networkidle`: pages with a persistent
     // WebSocket / polling connection (runners, chat, …) NEVER reach networkidle,
     // so it would hang to the timeout and error the spec. domcontentloaded
