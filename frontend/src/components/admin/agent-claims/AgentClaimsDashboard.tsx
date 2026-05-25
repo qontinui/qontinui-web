@@ -86,6 +86,33 @@ interface ActiveClaimsResponse {
   truncated: boolean;
 }
 
+/**
+ * Coord-native MCP coordination surface (Phase 2). One row from
+ * `GET /api/v1/operations/agent-status` → coord `GET /coord/agent-status`,
+ * backed by `coord.agent_status`. Distinct from the legacy claim-metadata
+ * shape (`ActiveClaim`): work-unit-grain, carries structured coordination
+ * free-text + the topic peers collaborate on. The dashboard prefers these
+ * rows and only falls back to the claim path when none exist for the tenant.
+ */
+interface AgentStatusRow {
+  device_id: string;
+  tenant_id: string;
+  correlation_topic: string;
+  work_unit_id: string;
+  status_text: string;
+  blocked_on: string | null;
+  intent_globs: string[] | null;
+  updated_at: string;
+  expires_at: string;
+}
+
+interface AgentStatusResponse {
+  agents: AgentStatusRow[];
+  count: number;
+}
+
+const AGENT_STATUS_API = `${ApiConfig.API_BASE_URL}/api/v1/operations/agent-status`;
+
 interface ConflictEntry {
   recorded_at: string;
   requesting_machine_id: string;
@@ -227,11 +254,50 @@ function ActiveClaimsSection({
 }) {
   const [kind, setKind] = useState("phase");
   const [prefix, setPrefix] = useState("");
+  // Legacy claim-metadata fallback (current source until cutover completes).
   const [data, setData] = useState<ActiveClaimsResponse | null>(null);
+  // Preferred coord-native source. `null` = not yet resolved / empty for
+  // tenant (→ render the fallback); a non-empty array = render structured.
+  const [agentStatus, setAgentStatus] = useState<AgentStatusRow[] | null>(
+    null
+  );
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
+    // --- Preferred read: coord-native agent_status ----------------------
+    // Best-effort. Any failure (HTTP error, coord unreachable, network)
+    // never surfaces as a dashboard error — we just fall through to the
+    // legacy claim path below so the section never goes blank/500 during
+    // the migration. On success-with-rows we short-circuit the fallback.
+    let usedAgentStatus = false;
+    try {
+      const res = await fetch(AGENT_STATUS_API);
+      if (res.ok) {
+        const body: AgentStatusResponse = await res.json();
+        const rows = Array.isArray(body.agents) ? body.agents : [];
+        if (rows.length > 0) {
+          setAgentStatus(rows);
+          setError(null);
+          usedAgentStatus = true;
+        } else {
+          // No agent_status rows for this tenant yet → dual-read fallback.
+          setAgentStatus(null);
+        }
+      } else {
+        setAgentStatus(null);
+      }
+    } catch {
+      // Swallow — fall through to the legacy claim path.
+      setAgentStatus(null);
+    }
+
+    if (usedAgentStatus) {
+      setLoading(false);
+      return;
+    }
+
+    // --- Fallback read: legacy claim metadata ---------------------------
     try {
       const url = new URL(`${API}/list`, window.location.origin);
       url.searchParams.set("kind", kind);
@@ -258,61 +324,135 @@ function ActiveClaimsSection({
     return () => clearInterval(interval);
   }, [fetchData]);
 
+  const usingAgentStatus = agentStatus !== null && agentStatus.length > 0;
+  const count = usingAgentStatus
+    ? agentStatus.length
+    : data?.holders.length ?? 0;
+
   return (
     <Card data-testid="claims-active-section">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <Layers className="h-4 w-4" />
-          Active claims
-          {data && (
-            <Badge variant="outline" className="ml-2">
-              {data.holders.length}
-              {data.truncated ? "+" : ""}
+          {usingAgentStatus ? "Active agents" : "Active claims"}
+          <Badge variant="outline" className="ml-2">
+            {count}
+            {!usingAgentStatus && data?.truncated ? "+" : ""}
+          </Badge>
+          {usingAgentStatus ? (
+            <Badge variant="secondary" className="ml-1 text-[10px]">
+              coord.agent_status
             </Badge>
-          )}
+          ) : null}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <Filter className="h-4 w-4 text-muted-foreground" />
-          <Select value={kind} onValueChange={setKind}>
-            <SelectTrigger
-              className="w-[180px]"
-              data-testid="claims-active-kind-select"
+        {/* The kind/prefix filter only drives the legacy claim fallback.
+            When the structured agent_status source is live, hide it to
+            avoid implying it filters that table. */}
+        {!usingAgentStatus ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Filter className="h-4 w-4 text-muted-foreground" />
+            <Select value={kind} onValueChange={setKind}>
+              <SelectTrigger
+                className="w-[180px]"
+                data-testid="claims-active-kind-select"
+              >
+                <SelectValue placeholder="kind" />
+              </SelectTrigger>
+              <SelectContent>
+                {KIND_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Input
+              placeholder="resource_key prefix (e.g. plan:my-plan:)"
+              value={prefix}
+              onChange={(e) => setPrefix(e.target.value)}
+              className="max-w-md"
+              data-testid="claims-active-prefix-input"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => fetchData()}
+              data-testid="claims-active-refresh"
             >
-              <SelectValue placeholder="kind" />
-            </SelectTrigger>
-            <SelectContent>
-              {KIND_OPTIONS.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Input
-            placeholder="resource_key prefix (e.g. plan:my-plan:)"
-            value={prefix}
-            onChange={(e) => setPrefix(e.target.value)}
-            className="max-w-md"
-            data-testid="claims-active-prefix-input"
-          />
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => fetchData()}
-            data-testid="claims-active-refresh"
-          >
-            <RefreshCw className="h-3 w-3" />
-          </Button>
-        </div>
+              <RefreshCw className="h-3 w-3" />
+            </Button>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => fetchData()}
+              data-testid="claims-active-refresh"
+            >
+              <RefreshCw className="h-3 w-3" />
+            </Button>
+          </div>
+        )}
 
         {error && (
           <p className="text-sm text-destructive">Failed to load: {error}</p>
         )}
 
-        {loading && !data ? (
+        {loading && !data && !usingAgentStatus ? (
           <Skeleton className="h-24 w-full" />
+        ) : usingAgentStatus ? (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>work_unit_id</TableHead>
+                <TableHead>status</TableHead>
+                <TableHead>topic</TableHead>
+                <TableHead>device</TableHead>
+                <TableHead>blocked_on</TableHead>
+                <TableHead>intent_globs</TableHead>
+                <TableHead className="w-[100px] text-right">updated</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {agentStatus.map((a) => (
+                <TableRow
+                  key={`${a.device_id}:${a.work_unit_id}`}
+                  data-testid="agent-status-row"
+                >
+                  <TableCell className="font-mono text-xs">
+                    {a.work_unit_id}
+                  </TableCell>
+                  <TableCell className="text-xs">{a.status_text}</TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {a.correlation_topic}
+                  </TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {shortId(a.device_id)}
+                  </TableCell>
+                  <TableCell className="text-xs">
+                    {a.blocked_on ? (
+                      <Badge className="bg-red-100 text-red-800 border-red-300">
+                        {a.blocked_on}
+                      </Badge>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="font-mono text-[10px] text-muted-foreground">
+                    {a.intent_globs && a.intent_globs.length > 0
+                      ? a.intent_globs.join(", ")
+                      : "—"}
+                  </TableCell>
+                  <TableCell className="text-right text-xs text-muted-foreground tabular-nums">
+                    {relativeTime(a.updated_at)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         ) : data && data.holders.length > 0 ? (
           <Table>
             <TableHeader>
