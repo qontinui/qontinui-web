@@ -2,60 +2,45 @@
   "version": "1.0",
   "id": "automation-builder",
   "name": "AutomationBuilder",
-  "description": "The Automation Builder (Workflows) page for the qontinui-web app lets users author automation workflows scoped to the active project. When the workspace has no projects, the page renders a project-gated empty state directing the user to create their first project before the Workflows builder becomes available. This spec covers that empty (no-project) state, which is what the captured snapshot shows.",
+  "description": "The Automation Builder (Workflows) page for the qontinui-web app, scoped to the active project. With a project selected (Spec CI seeds an empty 'spec-ci-fixture' project and threads ?project=<id> so the <RequireProject pageName=\"Workflows\"> gate clears), the page renders its real builder landing for an empty project: a project-named page header, the Automation Library panel, and a 'No Workflow Selected' empty editor with a Create New Workflow call to action. Asserts the landing structure of an empty project (no workflows authored yet). Workflow rows and editor content are data-driven and not asserted. Read-only: no transition mutates the fixture project (workflow creation is Unlock 2).",
   "provenance": {
     "source": "ai-generated",
     "appId": "qontinui-web"
   },
   "metadata": {
-    "tags": ["automation-builder", "workflows", "empty-state"]
+    "tags": ["automation-builder", "workflows", "builder-landing"]
   },
   "states": [
     {
-      "id": "automation-builder-empty-state",
-      "name": "No projects empty state",
-      "description": "Project-gated empty state shown when the workspace has zero projects. The Workflows builder is unavailable until a project exists.",
+      "id": "automation-builder-header",
+      "name": "Project-scoped page header",
+      "description": "The builder header names the active project. Spec CI selects the empty 'spec-ci-fixture' project, so the h1 reflects that fixture name deterministically.",
       "assertions": [
         {
-          "id": "automation-builder-empty-state-elem-0",
-          "description": "Empty-state heading 'No projects yet' is rendered.",
+          "id": "automation-builder-header-elem-0",
+          "description": "h1 page header reflects the active (fixture) project name.",
           "category": "element-presence",
           "severity": "critical",
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "heading-4-no-projects-yet", "role": "heading" },
-            "label": "No projects yet heading"
+            "criteria": { "id": "heading-1-spec-ci-fixture", "role": "heading" },
+            "label": "Project header heading"
           },
           "source": "ai-generated",
           "reviewed": false,
           "enabled": true
         },
         {
-          "id": "automation-builder-empty-state-elem-1",
-          "description": "Explanatory paragraph ties the gate specifically to Workflows.",
+          "id": "automation-builder-header-elem-1",
+          "description": "Automation Library panel heading is present alongside the builder.",
           "category": "element-presence",
           "severity": "critical",
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "content-paragraph-create-your-first-pr-0" },
-            "label": "Create-first-project explanation"
-          },
-          "source": "ai-generated",
-          "reviewed": false,
-          "enabled": true
-        },
-        {
-          "id": "automation-builder-empty-state-elem-2",
-          "description": "Empty-state copy names the Workflows feature that requires a project.",
-          "category": "text-content",
-          "severity": "warning",
-          "assertionType": "exists",
-          "target": {
-            "type": "search",
-            "criteria": { "id": "content-paragraph-create-your-first-pr-0", "text": "Create your first project to access Workflows" },
-            "label": "Workflows gate text"
+            "criteria": { "id": "heading-3-automation-library" },
+            "label": "Automation Library heading"
           },
           "source": "ai-generated",
           "reviewed": false,
@@ -65,88 +50,50 @@
       "provenance": { "source": "ai-generated" }
     },
     {
-      "id": "automation-builder-call-to-action",
-      "name": "Create-project call to action",
-      "description": "Primary call-to-action that routes the user into project creation, which unlocks the Workflows builder.",
+      "id": "automation-builder-empty-editor",
+      "name": "Empty editor landing",
+      "description": "With no workflow authored in the fixture project, the editor pane shows a 'No Workflow Selected' empty state with a Create New Workflow action — the correct start-state for a fresh project.",
       "assertions": [
         {
-          "id": "automation-builder-call-to-action-elem-0",
-          "description": "Create First Project link is present as the primary action.",
+          "id": "automation-builder-empty-editor-elem-0",
+          "description": "'No Workflow Selected' empty-editor heading is rendered.",
           "category": "element-presence",
           "severity": "critical",
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "link-create-first-project", "role": "link" },
-            "label": "Create First Project link"
+            "criteria": { "id": "heading-3-no-workflow-selected" },
+            "label": "No Workflow Selected heading"
           },
           "source": "ai-generated",
           "reviewed": false,
           "enabled": true
         },
         {
-          "id": "automation-builder-call-to-action-elem-1",
-          "description": "Action link reads 'Create First Project'.",
+          "id": "automation-builder-empty-editor-elem-1",
+          "description": "Empty-editor heading reads 'No Workflow Selected' (role+text cross-check).",
           "category": "text-content",
           "severity": "warning",
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "link-create-first-project", "text": "Create First Project" },
-            "label": "Create First Project label"
-          },
-          "source": "ai-generated",
-          "reviewed": false,
-          "enabled": true
-        }
-      ],
-      "provenance": { "source": "ai-generated" }
-    },
-    {
-      "id": "automation-builder-feature-gate",
-      "name": "Feature gate composition",
-      "description": "Structural check that the no-project gate composes its heading, explanation, and action together as a single coherent empty-state block.",
-      "assertions": [
-        {
-          "id": "automation-builder-feature-gate-elem-0",
-          "description": "Gate heading present.",
-          "category": "element-presence",
-          "severity": "warning",
-          "assertionType": "exists",
-          "target": {
-            "type": "search",
-            "criteria": { "id": "heading-4-no-projects-yet" },
-            "label": "Gate heading"
+            "criteria": { "role": "heading", "text_contains": "No Workflow Selected" },
+            "label": "No Workflow Selected by role+text"
           },
           "source": "ai-generated",
           "reviewed": false,
           "enabled": true
         },
         {
-          "id": "automation-builder-feature-gate-elem-1",
-          "description": "Gate action present.",
+          "id": "automation-builder-empty-editor-elem-2",
+          "description": "Create New Workflow action is present in the empty editor.",
           "category": "element-presence",
           "severity": "warning",
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "link-create-first-project" },
-            "label": "Gate action"
-          },
-          "source": "ai-generated",
-          "reviewed": false,
-          "enabled": true
-        },
-        {
-          "id": "automation-builder-feature-gate-elem-2",
-          "description": "Gate explanation paragraph present.",
-          "category": "element-presence",
-          "severity": "warning",
-          "assertionType": "exists",
-          "target": {
-            "type": "search",
-            "criteria": { "id": "content-paragraph-create-your-first-pr-0" },
-            "label": "Gate explanation"
+            "criteria": { "id": "button-create-new-workflow" },
+            "label": "Create New Workflow button"
           },
           "source": "ai-generated",
           "reviewed": false,
