@@ -111,6 +111,7 @@ jobs:
           npx tsx tests/spec-ci/run-spec-ci.ts \
             --base-url http://localhost:3001 \
             --api-base https://api.qontinui.io \
+            --include-write \
             --output spec-ci-report.json
 
       - name: Tear down frontend
