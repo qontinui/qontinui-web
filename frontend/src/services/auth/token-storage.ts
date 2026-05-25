@@ -35,6 +35,20 @@ export class TokenStorage {
   private readonly SESSION_ACCESS_TOKEN_KEY = "auth_bearer_access_token";
   private readonly SESSION_REFRESH_TOKEN_KEY = "auth_bearer_refresh_token";
 
+  /**
+   * Client-readable, non-secret auth marker cookie. In remote-backend mode the
+   * real `access_token`/`refresh_token` HttpOnly cookies never land on the
+   * dashboard origin (they're scoped to the cross-origin backend host), so the
+   * Next.js `middleware.ts` cookie gate would bounce every protected route to
+   * `/login` even though the Bearer token in sessionStorage is valid. This
+   * marker (value carries NO token — just "the client believes it is signed
+   * in") lets the middleware pass; it's a soft gate, not a security boundary
+   * (the page-level `useAuth()` flow still validates / refreshes / signs out).
+   * Session-scoped (no Max-Age) to align with the tab-scoped sessionStorage
+   * Bearer token. Kept in sync with middleware.ts AUTH_MARKER_COOKIE.
+   */
+  private readonly AUTH_MARKER_COOKIE = "qontinui_auth";
+
   // In-memory token storage (not localStorage — cleared on page refresh)
   // This is the primary auth mechanism for API calls via Authorization header.
   // HttpOnly cookies provide backup auth on the backend side (local-mode only).
@@ -65,10 +79,34 @@ export class TokenStorage {
       this.accessToken = token;
       if (ApiConfig.IS_REMOTE_BACKEND) {
         sessionStorage.setItem(this.SESSION_ACCESS_TOKEN_KEY, token);
+        // No backend cookie reaches the dashboard origin in remote mode —
+        // drop a soft auth-marker cookie so middleware.ts lets protected
+        // routes render (see AUTH_MARKER_COOKIE doc above).
+        this.setAuthMarkerCookie();
       }
     }
     // Set authentication flag for UI state management
     localStorage.setItem(this.AUTHENTICATED_KEY, "true");
+  }
+
+  /**
+   * Set the client-readable auth-marker cookie on the dashboard origin
+   * (remote-backend mode only). Session-scoped; `Secure` only over https so
+   * it still works on http://localhost during dev.
+   */
+  private setAuthMarkerCookie(): void {
+    if (typeof document === "undefined") return;
+    const secure =
+      typeof location !== "undefined" && location.protocol === "https:"
+        ? "; Secure"
+        : "";
+    document.cookie = `${this.AUTH_MARKER_COOKIE}=1; Path=/; SameSite=Lax${secure}`;
+  }
+
+  /** Remove the auth-marker cookie (logout / clear). */
+  private clearAuthMarkerCookie(): void {
+    if (typeof document === "undefined") return;
+    document.cookie = `${this.AUTH_MARKER_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`;
   }
 
   /**
@@ -172,6 +210,7 @@ export class TokenStorage {
     localStorage.removeItem(this.AUTHENTICATED_KEY);
     sessionStorage.removeItem(this.SESSION_ACCESS_TOKEN_KEY);
     sessionStorage.removeItem(this.SESSION_REFRESH_TOKEN_KEY);
+    this.clearAuthMarkerCookie();
   }
 
   /**

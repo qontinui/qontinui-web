@@ -11,6 +11,14 @@ import { NextRequest, NextResponse } from "next/server";
  * `useAuth()` flow handles refresh / sign-out — middleware is a soft
  * gate, not a security boundary.
  *
+ * Remote-backend mode: when the dashboard is pointed at a cross-origin
+ * backend (`NEXT_PUBLIC_API_URL`), the backend's HttpOnly cookies never
+ * land on this origin — the Bearer token lives in sessionStorage instead.
+ * In that mode `TokenStorage` drops a client-readable `qontinui_auth`
+ * marker cookie (no token, just "client believes it's signed in") so this
+ * gate doesn't bounce a legitimately-authenticated session. Same soft-gate
+ * caveat applies. Kept in sync with TokenStorage.AUTH_MARKER_COOKIE.
+ *
  * Public routes (marketing, auth flows, API, static) are explicitly
  * allow-listed via the matcher below.
  */
@@ -51,7 +59,10 @@ export function middleware(request: NextRequest) {
 
   const hasAccessToken = request.cookies.get("access_token");
   const hasRefreshToken = request.cookies.get("refresh_token");
-  if (hasAccessToken || hasRefreshToken) {
+  // `qontinui_auth` is the remote-backend (Bearer/sessionStorage) marker —
+  // see the module doc. Carries no token; soft gate only.
+  const hasAuthMarker = request.cookies.get("qontinui_auth");
+  if (hasAccessToken || hasRefreshToken || hasAuthMarker) {
     return NextResponse.next();
   }
 
