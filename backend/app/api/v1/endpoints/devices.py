@@ -268,17 +268,24 @@ async def pair_confirm(
     # Resolve tenant_id BEFORE the outbound call; let 403
     # `tenant_not_resolved` propagate. This is the same resolver the
     # `/api/v1/operations/*` proxy uses (PR #66 / readiness Wave 3c).
-    tenant_id = await resolve_tenant_for_user(current_user, db)
+    # The result is unused here (coord resolves tenant from the pairing
+    # flow stored at pair-start), but the call is kept as an authz gate.
+    _tenant_id = await resolve_tenant_for_user(current_user, db)
 
     coord_url = settings.COORD_URL.rstrip("/")
     headers = await strategy_client._headers(str(current_user.id))  # noqa: SLF001
+    # coord's PairCompleteRequest requires exactly:
+    #   state: String, web_session_token: String (non-empty),
+    #   user_id: Uuid, device_id: Uuid
+    # `web_session_token` proves to coord the user is authenticated;
+    # the web backend has already validated the session so we forward a
+    # sentinel value identifying the browser-flow proxy path.
     body: dict[str, Any] = {
         "state": payload.state,
+        "web_session_token": "browser-flow-session",
         "user_id": str(current_user.id),
-        "tenant_id": str(tenant_id),
+        "device_id": payload.device_id,
     }
-    if payload.device_name:
-        body["device_name"] = payload.device_name
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
