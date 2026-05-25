@@ -21,9 +21,9 @@ test.describe("Connect Runner Page", () => {
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
 
-    // Verify the Connect Runner heading
+    // Verify the Connect Device heading (unified-devices rename, PR #159)
     await expect(
-      page.getByRole("heading", { name: "Connect Runner" })
+      page.getByRole("heading", { name: "Connect Device" })
     ).toBeVisible({
       timeout: 15000,
     });
@@ -150,15 +150,15 @@ test.describe("Runners Management Page", () => {
     });
   });
 
-  test("shows online runners, session history, and auth tokens tabs", async ({
+  test("shows devices, session history, and auth tokens tabs", async ({
     page,
   }) => {
     await page.goto("/runners");
     await page.waitForLoadState("domcontentloaded");
 
-    // Online Runners tab should be visible
+    // Devices tab should be visible (unified-devices rename, PR #159)
     await expect(
-      page.getByRole("tab", { name: /Online Runners/i })
+      page.getByRole("tab", { name: /Devices/i })
     ).toBeVisible({ timeout: 15000 });
 
     // Session History tab should be visible

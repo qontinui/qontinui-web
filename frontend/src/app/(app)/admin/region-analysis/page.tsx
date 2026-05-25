@@ -84,7 +84,7 @@ export default function RegionAnalysisPage() {
       // httpClient.fetch sends Authorization Bearer + credentials; works
       // both cookie-auth (local) and Bearer (remote/staging) modes.
       const response = await httpClient.fetch(
-        `${ApiConfig.API_BASE_URL}/api/v1/annotations/sets`
+        `${ApiConfig.API_BASE_URL}/api/v1/annotations/`
       );
 
       if (!response.ok) {

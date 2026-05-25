@@ -337,3 +337,38 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## Artifacts" >> $GITHUB_STEP_SUMMARY
           echo "Test reports and artifacts are available in the Actions artifacts section." >> $GITHUB_STEP_SUMMARY
+
+      # Propagate shard/backend failures into this job's conclusion. Without
+      # this, `if: always()` means Test Summary stays GREEN even when a
+      # frontend shard or the backend job goes red, so push/nightly reds are
+      # invisible on the required `Test Summary` check. We treat `skipped` as
+      # OK so the on-PR case (where `frontend-tests` is skipped via its
+      # `if: github.event_name != 'pull_request'` guard) does not fail the
+      # summary — only a job that actually RAN and ended `failure`/`cancelled`
+      # turns this red. `needs.<job>.result` for a matrix job aggregates
+      # across shards: it is `failure` if ANY shard failed.
+      - name: Fail if any needed job failed
+        env:
+          BACKEND_RESULT: ${{ needs.backend-tests.result }}
+          FRONTEND_RESULT: ${{ needs.frontend-tests.result }}
+        run: |
+          echo "backend-tests:  ${BACKEND_RESULT}"
+          echo "frontend-tests: ${FRONTEND_RESULT}"
+          status=0
+          for result in "${BACKEND_RESULT}" "${FRONTEND_RESULT}"; do
+            case "${result}" in
+              failure|cancelled)
+                echo "::error::A needed job concluded '${result}' — failing Test Summary."
+                status=1
+                ;;
+              success|skipped|"")
+                # success = passed; skipped = job's `if` guard excluded it
+                # (e.g. frontend-tests on PRs); "" = no such dependency. All OK.
+                ;;
+              *)
+                echo "::error::A needed job concluded unexpected status '${result}' — failing Test Summary."
+                status=1
+                ;;
+            esac
+          done
+          exit "${status}"

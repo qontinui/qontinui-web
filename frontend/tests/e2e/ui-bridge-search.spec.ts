@@ -20,14 +20,17 @@ test.describe("UI Bridge Element Search", () => {
     });
   });
 
-  test("UI Bridge discover endpoint responds with success envelope", async ({
+  test("UI Bridge discover endpoint signals NO_BROWSER_CONNECTED when no relay client is attached", async ({
     page,
   }) => {
     // The UI Bridge `/api/ui-bridge/control/discover` endpoint is served by the
-    // catch-all proxy at `src/app/api/ui-bridge/[...path]/route.ts`. Post-redesign,
-    // server-side element discovery is intentionally a no-op (elements are
-    // client-side via the AutoRegisterProvider registry). This test verifies
-    // the endpoint is reachable and returns the SDK's success envelope.
+    // catch-all proxy at `src/app/api/ui-bridge/[...path]/route.ts`. `discover`
+    // is a browser-required route (`BROWSER_REQUIRED_ROUTES`, PR #236): element
+    // discovery reads the client-side AutoRegisterProvider registry, which only
+    // exists in a browser tab attached to the relay. A headless POST (no SDK
+    // client connected, as in this test) therefore gets the canonical
+    // `NO_BROWSER_CONNECTED` 503 envelope — this asserts that contract, the
+    // robust signal that the proxy isn't silently succeeding without a browser.
     //
     // Navigate to a page where the bridge initializes; any authenticated route
     // works since this test exercises the API endpoint, not page-specific UI.
@@ -39,7 +42,7 @@ test.describe("UI Bridge Element Search", () => {
       return;
     }
 
-    const response = await page.evaluate(async () => {
+    const result = await page.evaluate(async () => {
       const res = await fetch("/api/ui-bridge/control/discover", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -48,11 +51,13 @@ test.describe("UI Bridge Element Search", () => {
           fuzzy: true,
         }),
       });
-      return res.json();
+      return { status: res.status, body: await res.json() };
     });
 
-    expect(response).toBeDefined();
-    expect(response.success).toBe(true);
+    expect(result.status).toBe(503);
+    expect(result.body).toBeDefined();
+    expect(result.body.success).toBe(false);
+    expect(result.body.code).toBe("NO_BROWSER_CONNECTED");
   });
 
   test("can query UI Bridge health endpoint", async ({ page }) => {
