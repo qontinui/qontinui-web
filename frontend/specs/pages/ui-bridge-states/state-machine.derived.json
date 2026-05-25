@@ -78,5 +78,24 @@
       "provenance": { "source": "ai-generated" }
     }
   ],
-  "transitions": []
+  "transitions": [],
+  "apiAssertions": [
+    {
+      "id": "ui-bridge-no-browser-connected-envelope",
+      "description": "Ports the canonical NO_BROWSER_CONNECTED 503 envelope contract that ui-bridge-search.spec.ts:23 asserts ({success:false, code:\"NO_BROWSER_CONNECTED\"}). DETERMINISM NOTE: the e2e test targeted POST /control/discover, a BROWSER_REQUIRED_ROUTE that only 503s when NO relay client is attached (route.ts:258). Spec CI drives a real app tab whose UI-Bridge SDK auto-connects to the relay, so discover there returns 200 (a live discovery result) — relay-state-dependent, NOT a deterministic CI contract. We instead assert the SAME canonical envelope via the relay-INDEPENDENT fallthrough: ANY route not in UI_BRIDGE_ROUTES nor the relay-transport set is short-circuited to the identical {success:false, code:\"NO_BROWSER_CONNECTED\", message:\"<path> requires a browser SDK client\"} 503 (route.ts:247 isKnownRoute=false -> noBrowserResponse), regardless of browser connection. We hit a sentinel unknown path under /control so the assertion is stable on every run. Issued through the same-origin Next proxy (the page's auth path). NOTE: the harness json_path evaluator (api-contract.ts resolveDotPath) uses bare dot-paths WITHOUT the JSONPath `$.` root token, so jsonPath values are `success`/`code`/`message`, not `$.success`. Value-level only: this proxy envelope is NOT the runner's canonical UiBridgeResponseEnvelope (verified via ajv — it requires requestId/type/timestamp, all absent), and no corpus type models the proxy {success,code,message} shape yet (corpus-promotion follow-up). Provable-red: a regression that stopped translating unknown routes to the structured 503 (bare 404, or dropped `code`/`success`) reds status_code / the json_path assertions; a wrong `code` value reds the code assertion.",
+      "request": {
+        "method": "POST",
+        "path": "/api/ui-bridge/control/__spec_ci_no_browser_probe__",
+        "headers": { "Content-Type": "application/json" },
+        "body": {}
+      },
+      "effect": "read",
+      "assertions": [
+        { "type": "status_code", "expected": 503, "operator": "equals" },
+        { "type": "json_path", "jsonPath": "success", "expected": false, "operator": "equals" },
+        { "type": "json_path", "jsonPath": "code", "expected": "NO_BROWSER_CONNECTED", "operator": "equals" },
+        { "type": "json_path", "jsonPath": "message", "expected": "requires a browser SDK client", "operator": "contains" }
+      ]
+    }
+  ]
 }
