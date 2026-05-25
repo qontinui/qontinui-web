@@ -119,10 +119,11 @@ export function classifyConsole(level: string, text: string): "critical" | "igno
   // Only the "error" console level can gate; warn/log/info/debug never do.
   if (level === "error") {
     if (BENIGN_DENYLIST.some((re) => re.test(text))) return "ignore";
-    if (CRITICAL_SET.some((re) => re.test(text))) return "critical";
-    // v1: a non-denylisted, non-critical-set console.error is NOT gated
-    // (exact smoke-test equivalence). Widen in a follow-up once baseline-clean.
-    return "ignore";
+    // Widened (follow-up a): ANY non-denylisted console.error gates — a plain
+    // console.error("X failed") is a real signal the Uncaught/TypeError/
+    // ReferenceError critical-set missed. CRITICAL_SET is retained as the
+    // documented high-severity subset but no longer the gate condition.
+    return "critical";
   }
   return "ignore";
 }
