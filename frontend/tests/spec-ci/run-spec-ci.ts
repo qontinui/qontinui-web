@@ -36,6 +36,11 @@ import {
   type ConsoleErrorEntry,
   type ConsoleLevel,
 } from "./console-policy";
+import {
+  compileExpectedServerErrors,
+  isSameOriginServerError,
+  type ServerErrorEntry,
+} from "./server-error-policy";
 
 // ---------------------------------------------------------------------------
 // Console-error capture (the run-level invariant; see console-policy.ts)
@@ -109,6 +114,63 @@ function attachConsoleCapture(
 function readExpectedConsoleErrors(doc: Record<string, unknown>): RegExp[] {
   const meta = (doc as { metadata?: { expectedConsoleErrors?: unknown } }).metadata;
   return compileExpectedConsoleErrors(meta?.expectedConsoleErrors);
+}
+
+// ---------------------------------------------------------------------------
+// Same-origin HTTP-500 capture (the run-level invariant; see
+// server-error-policy.ts)
+//
+// HTTP response status is a property of the run that the console listener
+// CANNOT see: a `fetch()` to a 500 RESOLVES (`response.ok === false`) without
+// throwing, so it emits no console.error and no pageerror. We attach a
+// `page.on("response")` listener — alongside the console capture, on EVERY page
+// the harness drives (the shared authed page AND each fresh unauthPage) — that
+// records any response whose origin === the page's base origin (the
+// localhost:3001 Next proxy, i.e. a same-origin app/API call) with status >=
+// 500. Per-spec attribution is the SAME array-length-diff slicing used for
+// consoleErrors (see main()); transitionId stays "initial-load" because the
+// transition walk runs inside page.evaluate, opaque to the outer listener.
+// Scoped to same-origin so it does NOT double-count the network-layer aborts
+// the console NETWORK_NOISE_DENYLIST handles — those are not 500 RESPONSES.
+// ---------------------------------------------------------------------------
+
+/**
+ * Attach a `response` listener to a page, pushing any same-origin HTTP-5xx
+ * (per `isSameOriginServerError`) into `sink`, attributed via `getCtx()`.
+ * A factory (not inline) because there are two page sites to cover, mirroring
+ * `attachConsoleCapture`.
+ */
+function attachResponseCapture(
+  page: Page,
+  baseOrigin: string,
+  getCtx: () => CaptureCtx,
+  sink: ServerErrorEntry[],
+): void {
+  page.on("response", (response) => {
+    const status = response.status();
+    const url = response.url();
+    if (!isSameOriginServerError(url, status, baseOrigin)) return;
+    const ctx = getCtx();
+    sink.push({
+      specId: ctx.specId ?? "(unattributed)",
+      transitionId: ctx.transitionId,
+      url,
+      status,
+      method: response.request().method(),
+      ts: Date.now(),
+    });
+  });
+}
+
+/**
+ * Read a spec's `metadata.expectedServerErrors` waiver. Same loose
+ * `Record<string, unknown>` cast as `readExpectedConsoleErrors` because the
+ * harness reads the RAW spec JSON, not a typed IRDocument — no
+ * qontinui-schemas change needed.
+ */
+function readExpectedServerErrors(doc: Record<string, unknown>): RegExp[] {
+  const meta = (doc as { metadata?: { expectedServerErrors?: unknown } }).metadata;
+  return compileExpectedServerErrors(meta?.expectedServerErrors);
 }
 
 // ---------------------------------------------------------------------------
@@ -451,6 +513,13 @@ interface SpecResult {
    * `metadata.expectedConsoleErrors` waivers are removed). Empty = console-clean.
    */
   consoleErrors: ConsoleErrorEntry[];
+  /**
+   * Same-origin HTTP-5xx responses attributed to this spec (filled in by main()
+   * via length-diff slicing around the evaluateSpec call, after any
+   * `metadata.expectedServerErrors` waivers are removed). Empty = no same-origin
+   * server errors. See server-error-policy.ts.
+   */
+  serverErrors: ServerErrorEntry[];
   error: string | null;
   durationMs: number;
 }
@@ -526,6 +595,17 @@ function routeForSpec(
     // resolved Not-Found view. This is the harness's dynamic-route support:
     // the spec id `demo-detail` maps to a concrete /demo/<uuid> path here.
     "demo-detail": "/demo/a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    // Admin region-analysis lives at /admin/region-analysis (slug != spec id).
+    // ci-bot is a superuser so the page renders its real (non-redirect)
+    // content; the annotations API (GET /api/v1/annotations/) was fixed in #272
+    // so the populated annotation-set + tab UI renders rather than 500ing.
+    "region-analysis": "/admin/region-analysis",
+    // Admin per-agent log view is a dynamic [agent_id] route. Like demo-detail,
+    // we target a fixed sentinel id so the route resolves deterministically.
+    // The page fetches GET /operations/agent-logs/by-agent/<id>; a valid-but-
+    // unknown agent returns zero rows and renders the (success) empty-state.
+    // The id shape is a coord agent correlation id (free-form string).
+    "coord-agent-detail": "/admin/coord/agents/spec-ci-sentinel-agent",
   };
   const path = overrides[specId] ?? `/${specId}`;
   let url = `${baseUrl.replace(/\/$/, "")}${path}`;
@@ -555,6 +635,7 @@ async function evaluateSpec(
     transitions: [],
     transitionPassRate: 0,
     consoleErrors: [],
+    serverErrors: [],
     error: null,
     durationMs: 0,
   };
@@ -850,6 +931,8 @@ interface FullReport {
     transitionPassRate: number;
     /** Run-level console-error invariant: total critical hits + per-spec breakdown. */
     consoleErrors: { total: number; bySpec: Record<string, number> };
+    /** Run-level same-origin HTTP-500 invariant: total hits + per-spec breakdown. */
+    serverErrors: { total: number; bySpec: Record<string, number> };
   };
 }
 
@@ -1014,6 +1097,16 @@ async function main(): Promise<number> {
   const captureCtx: CaptureCtx = { specId: null, transitionId: null };
   attachConsoleCapture(page, () => captureCtx, criticalConsole);
 
+  // Same-origin HTTP-500 invariant: a parallel sink + the SAME per-spec context
+  // marker, with a `page.on("response")` listener on every page the harness
+  // drives. baseOrigin is the localhost proxy origin; only responses from THAT
+  // origin with status >= 500 gate (see server-error-policy.ts). Attached here
+  // for the shared authed page and inside runUnauthSpec for the unauth lane,
+  // exactly mirroring the console capture.
+  const baseOrigin = new URL(args.baseUrl).origin;
+  const serverErrors: ServerErrorEntry[] = [];
+  attachResponseCapture(page, baseOrigin, () => captureCtx, serverErrors);
+
   // Confirm the browser app session took. The same-origin `api-auth` login
   // above sets the session cookie on localhost (via the /api proxy), so a
   // protected route should render rather than redirect to /login. is_authenticated
@@ -1060,6 +1153,7 @@ async function main(): Promise<number> {
     // specs are covered by the run-level invariant (they were the one lane a
     // single shared-page listener would silently miss).
     attachConsoleCapture(unauthPage, () => captureCtx, criticalConsole);
+    attachResponseCapture(unauthPage, baseOrigin, () => captureCtx, serverErrors);
     try {
       return await evaluateSpec(
         unauthPage,
@@ -1088,6 +1182,7 @@ async function main(): Promise<number> {
     captureCtx.specId = spec.id;
     captureCtx.transitionId = "initial-load";
     const consoleBefore = criticalConsole.length;
+    const serverBefore = serverErrors.length;
     const r = unauth
       ? await runUnauthSpec(spec)
       : await evaluateSpec(page, spec, args.baseUrl, args.includeDestructive, args.includeWrite, fixtureProjectId);
@@ -1096,9 +1191,15 @@ async function main(): Promise<number> {
     r.consoleErrors = criticalConsole
       .slice(consoleBefore)
       .filter((e) => !expected.some((rx) => rx.test(e.text)));
+    // Same slice mechanism for same-origin 5xx, dropping expectedServerErrors
+    // waivers (matched against the response URL).
+    const expectedServer = readExpectedServerErrors(spec.doc);
+    r.serverErrors = serverErrors
+      .slice(serverBefore)
+      .filter((e) => !expectedServer.some((rx) => rx.test(e.url)));
     results.push(r);
     process.stderr.write(
-      `${r.matchOutcome} matchRate=${r.matchRate.toFixed(2)} transitions=${r.transitions.length} passRate=${r.transitionPassRate.toFixed(2)} consoleErrors=${r.consoleErrors.length}${r.error ? ` error=${r.error}` : ""}\n`,
+      `${r.matchOutcome} matchRate=${r.matchRate.toFixed(2)} transitions=${r.transitions.length} passRate=${r.transitionPassRate.toFixed(2)} consoleErrors=${r.consoleErrors.length} serverErrors=${r.serverErrors.length}${r.error ? ` error=${r.error}` : ""}\n`,
     );
   }
 
@@ -1123,6 +1224,13 @@ async function main(): Promise<number> {
   }
   const consoleErrorTotal = results.reduce((s, r) => s + r.consoleErrors.length, 0);
 
+  // Run-level same-origin HTTP-500 invariant rollup.
+  const serverErrorBySpec: Record<string, number> = {};
+  for (const r of results) {
+    if (r.serverErrors.length > 0) serverErrorBySpec[r.specId] = r.serverErrors.length;
+  }
+  const serverErrorTotal = results.reduce((s, r) => s + r.serverErrors.length, 0);
+
   const report: FullReport = {
     baseUrl: args.baseUrl,
     apiBase: args.apiBase,
@@ -1139,24 +1247,31 @@ async function main(): Promise<number> {
       meanMatchRate,
       transitionPassRate,
       consoleErrors: { total: consoleErrorTotal, bySpec: consoleErrorBySpec },
+      serverErrors: { total: serverErrorTotal, bySpec: serverErrorBySpec },
     },
   };
 
   writeFileSync(args.output, JSON.stringify(report, null, 2), "utf-8");
   process.stderr.write(
-    `[spec-ci] wrote ${args.output}: ${fullMatch} full, ${partialMatch} partial, ${noMatch} no_match, ${errorCount} error · min ${report.summary.minMatchRate.toFixed(2)} · mean ${report.summary.meanMatchRate.toFixed(2)} · transitionPassRate ${report.summary.transitionPassRate.toFixed(2)} · consoleErrors ${report.summary.consoleErrors.total}\n`,
+    `[spec-ci] wrote ${args.output}: ${fullMatch} full, ${partialMatch} partial, ${noMatch} no_match, ${errorCount} error · min ${report.summary.minMatchRate.toFixed(2)} · mean ${report.summary.meanMatchRate.toFixed(2)} · transitionPassRate ${report.summary.transitionPassRate.toFixed(2)} · consoleErrors ${report.summary.consoleErrors.total} · serverErrors ${report.summary.serverErrors.total}\n`,
   );
 
   // CI gate: fail iff (a) any spec errored, or (b) min match rate < 0.8,
   // or (c) transition pass rate < 1.0 across the corpus, or (d) any spec
   // produced a critical browser console error (the run-level invariant that
-  // subsumes the retired ui-bridge-graph-editor "no console errors" smoke test).
+  // subsumes the retired ui-bridge-graph-editor "no console errors" smoke
+  // test), or (e) any spec produced a same-origin HTTP-5xx response (the
+  // run-level invariant that gives the gate HTTP-RESPONSE visibility — backend
+  // 500s a resolved `fetch()` makes invisible to the console listener; see
+  // server-error-policy.ts).
   const consoleClean = report.summary.consoleErrors.total === 0;
+  const serverClean = report.summary.serverErrors.total === 0;
   const passed =
     errorCount === 0 &&
     report.summary.minMatchRate >= 0.8 &&
     report.summary.transitionPassRate >= 0.999 &&
-    consoleClean;
+    consoleClean &&
+    serverClean;
   return passed ? 0 : 1;
 }
 

@@ -1,0 +1,74 @@
+{
+  "version": "1.0",
+  "id": "region-analysis",
+  "name": "Region Analysis (admin)",
+  "description": "Admin region-analysis page (/admin/region-analysis). ci-bot is a superuser so the page renders (non-superusers are redirected to /build/workflows). The page loads annotation sets from GET /api/v1/annotations/ — a route that returned 500 before #272 (proj region-analysis live-500 fix) and now returns the populated set list. We assert the POPULATED SUCCESS state: the annotation-set picker and the three-tab interface (Run Analysis / Results / History) that render ONLY when at least one annotation set loaded and a set is selected (page.tsx: the tab strip is gated behind `selectedSetId`, which is set from the first row of a non-empty fetch). This is deliberately NOT the loading flash ('Loading annotation sets...') nor the empty fallback ('No annotation sets found. Run an extraction first.') — so a future regression that re-500s the annotations API or renders the empty state FAILS this spec. The h1 'Region Analysis' header anchors the page chrome. Read-only; structural only.",
+  "provenance": { "source": "ai-generated", "appId": "qontinui-web" },
+  "metadata": {
+    "tags": ["admin", "region-analysis", "annotations", "coverage-272"],
+    "extraSettleMs": 4000
+  },
+  "states": [
+    {
+      "id": "region-analysis-header",
+      "name": "Page header",
+      "description": "Top-of-page chrome: the Admin breadcrumb button and the h1 'Region Analysis' heading. Renders for a superuser regardless of data (confirms no access-denied redirect).",
+      "assertions": [
+        {
+          "id": "region-analysis-header-elem-0",
+          "description": "h1 'Region Analysis' heading anchors the page.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "role": "heading", "text_contains": "Region Analysis" }, "label": "Region Analysis heading" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "region-analysis-header-elem-1",
+          "description": "Admin breadcrumb button (returns to /admin).",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "role": "button", "text_contains": "Admin" }, "label": "Admin breadcrumb button" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
+    {
+      "id": "region-analysis-populated-tabs",
+      "name": "Populated annotation-set tab interface",
+      "description": "The three-tab strip (Run Analysis / Results / History) that renders ONLY when a non-empty annotation-set fetch resolved and a set is selected (page.tsx gates `{selectedSetId && (...tabs...)}`). Asserting these tab buttons distinguishes the populated-success render from the loading flash and the empty fallback — the exact regression the #272 annotations-500 fix unblocked.",
+      "assertions": [
+        {
+          "id": "region-analysis-populated-tabs-elem-0",
+          "description": "'Run Analysis' tab button (populated-success signal).",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "role": "button", "text_contains": "Run Analysis" }, "label": "Run Analysis tab" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "region-analysis-populated-tabs-elem-1",
+          "description": "'History' tab button (populated-success signal).",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "role": "button", "text_contains": "History" }, "label": "History tab" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    }
+  ],
+  "transitions": []
+}
