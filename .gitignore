@@ -111,3 +111,6 @@ coverage.xml
 # AWS password reset example config
 backend/reset_aws_password.example.env
 .worktrees/
+
+.vercel
+.env*

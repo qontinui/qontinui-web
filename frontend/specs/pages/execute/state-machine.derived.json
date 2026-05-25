@@ -1,87 +1,69 @@
 {
-    "version":  "1.0",
-    "id":  "execute",
-    "name":  "Execute",
-    "states":  [
-                   {
-                       "id":  "exec-page-structure",
-                       "name":  "Page Structure",
-                       "requiredElements":  [
-                                                {
-                                                    "role":  "heading",
-                                                    "text":  "Execute"
-                                                },
-                                                {
-                                                    "text":  "Workflow Library"
-                                                },
-                                                {
-                                                    "text":  "Sequence Builder"
-                                                }
-                                            ],
-                       "description":  "Core structural elements required for the Execute page to function: heading, library panel, and sequence builder panel.",
-                       "provenance":  {
-                                          "source":  "migrated"
-                                      }
-                   },
-                   {
-                       "id":  "exec-controls-state",
-                       "name":  "Controls State",
-                       "requiredElements":  [
-                                                {
-                                                    "role":  "button",
-                                                    "text":  "Run"
-                                                },
-                                                {
-                                                    "role":  "button",
-                                                    "text":  "Save"
-                                                }
-                                            ],
-                       "description":  "Control buttons should reflect the current state of the sequence builder, ensuring users cannot run an empty sequence.",
-                       "precondition":  "No workflows have been added to the sequence builder",
-                       "provenance":  {
-                                          "source":  "migrated"
-                                      }
-                   },
-                   {
-                       "id":  "exec-page-purpose",
-                       "name":  "Page Purpose",
-                       "requiredElements":  [
-                                                {
-                                                    "text":  "Workflow Library"
-                                                },
-                                                {
-                                                    "text":  "Sequence Builder"
-                                                },
-                                                {
-                                                    "role":  "button",
-                                                    "text":  "Run"
-                                                },
-                                                {
-                                                    "role":  "button",
-                                                    "text":  "Save"
-                                                }
-                                            ],
-                       "description":  "The Execute page lets users queue multiple workflows into an ordered execution sequence, then run them all in batch. Users drag workflows from a searchable library into the sequence builder, reorder them, save named sequences for reuse, and configure stop-on-failure behavior.",
-                       "provenance":  {
-                                          "source":  "migrated"
-                                      }
-                   }
-               ],
-    "transitions":  [
-
-                    ],
-    "provenance":  {
-                       "source":  "migrated",
-                       "appId":  "qontinui-web"
-                   },
-    "description":  "Execute page — batch workflow execution with drag-and-drop sequence building",
-    "metadata":  {
-                     "tags":  [
-                                  "execute",
-                                  "sequence-builder",
-                                  "batch-execution",
-                                  "drag-drop",
-                                  "tier-1"
-                              ]
-                 }
+  "version": "1.0",
+  "id": "execute",
+  "name": "Execute",
+  "description": "Execute / Workflows page (/execute). Authored against the SPEC_CI test account, whose Visual-mode session has no Qontinui Runner connected: the page renders a 'Runner Not Connected' gate in place of the workflow library, instructing the operator to start the Runner desktop app. (The workflow library + run-builder only render once a runner is connected — that is operator-session state, not the CI surface.) Asserts the always-present gate the ci-bot account actually sees.",
+  "provenance": {
+    "source": "ai-generated",
+    "appId": "qontinui-web"
+  },
+  "metadata": {
+    "tags": ["execute", "workflows", "run-builder", "tier-1"]
+  },
+  "states": [
+    {
+      "id": "execute-runner-not-connected",
+      "name": "Runner not connected gate",
+      "description": "Gate shown when no Qontinui Runner is connected to the session (the SPEC_CI test-account default): the 'Runner Not Connected' headline and the start-the-Runner recovery hint that replace the workflow library.",
+      "assertions": [
+        {
+          "id": "execute-runner-not-connected-elem-0",
+          "description": "h3 'Runner Not Connected' headlines the gate.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "heading-3-runner-not-connected" },
+            "label": "Runner Not Connected heading"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "execute-runner-not-connected-elem-1",
+          "description": "Heading text reads 'Runner Not Connected' (role+text cross-check on the same h3).",
+          "category": "text-content",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "heading", "text": "Runner Not Connected" },
+            "label": "Runner Not Connected heading by role+text"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "execute-runner-not-connected-elem-2",
+          "description": "Recovery hint instructs the operator to start the Qontinui Runner desktop app.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "content-paragraph-start-the-qontinui-r-0" },
+            "label": "Start-the-Runner hint"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    }
+  ],
+  "transitions": []
 }

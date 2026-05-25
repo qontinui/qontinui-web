@@ -14,7 +14,24 @@ import type {
   AutomationLog,
 } from "@/types/automation";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
+
+/**
+ * Build the `ws(s)://host` origin for a WebSocket URL.
+ *
+ * When API_BASE_URL is set (absolute) the WS origin is derived from it. When
+ * empty (same-origin mode — REST proxied through Next.js) there is no absolute
+ * base to parse, so the WS origin is derived from window.location instead.
+ */
+function getWebSocketOrigin(): string {
+  if (API_BASE_URL) {
+    const wsProtocol = API_BASE_URL.startsWith("https") ? "wss" : "ws";
+    const host = API_BASE_URL.replace(/^https?:\/\//, "");
+    return `${wsProtocol}://${host}`;
+  }
+  const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
+  return `${wsProtocol}://${window.location.host}`;
+}
 
 // Re-export types for backwards compatibility
 export type { User, Project, UserUpdate, ProjectCreate, ProjectUpdate };
@@ -1088,9 +1105,7 @@ class ApiClient {
    * Get WebSocket URL for real-time runner status updates (session start, logs, screenshots)
    */
   async getRunnerStatusWebSocketUrl(): Promise<string> {
-    const wsProtocol = API_BASE_URL.startsWith("https") ? "wss" : "ws";
-    const url = API_BASE_URL.replace(/^https?:\/\//, "");
-    const baseUrl = `${wsProtocol}://${url}/api/v1/ws/runner/status`;
+    const baseUrl = `${getWebSocketOrigin()}/api/v1/ws/runner/status`;
 
     // Get token for WebSocket authentication
     const token = await this.getWebSocketToken();
@@ -1106,9 +1121,7 @@ class ApiClient {
    * Get WebSocket URL for monitoring a specific session
    */
   async getMonitorWebSocketUrl(sessionId: string): Promise<string> {
-    const wsProtocol = API_BASE_URL.startsWith("https") ? "wss" : "ws";
-    const url = API_BASE_URL.replace(/^https?:\/\//, "");
-    const baseUrl = `${wsProtocol}://${url}/api/v1/automation/ws/automation/monitor/${sessionId}`;
+    const baseUrl = `${getWebSocketOrigin()}/api/v1/automation/ws/automation/monitor/${sessionId}`;
 
     // Get token for WebSocket authentication
     const token = await this.getWebSocketToken();

@@ -816,6 +816,92 @@ async def get_claims_list(
     return await _proxy_coord_get("/coord/claims/list", params=params)
 
 
+# ---- Coord agent-status proxy (coord-native MCP coordination surface) ----
+#
+# Plan `coord-native-coordination-mcp` Phase 2 (dashboard-render half).
+# Proxies coord's `GET /coord/agent-status` — the work-unit-grain agent
+# status read backed by `coord.agent_status` (the MCP coordination surface
+# `coord_report_status` / `coord_orient` write into this table). The
+# operator dashboard renders it as a *dual-read*: it prefers these
+# structured rows and falls back to `/claims/list` metadata when the tenant
+# has no agent_status rows yet (cutover robustness).
+#
+# Tenant scope differs from coord's claims proxy: coord's /coord/agent-status
+# reads `tenant_id` as a *query param* (the table's tenant_id is NOT NULL),
+# not the `X-Qontinui-Tenant-Id` header. We resolve the caller's tenant via
+# `get_tenant_id` and forward it as the query param.
+
+
+@router.get("/agent-status")
+async def get_agent_status(
+    correlation_topic: str | None = None,
+    tenant_id: UUID = Depends(get_tenant_id),
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> Any:
+    """List active (non-expired) agent_status rows for the caller's tenant.
+
+    Optional ``correlation_topic`` narrows to a single topic. The response
+    envelope mirrors coord: ``{"agents": [...], "count": N}``.
+    """
+    params: dict[str, Any] = {"tenant_id": str(tenant_id)}
+    if correlation_topic is not None:
+        params["correlation_topic"] = correlation_topic
+    return await _proxy_coord_get("/coord/agent-status", params=params)
+
+
+# ---- Coord gates-dashboard proxy ------------------------------------------
+#
+# Plan `2026-05-18-agent-spawn-coordination.md` Phase 5 — first-class
+# gates dashboard. Three proxy endpoints:
+#
+# - GET  /operations/gates/list              → coord `/coord/gates`
+# - POST /operations/gates/{gate_id}/approve → coord `/coord/gates/{gate_id}/approve`
+# - POST /operations/gates/{gate_id}/reject  → coord `/coord/gates/{gate_id}/reject`
+
+
+@router.get("/gates/list")
+async def get_gates_list(
+    verdict: str | None = None,
+    claim_kind: str | None = None,
+    resource_key: str | None = None,
+    limit: int | None = None,
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> Any:
+    """List gates, optionally filtered by verdict."""
+    params: dict[str, Any] = {}
+    if verdict is not None:
+        params["verdict"] = verdict
+    if claim_kind is not None:
+        params["claim_kind"] = claim_kind
+    if resource_key is not None:
+        params["resource_key"] = resource_key
+    if limit is not None:
+        params["limit"] = limit
+    return await _proxy_coord_get("/coord/gates", params=params)
+
+
+@router.post("/gates/{gate_id}/approve")
+async def approve_gate(
+    gate_id: str,
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> Any:
+    """Approve an OperatorApproval gate."""
+    return await _proxy_coord_post(f"/coord/gates/{gate_id}/approve", {})
+
+
+@router.post("/gates/{gate_id}/reject")
+async def reject_gate(
+    gate_id: str,
+    reason: str | None = None,
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> Any:
+    """Reject an OperatorApproval gate."""
+    body: dict[str, Any] = {}
+    if reason:
+        body["reason"] = reason
+    return await _proxy_coord_post(f"/coord/gates/{gate_id}/reject", body)
+
+
 @router.get("/claims/recent-conflicts")
 async def get_recent_conflicts(
     limit: int | None = None,

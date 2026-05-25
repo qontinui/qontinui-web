@@ -14,7 +14,7 @@ import {
 const logger = createLogger("useStateDiscovery");
 
 // Use the main backend URL for State Discovery endpoints
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
 const API_PATH = "/api";
 
 export function useStateDiscovery() {
@@ -185,9 +185,18 @@ export function useStateDiscovery() {
         wsRef.current.close();
       }
 
-      // Construct WebSocket URL based on API_BASE_URL
-      const wsProtocol = API_BASE_URL.startsWith("https") ? "wss" : "ws";
-      const wsHost = API_BASE_URL.replace(/^https?:\/\//, "");
+      // Construct WebSocket URL based on API_BASE_URL. Empty => same-origin:
+      // derive the WS origin from window.location.
+      const wsProtocol = API_BASE_URL
+        ? API_BASE_URL.startsWith("https")
+          ? "wss"
+          : "ws"
+        : window.location.protocol === "https:"
+          ? "wss"
+          : "ws";
+      const wsHost = API_BASE_URL
+        ? API_BASE_URL.replace(/^https?:\/\//, "")
+        : window.location.host;
       const wsUrl = `${wsProtocol}://${wsHost}${API_PATH}/state-discovery/ws/${analysisId}`;
       logger.debug("Creating WebSocket connection:", {
         url: wsUrl,

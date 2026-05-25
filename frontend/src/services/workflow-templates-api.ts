@@ -30,7 +30,7 @@ import type {
   TemplateSortOrder,
 } from "@/types/workflow-templates";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
 /**
  * Workflow Templates API Client

@@ -295,7 +295,7 @@ export interface BackendAPIConfig {
  * Default configuration
  */
 const DEFAULT_CONFIG: BackendAPIConfig = {
-  baseUrl: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000",
+  baseUrl: process.env.NEXT_PUBLIC_API_URL || "",
   wsUrl: process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000",
   timeout: 30000,
   retries: 3,

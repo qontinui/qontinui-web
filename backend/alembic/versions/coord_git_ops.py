@@ -1,7 +1,7 @@
 """coord.git_ops -- GitOp federation feed (append-only observation)
 
 Revision ID: coord_git_ops
-Revises: phase4_touched_hunks
+Revises: coord_handoff_requests
 Create Date: 2026-05-24
 
 Phase 5 of plan
@@ -72,7 +72,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_git_ops"
-down_revision: str = "phase4_touched_hunks"
+down_revision: str = "coord_handoff_requests"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

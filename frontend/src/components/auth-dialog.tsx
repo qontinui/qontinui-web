@@ -24,15 +24,13 @@ export function AuthDialog({
 }: AuthDialogProps) {
   const router = useRouter();
 
-  const handleSuccess = (user: User) => {
+  const handleSuccess = (_user: User) => {
     onOpenChange(false);
-    // Redirect to admin page if superuser, otherwise dashboard.
-    // Dashboard handles further product-mode routing.
-    if (user?.is_superuser) {
-      router.push("/admin");
-    } else {
-      router.push("/dashboard");
-    }
+    // Land on the general, mode-aware home. `/dashboard` forwards to
+    // `/build/workflows` (AI Dev) or `/tools/visual-automation` (Visual)
+    // based on the stored product mode. Superusers are NOT sent to the
+    // admin-only hub on login — Admin is an opt-in sidebar destination.
+    router.push("/dashboard");
   };
 
   return (

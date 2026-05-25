@@ -27,20 +27,22 @@ export default function LoginPage() {
     if (next && next.startsWith("/")) {
       router.replace(next);
     } else {
-      router.replace(user.is_superuser ? "/admin" : "/dashboard");
+      // Land on the general, mode-aware home. `/dashboard` forwards to
+      // `/build/workflows` (AI Dev) or `/tools/visual-automation` (Visual)
+      // based on the stored product mode. Superusers are NOT sent to the
+      // admin-only area on login — Admin is an opt-in sidebar destination.
+      router.replace("/dashboard");
     }
   }, [loading, user, next, router]);
 
-  const handleSuccess = (signedIn: User) => {
+  const handleSuccess = (_signedIn: User) => {
     if (next && next.startsWith("/")) {
       router.replace(next);
       return;
     }
-    if (signedIn?.is_superuser) {
-      router.replace("/admin");
-    } else {
-      router.replace("/dashboard");
-    }
+    // See note above: default landing is the mode-aware `/dashboard`, never
+    // the admin hub, regardless of superuser status.
+    router.replace("/dashboard");
   };
 
   return (

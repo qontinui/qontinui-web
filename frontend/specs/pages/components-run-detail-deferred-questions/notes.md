@@ -1,3 +1,0 @@
-# DeferredQuestionsTab
-
-_(notes)_

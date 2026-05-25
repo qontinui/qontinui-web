@@ -28,7 +28,7 @@ import { httpClient } from "@/services/service-factory";
 const log = createLogger("RenderLogContext");
 
 // Configuration
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
 const DEBOUNCE_MS = 500; // Debounce captures to prevent flooding
 const MAX_TEXT_LENGTH = 500; // Max text content per element
 const MAX_DEPTH = 20; // Max DOM tree depth
