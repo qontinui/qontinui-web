@@ -127,6 +127,8 @@ export function LibraryItemCard({
                 variant="ghost"
                 size="sm"
                 className="h-4 w-4 p-0 text-text-muted hover:text-red-400"
+                aria-label="Delete workflow"
+                title="Delete workflow"
                 onClick={(e) => {
                   e.stopPropagation();
                   onDelete(item);

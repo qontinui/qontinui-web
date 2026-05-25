@@ -18,7 +18,8 @@
  *     --base-url http://localhost:3001 \
  *     --api-base https://api.qontinui.io \
  *     --output spec-ci-report.json \
- *     [--include-destructive]
+ *     [--include-write]        # run reversible effect:"write" transitions
+ *     [--include-destructive]  # run irreversible effect:"destructive" (nightly)
  *
  * Env:
  *   QONTINUI_TEST_AUTO_LOGIN_EMAIL    required (auth credentials)
@@ -39,6 +40,7 @@ interface Args {
   apiBase: string;
   output: string;
   includeDestructive: boolean;
+  includeWrite: boolean;
   specsDir: string;
 }
 
@@ -46,6 +48,7 @@ function parseArgs(): Args {
   const argv = process.argv.slice(2);
   const args: Partial<Args> = {
     includeDestructive: false,
+    includeWrite: false,
     specsDir: resolve(__dirname, "../../specs/pages"),
   };
   for (let i = 0; i < argv.length; i++) {
@@ -57,6 +60,7 @@ function parseArgs(): Args {
       case "--output": args.output = value; i++; break;
       case "--specs-dir": args.specsDir = resolve(value); i++; break;
       case "--include-destructive": args.includeDestructive = true; break;
+      case "--include-write": args.includeWrite = true; break;
     }
   }
   args.baseUrl ??= "http://localhost:3001";
@@ -146,6 +150,59 @@ async function seedFixtureProject(
     return { id: null, reason: "create_no_id" };
   } catch (e) {
     return { id: null, reason: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Idempotent pre-run baseline reset (Unlock 2)
+//
+// ci-bot is a SHARED staging account, so write transitions (settings toggle,
+// create/delete workflow) could in principle leave residue if a run crashes
+// mid-spec before its in-spec revert runs. The pre-run reset restores ci-bot's
+// mutable surface to a known baseline at the START of every run so a
+// crashed/aborted prior run self-heals and never dirties this run — we do NOT
+// rely solely on per-spec teardown (the directive's safety net #1).
+//
+// What it resets:
+//   (a) The fixture project's `configuration` -> {} via `PUT /projects/<id>`,
+//       which deletes ANY leftover workflows (the create/delete-workflow write
+//       persists workflows into the fixture project's configuration via the
+//       automation-builder auto-save). Resetting to {} matches every leftover
+//       fixture-created workflow at once and is the empty start-state the
+//       create-workflow spec expects.
+//   (b) The settings-toggle preference touched by the settings-write spec is a
+//       CLIENT-only switch (the page's "Save" button — which is the only thing
+//       that persists it — is never clicked by the write spec; the spec just
+//       flips and reverts the in-DOM Radix switch). So there is no server-side
+//       value to reset for it: it reloads to its default on every page load.
+//       Documented here so the safety posture is explicit; nothing to do.
+//
+// Robust by design: every step is wrapped + non-fatal. A reset failure logs and
+// continues — it must never abort the run (the in-spec reverts + in-DOM
+// assertions are the primary determinism mechanism; this is the backstop).
+// ---------------------------------------------------------------------------
+
+async function baselineReset(
+  context: BrowserContext,
+  apiBase: string,
+  fixtureProjectId: string | null,
+): Promise<{ ok: boolean; detail: string }> {
+  if (!fixtureProjectId) return { ok: true, detail: "no fixture project — nothing to reset" };
+  const base = apiBase.replace(/\/$/, "");
+  try {
+    // PUT configuration:{} clears any leftover workflows created by a prior
+    // (possibly crashed) run's create-workflow write. Idempotent: a project
+    // that is already empty stays empty.
+    const resp = await context.request.put(`${base}/api/v1/projects/${fixtureProjectId}`, {
+      headers: { "Content-Type": "application/json" },
+      data: { configuration: {} },
+    });
+    if (!resp.ok()) {
+      return { ok: false, detail: `config-reset http_${resp.status()}` };
+    }
+    return { ok: true, detail: "config reset to {}" };
+  } catch (e) {
+    return { ok: false, detail: e instanceof Error ? e.message : String(e) };
   }
 }
 
@@ -296,7 +353,14 @@ interface SpecResult {
  * selection lever (`require-project.tsx:31-46`: `urlProjectId` satisfies the
  * "selected" half of the gate alongside the non-empty `useProjects()` list).
  */
-const GATED_SPECS = new Set<string>(["marketplace", "automation-builder"]);
+const GATED_SPECS = new Set<string>([
+  "marketplace",
+  "automation-builder",
+  // Unlock 2 create/delete-workflow write spec — needs the fixture project
+  // selected so the builder renders (and so the new workflow auto-saves into a
+  // real project). routeForSpec maps this id back to /automation-builder.
+  "automation-builder-workflow-crud",
+]);
 
 /**
  * localStorage key the automation store uses to persist the SELECTED project
@@ -329,6 +393,11 @@ function routeForSpec(
   const overrides: Record<string, string> = {
     "active-runs": "/runs/active",
     "ai-settings": "/settings/ai",
+    // Unlock 2 write spec lives at /settings/general (slug != spec id).
+    "settings-general": "/settings/general",
+    // Unlock 2 create/delete-workflow write spec runs on /automation-builder
+    // (with ?project=<fixture> appended because it is in GATED_SPECS).
+    "automation-builder-workflow-crud": "/automation-builder",
   };
   const path = overrides[specId] ?? `/${specId}`;
   let url = `${baseUrl.replace(/\/$/, "")}${path}`;
@@ -343,6 +412,7 @@ async function evaluateSpec(
   spec: SpecEntry,
   baseUrl: string,
   includeDestructive: boolean,
+  includeWrite: boolean,
   fixtureProjectId: string | null,
 ): Promise<SpecResult> {
   const route = routeForSpec(spec.id, baseUrl, fixtureProjectId);
@@ -407,7 +477,7 @@ async function evaluateSpec(
     // matcher needs real DOM, which we have here — exactly the use-case
     // it was designed for.
     const evalResult = (await page.evaluate(
-      async ({ irDoc, includeDestructive: incDes }) => {
+      async ({ irDoc, includeDestructive: incDes, includeWrite: incWrite }) => {
         try {
           // The frontend bundle re-exports ui-bridge-auto for use by its own
           // spec consumer hooks (`useDiscoveredSpec`). We rely on the same
@@ -532,6 +602,12 @@ async function evaluateSpec(
           for (let i = 0; i < adapted.transitions.length; i++) {
             const t = adapted.transitions[i];
             const effect = rawTransitions[i]?.effect ?? null;
+            // Gating (Unlock 2): `destructive` (irreversible) is gated by
+            // --include-destructive; `write` (reversible, self-reverting) is
+            // gated by --include-write. Both default OFF so a local run never
+            // mutates the shared ci-bot account by accident; the on-PR
+            // spec-ci.yml turns --include-write ON (writes are the gate's
+            // point) and keeps --include-destructive OFF (nightly-only).
             if (effect === "destructive" && !incDes) {
               transitionsOut.push({
                 id: t.id,
@@ -540,6 +616,17 @@ async function evaluateSpec(
                 passed: false,
                 durationMs: 0,
                 error: "skipped: destructive",
+              });
+              continue;
+            }
+            if (effect === "write" && !incWrite) {
+              transitionsOut.push({
+                id: t.id,
+                effect,
+                executed: false,
+                passed: false,
+                durationMs: 0,
+                error: "skipped: write",
               });
               continue;
             }
@@ -581,7 +668,7 @@ async function evaluateSpec(
           };
         }
       },
-      { irDoc: injectedDoc, includeDestructive },
+      { irDoc: injectedDoc, includeDestructive, includeWrite },
     )) as
       | {
           ok: true;
@@ -736,6 +823,17 @@ async function main(): Promise<number> {
     `[spec-ci] fixture-project: ${fixtureProjectId ? `${seed.reason} (id=${fixtureProjectId})` : `unavailable (${seed.reason})`}\n`,
   );
 
+  // Idempotent pre-run baseline reset (Unlock 2): restore ci-bot's mutable
+  // surface to a known clean baseline BEFORE any write spec runs, so a
+  // crashed/aborted prior run self-heals and never dirties this run. Only
+  // meaningful when write specs run (--include-write); harmless otherwise.
+  if (args.includeWrite) {
+    const reset = await baselineReset(context, args.baseUrl, fixtureProjectId);
+    process.stderr.write(
+      `[spec-ci] baseline-reset: ${reset.ok ? "ok" : "WARN"} (${reset.detail})\n`,
+    );
+  }
+
   const page = await context.newPage();
 
   // Confirm the browser app session took. The same-origin `api-auth` login
@@ -784,6 +882,7 @@ async function main(): Promise<number> {
         spec,
         args.baseUrl,
         args.includeDestructive,
+        args.includeWrite,
         // Auth pages aren't <RequireProject>-gated; no fixture selection needed.
         null,
       );
@@ -800,7 +899,7 @@ async function main(): Promise<number> {
     );
     const r = unauth
       ? await runUnauthSpec(spec)
-      : await evaluateSpec(page, spec, args.baseUrl, args.includeDestructive, fixtureProjectId);
+      : await evaluateSpec(page, spec, args.baseUrl, args.includeDestructive, args.includeWrite, fixtureProjectId);
     results.push(r);
     process.stderr.write(
       `${r.matchOutcome} matchRate=${r.matchRate.toFixed(2)} transitions=${r.transitions.length} passRate=${r.transitionPassRate.toFixed(2)}${r.error ? ` error=${r.error}` : ""}\n`,
