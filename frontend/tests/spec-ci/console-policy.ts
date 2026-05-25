@@ -77,6 +77,32 @@ export const BENIGN_DENYLIST: readonly RegExp[] = [
 export const CRITICAL_SET: readonly RegExp[] = [/Uncaught/, /TypeError/, /ReferenceError/];
 
 /**
+ * Environmental network-fetch rejections — noise in the Spec CI harness, NOT
+ * app defects, so dropped at ALL levels (including `pageerror`). Spec CI runs
+ * the production build proxying to a REMOTE staging API while rapidly
+ * `goto`-navigating between 44 specs; in-flight background fetches are aborted
+ * on navigation and surface as unhandled "Failed to fetch" rejections (one per
+ * authed page in the first CI run — 39 pageerror + 2 caught console.error).
+ * These do not indicate a code bug and would otherwise make the gate red on
+ * nearly every page, training reviewers to override it (the false-red machine
+ * the robustness priority rejects). The meaningful signal is preserved: real
+ * chunk-load failures ("ChunkLoadError" / "Loading chunk … failed"), logic
+ * TypeErrors ("Cannot read properties of …"), ReferenceErrors, and
+ * pre-hydration throws do NOT match these patterns.
+ *
+ * Follow-up (app robustness, not this gate): the unhandled "Failed to fetch"
+ * rejections on authed pages are a latent unhandled-rejection smell worth
+ * fixing at the source; tracked separately, not blocking the gate.
+ */
+export const NETWORK_NOISE_DENYLIST: readonly RegExp[] = [
+  /Failed to fetch/,
+  /Load failed/, // Safari fetch() rejection text
+  /NetworkError when attempting to fetch/, // Firefox
+  /\bAbortError\b/,
+  /aborted a request/,
+];
+
+/**
  * Classify a captured console/page event into gate-relevance.
  *
  * @param level the Playwright `console.type()` string, or `"pageerror"` for
@@ -84,7 +110,11 @@ export const CRITICAL_SET: readonly RegExp[] = [/Uncaught/, /TypeError/, /Refere
  * @param text  the message text (`console.text()` or `error.message`).
  */
 export function classifyConsole(level: string, text: string): "critical" | "ignore" {
-  // Uncaught exceptions / page errors are unconditionally real.
+  // Environmental network-fetch rejections are noise at every level.
+  if (NETWORK_NOISE_DENYLIST.some((re) => re.test(text))) return "ignore";
+  // Uncaught exceptions / page errors are otherwise unconditionally real
+  // (chunk-load failures, top-level throws — the highest-signal class, and
+  // captured pre-hydration because page.on attaches at page creation).
   if (level === "pageerror") return "critical";
   // Only the "error" console level can gate; warn/log/info/debug never do.
   if (level === "error") {

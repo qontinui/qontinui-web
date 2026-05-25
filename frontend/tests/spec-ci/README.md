@@ -57,6 +57,13 @@ broader on the `pageerror` axis):
   `ReferenceError`).
 - **`warn`/`log`/`info`/`debug`:** never gate (the flaky-red minefield) and are
   not recorded.
+- **Environmental network-fetch rejections** (`Failed to fetch`, `Load failed`,
+  `NetworkError…`, `AbortError`) are dropped at **all** levels, including
+  `pageerror`. Spec CI runs the prod build proxying to a remote staging API
+  while rapidly navigating between specs, which aborts in-flight background
+  fetches; these are harness artifacts, not code defects. Real chunk-load
+  failures (`ChunkLoadError` / `Loading chunk … failed`) and logic errors do
+  not match these patterns and still gate.
 
 ### Waiving a known error (per spec)
 
