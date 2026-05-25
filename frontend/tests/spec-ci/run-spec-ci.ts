@@ -235,6 +235,29 @@ function requiresUnauthenticated(doc: Record<string, unknown>): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Per-spec extra settle (smoke-parity / demo-detail)
+//
+// A few pages resolve their stable, assertable content only AFTER a data fetch
+// that the default fixed settle (2500ms below) is too short for. The clearest
+// case is /demo/[id] for a non-existent project: react-query retries the 404
+// fetch 3x with exponential backoff (~1s+2s+4s) before settling to the
+// Not-Found render, so the matcher would otherwise snapshot the transient
+// "Loading project..." flash. A spec opts into a longer settle via
+// `metadata.extraSettleMs` (added to the fixed 2500ms). The flag travels with
+// the spec (trivially auditable in the JSON) and is purely additive — specs
+// without it are unchanged. Clamped so a typo can't hang the run.
+// ---------------------------------------------------------------------------
+
+const MAX_EXTRA_SETTLE_MS = 15_000;
+
+function extraSettleMs(doc: Record<string, unknown>): number {
+  const meta = (doc as { metadata?: { extraSettleMs?: unknown } }).metadata;
+  const raw = meta?.extraSettleMs;
+  if (typeof raw !== "number" || !Number.isFinite(raw) || raw <= 0) return 0;
+  return Math.min(raw, MAX_EXTRA_SETTLE_MS);
+}
+
+// ---------------------------------------------------------------------------
 // Secret substitution (Unlock 3)
 //
 // The login transition needs ci-bot's password, which must NEVER live in a
@@ -360,6 +383,12 @@ const GATED_SPECS = new Set<string>([
   // selected so the builder renders (and so the new workflow auto-saves into a
   // real project). routeForSpec maps this id back to /automation-builder.
   "automation-builder-workflow-crud",
+  // Smoke-parity: NavigationTestGenerator lives under the project-scoped
+  // automation-builder surface; its smoke test (navigation-test-generator.spec
+  // .ts:14) navigates with ?project=<id>. Threading the fixture project keeps
+  // the page on its real (project-selected) render. routeForSpec maps this id
+  // to /automation-builder/navigation-tests (slug != spec id).
+  "navigation-test-generator",
 ]);
 
 /**
@@ -398,6 +427,19 @@ function routeForSpec(
     // Unlock 2 create/delete-workflow write spec runs on /automation-builder
     // (with ?project=<fixture> appended because it is in GATED_SPECS).
     "automation-builder-workflow-crud": "/automation-builder",
+    // Smoke-parity: UI Bridge State Machine route (slug != spec id). NOT in
+    // GATED_SPECS — the page's chrome (header + config selector + the six
+    // panel-switch buttons) renders project-independently, so no ?project=.
+    "ui-bridge-states": "/automation-builder/ui-bridge-states",
+    // Smoke-parity: NavigationTestGenerator route (slug != spec id). In
+    // GATED_SPECS, so ?project=<fixture> is appended below.
+    "navigation-test-generator": "/automation-builder/navigation-tests",
+    // Smoke-parity: the demo detail page is a dynamic [id] route. We target a
+    // fixed fake-but-valid-looking UUID (the same shape the smoke test uses,
+    // demo.spec.ts:193) so the public API 404s and the page renders its
+    // resolved Not-Found view. This is the harness's dynamic-route support:
+    // the spec id `demo-detail` maps to a concrete /demo/<uuid> path here.
+    "demo-detail": "/demo/a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   };
   const path = overrides[specId] ?? `/${specId}`;
   let url = `${baseUrl.replace(/\/$/, "")}${path}`;
@@ -457,7 +499,7 @@ async function evaluateSpec(
     // (is_authenticated flag + refresh cookie) and the data-driven content
     // render before the matcher snapshots the registry, dodging the load race.
     await page.goto(route, { waitUntil: "domcontentloaded", timeout: 60_000 });
-    await page.waitForTimeout(2500);
+    await page.waitForTimeout(2500 + extraSettleMs(spec.doc));
     result.navigatedOk = page.url().includes(route.split("?")[0].replace(baseUrl, "")) || true;
 
     // Substitute any `{{SECRET}}` placeholder (e.g. the login password) into a
@@ -781,6 +823,41 @@ async function main(): Promise<number> {
       body: JSON.stringify(body),
     });
   };
+
+  // CI-status / ws-token stub (corpus-stability backstop).
+  //
+  // The Operations page mounts the CI Status Dashboard panel, which on mount
+  // fires GET /api/v1/operations/ci-status and GET /api/v1/ws-token. Against
+  // ci-bot's staging tenant those can come back 401 (the coord-backed
+  // CI-status surface isn't provisioned for this account); the httpClient's
+  // reactive 401-refresh then fails and dispatches a `session-expired` event,
+  // which AuthProvider turns into a hard `window.location.href = "/login"`
+  // (contexts/auth-context.tsx). That hard navigation tears down the shared
+  // authed page mid-run and cascades a `/login` bounce into EVERY subsequent
+  // spec (operations → wrappers all collapse to no_match/error).
+  //
+  // We neutralize it at the network edge: return a benign, well-formed empty
+  // body for the CI-status seed and a tokenless ws-token (the hook then falls
+  // back to polling and never opens a WS). No 401 → no session-expired → no
+  // logout redirect → the shared session survives the Operations spec. This is
+  // a harness-only stub (no app change); it keeps the on-PR gate green and
+  // order-independent without weakening any assertion (the operations spec is
+  // structural — header/controls — and doesn't assert CI-status data).
+  const ciStatusStub = async (route: import("@playwright/test").Route) => {
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ repos: [] }),
+    });
+  };
+  const wsTokenStub = async (route: import("@playwright/test").Route) => {
+    // Empty token → useCiStatusStream logs "no WS token" and uses polling.
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ token: null }),
+    });
+  };
   await context.addInitScript(productModeInit, productMode);
   // Access tokens live in-memory (token-storage.ts) and are cleared on every
   // full navigation; the persistent `is_authenticated` flag is what the
@@ -797,6 +874,8 @@ async function main(): Promise<number> {
     }
   });
   await context.route("**/users/me/preferences", prefsIntercept);
+  await context.route("**/operations/ci-status", ciStatusStub);
+  await context.route("**/ws-token", wsTokenStub);
   process.stderr.write(`[spec-ci] product mode forced to "${productMode}"\n`);
 
   // api-auth: the API login call (sets cookies on the context). This alone is
@@ -875,6 +954,8 @@ async function main(): Promise<number> {
     });
     await unauthContext.addInitScript(productModeInit, productMode);
     await unauthContext.route("**/users/me/preferences", prefsIntercept);
+    await unauthContext.route("**/operations/ci-status", ciStatusStub);
+    await unauthContext.route("**/ws-token", wsTokenStub);
     const unauthPage = await unauthContext.newPage();
     try {
       return await evaluateSpec(

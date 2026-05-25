@@ -1,0 +1,82 @@
+{
+  "version": "1.0",
+  "id": "ui-bridge-states",
+  "name": "UI Bridge State Machine",
+  "description": "UI Bridge State Machine page (/automation-builder/ui-bridge-states). Smoke-parity for ui-bridge-graph-editor.spec.ts:47/61 (page loads without a 500; content renders). The page's chrome is project-independent: the 'State Machine' header, the configuration selector, and the six panel-switch buttons (Discovery / Graph Editor / State View / Transitions / Pathfinding / Export) are ALWAYS rendered regardless of project selection (UIBridgeStateMachinePage.tsx:170-236) — the project gate only swaps each panel's BODY between a 'Select a project...' prompt and the live panel. We anchor on that always-present chrome (no ?project= needed), which is the most structurally stable rendering ci-bot produces. Read-only; structural only (no data-driven assertions). Two coherent states: the header anchor and the panel-tab strip.",
+  "provenance": { "source": "ai-generated", "appId": "qontinui-web" },
+  "metadata": { "tags": ["ui-bridge", "state-machine", "automation-builder", "smoke-parity"] },
+  "states": [
+    {
+      "id": "ui-bridge-states-header",
+      "name": "Page header",
+      "description": "Top-of-page header anchoring the State Machine page, with the always-present configuration selector. Rendered independent of project selection.",
+      "assertions": [
+        {
+          "id": "ui-bridge-states-header-elem-0",
+          "description": "h1 'State Machine' heading anchors the page.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "heading-1-state-machine", "role": "heading" }, "label": "State Machine heading" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "ui-bridge-states-header-elem-1",
+          "description": "Configuration selector combobox is present in the header (always rendered).",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "combobox-select-configuration", "role": "combobox" }, "label": "Configuration selector" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
+    {
+      "id": "ui-bridge-states-tabs",
+      "name": "Panel switch buttons",
+      "description": "The six panel-switch buttons (Discovery, Graph Editor, State View, Transitions, Pathfinding, Export) rendered as a button strip below the header. These are plain <button> elements (not Radix tabs) with stable auto-assigned ids, always present regardless of project selection. Asserting three of the six (the first, a middle, and the last) is sufficient to anchor the strip structurally.",
+      "assertions": [
+        {
+          "id": "ui-bridge-states-tabs-elem-0",
+          "description": "Discovery panel-switch button (first in the strip).",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "button-discovery-0", "role": "button" }, "label": "Discovery button" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "ui-bridge-states-tabs-elem-1",
+          "description": "Graph Editor panel-switch button.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "button-graph-editor-1", "role": "button" }, "label": "Graph Editor button" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "ui-bridge-states-tabs-elem-2",
+          "description": "Export panel-switch button (last in the strip).",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "button-export-5", "role": "button" }, "label": "Export button" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    }
+  ],
+  "transitions": []
+}
