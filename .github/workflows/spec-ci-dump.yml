@@ -1,0 +1,79 @@
+name: Spec CI Dump (temp)
+
+# TEMPORARY diagnostic workflow — dumps ci-bot's live registry for gated
+# pages (marketplace, automation-builder) WITH the seeded fixture project +
+# ?project= param, so transitions can be authored against real elements.
+# Deleted before the PR merges.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  dump:
+    name: Spec CI Dump
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    env:
+      NEXT_PUBLIC_API_URL: ""
+      BACKEND_URL: https://api.qontinui.io
+      QONTINUI_API_BASE_URL: https://api.qontinui.io
+      QONTINUI_TEST_AUTO_LOGIN_EMAIL: ${{ secrets.SPEC_CI_AUTH_EMAIL }}
+      QONTINUI_TEST_AUTO_LOGIN_PASSWORD: ${{ secrets.SPEC_CI_AUTH_PASSWORD }}
+      NEXT_PUBLIC_ENABLE_SPEC_CI: "1"
+      NEXT_PUBLIC_UI_BRIDGE_REMOTE_COMMANDS: "1"
+      SPEC_CI_DUMP: "1"
+
+    steps:
+      - name: Checkout qontinui-web
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend deps
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        working-directory: ./frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Build frontend
+        working-directory: ./frontend
+        run: npm run build
+
+      - name: Start frontend (next start)
+        working-directory: ./frontend
+        run: |
+          npx next start -p 3001 -H 0.0.0.0 > frontend.log 2>&1 &
+          echo "FRONTEND_PID=$!" >> "$GITHUB_ENV"
+          for i in $(seq 1 30); do
+            if curl -s -o /dev/null -w "%{http_code}" http://localhost:3001/login | grep -qE "^(200|307)$"; then
+              echo "frontend up after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+
+      - name: Run Spec CI dump
+        working-directory: ./frontend
+        run: |
+          npx tsx tests/spec-ci/run-spec-ci.ts \
+            --base-url http://localhost:3001 \
+            --api-base https://api.qontinui.io \
+            --output spec-ci-report.json
+
+      - name: Upload dumps
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spec-ci-dumps
+          path: |
+            frontend/dump-*.json
+            frontend/frontend.log
+          retention-days: 7
