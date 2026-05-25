@@ -601,7 +601,11 @@ async function main(): Promise<number> {
   // ?project= param and dump the live registry (id/role/text) so transitions
   // can be authored against ci-bot's REAL rendered elements. Removed before PR.
   if (process.env.SPEC_CI_DUMP === "1") {
-    for (const specId of ["marketplace", "automation-builder"]) {
+    const dumpIds = (process.env.SPEC_CI_DUMP_IDS ?? "marketplace,automation-builder")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    for (const specId of dumpIds) {
       const route = routeForSpec(specId, args.baseUrl, fixtureProjectId);
       await page.goto(route, { waitUntil: "domcontentloaded", timeout: 60_000 });
       await page.waitForTimeout(3500);
@@ -611,12 +615,19 @@ async function main(): Promise<number> {
         };
         if (!W.__qontinuiSpecCi__) return { error: "no spec-ci ns" };
         const all = W.__qontinuiSpecCi__.getRegistry().getAllElements();
-        return all.map((e: any) => ({
-          id: e.id,
-          role: e.role,
-          tagName: e.tagName,
-          text: typeof e.text === "string" ? e.text.slice(0, 80) : e.text,
-        }));
+        return all.map((e: any) => {
+          const dom: HTMLElement | undefined = e.element;
+          let ident: any = undefined;
+          try { ident = e.getIdentifier?.(); } catch { /* ignore */ }
+          return {
+            id: e.id,
+            type: e.type,
+            label: e.label,
+            role: dom?.getAttribute?.("role") ?? ident?.role,
+            tagName: dom?.tagName?.toLowerCase?.(),
+            text: (dom?.textContent ?? "").trim().slice(0, 80),
+          };
+        });
       });
       writeFileSync(`dump-${specId}.json`, JSON.stringify({ route, url: page.url(), els }, null, 2), "utf-8");
       process.stderr.write(`[spec-ci] DUMP ${specId}: ${page.url()} -> dump-${specId}.json\n`);

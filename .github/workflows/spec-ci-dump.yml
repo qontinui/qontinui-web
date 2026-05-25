@@ -23,6 +23,7 @@ jobs:
       NEXT_PUBLIC_ENABLE_SPEC_CI: "1"
       NEXT_PUBLIC_UI_BRIDGE_REMOTE_COMMANDS: "1"
       SPEC_CI_DUMP: "1"
+      SPEC_CI_DUMP_IDS: "ai-tasks,captures,execution-history,integration-testing,qa-dashboard,recordings,testing,workflow-viz,dashboard"
 
     steps:
       - name: Checkout qontinui-web
