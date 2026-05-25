@@ -81,12 +81,18 @@ function attachConsoleCapture(
     });
   });
   page.on("pageerror", (err) => {
+    const text = err.message;
+    // Route through the same classifier as console events so the
+    // network-noise denylist (e.g. aborted "Failed to fetch" rejections)
+    // applies to pageerrors too; otherwise the gate reds on environmental
+    // fetch failures on every page.
+    if (classifyConsole("pageerror", text) !== "critical") return;
     const ctx = getCtx();
     sink.push({
       specId: ctx.specId ?? "(unattributed)",
       transitionId: ctx.transitionId,
       level: "pageerror",
-      text: err.message,
+      text,
       stack: err.stack ?? null,
       ts: Date.now(),
     });
