@@ -98,6 +98,7 @@ export default function CoordAgentLogPage() {
     try {
       const url = new URL(
         `${API}/agent-logs/by-agent/${encodeURIComponent(agentId)}`,
+        window.location.origin,
       );
       url.searchParams.set("limit", String(FETCH_LIMIT));
       const sinceOpt = SINCE_OPTIONS.find((o) => o.value === sinceKey);

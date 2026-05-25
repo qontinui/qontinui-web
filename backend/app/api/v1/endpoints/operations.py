@@ -2456,9 +2456,9 @@ async def list_user_tenants(
         await db.execute(
             text(
                 """
-                SELECT id, slug, name
+                SELECT tenant_id, slug, display_name
                 FROM coord.tenants
-                WHERE id = :id
+                WHERE tenant_id = :id
                 LIMIT 1
                 """
             ),
