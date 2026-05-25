@@ -269,5 +269,27 @@
       "provenance": { "source": "ai-generated" }
     }
   ],
-  "transitions": []
+  "transitions": [
+    {
+      "id": "settings-switch-to-ai-providers",
+      "name": "Switch to AI Providers section",
+      "description": "Behavioral: clicking the AI Providers section button navigates from /settings/account to /settings/ai (router.push) — the Account-only 'Signed in as' subheading unmounts. Read-only navigation between settings sections; no preferences are written. The vanish of the Account anchor is the behavioral assertion. activateStates is intentionally empty: the destination is a route change whose section-nav button ids reindex on re-render (the indexed button ordinals shift when the account pane unmounts), so no pre-snapshot structural state is a stable post-condition; the vanish proves the transition took effect.",
+      "fromStates": ["settings-section-tabs"],
+      "activateStates": [],
+      "exitStates": [],
+      "effect": "read",
+      "actions": [
+        {
+          "type": "click",
+          "target": { "id": "button-ai-providers-1" },
+          "waitAfter": {
+            "type": "vanish",
+            "query": { "id": "heading-3-signed-in-as" },
+            "timeout": 8000
+          }
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    }
+  ]
 }

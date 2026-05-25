@@ -239,5 +239,27 @@
       "provenance": { "source": "ai-generated" }
     }
   ],
-  "transitions": []
+  "transitions": [
+    {
+      "id": "admin-switch-to-runner-detail",
+      "name": "Switch to Runner Detail tab",
+      "description": "Behavioral: clicking the Runner Detail architecture tab swaps the active tabpanel away from the default Overview — the Overview-only 'qontinui-web backend' tier heading unmounts. Superuser-only page; read-only navigation between architecture views with no side effects. Tab matched by role+text (Radix ids are render-volatile). activateStates stays on the always-present header so the post-state is a stable structural anchor.",
+      "fromStates": ["admin-tabs"],
+      "activateStates": ["admin-header"],
+      "exitStates": [],
+      "effect": "read",
+      "actions": [
+        {
+          "type": "click",
+          "target": { "role": "tab", "text": "Runner Detail" },
+          "waitAfter": {
+            "type": "vanish",
+            "query": { "id": "heading-4-qontinui-web-backend", "role": "heading" },
+            "timeout": 8000
+          }
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    }
+  ]
 }

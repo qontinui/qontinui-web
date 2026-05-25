@@ -186,5 +186,27 @@
       "provenance": { "source": "ai-generated" }
     }
   ],
-  "transitions": []
+  "transitions": [
+    {
+      "id": "discoveries-switch-to-accepted",
+      "name": "Switch to Accepted tab",
+      "description": "Behavioral: clicking the Accepted status tab swaps the active tabpanel — the default-open Pending panel (anchored by its 'Pending Discoveries' section heading) unmounts. Read-only navigation between status views; no discovery rows are mutated. The Accepted panel's contents are data-driven (empty for the ci-bot account), so the assertion is the vanish of the Pending anchor rather than a destination element. Tab matched by role+text (Radix ids are render-volatile). activateStates stays on the always-present header so the post-state is a stable structural anchor.",
+      "fromStates": ["discoveries-tabs"],
+      "activateStates": ["discoveries-header"],
+      "exitStates": [],
+      "effect": "read",
+      "actions": [
+        {
+          "type": "click",
+          "target": { "role": "tab", "text": "Accepted" },
+          "waitAfter": {
+            "type": "vanish",
+            "query": { "id": "heading-3-pending-discoveries", "role": "heading" },
+            "timeout": 8000
+          }
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    }
+  ]
 }
