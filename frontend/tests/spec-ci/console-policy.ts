@@ -67,6 +67,14 @@ export const BENIGN_DENYLIST: readonly RegExp[] = [
   /favicon/,
   /hydration/,
   /Warning:/,
+  // Browser-emitted WebSocket handshake/connection failures (e.g. a runner-
+  // status WS returning 403 for the CI session). Like the resource-load
+  // entries above, these are logged by the browser itself and CANNOT be
+  // caught or suppressed by app code, so they are infrastructure noise, not a
+  // code defect. A genuinely broken WS feature would still surface as a
+  // functional matchRate/transition failure, so denylisting the console line
+  // does not lose the regression signal.
+  /WebSocket connection to .+ failed/,
 ];
 
 /**

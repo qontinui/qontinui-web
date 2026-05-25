@@ -52,7 +52,8 @@ in isolation:
   unhandled rejection bubbled to the page).
 - **`console.error`:** critical if its text matches **neither** the benign
   denylist (`net::ERR_`, `Failed to load resource`, `favicon`, `hydration`,
-  `Warning:`) **nor** the network-noise denylist below. (The `Uncaught`/
+  `Warning:`, browser-emitted `WebSocket connection … failed`) **nor** the
+  network-noise denylist below. (The `Uncaught`/
   `TypeError`/`ReferenceError` set is the documented high-severity subset but
   is no longer the gate condition — any non-denylisted `console.error` gates,
   so a plain `console.error("X failed")` is caught. Expected per-page errors
