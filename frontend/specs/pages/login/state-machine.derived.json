@@ -4,7 +4,7 @@
   "name": "Login",
   "description": "Standalone /login route, exercised UNauthenticated via the Spec CI unauth-context lane (metadata.requiresUnauthenticated). Structural state asserts the sign-in form: the email/username input (#login-username), the password input (#login-password), and the 'Sign In' submit button. The behavioral transition types ci-bot's email + the {{SPEC_CI_AUTH_PASSWORD}} secret placeholder (substituted at runtime from the GHA secret — never committed) and clicks Sign In, then waits for the login form to vanish (the credentials were accepted and /login redirected to the mode-aware authenticated home). Login is non-destructive: it only establishes a session in the throwaway unauth context, which is torn down after the spec.",
   "provenance": { "source": "ai-generated", "appId": "qontinui-web" },
-  "metadata": { "tags": ["auth", "login"], "requiresUnauthenticated": true },
+  "metadata": { "tags": ["auth", "login"], "requiresUnauthenticated": true, "expectedConsoleErrors": ["getCurrentUser failed: 401"] },
   "states": [
     {
       "id": "login-form",

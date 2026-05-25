@@ -4,7 +4,7 @@
   "name": "Forgot password",
   "description": "Standalone /forgot-password route, exercised UNauthenticated via the Spec CI unauth-context lane (metadata.requiresUnauthenticated). Structural-only: asserts the password-reset request form renders — the email input (#email) and the 'Send Reset Email' submit button. No transition is authored: submitting would POST a real password-reset request for the shared ci-bot account, so this spec proves the form's structure without firing it (the safe, deterministic surface).",
   "provenance": { "source": "ai-generated", "appId": "qontinui-web" },
-  "metadata": { "tags": ["auth", "password-reset"], "requiresUnauthenticated": true },
+  "metadata": { "tags": ["auth", "password-reset"], "requiresUnauthenticated": true, "expectedConsoleErrors": ["getCurrentUser failed: 401"] },
   "states": [
     {
       "id": "forgot-password-form",

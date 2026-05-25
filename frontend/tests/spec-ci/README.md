@@ -46,15 +46,17 @@ module throws) that the SDK's in-page hook structurally cannot see.
 ### What counts as "critical"
 
 Policy lives in `console-policy.ts` (`classifyConsole`) — reviewable + diffable
-in isolation. v1 semantics (exact equivalence with the retired smoke test, then
-broader on the `pageerror` axis):
+in isolation:
 
 - **Always critical:** any `page.on("pageerror")` event (uncaught exception /
   unhandled rejection bubbled to the page).
-- **`console.error`:** critical only if its text does **not** match the benign
+- **`console.error`:** critical if its text matches **neither** the benign
   denylist (`net::ERR_`, `Failed to load resource`, `favicon`, `hydration`,
-  `Warning:`) **and** does match the critical set (`Uncaught`, `TypeError`,
-  `ReferenceError`).
+  `Warning:`) **nor** the network-noise denylist below. (The `Uncaught`/
+  `TypeError`/`ReferenceError` set is the documented high-severity subset but
+  is no longer the gate condition — any non-denylisted `console.error` gates,
+  so a plain `console.error("X failed")` is caught. Expected per-page errors
+  are waived via `metadata.expectedConsoleErrors`, below.)
 - **`warn`/`log`/`info`/`debug`:** never gate (the flaky-red minefield) and are
   not recorded.
 - **Environmental network-fetch rejections** (`Failed to fetch`, `Load failed`,
