@@ -153,7 +153,8 @@ jobs:
               "- meanMatchRate: \(.summary.meanMatchRate)",
               "- transitionPassRate: \(.summary.transitionPassRate)",
               "- consoleErrors: \(.summary.consoleErrors.total)",
-              "- serverErrors: \(.summary.serverErrors.total)"
+              "- serverErrors: \(.summary.serverErrors.total)",
+              "- apiAssertionPassRate: \(.summary.apiAssertionPassRate)"
             ' frontend/spec-ci-report.json >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"
             echo "Failing specs:" >> "$GITHUB_STEP_SUMMARY"
@@ -164,4 +165,7 @@ jobs:
             echo "" >> "$GITHUB_STEP_SUMMARY"
             echo "Specs with same-origin HTTP-5xx:" >> "$GITHUB_STEP_SUMMARY"
             jq -r '.specs[] | select((.serverErrors // []) | length > 0) | .specId as $s | .serverErrors[] | "- \($s) [\(.method) \(.status)] \(.url)"' frontend/spec-ci-report.json >> "$GITHUB_STEP_SUMMARY" || true
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Specs with failing API assertions:" >> "$GITHUB_STEP_SUMMARY"
+            jq -r '.specs[] | select((.apiAssertions // []) | length > 0) | .specId as $s | .apiAssertions[] | select(.passed == false) | "- \($s) [\(.endpoint)] \(.error // (.assertionResults[] | select(.passed == false) | .reason))"' frontend/spec-ci-report.json >> "$GITHUB_STEP_SUMMARY" || true
           fi
