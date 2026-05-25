@@ -8,7 +8,9 @@
     "appId": "qontinui-web"
   },
   "metadata": {
-    "tags": ["operations", "fleet", "coord", "merge-train"]
+    "tags": ["operations", "fleet", "coord", "merge-train"],
+    "expectedServerErrors": ["/coord-api/status"],
+    "expectedServerErrorsNote": "GENUINELY-UNAVOIDABLE-IN-CI (kept after the 2026-05-25 baseline-500 triage; NOT a fixable backend defect like the ai-tasks/runs/automation-builder waivers, which were removed). GET /coord-api/status is the Next same-origin proxy (next.config.mjs: /coord-api/:path* -> ${COORD_URL}/coord/:path*). In CI COORD_URL is unset, so it defaults to http://localhost:9870 with no coord running -> the proxy 500s. The coord SERVICE is healthy (coord.staging.qontinui.io/coord/status returns 200); the 500 is purely CI infra absence. Wiring COORD_URL to the live staging coord is NOT a valid fix: this spec's 'operations-device-status-empty' state asserts the EMPTY-fleet tile, but the shared staging coord carries transient real devices (e.g. a manual-test-coord session), so a live coord makes the assertion non-deterministic (populated tile -> no_candidates). A deterministic fix needs a CI-local coord stub returning an empty fleet (follow-up). Until then this single same-origin 5xx is expected; any OTHER same-origin 5xx on this spec still reds the gate."
   },
   "states": [
     {
