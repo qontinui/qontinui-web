@@ -269,5 +269,27 @@
       "provenance": { "source": "ai-generated" }
     }
   ],
-  "transitions": []
+  "transitions": [
+    {
+      "id": "settings-switch-to-ai-providers",
+      "name": "Switch to AI Providers section",
+      "description": "Behavioral: clicking the AI Providers section button swaps the settings pane away from the default Account section — the Account-only 'Signed in as' subheading unmounts. Read-only navigation between settings sections; no preferences are written. The AI Providers pane contents are config-dependent, so the assertion is the vanish of the Account anchor rather than a destination element. activateStates stays on the always-present section tabs so the post-state is a stable structural anchor.",
+      "fromStates": ["settings-section-tabs"],
+      "activateStates": ["settings-section-tabs"],
+      "exitStates": [],
+      "effect": "read",
+      "actions": [
+        {
+          "type": "click",
+          "target": { "id": "button-ai-providers-1" },
+          "waitAfter": {
+            "type": "vanish",
+            "query": { "id": "heading-3-signed-in-as" },
+            "timeout": 8000
+          }
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    }
+  ]
 }
