@@ -819,6 +819,41 @@ async function main(): Promise<number> {
       body: JSON.stringify(body),
     });
   };
+
+  // CI-status / ws-token stub (corpus-stability backstop).
+  //
+  // The Operations page mounts the CI Status Dashboard panel, which on mount
+  // fires GET /api/v1/operations/ci-status and GET /api/v1/ws-token. Against
+  // ci-bot's staging tenant those can come back 401 (the coord-backed
+  // CI-status surface isn't provisioned for this account); the httpClient's
+  // reactive 401-refresh then fails and dispatches a `session-expired` event,
+  // which AuthProvider turns into a hard `window.location.href = "/login"`
+  // (contexts/auth-context.tsx). That hard navigation tears down the shared
+  // authed page mid-run and cascades a `/login` bounce into EVERY subsequent
+  // spec (operations → wrappers all collapse to no_match/error).
+  //
+  // We neutralize it at the network edge: return a benign, well-formed empty
+  // body for the CI-status seed and a tokenless ws-token (the hook then falls
+  // back to polling and never opens a WS). No 401 → no session-expired → no
+  // logout redirect → the shared session survives the Operations spec. This is
+  // a harness-only stub (no app change); it keeps the on-PR gate green and
+  // order-independent without weakening any assertion (the operations spec is
+  // structural — header/controls — and doesn't assert CI-status data).
+  const ciStatusStub = async (route: import("@playwright/test").Route) => {
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ repos: [] }),
+    });
+  };
+  const wsTokenStub = async (route: import("@playwright/test").Route) => {
+    // Empty token → useCiStatusStream logs "no WS token" and uses polling.
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ token: null }),
+    });
+  };
   await context.addInitScript(productModeInit, productMode);
   // Access tokens live in-memory (token-storage.ts) and are cleared on every
   // full navigation; the persistent `is_authenticated` flag is what the
@@ -835,6 +870,8 @@ async function main(): Promise<number> {
     }
   });
   await context.route("**/users/me/preferences", prefsIntercept);
+  await context.route("**/operations/ci-status", ciStatusStub);
+  await context.route("**/ws-token", wsTokenStub);
   process.stderr.write(`[spec-ci] product mode forced to "${productMode}"\n`);
 
   // api-auth: the API login call (sets cookies on the context). This alone is
@@ -913,6 +950,8 @@ async function main(): Promise<number> {
     });
     await unauthContext.addInitScript(productModeInit, productMode);
     await unauthContext.route("**/users/me/preferences", prefsIntercept);
+    await unauthContext.route("**/operations/ci-status", ciStatusStub);
+    await unauthContext.route("**/ws-token", wsTokenStub);
     const unauthPage = await unauthContext.newPage();
     try {
       return await evaluateSpec(
