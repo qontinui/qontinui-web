@@ -31,6 +31,7 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 from qontinui_schemas.generated.per_type.memory_restore_request import (
     MemoryRestoreRequest,
 )
@@ -1901,6 +1902,321 @@ async def websocket_device_status(
                 await websocket.close()
             except Exception as exc:  # noqa: BLE001
                 logger.debug("device_status_ws_close_failed", error=str(exc))
+
+
+# ---- CI Status Dashboard surface (Phase 3 + Phase 5) --------------------
+#
+# Plan: `D:/qontinui-root/qontinui-dev-notes/plans/2026-05-25-ci-status-dashboard-plan.md`
+# Phases 3 + 5. Three endpoints back the per-tenant CI status panel on
+# the operations dashboard:
+#
+#   1. `GET  /operations/ci-status`                  — tenant-scoped REST
+#                                                      proxy (seed + the
+#                                                      polling fallback).
+#   2. `WS   /operations/ci-status/ws`               — bridges browser to
+#                                                      coord's typed
+#                                                      `/ws/device-status`
+#                                                      channel, subscribing
+#                                                      to the
+#                                                      `ci_status:<tenant>`
+#                                                      topic family.
+#   3. `POST /operations/ci-status/notify-when-green` — register a
+#                                                      `CiGreen` gate so an
+#                                                      agent is informed
+#                                                      when the repo goes
+#                                                      green at a given SHA.
+#
+# The WS bridge reuses the same coord service-JWT mint + upstream WS URL
+# as the device-status bridge (`app.services.coord_device_status`) —
+# coord multiplexes its `/ws/device-status` channel by topic prefix, so
+# the only difference from the device-status bridge is the subscribe
+# topic (`ci_status:<tenant>`) and the relayed frame kind
+# (`ci_status.changed`).
+
+
+class RepoCiRow(BaseModel):
+    """One repo's CI status, mirroring coord's ``RepoCiRow`` wire shape.
+
+    ``main_verdict`` is coord's 3-state ``MainCiStatus`` rendering
+    (``green`` / ``red`` / ``unknown``); any amber tone is a frontend
+    derivation from ``open_pr_checks`` counts, not a backend value.
+    """
+
+    repo: str
+    main_verdict: str = Field(..., description='"green" | "red" | "unknown"')
+    open_pr_checks: dict[str, int] = Field(
+        ..., description="counts keyed by 'success' | 'failure' | 'pending'"
+    )
+    latest_details_url: str | None = None
+    main_head_sha: str | None = None
+
+
+class CiStatusResponse(BaseModel):
+    """Response wrapper for ``GET /operations/ci-status``."""
+
+    repos: list[RepoCiRow]
+
+
+class NotifyWhenGreenRequest(BaseModel):
+    """Body for ``POST /operations/ci-status/notify-when-green``.
+
+    Registers a ``CiGreen`` gate bound to ``(repo, head_sha)``. The
+    optional ``continuation_prompt`` becomes the gate's continuation
+    spawn ``initial_prompt`` so the gate engine can hand a follow-up
+    prompt to an agent when the repo goes green.
+    """
+
+    repo: str
+    head_sha: str
+    continuation_prompt: str | None = None
+
+
+class NotifyWhenGreenResponse(BaseModel):
+    """Response for ``POST /operations/ci-status/notify-when-green``."""
+
+    gate_id: UUID
+
+
+@router.get("/ci-status", response_model=CiStatusResponse)
+async def get_ci_status(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return per-repo CI status for the caller's tenant.
+
+    Proxies coord's ``GET /coord/ci/status`` with the
+    ``X-Qontinui-Tenant-Id`` header. Coord derives the repo set from
+    ``coord.tenant_repos`` for the tenant, so an operator with no
+    registered repos gets ``{"repos": []}`` — never 4xx.
+
+    Wire shape (coord ``CiStatusResponse``)::
+
+        { "repos": [RepoCiRow, ...] }
+    """
+    return await _proxy_coord_get("/coord/ci/status", tenant_id=tenant_id)
+
+
+@router.post("/ci-status/notify-when-green", response_model=NotifyWhenGreenResponse)
+async def post_ci_status_notify_when_green(
+    body: NotifyWhenGreenRequest,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Register a ``CiGreen`` gate for ``(repo, head_sha)``.
+
+    Builds coord's ``RegisterGateRequest`` (``gate_routes.rs``) with a
+    claim anchor (``claim_kind="ci_notify"``,
+    ``resource_key="ci-notify:<repo>"``) and the snake-case-tagged
+    ``CiGreen`` predicate (``{"kind":"ci_green","repo":...,
+    "head_sha":...}``). When ``continuation_prompt`` is set, it is
+    carried as the continuation spawn's ``initial_prompt`` — coord's
+    ``spawn_continuation`` reads that key (best-effort; it also wants a
+    ``target_device_id`` which the dashboard does not supply today, so
+    the prompt rides along for when a target is bound).
+
+    Proxies to coord ``POST /coord/gates/register`` with the tenant
+    header and returns ``{"gate_id": <uuid>}``.
+    """
+    register_body: dict[str, Any] = {
+        "claim_kind": "ci_notify",
+        "resource_key": f"ci-notify:{body.repo}",
+        "predicate": {
+            "kind": "ci_green",
+            "repo": body.repo,
+            "head_sha": body.head_sha,
+        },
+    }
+    if body.continuation_prompt is not None:
+        register_body["continuation_spawn"] = {
+            "initial_prompt": body.continuation_prompt,
+        }
+    return await _proxy_coord_post(
+        "/coord/gates/register", register_body, tenant_id=tenant_id
+    )
+
+
+@router.websocket("/ci-status/ws")
+async def websocket_ci_status(
+    websocket: WebSocket,
+) -> None:
+    """Bridge browser ↔ coord's typed `/ws/device-status` channel for CI.
+
+    Mirrors :func:`websocket_device_status` exactly — coord multiplexes
+    its WS by topic prefix, so the same minted service JWT + upstream WS
+    URL are reused. The only differences are the subscribe topic
+    (``ci_status:<tenant>`` instead of ``device_status:<tenant>``) and
+    the frame kind relayed (``ci_status.changed``). Frames are forwarded
+    verbatim; the browser parses the JSON.
+
+    Per-connection flow:
+
+    1. Browser opens `WS /api/v1/operations/ci-status/ws?token=<jwt>`.
+    2. We resolve the caller's tenant_id (same path as `/ci-status`).
+    3. We mint a tenant-scoped coord service JWT.
+    4. We open coord's `/ws/device-status` and subscribe to
+       `ci_status:<tenant_id>`.
+    5. Every `{"kind":"ci_status.changed","row":...}` frame is forwarded
+       to the browser.
+
+    Disconnect / failure handling matches the device-status bridge:
+    browser drop → close upstream; coord drop → close browser 1011 so
+    the hook reconnects; mint/connect failure → 1011 + error frame so
+    the frontend falls back to polling.
+    """
+    await websocket.accept()
+
+    # --- Browser-side auth ------------------------------------------------
+    token = websocket.query_params.get("token")
+    if not token:
+        await websocket.send_json(
+            {"type": "error", "error": "Missing authentication token"}
+        )
+        await websocket.close(code=1008, reason="Missing authentication token")
+        return
+
+    try:
+        user = await get_current_user_from_ws(token)
+    except Exception as exc:  # noqa: BLE001 — auth diagnostics live in deps
+        logger.warning("ci_status_ws_auth_failed", error=str(exc))
+        await websocket.send_json({"type": "error", "error": "Authentication failed"})
+        await websocket.close(code=1008, reason="Authentication failed")
+        return
+
+    # --- Tenant resolution + token mint ----------------------------------
+    try:
+        async with AsyncSessionLocal() as db:
+            tenant_id = await resolve_tenant_for_user(user, db)
+    except HTTPException as http_exc:
+        await websocket.send_json({"type": "error", "error": http_exc.detail})
+        await websocket.close(code=1008, reason=str(http_exc.detail))
+        return
+    except Exception as exc:  # noqa: BLE001
+        logger.error("ci_status_ws_tenant_lookup_failed", error=str(exc))
+        await websocket.send_json({"type": "error", "error": "Tenant lookup failed"})
+        await websocket.close(code=1011, reason="Tenant lookup failed")
+        return
+
+    try:
+        coord_token = await mint_device_status_token(tenant_id=tenant_id)
+    except CoordDeviceStatusDisabledError as exc:
+        logger.warning(
+            "ci_status_ws_disabled",
+            user_id=str(user.id),
+            reason=str(exc),
+        )
+        await websocket.send_json(
+            {
+                "type": "error",
+                "error": "Coord integration disabled — fall back to REST polling.",
+            }
+        )
+        await websocket.close(code=1011, reason="Coord integration disabled")
+        return
+    except CoordDeviceStatusMintFailedError as exc:
+        logger.error(
+            "ci_status_ws_mint_failed",
+            user_id=str(user.id),
+            error=str(exc),
+        )
+        await websocket.send_json({"type": "error", "error": "Token mint failed"})
+        await websocket.close(code=1011, reason="Token mint failed")
+        return
+
+    upstream_url = build_device_status_ws_url(coord_token)
+    subscribe_topic = f"ci_status:{tenant_id}"
+
+    # --- Upstream bridge --------------------------------------------------
+    upstream: Any = None
+    try:
+        try:
+            upstream = await websockets_connect(upstream_url, open_timeout=10)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "ci_status_ws_upstream_connect_failed",
+                user_id=str(user.id),
+                error=str(exc),
+            )
+            await websocket.send_json(
+                {"type": "error", "error": "Upstream coord WS unreachable"}
+            )
+            await websocket.close(code=1011, reason="Upstream WS unreachable")
+            return
+
+        # Send the typed subscribe message (coord won't push diffs
+        # until it receives this).
+        await upstream.send(
+            json.dumps({"action": "subscribe", "topic": subscribe_topic})
+        )
+
+        # Forward both directions: upstream → browser is the hot path
+        # (ci_status.changed frames). Browser → upstream stays open only
+        # so close-frames propagate; we don't forward arbitrary browser
+        # payloads (the subscription is fixed per-connection).
+        async def pump_upstream_to_browser() -> None:
+            try:
+                async for message in upstream:
+                    if websocket.client_state != WebSocketState.CONNECTED:
+                        break
+                    # Coord sends Text frames; the websockets lib gives
+                    # us str directly. Forward verbatim — the browser
+                    # parses the JSON.
+                    if isinstance(message, bytes):
+                        message = message.decode("utf-8")
+                    await websocket.send_text(message)
+            except websockets.exceptions.ConnectionClosed:
+                pass
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "ci_status_ws_upstream_pump_error",
+                    user_id=str(user.id),
+                    error=str(exc),
+                )
+
+        async def pump_browser_to_upstream() -> None:
+            try:
+                while True:
+                    # We only need to detect disconnect; the subscription
+                    # is fixed so any received frame is informational
+                    # (likely a ping/pong from a JS WS lib).
+                    await websocket.receive_text()
+            except WebSocketDisconnect:
+                pass
+            except Exception as exc:  # noqa: BLE001
+                logger.debug(
+                    "ci_status_ws_browser_pump_exit",
+                    user_id=str(user.id),
+                    error=str(exc),
+                )
+
+        # Race the two pumps — whichever side closes first ends the
+        # bridge. asyncio.wait+FIRST_COMPLETED + cancel the rest.
+        upstream_task = asyncio.create_task(pump_upstream_to_browser())
+        browser_task = asyncio.create_task(pump_browser_to_upstream())
+        done, pending = await asyncio.wait(
+            {upstream_task, browser_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        for task in pending:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            except Exception as exc:  # noqa: BLE001
+                logger.debug(
+                    "ci_status_ws_task_cancel_exception",
+                    user_id=str(user.id),
+                    error=str(exc),
+                )
+    finally:
+        if upstream is not None:
+            try:
+                await upstream.close()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("ci_status_ws_upstream_close_failed", error=str(exc))
+        if websocket.client_state == WebSocketState.CONNECTED:
+            try:
+                await websocket.close()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("ci_status_ws_close_failed", error=str(exc))
 
 
 # ---- Coord-Native Session Coordination — Phase 5 ------------------------
