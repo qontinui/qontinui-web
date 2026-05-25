@@ -2,13 +2,17 @@
   "version": "1.0",
   "id": "recordings",
   "name": "Recordings",
-  "description": "Recordings page for the qontinui-web app. Recordings is project-gated: with no project selected the page renders a 'No projects yet' empty state prompting the operator to create their first project before recordings become available. This spec asserts that project-gated empty-state structure (heading, explanatory copy, and the create-first-project call-to-action).",
+  "description": "Recordings page for the qontinui-web app. Recordings is project-gated: with no project selected the page renders a 'No projects yet' empty state prompting the operator to create their first project before recordings become available. This spec asserts that project-gated empty-state structure (heading, explanatory copy, and the create-first-project call-to-action). (Spec CI now seeds a fixture project on the ci-bot account, so with no project selected via URL this page renders the 'No project selected' gate rather than the 'No projects yet' first-project gate; assertions updated to the project-exists-but-unselected card.)",
   "provenance": {
     "source": "ai-generated",
     "appId": "qontinui-web"
   },
   "metadata": {
-    "tags": ["recordings", "empty-state", "project-gated"]
+    "tags": [
+      "recordings",
+      "empty-state",
+      "project-gated"
+    ]
   },
   "states": [
     {
@@ -24,7 +28,9 @@
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "heading-4-no-projects-yet" },
+            "criteria": {
+              "id": "heading-4-no-project-selected"
+            },
             "label": "No projects yet heading"
           },
           "source": "ai-generated",
@@ -39,7 +45,9 @@
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "content-paragraph-create-your-first-pr-0" },
+            "criteria": {
+              "id": "content-paragraph-select-or-create-a-p-0"
+            },
             "label": "Create-first-project explanatory copy"
           },
           "source": "ai-generated",
@@ -54,7 +62,9 @@
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "link-create-first-project" },
+            "criteria": {
+              "id": "link-go-to-dashboard"
+            },
             "label": "Create First Project link"
           },
           "source": "ai-generated",
@@ -62,7 +72,9 @@
           "enabled": true
         }
       ],
-      "provenance": { "source": "ai-generated" }
+      "provenance": {
+        "source": "ai-generated"
+      }
     },
     {
       "id": "recordings-cta-label",
@@ -77,7 +89,9 @@
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "link-create-first-project" },
+            "criteria": {
+              "id": "link-go-to-dashboard"
+            },
             "label": "Create First Project link"
           },
           "source": "ai-generated",
@@ -92,7 +106,10 @@
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "role": "link", "text": "Create First Project" },
+            "criteria": {
+              "role": "link",
+              "text": "Go to Dashboard"
+            },
             "label": "Create First Project by role+text"
           },
           "source": "ai-generated",
@@ -107,7 +124,10 @@
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "role": "heading", "text": "No projects yet" },
+            "criteria": {
+              "role": "heading",
+              "text": "No project selected"
+            },
             "label": "No projects yet by role+text"
           },
           "source": "ai-generated",
@@ -115,7 +135,9 @@
           "enabled": true
         }
       ],
-      "provenance": { "source": "ai-generated" }
+      "provenance": {
+        "source": "ai-generated"
+      }
     },
     {
       "id": "recordings-gate-copy",
@@ -130,7 +152,9 @@
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "content-paragraph-create-your-first-pr-0" },
+            "criteria": {
+              "id": "content-paragraph-select-or-create-a-p-0"
+            },
             "label": "Gate explanatory paragraph"
           },
           "source": "ai-generated",
@@ -145,7 +169,10 @@
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "content-paragraph-create-your-first-pr-0", "text_contains": "Recordings" },
+            "criteria": {
+              "id": "content-paragraph-select-or-create-a-p-0",
+              "text_contains": "Recordings"
+            },
             "label": "Gate copy references Recordings"
           },
           "source": "ai-generated",
@@ -160,7 +187,9 @@
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "heading-4-no-projects-yet" },
+            "criteria": {
+              "id": "heading-4-no-project-selected"
+            },
             "label": "No projects yet heading"
           },
           "source": "ai-generated",
@@ -168,7 +197,9 @@
           "enabled": true
         }
       ],
-      "provenance": { "source": "ai-generated" }
+      "provenance": {
+        "source": "ai-generated"
+      }
     }
   ],
   "transitions": []

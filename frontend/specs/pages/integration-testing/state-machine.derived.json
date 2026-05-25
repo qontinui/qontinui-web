@@ -2,9 +2,18 @@
   "version": "1.0",
   "id": "integration-testing",
   "name": "IntegrationTesting",
-  "description": "Integration Testing page for the qontinui-web app. This snapshot captured the project-gated empty state (no project selected this session): an onboarding panel prompting the operator to create a first project before the Integration Testing feature is available. Asserts the empty-state structure — heading, explanatory message, and the create-project call to action.",
-  "provenance": { "source": "ai-generated", "appId": "qontinui-web" },
-  "metadata": { "tags": ["integration-testing", "empty-state", "onboarding"] },
+  "description": "Integration Testing page for the qontinui-web app. This snapshot captured the project-gated empty state (no project selected this session): an onboarding panel prompting the operator to create a first project before the Integration Testing feature is available. Asserts the empty-state structure — heading, explanatory message, and the create-project call to action. (Spec CI now seeds a fixture project on the ci-bot account, so with no project selected via URL this page renders the 'No project selected' gate rather than the 'No projects yet' first-project gate; assertions updated to the project-exists-but-unselected card.)",
+  "provenance": {
+    "source": "ai-generated",
+    "appId": "qontinui-web"
+  },
+  "metadata": {
+    "tags": [
+      "integration-testing",
+      "empty-state",
+      "onboarding"
+    ]
+  },
   "states": [
     {
       "id": "integration-testing-empty-heading",
@@ -17,7 +26,13 @@
           "category": "element-presence",
           "severity": "critical",
           "assertionType": "exists",
-          "target": { "type": "search", "criteria": { "id": "heading-4-no-projects-yet" }, "label": "No projects yet heading" },
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "heading-4-no-project-selected"
+            },
+            "label": "No projects yet heading"
+          },
           "source": "ai-generated",
           "reviewed": false,
           "enabled": true
@@ -28,7 +43,14 @@
           "category": "text-content",
           "severity": "warning",
           "assertionType": "exists",
-          "target": { "type": "search", "criteria": { "role": "heading", "text": "No projects yet" }, "label": "Empty-state heading by role+text" },
+          "target": {
+            "type": "search",
+            "criteria": {
+              "role": "heading",
+              "text": "No project selected"
+            },
+            "label": "Empty-state heading by role+text"
+          },
           "source": "ai-generated",
           "reviewed": false,
           "enabled": true
@@ -39,13 +61,22 @@
           "category": "accessibility",
           "severity": "warning",
           "assertionType": "exists",
-          "target": { "type": "search", "criteria": { "id": "heading-4-no-projects-yet", "role": "heading" }, "label": "Empty-state heading role" },
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "heading-4-no-project-selected",
+              "role": "heading"
+            },
+            "label": "Empty-state heading role"
+          },
           "source": "ai-generated",
           "reviewed": false,
           "enabled": true
         }
       ],
-      "provenance": { "source": "ai-generated" }
+      "provenance": {
+        "source": "ai-generated"
+      }
     },
     {
       "id": "integration-testing-empty-message",
@@ -58,7 +89,13 @@
           "category": "element-presence",
           "severity": "warning",
           "assertionType": "exists",
-          "target": { "type": "search", "criteria": { "id": "content-paragraph-create-your-first-pr-0" }, "label": "Empty-state message" },
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "content-paragraph-select-or-create-a-p-0"
+            },
+            "label": "Empty-state message"
+          },
           "source": "ai-generated",
           "reviewed": false,
           "enabled": true
@@ -69,7 +106,13 @@
           "category": "element-presence",
           "severity": "warning",
           "assertionType": "exists",
-          "target": { "type": "search", "criteria": { "id": "heading-4-no-projects-yet" }, "label": "No projects yet heading" },
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "heading-4-no-project-selected"
+            },
+            "label": "No projects yet heading"
+          },
           "source": "ai-generated",
           "reviewed": false,
           "enabled": true
@@ -80,13 +123,21 @@
           "category": "element-presence",
           "severity": "warning",
           "assertionType": "exists",
-          "target": { "type": "search", "criteria": { "id": "link-create-first-project" }, "label": "Create First Project link" },
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "link-go-to-dashboard"
+            },
+            "label": "Create First Project link"
+          },
           "source": "ai-generated",
           "reviewed": false,
           "enabled": true
         }
       ],
-      "provenance": { "source": "ai-generated" }
+      "provenance": {
+        "source": "ai-generated"
+      }
     },
     {
       "id": "integration-testing-empty-cta",
@@ -99,7 +150,13 @@
           "category": "element-presence",
           "severity": "critical",
           "assertionType": "exists",
-          "target": { "type": "search", "criteria": { "id": "link-create-first-project" }, "label": "Create First Project link" },
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "link-go-to-dashboard"
+            },
+            "label": "Create First Project link"
+          },
           "source": "ai-generated",
           "reviewed": false,
           "enabled": true
@@ -110,7 +167,14 @@
           "category": "text-content",
           "severity": "warning",
           "assertionType": "exists",
-          "target": { "type": "search", "criteria": { "role": "link", "text": "Create First Project" }, "label": "Create First Project by role+text" },
+          "target": {
+            "type": "search",
+            "criteria": {
+              "role": "link",
+              "text": "Go to Dashboard"
+            },
+            "label": "Create First Project by role+text"
+          },
           "source": "ai-generated",
           "reviewed": false,
           "enabled": true
@@ -121,13 +185,22 @@
           "category": "accessibility",
           "severity": "warning",
           "assertionType": "exists",
-          "target": { "type": "search", "criteria": { "id": "link-create-first-project", "role": "link" }, "label": "Create First Project link role" },
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "link-go-to-dashboard",
+              "role": "link"
+            },
+            "label": "Create First Project link role"
+          },
           "source": "ai-generated",
           "reviewed": false,
           "enabled": true
         }
       ],
-      "provenance": { "source": "ai-generated" }
+      "provenance": {
+        "source": "ai-generated"
+      }
     }
   ],
   "transitions": []
