@@ -1,0 +1,84 @@
+{
+  "version": "1.0",
+  "id": "login",
+  "name": "Login",
+  "description": "Standalone /login route, exercised UNauthenticated via the Spec CI unauth-context lane (metadata.requiresUnauthenticated). Structural state asserts the sign-in form: the email/username input (#login-username), the password input (#login-password), and the 'Sign In' submit button. The behavioral transition types ci-bot's email + the {{SPEC_CI_AUTH_PASSWORD}} secret placeholder (substituted at runtime from the GHA secret — never committed) and clicks Sign In, then waits for the login form to vanish (the credentials were accepted and /login redirected to the mode-aware authenticated home). Login is non-destructive: it only establishes a session in the throwaway unauth context, which is torn down after the spec.",
+  "provenance": { "source": "ai-generated", "appId": "qontinui-web" },
+  "metadata": { "tags": ["auth", "login"], "requiresUnauthenticated": true },
+  "states": [
+    {
+      "id": "login-form",
+      "name": "Sign-in form",
+      "description": "The /login sign-in form: email-or-username input, password input, and the Sign In submit button. Matched by the DOM id attribute (stable, author-set) rather than the bridge-assigned element id.",
+      "assertions": [
+        {
+          "id": "login-form-elem-0",
+          "description": "Email-or-username input (#login-username) is present.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "attributes": { "id": "login-username" } }, "label": "Email or username input" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "login-form-elem-1",
+          "description": "Password input (#login-password) is present.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "attributes": { "id": "login-password" } }, "label": "Password input" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "login-form-elem-2",
+          "description": "Sign In submit button is present. Disambiguated from the marketing-header 'Sign In' button (which opens the auth dialog, type=null) by attributes.type=submit — the form's <button type=submit>.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "attributes": { "type": "submit" }, "text": "Sign In" }, "label": "Sign In submit button" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    }
+  ],
+  "transitions": [
+    {
+      "id": "login-sign-in-with-valid-credentials",
+      "name": "Sign in with valid credentials",
+      "description": "Behavioral: type ci-bot's email into #login-username, type the {{SPEC_CI_AUTH_PASSWORD}} secret (runtime-substituted from the GHA secret, never committed) into #login-password, then click the form's Sign In submit button (type=submit, disambiguated from the marketing-header Sign In). The waitAfter IS the behavioral assertion: the login input (#login-username) VANISHES — i.e. the credentials were accepted and /login client-side-redirected to the mode-aware authenticated home (Spec CI forces Visual mode -> /tools/visual-automation), so the login form unmounts and deregisters. Vanish is used (not 'authenticated nav appears') because the post-login destination differs by product mode, but the login form unmounting is a stable cross-mode success signal that survives the client-side (context-preserving) navigation. A failed login keeps the form mounted (it surfaces a toast, not a redirect), so vanish is a true success discriminator. activateStates is empty because the post-login surface is a different route than the structural login-form state; encoding it as a second always-required state would force a structural partial_match (it can't exist on the /login page the matcher first snapshots). effect:read because it only establishes a session in the throwaway unauth context (torn down after the spec); it mutates no server state.",
+      "fromStates": ["login-form"],
+      "activateStates": [],
+      "exitStates": [],
+      "effect": "read",
+      "actions": [
+        {
+          "type": "type",
+          "target": { "attributes": { "id": "login-username" } },
+          "params": { "text": "ci-bot@qontinui.io", "clear": true }
+        },
+        {
+          "type": "type",
+          "target": { "attributes": { "id": "login-password" } },
+          "params": { "text": "{{SPEC_CI_AUTH_PASSWORD}}", "clear": true }
+        },
+        {
+          "type": "click",
+          "target": { "attributes": { "type": "submit" }, "text": "Sign In" },
+          "waitAfter": {
+            "type": "vanish",
+            "query": { "attributes": { "id": "login-username" } },
+            "timeout": 15000
+          }
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    }
+  ]
+}

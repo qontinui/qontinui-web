@@ -159,6 +159,84 @@ interface SpecEntry {
   doc: Record<string, unknown>;
 }
 
+// ---------------------------------------------------------------------------
+// Unauthenticated lane tagging (Unlock 3)
+//
+// Auth flows (login, invalid-creds, password-reset) must start
+// UNauthenticated — impossible in the shared pre-authed context. We tag those
+// specs with `metadata.requiresUnauthenticated: true` and route them through a
+// dedicated `browser.newContext()` that runs NO `programmaticLogin` and seeds
+// NO `is_authenticated` flag, so pages render the `/login` screen. The tag is a
+// spec-metadata flag (not a path rule) so it travels with the spec and is
+// trivially auditable in the JSON. Everything else stays on the pre-authed
+// context — the lane is purely additive and cannot regress the 37 authed specs.
+// ---------------------------------------------------------------------------
+
+function requiresUnauthenticated(doc: Record<string, unknown>): boolean {
+  const meta = (doc as { metadata?: { requiresUnauthenticated?: unknown } }).metadata;
+  return meta?.requiresUnauthenticated === true;
+}
+
+// ---------------------------------------------------------------------------
+// Secret substitution (Unlock 3)
+//
+// The login transition needs ci-bot's password, which must NEVER live in a
+// committed spec JSON. Specs reference it as the literal placeholder
+// `{{SPEC_CI_AUTH_PASSWORD}}` in a transition action param; just before the
+// in-browser executor runs, we deep-clone the spec doc and replace any such
+// placeholder with `process.env.QONTINUI_TEST_AUTO_LOGIN_PASSWORD` (the value
+// the GHA workflow injects from the `SPEC_CI_AUTH_PASSWORD` secret). Only the
+// throwaway clone passed to `page.evaluate` carries the secret — the report
+// and `spec.doc` keep the placeholder. The substituted value is NEVER logged.
+//
+// The mapping is a fixed allow-list so an arbitrary `{{...}}` can't pull an
+// unintended env var into the page.
+// ---------------------------------------------------------------------------
+
+const SECRET_PLACEHOLDERS: Record<string, () => string | undefined> = {
+  "{{SPEC_CI_AUTH_PASSWORD}}": () => process.env.QONTINUI_TEST_AUTO_LOGIN_PASSWORD,
+};
+
+/**
+ * Deep-clone `doc` and substitute any known `{{SECRET}}` placeholder found in a
+ * string value (recursively). Returns a tuple of the substituted clone and
+ * whether every referenced placeholder resolved to a non-empty value — the
+ * caller surfaces an unresolved secret as a spec error rather than typing the
+ * literal placeholder into the login form.
+ */
+function substituteSecrets(
+  doc: Record<string, unknown>,
+): { doc: Record<string, unknown>; ok: boolean; missing: string[] } {
+  const missing = new Set<string>();
+  const walk = (val: unknown): unknown => {
+    if (typeof val === "string") {
+      let out = val;
+      for (const [placeholder, getter] of Object.entries(SECRET_PLACEHOLDERS)) {
+        if (out.includes(placeholder)) {
+          const secret = getter();
+          if (!secret) {
+            missing.add(placeholder);
+            continue;
+          }
+          out = out.split(placeholder).join(secret);
+        }
+      }
+      return out;
+    }
+    if (Array.isArray(val)) return val.map(walk);
+    if (val && typeof val === "object") {
+      const obj: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(val as Record<string, unknown>)) {
+        obj[k] = walk(v);
+      }
+      return obj;
+    }
+    return val;
+  };
+  const cloned = walk(doc) as Record<string, unknown>;
+  return { doc: cloned, ok: missing.size === 0, missing: [...missing] };
+}
+
 function discoverSpecs(specsDir: string): SpecEntry[] {
   if (!existsSync(specsDir)) return [];
   const out: SpecEntry[] = [];
@@ -312,6 +390,19 @@ async function evaluateSpec(
     await page.waitForTimeout(2500);
     result.navigatedOk = page.url().includes(route.split("?")[0].replace(baseUrl, "")) || true;
 
+    // Substitute any `{{SECRET}}` placeholder (e.g. the login password) into a
+    // throwaway clone of the spec doc just before it crosses into the page.
+    // The original `spec.doc` (and so the report) keeps the placeholder, and
+    // the substituted value is never written to a log. An unresolved secret is
+    // a hard error — better than silently typing the literal placeholder.
+    const subst = substituteSecrets(spec.doc);
+    if (!subst.ok) {
+      result.error = `unresolved secret(s): ${subst.missing.join(",")}`;
+      result.durationMs = Date.now() - started;
+      return result;
+    }
+    const injectedDoc = subst.doc;
+
     // Inject the IR + run the matcher inside the page. ui-bridge-auto's
     // matcher needs real DOM, which we have here — exactly the use-case
     // it was designed for.
@@ -324,6 +415,9 @@ async function evaluateSpec(
           // booted. The frontend exposes this for dev-tools introspection.
           // If the page didn't expose it, this throws and we surface the
           // gap in the report.
+          /* eslint-disable @typescript-eslint/no-explicit-any -- injected dev-only
+             surface; the ui-bridge-auto runtime shapes are intentionally untyped
+             here (this code runs inside page.evaluate, away from the bundle types). */
           const W = window as unknown as {
             __qontinuiSpecCi__?: {
               adaptIRDocumentToWorkflowConfig: (doc: unknown) => any;
@@ -336,6 +430,7 @@ async function evaluateSpec(
               getActionExecutor: () => any;
             };
           };
+          /* eslint-enable @typescript-eslint/no-explicit-any */
           if (!W.__qontinuiSpecCi__) {
             return {
               ok: false,
@@ -432,6 +527,7 @@ async function evaluateSpec(
             durationMs: number;
             error: string | null;
           }> = [];
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- raw IR shape
           const rawTransitions = (irDoc as { transitions?: any[] }).transitions ?? [];
           for (let i = 0; i < adapted.transitions.length; i++) {
             const t = adapted.transitions[i];
@@ -485,7 +581,7 @@ async function evaluateSpec(
           };
         }
       },
-      { irDoc: spec.doc, includeDestructive },
+      { irDoc: injectedDoc, includeDestructive },
     )) as
       | {
           ok: true;
@@ -568,21 +664,17 @@ async function main(): Promise<number> {
   // account unmutated (no PUT). Override with SPEC_CI_PRODUCT_MODE=ai.
   const productMode: "ai" | "visual" =
     process.env.SPEC_CI_PRODUCT_MODE === "ai" ? "ai" : "visual";
-  await context.addInitScript((m) => {
+  // Product-mode seed only — NO `is_authenticated` here (that is seeded
+  // separately on the authed context below). Sharing this init lets us reuse
+  // the same product-mode pin on the unauth lane without authenticating it.
+  const productModeInit = (m: unknown) => {
     try {
       window.localStorage.setItem("qontinui-product-mode", m as string);
-      // Access tokens live in-memory (token-storage.ts) and are cleared on
-      // every full navigation; the persistent `is_authenticated` flag is what
-      // the client-side AuthProvider checks pre-mount to decide whether to
-      // refresh-and-stay vs redirect to /login. Seed it on every page load so
-      // each goto re-auths via the refresh cookie instead of bouncing to
-      // /login. (The UI login below establishes the refresh cookie.)
-      window.localStorage.setItem("is_authenticated", "true");
     } catch {
-      /* localStorage unavailable — intercept below still forces serverMode */
+      /* localStorage unavailable — prefs intercept below still forces serverMode */
     }
-  }, productMode);
-  await context.route("**/users/me/preferences", async (route) => {
+  };
+  const prefsIntercept = async (route: import("@playwright/test").Route) => {
     if (route.request().method() !== "GET") return route.continue();
     let body: Record<string, unknown> = {};
     try {
@@ -601,7 +693,23 @@ async function main(): Promise<number> {
       contentType: "application/json",
       body: JSON.stringify(body),
     });
+  };
+  await context.addInitScript(productModeInit, productMode);
+  // Access tokens live in-memory (token-storage.ts) and are cleared on every
+  // full navigation; the persistent `is_authenticated` flag is what the
+  // client-side AuthProvider checks pre-mount to decide whether to
+  // refresh-and-stay vs redirect to /login. Seed it on the AUTHED context only
+  // so each goto re-auths via the refresh cookie instead of bouncing to /login.
+  // (The UI login below establishes the refresh cookie.) The unauth lane
+  // deliberately omits this so its pages render the /login screen.
+  await context.addInitScript(() => {
+    try {
+      window.localStorage.setItem("is_authenticated", "true");
+    } catch {
+      /* localStorage unavailable */
+    }
   });
+  await context.route("**/users/me/preferences", prefsIntercept);
   process.stderr.write(`[spec-ci] product mode forced to "${productMode}"\n`);
 
   // api-auth: the API login call (sets cookies on the context). This alone is
@@ -654,10 +762,45 @@ async function main(): Promise<number> {
   );
   const results: SpecResult[] = [];
 
+  // Unauth lane (Unlock 3): specs tagged `metadata.requiresUnauthenticated`
+  // run in a SEPARATE context that never logged in and never seeded
+  // `is_authenticated`, so their pages render the /login screen. Each such
+  // spec gets a FRESH context+page so a login transition that establishes a
+  // session in one auth spec can't leak into the next (full isolation). The
+  // product-mode pin is reused (it doesn't authenticate); the auth seed +
+  // programmaticLogin are deliberately omitted. Non-auth specs stay on the
+  // shared pre-authed `page` — the lane is purely additive.
+  const runUnauthSpec = async (spec: SpecEntry): Promise<SpecResult> => {
+    const unauthContext = await browser.newContext({
+      viewport: { width: 1280, height: 800 },
+      ignoreHTTPSErrors: true,
+    });
+    await unauthContext.addInitScript(productModeInit, productMode);
+    await unauthContext.route("**/users/me/preferences", prefsIntercept);
+    const unauthPage = await unauthContext.newPage();
+    try {
+      return await evaluateSpec(
+        unauthPage,
+        spec,
+        args.baseUrl,
+        args.includeDestructive,
+        // Auth pages aren't <RequireProject>-gated; no fixture selection needed.
+        null,
+      );
+    } finally {
+      await unauthContext.close();
+    }
+  };
+
   for (let i = 0; i < specs.length; i++) {
     const spec = specs[i];
-    process.stderr.write(`[spec-ci] ${i + 1}/${specs.length} ${spec.id} … `);
-    const r = await evaluateSpec(page, spec, args.baseUrl, args.includeDestructive, fixtureProjectId);
+    const unauth = requiresUnauthenticated(spec.doc);
+    process.stderr.write(
+      `[spec-ci] ${i + 1}/${specs.length} ${spec.id}${unauth ? " [unauth]" : ""} … `,
+    );
+    const r = unauth
+      ? await runUnauthSpec(spec)
+      : await evaluateSpec(page, spec, args.baseUrl, args.includeDestructive, fixtureProjectId);
     results.push(r);
     process.stderr.write(
       `${r.matchOutcome} matchRate=${r.matchRate.toFixed(2)} transitions=${r.transitions.length} passRate=${r.transitionPassRate.toFixed(2)}${r.error ? ` error=${r.error}` : ""}\n`,
