@@ -11,13 +11,17 @@ works across horizontally-scaled backend instances.
 """
 
 import asyncio
+import base64
+import binascii
 import json
 import re
+import time
 import urllib.error
 import urllib.request
 import uuid
 from datetime import UTC, datetime
 from typing import Annotated
+from uuid import UUID, uuid4
 
 import structlog
 from fastapi import (
@@ -58,6 +62,28 @@ _RUNNER_PORT_MAX = 9899
 # dots, and forward slashes only. Rejects characters that could rewrite the URL
 # (e.g., '@', ':', '?', '#') even if FastAPI strips some of them first.
 _SAFE_PATH_RE = re.compile(r"^[a-zA-Z0-9/_\-\.]*$")
+
+# Maximum request/response body size relayed over the WS bridge. Guards both
+# the inbound request body and the base64-decoded response body against
+# oversized payloads that would strain Redis pub/sub. 8 MiB.
+RELAY_MAX_BODY_BYTES = 8 * 1024 * 1024
+
+# Relay dispatch timeout bounds (milliseconds) for the remote-runner path.
+_RELAY_TIMEOUT_MS_MIN = 1000
+_RELAY_TIMEOUT_MS_MAX = 120000
+_RELAY_TIMEOUT_MS_DEFAULT = 30000
+
+# Request headers never forwarded to the runner over the relay. ``authorization``
+# is excluded deliberately: the runner trusts its outbound WS connection, NOT
+# the end user's bearer token, so the token must never cross the relay.
+_RELAY_EXCLUDED_REQUEST_HEADERS = frozenset(
+    {"host", "connection", "transfer-encoding", "content-length", "authorization"}
+)
+
+# Hop-by-hop response headers stripped before returning the runner's reply.
+_RELAY_EXCLUDED_RESPONSE_HEADERS = frozenset(
+    {"transfer-encoding", "connection", "keep-alive", "content-length"}
+)
 
 
 def _validate_runner_port(port: int) -> None:
@@ -639,8 +665,24 @@ async def runner_proxy(
 
     The runner port is looked up from the user's most recent active connection.
     Falls back to port 9876 (default runner port).
+
+    Two modes:
+
+    * **Co-located (legacy)** — when the ``X-Qontinui-Device-Id`` header is
+      ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the
+      synchronous urllib path below. Used by the demo box where the runner is
+      on the same host as the backend.
+    * **Remote relay** — when ``X-Qontinui-Device-Id`` is PRESENT, the request
+      is relayed HTTP-over-WebSocket through the runner's existing outbound
+      ``/devices/ws`` connection. This lets a mobile client on a *different*
+      network reach a runner it doesn't share a LAN with.
     """
     user_id = str(user.id)
+
+    # --- Remote relay path (mobile on a different network) ---------------
+    device_id_hdr = request.headers.get("X-Qontinui-Device-Id")
+    if device_id_hdr is not None:
+        return await _runner_proxy_relay(request, path, user_id, device_id_hdr)
 
     # Find the runner port from the unified device registry.
     #
@@ -726,3 +768,227 @@ async def runner_proxy(
             status_code=502,
             content={"detail": f"Proxy error: {str(e)}"},
         )
+
+
+def _resolve_relay_timeout_s(request: Request) -> float:
+    """Resolve the relay dispatch timeout (seconds) from the request headers.
+
+    Reads ``X-Qontinui-Timeout-Ms`` if present and parseable as an int,
+    clamps it to ``[_RELAY_TIMEOUT_MS_MIN, _RELAY_TIMEOUT_MS_MAX]``, and
+    defaults to ``_RELAY_TIMEOUT_MS_DEFAULT`` otherwise.
+    """
+    raw = request.headers.get("X-Qontinui-Timeout-Ms")
+    ms = _RELAY_TIMEOUT_MS_DEFAULT
+    if raw is not None:
+        try:
+            ms = int(raw)
+        except (TypeError, ValueError):
+            ms = _RELAY_TIMEOUT_MS_DEFAULT
+    ms = max(_RELAY_TIMEOUT_MS_MIN, min(_RELAY_TIMEOUT_MS_MAX, ms))
+    return ms / 1000.0
+
+
+async def _runner_proxy_relay(
+    request: Request,
+    path: str,
+    user_id: str,
+    device_id_hdr: str,
+) -> Response:
+    """Relay an HTTP request to a remote runner over its outbound WS bridge.
+
+    Reached from :func:`runner_proxy` when the ``X-Qontinui-Device-Id`` header
+    is present. The runner need not be co-located with this backend: the
+    request is published as an ``http_request`` envelope on the runner's Redis
+    command channel and the matching ``command_response`` is awaited, so the
+    relay works across horizontally-scaled backend replicas.
+    """
+    # Lazy imports keep the module import graph light for the legacy path.
+    from sqlalchemy import text
+
+    from app.services.runner import (
+        RunnerCommandTimeoutError,
+        RunnerNotConnectedError,
+    )
+    from app.services.runner_websocket_manager import (
+        get_runner_websocket_manager,
+    )
+
+    # 1. Validate + resolve the device (UUID, ownership, connected).
+    try:
+        device_uuid = UUID(device_id_hdr)
+    except (ValueError, AttributeError, TypeError):
+        return JSONResponse(
+            status_code=400,
+            content={"detail": "X-Qontinui-Device-Id is not a valid UUID"},
+        )
+
+    try:
+        from app.db.session import AsyncSessionLocal
+
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                text(
+                    "SELECT id, ws_session_id FROM coord.devices "
+                    "WHERE id = :device_id "
+                    "  AND user_id = :uid "
+                    "  AND capability_user_paired = true"
+                ),
+                {"device_id": str(device_uuid), "uid": user_id},
+            )
+            row = result.fetchone()
+    except Exception as e:
+        logger.error(
+            "runner_proxy_relay_device_lookup_failed",
+            device_id=str(device_uuid),
+            error=str(e),
+        )
+        return JSONResponse(
+            status_code=502,
+            content={"detail": "device lookup failed"},
+        )
+
+    if row is None:
+        return JSONResponse(
+            status_code=404,
+            content={"detail": "device not found or not owned by caller"},
+        )
+    if row[1] is None:  # ws_session_id IS NULL
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "runner not connected"},
+        )
+
+    # 2. Validate path with the existing SSRF guard.
+    try:
+        _validate_proxy_path(path)
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+    # 3. Resolve the dispatch timeout.
+    timeout_s = _resolve_relay_timeout_s(request)
+
+    # 4. Read + size-cap the request body.
+    body = await request.body()
+    if len(body) > RELAY_MAX_BODY_BYTES:
+        return JSONResponse(
+            status_code=413,
+            content={"detail": "request body exceeds relay size cap"},
+        )
+
+    # 5. Build the filtered request headers (lowercased keys, drop hop-by-hop
+    #    + authorization — never forward the user's bearer to the runner).
+    fwd_headers = {
+        k.lower(): v
+        for k, v in request.headers.items()
+        if k.lower() not in _RELAY_EXCLUDED_REQUEST_HEADERS
+    }
+
+    # 6. Build the http_request envelope (top-level type — see wire contract).
+    body_b64 = base64.b64encode(body).decode("ascii") if body else ""
+    envelope: dict[str, str | dict[str, str]] = {
+        "type": "http_request",
+        "method": request.method,
+        "path": path,
+        "query": request.url.query,
+        "headers": fwd_headers,
+        "body_b64": body_b64,
+    }
+
+    request_id = str(uuid4())
+    redis_client = await get_redis()
+    manager = await get_runner_websocket_manager(redis_client)
+
+    started = time.monotonic()
+    logger.info(
+        "runner_proxy_relay_dispatch",
+        device_id=str(device_uuid),
+        request_id=request_id,
+        method=request.method,
+        path=path,
+        timeout_s=timeout_s,
+        body_bytes=len(body),
+    )
+
+    # 7. Dispatch over the WS bridge and await the matching response.
+    try:
+        reply = await manager.relay.dispatch_and_wait(
+            str(device_uuid),
+            envelope,
+            request_id=request_id,
+            timeout_s=timeout_s,
+            require_local_connection=False,
+        )
+    except RunnerNotConnectedError:
+        logger.warning(
+            "runner_proxy_relay_runner_disconnected",
+            device_id=str(device_uuid),
+            request_id=request_id,
+        )
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "runner not connected"},
+        )
+    except RunnerCommandTimeoutError:
+        elapsed_ms = (time.monotonic() - started) * 1000.0
+        logger.error(
+            "runner_proxy_relay_timeout",
+            device_id=str(device_uuid),
+            request_id=request_id,
+            path=path,
+            elapsed_ms=round(elapsed_ms, 1),
+        )
+        return JSONResponse(
+            status_code=504,
+            content={"detail": "runner did not respond in time"},
+        )
+
+    # 8. Translate the command_response reply into a FastAPI Response.
+    status_code = reply.get("status", 200)
+    try:
+        status_code = int(status_code)
+    except (TypeError, ValueError):
+        status_code = 200
+
+    reply_body_b64 = reply.get("body_b64", "") or ""
+    try:
+        resp_content = base64.b64decode(reply_body_b64) if reply_body_b64 else b""
+    except (binascii.Error, ValueError):
+        logger.error(
+            "runner_proxy_relay_bad_response_b64",
+            device_id=str(device_uuid),
+            request_id=request_id,
+        )
+        return JSONResponse(
+            status_code=502,
+            content={"detail": "runner returned an undecodable body"},
+        )
+
+    if len(resp_content) > RELAY_MAX_BODY_BYTES:
+        return JSONResponse(
+            status_code=413,
+            content={"detail": "runner response exceeds relay size cap"},
+        )
+
+    reply_headers = reply.get("headers") or {}
+    resp_headers = {
+        k: v
+        for k, v in reply_headers.items()
+        if k.lower() not in _RELAY_EXCLUDED_RESPONSE_HEADERS
+    }
+
+    elapsed_ms = (time.monotonic() - started) * 1000.0
+    logger.info(
+        "runner_proxy_relay",
+        device_id=str(device_uuid),
+        request_id=request_id,
+        method=request.method,
+        path=path,
+        status=status_code,
+        elapsed_ms=round(elapsed_ms, 1),
+    )
+
+    return Response(
+        content=resp_content,
+        status_code=status_code,
+        headers=resp_headers,
+    )

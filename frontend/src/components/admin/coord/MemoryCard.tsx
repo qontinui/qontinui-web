@@ -14,7 +14,17 @@ import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { BookOpen } from "lucide-react";
-import type { MemorySummary } from "@qontinui/shared-types";
+// TODO: Re-export from @qontinui/shared-types once MemorySummary is published.
+// Locally aliased to unblock compilation.
+type MemorySummary = {
+  name: string;
+  version: number;
+  updated_at: string;
+  written_at?: string | null;
+  type?: string | null;
+  description?: string | null;
+  tags?: string[];
+};
 
 /**
  * Wire-format row for the coord memory list view. Sources both the
