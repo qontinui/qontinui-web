@@ -45,6 +45,14 @@ jobs:
       NEXT_PUBLIC_API_URL: ""
       BACKEND_URL: https://api.qontinui.io
       QONTINUI_API_BASE_URL: https://api.qontinui.io
+      # The /coord-api/* same-origin proxy (next.config.mjs) forwards to
+      # ${COORD_URL}/coord/*. Unset, it defaults to http://localhost:9870
+      # which has no coord in CI -> the operations spec's GET
+      # /coord-api/status 500s. Point it at the public staging coord
+      # service (the axum service ALB; /coord/status returns live device
+      # data there) so the proxy reaches a real coord and the route returns
+      # 200, exactly like the api.qontinui.io backend-proxied routes do.
+      COORD_URL: https://coord.staging.qontinui.io
       QONTINUI_TEST_AUTO_LOGIN_EMAIL: ${{ secrets.SPEC_CI_AUTH_EMAIL }}
       QONTINUI_TEST_AUTO_LOGIN_PASSWORD: ${{ secrets.SPEC_CI_AUTH_PASSWORD }}
       # Gates SpecCiInit's window-exposure to Spec-CI runs only. Production

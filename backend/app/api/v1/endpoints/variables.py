@@ -42,9 +42,30 @@ router = APIRouter()
 # ============================================================================
 
 
+def _parse_project_uuid(project_id: str) -> UUID:
+    """Validate ``project_id`` is a well-formed UUID, else raise 422.
+
+    ``project_id`` arrives as a raw query string. Passing a malformed or
+    empty value straight into a query against the UUID-typed
+    ``project.projects.id`` column makes asyncpg raise ``DataError`` —
+    surfacing as an opaque HTTP 500 on routine input (e.g. the
+    automation-builder page mounting before a project is selected sends
+    ``project_id=``). A bad-format identifier is a client error, so reject
+    it with 422 before touching the database.
+    """
+    try:
+        return UUID(project_id)
+    except (ValueError, AttributeError, TypeError):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid project_id (must be a UUID): {project_id!r}",
+        ) from None
+
+
 async def get_project_or_404(db: AsyncSession, project_id: str) -> Project:
-    """Get project or raise 404."""
-    result = await db.execute(select(Project).filter(Project.id == project_id))
+    """Get project or raise 404 (422 if ``project_id`` isn't a valid UUID)."""
+    project_uuid = _parse_project_uuid(project_id)
+    result = await db.execute(select(Project).filter(Project.id == project_uuid))
     project = result.scalar_one_or_none()
 
     if not project:

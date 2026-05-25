@@ -36,11 +36,24 @@ interface UseGlobalVariablesReturn {
 /**
  * Fetch global variables for a project
  */
+/**
+ * True when ``projectId`` is a usable identifier. Guards against empty,
+ * ``undefined``/``null`` (literal or coerced), and the numeric ``0``
+ * placeholder — calling the API with any of these produces a backend
+ * error instead of a meaningful result, so the page must not make the
+ * call until a real project is selected.
+ */
+const hasValidProjectId = (projectId: string | number): boolean => {
+  if (projectId === 0 || projectId === "") return false;
+  const s = String(projectId).trim();
+  return s.length > 0 && s !== "undefined" && s !== "null";
+};
+
 const fetchGlobalVariables = async (
   projectId: string | number
 ): Promise<GlobalVariable[]> => {
   const response = await httpClient.fetch(
-    `${API_BASE_URL}/api/v1/variables/global?project_id=${projectId}`
+    `${API_BASE_URL}/api/v1/variables/global?project_id=${encodeURIComponent(String(projectId))}`
   );
   if (!response.ok) {
     throw new Error(`Failed to fetch variables: ${response.status}`);
@@ -124,7 +137,7 @@ export function useGlobalVariables({
     {
       queryKey,
       queryFn: () => fetchGlobalVariables(projectId),
-      enabled: enabled && !!projectId,
+      enabled: enabled && hasValidProjectId(projectId),
       staleTime: 30000, // 30 seconds
     }
   );
