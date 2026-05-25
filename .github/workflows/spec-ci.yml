@@ -151,9 +151,13 @@ jobs:
               "- error: \(.summary.error)",
               "- minMatchRate: \(.summary.minMatchRate)",
               "- meanMatchRate: \(.summary.meanMatchRate)",
-              "- transitionPassRate: \(.summary.transitionPassRate)"
+              "- transitionPassRate: \(.summary.transitionPassRate)",
+              "- consoleErrors: \(.summary.consoleErrors.total)"
             ' frontend/spec-ci-report.json >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"
             echo "Failing specs:" >> "$GITHUB_STEP_SUMMARY"
             jq -r '.specs[] | select(.matchOutcome != "full_match") | "- \(.specId) (\(.matchOutcome), matchRate=\(.matchRate))"' frontend/spec-ci-report.json >> "$GITHUB_STEP_SUMMARY" || true
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Specs with critical console errors:" >> "$GITHUB_STEP_SUMMARY"
+            jq -r '.specs[] | select((.consoleErrors // []) | length > 0) | .specId as $s | .consoleErrors[] | "- \($s) [\(.level)] \(.text)"' frontend/spec-ci-report.json >> "$GITHUB_STEP_SUMMARY" || true
           fi
