@@ -8,9 +8,7 @@
     "appId": "qontinui-web"
   },
   "metadata": {
-    "tags": ["automation-builder", "workflows", "builder-landing"],
-    "expectedServerErrors": ["/api/v1/variables/global"],
-    "expectedServerErrorsNote": "PRE-EXISTING backend 500 (tech-debt baseline for the new same-origin HTTP-500 invariant, NOT a legitimate error-path exercise): GET /api/v1/variables/global?project_id=<id> 500s for the ci-bot account against live staging (verified direct-to-backend; 422 without project_id, 500 with). Waived so this spec does not block all merges on a defect outside this PR's scope; tracked for fix-forward. Remove once fixed."
+    "tags": ["automation-builder", "workflows", "builder-landing"]
   },
   "states": [
     {

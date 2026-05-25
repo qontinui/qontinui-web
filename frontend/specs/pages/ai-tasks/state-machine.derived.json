@@ -11,9 +11,7 @@
     "tags": [
       "ai-tasks",
       "empty-state"
-    ],
-    "expectedServerErrors": ["/api/v1/task-runs"],
-    "expectedServerErrorsNote": "PRE-EXISTING backend 500 (tech-debt baseline for the new same-origin HTTP-500 invariant, NOT a legitimate error-path exercise): GET /api/v1/task-runs 500s for the ci-bot account against live staging (verified direct-to-backend). Waived so this coverage spec does not block all merges on a defect outside this PR's scope; tracked for fix-forward in the backend. Remove this waiver once the endpoint is fixed."
+    ]
   },
   "states": [
     {
