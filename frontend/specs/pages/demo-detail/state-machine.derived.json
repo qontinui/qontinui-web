@@ -7,7 +7,8 @@
   "metadata": {
     "tags": ["demo", "public", "not-found", "smoke-parity"],
     "requiresUnauthenticated": true,
-    "extraSettleMs": 9000
+    "extraSettleMs": 9000,
+    "expectedConsoleErrors": ["getCurrentUser failed: 401"]
   },
   "states": [
     {
