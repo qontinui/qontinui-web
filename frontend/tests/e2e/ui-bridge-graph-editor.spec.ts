@@ -324,59 +324,9 @@ test.describe("UI Bridge Graph Editor - Other Tabs", () => {
   });
 });
 
-test.describe("UI Bridge Graph Editor - No Console Errors", () => {
-  test("should load and navigate without critical console errors @smoke", async ({
-    page,
-  }) => {
-    const errors: string[] = [];
-    page.on("console", (msg) => {
-      if (msg.type() === "error") {
-        const text = msg.text();
-        // Ignore expected errors
-        if (
-          !text.includes("net::ERR_") &&
-          !text.includes("Failed to load resource") &&
-          !text.includes("favicon") &&
-          !text.includes("hydration") &&
-          !text.includes("Warning:")
-        ) {
-          errors.push(text);
-        }
-      }
-    });
-
-    await navigateToUIBridge(page);
-
-    if (await hasTabsVisible(page)) {
-      // Navigate through each tab to trigger rendering
-      const tabs = [
-        "Graph Editor",
-        "State View",
-        "Transitions",
-        "Pathfinding",
-        "Export",
-        "Discovery",
-      ];
-
-      for (const tabName of tabs) {
-        const tab = page.getByRole("tab", {
-          name: new RegExp(tabName, "i"),
-        });
-        if (await tab.isVisible().catch(() => false)) {
-          await tab.click();
-          await page.waitForTimeout(500);
-        }
-      }
-    }
-
-    // Filter for truly critical errors (uncaught exceptions, type errors)
-    const criticalErrors = errors.filter(
-      (e) =>
-        e.includes("Uncaught") ||
-        e.includes("TypeError") ||
-        e.includes("ReferenceError")
-    );
-
-    expect(criticalErrors).toHaveLength(0);
-  });
-});
+// NOTE: The "No Console Errors" @smoke test that previously lived here was
+// retired 2026-05-25. Spec CI now enforces a default-on console-error
+// invariant across ALL specs (every goto + transition), strictly subsuming
+// this single-page check — it captures pre-hydration errors this Playwright
+// test could not. See frontend/tests/spec-ci/console-policy.ts and
+// run-spec-ci.ts, and qontinui-web/CLAUDE.md (Spec CI section).

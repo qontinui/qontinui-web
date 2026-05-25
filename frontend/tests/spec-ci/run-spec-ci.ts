@@ -30,6 +30,80 @@
 import { chromium, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { readdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { resolve, join } from "node:path";
+import {
+  classifyConsole,
+  compileExpectedConsoleErrors,
+  type ConsoleErrorEntry,
+  type ConsoleLevel,
+} from "./console-policy";
+
+// ---------------------------------------------------------------------------
+// Console-error capture (the run-level invariant; see console-policy.ts)
+//
+// A console error is a property of the JS runtime DURING the run, not of any
+// element or state — so it lives in the harness that owns the page, not in the
+// IRPageSpec schema or the element-assertion DSL. We attach a `page.on` listener
+// to EVERY page the harness drives (the shared authed page AND each fresh
+// `unauthPage` minted per unauthenticated spec — the unauth lane is otherwise
+// invisible to a single-page listener) and write critical hits into a shared
+// sink. Per-spec attribution is by array-length-diff around each evaluateSpec
+// call (see main()); transition-level attribution is `null` because the
+// transition walk runs inside `page.evaluate`, opaque to the outer listener.
+// ---------------------------------------------------------------------------
+
+interface CaptureCtx {
+  specId: string | null;
+  transitionId: string | null;
+}
+
+/**
+ * Attach `console` + `pageerror` listeners to a page, pushing only
+ * gate-relevant (critical) entries into `sink`, attributed via `getCtx()`.
+ * A factory (not inline) because there are two page sites to cover.
+ */
+function attachConsoleCapture(
+  page: Page,
+  getCtx: () => CaptureCtx,
+  sink: ConsoleErrorEntry[],
+): void {
+  page.on("console", (msg) => {
+    const level = msg.type();
+    const text = msg.text();
+    if (classifyConsole(level, text) !== "critical") return;
+    const ctx = getCtx();
+    sink.push({
+      specId: ctx.specId ?? "(unattributed)",
+      transitionId: ctx.transitionId,
+      level: level as ConsoleLevel,
+      text,
+      stack: null,
+      ts: Date.now(),
+    });
+  });
+  page.on("pageerror", (err) => {
+    const ctx = getCtx();
+    sink.push({
+      specId: ctx.specId ?? "(unattributed)",
+      transitionId: ctx.transitionId,
+      level: "pageerror",
+      text: err.message,
+      stack: err.stack ?? null,
+      ts: Date.now(),
+    });
+  });
+}
+
+/**
+ * Read a spec's `metadata.expectedConsoleErrors` waiver. Uses the same loose
+ * `Record<string, unknown>` cast as `requiresUnauthenticated` (below) because
+ * the harness reads the RAW spec JSON, not a typed IRDocument — so no
+ * qontinui-schemas change is needed even though `IRMetadata` is a closed
+ * interface that doesn't declare this key.
+ */
+function readExpectedConsoleErrors(doc: Record<string, unknown>): RegExp[] {
+  const meta = (doc as { metadata?: { expectedConsoleErrors?: unknown } }).metadata;
+  return compileExpectedConsoleErrors(meta?.expectedConsoleErrors);
+}
 
 // ---------------------------------------------------------------------------
 // CLI args
@@ -365,6 +439,12 @@ interface SpecResult {
   assertions: AssertionResult[];
   transitions: TransitionResult[];
   transitionPassRate: number;
+  /**
+   * Critical console errors attributed to this spec (filled in by main() via
+   * length-diff slicing around the evaluateSpec call, after any
+   * `metadata.expectedConsoleErrors` waivers are removed). Empty = console-clean.
+   */
+  consoleErrors: ConsoleErrorEntry[];
   error: string | null;
   durationMs: number;
 }
@@ -468,6 +548,7 @@ async function evaluateSpec(
     assertions: [],
     transitions: [],
     transitionPassRate: 0,
+    consoleErrors: [],
     error: null,
     durationMs: 0,
   };
@@ -761,6 +842,8 @@ interface FullReport {
     minMatchRate: number;
     meanMatchRate: number;
     transitionPassRate: number;
+    /** Run-level console-error invariant: total critical hits + per-spec breakdown. */
+    consoleErrors: { total: number; bySpec: Record<string, number> };
   };
 }
 
@@ -915,6 +998,16 @@ async function main(): Promise<number> {
 
   const page = await context.newPage();
 
+  // Console-error invariant: a single shared sink + a mutable per-spec context
+  // marker, with listeners attached to EVERY page the harness drives. The
+  // marker is updated in the spec loop below before each navigation; the
+  // listener reads it at fire time for attribution. Attach to the shared authed
+  // page here and to each fresh unauthPage inside runUnauthSpec — otherwise the
+  // unauth lane (login / invalid-creds / password-reset) escapes the gate.
+  const criticalConsole: ConsoleErrorEntry[] = [];
+  const captureCtx: CaptureCtx = { specId: null, transitionId: null };
+  attachConsoleCapture(page, () => captureCtx, criticalConsole);
+
   // Confirm the browser app session took. The same-origin `api-auth` login
   // above sets the session cookie on localhost (via the /api proxy), so a
   // protected route should render rather than redirect to /login. is_authenticated
@@ -957,6 +1050,10 @@ async function main(): Promise<number> {
     await unauthContext.route("**/operations/ci-status", ciStatusStub);
     await unauthContext.route("**/ws-token", wsTokenStub);
     const unauthPage = await unauthContext.newPage();
+    // Same console sink + context marker as the shared authed page, so unauth
+    // specs are covered by the run-level invariant (they were the one lane a
+    // single shared-page listener would silently miss).
+    attachConsoleCapture(unauthPage, () => captureCtx, criticalConsole);
     try {
       return await evaluateSpec(
         unauthPage,
@@ -978,12 +1075,24 @@ async function main(): Promise<number> {
     process.stderr.write(
       `[spec-ci] ${i + 1}/${specs.length} ${spec.id}${unauth ? " [unauth]" : ""} … `,
     );
+    // Mark the active spec for console attribution, then capture the sink
+    // length so we can slice off exactly this spec's critical console hits.
+    // transitionId stays "initial-load" — the in-page transition walk is
+    // opaque to the outer listener (see attachConsoleCapture).
+    captureCtx.specId = spec.id;
+    captureCtx.transitionId = "initial-load";
+    const consoleBefore = criticalConsole.length;
     const r = unauth
       ? await runUnauthSpec(spec)
       : await evaluateSpec(page, spec, args.baseUrl, args.includeDestructive, args.includeWrite, fixtureProjectId);
+    // Attribute this spec's slice, dropping any author-declared expected errors.
+    const expected = readExpectedConsoleErrors(spec.doc);
+    r.consoleErrors = criticalConsole
+      .slice(consoleBefore)
+      .filter((e) => !expected.some((rx) => rx.test(e.text)));
     results.push(r);
     process.stderr.write(
-      `${r.matchOutcome} matchRate=${r.matchRate.toFixed(2)} transitions=${r.transitions.length} passRate=${r.transitionPassRate.toFixed(2)}${r.error ? ` error=${r.error}` : ""}\n`,
+      `${r.matchOutcome} matchRate=${r.matchRate.toFixed(2)} transitions=${r.transitions.length} passRate=${r.transitionPassRate.toFixed(2)} consoleErrors=${r.consoleErrors.length}${r.error ? ` error=${r.error}` : ""}\n`,
     );
   }
 
@@ -1001,6 +1110,13 @@ async function main(): Promise<number> {
   const transitionPassRate =
     valid.length === 0 ? 0 : valid.reduce((s, r) => s + r.transitionPassRate, 0) / valid.length;
 
+  // Run-level console-error invariant rollup.
+  const consoleErrorBySpec: Record<string, number> = {};
+  for (const r of results) {
+    if (r.consoleErrors.length > 0) consoleErrorBySpec[r.specId] = r.consoleErrors.length;
+  }
+  const consoleErrorTotal = results.reduce((s, r) => s + r.consoleErrors.length, 0);
+
   const report: FullReport = {
     baseUrl: args.baseUrl,
     apiBase: args.apiBase,
@@ -1016,20 +1132,25 @@ async function main(): Promise<number> {
       minMatchRate: valid.length === 0 ? 0 : minMatchRate,
       meanMatchRate,
       transitionPassRate,
+      consoleErrors: { total: consoleErrorTotal, bySpec: consoleErrorBySpec },
     },
   };
 
   writeFileSync(args.output, JSON.stringify(report, null, 2), "utf-8");
   process.stderr.write(
-    `[spec-ci] wrote ${args.output}: ${fullMatch} full, ${partialMatch} partial, ${noMatch} no_match, ${errorCount} error · min ${report.summary.minMatchRate.toFixed(2)} · mean ${report.summary.meanMatchRate.toFixed(2)} · transitionPassRate ${report.summary.transitionPassRate.toFixed(2)}\n`,
+    `[spec-ci] wrote ${args.output}: ${fullMatch} full, ${partialMatch} partial, ${noMatch} no_match, ${errorCount} error · min ${report.summary.minMatchRate.toFixed(2)} · mean ${report.summary.meanMatchRate.toFixed(2)} · transitionPassRate ${report.summary.transitionPassRate.toFixed(2)} · consoleErrors ${report.summary.consoleErrors.total}\n`,
   );
 
   // CI gate: fail iff (a) any spec errored, or (b) min match rate < 0.8,
-  // or (c) transition pass rate < 1.0 across the corpus.
+  // or (c) transition pass rate < 1.0 across the corpus, or (d) any spec
+  // produced a critical browser console error (the run-level invariant that
+  // subsumes the retired ui-bridge-graph-editor "no console errors" smoke test).
+  const consoleClean = report.summary.consoleErrors.total === 0;
   const passed =
     errorCount === 0 &&
     report.summary.minMatchRate >= 0.8 &&
-    report.summary.transitionPassRate >= 0.999;
+    report.summary.transitionPassRate >= 0.999 &&
+    consoleClean;
   return passed ? 0 : 1;
 }
 
