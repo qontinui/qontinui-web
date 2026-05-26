@@ -2,7 +2,7 @@
   "version": "1.0",
   "id": "ai-tasks-detail",
   "name": "AI Task Detail",
-  "description": "Detail view for a single AI task (/ai-tasks/[id]). Wrapped in RequireProject — the harness appends ?project=<fixture> via GATED_SPECS. Fetches GET /api/v1/task-runs/{id} via taskRunsService.getTaskDetail, typed as TaskRunBackendDetail (camelCase, from @qontinui/shared-types). The routeStub must use camelCase fields matching the shared type — sessions need startedAt/endedAt, findings need detectedAt/resolvedAt, status must be 'complete' (not 'completed'). The static 'AI Task Details' heading and Refresh button render regardless of data, proving the page mounted and the RequireProject gate cleared. Ports ai-tasks-pages.spec.ts detail rendering. Read-only; structural only.",
+  "description": "Detail view for a single AI task (/ai-tasks/[id]). Wrapped in RequireProject — the harness appends ?project=<fixture> via GATED_SPECS. Fetches GET /api/v1/task-runs/{id} via useTaskDetail. The routeStub returns a completed task so the page gets past its loading spinner. The static 'AI Task Details' heading and Refresh button render regardless of data state, proving the page mounted and the RequireProject gate cleared. The populated body (StatusBadge, tab list) uses data-derived text with count-suffixed ids (Sessions (N), Findings (N)) that are non-deterministic — only the chrome is asserted. Ports ai-tasks-pages.spec.ts detail rendering. Read-only; structural only.",
   "provenance": { "source": "ai-generated", "appId": "qontinui-web" },
   "metadata": {
     "tags": ["ai-tasks", "detail", "route-stub"],
@@ -15,46 +15,18 @@
         "body": {
           "id": "spec-ci-sentinel-task",
           "taskName": "Spec CI Sentinel Task",
-          "status": "complete",
+          "status": "completed",
           "prompt": "Sentinel task for spec CI verification",
-          "taskType": "ai_dev",
           "createdAt": "2026-05-25T12:00:00Z",
           "completedAt": "2026-05-25T12:01:00Z",
-          "updatedAt": "2026-05-25T12:01:00Z",
           "durationSeconds": 60,
-          "sessionsCount": 1,
-          "maxSessions": null,
-          "autoContinue": false,
-          "outputSummary": "Completed successfully.",
-          "summary": null,
-          "goalAchieved": true,
-          "remainingWork": null,
-          "fullOutputStored": false,
-          "errorMessage": null,
-          "projectId": null,
-          "createdByUserId": null,
-          "runnerId": null,
-          "configId": null,
-          "workflowName": null,
           "sessions": [
-            {
-              "id": "s1",
-              "taskRunId": "spec-ci-sentinel-task",
-              "sessionNumber": 1,
-              "startedAt": "2026-05-25T12:00:00Z",
-              "endedAt": "2026-05-25T12:00:30Z",
-              "durationSeconds": 30,
-              "outputSummary": "Session completed"
-            }
+            { "id": "s1", "name": "Session 1", "status": "completed", "duration_seconds": 30 }
           ],
-          "findings": [],
-          "findingSummary": {
-            "total": 0,
-            "byCategory": {},
-            "bySeverity": {},
-            "byStatus": {},
-            "recent": []
-          }
+          "findings": [
+            { "id": "f1", "title": "Finding 1", "severity": "info", "description": "Test finding" }
+          ],
+          "outputSummary": "Completed successfully."
         }
       }
     ]
@@ -63,11 +35,11 @@
     {
       "id": "ai-tasks-detail-chrome",
       "name": "Page chrome",
-      "description": "The static AI Task Details heading and Refresh button that render regardless of data load state.",
+      "description": "The static AI Task Details heading and Refresh button that render regardless of data load state. Their presence proves the page mounted, the RequireProject gate cleared, and the component is past its initial skeleton.",
       "assertions": [
         {
           "id": "ai-tasks-detail-chrome-elem-0",
-          "description": "'AI Task Details' heading.",
+          "description": "'AI Task Details' heading — renders in all data states.",
           "category": "element-presence",
           "severity": "critical",
           "assertionType": "exists",
@@ -78,7 +50,7 @@
         },
         {
           "id": "ai-tasks-detail-chrome-elem-1",
-          "description": "Refresh button.",
+          "description": "Refresh button — renders in all data states.",
           "category": "element-presence",
           "severity": "warning",
           "assertionType": "exists",

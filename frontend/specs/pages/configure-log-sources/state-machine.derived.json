@@ -27,6 +27,25 @@
         }
       ],
       "provenance": { "source": "ai-generated" }
+    },
+    {
+      "id": "configure-log-sources-offline",
+      "name": "Runner offline state",
+      "description": "RunnerOfflineState rendered when no runner is available in CI.",
+      "assertions": [
+        {
+          "id": "configure-log-sources-offline-elem-0",
+          "description": "'Runner Not Connected' heading from RunnerOfflineState.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "heading-3-runner-not-connected" }, "label": "Runner Not Connected heading" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
     }
   ],
   "transitions": []

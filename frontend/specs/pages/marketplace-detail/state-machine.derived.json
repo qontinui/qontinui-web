@@ -1,37 +1,60 @@
 {
   "version": "1.0",
   "id": "marketplace-detail",
-  "name": "Marketplace Package Detail (not-found)",
-  "description": "Marketplace package detail page in its resolved not-found state (/marketplace/[slug]). Without a routeStub the sentinel slug 404s and the page renders PackageNotFound: 'Package not found' heading plus 'Back to Marketplace' button. The stubbed populated variant is deferred — the current stub shape crashes the page (missing required fields for transformBackendDetailToFrontend). The not-found state mirrors demo-detail's pattern: a dynamic route with a fixed sentinel that 404s to a deterministic view. Ports marketplace.spec.ts invalid slug test. Read-only; structural only.",
+  "name": "Marketplace Package Detail",
+  "description": "Detail view for a single marketplace package (/marketplace/[slug]). With the routeStub returning a valid package, the populated PackageHeader renders 'Back' and 'Install Package' buttons — these are static-text elements exclusive to the success branch (the not-found branch renders 'Back to Marketplace' instead). button-install-package is the clean load-bearing success marker. Ports marketplace.spec.ts package detail rendering. Read-only; structural only.",
   "provenance": { "source": "ai-generated", "appId": "qontinui-web" },
   "metadata": {
-    "tags": ["marketplace", "package", "detail", "not-found"],
-    "extraSettleMs": 6000
+    "tags": ["marketplace", "package", "detail", "route-stub"],
+    "extraSettleMs": 4000,
+    "routeStubs": [
+      {
+        "urlPattern": "**/api/v1/marketplace/packages/spec-ci-sentinel-pkg**",
+        "status": 200,
+        "contentType": "application/json",
+        "body": {
+          "id": "spec-ci-sentinel-pkg-id",
+          "name": "Spec CI Package",
+          "slug": "spec-ci-sentinel-pkg",
+          "description": "A sentinel package for spec CI verification.",
+          "average_rating": 4.5,
+          "rating_count": 10,
+          "author": "spec-ci",
+          "latest_version": {
+            "version": "1.0.0",
+            "security_scan": { "scanned": true, "passed": true }
+          },
+          "versions": [{ "version": "1.0.0" }],
+          "categories": [],
+          "tags": ["spec-ci"]
+        }
+      }
+    ]
   },
   "states": [
     {
-      "id": "marketplace-detail-not-found",
-      "name": "Package not found",
-      "description": "The PackageNotFound component rendered when the sentinel slug returns 404. The heading and back button are static text exclusive to the not-found branch.",
+      "id": "marketplace-detail-populated",
+      "name": "Populated package header",
+      "description": "The PackageHeader rendered when package data is present. The 'Install Package' button is the clean load-bearing success marker — it renders ONLY in the populated branch (the not-found branch shows 'Back to Marketplace' instead).",
       "assertions": [
         {
-          "id": "marketplace-detail-not-found-elem-0",
-          "description": "'Package not found' heading.",
+          "id": "marketplace-detail-populated-elem-0",
+          "description": "Install Package button — populated-only, load-bearing success marker.",
           "category": "element-presence",
           "severity": "critical",
           "assertionType": "exists",
-          "target": { "type": "search", "criteria": { "id": "heading-2-package-not-found" }, "label": "Package not found heading" },
+          "target": { "type": "search", "criteria": { "id": "button-install-package" }, "label": "Install Package button" },
           "source": "ai-generated",
           "reviewed": false,
           "enabled": true
         },
         {
-          "id": "marketplace-detail-not-found-elem-1",
-          "description": "'Back to Marketplace' button.",
+          "id": "marketplace-detail-populated-elem-1",
+          "description": "Back button in the populated PackageHeader.",
           "category": "element-presence",
-          "severity": "critical",
+          "severity": "warning",
           "assertionType": "exists",
-          "target": { "type": "search", "criteria": { "id": "button-back-to-marketplace" }, "label": "Back to Marketplace button" },
+          "target": { "type": "search", "criteria": { "id": "button-back" }, "label": "Back button" },
           "source": "ai-generated",
           "reviewed": false,
           "enabled": true

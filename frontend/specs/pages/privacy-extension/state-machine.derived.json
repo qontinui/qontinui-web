@@ -9,9 +9,28 @@
   },
   "states": [
     {
+      "id": "privacy-extension-header",
+      "name": "Page heading",
+      "description": "The h1 privacy policy heading.",
+      "assertions": [
+        {
+          "id": "privacy-extension-header-elem-0",
+          "description": "h1 Privacy Policy heading.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "heading-1-privacy-policy-for-qontinui-capture-browser-extension" }, "label": "Privacy Policy heading" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
+    {
       "id": "privacy-extension-sections",
       "name": "Content sections",
-      "description": "The h2 section headings for the policy content. All static text. The h1 heading is omitted because its generated id is too long and gets truncated by the SDK.",
+      "description": "The h2 section headings for the policy content. All static text.",
       "assertions": [
         {
           "id": "privacy-extension-sections-elem-0",
