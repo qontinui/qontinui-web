@@ -889,6 +889,32 @@ async function evaluateSpec(
           const detector = new ns.StateDetector(machine, registry);
           detector.evaluate();
 
+          // --- TEMPORARY: dump all element IDs for specs that need deepening ---
+          const DUMP_SPECS = new Set([
+            "recordings-detail", "runs-detail", "testing-run-detail",
+            "qa-dashboard-run-detail", "configure-finding-rules",
+            "verify-email", "marketplace-detail",
+          ]);
+          if (DUMP_SPECS.has(spec.id)) {
+            const dumpEls = registry.getAllElements();
+            process.stderr.write(
+              `[spec-ci-dump] ${spec.id} (${dumpEls.length} elements):\n`,
+            );
+            for (const el of dumpEls) {
+              const eid = (el as { id?: string }).id ?? "?";
+              const etype = (el as { type?: string }).type ?? "?";
+              const elabel = (el as { label?: string }).label ?? "";
+              // Skip common sidebar/nav elements to reduce noise
+              if (
+                /^button-(dashboard|execute|visual|runners|scheduled|operations|monitor|gui|assets|create|discover|config|qa|ai-|project-|settings|help|admin|collapse|search|open-tanstack|98-mb|\d+-mb)/.test(eid) ||
+                /^(mention-|radix-|img-|svg-|content-content-)/.test(eid) ||
+                /^button-(ai-dev|visual)-\d+$/.test(eid)
+              ) continue;
+              process.stderr.write(`  ${eid.padEnd(60)} [${etype}] ${elabel}\n`);
+            }
+          }
+          // --- END TEMPORARY DUMP ---
+
           // Evaluate per-state assertion match-rate (structural side).
           const assertionsOut: Array<{
             stateId: string;
