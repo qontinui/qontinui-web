@@ -9,7 +9,7 @@
     {
       "id": "marketing-home-hero",
       "name": "Hero section",
-      "description": "Top-of-page hero: the H1 headline and the hero CTA buttons (Download, Sign In). Ports marketing.spec.ts:22/37/99 (loads + branding + hero download button).",
+      "description": "Top-of-page hero: the H1 headline. Ports marketing.spec.ts:22/37 (loads + branding heading). NOTE: the header Sign In / Download CTA buttons carry ui-bridge auto-IDs with a render-order index suffix (e.g. button-sign-in-3) that is NOT deterministic across auth states, so we anchor the hero on the stable, unique H1 heading only rather than an index-suffixed button; the unauth Sign-In flow is already covered by the dedicated `login` spec + unauth lane.",
       "assertions": [
         {
           "id": "marketing-home-hero-elem-0",
@@ -18,17 +18,6 @@
           "severity": "critical",
           "assertionType": "exists",
           "target": { "type": "search", "criteria": { "id": "heading-1-ai-development-that-verifies-i", "role": "heading" }, "label": "Hero headline" },
-          "source": "ai-generated",
-          "reviewed": false,
-          "enabled": true
-        },
-        {
-          "id": "marketing-home-hero-elem-1",
-          "description": "Sign In button in the header (ports marketing 'shows Sign In button').",
-          "category": "element-presence",
-          "severity": "critical",
-          "assertionType": "exists",
-          "target": { "type": "search", "criteria": { "id": "button-sign-in-3" }, "label": "Sign In button" },
           "source": "ai-generated",
           "reviewed": false,
           "enabled": true
