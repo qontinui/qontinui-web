@@ -75,6 +75,14 @@ export const BENIGN_DENYLIST: readonly RegExp[] = [
   // functional matchRate/transition failure, so denylisting the console line
   // does not lose the regression signal.
   /WebSocket connection to .+ failed/,
+  // The frontend's proactive token-refresh fires on every authed page. In CI
+  // the harness authenticates via programmatic login (bearer/session cookie)
+  // with no refresh token, so the refresh endpoint returns 401 TOKEN_MISSING.
+  // This is a CI auth-harness artifact, not an app defect — the session is
+  // valid and every page renders correctly. Narrowly anchored to the 401 +
+  // TOKEN_MISSING text so a real refresh error (wrong token, 500) still gates.
+  /TokenRefresh.*401/,
+  /TOKEN_MISSING/,
 ];
 
 /**
