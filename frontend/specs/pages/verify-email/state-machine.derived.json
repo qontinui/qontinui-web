@@ -1,0 +1,57 @@
+{
+  "version": "1.0",
+  "id": "verify-email",
+  "name": "Verify Email (error-resolved)",
+  "description": "Email verification page in the stable error-resolved state (/verify-email with no token). Without a token the page immediately sets status='error' and renders the 'Verification Failed' view with no API call and no redirect — a deterministic, API-free render analogous to demo-detail's not-found view. The heading and action buttons prove the error state rendered cleanly. Runs in the unauth lane (requiresUnauthenticated). Ports auth-flows.spec.ts verify-email invalid-link state. Read-only; structural only.",
+  "provenance": { "source": "ai-generated", "appId": "qontinui-web" },
+  "metadata": {
+    "tags": ["auth", "verify-email", "error-state"],
+    "requiresUnauthenticated": true,
+    "expectedConsoleErrors": ["getCurrentUser failed: 401"],
+    "extraSettleMs": 2000
+  },
+  "states": [
+    {
+      "id": "verify-email-error",
+      "name": "Verification failed view",
+      "description": "The no-token error-resolved view: 'Verification Failed' heading plus Go to Home and Request New Link buttons. No API call, no redirect — a stable deterministic render.",
+      "assertions": [
+        {
+          "id": "verify-email-error-elem-0",
+          "description": "'Verification Failed' heading — proves the no-token error state rendered.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "heading-2-verification-failed" }, "label": "Verification Failed heading" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "verify-email-error-elem-1",
+          "description": "Go to Home button.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "button-go-to-home" }, "label": "Go to Home button" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "verify-email-error-elem-2",
+          "description": "Request New Link button.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "button-request-new-link" }, "label": "Request New Link button" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    }
+  ],
+  "transitions": []
+}

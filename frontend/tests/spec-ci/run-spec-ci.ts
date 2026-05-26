@@ -637,6 +637,10 @@ const GATED_SPECS = new Set<string>([
   // the page on its real (project-selected) render. routeForSpec maps this id
   // to /automation-builder/navigation-tests (slug != spec id).
   "navigation-test-generator",
+  // RequireProject-wrapped detail pages — need ?project=<fixture> to clear the gate.
+  "ai-tasks-detail",
+  "testing-run-detail",
+  "qa-dashboard-run-detail",
 ]);
 
 /**
@@ -699,6 +703,20 @@ function routeForSpec(
     // unknown agent returns zero rows and renders the (success) empty-state.
     // The id shape is a coord agent correlation id (free-form string).
     "coord-agent-detail": "/admin/coord/agents/spec-ci-sentinel-agent",
+    // Dynamic detail routes — sentinel ids for stubbed fetch resolution.
+    "ai-tasks-detail": "/ai-tasks/spec-ci-sentinel-task",
+    "captures-detail": "/captures/spec-ci-sentinel-session",
+    "recordings-detail": "/recordings/spec-ci-sentinel-recording",
+    "runs-detail": "/runs/spec-ci-sentinel-run",
+    "testing-run-detail": "/testing/runs/spec-ci-sentinel-run",
+    "qa-dashboard-run-detail": "/qa-dashboard/runs/spec-ci-sentinel-run",
+    "marketplace-detail": "/marketplace/spec-ci-sentinel-pkg",
+    // Token-carrying override — query param threads through string concat.
+    "reset-password": "/reset-password?token=spec-ci-reset-token",
+    // Nested slug → path overrides (default /${specId} maps to single segment).
+    "configure-finding-rules": "/configure/finding-rules",
+    "configure-hooks": "/configure/hooks",
+    "configure-log-sources": "/configure/log-sources",
   };
   const path = overrides[specId] ?? `/${specId}`;
   let url = `${baseUrl.replace(/\/$/, "")}${path}`;

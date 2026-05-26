@@ -1,0 +1,67 @@
+{
+  "version": "1.0",
+  "id": "ai-tasks-detail",
+  "name": "AI Task Detail",
+  "description": "Detail view for a single AI task (/ai-tasks/[id]). Wrapped in RequireProject — the harness appends ?project=<fixture> via GATED_SPECS. Fetches GET /api/v1/task-runs/{id} via useTaskDetail. The routeStub returns a completed task so the page gets past its loading spinner. The static 'AI Task Details' heading and Refresh button render regardless of data state, proving the page mounted and the RequireProject gate cleared. The populated body (StatusBadge, tab list) uses data-derived text with count-suffixed ids (Sessions (N), Findings (N)) that are non-deterministic — only the chrome is asserted. Ports ai-tasks-pages.spec.ts detail rendering. Read-only; structural only.",
+  "provenance": { "source": "ai-generated", "appId": "qontinui-web" },
+  "metadata": {
+    "tags": ["ai-tasks", "detail", "route-stub"],
+    "extraSettleMs": 4000,
+    "routeStubs": [
+      {
+        "urlPattern": "**/api/v1/task-runs/spec-ci-sentinel-task**",
+        "status": 200,
+        "contentType": "application/json",
+        "body": {
+          "id": "spec-ci-sentinel-task",
+          "taskName": "Spec CI Sentinel Task",
+          "status": "completed",
+          "prompt": "Sentinel task for spec CI verification",
+          "createdAt": "2026-05-25T12:00:00Z",
+          "completedAt": "2026-05-25T12:01:00Z",
+          "durationSeconds": 60,
+          "sessions": [
+            { "id": "s1", "name": "Session 1", "status": "completed", "duration_seconds": 30 }
+          ],
+          "findings": [
+            { "id": "f1", "title": "Finding 1", "severity": "info", "description": "Test finding" }
+          ],
+          "outputSummary": "Completed successfully."
+        }
+      }
+    ]
+  },
+  "states": [
+    {
+      "id": "ai-tasks-detail-chrome",
+      "name": "Page chrome",
+      "description": "The static AI Task Details heading and Refresh button that render regardless of data load state. Their presence proves the page mounted, the RequireProject gate cleared, and the component is past its initial skeleton.",
+      "assertions": [
+        {
+          "id": "ai-tasks-detail-chrome-elem-0",
+          "description": "'AI Task Details' heading — renders in all data states.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "heading-1-ai-task-details" }, "label": "AI Task Details heading" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "ai-tasks-detail-chrome-elem-1",
+          "description": "Refresh button — renders in all data states.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "button-refresh" }, "label": "Refresh button" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    }
+  ],
+  "transitions": []
+}
