@@ -79,6 +79,17 @@ class UnifiedWorkflow(Base):
         default=list,
     )
 
+    # Lossless canonical payload
+    definition: Mapped[dict] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
+        default=dict,
+        comment="Full canonical UnifiedWorkflow payload (camelCase, ~58 fields). "
+        "Lossless source of truth; the typed columns above are a "
+        "denormalized index derived from this for dispatch/list queries.",
+    )
+
     # Workflow steps — stored as opaque JSONB arrays
     setup_steps: Mapped[list] = mapped_column(
         JSONB,

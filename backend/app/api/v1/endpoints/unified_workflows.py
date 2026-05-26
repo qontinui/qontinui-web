@@ -15,11 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import current_active_user, get_async_db
 from app.models.user import User
 from app.services.unified_workflow_service import (
-    UnifiedWorkflowCreate,
     UnifiedWorkflowListResponse,
-    UnifiedWorkflowResponse,
     UnifiedWorkflowService,
-    UnifiedWorkflowUpdate,
 )
 
 logger = structlog.get_logger(__name__)
@@ -37,16 +34,20 @@ def get_service() -> UnifiedWorkflowService:
 
 @router.post(
     "",
-    response_model=UnifiedWorkflowResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create a workflow",
 )
 async def create_workflow(
-    data: UnifiedWorkflowCreate,
+    data: dict[str, Any],
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(current_active_user),
     service: UnifiedWorkflowService = Depends(get_service),
-) -> UnifiedWorkflowResponse:
+) -> dict[str, Any]:
+    """Create a workflow from a full canonical (camelCase) ``UnifiedWorkflow``.
+
+    The complete payload is stored losslessly; no field is dropped. Returns the
+    canonical object augmented with server-authoritative fields.
+    """
     return await service.create_workflow(db, data, current_user.id)
 
 
@@ -102,7 +103,6 @@ async def search_workflows(
 
 @router.get(
     "/{workflow_id}",
-    response_model=UnifiedWorkflowResponse,
     summary="Get a workflow",
 )
 async def get_workflow(
@@ -110,7 +110,7 @@ async def get_workflow(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(current_active_user),
     service: UnifiedWorkflowService = Depends(get_service),
-) -> UnifiedWorkflowResponse:
+) -> dict[str, Any]:
     try:
         return await service.get_workflow(db, workflow_id)
     except ValueError:
@@ -122,16 +122,20 @@ async def get_workflow(
 
 @router.put(
     "/{workflow_id}",
-    response_model=UnifiedWorkflowResponse,
     summary="Update a workflow",
 )
 async def update_workflow(
     workflow_id: UUID,
-    data: UnifiedWorkflowUpdate,
+    data: dict[str, Any],
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(current_active_user),
     service: UnifiedWorkflowService = Depends(get_service),
-) -> UnifiedWorkflowResponse:
+) -> dict[str, Any]:
+    """Update a workflow by merging a canonical (camelCase) patch losslessly.
+
+    Incoming top-level keys are shallow-merged into the stored definition; all
+    typed columns are re-derived. Returns the merged canonical object.
+    """
     try:
         return await service.update_workflow(db, workflow_id, data, current_user.id)
     except ValueError:
@@ -168,7 +172,6 @@ async def delete_workflow(
 
 @router.post(
     "/{workflow_id}/duplicate",
-    response_model=UnifiedWorkflowResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Duplicate a workflow",
 )
@@ -177,7 +180,7 @@ async def duplicate_workflow(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(current_active_user),
     service: UnifiedWorkflowService = Depends(get_service),
-) -> UnifiedWorkflowResponse:
+) -> dict[str, Any]:
     try:
         return await service.duplicate_workflow(db, workflow_id, current_user.id)
     except ValueError:
@@ -208,7 +211,6 @@ async def export_workflow(
 
 @router.post(
     "/import",
-    response_model=UnifiedWorkflowResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Import a workflow from JSON",
 )
@@ -217,5 +219,5 @@ async def import_workflow(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(current_active_user),
     service: UnifiedWorkflowService = Depends(get_service),
-) -> UnifiedWorkflowResponse:
+) -> dict[str, Any]:
     return await service.import_workflow(db, data, current_user.id)

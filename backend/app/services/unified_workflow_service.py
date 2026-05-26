@@ -2,6 +2,25 @@
 Service for Unified Workflow business logic.
 
 Handles workflow CRUD, duplication, import/export, and response mapping.
+
+Losslessness contract
+----------------------
+``POST`` / ``PUT /api/v1/unified-workflows`` is a lossless round-trip for the
+full canonical ``UnifiedWorkflow`` (~58 camelCase fields). The complete
+incoming object is stored verbatim in ``UnifiedWorkflow.definition`` (JSONB).
+The typed ORM columns (``name``, ``setup_steps``, ``provider``, ...) are a
+*derived denormalized index* projected from ``definition`` via the single
+:func:`_project_definition_to_columns` function; dispatch + list/search read
+those columns. The columns are never set independently of ``definition`` — they
+are always re-derived, so the two cannot drift.
+
+The request body is a permissive ``dict[str, Any]`` (canonical camelCase),
+**not** the generated ``qontinui_schemas`` ``UnifiedWorkflow`` Pydantic type:
+that generated type declares ``model_config = ConfigDict(extra="forbid")``,
+so it would *reject* any field outside its 58 declared keys (breaking
+losslessness for future/runner-specific fields) and its typed step-union
+fields would re-tag / normalize step JSON on re-serialization. Storing the raw
+dict guarantees nothing is dropped or mutated.
 """
 
 from datetime import datetime
@@ -10,13 +29,7 @@ from uuid import UUID
 
 import structlog
 from fastapi import HTTPException
-from pydantic import BaseModel, Field
-
-# Import via direct module path rather than the top-level generated package
-# because the package `__init__` registers every generated type, and any
-# temporarily-broken per-type file during a concurrent regen cascades into
-# import failures for unrelated types. `FullRunnerStep` is stable.
-from qontinui_schemas.generated.per_type.full_runner_step import FullRunnerStep
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.unified_workflow import UnifiedWorkflow
@@ -26,127 +39,107 @@ logger = structlog.get_logger(__name__)
 
 
 # =============================================================================
-# Request/Response Schemas
+# Canonical <-> column projection
 # =============================================================================
+#
+# The canonical payload is camelCase (see qontinui-schemas `UnifiedWorkflow`).
+# Step arrays (`setupSteps`, ...) carry FullRunnerStep-shaped objects whose
+# *own* fields are already camelCase (`autoFix`, `criterionIds`, `phase`, ...)
+# — the same JSON the typed `*_steps` columns store today (the previous code
+# stored `FullRunnerStep.model_dump(mode="json")`, which emits exactly these
+# camelCase keys). So step projection is a verbatim pass-through: we copy the
+# canonical step objects into the columns untouched.
+
+# Maps a typed ORM column kwarg (snake_case) -> the canonical key (camelCase)
+# that feeds it, paired with the default to use when the key is absent. Mirrors
+# the defaults previously baked into `_model_to_response` so list/search/dispatch
+# behaviour is unchanged for older rows.
+_COLUMN_SOURCES: dict[str, tuple[str, Any]] = {
+    "description": ("description", ""),
+    "category": ("category", "general"),
+    "tags": ("tags", []),
+    "setup_steps": ("setupSteps", []),
+    "verification_steps": ("verificationSteps", []),
+    "agentic_steps": ("agenticSteps", []),
+    "completion_steps": ("completionSteps", []),
+    "max_iterations": ("maxIterations", 10),
+    "timeout_seconds": ("timeoutSeconds", None),
+    "provider": ("provider", None),
+    "model": ("model", None),
+    "skip_ai_summary": ("skipAiSummary", False),
+    "log_watch_enabled": ("logWatchEnabled", True),
+    "health_check_enabled": ("healthCheckEnabled", True),
+    "health_check_urls": ("healthCheckUrls", []),
+    "preflight_check_enabled": ("preflightCheckEnabled", True),
+    "log_source_selection": ("logSourceSelection", "default"),
+    "context_ids": ("contextIds", []),
+    "disabled_context_ids": ("disabledContextIds", []),
+    "auto_include_contexts": ("autoIncludeContexts", True),
+    "prompt_template": ("promptTemplate", None),
+    "enable_sweep": ("enableSweep", False),
+    "max_sweep_iterations": ("maxSweepIterations", 5),
+    "generated_by_task_run_id": ("generatedByTaskRunId", None),
+    "stages": ("stages", None),
+    "stop_on_failure": ("stopOnFailure", False),
+    "approval_gate": ("approvalGate", False),
+    "reflection_mode": ("reflectionMode", True),
+    "constraint_overrides": ("constraintOverrides", None),
+    "model_overrides": ("modelOverrides", None),
+}
+
+# Columns whose stored value must never be NULL (the model declares them
+# NOT NULL). When the canonical key is present but explicitly null, fall back
+# to the column default so we never violate the constraint.
+_NON_NULLABLE_COLUMN_DEFAULTS: dict[str, Any] = {
+    "description": "",
+    "category": "general",
+    "tags": [],
+    "setup_steps": [],
+    "verification_steps": [],
+    "agentic_steps": [],
+    "completion_steps": [],
+    "max_iterations": 10,
+    "skip_ai_summary": False,
+    "log_watch_enabled": True,
+    "health_check_enabled": True,
+    "health_check_urls": [],
+    "preflight_check_enabled": True,
+    "log_source_selection": "default",
+    "context_ids": [],
+    "disabled_context_ids": [],
+    "auto_include_contexts": True,
+    "enable_sweep": False,
+    "max_sweep_iterations": 5,
+    "stop_on_failure": False,
+    "approval_gate": False,
+    "reflection_mode": True,
+}
 
 
-class UnifiedWorkflowCreate(BaseModel):
-    """Request to create a workflow."""
+def _project_definition_to_columns(definition: dict[str, Any]) -> dict[str, Any]:
+    """Project the canonical (camelCase) workflow onto typed ORM column kwargs.
 
-    id: str | None = None  # Runner can specify UUID during migration
-    name: str
-    description: str = ""
-    category: str = "general"
-    tags: list[str] = Field(default_factory=list)
-    setup_steps: list[FullRunnerStep] = Field(default_factory=list)
-    verification_steps: list[FullRunnerStep] = Field(default_factory=list)
-    agentic_steps: list[FullRunnerStep] = Field(default_factory=list)
-    completion_steps: list[FullRunnerStep] = Field(default_factory=list)
-    max_iterations: int = 10
-    timeout_seconds: int | None = None
-    provider: str | None = None
-    model: str | None = None
-    skip_ai_summary: bool = False
-    log_watch_enabled: bool = True
-    health_check_enabled: bool = True
-    health_check_urls: list[Any] = Field(default_factory=list)
-    preflight_check_enabled: bool = True
-    log_source_selection: Any = "default"
-    context_ids: list[str] = Field(default_factory=list)
-    disabled_context_ids: list[str] = Field(default_factory=list)
-    auto_include_contexts: bool = True
-    prompt_template: str | None = None
-    enable_sweep: bool = False
-    max_sweep_iterations: int = 5
-    generated_by_task_run_id: str | None = None
-    stages: list[Any] | None = None
-    stop_on_failure: bool = False
-    approval_gate: bool = False
-    reflection_mode: bool = True
-    constraint_overrides: dict[str, bool] | None = None
-    model_overrides: dict[str, Any] | None = None
-    project_id: str | None = None
+    This is the ONE place camelCase->snake_case translation happens. It is
+    called from both create and update so the denormalized columns are always
+    a faithful derivation of ``definition`` and the two cannot drift.
+
+    ``name`` is intentionally not included here — it is required and handled by
+    the callers directly so a missing/empty name is a hard validation error
+    rather than a silent default.
+    """
+    columns: dict[str, Any] = {}
+    for column, (canonical_key, default) in _COLUMN_SOURCES.items():
+        value = definition.get(canonical_key, default)
+        # Honour explicit null on NOT NULL columns by substituting the default.
+        if value is None and column in _NON_NULLABLE_COLUMN_DEFAULTS:
+            value = _NON_NULLABLE_COLUMN_DEFAULTS[column]
+        columns[column] = value
+    return columns
 
 
-class UnifiedWorkflowUpdate(BaseModel):
-    """Request to update a workflow. All fields optional."""
-
-    name: str | None = None
-    description: str | None = None
-    category: str | None = None
-    tags: list[str] | None = None
-    setup_steps: list[FullRunnerStep] | None = None
-    verification_steps: list[FullRunnerStep] | None = None
-    agentic_steps: list[FullRunnerStep] | None = None
-    completion_steps: list[FullRunnerStep] | None = None
-    max_iterations: int | None = None
-    timeout_seconds: int | None = None
-    provider: str | None = None
-    model: str | None = None
-    skip_ai_summary: bool | None = None
-    log_watch_enabled: bool | None = None
-    health_check_enabled: bool | None = None
-    health_check_urls: list[Any] | None = None
-    preflight_check_enabled: bool | None = None
-    log_source_selection: Any | None = None
-    context_ids: list[str] | None = None
-    disabled_context_ids: list[str] | None = None
-    auto_include_contexts: bool | None = None
-    prompt_template: str | None = None
-    enable_sweep: bool | None = None
-    max_sweep_iterations: int | None = None
-    generated_by_task_run_id: str | None = None
-    stages: list[Any] | None = None
-    stop_on_failure: bool | None = None
-    approval_gate: bool | None = None
-    reflection_mode: bool | None = None
-    constraint_overrides: dict[str, bool] | None = None
-    model_overrides: dict[str, Any] | None = None
-    project_id: str | None = None
-
-
-class UnifiedWorkflowResponse(BaseModel):
-    # Backfill scan on 2026-04-16 validated all 1160 steps across 169 workflows
-    # against FullRunnerStep. 138 legacy rows were fixed (missing id/phase/name,
-    # sdk_* action renames, step_type->type renames). Safe to use typed arrays.
-    """Response for a workflow."""
-
-    id: str
-    created_by_user_id: str | None
-    project_id: str | None
-    name: str
-    description: str
-    category: str
-    tags: list[str]
-    setup_steps: list[FullRunnerStep]
-    verification_steps: list[FullRunnerStep]
-    agentic_steps: list[FullRunnerStep]
-    completion_steps: list[FullRunnerStep]
-    max_iterations: int
-    timeout_seconds: int | None
-    provider: str | None
-    model: str | None
-    skip_ai_summary: bool
-    log_watch_enabled: bool
-    health_check_enabled: bool
-    health_check_urls: list[Any]
-    preflight_check_enabled: bool
-    log_source_selection: Any
-    context_ids: list[str]
-    disabled_context_ids: list[str]
-    auto_include_contexts: bool
-    prompt_template: str | None
-    enable_sweep: bool
-    max_sweep_iterations: int
-    generated_by_task_run_id: str | None
-    stages: list[Any] | None
-    stop_on_failure: bool
-    approval_gate: bool
-    reflection_mode: bool
-    constraint_overrides: dict[str, bool] | None
-    model_overrides: dict[str, Any] | None
-    created_at: datetime
-    modified_at: datetime  # Exposed as modified_at for frontend compat
+# =============================================================================
+# Response Schemas
+# =============================================================================
 
 
 class Pagination(BaseModel):
@@ -159,9 +152,14 @@ class Pagination(BaseModel):
 
 
 class UnifiedWorkflowListResponse(BaseModel):
-    """Response for listing workflows."""
+    """Response for listing workflows.
 
-    items: list[UnifiedWorkflowResponse]
+    Items are the lossless canonical workflow objects (camelCase) augmented
+    with server-authoritative fields. They are plain dicts rather than a typed
+    model so no field is ever dropped on serialization.
+    """
+
+    items: list[dict[str, Any]]
     pagination: Pagination
 
 
@@ -170,79 +168,51 @@ class UnifiedWorkflowListResponse(BaseModel):
 # =============================================================================
 
 
-def _model_to_response(workflow: UnifiedWorkflow) -> UnifiedWorkflowResponse:
-    return UnifiedWorkflowResponse(
-        id=str(workflow.id),
-        created_by_user_id=(
-            str(workflow.created_by_user_id) if workflow.created_by_user_id else None
-        ),
-        project_id=str(workflow.project_id) if workflow.project_id else None,
-        name=workflow.name,
-        description=workflow.description or "",
-        category=workflow.category or "general",
-        tags=workflow.tags or [],
-        setup_steps=workflow.setup_steps or [],
-        verification_steps=workflow.verification_steps or [],
-        agentic_steps=workflow.agentic_steps or [],
-        completion_steps=workflow.completion_steps or [],
-        max_iterations=workflow.max_iterations or 10,
-        timeout_seconds=workflow.timeout_seconds,
-        provider=workflow.provider,
-        model=workflow.model,
-        skip_ai_summary=workflow.skip_ai_summary or False,
-        log_watch_enabled=(
-            workflow.log_watch_enabled
-            if workflow.log_watch_enabled is not None
-            else True
-        ),
-        health_check_enabled=(
-            workflow.health_check_enabled
-            if workflow.health_check_enabled is not None
-            else True
-        ),
-        health_check_urls=workflow.health_check_urls or [],
-        preflight_check_enabled=(
-            workflow.preflight_check_enabled
-            if workflow.preflight_check_enabled is not None
-            else True
-        ),
-        log_source_selection=(
-            workflow.log_source_selection
-            if workflow.log_source_selection is not None
-            else "default"
-        ),
-        context_ids=workflow.context_ids or [],
-        disabled_context_ids=workflow.disabled_context_ids or [],
-        auto_include_contexts=(
-            workflow.auto_include_contexts
-            if workflow.auto_include_contexts is not None
-            else True
-        ),
-        prompt_template=workflow.prompt_template,
-        enable_sweep=(
-            workflow.enable_sweep if workflow.enable_sweep is not None else False
-        ),
-        max_sweep_iterations=(
-            workflow.max_sweep_iterations
-            if workflow.max_sweep_iterations is not None
-            else 5
-        ),
-        generated_by_task_run_id=workflow.generated_by_task_run_id,
-        stages=workflow.stages or [],
-        stop_on_failure=(
-            workflow.stop_on_failure if workflow.stop_on_failure is not None else False
-        ),
-        approval_gate=(
-            workflow.approval_gate if workflow.approval_gate is not None else False
-        ),
-        reflection_mode=(
-            workflow.reflection_mode if workflow.reflection_mode is not None else True
-        ),
-        constraint_overrides=workflow.constraint_overrides,
-        model_overrides=workflow.model_overrides,
-        created_at=workflow.created_at,
-        modified_at=workflow.updated_at,
+def _iso(value: datetime | None) -> str | None:
+    return value.isoformat() if value is not None else None
+
+
+def _model_to_response(workflow: UnifiedWorkflow) -> dict[str, Any]:
+    """Return the lossless canonical workflow for a stored row.
+
+    The response *is* the stored ``definition`` (the full canonical object the
+    client sent), augmented with the server-authoritative fields the client
+    needs. Server fields overwrite any stale copies that may live in
+    ``definition`` so the authoritative values always win.
+
+    Timestamps are surfaced in both camelCase (``createdAt``) and the
+    ``modified_at`` casing the canonical TS type declares for last-modified.
+    ``created_at`` / ``modified_at`` snake_case aliases are also included for
+    consumers that read the legacy shape.
+    """
+    # Copy so we never mutate the ORM-attached dict.
+    response: dict[str, Any] = dict(workflow.definition or {})
+
+    created_at = _iso(workflow.created_at)
+    modified_at = _iso(workflow.updated_at)
+
+    response.update(
+        {
+            "id": str(workflow.id),
+            "createdByUserId": (
+                str(workflow.created_by_user_id)
+                if workflow.created_by_user_id
+                else None
+            ),
+            "projectId": str(workflow.project_id) if workflow.project_id else None,
+            "createdAt": created_at,
+            "modified_at": modified_at,
+            # Legacy snake_case aliases for older consumers.
+            "created_by_user_id": (
+                str(workflow.created_by_user_id)
+                if workflow.created_by_user_id
+                else None
+            ),
+            "project_id": str(workflow.project_id) if workflow.project_id else None,
+            "created_at": created_at,
+        }
     )
+    return response
 
 
 # =============================================================================
@@ -259,48 +229,49 @@ class UnifiedWorkflowService:
     ) -> None:
         self.repo = repo or UnifiedWorkflowRepository()
 
+    @staticmethod
+    def _validate_name(definition: dict[str, Any]) -> str:
+        """Extract and validate the required, non-empty workflow name."""
+        name = definition.get("name")
+        if not isinstance(name, str) or not name.strip():
+            raise HTTPException(
+                status_code=422,
+                detail="Workflow 'name' is required and must be a non-empty string.",
+            )
+        return name
+
     async def create_workflow(
         self,
         db: AsyncSession,
-        data: UnifiedWorkflowCreate,
+        data: dict[str, Any],
         user_id: UUID,
-    ) -> UnifiedWorkflowResponse:
-        """Create a new unified workflow."""
+    ) -> dict[str, Any]:
+        """Create a new unified workflow from a canonical (camelCase) payload.
+
+        The full incoming object is stored verbatim in ``definition``; the
+        typed columns are derived from it via
+        :func:`_project_definition_to_columns`. Server-authoritative fields
+        (``created_by_user_id``, ``project_id``, optional client-supplied
+        ``id`` for runner migration) are applied on top.
+        """
+        # Store the complete canonical object losslessly. Copy so later server
+        # field handling never mutates the caller's dict.
+        definition: dict[str, Any] = dict(data)
+        name = self._validate_name(definition)
+
+        # Server-authoritative / non-canonical fields are routed to columns and
+        # must not pollute the stored canonical definition.
+        client_id = definition.pop("project_id", None)
+        project_id = definition.pop("projectId", None) or client_id
+        supplied_id = definition.get("id") or None
+
         workflow = UnifiedWorkflow(
-            id=UUID(data.id) if data.id else None,
+            id=UUID(supplied_id) if supplied_id else None,
             created_by_user_id=user_id,
-            project_id=UUID(data.project_id) if data.project_id else None,
-            name=data.name,
-            description=data.description,
-            category=data.category,
-            tags=data.tags,
-            setup_steps=[s.model_dump(mode="json") for s in data.setup_steps],
-            verification_steps=[
-                s.model_dump(mode="json") for s in data.verification_steps
-            ],
-            agentic_steps=[s.model_dump(mode="json") for s in data.agentic_steps],
-            completion_steps=[s.model_dump(mode="json") for s in data.completion_steps],
-            max_iterations=data.max_iterations,
-            timeout_seconds=data.timeout_seconds,
-            provider=data.provider,
-            model=data.model,
-            skip_ai_summary=data.skip_ai_summary,
-            log_watch_enabled=data.log_watch_enabled,
-            health_check_enabled=data.health_check_enabled,
-            health_check_urls=data.health_check_urls,
-            preflight_check_enabled=data.preflight_check_enabled,
-            log_source_selection=data.log_source_selection,
-            context_ids=data.context_ids,
-            disabled_context_ids=data.disabled_context_ids,
-            auto_include_contexts=data.auto_include_contexts,
-            prompt_template=data.prompt_template,
-            generated_by_task_run_id=data.generated_by_task_run_id,
-            stages=data.stages,
-            stop_on_failure=data.stop_on_failure,
-            approval_gate=data.approval_gate,
-            reflection_mode=data.reflection_mode,
-            constraint_overrides=data.constraint_overrides,
-            model_overrides=data.model_overrides,
+            project_id=UUID(project_id) if project_id else None,
+            name=name,
+            definition=definition,
+            **_project_definition_to_columns(definition),
         )
 
         try:
@@ -311,14 +282,14 @@ class UnifiedWorkflowService:
             if "duplicate" in str(e).lower() or "unique" in str(e).lower():
                 raise HTTPException(
                     status_code=409,
-                    detail=f"Workflow with ID {data.id} already exists",
+                    detail=f"Workflow with ID {supplied_id} already exists",
                 ) from e
             raise
 
         logger.info(
             "Created workflow",
             workflow_id=str(created.id),
-            name=data.name,
+            name=name,
             user_id=str(user_id),
         )
 
@@ -328,21 +299,46 @@ class UnifiedWorkflowService:
         self,
         db: AsyncSession,
         workflow_id: UUID,
-        data: UnifiedWorkflowUpdate,
+        data: dict[str, Any],
         user_id: UUID,
-    ) -> UnifiedWorkflowResponse:
-        """Update an existing unified workflow."""
+    ) -> dict[str, Any]:
+        """Update a workflow by merging a canonical (camelCase) patch.
+
+        The incoming patch is shallow-merged into the stored ``definition``
+        (incoming top-level keys overwrite). The merged ``definition`` is
+        written back and ALL typed columns are re-derived from it via
+        :func:`_project_definition_to_columns`. Typed columns are never set
+        independently of ``definition`` so the two cannot drift.
+        """
         workflow = await self.repo.get_by_id(db, workflow_id)
         if not workflow:
             raise ValueError(f"Workflow not found: {workflow_id}")
 
-        # Apply partial updates
-        update_fields = data.model_dump(exclude_unset=True)
-        for field, value in update_fields.items():
-            if field == "project_id":
-                setattr(workflow, field, UUID(value) if value else None)
-            else:
-                setattr(workflow, field, value)
+        patch: dict[str, Any] = dict(data)
+
+        # Pull server-authoritative / non-canonical fields out of the patch.
+        project_id_set = "projectId" in patch or "project_id" in patch
+        project_id = patch.pop("projectId", None)
+        legacy_project_id = patch.pop("project_id", None)
+        if project_id is None:
+            project_id = legacy_project_id
+
+        # Shallow-merge the patch into the stored canonical definition. Assign a
+        # fresh dict (not in-place mutation) so SQLAlchemy flags the JSONB column
+        # dirty and persists the change.
+        merged: dict[str, Any] = dict(workflow.definition or {})
+        merged.update(patch)
+
+        # Validate the post-merge name (a partial update must not erase it).
+        name = self._validate_name(merged)
+
+        workflow.definition = merged
+        workflow.name = name
+        for column, value in _project_definition_to_columns(merged).items():
+            setattr(workflow, column, value)
+
+        if project_id_set:
+            workflow.project_id = UUID(project_id) if project_id else None
 
         updated = await self.repo.update(db, workflow)
         await db.commit()
@@ -350,7 +346,7 @@ class UnifiedWorkflowService:
         logger.info(
             "Updated workflow",
             workflow_id=str(workflow_id),
-            updated_fields=list(update_fields.keys()),
+            patched_keys=list(patch.keys()),
             user_id=str(user_id),
         )
 
@@ -380,7 +376,7 @@ class UnifiedWorkflowService:
         self,
         db: AsyncSession,
         workflow_id: UUID,
-    ) -> UnifiedWorkflowResponse:
+    ) -> dict[str, Any]:
         """Get a unified workflow by ID."""
         workflow = await self.repo.get_by_id(db, workflow_id)
         if not workflow:
@@ -450,64 +446,29 @@ class UnifiedWorkflowService:
         db: AsyncSession,
         workflow_id: UUID,
         user_id: UUID,
-    ) -> UnifiedWorkflowResponse:
-        """Duplicate an existing workflow."""
+    ) -> dict[str, Any]:
+        """Duplicate an existing workflow losslessly.
+
+        Clones the full canonical ``definition`` (so no field is lost), renames
+        the copy, drops the original id, and re-derives the typed columns via
+        the shared projection.
+        """
         original = await self.repo.get_by_id(db, workflow_id)
         if not original:
             raise ValueError(f"Workflow not found: {workflow_id}")
 
+        definition: dict[str, Any] = dict(original.definition or {})
+        # New row: drop the cloned id and bump the name.
+        definition.pop("id", None)
+        new_name = f"{original.name} (copy)"
+        definition["name"] = new_name
+
         clone = UnifiedWorkflow(
             created_by_user_id=user_id,
             project_id=original.project_id,
-            name=f"{original.name} (copy)",
-            description=original.description,
-            category=original.category,
-            tags=list(original.tags) if original.tags else [],
-            setup_steps=list(original.setup_steps) if original.setup_steps else [],
-            verification_steps=(
-                list(original.verification_steps) if original.verification_steps else []
-            ),
-            agentic_steps=(
-                list(original.agentic_steps) if original.agentic_steps else []
-            ),
-            completion_steps=(
-                list(original.completion_steps) if original.completion_steps else []
-            ),
-            max_iterations=original.max_iterations,
-            timeout_seconds=original.timeout_seconds,
-            provider=original.provider,
-            model=original.model,
-            skip_ai_summary=original.skip_ai_summary,
-            log_watch_enabled=original.log_watch_enabled,
-            health_check_enabled=original.health_check_enabled,
-            health_check_urls=(
-                list(original.health_check_urls) if original.health_check_urls else []
-            ),
-            preflight_check_enabled=original.preflight_check_enabled,
-            log_source_selection=original.log_source_selection,
-            context_ids=list(original.context_ids) if original.context_ids else [],
-            disabled_context_ids=(
-                list(original.disabled_context_ids)
-                if original.disabled_context_ids
-                else []
-            ),
-            auto_include_contexts=original.auto_include_contexts,
-            prompt_template=original.prompt_template,
-            enable_sweep=original.enable_sweep,
-            max_sweep_iterations=original.max_sweep_iterations,
-            generated_by_task_run_id=original.generated_by_task_run_id,
-            stages=list(original.stages) if original.stages else original.stages,
-            stop_on_failure=original.stop_on_failure,
-            approval_gate=original.approval_gate,
-            reflection_mode=original.reflection_mode,
-            constraint_overrides=(
-                dict(original.constraint_overrides)
-                if original.constraint_overrides
-                else None
-            ),
-            model_overrides=(
-                dict(original.model_overrides) if original.model_overrides else None
-            ),
+            name=new_name,
+            definition=definition,
+            **_project_definition_to_columns(definition),
         )
 
         created = await self.repo.create(db, clone)
@@ -527,90 +488,24 @@ class UnifiedWorkflowService:
         db: AsyncSession,
         workflow_id: UUID,
     ) -> dict[str, Any]:
-        """Export a workflow as a dictionary."""
+        """Export a workflow as the lossless canonical object."""
         workflow = await self.repo.get_by_id(db, workflow_id)
         if not workflow:
             raise ValueError(f"Workflow not found: {workflow_id}")
 
-        return {
-            "id": str(workflow.id),
-            "name": workflow.name,
-            "description": workflow.description or "",
-            "category": workflow.category or "general",
-            "tags": workflow.tags or [],
-            "setup_steps": workflow.setup_steps or [],
-            "verification_steps": workflow.verification_steps or [],
-            "agentic_steps": workflow.agentic_steps or [],
-            "completion_steps": workflow.completion_steps or [],
-            "max_iterations": workflow.max_iterations or 10,
-            "timeout_seconds": workflow.timeout_seconds,
-            "provider": workflow.provider,
-            "model": workflow.model,
-            "skip_ai_summary": workflow.skip_ai_summary or False,
-            "log_watch_enabled": (
-                workflow.log_watch_enabled
-                if workflow.log_watch_enabled is not None
-                else True
-            ),
-            "health_check_enabled": (
-                workflow.health_check_enabled
-                if workflow.health_check_enabled is not None
-                else True
-            ),
-            "health_check_urls": workflow.health_check_urls or [],
-            "preflight_check_enabled": (
-                workflow.preflight_check_enabled
-                if workflow.preflight_check_enabled is not None
-                else True
-            ),
-            "log_source_selection": (
-                workflow.log_source_selection
-                if workflow.log_source_selection is not None
-                else "default"
-            ),
-            "context_ids": workflow.context_ids or [],
-            "disabled_context_ids": workflow.disabled_context_ids or [],
-            "auto_include_contexts": (
-                workflow.auto_include_contexts
-                if workflow.auto_include_contexts is not None
-                else True
-            ),
-            "prompt_template": workflow.prompt_template,
-            "enable_sweep": (
-                workflow.enable_sweep if workflow.enable_sweep is not None else False
-            ),
-            "max_sweep_iterations": (
-                workflow.max_sweep_iterations
-                if workflow.max_sweep_iterations is not None
-                else 5
-            ),
-            "generated_by_task_run_id": workflow.generated_by_task_run_id,
-            "stages": workflow.stages,
-            "stop_on_failure": (
-                workflow.stop_on_failure
-                if workflow.stop_on_failure is not None
-                else False
-            ),
-            "approval_gate": (
-                workflow.approval_gate if workflow.approval_gate is not None else False
-            ),
-            "reflection_mode": (
-                workflow.reflection_mode
-                if workflow.reflection_mode is not None
-                else True
-            ),
-            "constraint_overrides": workflow.constraint_overrides,
-            "model_overrides": workflow.model_overrides,
-        }
+        return _model_to_response(workflow)
 
     async def import_workflow(
         self,
         db: AsyncSession,
         data: dict[str, Any],
         user_id: UUID,
-    ) -> UnifiedWorkflowResponse:
-        """Import a workflow from exported data."""
-        create_data = UnifiedWorkflowCreate(**data)
-        # Don't preserve the original ID on import — create a new one
-        create_data.id = None
-        return await self.create_workflow(db, create_data, user_id)
+    ) -> dict[str, Any]:
+        """Import a workflow from exported canonical data.
+
+        The whole exported object is treated as the canonical definition. The
+        original id is dropped so a fresh row is created.
+        """
+        definition: dict[str, Any] = dict(data)
+        definition.pop("id", None)
+        return await self.create_workflow(db, definition, user_id)
