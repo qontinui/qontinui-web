@@ -14,7 +14,7 @@ from app.core.config import settings
 from app.core.error_codes import ErrorCode
 from app.core.security import create_access_token, create_refresh_token
 from app.middleware.error_handler import unauthorized_error
-from app.middleware.rate_limit import auth_rate_limit
+from app.middleware.rate_limit import auth_rate_limit, refresh_rate_limit
 from app.models.user import User
 from app.services.auth_analytics_service import auth_analytics_service
 from app.services.cookie_service import cookie_service
@@ -244,7 +244,7 @@ async def logout(
 
 
 @router.post("/jwt/refresh", response_model=TokenResponse)
-@auth_rate_limit("10 per minute")
+@refresh_rate_limit("60 per minute")
 async def refresh_token(
     *,
     request: Request,

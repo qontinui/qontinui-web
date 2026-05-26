@@ -1,4 +1,5 @@
 import functools
+import logging
 import time
 
 from fastapi import Request, Response
@@ -8,6 +9,8 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 # Determine storage backend based on configuration
 # Use Redis if enabled for scalable, persistent rate limiting across instances
@@ -101,6 +104,46 @@ api_limiter = Limiter(
 )
 
 
+def _get_refresh_token_subject(request: Request) -> str:
+    """Extract user subject from the refresh token cookie for per-user rate
+    limiting.
+
+    All Vercel-proxied traffic arrives from a small pool of ALB IPs, so pure
+    IP-based rate limiting collapses every user into one bucket.  When the
+    refresh token is in an HttpOnly cookie (web dashboard), we can decode the
+    ``sub`` claim synchronously and give each user their own bucket.
+
+    Mobile clients send the token in the POST body instead.  The body isn't
+    available synchronously in slowapi's key function, so we fall back to IP.
+    The endpoint limit is set high enough (60/min) that shared-IP mobile
+    traffic still has headroom.
+    """
+    try:
+        token = request.cookies.get("refresh_token")
+        if token:
+            from jose import jwt as jose_jwt
+
+            payload = jose_jwt.decode(
+                token,
+                settings.SECRET_KEY,
+                algorithms=[settings.ALGORITHM],
+            )
+            sub = payload.get("sub")
+            if sub:
+                return f"refresh-user:{sub}"
+    except Exception:
+        pass
+    return f"ip:{get_remote_address(request)}"
+
+
+refresh_limiter = Limiter(
+    key_func=_get_refresh_token_subject,
+    default_limits=_auth_limits,  # type: ignore[arg-type]
+    storage_uri=storage_uri,
+    enabled=settings.RATE_LIMIT_ENABLED,
+)
+
+
 # Loopback hosts treated as "the dev fleet" — exempt from auth rate limits
 # in development. The primary runner, every spawned test runner, and the
 # supervisor all phone home over 127.0.0.1 on a dev box, so without an
@@ -133,6 +176,42 @@ def auth_rate_limit(limit_string: str):
         return no_op_decorator
 
     base_decorator = auth_limiter.limit(limit_string)
+
+    def conditional_decorator(func):
+        limited = base_decorator(func)
+
+        @functools.wraps(limited)
+        async def wrapper(*args, **kwargs):
+            request = kwargs.get("request")
+            if request is None:
+                for arg in args:
+                    if isinstance(arg, Request):
+                        request = arg
+                        break
+            if request is not None and _is_loopback_dev(request):
+                return await func(*args, **kwargs)
+            return await limited(*args, **kwargs)
+
+        return wrapper
+
+    return conditional_decorator
+
+
+def refresh_rate_limit(limit_string: str):
+    """Rate limit keyed on the refresh token's user subject, not client IP.
+
+    Behind Vercel/ALB, all traffic shares a handful of source IPs so IP-based
+    limits collapse every user into one bucket.  This decorator extracts the
+    ``sub`` claim from the refresh token and gives each user their own bucket.
+    """
+    if not settings.RATE_LIMIT_ENABLED:
+
+        def no_op_decorator(func):
+            return func
+
+        return no_op_decorator
+
+    base_decorator = refresh_limiter.limit(limit_string)
 
     def conditional_decorator(func):
         limited = base_decorator(func)
