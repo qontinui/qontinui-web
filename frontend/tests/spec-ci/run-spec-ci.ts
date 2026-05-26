@@ -693,6 +693,18 @@ function routeForSpec(
     // content; the annotations API (GET /api/v1/annotations/) was fixed in #272
     // so the populated annotation-set + tab UI renders rather than 500ing.
     "region-analysis": "/admin/region-analysis",
+    // Adoption-sweep structural specs whose route path differs from the spec id
+    // (slug != spec id). Each ports a structural describe block from a
+    // nightly-Playwright pages/*.spec.ts onto an IR spec so the structural
+    // coverage survives the Phase-5 cutover. These are public/superuser-stable
+    // pages (marketing, runner marketing, docs hub + sub-pages); ids verified
+    // against a ci-bot CI element-dump.
+    "marketing-home": "/",
+    "runner-marketing": "/runner",
+    "docs-hub": "/docs",
+    "docs-getting-started": "/docs/getting-started",
+    "docs-web": "/docs/web",
+    "docs-runner": "/docs/runner",
     // Admin per-agent log view is a dynamic [agent_id] route. Like demo-detail,
     // we target a fixed sentinel id so the route resolves deterministically.
     // The page fetches GET /operations/agent-logs/by-agent/<id>; a valid-but-

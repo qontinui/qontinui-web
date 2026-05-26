@@ -1,0 +1,71 @@
+{
+  "version": "1.0",
+  "id": "runner-marketing",
+  "name": "Runner marketing page (/runner)",
+  "description": "Public Qontinui Runner marketing page. Adoption-sweep port of marketing.spec.ts 'Runner Page (/runner)' describe block (structural half: hero title, feature cards, How-It-Works, security/code-signing section, download CTA). 'loads without 500' is covered by the C8 crawl + the run-level HTTP-500 invariant; this spec adds the structural element-presence assertions. Element ids captured from a ci-bot CI element-dump: heading-1-qontinui-runner is the hero H1; the AI-assisted-development features H2, How-It-Works H2, and Security/Code-Signing H2 are the stable section anchors; the hero download CTA links resolve. Public page (renders authed or unauth). Read-only; structural only.",
+  "provenance": { "source": "ai-generated", "appId": "qontinui-web" },
+  "metadata": { "tags": ["marketing", "runner", "public", "smoke-parity", "adoption-sweep"] },
+  "states": [
+    {
+      "id": "runner-marketing-hero",
+      "name": "Hero section",
+      "description": "Hero H1 + download CTA. Ports marketing.spec.ts:142/155/199 (loads + hero title + Download Now CTA).",
+      "assertions": [
+        {
+          "id": "runner-marketing-hero-elem-0",
+          "description": "Hero H1 'Qontinui Runner'.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "heading-1-qontinui-runner", "role": "heading" }, "label": "Runner hero heading" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "runner-marketing-hero-elem-1",
+          "description": "'Download Now' hero CTA link.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "link-download-now-0" }, "label": "Download Now CTA" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
+    {
+      "id": "runner-marketing-sections",
+      "name": "Content sections",
+      "description": "Stable narrative section headings: the features H2, How-It-Works H2, and the Security & Code-Signing H2. Ports marketing.spec.ts:168/217/232 (feature cards + How it works + Security section).",
+      "assertions": [
+        {
+          "id": "runner-marketing-sections-elem-0",
+          "description": "'Built for AI-assisted development' features H2.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "heading-2-built-for-ai-assisted-developm", "role": "heading" }, "label": "Features heading" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "runner-marketing-sections-elem-1",
+          "description": "'Security & Code Signing' H2.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "heading-2-security-code-signing", "role": "heading" }, "label": "Security section heading" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    }
+  ],
+  "transitions": []
+}
