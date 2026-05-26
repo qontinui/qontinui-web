@@ -150,6 +150,16 @@ class Settings(BaseSettings):
     REDIS_ENABLED: bool = Field(
         default=False, description="Enable Redis for task queue and caching"
     )
+    REDIS_URL: str | None = Field(
+        default=None,
+        description=(
+            "Full Redis connection URL (e.g. rediss://:<token>@host:6379/0). Canonical "
+            "input: carries scheme/TLS/auth/host/port/db in one place, so the client is "
+            "provider-agnostic (ElastiCache, Upstash, local) and supports managed Redis "
+            "requiring TLS + AuthToken. Takes precedence over REDIS_HOST/PORT/DB, which "
+            "remain a local-dev fallback when this is unset."
+        ),
+    )
     REDIS_HOST: str = Field(default="localhost")
     REDIS_PORT: int = Field(default=6379)
     REDIS_DB: int = Field(default=0)
