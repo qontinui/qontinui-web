@@ -43,6 +43,7 @@ import {
 } from "./server-error-policy";
 import { evaluateApiCheck, type ApiCheckResult } from "./api-contract";
 import { discoverAppRoutes } from "./route-manifest";
+import { applyCrawlWaivers } from "./crawl-baseline";
 
 // ---------------------------------------------------------------------------
 // Console-error capture (the run-level invariant; see console-policy.ts)
@@ -585,8 +586,33 @@ interface SpecResult {
 interface CrawlResult {
   route: string;
   navigatedOk: boolean;
+  /**
+   * The navigation was interrupted by a client-side redirect to `/login` — the
+   * signature of a torn-down authed session (NOT a route defect). Counted into
+   * the run-level `crawlSessionLost` guard, not per-route gating. See the crawl
+   * loop for the full rationale.
+   */
+  sessionLost: boolean;
+  /** ALL critical console errors captured on this route (pre-waiver). */
   consoleErrors: ConsoleErrorEntry[];
+  /** ALL same-origin HTTP-5xx captured on this route (pre-waiver). */
   serverErrors: ServerErrorEntry[];
+  /**
+   * Console errors that survived the crawl waivers (crawl-baseline.ts) — these
+   * GATE. Empty = either console-clean or fully baseline-waived.
+   */
+  unwaivedConsoleErrors: ConsoleErrorEntry[];
+  /**
+   * Same-origin 5xx that survived the crawl waivers — these GATE. Empty = either
+   * none or fully baseline-waived (global CI-env class or per-route waiver).
+   */
+  unwaivedServerErrors: ServerErrorEntry[];
+  /**
+   * Hard page-health failure: navigation threw (timeout / load crash) AND the
+   * route is not `allowNavFail`-waived. A legitimate 404/redirect does NOT set
+   * this (Next serves a 200/30x — `goto` resolves without throwing).
+   */
+  healthFail: boolean;
   durationMs: number;
   error: string | null;
 }
@@ -1021,12 +1047,35 @@ interface FullReport {
   authOk: boolean;
   specCount: number;
   specs: SpecResult[];
-  /** Spec-less route crawl results (Phase 4). Informational — not gating. */
+  /**
+   * Spec-less route crawl results (C8). GATING: `gatingFindings > 0` reds the
+   * run (see the crawl-gate fold in main()). `consoleErrors`/`serverErrors` are
+   * the RAW (pre-waiver) totals for visibility; `unwaivedConsoleErrors`/
+   * `unwaivedServerErrors`/`healthFails`/`gatingFindings` are the post-waiver
+   * (baseline-subtracted) totals that actually gate.
+   */
   crawl?: {
     total: number;
     visited: number;
     consoleErrors: number;
     serverErrors: number;
+    /** Post-waiver console errors that gate (NEW findings). */
+    unwaivedConsoleErrors: number;
+    /** Post-waiver same-origin 5xx that gate (NEW findings). */
+    unwaivedServerErrors: number;
+    /** Routes whose navigation failed and is not allowNavFail-waived. */
+    healthFails: number;
+    /** True if the authed session was torn down mid-crawl (/login bounce). */
+    sessionLost: boolean;
+    /** How many crawl routes saw the session-lost /login redirect. */
+    sessionLostRoutes: number;
+    /**
+     * Total gating findings across the crawl (per-route console + server +
+     * health, PLUS 1 if the session was lost mid-crawl — the re-run signal).
+     */
+    gatingFindings: number;
+    /** Fraction of crawled routes with ZERO gating findings (1.0 = all clean). */
+    passRate: number;
     routes: CrawlResult[];
   };
   summary: {
@@ -1331,12 +1380,27 @@ async function main(): Promise<number> {
   }
 
   // -------------------------------------------------------------------------
-  // Spec-less route crawl (Phase 4 / GAP-1): visit every app route that has
-  // no IR spec and apply the console-error (C3) and server-error (C4) run-level
-  // invariants. Dynamic routes are skipped for now (would need fixture param
-  // injection + auth-aware navigation). Results are INFORMATIONAL — they do
-  // NOT gate the CI exit code. Once stable after a soak period they can be
-  // promoted to gating.
+  // Spec-less route crawl (C8): visit every app route that has no IR spec and
+  // apply the SAME run-level invariants the spec'd pages get — critical console
+  // errors (C3, console-policy.ts), same-origin HTTP-5xx (C4,
+  // server-error-policy.ts), and basic page-health (navigation success). This
+  // lane is now GATING: a NEW finding on any crawled route reds the on-PR gate,
+  // attributed to that route (see the crawl-gate fold near the exit-code
+  // computation below). Pre-existing findings are waived per-route /
+  // per-URL-class via crawl-baseline.ts so the established baseline lands green
+  // while still enforcing zero NEW findings.
+  //
+  // Dynamic [param] routes are skipped (route-manifest flags them isDynamic):
+  // they would need per-route fixture injection + auth-aware navigation, and a
+  // sentinel-id crawl is 404-heavy noise. The few dynamic routes that matter
+  // (demo-detail, region-analysis agent-detail) have explicit IR specs with
+  // sentinel ids, so they ride the spec lane, not the crawl. Robustness: a
+  // legitimate 404 / redirect / data-unavailable render does NOT gate — only a
+  // real same-origin 5xx, a critical console error, or a navigation FAILURE
+  // (goto throw) counts. Reused authed page → the crawl covers the authed lane
+  // (ci-bot superuser). Public/unauth-only routes that 401-bounce render fine
+  // here (the authed session simply sees them); the dedicated unauth lane is
+  // exercised by the requiresUnauthenticated specs, not the crawl.
   // -------------------------------------------------------------------------
   const appDir = join(__dirname, "../../src/app");
   const allRoutes = discoverAppRoutes(appDir);
@@ -1370,37 +1434,67 @@ async function main(): Promise<number> {
     const consoleBefore = criticalConsole.length;
     const serverBefore = serverErrors.length;
 
+    let navigatedOk = true;
+    let navError: string | null = null;
     try {
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15_000 });
       // Brief settle for async rendering (shorter than spec eval — crawl is a
       // smoke check, not a structural match).
       await page.waitForTimeout(2_000);
-
-      const crawlConsole = criticalConsole.slice(consoleBefore);
-      const crawlServer = serverErrors.slice(serverBefore);
-
-      crawlResults.push({
-        route: route.path,
-        navigatedOk: true,
-        consoleErrors: crawlConsole,
-        serverErrors: crawlServer,
-        durationMs: Date.now() - started,
-        error: null,
-      });
     } catch (e) {
-      crawlResults.push({
-        route: route.path,
-        navigatedOk: false,
-        consoleErrors: criticalConsole.slice(consoleBefore),
-        serverErrors: serverErrors.slice(serverBefore),
-        durationMs: Date.now() - started,
-        error: e instanceof Error ? e.message : String(e),
-      });
+      navigatedOk = false;
+      navError = e instanceof Error ? e.message : String(e);
     }
 
+    // Session-lost detection. A navigation INTERRUPTED by a client-side redirect
+    // to `/login` is NOT a route health defect — it is the unmistakable
+    // signature of the shared authed session having been torn down (the
+    // client-side AuthProvider bounces every protected route to /login once the
+    // in-memory token + refresh cookie are gone). The dominant real-world cause
+    // in CI is the shared ci-bot account's auth endpoint rate-limiting the
+    // initial login / token-refresh (the "10 per 1 minute" limiter), which never
+    // establishes the refresh cookie, so EVERY subsequent crawl route bounces.
+    // Attributing 40+ "/login redirect" health-fails to individual routes would
+    // be 40 false per-route reds for one upstream auth/session failure. We flag
+    // it as `sessionLost` instead — counted into a run-level guard
+    // (`crawlSessionLost` below) that fails the gate on a single, honest
+    // "session lost during crawl" signal rather than polluting per-route
+    // attribution. A genuine route health failure (a real timeout/crash that is
+    // NOT a /login bounce) still sets `healthFail` and gates per-route.
+    const sessionLost =
+      !navigatedOk && navError !== null && /\/login(\?|"|$)/.test(navError);
+    const crawlConsole = criticalConsole.slice(consoleBefore);
+    const crawlServer = serverErrors.slice(serverBefore);
+    // Fold the raw findings through the crawl waiver registry (crawl-baseline
+    // .ts): global CI-env URL classes (/coord-api/*, /api/vga/*) + per-route
+    // waivers. Whatever survives GATES, attributed to this route.
+    const waived = applyCrawlWaivers(route.path, crawlConsole, crawlServer);
+    // A real health failure = navigation failed, NOT waived, AND not a
+    // session-lost /login bounce (those are the run-level auth signal, not a
+    // per-route defect).
+    const healthFail = !navigatedOk && !waived.navFailWaived && !sessionLost;
+
+    crawlResults.push({
+      route: route.path,
+      navigatedOk,
+      sessionLost,
+      consoleErrors: crawlConsole,
+      serverErrors: crawlServer,
+      unwaivedConsoleErrors: waived.unwaivedConsole,
+      unwaivedServerErrors: waived.unwaivedServer,
+      healthFail,
+      durationMs: Date.now() - started,
+      error: navError,
+    });
+
     const last = crawlResults[crawlResults.length - 1]!;
+    const findingCount =
+      last.unwaivedConsoleErrors.length +
+      last.unwaivedServerErrors.length +
+      (last.healthFail ? 1 : 0);
     process.stderr.write(
-      `[spec-ci] crawl ${route.path} ${last.navigatedOk ? "ok" : "FAIL"} (${last.durationMs}ms)\n`,
+      `[spec-ci] crawl ${route.path} ${last.navigatedOk ? "ok" : last.sessionLost ? "SESSION-LOST" : "NAV-FAIL"}` +
+        `${findingCount > 0 ? ` GATING(${findingCount})` : ""} (${last.durationMs}ms)\n`,
     );
   }
 
@@ -1436,9 +1530,50 @@ async function main(): Promise<number> {
   const apiAssertionPassRate =
     valid.length === 0 ? 1 : valid.reduce((s, r) => s + r.apiAssertionPassRate, 0) / valid.length;
 
-  // Crawl rollup (informational — not included in the CI gate).
+  // Crawl rollup. Raw totals are for visibility; the *unwaived* totals are what
+  // gate (a NEW finding on any crawled route reds the run).
   const crawlConsoleTotal = crawlResults.reduce((s, r) => s + r.consoleErrors.length, 0);
   const crawlServerTotal = crawlResults.reduce((s, r) => s + r.serverErrors.length, 0);
+
+  // Session-lost guard. When the shared authed session is torn down mid-crawl
+  // (the dominant cause: the shared ci-bot account's auth/refresh endpoint
+  // rate-limiting, which never establishes the refresh cookie), the crawl
+  // produces a cascade of downstream artifacts on EVERY subsequent route: the
+  // /login-redirect navigation interrupts (`sessionLost`) AND the
+  // `[TokenRefresh] … 401 TOKEN_MISSING` console errors. None of these are
+  // per-route code defects. We fold them into a single run-level
+  // `crawlSessionLost` signal and EXCLUDE session-lost routes from per-route
+  // gating attribution (console + health), so the gate fails on ONE honest
+  // "session lost during crawl — re-run" signal instead of N false per-route
+  // reds. The gate STILL goes red (a lost session is a real run failure), just
+  // correctly attributed. A NON-session-lost route's findings gate normally.
+  const crawlSessionLostRoutes = crawlResults.filter((r) => r.sessionLost).length;
+  const crawlSessionLost = crawlSessionLostRoutes > 0;
+
+  // Per-route gating attribution EXCLUDES session-lost routes (their console
+  // errors are TOKEN_MISSING auth artifacts, not route defects).
+  const crawlUnwaivedConsole = crawlResults.reduce(
+    (s, r) => s + (r.sessionLost ? 0 : r.unwaivedConsoleErrors.length),
+    0,
+  );
+  const crawlUnwaivedServer = crawlResults.reduce(
+    (s, r) => s + (r.sessionLost ? 0 : r.unwaivedServerErrors.length),
+    0,
+  );
+  const crawlHealthFails = crawlResults.reduce((s, r) => s + (r.healthFail ? 1 : 0), 0);
+  // The crawl gates iff there is a real per-route finding OR the session was
+  // lost during the crawl (re-run signal).
+  const crawlGatingFindings =
+    crawlUnwaivedConsole + crawlUnwaivedServer + crawlHealthFails + (crawlSessionLost ? 1 : 0);
+  const crawlCleanRoutes = crawlResults.filter(
+    (r) =>
+      !r.sessionLost &&
+      r.unwaivedConsoleErrors.length === 0 &&
+      r.unwaivedServerErrors.length === 0 &&
+      !r.healthFail,
+  ).length;
+  const crawlPassRate =
+    crawlResults.length === 0 ? 1 : crawlCleanRoutes / crawlResults.length;
 
   const report: FullReport = {
     baseUrl: args.baseUrl,
@@ -1452,6 +1587,13 @@ async function main(): Promise<number> {
       visited: crawlResults.length,
       consoleErrors: crawlConsoleTotal,
       serverErrors: crawlServerTotal,
+      unwaivedConsoleErrors: crawlUnwaivedConsole,
+      unwaivedServerErrors: crawlUnwaivedServer,
+      healthFails: crawlHealthFails,
+      sessionLost: crawlSessionLost,
+      sessionLostRoutes: crawlSessionLostRoutes,
+      gatingFindings: crawlGatingFindings,
+      passRate: crawlPassRate,
       routes: crawlResults,
     },
     summary: {
@@ -1470,8 +1612,35 @@ async function main(): Promise<number> {
 
   writeFileSync(args.output, JSON.stringify(report, null, 2), "utf-8");
   process.stderr.write(
-    `[spec-ci] wrote ${args.output}: ${fullMatch} full, ${partialMatch} partial, ${noMatch} no_match, ${errorCount} error · min ${report.summary.minMatchRate.toFixed(2)} · mean ${report.summary.meanMatchRate.toFixed(2)} · transitionPassRate ${report.summary.transitionPassRate.toFixed(2)} · consoleErrors ${report.summary.consoleErrors.total} · serverErrors ${report.summary.serverErrors.total} · apiAssertionPassRate ${report.summary.apiAssertionPassRate.toFixed(2)} · crawl ${crawlResults.length} routes, ${crawlConsoleTotal} console, ${crawlServerTotal} server\n`,
+    `[spec-ci] wrote ${args.output}: ${fullMatch} full, ${partialMatch} partial, ${noMatch} no_match, ${errorCount} error · min ${report.summary.minMatchRate.toFixed(2)} · mean ${report.summary.meanMatchRate.toFixed(2)} · transitionPassRate ${report.summary.transitionPassRate.toFixed(2)} · consoleErrors ${report.summary.consoleErrors.total} · serverErrors ${report.summary.serverErrors.total} · apiAssertionPassRate ${report.summary.apiAssertionPassRate.toFixed(2)} · crawl ${crawlResults.length} routes, ${crawlConsoleTotal}/${crawlServerTotal} raw console/server, ${crawlGatingFindings} GATING (${crawlUnwaivedConsole} console + ${crawlUnwaivedServer} server + ${crawlHealthFails} health${crawlSessionLost ? ` + SESSION-LOST(${crawlSessionLostRoutes} routes)` : ""}), passRate ${crawlPassRate.toFixed(2)}\n`,
   );
+
+  // Surface the gating crawl findings explicitly so a red is actionable from
+  // the log alone (the JSON report has the full per-route breakdown).
+  if (crawlSessionLost) {
+    process.stderr.write(
+      `[spec-ci] CRAWL-GATE session-lost: the authed session was torn down mid-crawl ` +
+        `(${crawlSessionLostRoutes} routes bounced to /login). This is an ENVIRONMENTAL ` +
+        `auth/session failure (typically the shared ci-bot account's auth endpoint ` +
+        `rate-limiting — see the global concurrency lane in spec-ci.yml), NOT per-route ` +
+        `code defects. Re-run once the auth window clears; per-route findings on the ` +
+        `bounced routes are suppressed as auth artifacts.\n`,
+    );
+  }
+  if (crawlGatingFindings > 0) {
+    for (const r of crawlResults) {
+      if (r.sessionLost) continue; // auth artifacts, not per-route findings
+      for (const e of r.unwaivedConsoleErrors) {
+        process.stderr.write(`[spec-ci] CRAWL-GATE console ${r.route}: [${e.level}] ${e.text}\n`);
+      }
+      for (const e of r.unwaivedServerErrors) {
+        process.stderr.write(`[spec-ci] CRAWL-GATE server ${r.route}: [${e.method} ${e.status}] ${e.url}\n`);
+      }
+      if (r.healthFail) {
+        process.stderr.write(`[spec-ci] CRAWL-GATE health ${r.route}: navigation failed (${r.error})\n`);
+      }
+    }
+  }
 
   // CI gate: fail iff (a) any spec errored, or (b) min match rate < 0.8,
   // or (c) transition pass rate < 1.0 across the corpus, or (d) any spec
@@ -1481,16 +1650,24 @@ async function main(): Promise<number> {
   // run-level invariant that gives the gate HTTP-RESPONSE visibility — backend
   // 500s a resolved `fetch()` makes invisible to the console listener; see
   // server-error-policy.ts), or (f) API-contract assertions failed.
+  // ...or (g) the spec-less route crawl (C8) surfaced a NEW finding on any
+  // un-spec'd route — a critical console error, a same-origin HTTP-5xx, or a
+  // hard page-health failure (navigation throw) — after the per-route /
+  // per-URL-class baseline waivers (crawl-baseline.ts) are subtracted. This
+  // extends the same per-spec consoleClean/serverClean folding to the ~200
+  // routes that have no IR spec, so the gate is no longer blind to them.
   const consoleClean = report.summary.consoleErrors.total === 0;
   const serverClean = report.summary.serverErrors.total === 0;
   const apiContractClean = report.summary.apiAssertionPassRate >= 0.999;
+  const crawlClean = crawlGatingFindings === 0;
   const passed =
     errorCount === 0 &&
     report.summary.minMatchRate >= 0.8 &&
     report.summary.transitionPassRate >= 0.999 &&
     consoleClean &&
     serverClean &&
-    apiContractClean;
+    apiContractClean &&
+    crawlClean;
   return passed ? 0 : 1;
 }
 

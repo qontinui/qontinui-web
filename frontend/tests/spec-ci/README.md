@@ -23,9 +23,16 @@ npx tsx tests/spec-ci/run-spec-ci.ts \
 
 - a spec errored,
 - `minMatchRate < 0.8`,
-- `transitionPassRate < 0.999`, **or**
+- `transitionPassRate < 0.999`,
 - **any spec produced a critical browser console error** (the run-level
-  console-error invariant, below).
+  console-error invariant, below),
+- **any spec produced a same-origin HTTP-5xx** (the server-error invariant,
+  `server-error-policy.ts`),
+- an API-contract assertion failed (`apiAssertionPassRate < 0.999`), **or**
+- **the spec-less route crawl (C8) surfaced a NEW finding** on any un-spec'd
+  route — a critical console error, a same-origin HTTP-5xx, or a hard
+  page-health failure — after the per-route baseline waivers
+  (`crawl-baseline.ts`) are subtracted (see below).
 
 ## Console-error invariant
 
@@ -93,3 +100,63 @@ waiver is in the diff.
 No qontinui-schemas change is needed for this field: the harness reads the raw
 spec JSON (not a typed `IRDocument`), the same way `requiresUnauthenticated`
 reads `metadata.requiresUnauthenticated`.
+
+## Spec-less route crawl (C8) — GATING
+
+After the spec corpus runs, the harness walks **every navigable app route that
+has no IR spec** (discovered from the Next `app/` tree by `route-manifest.ts`;
+~200 routes) and applies the SAME run-level invariants the spec'd pages get:
+critical console errors (C3), same-origin HTTP-5xx (C4), and basic page-health
+(navigation success). This lane is **gating**: a NEW finding on any crawled
+route reds the gate, attributed to that route (`summary` exposes
+`crawl.gatingFindings` / `crawl.passRate`; the per-route breakdown carries
+`unwaivedConsoleErrors` / `unwaivedServerErrors` / `healthFail`).
+
+Robustness — what does NOT gate:
+
+- A legitimate **404 / redirect / data-unavailable** render (`goto` resolves
+  with a 200/30x — only a navigation **throw**, e.g. a timeout, is a
+  `healthFail`).
+- **Dynamic `[param]` routes** are skipped (they would need per-route fixtures
+  + auth-aware nav). The few that matter (`demo-detail`, the admin agent-detail)
+  have explicit IR specs with sentinel ids and ride the spec lane instead.
+- Anything matching the **benign denylists** in `console-policy.ts` (favicon /
+  hydration / network-abort noise).
+
+The crawl reuses the shared **authed** page (ci-bot, superuser), so it covers
+the authed lane. The unauth lane is exercised by `requiresUnauthenticated`
+specs, not the crawl.
+
+**Session-lost guard.** If the shared authed session is torn down mid-crawl —
+the dominant cause is the shared ci-bot account's auth/refresh endpoint
+rate-limiting (the backend's "10 per 1 minute" limiter), which never
+establishes the refresh cookie — every subsequent protected route bounces to
+`/login` and logs `[TokenRefresh] … 401 TOKEN_MISSING`. These are downstream
+artifacts of one upstream auth failure, not per-route defects. The crawl flags
+a `/login`-redirect navigation interrupt as `sessionLost` (not `healthFail`),
+counts it into a single run-level `crawl.sessionLost` signal, and **suppresses
+those routes' per-route attribution** (console + health). The gate still goes
+**red** (a lost session is a real run failure — re-run), but on one honest
+"session lost during crawl" signal instead of N false per-route reds. To avoid
+the rate-limit in the first place, `spec-ci.yml` serializes ALL runs to a
+single global concurrency lane.
+
+### Waiving a pre-existing crawl finding (baseline)
+
+Crawled routes have no spec file, so their waivers live in a single
+source-controlled registry, `crawl-baseline.ts`:
+
+- `GLOBAL_SERVER_WAIVERS` — same-origin-5xx **URL classes** that are
+  CI-environment-unavoidable on any route (`/coord-api/*` — no coord process in
+  CI; `/api/vga/*` — Next server routes hitting a private-subnet RDS). These
+  mirror the two classes the spec waivers already documented.
+- `PER_ROUTE_WAIVERS` — keyed by the exact route path, listing the SPECIFIC
+  console-text / 5xx-URL patterns expected on that route (+ optional
+  `allowNavFail`), each with a mandatory `class` (`ci-env` | `real-bug` |
+  `benign`) and an honest `note`. A `real-bug` waiver is a deliberate
+  tech-debt deferral: the finding is real and tracked, but the gating PR's job
+  is the mechanism + green baseline, not fixing every route.
+
+Rules: never a blanket "ignore all crawl findings"; every waiver is a specific
+route + specific pattern (or a specific backend URL class). A genuinely benign
+NEW noise class is fixed in `console-policy.ts`'s denylist, NOT here.
