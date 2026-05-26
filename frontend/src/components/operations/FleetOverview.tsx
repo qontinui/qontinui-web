@@ -11,6 +11,7 @@ import {
   Terminal,
   RefreshCw,
   WifiOff,
+  Cog,
 } from "lucide-react";
 import { MachineCard } from "./MachineCard";
 import { DeviceStatusTile } from "./DeviceStatusTile";
@@ -20,6 +21,8 @@ import { useSymbolClaimsStream } from "./useSymbolClaimsStream";
 import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_API, POLL_INTERVAL_MS, relativeTime } from "./utils";
 import type {
+  CiRunnerInfo,
+  CiRunnersByHost,
   DeviceStatus,
   FleetStatus,
   AggregatedTaskRuns,
@@ -38,6 +41,7 @@ function buildMachineGroups(
   symbolClaimsByMachine: Map<string, SymbolClaim[]>
 ): MachineGroup[] {
   const byHost = new Map<string, MachineGroup>();
+  const ciRunners: CiRunnersByHost = fleet.ci_runners ?? {};
 
   // The symbol-claims map is keyed by machine_id (UUID); the MachineGroup
   // is keyed by hostname. Symbol claims arrive from coord BEFORE the
@@ -48,6 +52,10 @@ function buildMachineGroups(
   const resolveClaims = (activity: DeviceStatus | undefined): SymbolClaim[] => {
     if (!activity) return [];
     return symbolClaimsByMachine.get(activity.device_id) ?? [];
+  };
+
+  const resolveCiRunner = (hostname: string): CiRunnerInfo | undefined => {
+    return ciRunners[hostname];
   };
 
   for (const runner of fleet.runners) {
@@ -61,6 +69,7 @@ function buildMachineGroups(
         claudeSessions: fleet.claude_sessions[hostname] ?? [],
         currentActivity: activity,
         currentlyEditing: resolveClaims(activity),
+        ciRunner: resolveCiRunner(hostname),
       };
       byHost.set(hostname, group);
     }
@@ -77,6 +86,7 @@ function buildMachineGroups(
         claudeSessions: sessions,
         currentActivity: activity,
         currentlyEditing: resolveClaims(activity),
+        ciRunner: resolveCiRunner(hostname),
       });
     }
   }
@@ -94,6 +104,7 @@ function buildMachineGroups(
         claudeSessions: [],
         currentActivity,
         currentlyEditing: resolveClaims(currentActivity),
+        ciRunner: resolveCiRunner(hostname),
       });
     }
   }
@@ -207,6 +218,18 @@ export function FleetOverview() {
     [fleet, deviceStatus.byHostname, symbolClaims.byMachine]
   );
 
+  const activeCiRunners = useMemo(() => {
+    if (!fleet?.ci_runners) return 0;
+    return Object.values(fleet.ci_runners).filter(
+      (ci) => ci.status !== "offline",
+    ).length;
+  }, [fleet]);
+
+  const totalCiRunners = useMemo(() => {
+    if (!fleet?.ci_runners) return 0;
+    return Object.keys(fleet.ci_runners).length;
+  }, [fleet]);
+
   const runningTasks: RunnerTaskRun[] = useMemo(
     () =>
       (tasks?.task_runs ?? []).filter((t) => {
@@ -291,6 +314,14 @@ export function FleetOverview() {
             label="CC Sessions"
             value={fleet?.total_claude_sessions ?? 0}
           />
+          {totalCiRunners > 0 && (
+            <StatBadge
+              icon={Cog}
+              label="CI Runners"
+              value={`${activeCiRunners}/${totalCiRunners}`}
+              variant={activeCiRunners > 0 ? "success" : "outline"}
+            />
+          )}
 
           {/* Refresh indicator */}
           <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">

@@ -184,7 +184,22 @@ async def get_fleet_status(
     registry = get_fleet_registry()
     fleet_status = await registry.get_fleet_status()
 
-    return {
+    # Build per-hostname CI runner info from coord.devices rows that
+    # have ci_runner_status set (Phase 4c self-hosted CI runners).
+    ci_runners: dict[str, dict[str, Any]] = {}
+    for device in runners:
+        if device.ci_runner_status is not None and device.hostname:
+            ci_runners[device.hostname] = {
+                "status": device.ci_runner_status,
+                "labels": list(device.ci_runner_labels or []),
+                "lastJobAt": (
+                    device.ci_runner_last_job_at.isoformat()
+                    if device.ci_runner_last_job_at
+                    else None
+                ),
+            }
+
+    result: dict[str, Any] = {
         "runners": wire_runners,
         "claude_sessions": {
             hostname: [s.model_dump(mode="json") for s in sessions]
@@ -192,6 +207,11 @@ async def get_fleet_status(
         },
         "total_claude_sessions": fleet_status.total_claude_sessions,
     }
+
+    if ci_runners:
+        result["ci_runners"] = ci_runners
+
+    return result
 
 
 @router.get("/fleet/tasks", response_model=AggregatedTaskRuns)

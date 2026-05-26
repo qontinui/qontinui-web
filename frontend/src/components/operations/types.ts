@@ -149,12 +149,20 @@ export interface NotifyWhenGreenResponse {
 }
 
 /**
+ * Per-machine CI runner info returned by the backend in the `/fleet`
+ * response. Keyed by hostname. Phase 4c of the self-hosted CI runners plan.
+ */
+export type CiRunnersByHost = Record<string, CiRunnerInfo>;
+
+/**
  * Fleet status payload — directly serializes from the unified Runner
  * entity plus a hostname → Claude-session map.
  */
 export interface FleetStatus {
   runners: Runner[];
   claude_sessions: Record<string, ClaudeSessionInfo[]>; // hostname -> sessions
+  /** Per-hostname CI runner info, when the device has CI capability. */
+  ci_runners?: CiRunnersByHost;
   total_runners: number;
   total_healthy: number;
   total_running_tasks: number;
@@ -187,6 +195,24 @@ export interface AggregatedTaskRuns {
  * posted to `/coord/status` recently, or when the WS subscription
  * is offline AND the polling fallback hasn't caught up yet.
  */
+/**
+ * CI runner status for a machine, sourced from `coord.devices`
+ * CI capability columns. Phase 4c of the self-hosted CI runners plan.
+ *
+ * - `idle`    — CI runner is registered and available for jobs.
+ * - `busy`    — CI runner is currently executing a job.
+ * - `offline` — CI runner is registered but not reachable / reporting.
+ */
+export type CiRunnerStatus = "idle" | "busy" | "offline";
+
+export interface CiRunnerInfo {
+  status: CiRunnerStatus;
+  /** Labels the CI runner advertises (e.g. `["self-hosted", "linux", "x64"]`). */
+  labels: string[];
+  /** ISO 8601 timestamp of the last CI job execution, or `null` if never. */
+  lastJobAt: string | null;
+}
+
 export interface MachineGroup {
   hostname: string;
   runners: Runner[];
@@ -202,4 +228,10 @@ export interface MachineGroup {
    * machine; the `MachineCard` hides the sub-line entirely in that case.
    */
   currentlyEditing?: SymbolClaim[];
+  /**
+   * CI runner capability for this machine, sourced from `coord.devices`
+   * CI columns. Phase 4c of the self-hosted CI runners plan. Absent
+   * when the machine does not have CI runner capability.
+   */
+  ciRunner?: CiRunnerInfo;
 }
