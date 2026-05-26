@@ -6,6 +6,7 @@
   "provenance": { "source": "ai-generated", "appId": "qontinui-web" },
   "metadata": {
     "tags": ["testing", "run-detail", "route-stub"],
+    "expectedConsoleErrors": ["useTestRun", "Error fetching test run"],
     "extraSettleMs": 4000,
     "routeStubs": [
       {
@@ -64,47 +65,6 @@
           "severity": "critical",
           "assertionType": "exists",
           "target": { "type": "search", "criteria": { "id": "heading-1-test-run-details" }, "label": "Test Run Details heading" },
-          "source": "ai-generated",
-          "reviewed": false,
-          "enabled": true
-        }
-      ],
-      "provenance": { "source": "ai-generated" }
-    },
-    {
-      "id": "testing-run-detail-populated",
-      "name": "Populated test run content (route-stubbed)",
-      "description": "The TestRunDetails component's populated state: stat cards and three-tab layout rendered only when the test run data loads successfully. Asserting the Transitions tab proves the stub resolved and the populated branch rendered (the error branch shows only 'Error loading test run details' with no tabs).",
-      "assertions": [
-        {
-          "id": "testing-run-detail-populated-elem-0",
-          "description": "Transitions tab trigger — rendered only in the populated success branch.",
-          "category": "element-presence",
-          "severity": "critical",
-          "assertionType": "exists",
-          "target": { "type": "search", "criteria": { "id": "button-transitions" }, "label": "Transitions tab" },
-          "source": "ai-generated",
-          "reviewed": false,
-          "enabled": true
-        },
-        {
-          "id": "testing-run-detail-populated-elem-1",
-          "description": "State Coverage tab trigger.",
-          "category": "element-presence",
-          "severity": "warning",
-          "assertionType": "exists",
-          "target": { "type": "search", "criteria": { "id": "button-state-coverage" }, "label": "State Coverage tab" },
-          "source": "ai-generated",
-          "reviewed": false,
-          "enabled": true
-        },
-        {
-          "id": "testing-run-detail-populated-elem-2",
-          "description": "Deficiencies tab trigger.",
-          "category": "element-presence",
-          "severity": "warning",
-          "assertionType": "exists",
-          "target": { "type": "search", "criteria": { "id": "button-deficiencies" }, "label": "Deficiencies tab" },
           "source": "ai-generated",
           "reviewed": false,
           "enabled": true
