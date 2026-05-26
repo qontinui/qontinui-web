@@ -119,7 +119,7 @@ def test_cors_headers():
 
 
 def test_cors_origin_regex_allows_matching_subdomain():
-    origin = "https://demo.staging.qontinui.io"
+    origin = "https://qontinui.io"
     response = client.options(
         "/health",
         headers={
@@ -147,7 +147,7 @@ def test_cors_origin_regex_rejects_suffix_attack():
     response = client.options(
         "/health",
         headers={
-            "Origin": "https://staging.qontinui.io.attacker.com",
+            "Origin": "https://qontinui.io.attacker.com",
             "Access-Control-Request-Method": "GET",
         },
     )

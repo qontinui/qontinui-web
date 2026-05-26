@@ -31,7 +31,7 @@ const SPEC_SUBSCRIBE_URL = "http://localhost:9876/apps/qontinui-web/spec/subscri
 
 /**
  * The runner only runs on the operator's local machine. Production
- * deployments (demo.staging.qontinui.io, qontinui.io) have no
+ * deployments (qontinui.io) have no
  * `localhost:9876` to talk to, and the browser's CORS policy blocks
  * cross-origin fetches to loopback from non-localhost origins with a
  * loud console error (`Permission was denied for this request to

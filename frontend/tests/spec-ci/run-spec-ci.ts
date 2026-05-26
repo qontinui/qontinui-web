@@ -1014,6 +1014,40 @@ async function evaluateSpec(
         }
       | { ok: false; error: string };
 
+    // --- TEMPORARY: dump element IDs for specs that need deepening ---
+    const DUMP_SPECS_SET = [
+      "recordings-detail", "runs-detail", "testing-run-detail",
+      "qa-dashboard-run-detail", "configure-finding-rules",
+      "verify-email", "marketplace-detail",
+    ];
+    if (DUMP_SPECS_SET.includes(spec.id)) {
+      try {
+        const dumpEls = await page.evaluate(() => {
+          const w = window as unknown as {
+            __qontinuiSpecCi__?: {
+              getRegistry(): {
+                getAllElements(): Array<{ id: string; type: string; label: string }>;
+              };
+            };
+          };
+          const reg = w.__qontinuiSpecCi__?.getRegistry();
+          if (!reg) return null;
+          return reg.getAllElements().map((e) => ({
+            id: e.id, type: e.type, label: (e.label ?? "").slice(0, 50),
+          }));
+        });
+        if (dumpEls) {
+          const skip = /^(button-(dashboard|execute-[1-9]|visual-[1-9]|runners-[3-9]|scheduled|operations|monitor|gui|assets|create|discover|config|qa|ai-dev|ai-tasks$|project-|settings|help|admin|collapse|search|open-tanstack|\d+-mb)|mention-|radix-|img-|svg-|content-content-|button-visual-\d)/;
+          process.stderr.write(`[spec-ci-dump] ${spec.id} (${dumpEls.length} elements):\n`);
+          for (const el of dumpEls) {
+            if (skip.test(el.id)) continue;
+            process.stderr.write(`  ${el.id.padEnd(60)} [${el.type}] ${el.label}\n`);
+          }
+        }
+      } catch { /* dump is best-effort */ }
+    }
+    // --- END TEMPORARY DUMP ---
+
     if (evalResult.ok) {
       result.matchRate = evalResult.matchRate;
       result.matchOutcome = evalResult.matchOutcome;

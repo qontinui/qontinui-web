@@ -288,8 +288,8 @@ async def remove_runner(
 
 # ---- Coord merge-queue proxy (operations dashboard) ----------------------
 #
-# The Next.js frontend at `demo.staging.qontinui.io` (and any future
-# staging subdomain) renders the merge-train section on /operations.
+# The Next.js frontend at `qontinui.io` renders the merge-train
+# section on /operations.
 # Coord lives at a different origin and has no CORS layer, so the
 # browser can't reach coord directly. These endpoints proxy
 # read-only merge state through the web backend, which already shares
@@ -2244,7 +2244,7 @@ async def websocket_ci_status(
 # Plan: `D:/qontinui-root/qontinui-dev-notes/plans/2026-05-22-coord-native-session-coordination.md`
 # Phase 5. The dashboard `/sessions` panel reads from coord's
 # `/sessions` REST + SSE surface (Phase 1 SHIPPED, LIVE at
-# `coord.staging.qontinui.io`).
+# `coord.qontinui.io`).
 #
 # We proxy from the web backend so the browser gets:
 #   1. Same-origin requests (no CORS to coord required).

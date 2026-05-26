@@ -6,7 +6,7 @@
  *
  * The dashboard-facing surface for coord-native sessions. Reads from
  * the backend proxy at `/api/v1/operations/sessions` (which forwards
- * to `coord.staging.qontinui.io/sessions`).
+ * to `coord.qontinui.io/sessions`).
  *
  * Sibling pages that share this surface:
  *   - `/operations` (Fleet Overview, device-hardware-only after this
