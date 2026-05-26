@@ -1,0 +1,95 @@
+{
+  "version": "1.0",
+  "id": "ai-tasks-detail",
+  "name": "AI Task Detail",
+  "description": "Detail view for a single AI task (/ai-tasks/[id]). Wrapped in RequireProject — the harness appends ?project=<fixture> via GATED_SPECS. Fetches GET /api/v1/task-runs/{id} via taskRunsService.getTaskDetail, typed as TaskRunBackendDetail (camelCase, from @qontinui/shared-types). The routeStub must use camelCase fields matching the shared type — sessions need startedAt/endedAt, findings need detectedAt/resolvedAt, status must be 'complete' (not 'completed'). The static 'AI Task Details' heading and Refresh button render regardless of data, proving the page mounted and the RequireProject gate cleared. Ports ai-tasks-pages.spec.ts detail rendering. Read-only; structural only.",
+  "provenance": { "source": "ai-generated", "appId": "qontinui-web" },
+  "metadata": {
+    "tags": ["ai-tasks", "detail", "route-stub"],
+    "extraSettleMs": 4000,
+    "routeStubs": [
+      {
+        "urlPattern": "**/api/v1/task-runs/spec-ci-sentinel-task**",
+        "status": 200,
+        "contentType": "application/json",
+        "body": {
+          "id": "spec-ci-sentinel-task",
+          "taskName": "Spec CI Sentinel Task",
+          "status": "complete",
+          "prompt": "Sentinel task for spec CI verification",
+          "taskType": "ai_dev",
+          "createdAt": "2026-05-25T12:00:00Z",
+          "completedAt": "2026-05-25T12:01:00Z",
+          "updatedAt": "2026-05-25T12:01:00Z",
+          "durationSeconds": 60,
+          "sessionsCount": 1,
+          "maxSessions": null,
+          "autoContinue": false,
+          "outputSummary": "Completed successfully.",
+          "summary": null,
+          "goalAchieved": true,
+          "remainingWork": null,
+          "fullOutputStored": false,
+          "errorMessage": null,
+          "projectId": null,
+          "createdByUserId": null,
+          "runnerId": null,
+          "configId": null,
+          "workflowName": null,
+          "sessions": [
+            {
+              "id": "s1",
+              "taskRunId": "spec-ci-sentinel-task",
+              "sessionNumber": 1,
+              "startedAt": "2026-05-25T12:00:00Z",
+              "endedAt": "2026-05-25T12:00:30Z",
+              "durationSeconds": 30,
+              "outputSummary": "Session completed"
+            }
+          ],
+          "findings": [],
+          "findingSummary": {
+            "total": 0,
+            "byCategory": {},
+            "bySeverity": {},
+            "byStatus": {},
+            "recent": []
+          }
+        }
+      }
+    ]
+  },
+  "states": [
+    {
+      "id": "ai-tasks-detail-chrome",
+      "name": "Page chrome",
+      "description": "The static AI Task Details heading and Refresh button that render regardless of data load state.",
+      "assertions": [
+        {
+          "id": "ai-tasks-detail-chrome-elem-0",
+          "description": "'AI Task Details' heading.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "heading-1-ai-task-details" }, "label": "AI Task Details heading" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "ai-tasks-detail-chrome-elem-1",
+          "description": "Refresh button.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "button-refresh" }, "label": "Refresh button" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    }
+  ],
+  "transitions": []
+}
