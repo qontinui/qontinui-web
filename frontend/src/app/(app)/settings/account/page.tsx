@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { useRunnerHealth, runnerApi, type DeviceInfo } from "@/lib/runner-api";
 import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
 import { useAuth } from "@/contexts/auth-context";
-import { useOrganization } from "@/contexts/organization-context";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, User, Wifi, Tag, ExternalLink, Building2 } from "lucide-react";
@@ -17,7 +16,6 @@ export default function AccountSettingsPage() {
     data: health,
   } = useRunnerHealth();
   const { user } = useAuth();
-  const { currentOrganization } = useOrganization();
   const [deviceInfo, setDeviceInfo] = useState<DeviceInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [runnerName, setRunnerName] = useState("");
@@ -143,7 +141,7 @@ export default function AccountSettingsPage() {
                 data-content-label="tenant name"
                 className="text-foreground"
               >
-                {currentOrganization?.name ?? (
+                {user.tenant_slug ?? (
                   <span className="text-muted-foreground italic">
                     Personal (default)
                   </span>
@@ -162,7 +160,7 @@ export default function AccountSettingsPage() {
                 data-content-label="tenant id value"
                 className="text-foreground font-mono text-xs truncate"
               >
-                {currentOrganization?.id ?? (
+                {user.tenant_id ?? (
                   <span className="text-muted-foreground italic font-sans">
                     Not assigned
                   </span>

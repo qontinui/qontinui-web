@@ -77,11 +77,8 @@ export class TokenStorage {
     if (typeof window === "undefined") return;
     if (token) {
       this.accessToken = token;
+      sessionStorage.setItem(this.SESSION_ACCESS_TOKEN_KEY, token);
       if (ApiConfig.IS_REMOTE_BACKEND) {
-        sessionStorage.setItem(this.SESSION_ACCESS_TOKEN_KEY, token);
-        // No backend cookie reaches the dashboard origin in remote mode —
-        // drop a soft auth-marker cookie so middleware.ts lets protected
-        // routes render (see AUTH_MARKER_COOKIE doc above).
         this.setAuthMarkerCookie();
       }
     }
