@@ -172,21 +172,44 @@ def _iso(value: datetime | None) -> str | None:
     return value.isoformat() if value is not None else None
 
 
+def _columns_to_definition(workflow: UnifiedWorkflow) -> dict[str, Any]:
+    """Reconstruct a canonical (camelCase) object from the typed columns.
+
+    Inverse of :func:`_project_definition_to_columns` — the single mapping is
+    reused so the two never disagree. Used as the read fallback for rows whose
+    ``definition`` blob is empty: rows that pre-date the ``definition`` column
+    (their data lives only in the typed columns) and any row written by a path
+    that bypasses this service. Without it those rows would read back as an
+    empty canonical object, dropping their name/steps/settings on every GET.
+    """
+    canonical: dict[str, Any] = {"name": workflow.name}
+    for column, (canonical_key, _default) in _COLUMN_SOURCES.items():
+        canonical[canonical_key] = getattr(workflow, column)
+    return canonical
+
+
 def _model_to_response(workflow: UnifiedWorkflow) -> dict[str, Any]:
     """Return the lossless canonical workflow for a stored row.
 
-    The response *is* the stored ``definition`` (the full canonical object the
-    client sent), augmented with the server-authoritative fields the client
-    needs. Server fields overwrite any stale copies that may live in
-    ``definition`` so the authoritative values always win.
+    The response is the stored ``definition`` layered over a column-derived
+    reconstruction, then augmented with server-authoritative fields. Layering
+    ``definition`` on top of :func:`_columns_to_definition` means service-written
+    rows return their lossless blob verbatim (it wins key-for-key and carries the
+    ~24 fields that have no column), while pre-``definition`` rows (empty blob)
+    still return a faithful canonical object rebuilt from the typed columns —
+    without this fallback they would read back empty. Server fields overwrite any
+    stale copies in ``definition`` so the authoritative values always win.
 
     Timestamps are surfaced in both camelCase (``createdAt``) and the
     ``modified_at`` casing the canonical TS type declares for last-modified.
     ``created_at`` / ``modified_at`` snake_case aliases are also included for
     consumers that read the legacy shape.
     """
-    # Copy so we never mutate the ORM-attached dict.
-    response: dict[str, Any] = dict(workflow.definition or {})
+    # Reconstruct from columns, then overlay the lossless blob (blob wins where
+    # present; columns fill rows whose blob is empty). Copy so we never mutate
+    # the ORM-attached dict.
+    response: dict[str, Any] = _columns_to_definition(workflow)
+    response.update(workflow.definition or {})
 
     created_at = _iso(workflow.created_at)
     modified_at = _iso(workflow.updated_at)
