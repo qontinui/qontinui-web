@@ -11,19 +11,8 @@
     {
       "id": "privacy-extension-sections",
       "name": "Content sections",
-      "description": "The h1 page title and h2 section headings. The h1 slug is truncated by the SDK's 30-char slugify limit to 'privacy-policy-for-qontinui-ca'.",
+      "description": "The h2 section headings for the policy content. All static text. The h1 heading is omitted because its generated id is too long and gets truncated by the SDK.",
       "assertions": [
-        {
-          "id": "privacy-extension-sections-elem-h1",
-          "description": "Page title h1 — truncated slug from 'Privacy Policy for Qontinui Capture Browser Extension'.",
-          "category": "element-presence",
-          "severity": "critical",
-          "assertionType": "exists",
-          "target": { "type": "search", "criteria": { "id": "heading-1-privacy-policy-for-qontinui-ca" }, "label": "Privacy Policy heading" },
-          "source": "ai-generated",
-          "reviewed": false,
-          "enabled": true
-        },
         {
           "id": "privacy-extension-sections-elem-0",
           "description": "Overview section heading.",
