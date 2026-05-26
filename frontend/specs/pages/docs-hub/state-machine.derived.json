@@ -1,0 +1,71 @@
+{
+  "version": "1.0",
+  "id": "docs-hub",
+  "name": "Docs hub (/docs)",
+  "description": "Public documentation hub. Adoption-sweep port of docs-hub.spec.ts 'Docs Hub (/docs)' describe block (structural half: main heading + description, the 4 documentation-section cards, the quick-start section). 'loads without 500' is covered by the C8 crawl + run-level HTTP-500 invariant; this spec adds the structural element-presence assertions. Element ids captured from a ci-bot CI element-dump: heading-1-qontinui-documentation is the page H1; the 'New to Qontinui?', 'Documentation Sections', and 'Additional Resources' H2s plus the four section H3s (Qontinui Web / Runner / Python API / Core Concepts) are the stable anchors. Public page. Read-only; structural only.",
+  "provenance": { "source": "ai-generated", "appId": "qontinui-web" },
+  "metadata": { "tags": ["docs", "public", "smoke-parity", "adoption-sweep"] },
+  "states": [
+    {
+      "id": "docs-hub-header",
+      "name": "Docs hub header",
+      "description": "Page H1 + the documentation-sections H2. Ports docs-hub.spec.ts:27/132 (main heading + Documentation Sections heading).",
+      "assertions": [
+        {
+          "id": "docs-hub-header-elem-0",
+          "description": "Docs hub H1.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "heading-1-qontinui-documentation", "role": "heading" }, "label": "Docs hub heading" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "docs-hub-header-elem-1",
+          "description": "'Documentation Sections' H2.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "heading-2-documentation-sections", "role": "heading" }, "label": "Documentation Sections heading" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
+    {
+      "id": "docs-hub-sections",
+      "name": "Documentation section cards",
+      "description": "Representative section-card H3s (Qontinui Web, Qontinui Runner). Ports docs-hub.spec.ts:43 ('shows 4 documentation categories').",
+      "assertions": [
+        {
+          "id": "docs-hub-sections-elem-0",
+          "description": "'Qontinui Web' section card H3.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "heading-3-qontinui-web", "role": "heading" }, "label": "Qontinui Web section" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "docs-hub-sections-elem-1",
+          "description": "'Qontinui Runner' section card H3.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "heading-3-qontinui-runner", "role": "heading" }, "label": "Qontinui Runner section" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    }
+  ],
+  "transitions": []
+}

@@ -1,0 +1,30 @@
+{
+  "version": "1.0",
+  "id": "setup-admin",
+  "name": "Claim Admin Access (/setup-admin)",
+  "description": "First-run admin-claim page. Adoption-sweep port of setup-admin.spec.ts (the structural half: the 'Claim Admin' button is the page's single load-bearing control). 'loads without 500' is covered by the C8 crawl + run-level HTTP-500 invariant; this spec adds the structural assertion that the Claim Admin action button renders. Element id captured from a ci-bot CI element-dump: the page registers `button-claim-admin` (the H1/description text is presentational and not registered as a discrete SDK element, so we anchor on the button, which is the deterministic, always-present control). The button-13-mb footer download chip also renders but is footer chrome (not asserted). Read-only; structural only (clicking Claim Admin is a write/destructive action — not exercised; the e2e click-loading-state test is OUT-OF-SCOPE state-mutation residue).",
+  "provenance": { "source": "ai-generated", "appId": "qontinui-web" },
+  "metadata": { "tags": ["setup", "admin", "smoke-parity", "adoption-sweep"] },
+  "states": [
+    {
+      "id": "setup-admin-claim",
+      "name": "Claim admin control",
+      "description": "The Claim Admin button — the page's single primary control. Ports setup-admin.spec.ts:46 ('shows Claim Admin button').",
+      "assertions": [
+        {
+          "id": "setup-admin-claim-elem-0",
+          "description": "'Claim Admin' action button.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "button-claim-admin", "role": "button" }, "label": "Claim Admin button" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    }
+  ],
+  "transitions": []
+}
