@@ -4,12 +4,26 @@ Redis configuration for caching and Celery.
 This module provides Redis client setup and connection management.
 """
 
+from urllib.parse import urlsplit
+
 import structlog
 from redis import asyncio as aioredis
 
 from app.core.config import settings
 
 logger = structlog.get_logger(__name__)
+
+
+def _redacted_target(url: str) -> str:
+    """Render a Redis URL as scheme://host:port/path for logging.
+
+    Never logs userinfo (a managed-Redis URL can embed an AuthToken/password).
+    """
+    try:
+        parts = urlsplit(url)
+        return f"{parts.scheme}://{parts.hostname}:{parts.port}{parts.path}"
+    except Exception:
+        return "<unparseable-redis-url>"
 
 
 class RedisConfig:
@@ -26,12 +40,31 @@ class RedisConfig:
             Redis client instance
         """
         if cls._client is None:
-            redis_url = f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
+            # A full REDIS_URL is the canonical input: it carries scheme (redis:// or
+            # rediss:// for TLS), auth, host, port, and db, so the client is
+            # provider-agnostic and works with managed Redis that requires TLS +
+            # AuthToken. REDIS_HOST/PORT/DB remain a local-dev fallback when unset.
+            redis_url = settings.REDIS_URL or (
+                f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
+            )
 
             cls._client = await aioredis.from_url(
-                redis_url, encoding="utf-8", decode_responses=True, max_connections=100
+                redis_url,
+                encoding="utf-8",
+                decode_responses=True,
+                max_connections=100,
+                # Robustness: bound connect/op latency and self-heal idle/broken
+                # connections instead of hanging the WS registration path.
+                socket_connect_timeout=5,
+                socket_timeout=5,
+                retry_on_timeout=True,
+                health_check_interval=30,
             )
-            logger.info("redis_client_initialized", redis_url=redis_url)
+            # Log only the non-secret target (scheme/host/port) — the URL may embed
+            # an auth token.
+            logger.info(
+                "redis_client_initialized", redis_target=_redacted_target(redis_url)
+            )
 
         return cls._client
 

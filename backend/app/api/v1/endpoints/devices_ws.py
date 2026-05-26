@@ -235,24 +235,87 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
         await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
         return
 
-    redis = await get_redis()
-    manager = await get_runner_websocket_manager(redis)
-    await manager.register(
-        runner_id=device_id,
-        websocket=websocket,
-        user_id=user_id,
-        runner_name=name,
-        ip_address=client_ip,
-        connected_at=utc_now().isoformat(),
-    )
+    # ------------------------------------------------------------------
+    # 2b. Register with the Redis-backed runner WS manager and announce the
+    #     connection. This block talks to Redis (``get_redis`` /
+    #     ``get_runner_websocket_manager`` / ``manager.register`` /
+    #     ``manager.publish_runner_connected``) and so can raise when Redis
+    #     is unavailable or misconfigured (observed on prod api.qontinui.io).
+    #     If we let that escape the handler the ASGI worker drops the socket
+    #     abnormally (close code 1006, no frame), the ``connected`` ack is
+    #     never sent, and the runner's /web-integration/status never flips
+    #     to ws_connected:true. Mirror the graceful 1011 close used by the
+    #     device-row registration block above, and — since the device row
+    #     was already committed as WS-connected (ws_session_id /
+    #     ws_connected_at) above — roll that marking back so a failed
+    #     registration does not leave the device falsely reported connected.
+    # ------------------------------------------------------------------
+    try:
+        redis = await get_redis()
+        manager = await get_runner_websocket_manager(redis)
+        await manager.register(
+            runner_id=device_id,
+            websocket=websocket,
+            user_id=user_id,
+            runner_name=name,
+            ip_address=client_ip,
+            connected_at=utc_now().isoformat(),
+        )
 
-    await manager.publish_runner_connected(
-        runner_id=device_id,
-        user_id=user_id,
-        runner_name=name,
-        connected_at=utc_now().isoformat(),
-        ip_address=client_ip,
-    )
+        await manager.publish_runner_connected(
+            runner_id=device_id,
+            user_id=user_id,
+            runner_name=name,
+            connected_at=utc_now().isoformat(),
+            ip_address=client_ip,
+        )
+    except Exception as e:
+        logger.error(
+            "devices_ws_register_failed",
+            device_id=str(device_id) if device_id else None,
+            user_id=str(user_id),
+            error=str(e),
+            error_type=type(e).__name__,
+            exc_info=True,
+        )
+        # Roll back the WS-connected marking committed above so consumers of
+        # GET /api/v1/devices don't see a false wsConnected:true for a device
+        # whose registration never completed. Only clear if the row still
+        # points at OUR connection (mirror _cleanup's superseded-session
+        # guard), and close the connection record.
+        try:
+            async with AsyncSessionLocal() as db:
+                row = await device_crud.get_device(db, device_id) if device_id else None
+                if row is not None and row.ws_session_id == connection_pk:
+                    row.ws_session_id = None
+                    row.ws_connected_at = None
+                    await db.commit()
+        except Exception as rollback_err:
+            logger.error(
+                "devices_ws_register_failed_rollback_failed",
+                device_id=str(device_id) if device_id else None,
+                error=str(rollback_err),
+            )
+        if connection_pk is not None:
+            try:
+                async with AsyncSessionLocal() as db:
+                    await device_connection_crud.close_connection_record(
+                        db, connection_pk
+                    )
+            except Exception as close_err:
+                logger.error(
+                    "devices_ws_register_failed_close_connection_failed",
+                    connection_pk=connection_pk,
+                    error=str(close_err),
+                )
+        try:
+            await websocket.send_json(
+                {"type": "error", "message": "Internal error during registration."}
+            )
+        except Exception:
+            pass
+        await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
+        return
 
     await websocket.send_json(
         {

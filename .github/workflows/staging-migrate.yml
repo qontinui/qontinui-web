@@ -31,10 +31,12 @@ on:
 
 # Migrator runs as a one-shot ECS task; concurrent runs are safe (alembic
 # acquires its own advisory lock on the DB) but pointless. Cancel-in-progress
-# keeps the latest commit's chain authoritative.
+# is OFF: cancelling a migration mid-flight risks half-applied DDL that
+# alembic's advisory lock can't roll back. Pending runs queue and the latest
+# wins naturally (alembic stamps head, intermediate runs no-op).
 concurrency:
   group: staging-migrate
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   AWS_REGION: us-east-1

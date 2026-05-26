@@ -1,43 +1,49 @@
 /**
  * Unified Workflows API Client
  *
- * CRUD operations and React hooks for workflow definitions via the runner API
- * (SQLite). The runner is the source of truth for workflow definitions and
- * execution.
+ * CRUD operations and React hooks for workflow definitions via the WEB API
+ * (`/api/v1/unified-workflows`, backed by PostgreSQL `project.unified_workflows`).
+ *
+ * The web endpoint is lossless: request bodies are the full canonical
+ * (camelCase) ``UnifiedWorkflow`` object and responses are the canonical
+ * object directly (NOT a ``{success, data}`` envelope). List/search return
+ * ``{ items, pagination }``. The runner is needed ONLY to execute a workflow;
+ * authoring/listing/saving hit the web backend with no co-located runner.
  */
 
 import { useState, useCallback, useEffect } from "react";
 import type { UnifiedWorkflow } from "@/types/unified-workflow";
 
-const RUNNER_BASE =
-  process.env.NEXT_PUBLIC_RUNNER_API_URL || "http://localhost:9876";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
+const API_PREFIX = "/api/v1/unified-workflows";
 
-/** Runner API wraps responses in { success, data, error? } */
-interface RunnerResponse<T> {
-  success: boolean;
-  data: T;
-  error?: string;
+/** List/search responses wrap items in a paginated envelope. */
+interface ListResponse {
+  items: UnifiedWorkflow[];
+  pagination: {
+    total: number;
+    limit: number;
+    offset: number;
+  };
 }
 
-async function runnerFetch<T>(
-  path: string,
-  options: RequestInit = {}
-): Promise<T> {
+async function webFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(options.headers as Record<string, string>),
   };
 
-  const response = await fetch(`${RUNNER_BASE}/unified-workflows${path}`, {
+  const response = await fetch(`${API_BASE}${API_PREFIX}${path}`, {
     ...options,
     headers,
+    credentials: "include",
   });
 
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new Error(
-      body.error ||
-        `Runner API error: ${response.status} ${response.statusText}`
+      (body && (body.detail || body.error)) ||
+        `API error: ${response.status} ${response.statusText}`
     );
   }
 
@@ -46,11 +52,7 @@ async function runnerFetch<T>(
     return undefined as T;
   }
 
-  const json: RunnerResponse<T> = await response.json();
-  if (!json.success) {
-    throw new Error(json.error || "Runner API request failed");
-  }
-  return json.data;
+  return response.json() as Promise<T>;
 }
 
 // =============================================================================
@@ -64,17 +66,18 @@ export async function listWorkflows(params?: {
   if (params?.category) searchParams.set("category", params.category);
 
   const qs = searchParams.toString();
-  return runnerFetch<UnifiedWorkflow[]>(qs ? `?${qs}` : "");
+  const result = await webFetch<ListResponse>(qs ? `?${qs}` : "");
+  return result.items;
 }
 
 export async function getWorkflow(id: string): Promise<UnifiedWorkflow> {
-  return runnerFetch<UnifiedWorkflow>(`/${id}`);
+  return webFetch<UnifiedWorkflow>(`/${id}`);
 }
 
 export async function createWorkflow(
   data: Partial<UnifiedWorkflow>
 ): Promise<UnifiedWorkflow> {
-  return runnerFetch<UnifiedWorkflow>("", {
+  return webFetch<UnifiedWorkflow>("", {
     method: "POST",
     body: JSON.stringify(data),
   });
@@ -84,14 +87,14 @@ export async function updateWorkflow(
   id: string,
   data: Partial<UnifiedWorkflow>
 ): Promise<UnifiedWorkflow> {
-  return runnerFetch<UnifiedWorkflow>(`/${id}`, {
+  return webFetch<UnifiedWorkflow>(`/${id}`, {
     method: "PUT",
     body: JSON.stringify(data),
   });
 }
 
 export async function deleteWorkflow(id: string): Promise<void> {
-  return runnerFetch<void>(`/${id}`, { method: "DELETE" });
+  return webFetch<void>(`/${id}`, { method: "DELETE" });
 }
 
 // =============================================================================
@@ -109,21 +112,22 @@ export async function searchWorkflows(params?: {
   if (params?.tag) searchParams.set("tag", params.tag);
 
   const qs = searchParams.toString();
-  return runnerFetch<UnifiedWorkflow[]>(`/search${qs ? `?${qs}` : ""}`);
+  const result = await webFetch<ListResponse>(`/search${qs ? `?${qs}` : ""}`);
+  return result.items;
 }
 
 export async function duplicateWorkflow(id: string): Promise<UnifiedWorkflow> {
-  return runnerFetch<UnifiedWorkflow>(`/${id}/duplicate`, {
+  return webFetch<UnifiedWorkflow>(`/${id}/duplicate`, {
     method: "POST",
   });
 }
 
 export async function exportWorkflow(id: string): Promise<unknown> {
-  return runnerFetch<unknown>(`/${id}/export`);
+  return webFetch<unknown>(`/${id}/export`);
 }
 
 export async function importWorkflow(data: unknown): Promise<UnifiedWorkflow> {
-  return runnerFetch<UnifiedWorkflow>("/import", {
+  return webFetch<UnifiedWorkflow>("/import", {
     method: "POST",
     body: JSON.stringify(data),
   });
@@ -148,7 +152,9 @@ export function useUnifiedWorkflows() {
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to load workflows";
-      // Detect runner offline (fetch failures)
+      // Detect WEB backend unreachable (fetch failures). Runner connectivity
+      // is gated separately via useRunnerHealth; this only reflects whether
+      // the web API itself is reachable.
       if (
         message.includes("Failed to fetch") ||
         message.includes("NetworkError") ||
@@ -167,7 +173,8 @@ export function useUnifiedWorkflows() {
     fetchData();
   }, [fetchData]);
 
-  // Refetch when page regains visibility or focus (picks up workflows created by the runner)
+  // Refetch when page regains visibility or focus (picks up workflows
+  // created in another tab/session).
   useEffect(() => {
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") fetchData();
