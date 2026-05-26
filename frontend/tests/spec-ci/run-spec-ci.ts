@@ -1229,6 +1229,13 @@ async function main(): Promise<number> {
   await context.addInitScript(() => {
     try {
       window.localStorage.setItem("is_authenticated", "true");
+      // Seed a future token_expiry so isAccessTokenExpired() returns false.
+      // Without this, every page.goto triggers refreshAccessToken() (60+
+      // token rotations per run). Each rotation blacklists the old refresh
+      // token; if any single Set-Cookie delivery fails (transient proxy
+      // hiccup), all subsequent specs get 401 → login redirect → irrecoverable.
+      const expiryMs = Date.now() + 3600 * 1000;
+      window.localStorage.setItem("token_expiry", expiryMs.toString());
     } catch {
       /* localStorage unavailable */
     }
