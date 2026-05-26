@@ -40,6 +40,17 @@ function getCorpus(): Record<string, unknown> {
 function getAjv(): InstanceType<typeof Ajv2020> {
   if (!_ajv) {
     _ajv = new Ajv2020({ allErrors: true, strict: false });
+    // The schemars-generated corpus annotates integer/number fields with the
+    // OpenAPI numeric `format` keywords (`int32`/`int64`/`float`/`double`).
+    // ajv has no built-in validators for these, so without registration it
+    // logs `unknown format "int64" ignored in schema …` on every compile.
+    // These formats carry no validation semantics beyond the underlying JSON
+    // `type` (integer/number), so register them as always-valid no-ops to
+    // keep the run log clean. (`strict: false` already makes them non-fatal;
+    // this just silences the noise.)
+    for (const fmt of ["int32", "int64", "float", "double"]) {
+      _ajv.addFormat(fmt, true);
+    }
   }
   return _ajv;
 }
