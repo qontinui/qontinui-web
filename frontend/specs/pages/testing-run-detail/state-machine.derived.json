@@ -6,37 +6,82 @@
   "provenance": { "source": "ai-generated", "appId": "qontinui-web" },
   "metadata": {
     "tags": ["testing", "run-detail", "route-stub"],
-    "expectedConsoleErrors": ["useTestRun", "Error fetching test run"],
     "extraSettleMs": 4000,
     "routeStubs": [
       {
-        "urlPattern": "**/api/v1/execution/runs/spec-ci-sentinel-run**",
+        "urlPattern": "**/api/v1/execution/runs/spec-ci-sentinel-run/actions**",
+        "status": 200,
+        "contentType": "application/json",
+        "body": {
+          "actions": [
+            {
+              "id": "a1",
+              "run_id": "spec-ci-sentinel-run",
+              "sequence_number": 1,
+              "action_type": "navigate",
+              "action_name": "Go to dashboard",
+              "status": "success",
+              "started_at": "2026-05-25T12:00:01Z",
+              "completed_at": "2026-05-25T12:00:02Z",
+              "duration_ms": 500,
+              "from_state": "login",
+              "to_state": "dashboard"
+            }
+          ],
+          "pagination": { "total": 1, "limit": 1000, "offset": 0, "has_more": false }
+        }
+      },
+      {
+        "urlPattern": "**/api/v1/execution/runs/spec-ci-sentinel-run/issues**",
+        "status": 200,
+        "contentType": "application/json",
+        "body": {
+          "issues": [],
+          "pagination": { "total": 0, "limit": 1000, "offset": 0, "has_more": false }
+        }
+      },
+      {
+        "urlPattern": "**/api/v1/execution/runs/spec-ci-sentinel-run",
         "status": 200,
         "contentType": "application/json",
         "body": {
           "id": "spec-ci-sentinel-run",
-          "workflow_name": "Spec CI Workflow",
           "project_id": "spec-ci-project",
-          "workflow_id": "spec-ci-workflow",
+          "run_type": "workflow_test",
+          "run_name": "Spec CI Workflow",
           "status": "completed",
-          "start_time": "2026-05-25T12:00:00Z",
+          "started_at": "2026-05-25T12:00:00Z",
+          "ended_at": "2026-05-25T12:02:00Z",
           "duration_seconds": 120,
-          "coverage_percentage": 80.0,
-          "states_covered": 8,
-          "total_states": 10,
-          "successful_transitions": 15,
-          "total_transitions": 18,
-          "deficiencies_found": 2,
-          "transitions": [
-            {
-              "id": "t1",
-              "success": true,
-              "from_state": "login",
-              "to_state": "dashboard",
-              "action": "navigate",
-              "duration_ms": 500
-            }
-          ]
+          "runner_metadata": {
+            "runner_version": "1.0.0",
+            "os": "linux",
+            "hostname": "spec-ci",
+            "workflow_id": "spec-ci-workflow",
+            "total_transitions": 18,
+            "successful_transitions": 15,
+            "failed_transitions": 3,
+            "coverage_percentage": 80.0,
+            "states_covered": 8,
+            "total_states": 10,
+            "deficiencies_found": 2
+          },
+          "workflow_metadata": {
+            "workflow_id": "spec-ci-workflow",
+            "workflow_name": "Spec CI Workflow"
+          },
+          "stats": {
+            "total_actions": 18,
+            "successful_actions": 15,
+            "failed_actions": 3,
+            "total_issues": 0
+          },
+          "coverage_data": {
+            "coverage_percentage": 80.0,
+            "states_covered": 8,
+            "states_total": 10
+          },
+          "created_at": "2026-05-25T12:00:00Z"
         }
       }
     ]
@@ -44,8 +89,8 @@
   "states": [
     {
       "id": "testing-run-detail-chrome",
-      "name": "Page chrome",
-      "description": "The static back button (data-testid testing-page-run-details-back-btn) and heading that render regardless of data load state.",
+      "name": "Page chrome and populated tabs",
+      "description": "The static back button and heading, plus the tab triggers that render only when the TestRunDetails component successfully loads data. Tab triggers prove the three route stubs resolved without crash.",
       "assertions": [
         {
           "id": "testing-run-detail-chrome-elem-0",
@@ -65,6 +110,39 @@
           "severity": "critical",
           "assertionType": "exists",
           "target": { "type": "search", "criteria": { "id": "heading-1-test-run-details" }, "label": "Test Run Details heading" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "testing-run-detail-chrome-elem-2",
+          "description": "Transitions tab trigger — proves TestRunDetails loaded data successfully. Radix TabsTrigger role='tab' gives 'tab-' prefix.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "tab-transitions" }, "label": "Transitions tab" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "testing-run-detail-chrome-elem-3",
+          "description": "State Coverage tab trigger.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "tab-state-coverage" }, "label": "State Coverage tab" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "testing-run-detail-chrome-elem-4",
+          "description": "Deficiencies tab trigger.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "tab-deficiencies" }, "label": "Deficiencies tab" },
           "source": "ai-generated",
           "reviewed": false,
           "enabled": true
