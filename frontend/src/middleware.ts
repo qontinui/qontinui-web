@@ -63,6 +63,11 @@ export function middleware(request: NextRequest) {
   // see the module doc. Carries no token; soft gate only.
   const hasAuthMarker = request.cookies.get("qontinui_auth");
   if (hasAccessToken || hasRefreshToken || hasAuthMarker) {
+    if (pathname === "/workflows") {
+      const dest = request.nextUrl.clone();
+      dest.pathname = "/build/workflows";
+      return NextResponse.redirect(dest);
+    }
     return NextResponse.next();
   }
 

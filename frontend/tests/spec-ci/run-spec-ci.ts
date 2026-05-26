@@ -638,7 +638,6 @@ const GATED_SPECS = new Set<string>([
   // to /automation-builder/navigation-tests (slug != spec id).
   "navigation-test-generator",
   // RequireProject-wrapped detail pages — need ?project=<fixture> to clear the gate.
-  "ai-tasks-detail",
   "testing-run-detail",
   "qa-dashboard-run-detail",
 ]);
