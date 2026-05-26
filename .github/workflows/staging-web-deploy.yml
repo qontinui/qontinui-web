@@ -37,11 +37,13 @@ on:
   workflow_dispatch:
 
 # One staging-web deploy at a time; the latest commit's image is the one that
-# should win. An interrupted deploy leaves the service on its prior stable
-# revision (circuit breaker), so cancel-in-progress is safe.
+# should win. Cancel-in-progress is OFF: cancelling a deploy mid-flight
+# (after image push, before ECS stabilize) risks a half-registered task-def
+# or a service stuck draining with no replacement. Pending runs queue; the
+# latest commit's image wins naturally when it reaches the deploy step.
 concurrency:
   group: staging-web-deploy
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   AWS_REGION: us-east-1
