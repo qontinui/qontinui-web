@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/tooltip";
 import { Monitor, Laptop, Terminal, Cpu, Circle } from "lucide-react";
 import { relativeTime } from "./utils";
+import { CiRunnerBadge } from "./CiRunnerBadge";
 import type { MachineGroup } from "./types";
 
 interface MachineCardProps {
@@ -193,6 +194,16 @@ export function MachineCard({ machine }: MachineCardProps) {
           )}
         </div>
 
+        {/* CI Runner */}
+        {machine.ciRunner && (
+          <div>
+            <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">
+              CI Runner
+            </h4>
+            <CiRunnerBadge ciRunner={machine.ciRunner} />
+          </div>
+        )}
+
         {/* Summary footer */}
         <div className="flex items-center gap-3 pt-1 border-t border-border text-xs text-muted-foreground">
           <span>
@@ -202,6 +213,9 @@ export function MachineCard({ machine }: MachineCardProps) {
             {claudeSessions.length} CC session
             {claudeSessions.length !== 1 ? "s" : ""}
           </span>
+          {machine.ciRunner && machine.ciRunner.status !== "offline" && (
+            <span>CI runner active</span>
+          )}
         </div>
       </CardContent>
     </Card>

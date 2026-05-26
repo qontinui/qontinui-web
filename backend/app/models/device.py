@@ -187,6 +187,23 @@ class Device(Base):
         DateTime(timezone=True), nullable=True
     )
 
+    # ---- CI Runner capability (Phase 4c self-hosted CI runners) -------------
+    ci_runner_status: Mapped[str | None] = mapped_column(
+        String,
+        nullable=True,
+        comment="idle | busy | offline — NULL when the device has no CI runner.",
+    )
+    ci_runner_labels: Mapped[list[str] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment='CI runner labels, e.g. ["self-hosted", "linux", "x64"].',
+    )
+    ci_runner_last_job_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Timestamp of the most recent CI job executed by this runner.",
+    )
+
     # ---- Audit -------------------------------------------------------------
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
