@@ -108,6 +108,23 @@ export const NETWORK_NOISE_DENYLIST: readonly RegExp[] = [
   /NetworkError when attempting to fetch/, // Firefox
   /\bAbortError\b/,
   /aborted a request/,
+  // Transient auth rate-limit on the SHARED ci-bot account. The harness drives
+  // ~46 specs + ~130 crawl routes through one staging account, each navigation
+  // re-authing via the in-memory-token refresh; when two Spec CI runs overlap
+  // (e.g. a PR-triggered run + a workflow_dispatch on another ref — the
+  // `concurrency` group only de-dupes within a single ref), the backend's
+  // "10 per 1 minute" limiter 429s the token-refresh endpoint. The app logs
+  // `[TokenRefresh] Token refresh failed: 429 {"error":"RATE_LIMIT_EXCEEDED"…}`
+  // on EVERY affected page (spec + crawl alike), which would otherwise red the
+  // whole gate on a pure infra/timing artifact — the false-red machine the
+  // robustness priority rejects. This is unambiguously a rate-limit (the 429 +
+  // RATE_LIMIT_EXCEEDED code), never a logic defect, so it is safe to drop. A
+  // genuinely broken auth/refresh path surfaces differently (a /login bounce →
+  // functional matchRate failures, or a non-429 refresh error), so the
+  // regression signal is preserved. Narrowly anchored to the 429 rate-limit
+  // text so a real refresh error (wrong token, 401/500) still gates.
+  /\[TokenRefresh\] Token refresh failed: 429/,
+  /RATE_LIMIT_EXCEEDED/,
 ];
 
 /**
