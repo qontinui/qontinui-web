@@ -14,6 +14,9 @@ payload).
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
+from qontinui_schemas.generated.per_type.runner import (
+    Runner as RunnerWire,
+)
 
 from app.schemas.base import IsoDatetime
 
@@ -53,6 +56,55 @@ class DeviceConnectionResponse(BaseModel):
     ip_address: str | None
     project_id: UUID | None
     session_id: str | None
+
+
+class DeviceWire(RunnerWire):
+    """Device list/detail wire shape — the canonical ``Runner`` payload
+    plus an explicit live-reachability projection.
+
+    Additive over :class:`qontinui_schemas...Runner`: every existing field
+    (``id``, ``derivedStatus``, ``wsConnected``, ``lastHeartbeat``, …) is
+    inherited unchanged. The three fields below are appended so the mobile
+    app (and any UI) can show whether a *registered* runner is actually
+    *reachable* via the runner-proxy relay, not merely paired:
+
+    * ``online`` — ``True`` iff the device currently holds a live runner WS
+      session (``coord.devices.ws_session_id IS NOT NULL`` — the exact
+      predicate the runner-proxy relay checks before dispatching, see
+      ``device_bridge_ws._runner_proxy_relay``). Falls back to
+      heartbeat-freshness when no live WS session id is recorded.
+    * ``connectionStatus`` — coarse string projection of ``online``:
+      ``"connected"`` | ``"stale"`` | ``"offline"`` for display.
+    * ``lastSeen`` — ISO 8601 timestamp of the most recent liveness signal
+      (``ws_connected_at`` / ``last_heartbeat`` / ``last_seen_at``,
+      whichever is newest), or ``None`` if the device was never seen.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    online: bool = Field(
+        ...,
+        description=(
+            "Whether the runner currently holds a live device-bridge / "
+            "runner WebSocket session and is therefore reachable via the "
+            "runner-proxy relay. Sourced from `ws_session_id IS NOT NULL`, "
+            "with a heartbeat-freshness fallback."
+        ),
+    )
+    connectionStatus: str = Field(
+        ...,
+        description=(
+            'Coarse connection state for display: "connected" (live WS), '
+            '"stale" (recent heartbeat but no live WS), or "offline".'
+        ),
+    )
+    lastSeen: str | None = Field(
+        default=None,
+        description=(
+            "ISO 8601 timestamp of the most recent liveness signal "
+            "(WS connect / heartbeat / last_seen), or null if never seen."
+        ),
+    )
 
 
 class PairConfirmRequest(BaseModel):

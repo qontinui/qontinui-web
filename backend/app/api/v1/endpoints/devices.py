@@ -20,6 +20,7 @@ The schemas-crate ``Runner*`` types continue to back the response
 payload until Phase 7 renames them to ``Device*``.
 """
 
+from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -49,6 +50,7 @@ from app.models.device import Device
 from app.models.user import User as UserModel
 from app.schemas.device import (
     DeviceConnectionResponse,
+    DeviceWire,
     DispatchDeviceRequest,
     DispatchDeviceResponse,
     PairCliRequest,
@@ -68,6 +70,68 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 # device-to-wire serialization
 # ---------------------------------------------------------------------------
+
+# Heartbeat-freshness window used as the fallback online signal when a device
+# has no recorded live WS session id (``ws_session_id``). A device whose most
+# recent liveness signal is within this window is reported ``connectionStatus
+# == "stale"`` (recently alive but not currently holding a live WS) rather than
+# ``"offline"``. Kept slightly above the device-bridge heartbeat cadence so a
+# single missed beat doesn't flip a device offline; well under the 1h Redis
+# device-bridge TTL (``device_bridge_service._DEVICE_TTL_SECONDS``).
+_HEARTBEAT_FRESHNESS = timedelta(seconds=90)
+
+
+def _latest_liveness(device: Device) -> datetime | None:
+    """Return the newest of the device's liveness timestamps, or ``None``.
+
+    Considers ``ws_connected_at`` (live WS established), ``last_heartbeat``
+    (most recent heartbeat) and ``last_seen_at`` (audit). Used both to
+    populate ``lastSeen`` and to compute the heartbeat-freshness fallback for
+    ``online``.
+    """
+    candidates = [
+        device.ws_connected_at,
+        device.last_heartbeat,
+        device.last_seen_at,
+    ]
+    seen = [c for c in candidates if c is not None]
+    if not seen:
+        return None
+    return max(seen)
+
+
+def _derive_online(device: Device) -> tuple[bool, str, str | None]:
+    """Derive the ``(online, connectionStatus, lastSeen)`` projection.
+
+    ``online`` is sourced primarily from ``ws_session_id IS NOT NULL`` — the
+    exact predicate the runner-proxy relay checks before dispatching to a
+    runner (see ``device_bridge_ws._runner_proxy_relay``), so it answers the
+    operative question "is this runner reachable right now?" rather than
+    merely "is it registered?".
+
+    When no live WS session id is recorded, fall back to heartbeat freshness:
+    a device whose newest liveness timestamp is within ``_HEARTBEAT_FRESHNESS``
+    is reported ``"stale"`` (recently alive, no live WS) and ``online=False``;
+    otherwise ``"offline"``.
+    """
+    last_seen_dt = _latest_liveness(device)
+    last_seen_iso = last_seen_dt.isoformat() if last_seen_dt is not None else None
+
+    if device.ws_session_id is not None:
+        return True, "connected", last_seen_iso
+
+    if last_seen_dt is not None:
+        now = utc_now()
+        # ``last_seen_dt`` is timezone-aware (all columns are TIMESTAMPTZ); guard
+        # the rare naive case so the subtraction can't raise.
+        if last_seen_dt.tzinfo is None:
+            fresh = False
+        else:
+            fresh = (now - last_seen_dt) <= _HEARTBEAT_FRESHNESS
+        if fresh:
+            return False, "stale", last_seen_iso
+
+    return False, "offline", last_seen_iso
 
 
 def _derive_status(device: Device) -> RunnerStatus:
@@ -154,6 +218,24 @@ def _device_to_wire(device: Device) -> RunnerWire:
     )
 
 
+def _device_to_device_wire(device: Device) -> DeviceWire:
+    """Convert a ``Device`` row to :class:`DeviceWire`.
+
+    Additive over :func:`_device_to_wire`: reuses the canonical ``Runner``
+    serialization for every existing field, then appends the live-reachability
+    projection (``online`` / ``connectionStatus`` / ``lastSeen``) derived from
+    :func:`_derive_online`.
+    """
+    base = _device_to_wire(device)
+    online, connection_status, last_seen = _derive_online(device)
+    return DeviceWire(
+        **base.model_dump(),
+        online=online,
+        connectionStatus=connection_status,
+        lastSeen=last_seen,
+    )
+
+
 def _ensure_owned(device: Device | None, user_id: UUID) -> Device:
     if device is None:
         raise HTTPException(
@@ -171,7 +253,7 @@ def _ensure_owned(device: Device | None, user_id: UUID) -> Device:
 # ---------------------------------------------------------------------------
 
 
-@router.get("", response_model=list[RunnerWire])
+@router.get("", response_model=list[DeviceWire])
 async def list_devices_endpoint(
     *,
     db: AsyncSession = Depends(get_async_db),
@@ -204,7 +286,7 @@ async def list_devices_endpoint(
             email=current_user.email,
             paired_filter=True,
         )
-    wire = [_device_to_wire(d) for d in devices]
+    wire = [_device_to_device_wire(d) for d in devices]
 
     if status_filter:
         allowed = {s.strip() for s in status_filter.split(",") if s.strip()}
@@ -485,7 +567,7 @@ async def pair_cli(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/{device_id}", response_model=RunnerWire)
+@router.get("/{device_id}", response_model=DeviceWire)
 async def get_device_endpoint(
     *,
     db: AsyncSession = Depends(get_async_db),
@@ -495,7 +577,7 @@ async def get_device_endpoint(
     """Fetch a single device by id (must be owned by ``current_user``)."""
     record = await device_crud.get_device(db, device_id)
     record = _ensure_owned(record, current_user.id)
-    return _device_to_wire(record)
+    return _device_to_device_wire(record)
 
 
 @router.delete("/{device_id}", status_code=status.HTTP_204_NO_CONTENT)
