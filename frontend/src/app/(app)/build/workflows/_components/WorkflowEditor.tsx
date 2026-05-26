@@ -14,6 +14,7 @@ import { CurlImportDialog } from "@/components/workflow-builder/CurlImportDialog
 import { GenerateFromStatesModal } from "@/components/workflow-builder/GenerateFromStatesModal";
 import { Button } from "@/components/ui/button";
 import { generateStepId, type UnifiedStep, type WorkflowPhase } from "@/types/unified-workflow";
+import { useRunnerHealth } from "@/lib/runner/hooks/misc-hooks";
 import { PhaseStepRenderer } from "./PhaseStepRenderer";
 import { DispatchWorkflowButton } from "@/components/server-runners/DispatchWorkflowButton";
 import { RunOnRunnerButton } from "@/components/runners";
@@ -45,6 +46,11 @@ export function WorkflowEditor({
   const { state, addStep, saveWorkflow, exportWorkflow, importWorkflow, setWorkflow, updateWorkflow, hasUnsavedChanges, getActiveSteps } =
     useWorkflowBuilder();
   const router = useRouter();
+  // Run is an execution affordance — gate it on runner connectivity. Save /
+  // Export / Import / step editors stay enabled regardless of runner state.
+  const { data: runnerHealth, isOffline: runnerHealthOffline } =
+    useRunnerHealth();
+  const runnerIsOffline = runnerHealthOffline || !runnerHealth;
   const [showSettings, setShowSettings] = useState(false);
   const [showConstraints, setShowConstraints] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
@@ -150,6 +156,10 @@ export function WorkflowEditor({
         id: 'run',
         label: 'Run Workflow',
         handler: async () => {
+          if (runnerIsOffline) {
+            toast.error("Connect a runner to run this workflow");
+            return;
+          }
           if (hasUnsavedChanges) {
             const saved = await saveWorkflow();
             if (!saved) return;
@@ -221,6 +231,12 @@ export function WorkflowEditor({
             variant="brand-primary"
             size="sm"
             className="h-8"
+            disabled={runnerIsOffline}
+            title={
+              runnerIsOffline
+                ? "Connect a runner to run this workflow"
+                : "Run workflow"
+            }
             onClick={async () => {
               if (hasUnsavedChanges) {
                 const saved = await saveWorkflow();
