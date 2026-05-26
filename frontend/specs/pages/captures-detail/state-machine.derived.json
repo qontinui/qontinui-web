@@ -1,0 +1,44 @@
+{
+  "version": "1.0",
+  "id": "captures-detail",
+  "name": "Capture Session Detail (not-found)",
+  "description": "Capture session detail page in its resolved not-found state (/captures/[sessionId]). Without a routeStub the sentinel session ID 404s naturally and the page renders its 'Session not found' error view with a 'Back to Captures' button. This mirrors the demo-detail pattern: a dynamic [id] route with a fixed sentinel that 404s to a deterministic resolved view. The not-found branch is the safe, API-free baseline. The populated variant (with routeStub for the session + video endpoints) is deferred — the VideoPlayer issues a media GET that a JSON stub cannot satisfy, and the console-error behavior of a 404'd video needs verification. Ports captures-recordings.spec.ts non-existent session test. Read-only; structural only.",
+  "provenance": { "source": "ai-generated", "appId": "qontinui-web" },
+  "metadata": {
+    "tags": ["captures", "detail", "not-found"],
+    "extraSettleMs": 6000
+  },
+  "states": [
+    {
+      "id": "captures-detail-not-found",
+      "name": "Session not found",
+      "description": "The resolved not-found view rendered when the capture session fetch fails (sentinel ID returns 404). Confirmed via local element dump: heading-2-session-not-found and button-back-to-captures are the stable elements in this branch.",
+      "assertions": [
+        {
+          "id": "captures-detail-not-found-elem-0",
+          "description": "'Session not found' heading — confirms the page rendered its error state, not a loading spinner.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "heading-2-session-not-found" }, "label": "Session not found heading" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "captures-detail-not-found-elem-1",
+          "description": "'Back to Captures' button — the recovery affordance on the not-found view.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "button-back-to-captures" }, "label": "Back to Captures button" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    }
+  ],
+  "transitions": []
+}

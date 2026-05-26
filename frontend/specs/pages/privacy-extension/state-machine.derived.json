@@ -1,0 +1,54 @@
+{
+  "version": "1.0",
+  "id": "privacy-extension",
+  "name": "Privacy Extension Policy",
+  "description": "Static marketing page for the Qontinui Capture browser extension privacy policy (/privacy-extension). Pure static content — no API calls, no auth gate. All heading ids are deterministic static text. Ports legal.spec.ts privacy extension section. Read-only; structural only.",
+  "provenance": { "source": "ai-generated", "appId": "qontinui-web" },
+  "metadata": {
+    "tags": ["marketing", "privacy", "static"]
+  },
+  "states": [
+    {
+      "id": "privacy-extension-sections",
+      "name": "Content sections",
+      "description": "The h2 section headings for the policy content. All static text. The h1 heading is omitted because its generated id is too long and gets truncated by the SDK.",
+      "assertions": [
+        {
+          "id": "privacy-extension-sections-elem-0",
+          "description": "Overview section heading.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "heading-2-overview" }, "label": "Overview heading" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "privacy-extension-sections-elem-1",
+          "description": "Data Collection section heading.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "heading-2-data-collection" }, "label": "Data Collection heading" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "privacy-extension-sections-elem-2",
+          "description": "Open Source section heading.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "heading-2-open-source" }, "label": "Open Source heading" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    }
+  ],
+  "transitions": []
+}

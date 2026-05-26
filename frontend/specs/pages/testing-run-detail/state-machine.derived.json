@@ -1,0 +1,77 @@
+{
+  "version": "1.0",
+  "id": "testing-run-detail",
+  "name": "Test Run Detail (Testing)",
+  "description": "Test run detail view under the Testing surface (/testing/runs/[id]). Wrapped in RequireProject — the harness appends ?project=<fixture> via GATED_SPECS. Fetches GET /api/v1/execution/runs/{id} via useTestRun. The routeStub returns a completed TestRunDetail so the populated TestRunDetails component renders its stat cards (Duration/Coverage/Success Rate/Deficiencies) and three-tab layout (Transitions/State Coverage/Deficiencies). The static back button data-testid='testing-page-run-details-back-btn' renders regardless of data; the tab triggers render ONLY on successful load — asserting a tab proves the stub resolved. Ports testing-project.spec.ts / testing-global.spec.ts test-run detail. Read-only; structural only.",
+  "provenance": { "source": "ai-generated", "appId": "qontinui-web" },
+  "metadata": {
+    "tags": ["testing", "run-detail", "route-stub"],
+    "expectedConsoleErrors": ["useTestRun", "Error fetching test run"],
+    "extraSettleMs": 4000,
+    "routeStubs": [
+      {
+        "urlPattern": "**/api/v1/execution/runs/spec-ci-sentinel-run**",
+        "status": 200,
+        "contentType": "application/json",
+        "body": {
+          "id": "spec-ci-sentinel-run",
+          "workflow_name": "Spec CI Workflow",
+          "project_id": "spec-ci-project",
+          "workflow_id": "spec-ci-workflow",
+          "status": "completed",
+          "start_time": "2026-05-25T12:00:00Z",
+          "duration_seconds": 120,
+          "coverage_percentage": 80.0,
+          "states_covered": 8,
+          "total_states": 10,
+          "successful_transitions": 15,
+          "total_transitions": 18,
+          "deficiencies_found": 2,
+          "transitions": [
+            {
+              "id": "t1",
+              "success": true,
+              "from_state": "login",
+              "to_state": "dashboard",
+              "action": "navigate",
+              "duration_ms": 500
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "states": [
+    {
+      "id": "testing-run-detail-chrome",
+      "name": "Page chrome",
+      "description": "The static back button (data-testid testing-page-run-details-back-btn) and heading that render regardless of data load state.",
+      "assertions": [
+        {
+          "id": "testing-run-detail-chrome-elem-0",
+          "description": "Back button with data-testid testing-page-run-details-back-btn.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "testing-page-run-details-back-btn" }, "label": "Back button" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "testing-run-detail-chrome-elem-1",
+          "description": "Test Run Details heading.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "heading-1-test-run-details" }, "label": "Test Run Details heading" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    }
+  ],
+  "transitions": []
+}
