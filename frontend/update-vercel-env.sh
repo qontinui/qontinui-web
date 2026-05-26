@@ -13,7 +13,7 @@ echo "=== Updating Vercel Environment Variables ==="
 echo ""
 
 # Main backend URL
-BACKEND_URL="http://qontinui-prod.eba-km2u4s23.eu-central-1.elasticbeanstalk.com"
+BACKEND_URL="https://api.qontinui.io"
 
 echo "Current configuration:"
 echo "  NEXT_PUBLIC_API_URL: $BACKEND_URL"
@@ -39,5 +39,4 @@ echo ""
 echo "=== Done! ==="
 echo "Your frontend should now connect to: $BACKEND_URL"
 echo ""
-echo "Note: If you set up a custom domain for your backend (e.g., api.qontinui.com),"
-echo "you should update this script to use that URL instead."
+echo "Backend API: $BACKEND_URL"

@@ -12,7 +12,7 @@
 # Usage:
 #   .\demo-trigger.ps1 -PrimaryMachineId <pc-uuid> -SecondaryMachineId <msi-uuid>
 #   .\demo-trigger.ps1 -PrimaryMachineId <pc-uuid> -SecondaryMachineId <msi-uuid> -ParentSha <sha>
-#   .\demo-trigger.ps1 -PrimaryMachineId <pc-uuid> -SecondaryMachineId <msi-uuid> -CoordUrl https://coord.staging.qontinui.io
+#   .\demo-trigger.ps1 -PrimaryMachineId <pc-uuid> -SecondaryMachineId <msi-uuid> -CoordUrl https://coord.qontinui.io
 #
 # Machine UUIDs are visible on /operations as the `machine_id`
 # column of each runner card; copy them once and keep them in
@@ -34,7 +34,7 @@ param(
     [string]$ParentSha = 'main',
 
     [Parameter()]
-    [string]$CoordUrl = 'https://coord.staging.qontinui.io',
+    [string]$CoordUrl = 'https://coord.qontinui.io',
 
     [Parameter()]
     [string]$Repo = 'qontinui-web'

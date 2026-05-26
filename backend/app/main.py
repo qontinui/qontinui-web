@@ -86,8 +86,6 @@ if settings.ENVIRONMENT == "production":
         "qontinui.com",
         "www.qontinui.com",
         "app.qontinui.com",
-        "qontinui-prod-py.eba-km2u4s23.eu-central-1.elasticbeanstalk.com",
-        "*.elasticbeanstalk.com",
     ]
 
     app.add_middleware(

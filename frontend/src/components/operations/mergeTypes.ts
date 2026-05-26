@@ -223,7 +223,7 @@ export interface DemoFeature {
 
 const DEMO_FRONTEND_URL =
   process.env.NEXT_PUBLIC_DEMO_FRONTEND_URL ||
-  "https://demo.staging.qontinui.io";
+  "https://qontinui.io";
 
 export const DEMO_FEATURES: ReadonlyArray<DemoFeature> = [
   {

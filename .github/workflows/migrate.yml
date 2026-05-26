@@ -1,4 +1,4 @@
-name: Apply Migrations to Staging RDS
+name: Apply Migrations to RDS
 
 # Auto-runs `alembic upgrade head` against the staging canonical DB by building
 # the migrator image and dispatching the ECS task. The migrator image is the
@@ -35,7 +35,7 @@ on:
 # alembic's advisory lock can't roll back. Pending runs queue and the latest
 # wins naturally (alembic stamps head, intermediate runs no-op).
 concurrency:
-  group: staging-migrate
+  group: migrate
   cancel-in-progress: false
 
 env:
@@ -51,7 +51,7 @@ jobs:
   migrate:
     name: Build, push, run migrator
     runs-on: ubuntu-latest
-    environment: staging
+    environment: production
     permissions:
       contents: read
 

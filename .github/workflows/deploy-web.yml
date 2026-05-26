@@ -1,4 +1,4 @@
-name: Deploy Web Backend to Staging
+name: Deploy Web Backend
 
 # Builds the qontinui-web backend image and rolls it onto the staging ECS
 # service (cluster qontinui-staging, service "web", region us-east-1). Mirrors
@@ -31,18 +31,18 @@ on:
     branches: [main]
     paths:
       - 'backend/**'
-      - '.github/workflows/staging-web-deploy.yml'
+      - '.github/workflows/deploy-web.yml'
   schedule:
     - cron: '0 3 * * *'  # daily 03:00 UTC — catches schemas-only drift
   workflow_dispatch:
 
-# One staging-web deploy at a time; the latest commit's image is the one that
+# One web deploy at a time; the latest commit's image is the one that
 # should win. Cancel-in-progress is OFF: cancelling a deploy mid-flight
 # (after image push, before ECS stabilize) risks a half-registered task-def
 # or a service stuck draining with no replacement. Pending runs queue; the
 # latest commit's image wins naturally when it reaches the deploy step.
 concurrency:
-  group: staging-web-deploy
+  group: deploy-web
   cancel-in-progress: false
 
 env:
@@ -52,13 +52,13 @@ env:
   ECS_SERVICE: web
   ECS_CONTAINER: web
   ECS_TASK_FAMILY: qontinui-staging-web
-  STAGING_HEALTH_URL: https://demo.staging.qontinui.io/api/v1/health
+  HEALTH_URL: https://api.qontinui.io/api/v1/health
 
 jobs:
   deploy:
     name: Build, push, deploy web backend
     runs-on: ubuntu-latest
-    environment: staging
+    environment: production
     permissions:
       contents: read
 
@@ -189,13 +189,13 @@ jobs:
             exit 1
           fi
 
-      - name: Smoke staging health endpoint
+      - name: Smoke health endpoint
         run: |
           for i in 1 2 3 4 5; do
-            CODE=$(curl -s -o /dev/null -w '%{http_code}' "${STAGING_HEALTH_URL}" || echo 000)
-            echo "attempt $i: ${STAGING_HEALTH_URL} -> $CODE"
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' "${HEALTH_URL}" || echo 000)
+            echo "attempt $i: ${HEALTH_URL} -> $CODE"
             [ "$CODE" = "200" ] && exit 0
             sleep 10
           done
-          echo "::error::staging health endpoint never returned 200"
+          echo "::error::health endpoint never returned 200"
           exit 1
