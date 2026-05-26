@@ -828,22 +828,28 @@ async def _runner_proxy_relay(
         async with AsyncSessionLocal() as db:
             result = await db.execute(
                 text(
-                    "SELECT id, ws_session_id FROM coord.devices "
-                    "WHERE id = :device_id "
+                    "SELECT device_id, ws_session_id FROM coord.devices "
+                    "WHERE device_id = :device_id "
                     "  AND user_id = :uid "
                     "  AND capability_user_paired = true"
                 ),
                 {"device_id": str(device_uuid), "uid": user_id},
             )
             row = result.fetchone()
-    except Exception as e:
-        logger.error(
+    except Exception:
+        # A failure here is a query/programming error (bad SQL, schema
+        # drift, connection loss) — NOT an upstream-relay problem. The
+        # original broad ``except`` masked an ``UndefinedColumnError``
+        # (querying the nonexistent ``id`` column on ``coord.devices``,
+        # whose PK is ``device_id``) behind a misleading 502. Log the
+        # full traceback and surface a 500 so the real fault is
+        # diagnosable; reserve 502 for genuine relay-connectivity faults.
+        logger.exception(
             "runner_proxy_relay_device_lookup_failed",
             device_id=str(device_uuid),
-            error=str(e),
         )
         return JSONResponse(
-            status_code=502,
+            status_code=500,
             content={"detail": "device lookup failed"},
         )
 
