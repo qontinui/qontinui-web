@@ -27,16 +27,15 @@ on:
     branches: [main, develop]
   workflow_dispatch:
 
-# Serialize ALL Spec CI runs to a SINGLE global lane (no per-ref key). Every run
-# drives the one shared ci-bot staging account, whose auth/token-refresh endpoint
-# is rate-limited ("10 per 1 minute"); two runs overlapping (e.g. a PR-triggered
-# run + a push/dispatch on another ref) exhaust the limiter and 429 the refresh
-# on every page, reding the gate on a pure timing artifact. A constant group
-# forces runs to queue rather than collide. cancel-in-progress is OFF so an
-# in-flight run completes (cancelling mid-run would still leave its auth churn
-# counted against the next run's window); pending runs coalesce to the latest.
+# Serialize Spec CI runs per event-type + ref. The ci-bot staging account's
+# auth/token-refresh endpoint is rate-limited (10/min); the prior global lane
+# prevented contention but also let main pushes cancel pending PR runs (GitHub
+# cancels the oldest pending run in a group when a newer one arrives, even with
+# cancel-in-progress: false). Splitting by event_name + ref allows at most two
+# concurrent runs (one PR + one push) — well within the 10/min budget — while
+# preventing push-to-main from reaping a PR's required check.
 concurrency:
-  group: spec-ci-global
+  group: spec-ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
