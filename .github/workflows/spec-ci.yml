@@ -163,7 +163,7 @@ jobs:
               "- consoleErrors: \(.summary.consoleErrors.total)",
               "- serverErrors: \(.summary.serverErrors.total)",
               "- apiAssertionPassRate: \(.summary.apiAssertionPassRate)",
-              "- crawl: \(.crawl.visited) routes visited, \(.crawl.gatingFindings) gating findings (passRate \(.crawl.passRate))"
+              "- crawl: \(.crawl.visited) routes visited, \(.crawl.gatingFindings) gating findings (passRate \(.crawl.passRate))\(if .crawl.sessionLost then " — SESSION-LOST mid-crawl (\(.crawl.sessionLostRoutes) routes bounced to /login; environmental auth/rate-limit, re-run)" else "" end)"
             ' frontend/spec-ci-report.json >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"
             echo "Failing specs:" >> "$GITHUB_STEP_SUMMARY"

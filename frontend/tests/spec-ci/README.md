@@ -127,6 +127,20 @@ The crawl reuses the shared **authed** page (ci-bot, superuser), so it covers
 the authed lane. The unauth lane is exercised by `requiresUnauthenticated`
 specs, not the crawl.
 
+**Session-lost guard.** If the shared authed session is torn down mid-crawl —
+the dominant cause is the shared ci-bot account's auth/refresh endpoint
+rate-limiting (the backend's "10 per 1 minute" limiter), which never
+establishes the refresh cookie — every subsequent protected route bounces to
+`/login` and logs `[TokenRefresh] … 401 TOKEN_MISSING`. These are downstream
+artifacts of one upstream auth failure, not per-route defects. The crawl flags
+a `/login`-redirect navigation interrupt as `sessionLost` (not `healthFail`),
+counts it into a single run-level `crawl.sessionLost` signal, and **suppresses
+those routes' per-route attribution** (console + health). The gate still goes
+**red** (a lost session is a real run failure — re-run), but on one honest
+"session lost during crawl" signal instead of N false per-route reds. To avoid
+the rate-limit in the first place, `spec-ci.yml` serializes ALL runs to a
+single global concurrency lane.
+
 ### Waiving a pre-existing crawl finding (baseline)
 
 Crawled routes have no spec file, so their waivers live in a single
