@@ -114,7 +114,6 @@ from app.api.v1.endpoints import (
     visual_comparison,
     workflow_dispatch,
     workflow_step_types,
-    workflows,
 )
 from app.api.v1.endpoints import auth as auth_pkg
 from app.api.v1.endpoints import testing as testing_pkg
@@ -307,14 +306,6 @@ api_router.include_router(
 # Workflow dispatch — user-triggered routing to server-mode runners
 api_router.include_router(
     workflow_dispatch.router, prefix="/workflows", tags=["workflow-dispatch"]
-)
-# Workflow mirror — runner-authored, owner-scoped mirror of workflow
-# definitions so /build/workflows can list+browse workflows even when the
-# operator's runner is offline. Mounted under /workflows; the
-# workflow_dispatch router above only owns POST /workflows/{id}/dispatch
-# so the path tree does not collide.
-api_router.include_router(
-    workflows.router, prefix="/workflows", tags=["workflows-mirror"]
 )
 # Scheduled workflow runs (cron-driven dispatch via celery-beat / redbeat)
 api_router.include_router(
