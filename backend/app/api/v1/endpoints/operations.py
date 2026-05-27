@@ -184,6 +184,32 @@ async def get_fleet_status(
     registry = get_fleet_registry()
     fleet_status = await registry.get_fleet_status()
 
+    # Merge heartbeat-only runners (not yet paired/registered in the DB)
+    # so they appear on the Operations page alongside paired devices.
+    db_keys = {(r.hostname, r.port) for r in runners}
+    for beacon in fleet_status.runners:
+        if (beacon.hostname, beacon.port) in db_keys:
+            continue
+        wire_runners.append(
+            {
+                "id": beacon.id,
+                "userId": str(current_user.id),
+                "name": beacon.instance_name or "primary",
+                "hostname": beacon.hostname,
+                "ipAddress": beacon.ip,
+                "port": beacon.port,
+                "os": beacon.os,
+                "osVersion": beacon.os_version,
+                "capabilities": [],
+                "derivedStatus": "healthy" if beacon.is_healthy else "stale",
+                "lastHeartbeat": beacon.last_heartbeat.isoformat(),
+                "wsConnected": False,
+                "uiError": None,
+                "recentCrash": None,
+                "createdAt": beacon.last_heartbeat.isoformat(),
+            }
+        )
+
     # Build per-hostname CI runner info from coord.devices rows that
     # have ci_runner_status set (Phase 4c self-hosted CI runners).
     ci_runners: dict[str, dict[str, Any]] = {}
