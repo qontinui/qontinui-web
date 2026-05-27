@@ -2575,9 +2575,7 @@ async def list_repos(
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """List registered canonical repositories for the caller's tenant."""
-    return await _proxy_coord_get(
-        "/coord/canonical-repos", tenant_id=tenant_id
-    )
+    return await _proxy_coord_get("/coord/canonical-repos", tenant_id=tenant_id)
 
 
 @router.post("/repos")
@@ -2589,9 +2587,7 @@ async def register_repo(
 
     Body: ``{"repo": "owner/name"}``.
     """
-    return await _proxy_coord_post(
-        "/coord/canonical-repos", body, tenant_id=tenant_id
-    )
+    return await _proxy_coord_post("/coord/canonical-repos", body, tenant_id=tenant_id)
 
 
 @router.delete("/repos")
