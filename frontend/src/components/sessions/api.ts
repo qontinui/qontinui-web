@@ -9,8 +9,12 @@
 
 import { OPERATIONS_API } from "../operations/utils";
 import type {
+  AgentStatusResponse,
   OutputChunkFrame,
   OutputHistoryResponse,
+  RegisteredRepo,
+  RegisteredReposResponse,
+  SessionClaimsResponse,
   SessionEventRow,
   SessionListResponse,
   SessionRow,
@@ -167,6 +171,30 @@ export async function handoffSession(
   return await res.json();
 }
 
+export async function getSessionClaims(
+  sessionId: string,
+  signal?: AbortSignal
+): Promise<SessionClaimsResponse> {
+  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(sessionId)}/claims`;
+  const res = await fetch(url, { ...DEFAULT_INIT, signal });
+  if (!res.ok) {
+    throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
+  }
+  return (await res.json()) as SessionClaimsResponse;
+}
+
+export async function getSessionAgentStatus(
+  sessionId: string,
+  signal?: AbortSignal
+): Promise<AgentStatusResponse> {
+  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(sessionId)}/agent-status`;
+  const res = await fetch(url, { ...DEFAULT_INIT, signal });
+  if (!res.ok) {
+    throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
+  }
+  return (await res.json()) as AgentStatusResponse;
+}
+
 export async function listTenants(
   signal?: AbortSignal
 ): Promise<TenantListResponse> {
@@ -176,6 +204,50 @@ export async function listTenants(
     throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
   }
   return (await res.json()) as TenantListResponse;
+}
+
+// ---- Registered repos (module-level cache) --------------------------------
+
+let _repoCache: { repos: RegisteredRepo[]; fetchedAt: number } | null = null;
+let _repoInflight: Promise<RegisteredRepo[]> | null = null;
+const REPO_CACHE_TTL_MS = 30_000;
+
+export async function listRegisteredRepos(
+  signal?: AbortSignal
+): Promise<RegisteredRepo[]> {
+  if (_repoCache && Date.now() - _repoCache.fetchedAt < REPO_CACHE_TTL_MS) {
+    return _repoCache.repos;
+  }
+  if (_repoInflight) return _repoInflight;
+
+  _repoInflight = (async () => {
+    try {
+      const url = `${OPERATIONS_API}/repos`;
+      const res = await fetch(url, { ...DEFAULT_INIT, signal });
+      if (!res.ok) {
+        throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
+      }
+      const data = (await res.json()) as RegisteredReposResponse;
+      const repos = data.repos ?? [];
+      _repoCache = { repos, fetchedAt: Date.now() };
+      return repos;
+    } finally {
+      _repoInflight = null;
+    }
+  })();
+
+  return _repoInflight;
+}
+
+export function registeredRepoSlugs(repos: RegisteredRepo[]): Set<string> {
+  return new Set(repos.map((r) => r.repo));
+}
+
+export function findRegisteredRepo(
+  repos: RegisteredRepo[],
+  slug: string
+): RegisteredRepo | undefined {
+  return repos.find((r) => r.repo === slug);
 }
 
 // ---- SSE subscription ---------------------------------------------------

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Terminal,
@@ -10,6 +11,11 @@ import {
   Activity,
   GitBranch,
   Cpu,
+  Lock,
+  Ban,
+  Link2,
+  Check,
+  AlertTriangle,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -19,12 +25,17 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { relativeTime } from "@/components/operations/utils";
+import {
+  getSessionClaims,
+  getSessionAgentStatus,
+  listRegisteredRepos,
+  registeredRepoSlugs,
+} from "./api";
 import { classifyHeartbeat } from "./types";
-import type { SessionRow, SessionIntent } from "./types";
+import type { SessionRow, SessionIntent, AgentStatus } from "./types";
 
 interface SessionCardProps {
   session: SessionRow;
-  /** Resolves a device_id (UUID) to a human-readable hostname. */
   hostnameFor?: (deviceId: string) => string | undefined;
 }
 
@@ -111,6 +122,30 @@ export function SessionCard({ session, hostnameFor }: SessionCardProps) {
   const repo = session.repo;
   const branch = session.branch;
 
+  const [claimsCount, setClaimsCount] = useState<number | null>(null);
+  const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
+  const [repoCoordinated, setRepoCoordinated] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (session.state === "closed") return;
+    const ctrl = new AbortController();
+    void getSessionClaims(session.id, ctrl.signal)
+      .then((res) => setClaimsCount(res.claims?.length ?? res.count ?? 0))
+      .catch(() => {});
+    void getSessionAgentStatus(session.id, ctrl.signal)
+      .then((res) => {
+        const first = res.agents?.[0] ?? null;
+        setAgentStatus(first);
+      })
+      .catch(() => {});
+    if (repo) {
+      void listRegisteredRepos(ctrl.signal)
+        .then((repos) => setRepoCoordinated(registeredRepoSlugs(repos).has(repo)))
+        .catch(() => {});
+    }
+    return () => ctrl.abort();
+  }, [session.id, session.state, repo]);
+
   return (
     <Link
       href={`/sessions/${session.id}`}
@@ -171,16 +206,76 @@ export function SessionCard({ session, hostnameFor }: SessionCardProps) {
 
           {(repo || branch) && (
             <div
-              className="flex items-center gap-1 text-xs text-muted-foreground"
+              className="flex items-center gap-1.5 text-xs text-muted-foreground"
               data-ui-bridge-id="sessions.card-repo-branch"
             >
-              <GitBranch className="h-3 w-3" />
+              <GitBranch className="h-3 w-3 shrink-0" />
               <span className="font-mono truncate">
                 {repo ?? "(no repo)"}
                 {branch ? ` · ${branch}` : ""}
               </span>
+              {repo && repoCoordinated === true && (
+                <Badge
+                  variant="outline"
+                  className="text-[10px] px-1.5 py-0 gap-0.5 border-green-500/40 text-green-400 bg-green-500/5 shrink-0"
+                  data-ui-bridge-id="sessions.card-repo-coordinated"
+                >
+                  <Check className="h-2.5 w-2.5" />
+                  Coordinated
+                </Badge>
+              )}
+              {repo && repoCoordinated === false && (
+                <Badge
+                  variant="outline"
+                  className="text-[10px] px-1.5 py-0 gap-0.5 border-yellow-500/40 text-yellow-300 bg-yellow-500/5 shrink-0"
+                  data-ui-bridge-id="sessions.card-repo-uncoordinated"
+                >
+                  <AlertTriangle className="h-2.5 w-2.5" />
+                  Uncoordinated
+                </Badge>
+              )}
             </div>
           )}
+
+          {(claimsCount !== null && claimsCount > 0) ||
+           agentStatus?.blocked_on ||
+           agentStatus?.correlation_topic ? (
+            <div
+              className="flex flex-wrap items-center gap-1.5"
+              data-ui-bridge-id="sessions.card-coordination"
+            >
+              {claimsCount !== null && claimsCount > 0 && (
+                <Badge
+                  variant="outline"
+                  className="text-[10px] px-1.5 py-0 gap-1 border-purple-500/40 text-purple-300 bg-purple-500/5"
+                  data-ui-bridge-id="sessions.card-claims"
+                >
+                  <Lock className="h-2.5 w-2.5" />
+                  {claimsCount} {claimsCount === 1 ? "file locked" : "files locked"}
+                </Badge>
+              )}
+              {agentStatus?.blocked_on && (
+                <Badge
+                  variant="outline"
+                  className="text-[10px] px-1.5 py-0 gap-1 border-red-500/40 text-red-300 bg-red-500/5"
+                  data-ui-bridge-id="sessions.card-blocked"
+                >
+                  <Ban className="h-2.5 w-2.5" />
+                  blocked
+                </Badge>
+              )}
+              {agentStatus?.correlation_topic && (
+                <Badge
+                  variant="outline"
+                  className="text-[10px] px-1.5 py-0 gap-1 border-cyan-500/40 text-cyan-300 bg-cyan-500/5"
+                  data-ui-bridge-id="sessions.card-correlation"
+                >
+                  <Link2 className="h-2.5 w-2.5" />
+                  {agentStatus.correlation_topic}
+                </Badge>
+              )}
+            </div>
+          ) : null}
 
           <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground pt-1 border-t border-border">
             <Tooltip>

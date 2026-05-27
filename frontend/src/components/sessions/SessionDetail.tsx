@@ -7,6 +7,7 @@
  * Bundles together:
  *   - Header: session metadata (kind, host, repo, branch, intent purpose)
  *   - Events timeline: replay + JetStream live-tail via SSE
+ *   - Coordination: claims (file locks) + agent_status overlay (Phase 3.3)
  *   - Held claims: cross-references the existing `/coord/claims/list`
  *     proxy by `device_id` (machine_id-keyed)
  *   - Actions: Close (DELETE /sessions/:id). Phase 6 layers Steal on
@@ -34,6 +35,13 @@ import {
   Activity as ActivityIcon,
   Swords,
   ArrowRightLeft,
+  Lock,
+  Ban,
+  Link2,
+  FileText,
+  Globe,
+  Check,
+  ExternalLink,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -41,7 +49,16 @@ import { Badge } from "@/components/ui/badge";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { relativeTime } from "@/components/operations/utils";
-import { closeSession, getSession, subscribeSessionEvents } from "./api";
+import {
+  closeSession,
+  getSession,
+  getSessionClaims,
+  getSessionAgentStatus,
+  subscribeSessionEvents,
+  listRegisteredRepos,
+  findRegisteredRepo,
+  registeredRepoSlugs,
+} from "./api";
 import { classifyHeartbeat } from "./types";
 import { StealModal, getDashboardMachineId } from "./StealModal";
 import { HandoffModal, type HandoffTarget } from "./HandoffModal";
@@ -51,18 +68,18 @@ import {
   type ClaimStolenPayload,
   type ClaimStealVisibility,
 } from "./visibility";
-import type { SessionEventRow, SessionRow, SessionIntent } from "./types";
+import type {
+  SessionEventRow,
+  SessionRow,
+  SessionIntent,
+  SessionClaim,
+  AgentStatus,
+  RegisteredRepo,
+} from "./types";
 
 interface SessionDetailProps {
   sessionId: string;
   hostnameFor?: (deviceId: string) => string | undefined;
-  /**
-   * Candidate machines this session can be handed off to ("Continue
-   * elsewhere"). Derived by the page from the live device-status
-   * stream. The session's own device is filtered out by the modal.
-   * Omitted → the handoff button still renders but the picker shows
-   * "no other machines online".
-   */
   handoffTargets?: HandoffTarget[];
 }
 
@@ -98,6 +115,19 @@ function getIntent(intent: SessionRow["intent"]): SessionIntent {
   return { purpose: "" };
 }
 
+function mirrorStateBadgeClass(state: string): string {
+  switch (state) {
+    case "synced":
+      return "border-green-500/40 text-green-400 bg-green-500/5";
+    case "drifting":
+      return "border-yellow-500/40 text-yellow-300 bg-yellow-500/5";
+    case "error":
+      return "border-red-500/40 text-red-300 bg-red-500/5";
+    default:
+      return "border-border text-muted-foreground bg-muted/10";
+  }
+}
+
 export function SessionDetail({
   sessionId,
   hostnameFor,
@@ -113,12 +143,14 @@ export function SessionDetail({
   const [stealOpen, setStealOpen] = useState(false);
   const [handoffOpen, setHandoffOpen] = useState(false);
 
-  // The dashboard browser identifies as its own machine_id for steal
-  // accounting. Resolved once per tab via sessionStorage so all steal
-  // events from this tab share a single id.
+  const [claims, setClaims] = useState<SessionClaim[]>([]);
+  const [agentStatuses, setAgentStatuses] = useState<AgentStatus[]>([]);
+  const [coordLoading, setCoordLoading] = useState(true);
+  const [repoRegistration, setRepoRegistration] = useState<RegisteredRepo | null>(null);
+  const [repoIsCoordinated, setRepoIsCoordinated] = useState<boolean | null>(null);
+
   const dashboardMachineId = useMemo(() => getDashboardMachineId(), []);
 
-  // Fetch the session row.
   useEffect(() => {
     const ctrl = new AbortController();
     void (async () => {
@@ -136,22 +168,43 @@ export function SessionDetail({
     return () => ctrl.abort();
   }, [sessionId]);
 
-  // Subscribe to events SSE.
+  useEffect(() => {
+    const ctrl = new AbortController();
+    setCoordLoading(true);
+    Promise.allSettled([
+      getSessionClaims(sessionId, ctrl.signal),
+      getSessionAgentStatus(sessionId, ctrl.signal),
+    ]).then(([claimsResult, statusResult]) => {
+      if (claimsResult.status === "fulfilled") {
+        setClaims(claimsResult.value.claims ?? []);
+      }
+      if (statusResult.status === "fulfilled") {
+        setAgentStatuses(statusResult.value.agents ?? []);
+      }
+      setCoordLoading(false);
+    });
+    return () => ctrl.abort();
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!session?.repo) return;
+    const ctrl = new AbortController();
+    void listRegisteredRepos(ctrl.signal)
+      .then((repos) => {
+        const match = findRegisteredRepo(repos, session.repo!);
+        setRepoIsCoordinated(registeredRepoSlugs(repos).has(session.repo!));
+        setRepoRegistration(match ?? null);
+      })
+      .catch(() => {});
+    return () => ctrl.abort();
+  }, [session?.repo]);
+
   useEffect(() => {
     const cleanup = subscribeSessionEvents(sessionId, {
       onEvent: (row) => {
-        // `output_chunk` frames are PTY bytes, not timeline events — they
-        // live in `coord.session_output` (not `session_events`), arrive
-        // only as live frames with no `seq`, and are rendered by the
-        // OutputPane's xterm terminal instead. Drop them here so they
-        // don't pollute the events list.
         if (row.event_kind === "output_chunk") return;
         setEvents((prev) => {
-          // Dedup on (session_id, seq) — backend may replay during
-          // reconnect.
           if (prev.some((e) => e.seq === row.seq)) return prev;
-          // Keep newest first; the SSE replay arrives oldest-first
-          // per coord's design.
           const next = [...prev, row];
           next.sort((a, b) => b.seq - a.seq);
           return next.slice(0, 200);
@@ -180,11 +233,6 @@ export function SessionDetail({
     }
   }, [session]);
 
-  // Filter the event stream by tenant policy. Each `claim_stolen`
-  // event carries a `policy` field in its payload (set by coord at
-  // emit time, see `qontinui-coord/src/sessions.rs::post_steal`).
-  // Other event kinds are always visible. Lives BEFORE the early
-  // returns so hook order stays stable across renders.
   const visibleEvents = useMemo(
     () =>
       filterEventsByPolicy(events, {
@@ -193,6 +241,16 @@ export function SessionDetail({
       }),
     [events, dashboardMachineId, session?.device_id]
   );
+
+  const primaryAgent = agentStatuses[0] ?? null;
+  const correlatedAgents = useMemo(() => {
+    if (!primaryAgent?.correlation_topic) return [];
+    return agentStatuses.filter(
+      (a) =>
+        a.correlation_topic === primaryAgent.correlation_topic &&
+        a.id !== primaryAgent.id
+    );
+  }, [agentStatuses, primaryAgent]);
 
   if (loading) {
     return (
@@ -234,7 +292,6 @@ export function SessionDetail({
         data-ui-bridge-id="sessions.detail"
         data-session-id={session.id}
       >
-        {/* Header strip with back + actions */}
         <div className="flex items-center justify-between gap-3">
           <Link href="/sessions">
             <Button size="sm" variant="ghost">
@@ -326,14 +383,62 @@ export function SessionDetail({
                 <p className="text-xs uppercase tracking-wider text-muted-foreground mb-1">
                   Repo / Branch
                 </p>
-                <p
-                  className="text-sm font-mono flex items-center gap-1"
-                  data-ui-bridge-id="sessions.detail-repo-branch"
-                >
-                  <GitBranch className="h-3 w-3 text-muted-foreground" />
-                  {session.repo ?? "(no repo)"}
-                  {session.branch ? ` · ${session.branch}` : ""}
-                </p>
+                <div className="space-y-1.5">
+                  <p
+                    className="text-sm font-mono flex items-center gap-1.5"
+                    data-ui-bridge-id="sessions.detail-repo-branch"
+                  >
+                    <GitBranch className="h-3 w-3 text-muted-foreground" />
+                    {session.repo ?? "(no repo)"}
+                    {session.branch ? ` · ${session.branch}` : ""}
+                  </p>
+                  {session.repo && repoIsCoordinated === true && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] px-1.5 py-0 gap-0.5 border-green-500/40 text-green-400 bg-green-500/5"
+                        data-ui-bridge-id="sessions.detail-repo-coordinated"
+                      >
+                        <Check className="h-2.5 w-2.5" />
+                        Coordinated
+                      </Badge>
+                      {repoRegistration?.mirror_state && (
+                        <Badge
+                          variant="outline"
+                          className={`text-[10px] px-1.5 py-0 ${mirrorStateBadgeClass(repoRegistration.mirror_state)}`}
+                          data-ui-bridge-id="sessions.detail-repo-mirror"
+                        >
+                          {repoRegistration.mirror_state}
+                        </Badge>
+                      )}
+                      {repoRegistration?.last_reconciled_at && (
+                        <span className="text-[10px] text-muted-foreground">
+                          Reconciled {relativeTime(repoRegistration.last_reconciled_at)}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {session.repo && repoIsCoordinated === false && (
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] px-1.5 py-0 gap-0.5 border-yellow-500/40 text-yellow-300 bg-yellow-500/5"
+                      data-ui-bridge-id="sessions.detail-repo-uncoordinated"
+                    >
+                      <AlertTriangle className="h-2.5 w-2.5" />
+                      Uncoordinated
+                    </Badge>
+                  )}
+                  {session.repo && repoIsCoordinated !== null && (
+                    <Link
+                      href="/settings/repos"
+                      className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
+                      data-ui-bridge-id="sessions.detail-manage-repos-link"
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                      Manage repositories
+                    </Link>
+                  )}
+                </div>
               </div>
             )}
 
@@ -430,17 +535,18 @@ export function SessionDetail({
           </CardContent>
         </Card>
 
-        {/* Read-only live PTY output pane (Phase 8). Renders the xterm
-            terminal for sessions that opted into `share_output`, and an
-            "output not shared" notice otherwise. Bootstraps from the
-            warm-tier history then live-tails the `output_chunk` SSE
-            frames, de-duping by `chunk_offset`. */}
+        {/* Coordination card (Phase 3.3) */}
+        <CoordinationCard
+          claims={claims}
+          agentStatuses={agentStatuses}
+          primaryAgent={primaryAgent}
+          correlatedAgents={correlatedAgents}
+          loading={coordLoading}
+        />
+
         <OutputPane session={session} />
 
-        {/* Events timeline — claim_stolen rows are filtered per
-            tenant policy (`claim_steal_visibility`) using the
-            stealer + victim machine_ids embedded in the event
-            payload by coord. See `./visibility.ts`. */}
+        {/* Events timeline */}
         <Card data-ui-bridge-id="sessions.detail-events">
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
@@ -526,8 +632,6 @@ export function SessionDetail({
         session={session}
         hostnameFor={hostnameFor}
         onSucceeded={() => {
-          // Re-fetch the row; coord may have moved state to
-          // `pending_resolution` and emitted the steal event.
           void getSession(session.id)
             .then(setSession)
             .catch(() => {});
@@ -540,10 +644,6 @@ export function SessionDetail({
         session={session}
         candidates={handoffTargets}
         onSucceeded={() => {
-          // Re-fetch the row; the source session closes once the target
-          // runner materializes the child, so the state moves to
-          // `closed`. The handoff_request event also appears in the
-          // timeline via the live SSE tail.
           void getSession(session.id)
             .then(setSession)
             .catch(() => {});
@@ -553,15 +653,178 @@ export function SessionDetail({
   );
 }
 
-/**
- * Pretty-renderer for `claim_stolen` event payloads. Coord emits the
- * payload as
- *
- *   { event_kind, session_id, tenant_id, originating_machine_id,
- *     stealing_machine_id, reason, policy }
- *
- * (See `qontinui-coord/src/sessions.rs::post_steal`.)
- */
+function CoordinationCard({
+  claims,
+  agentStatuses,
+  primaryAgent,
+  correlatedAgents,
+  loading,
+}: {
+  claims: SessionClaim[];
+  agentStatuses: AgentStatus[];
+  primaryAgent: AgentStatus | null;
+  correlatedAgents: AgentStatus[];
+  loading: boolean;
+}) {
+  const hasData = claims.length > 0 || agentStatuses.length > 0;
+
+  if (loading) {
+    return (
+      <Card data-ui-bridge-id="sessions.detail-coordination">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Globe className="h-4 w-4 text-muted-foreground" />
+            Coordination
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            Loading coordination data...
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!hasData) {
+    return (
+      <Card data-ui-bridge-id="sessions.detail-coordination">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Globe className="h-4 w-4 text-muted-foreground" />
+            Coordination
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-xs italic text-muted-foreground">
+            No active claims or agent status for this session&apos;s device.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card data-ui-bridge-id="sessions.detail-coordination">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base flex items-center gap-2">
+          <Globe className="h-4 w-4 text-muted-foreground" />
+          Coordination
+          {claims.length > 0 && (
+            <Badge variant="outline" className="text-[10px] gap-1 border-purple-500/40 text-purple-300">
+              <Lock className="h-2.5 w-2.5" />
+              {claims.length} {claims.length === 1 ? "claim" : "claims"}
+            </Badge>
+          )}
+          {primaryAgent?.blocked_on && (
+            <Badge variant="outline" className="text-[10px] gap-1 border-red-500/40 text-red-300">
+              <Ban className="h-2.5 w-2.5" />
+              blocked
+            </Badge>
+          )}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {claims.length > 0 && (
+          <div>
+            <p className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
+              Active claims (file locks)
+            </p>
+            <div className="space-y-1">
+              {claims.map((claim) => (
+                <div
+                  key={claim.id}
+                  className="flex items-center justify-between gap-2 text-xs px-2.5 py-1.5 rounded-md bg-muted/40"
+                  data-ui-bridge-id="sessions.detail-claim-row"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <FileText className="h-3 w-3 text-purple-400 shrink-0" />
+                    <span className="font-mono truncate">{claim.resource_key}</span>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                      {claim.kind}
+                    </Badge>
+                    <span className="text-[10px] text-muted-foreground">
+                      {relativeTime(claim.acquired_at)}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {primaryAgent && (
+          <div>
+            <p className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
+              Agent status
+            </p>
+            <div className="space-y-2">
+              {primaryAgent.status_text && (
+                <div className="text-xs">
+                  <span className="text-muted-foreground">Status: </span>
+                  <span>{primaryAgent.status_text}</span>
+                </div>
+              )}
+              {primaryAgent.blocked_on && (
+                <div className="text-xs">
+                  <span className="text-muted-foreground">Blocked on: </span>
+                  <span className="text-red-300 font-mono">{primaryAgent.blocked_on}</span>
+                </div>
+              )}
+              {primaryAgent.intent_globs && primaryAgent.intent_globs.length > 0 && (
+                <div className="text-xs">
+                  <span className="text-muted-foreground">Intent globs: </span>
+                  <span className="font-mono">
+                    {primaryAgent.intent_globs.join(", ")}
+                  </span>
+                </div>
+              )}
+              {primaryAgent.correlation_topic && (
+                <div className="text-xs">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <Link2 className="h-3 w-3 text-cyan-400" />
+                    <span className="text-muted-foreground">Correlation topic: </span>
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] px-1.5 py-0 border-cyan-500/40 text-cyan-300"
+                    >
+                      {primaryAgent.correlation_topic}
+                    </Badge>
+                  </div>
+                  {correlatedAgents.length > 0 && (
+                    <div className="ml-4 mt-1 space-y-0.5">
+                      <p className="text-[10px] text-muted-foreground">
+                        {correlatedAgents.length} other{" "}
+                        {correlatedAgents.length === 1 ? "agent" : "agents"} on
+                        this topic:
+                      </p>
+                      {correlatedAgents.map((a) => (
+                        <div
+                          key={a.id}
+                          className="text-[10px] font-mono text-muted-foreground/80 pl-2"
+                        >
+                          {a.device_id.slice(0, 8)}…
+                          {a.status_text ? ` — ${a.status_text}` : ""}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="text-[10px] text-muted-foreground">
+                Updated {relativeTime(primaryAgent.updated_at)}
+              </div>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function ClaimStolenRow({
   payload,
   hostnameFor,
@@ -589,7 +852,7 @@ function ClaimStolenRow({
           className="border-l-2 border-red-500/40 pl-2 italic text-muted-foreground"
           data-ui-bridge-id="sessions.detail-claim-stolen-reason"
         >
-          “{payload.reason}”
+          &ldquo;{payload.reason}&rdquo;
         </blockquote>
       )}
       <p className="text-[10px] text-muted-foreground">
