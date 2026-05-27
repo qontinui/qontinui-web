@@ -1388,6 +1388,7 @@ async def get_agent(
 async def _proxy_coord_delete(
     path: str,
     *,
+    params: dict[str, Any] | None = None,
     tenant_id: UUID | None = None,
 ) -> Any:
     """Proxy a DELETE request to coord and return the JSON body.
@@ -1395,12 +1396,14 @@ async def _proxy_coord_delete(
     Mirrors ``_proxy_coord_get`` / ``_proxy_coord_post`` for the
     tombstone-soft-delete path (coord retains the row + version history;
     DELETE only sets a tombstone marker per Q3's event-sourced shape).
+
+    ``params`` is forwarded as the query string when set.
     """
     url = f"{settings.COORD_URL}{path}"
     headers = _tenant_headers(tenant_id) if tenant_id is not None else None
     async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
         try:
-            resp = await client.delete(url, headers=headers)
+            resp = await client.delete(url, params=params, headers=headers)
         except httpx.ConnectError:
             raise HTTPException(
                 status_code=502,
@@ -2453,6 +2456,68 @@ async def handoff_coord_session(
     )
 
 
+@router.get("/sessions/{session_id}/claims")
+async def get_session_claims(
+    session_id: UUID,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return active claims held by the device owning this session.
+
+    Resolves the session's ``device_id`` from the sessions list, then
+    proxies ``GET /coord/claims/list?machine_id=<device_id>`` to return
+    all claim kinds for that device. The dashboard renders these as
+    "file locks" / coordination state on the session card and detail
+    views.
+    """
+    session = await _resolve_session_row(session_id, tenant_id)
+    device_id = session.get("device_id")
+    if not device_id:
+        return {"claims": [], "count": 0}
+    return await _proxy_coord_get(
+        "/coord/claims/list",
+        params={"machine_id": str(device_id)},
+    )
+
+
+@router.get("/sessions/{session_id}/agent-status")
+async def get_session_agent_status(
+    session_id: UUID,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return agent_status rows for the device owning this session.
+
+    Resolves the session's ``device_id`` then proxies
+    ``GET /coord/agent-status?device_id=<device_id>&tenant_id=<tenant_id>``.
+    The dashboard renders agent coordination state (status_text,
+    blocked_on, intent_globs, correlation_topic) on the session detail
+    view.
+    """
+    session = await _resolve_session_row(session_id, tenant_id)
+    device_id = session.get("device_id")
+    if not device_id:
+        return {"agents": [], "count": 0}
+    return await _proxy_coord_get(
+        "/coord/agent-status",
+        params={"device_id": str(device_id), "tenant_id": str(tenant_id)},
+    )
+
+
+async def _resolve_session_row(session_id: UUID, tenant_id: UUID) -> dict[str, Any]:
+    """Look up a single session row from coord's session list.
+
+    Reuses the same list-and-filter approach as ``get_coord_session``.
+    """
+    payload = await _proxy_coord_get(
+        "/sessions",
+        params={"tenant_id": str(tenant_id), "scope": "all"},
+    )
+    sessions = payload.get("sessions", []) if isinstance(payload, dict) else []
+    for row in sessions:
+        if isinstance(row, dict) and str(row.get("id", "")) == str(session_id):
+            return row
+    raise HTTPException(status_code=404, detail="session not found")
+
+
 @router.get("/tenants")
 async def list_user_tenants(
     current_user: UserModel = Depends(get_current_active_user_async),
@@ -2500,3 +2565,39 @@ async def list_user_tenants(
         ],
         "active_tenant_id": str(tenant_id),
     }
+
+
+# ---- Repo management proxy (canonical-repos on coord) ----------------------
+
+
+@router.get("/repos")
+async def list_repos(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """List registered canonical repositories for the caller's tenant."""
+    return await _proxy_coord_get("/coord/canonical-repos", tenant_id=tenant_id)
+
+
+@router.post("/repos")
+async def register_repo(
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Register a new canonical repository.
+
+    Body: ``{"repo": "owner/name"}``.
+    """
+    return await _proxy_coord_post("/coord/canonical-repos", body, tenant_id=tenant_id)
+
+
+@router.delete("/repos")
+async def deregister_repo(
+    repo: str = Query(..., description="Repository slug (owner/name)"),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Deregister a canonical repository."""
+    return await _proxy_coord_delete(
+        "/coord/canonical-repos",
+        params={"repo": repo},
+        tenant_id=tenant_id,
+    )

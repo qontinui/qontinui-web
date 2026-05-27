@@ -5,21 +5,23 @@
  * `2026-05-22-coord-native-session-coordination.md`.
  *
  * Renders the live grid of `coord.sessions` rows for the operator's
- * tenant. Polls `GET /api/v1/operations/sessions` on a 5s interval
- * (Phase 5 deliberately punts on fleet-wide SSE — coord exposes SSE
- * per-session, not fleet-wide, and a polling cadence matched to the
- * 15s heartbeat is structurally sufficient for the dashboard's
- * "what's active right now" need).
+ * tenant, grouped by device (machine). Polls `GET /api/v1/operations/sessions`
+ * on a 5s interval.
  *
- * The scope toggle (Active tenant only | All my tenants) sticks
- * per-operator in localStorage. Server-side scope is currently the
- * scope sent to coord; once coord-side multi-tenant operator
- * scoping lands (Phase 7), "All my tenants" becomes a real-deal
- * cross-tenant view.
+ * Phase 3.2 enhancement: sessions are grouped by device_id with
+ * machine header cards and a cross-machine summary bar showing total
+ * sessions, sessions per kind, and active vs stale counts.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, RefreshCw, WifiOff } from "lucide-react";
+import {
+  Loader2,
+  RefreshCw,
+  WifiOff,
+  Server,
+  Activity,
+  AlertTriangle,
+} from "lucide-react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -35,30 +37,28 @@ import type {
   ListSessionsOptions,
 } from "./api";
 import type { SessionRow } from "./types";
+import { classifyHeartbeat } from "./types";
 import { relativeTime } from "@/components/operations/utils";
 
 const SCOPE_STORAGE_KEY = "qontinui.sessions.scope";
 const POLL_INTERVAL_MS = 5_000;
 
-/**
- * Map device_id → hostname using the existing `useDeviceStatusStream`
- * data source. We accept this as a prop so callers can substitute
- * mocks for testing without dragging the WS in.
- */
 interface SessionsListProps {
   hostnameFor?: (deviceId: string) => string | undefined;
-  /**
-   * When true, the initial fetch is performed synchronously on mount
-   * (default). Tests pass false + drive state via the `fetcher` hook
-   * directly to avoid the polling timer.
-   */
   pollEnabled?: boolean;
-  /** Override the fetcher for tests / storybook. */
   fetcher?: (opts: ListSessionsOptions) => Promise<{
     count: number;
     scope: string;
     sessions: SessionRow[];
   }>;
+}
+
+interface MachineSessionGroup {
+  deviceId: string;
+  hostname: string;
+  sessions: SessionRow[];
+  activeSessions: number;
+  staleSessions: number;
 }
 
 function readStoredScope(): ListSessionsScope {
@@ -74,6 +74,151 @@ function writeStoredScope(scope: ListSessionsScope) {
   } catch {
     // ignore quota / private-mode errors
   }
+}
+
+function buildMachineGroups(
+  sessions: SessionRow[],
+  hostnameFor?: (deviceId: string) => string | undefined
+): MachineSessionGroup[] {
+  const byDevice = new Map<string, SessionRow[]>();
+  for (const session of sessions) {
+    const key = session.device_id;
+    const existing = byDevice.get(key);
+    if (existing) {
+      existing.push(session);
+    } else {
+      byDevice.set(key, [session]);
+    }
+  }
+
+  const groups: MachineSessionGroup[] = [];
+  for (const [deviceId, deviceSessions] of byDevice) {
+    const sorted = [...deviceSessions].sort((a, b) => {
+      const aActive = a.state === "active" ? 0 : 1;
+      const bActive = b.state === "active" ? 0 : 1;
+      if (aActive !== bActive) return aActive - bActive;
+      const aStarted = a.started_at ? new Date(a.started_at).getTime() : 0;
+      const bStarted = b.started_at ? new Date(b.started_at).getTime() : 0;
+      return bStarted - aStarted;
+    });
+
+    groups.push({
+      deviceId,
+      hostname: hostnameFor?.(deviceId) ?? `${deviceId.slice(0, 8)}…`,
+      sessions: sorted,
+      activeSessions: sorted.filter((s) => s.state === "active").length,
+      staleSessions: sorted.filter(
+        (s) => classifyHeartbeat(s.last_heartbeat_at) === "stale" ||
+               classifyHeartbeat(s.last_heartbeat_at) === "dead"
+      ).length,
+    });
+  }
+
+  groups.sort((a, b) => {
+    if (a.activeSessions !== b.activeSessions)
+      return b.activeSessions - a.activeSessions;
+    return a.hostname.localeCompare(b.hostname);
+  });
+
+  return groups;
+}
+
+function CrossMachineSummary({ sessions }: { sessions: SessionRow[] }) {
+  const stats = useMemo(() => {
+    const kindCounts = new Map<string, number>();
+    let active = 0;
+    let stale = 0;
+    const deviceIds = new Set<string>();
+
+    for (const s of sessions) {
+      deviceIds.add(s.device_id);
+      const kind = s.session_kind;
+      kindCounts.set(kind, (kindCounts.get(kind) ?? 0) + 1);
+      if (s.state === "active") active++;
+      const health = classifyHeartbeat(s.last_heartbeat_at);
+      if (health === "stale" || health === "dead") stale++;
+    }
+
+    return { kindCounts, active, stale, machines: deviceIds.size, total: sessions.length };
+  }, [sessions]);
+
+  if (stats.total === 0) return null;
+
+  return (
+    <div
+      className="flex flex-wrap items-center gap-3"
+      data-ui-bridge-id="sessions.summary"
+    >
+      <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-muted/30">
+        <Server className="h-4 w-4 text-muted-foreground" />
+        <span className="text-xs text-muted-foreground">Machines</span>
+        <Badge variant="outline" className="ml-auto text-xs">
+          {stats.machines}
+        </Badge>
+      </div>
+      <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-muted/30">
+        <Activity className="h-4 w-4 text-muted-foreground" />
+        <span className="text-xs text-muted-foreground">Active</span>
+        <Badge variant="outline" className="ml-auto text-xs border-green-500/40 text-green-400 bg-green-500/5">
+          {stats.active}
+        </Badge>
+      </div>
+      {stats.stale > 0 && (
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-muted/30">
+          <AlertTriangle className="h-4 w-4 text-muted-foreground" />
+          <span className="text-xs text-muted-foreground">Stale</span>
+          <Badge variant="outline" className="ml-auto text-xs border-yellow-500/40 text-yellow-300 bg-yellow-500/5">
+            {stats.stale}
+          </Badge>
+        </div>
+      )}
+      {Array.from(stats.kindCounts.entries())
+        .sort(([, a], [, b]) => b - a)
+        .map(([kind, count]) => (
+          <div
+            key={kind}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-muted/30"
+          >
+            <span className="text-xs text-muted-foreground capitalize">{kind.replace(/_/g, " ")}</span>
+            <Badge variant="outline" className="ml-auto text-xs">
+              {count}
+            </Badge>
+          </div>
+        ))}
+    </div>
+  );
+}
+
+function MachineHeader({ group }: { group: MachineSessionGroup }) {
+  return (
+    <div
+      className="flex items-center gap-3"
+      data-ui-bridge-id="sessions.machine-header"
+      data-device-id={group.deviceId}
+    >
+      <div
+        className={`h-2.5 w-2.5 rounded-full shrink-0 ${
+          group.activeSessions > 0 && group.staleSessions === 0
+            ? "bg-green-500"
+            : group.activeSessions > 0
+              ? "bg-yellow-500"
+              : "bg-muted-foreground/40"
+        }`}
+      />
+      <span className="text-sm font-semibold">{group.hostname}</span>
+      <Badge variant="outline" className="text-[10px]">
+        {group.sessions.length} {group.sessions.length === 1 ? "session" : "sessions"}
+      </Badge>
+      {group.staleSessions > 0 && (
+        <Badge
+          variant="outline"
+          className="text-[10px] border-yellow-500/40 text-yellow-300 bg-yellow-500/5"
+        >
+          {group.staleSessions} stale
+        </Badge>
+      )}
+    </div>
+  );
 }
 
 export function SessionsList({
@@ -130,26 +275,19 @@ export function SessionsList({
     setLoading(true);
   }, []);
 
-  const sortedSessions = useMemo(
-    () =>
-      [...sessions].sort((a, b) => {
-        // Active first, then newest started_at first.
-        const aActive = a.state === "active" ? 0 : 1;
-        const bActive = b.state === "active" ? 0 : 1;
-        if (aActive !== bActive) return aActive - bActive;
-        const aStarted = a.started_at ? new Date(a.started_at).getTime() : 0;
-        const bStarted = b.started_at ? new Date(b.started_at).getTime() : 0;
-        return bStarted - aStarted;
-      }),
-    [sessions]
+  const machineGroups = useMemo(
+    () => buildMachineGroups(sessions, hostnameFor),
+    [sessions, hostnameFor]
   );
+
+  const totalSessions = sessions.length;
 
   return (
     <TooltipProvider delayDuration={200}>
       <div
         className="space-y-4"
         data-ui-bridge-id="sessions.list"
-        data-session-count={sortedSessions.length}
+        data-session-count={totalSessions}
       >
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Tabs value={scope} onValueChange={onScopeChange}>
@@ -171,8 +309,8 @@ export function SessionsList({
 
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
             <Badge variant="outline" data-ui-bridge-id="sessions.count-badge">
-              {sortedSessions.length}{" "}
-              {sortedSessions.length === 1 ? "session" : "sessions"}
+              {totalSessions}{" "}
+              {totalSessions === 1 ? "session" : "sessions"}
             </Badge>
             {error && (
               <Badge
@@ -203,7 +341,7 @@ export function SessionsList({
           </div>
         </div>
 
-        {loading && sortedSessions.length === 0 ? (
+        {loading && totalSessions === 0 ? (
           <div
             className="flex items-center justify-center py-16 text-muted-foreground gap-2"
             data-ui-bridge-id="sessions.loading"
@@ -211,7 +349,7 @@ export function SessionsList({
             <Loader2 className="h-5 w-5 animate-spin" />
             <span className="text-sm">Loading sessions…</span>
           </div>
-        ) : error && sortedSessions.length === 0 ? (
+        ) : error && totalSessions === 0 ? (
           <div
             className="flex flex-col items-center justify-center py-16 gap-3 text-muted-foreground"
             data-ui-bridge-id="sessions.error-state"
@@ -230,7 +368,7 @@ export function SessionsList({
               Retry
             </Button>
           </div>
-        ) : sortedSessions.length === 0 ? (
+        ) : totalSessions === 0 ? (
           <div
             className="flex flex-col items-center justify-center py-16 gap-3 text-muted-foreground"
             data-ui-bridge-id="sessions.empty"
@@ -242,16 +380,22 @@ export function SessionsList({
             </p>
           </div>
         ) : (
-          <div
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3"
-            data-ui-bridge-id="sessions.grid"
-          >
-            {sortedSessions.map((session) => (
-              <SessionCard
-                key={session.id}
-                session={session}
-                hostnameFor={hostnameFor}
-              />
+          <div className="space-y-6" data-ui-bridge-id="sessions.grouped">
+            <CrossMachineSummary sessions={sessions} />
+
+            {machineGroups.map((group) => (
+              <div key={group.deviceId} className="space-y-3">
+                <MachineHeader group={group} />
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {group.sessions.map((session) => (
+                    <SessionCard
+                      key={session.id}
+                      session={session}
+                      hostnameFor={hostnameFor}
+                    />
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         )}

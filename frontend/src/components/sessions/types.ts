@@ -119,10 +119,60 @@ export interface OutputChunkFrame extends OutputChunk {
   device_id?: string;
 }
 
+/** A registered canonical repo from `GET /api/v1/operations/repos`. */
+export interface RegisteredRepo {
+  repo: string;
+  mirror_state?: string | null;
+  last_reconciled_at?: string | null;
+  created_at?: string | null;
+}
+
+/** Wire shape from `GET /api/v1/operations/repos`. */
+export interface RegisteredReposResponse {
+  repos: RegisteredRepo[];
+}
+
 /** Wire shape from `GET /api/v1/operations/tenants`. */
 export interface TenantListResponse {
   tenants: { id: string; slug: string; name: string }[];
   active_tenant_id: string;
+}
+
+/** A single claim from `coord.claims`. */
+export interface SessionClaim {
+  id: string;
+  kind: string;
+  resource_key: string;
+  machine_id: string;
+  tenant_id?: string;
+  acquired_at: string;
+  expires_at: string | null;
+  metadata?: Record<string, unknown>;
+}
+
+/** Wire shape from `GET /api/v1/operations/sessions/:id/claims`. */
+export interface SessionClaimsResponse {
+  claims: SessionClaim[];
+  count: number;
+}
+
+/** A single agent_status row from `coord.agent_status`. */
+export interface AgentStatus {
+  id: string;
+  device_id: string;
+  tenant_id: string;
+  status_text: string | null;
+  blocked_on: string | null;
+  intent_globs: string[] | null;
+  correlation_topic: string | null;
+  updated_at: string;
+  expires_at: string | null;
+}
+
+/** Wire shape from `GET /api/v1/operations/sessions/:id/agent-status`. */
+export interface AgentStatusResponse {
+  agents: AgentStatus[];
+  count: number;
 }
 
 /**

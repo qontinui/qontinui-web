@@ -305,9 +305,7 @@ class TestDeviceStatusServiceModule:
         with patch("app.services.coord_device_status.settings") as mock_settings:
             mock_settings.COORD_URL = "https://coord.qontinui.io"
             url = build_device_status_ws_url("abc.def.ghi")
-            assert url == (
-                "wss://coord.qontinui.io/ws/device-status?token=abc.def.ghi"
-            )
+            assert url == ("wss://coord.qontinui.io/ws/device-status?token=abc.def.ghi")
 
 
 # ---------------------------------------------------------------------------
