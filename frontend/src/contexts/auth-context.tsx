@@ -8,6 +8,7 @@ import React, {
   ReactNode,
   useRef,
 } from "react";
+import { usePathname } from "next/navigation";
 import { createLogger } from "@/lib/logger";
 import { authService, httpClient } from "@/services/service-factory";
 import { ApiConfig } from "@/services/api-config";
@@ -87,6 +88,7 @@ type AuthBroadcastMessage =
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const pathname = usePathname();
   const channelRef = useRef<BroadcastChannel | null>(null);
   const hasAttemptedDevLogin = useRef(false);
   const hasAttemptedRestore = useRef(false);
@@ -167,6 +169,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return undefined;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Re-validate auth state on soft navigation between authenticated routes.
+  // This guards against session-fragility bounces to /login: if `user`
+  // transiently goes null (remount / token desync) or the localStorage auth
+  // flag desyncs from the in-memory user, recover here instead of letting
+  // AppAuthGate redirect. Runs in addition to — never instead of — the
+  // mount-time checkAuth().
+  useEffect(() => {
+    // Skip during SSR and before the initial auth check resolves.
+    if (typeof window === "undefined") return;
+
+    if (user && authService.isAuthenticated()) {
+      // Fast path: still authenticated, no API call. Proactively refresh if
+      // the access token is about to expire so the next route doesn't desync.
+      if (authService.isAccessTokenExpiringSoon()) {
+        logger.debug(
+          "Access token expiring soon on navigation, refreshing proactively"
+        );
+        authService.refreshAccessToken().catch((err: unknown) => {
+          logger.debug("Proactive token refresh failed:", err);
+        });
+      }
+    } else if (user && !authService.isAuthenticated()) {
+      // The in-memory user proves we logged in this session, but the
+      // localStorage auth flag is missing — repair it so the fast path holds.
+      logger.debug(
+        "Auth flag desynced from in-memory user on navigation, repairing flag"
+      );
+      authService.setAuthenticated();
+    } else if (!user && !loading && authService.isAuthenticated()) {
+      // User transiently null while the flag says authenticated — restore
+      // from the backend rather than bouncing to /login.
+      logger.debug(
+        "User null but auth flag set on navigation, restoring via checkAuth"
+      );
+      checkAuth();
+    }
+    // Else: genuinely unauthenticated — AppAuthGate handles the redirect.
+
+    // Intentionally only re-runs on pathname change; reads user/loading
+    // without depending on them to avoid re-running on every state update.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
 
   const checkAuth = async () => {
     logger.debug("Checking authentication...");
@@ -327,6 +372,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         remember_me: rememberMe,
       });
       setUser(loggedInUser);
+      // Belt-and-braces: ensure the localStorage auth flag is set after a
+      // successful login so the pathname re-validation fast path always holds.
+      authService.setAuthenticated();
 
       // Broadcast login event to other tabs
       if (channelRef.current) {
