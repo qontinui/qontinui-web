@@ -152,17 +152,23 @@ async def resolve_tenants_for_user(user: User, db: AsyncSession) -> list[UUID]:
     #      `active_tenant_id` the UI uses as default)
     #   2) then by slug alphabetical for everyone else (stable wire
     #      shape for the dashboard's tenant chip rendering).
+    #
+    # GROUP BY (not DISTINCT) so an operator with multiple roles in
+    # the same tenant doesn't multiply rows. Postgres rejects
+    # `SELECT DISTINCT ... ORDER BY <expression-not-in-select-list>`
+    # which the home-tenant predicate would otherwise trigger.
     rows = (
         await db.execute(
             text(
                 """
-                SELECT DISTINCT r.tenant_id, t.slug
+                SELECT r.tenant_id, t.slug, o.tenant_id AS home_tenant_id
                 FROM coord.operators o
                 JOIN coord.operator_roles r
                   ON r.operator_id = o.operator_id
                 JOIN coord.tenants t
                   ON t.tenant_id = r.tenant_id
                 WHERE LOWER(o.email) = :email
+                GROUP BY r.tenant_id, t.slug, o.tenant_id
                 ORDER BY
                     (r.tenant_id = o.tenant_id) DESC,
                     t.slug ASC

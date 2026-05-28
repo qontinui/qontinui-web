@@ -2680,17 +2680,22 @@ async def list_user_tenants(
           "active_tenant_id": "<uuid>" }
     """
     email = (current_user.email or "").strip().lower()
+    # GROUP BY (not DISTINCT) so an operator with multiple roles in
+    # the same tenant doesn't multiply rows. Postgres rejects
+    # `SELECT DISTINCT ... ORDER BY <expression-not-in-select-list>`
+    # which the home-tenant predicate would otherwise trigger.
     rows = (
         await db.execute(
             text(
                 """
-                SELECT DISTINCT t.tenant_id, t.slug, t.display_name, o.tenant_id AS home_tenant_id
+                SELECT t.tenant_id, t.slug, t.display_name, o.tenant_id AS home_tenant_id
                 FROM coord.operators o
                 JOIN coord.operator_roles r
                   ON r.operator_id = o.operator_id
                 JOIN coord.tenants t
                   ON t.tenant_id = r.tenant_id
                 WHERE LOWER(o.email) = :email
+                GROUP BY t.tenant_id, t.slug, t.display_name, o.tenant_id
                 ORDER BY
                     (t.tenant_id = o.tenant_id) DESC,
                     t.slug ASC
