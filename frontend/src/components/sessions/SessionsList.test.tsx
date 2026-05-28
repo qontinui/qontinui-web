@@ -40,10 +40,8 @@ function setTenantMock(patch: Partial<typeof tenantMock>) {
   Object.assign(tenantMock, patch);
 }
 
-// Plain top-level import is fine: vitest hoists vi.mock above all
-// non-hoisted imports, so SessionsList's useTenant resolves to the
-// mock declared above.
-// eslint-disable-next-line import/first
+// Vitest hoists vi.mock above non-hoisted imports, so SessionsList's
+// useTenant reference resolves to the mock declared above.
 import { SessionsList } from "./SessionsList";
 
 function mockSession(overrides: Partial<SessionRow> = {}): SessionRow {
