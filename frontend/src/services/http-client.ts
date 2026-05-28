@@ -46,32 +46,41 @@ export class HttpClient {
     // Execute single request
     const response = await this.executeSingleRequest(url, options, skipAuth);
 
-    // Handle 401 Unauthorized with token refresh
+    // Handle 401 Unauthorized with token refresh.
+    //
+    // Only refresh when our access token is actually stale (expired or about
+    // to expire). A 401 while the token is still valid is NOT session expiry —
+    // it's a feature/permission/upstream failure (e.g. a proxied downstream
+    // service rejecting the call). Refreshing on those hammers the refresh
+    // endpoint, and a token-rotation race there can 401 the refresh itself,
+    // which `doRefreshToken` escalates to a global `session-expired` — falsely
+    // tearing the whole session down. (This was the `strategy/mentions/unread`
+    // teardown.) So surface a valid-token 401 instead of refreshing.
     if (response.status === 401 && !skipAuth && attempt === 1) {
-      console.warn("[HttpClient] Received 401, attempting token refresh...");
+      const tokenStale =
+        this.tokenManager.isAccessTokenExpired() ||
+        this.tokenManager.isAccessTokenExpiringSoon();
+      if (!tokenStale) {
+        console.warn(
+          "[HttpClient] 401 with a still-valid access token — treating as a feature/upstream error, not session expiry; not refreshing"
+        );
+        return response;
+      }
+      console.warn(
+        "[HttpClient] Received 401 with a stale access token, attempting token refresh..."
+      );
       const refreshed = await this.refreshAccessToken();
       if (refreshed) {
         log.debug("Token refresh successful, retrying request");
         return this.executeSingleRequest(url, options, skipAuth);
-      } else {
-        // DISABLED: Automatic logout on 401
-        // Users should be able to stay logged in even if some API calls fail
-        console.warn(
-          "[HttpClient] Token refresh failed - returning 401 response without auto-logout"
-        );
-        return response;
-
-        // Original auto-logout logic (disabled):
-        // Only trigger session expired if we truly have no valid tokens
-        // const hasRefreshToken = !!this.tokenManager.getRefreshToken();
-        // if (!hasRefreshToken && this.onSessionExpired) {
-        //   console.error('[HttpClient] No refresh token available - session truly expired');
-        //   this.onSessionExpired();
-        // } else {
-        //   console.warn('[HttpClient] Token refresh failed but still have refresh token - may be temporary issue');
-        // }
-        // return response;
       }
+      // Token refresh failed. Do NOT auto-logout here — `doRefreshToken`
+      // already fires `session-expired` when the refresh token itself is
+      // invalid; a transient refresh failure should leave the user signed in.
+      console.warn(
+        "[HttpClient] Token refresh failed - returning 401 response without auto-logout"
+      );
+      return response;
     }
 
     // Use RetryStrategy for rate limiting and server errors
