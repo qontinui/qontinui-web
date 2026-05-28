@@ -48,7 +48,7 @@ import { handlers, relay } from "@/lib/ui-bridge/relay";
 import { NextRequest } from "next/server";
 import { passThroughBody } from "./body-passthrough";
 import {
-  isForbiddenWebRoute,
+  isWebRouteRejected,
   forbiddenWebRouteResponse,
 } from "./web-forbidden-routes";
 
@@ -242,11 +242,13 @@ async function wrapHandler(
   const params = await context.params;
   const path = resolvePath(params);
 
-  // Hard reject for paths permanently forbidden on the web surface (e.g.
-  // `/control/page/evaluate` — see `web-forbidden-routes.ts`). Runs BEFORE
-  // any SDK-contract / browser-connected checks so a future SDK release
-  // that adds a forbidden path to UI_BRIDGE_ROUTES cannot re-enable it.
-  if (isForbiddenWebRoute(path)) {
+  // Hard reject paths forbidden on a DEPLOYED web surface (e.g.
+  // `/control/page/evaluate` — see `web-forbidden-routes.ts`). Scoped to
+  // production builds, so local `next dev` keeps full UI Bridge power for
+  // manual testing. Runs BEFORE any SDK-contract / browser-connected checks
+  // so a future SDK release that adds a forbidden path to UI_BRIDGE_ROUTES
+  // cannot re-enable it on a deployment.
+  if (isWebRouteRejected(path)) {
     return forbiddenWebRouteResponse(path);
   }
 

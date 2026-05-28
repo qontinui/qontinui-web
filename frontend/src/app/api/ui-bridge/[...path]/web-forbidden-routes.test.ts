@@ -10,9 +10,11 @@
  * Cross-link: `plans/2026-05-28-production-safe-ui-bridge-design.md` §4.7.
  */
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  isDeployedWebSurface,
   isForbiddenWebRoute,
+  isWebRouteRejected,
   forbiddenWebRouteResponse,
 } from "./web-forbidden-routes";
 
@@ -81,5 +83,50 @@ describe("forbiddenWebRouteResponse", () => {
     const body = await response.json();
     expect(body.message).toContain("/some/other/forbidden/path");
     expect(body.code).toBe("ROUTE_FORBIDDEN_ON_WEB");
+  });
+});
+
+describe("isDeployedWebSurface", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("is true on a production build", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    expect(isDeployedWebSurface()).toBe(true);
+  });
+
+  it("is false under local next dev", () => {
+    vi.stubEnv("NODE_ENV", "development");
+    expect(isDeployedWebSurface()).toBe(false);
+  });
+
+  it("is false in the test environment", () => {
+    vi.stubEnv("NODE_ENV", "test");
+    expect(isDeployedWebSurface()).toBe(false);
+  });
+});
+
+describe("isWebRouteRejected", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("rejects /control/page/evaluate ONLY on a deployed surface", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    expect(isWebRouteRejected("/control/page/evaluate")).toBe(true);
+  });
+
+  it("allows /control/page/evaluate under local next dev (full UI Bridge power)", () => {
+    vi.stubEnv("NODE_ENV", "development");
+    expect(isWebRouteRejected("/control/page/evaluate")).toBe(false);
+  });
+
+  it("never rejects ordinary control routes, in any environment", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    expect(isWebRouteRejected("/control/snapshot")).toBe(false);
+    expect(isWebRouteRejected("/control/page/navigate")).toBe(false);
+    vi.stubEnv("NODE_ENV", "development");
+    expect(isWebRouteRejected("/control/snapshot")).toBe(false);
   });
 });
