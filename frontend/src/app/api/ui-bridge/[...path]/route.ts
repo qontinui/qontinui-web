@@ -51,6 +51,13 @@ import {
   isWebRouteRejected,
   forbiddenWebRouteResponse,
 } from "./web-forbidden-routes";
+import {
+  authenticateBridgeRequest,
+  isAllowedOrigin,
+  isAuthGateEnabled,
+  originForbiddenResponse,
+  unauthenticatedResponse,
+} from "./_auth";
 
 const sseManager = new SSEManager();
 
@@ -241,6 +248,26 @@ async function wrapHandler(
 ): Promise<Response> {
   const params = await context.params;
   const path = resolvePath(params);
+
+  // Session-bound relay gate (Phase 1 of the production-safe UI Bridge
+  // plan, §4.1 + partial §4.3). Off by default — gated by env var
+  // `UI_BRIDGE_REQUIRE_AUTH=1` — because the current SDK transport
+  // doesn't attach an Authorization header yet. Flip the flag per
+  // environment once the transport-side Bearer hook lands.
+  //
+  // Auth runs BEFORE the forbidden-route + isKnownRoute checks: a hostile
+  // anonymous caller shouldn't be able to distinguish "valid route, you
+  // can't access it" from "no such route" — both must yield the same
+  // 401 without any route-existence signal.
+  if (isAuthGateEnabled()) {
+    if (!isAllowedOrigin(request.headers.get("origin"))) {
+      return originForbiddenResponse();
+    }
+    const auth = await authenticateBridgeRequest(request);
+    if (!auth.ok) {
+      return unauthenticatedResponse();
+    }
+  }
 
   // Hard reject paths forbidden on a DEPLOYED web surface (e.g.
   // `/control/page/evaluate` — see `web-forbidden-routes.ts`). Scoped to
