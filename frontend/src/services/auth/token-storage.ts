@@ -78,9 +78,10 @@ export class TokenStorage {
     if (token) {
       this.accessToken = token;
       sessionStorage.setItem(this.SESSION_ACCESS_TOKEN_KEY, token);
-      if (ApiConfig.IS_REMOTE_BACKEND) {
-        this.setAuthMarkerCookie();
-      }
+      // Always set the marker cookie so Next.js middleware knows the user is
+      // authenticated, regardless of whether we're in local or remote mode.
+      // Without this, the middleware sees no auth cookie and bounces to /login.
+      this.setAuthMarkerCookie();
     }
     // Set authentication flag for UI state management
     localStorage.setItem(this.AUTHENTICATED_KEY, "true");

@@ -14,8 +14,7 @@
  *   - `/sessions/[id]` (this PR — session detail view)
  */
 
-import { useEffect, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useMemo } from "react";
 import { Activity } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { useTenant } from "@/contexts/tenant-context";
@@ -25,18 +24,9 @@ import { TenantSwitcher } from "@/components/sessions/TenantSwitcher";
 import { useDeviceStatusStream } from "@/components/operations/useDeviceStatusStream";
 
 export default function SessionsPage() {
-  const { user, loading: authLoading } = useAuth();
-  const router = useRouter();
+  const { user } = useAuth();
   const tenant = useTenant();
   const deviceStatus = useDeviceStatusStream();
-
-  // Redirect unauthenticated users to the marketing root. Same posture
-  // as the rest of the (app) shell.
-  useEffect(() => {
-    if (!authLoading && !user) {
-      router.push("/");
-    }
-  }, [user, authLoading, router]);
 
   // Build a device_id → hostname resolver from the live
   // device-status stream. Sessions store device_id (UUID); operators
