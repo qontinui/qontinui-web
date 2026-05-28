@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -143,15 +144,14 @@ export default function RecordingDetailPage() {
               Start Processing
             </Button>
           )}
-          <Button
-            variant="outline"
+          <DestructiveButton
             size="sm"
             onClick={handleDelete}
             className="text-red-600"
           >
             <Trash2 className="mr-2 h-4 w-4" />
             Delete
-          </Button>
+          </DestructiveButton>
         </div>
       </header>
 

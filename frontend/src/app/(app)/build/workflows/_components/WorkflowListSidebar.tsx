@@ -7,6 +7,7 @@ import { useUnifiedWorkflows } from "@/lib/api/unified-workflows";
 import { useRunnerHealth } from "@/lib/runner/hooks/misc-hooks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { UnifiedWorkflow } from "@/types/unified-workflow";
@@ -202,8 +203,7 @@ export function WorkflowListSidebar({
             <div className="flex items-center gap-1 min-w-[60px] justify-end">
               {selectionMode ? (
                 <>
-                  <Button
-                    variant="ghost"
+                  <DestructiveButton
                     size="icon"
                     className="h-5 w-5 text-red-400 hover:text-red-300"
                     disabled={selectedIds.size === 0}
@@ -211,7 +211,7 @@ export function WorkflowListSidebar({
                     title="Delete selected"
                   >
                     <Trash2 className="size-3" />
-                  </Button>
+                  </DestructiveButton>
                   <Button
                     variant="ghost"
                     size="icon"

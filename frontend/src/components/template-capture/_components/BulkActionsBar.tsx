@@ -8,6 +8,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 
 interface BulkActionsBarProps {
   selectedCount: number;
@@ -43,8 +44,7 @@ export function BulkActionsBar({
 
       {selectedCount > 0 && (
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
+          <DestructiveButton
             size="sm"
             className="text-green-600 hover:bg-green-50 dark:hover:bg-green-950"
             onClick={onBulkApprove}
@@ -56,7 +56,7 @@ export function BulkActionsBar({
               <CheckCircle2 className="h-4 w-4 mr-2" />
             )}
             Approve {selectedCount}
-          </Button>
+          </DestructiveButton>
           <Button
             variant="outline"
             size="sm"

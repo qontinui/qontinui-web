@@ -18,6 +18,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -314,12 +315,14 @@ export function VariableTable({
                           <Copy className="mr-2 h-4 w-4" />
                           Duplicate
                         </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => onDelete(variable.name)}
-                          className="text-destructive focus:text-destructive"
-                        >
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          Delete
+                        <DropdownMenuItem asChild>
+                          <DestructiveButton
+                            onClick={() => onDelete(variable.name)}
+                            className="w-full justify-start text-destructive focus:text-destructive"
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Delete
+                          </DestructiveButton>
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>

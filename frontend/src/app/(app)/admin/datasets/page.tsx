@@ -16,6 +16,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { datasetService } from "@/services/dataset-service";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Upload, Eye, Trash2, Download, FolderOpen, Plus } from "lucide-react";
@@ -312,12 +313,13 @@ export default function DatasetsPage() {
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={handleDelete}
-                disabled={deleting}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              >
-                {deleting ? "Deleting..." : "Delete"}
+              <AlertDialogAction asChild>
+                <DestructiveButton
+                  onClick={handleDelete}
+                  disabled={deleting}
+                >
+                  {deleting ? "Deleting..." : "Delete"}
+                </DestructiveButton>
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

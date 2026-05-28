@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
@@ -454,11 +455,10 @@ export function ContextsManager() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleConfirmDelete}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              Delete
+            <AlertDialogAction asChild>
+              <DestructiveButton onClick={handleConfirmDelete}>
+                Delete
+              </DestructiveButton>
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

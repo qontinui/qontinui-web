@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Loader2, Trash2, Clock, CheckCircle2, XCircle } from "lucide-react";
 
@@ -40,8 +41,7 @@ export function ExtractionHistorySidebar({
           <span className="explorer-panel-header-title">History</span>
         </div>
         {extractions && extractions.length > 0 && (
-          <Button
-            variant="ghost"
+          <DestructiveButton
             size="sm"
             onClick={onDeleteAllExtractions}
             disabled={isDeletingAll}
@@ -53,7 +53,7 @@ export function ExtractionHistorySidebar({
               <Trash2 className="h-3 w-3 mr-1" />
             )}
             PURGE
-          </Button>
+          </DestructiveButton>
         )}
       </div>
 

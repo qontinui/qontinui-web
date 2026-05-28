@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { McpServer, McpServerStatus } from "@/lib/runner-api";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Badge } from "@/components/ui/badge";
 import {
   Loader2,
@@ -158,8 +159,7 @@ export function ServerCard({
             >
               <Edit2 className="size-3.5" />
             </Button>
-            <Button
-              variant="ghost"
+            <DestructiveButton
               size="icon"
               className="h-7 w-7 text-muted-foreground hover:text-red-400"
               onClick={handleDelete}
@@ -171,7 +171,7 @@ export function ServerCard({
               ) : (
                 <Trash2 className="size-3.5" />
               )}
-            </Button>
+            </DestructiveButton>
             <Button
               variant="ghost"
               size="icon"

@@ -18,6 +18,7 @@ import {
   type ModelDiskUsageResponse,
 } from "@/lib/runner-client";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Progress } from "@/components/ui/progress";
 import {
   Card,
@@ -332,11 +333,12 @@ export function ModelManager() {
                                 </AlertDialogHeader>
                                 <AlertDialogFooter>
                                   <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                  <AlertDialogAction
-                                    onClick={() => handleDelete(model.id)}
-                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                  >
-                                    Delete
+                                  <AlertDialogAction asChild>
+                                    <DestructiveButton
+                                      onClick={() => handleDelete(model.id)}
+                                    >
+                                      Delete
+                                    </DestructiveButton>
                                   </AlertDialogAction>
                                 </AlertDialogFooter>
                               </AlertDialogContent>

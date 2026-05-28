@@ -3,6 +3,7 @@
 import type { GlobalLogSource, GlobalLogSourceProfile } from "@/lib/runner-api";
 import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import {
   Loader2,
   FileText,
@@ -310,12 +311,13 @@ export default function LogSourcesPage() {
                       >
                         <Edit2 className="w-3.5 h-3.5" />
                       </button>
-                      <button
+                      <DestructiveButton
+                        size="icon"
                         onClick={() => deleteSource(source.id)}
                         className="p-1 text-muted-foreground hover:text-red-400 transition-colors"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      </DestructiveButton>
                     </div>
                   </div>
                 ))
@@ -399,12 +401,13 @@ export default function LogSourcesPage() {
                         >
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>
-                        <button
+                        <DestructiveButton
+                          size="icon"
                           onClick={() => deleteProfile(profile.id)}
                           className="p-1 text-muted-foreground hover:text-red-400 transition-colors"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        </DestructiveButton>
                       </div>
                     </div>
                   );

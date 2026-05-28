@@ -14,6 +14,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -304,12 +305,14 @@ export function CommentThread({
                           <Edit2 className="mr-2 h-3 w-3" />
                           Edit
                         </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => handleDelete(comment.id)}
-                          className="text-destructive focus:text-destructive"
-                        >
-                          <Trash2 className="mr-2 h-3 w-3" />
-                          Delete
+                        <DropdownMenuItem asChild>
+                          <DestructiveButton
+                            onClick={() => handleDelete(comment.id)}
+                            className="w-full justify-start text-destructive focus:text-destructive"
+                          >
+                            <Trash2 className="mr-2 h-3 w-3" />
+                            Delete
+                          </DestructiveButton>
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>

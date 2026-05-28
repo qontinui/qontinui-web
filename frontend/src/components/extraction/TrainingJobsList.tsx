@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import {
   Loader2,
   RefreshCw,
@@ -350,8 +351,7 @@ export function TrainingJobsList({
 
                 {/* Delete button (not for running jobs) */}
                 {job.status !== "running" && job.status !== "queued" && (
-                  <Button
-                    variant="ghost"
+                  <DestructiveButton
                     size="sm"
                     onClick={() => handleDelete(job.id)}
                     disabled={actionLoading === job.id}
@@ -362,7 +362,7 @@ export function TrainingJobsList({
                     ) : (
                       <Trash2 className="w-4 h-4" />
                     )}
-                  </Button>
+                  </DestructiveButton>
                 )}
               </div>
             </div>

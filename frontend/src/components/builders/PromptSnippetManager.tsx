@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -292,15 +293,14 @@ export function PromptSnippetManager({
                     {isNew ? "Create" : "Save"}
                   </Button>
                   {!isNew && selectedId && (
-                    <Button
+                    <DestructiveButton
                       size="sm"
-                      variant="outline"
                       className="gap-1.5 text-red-400 border-red-500/30 hover:bg-red-500/10"
                       onClick={handleDelete}
                     >
                       <Trash2 className="size-3" />
                       Delete
-                    </Button>
+                    </DestructiveButton>
                   )}
                   <Button
                     size="sm"

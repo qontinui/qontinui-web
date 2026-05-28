@@ -22,6 +22,31 @@ import type { Workflow } from "@/lib/action-schema/action-types";
 vi.mock("@/stores/canvas-store");
 vi.mock("@/stores/properties-panel-store");
 
+// DestructiveButton blocks synthetic clicks (event.isTrusted=false) by
+// design — see plans/2026-05-28-production-safe-ui-bridge-design.md §4.4.
+// userEvent.click in jsdom produces synthetic events, so a real
+// DestructiveButton would short-circuit the delete-on-click assertions
+// below. The wrapper's gate is independently covered in
+// src/components/ui/destructive-button.test.tsx; here we mock it out to a
+// plain button so the existing business-logic tests keep exercising the
+// delete wiring.
+vi.mock("@/components/ui/destructive-button", () => ({
+  DestructiveButton: ({
+    children,
+    onClick,
+    ...props
+  }: {
+    children?: unknown;
+    onClick?: (e: unknown) => void;
+    [key: string]: unknown;
+  }) => (
+    <button onClick={onClick} {...(props as Record<string, never>)}>
+      {children as React.ReactNode}
+    </button>
+  ),
+  isSyntheticClick: () => false,
+}));
+
 type StoreState = Record<string, unknown>;
 
 function mockCanvasState(state: StoreState) {

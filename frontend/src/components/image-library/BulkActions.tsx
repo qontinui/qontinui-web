@@ -10,6 +10,7 @@
 import React from "react";
 import { X, Folder, Move, Tag, Package, Download, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -110,15 +111,14 @@ export function BulkActions({
           Download
         </Button>
 
-        <Button
-          variant="outline"
+        <DestructiveButton
           size="sm"
           className="border-red-700 text-red-400 hover:bg-red-900/20"
           onClick={onBulkDelete}
         >
           <Trash2 className="w-4 h-4 mr-2" />
           Delete
-        </Button>
+        </DestructiveButton>
 
         <Button variant="ghost" size="sm" onClick={onClearSelection}>
           <X className="w-4 h-4" />

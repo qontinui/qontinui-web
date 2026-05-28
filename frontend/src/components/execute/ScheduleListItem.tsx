@@ -3,6 +3,7 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Switch } from "@/components/ui/switch";
 import {
   Play,
@@ -188,15 +189,14 @@ export function ScheduleListItem({
             >
               <Pencil className="size-3.5" />
             </Button>
-            <Button
-              variant="ghost"
+            <DestructiveButton
               size="icon"
               className="h-8 w-8 text-red-400 hover:text-red-300"
               onClick={() => onDelete(task)}
               title="Delete"
             >
               <Trash2 className="size-3.5" />
-            </Button>
+            </DestructiveButton>
           </div>
         </div>
       </CardContent>

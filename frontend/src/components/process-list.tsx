@@ -4,6 +4,7 @@ import { useState, DragEvent } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Input } from "@/components/ui/input";
 import {
   Tooltip,
@@ -379,14 +380,13 @@ export function ProcessList({
                     )}
                     <div className="w-5" />
                     {isCustom ? (
-                      <Button
-                        variant="ghost"
+                      <DestructiveButton
                         size="sm"
                         className="h-6 w-6 p-0 text-text-muted hover:text-red-400"
                         onClick={() => handleDeleteCategory(category)}
                       >
                         <Trash2 className="w-3 h-3" />
-                      </Button>
+                      </DestructiveButton>
                     ) : (
                       <div className="h-6 w-6" />
                     )}

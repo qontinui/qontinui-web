@@ -335,6 +335,7 @@ const StateImageDetails: React.FC<StateImageDetailsProps> = ({
           <Button
             className="w-full justify-start"
             variant="destructive"
+            /* eslint-disable-next-line @qontinui-web/no-unwrapped-destructive-handler -- opener; destructive action gated in the dialog's confirm button */
             onClick={() => setShowDeleteDialog(true)}
           >
             <Trash2 className="mr-2 h-4 w-4" />

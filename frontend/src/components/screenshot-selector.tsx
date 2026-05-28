@@ -10,6 +10,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -259,14 +260,13 @@ export function ScreenshotSelector({
                       </div>
                     )}
 
-                    <Button
-                      variant="ghost"
+                    <DestructiveButton
                       size="icon"
                       onClick={(e) => handleDeleteScreenshot(e, screenshot.id)}
                       className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 hover:bg-black/70"
                     >
                       <Trash2 className="w-4 h-4 text-red-400" />
-                    </Button>
+                    </DestructiveButton>
 
                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
                       <p className="text-xs text-white truncate">

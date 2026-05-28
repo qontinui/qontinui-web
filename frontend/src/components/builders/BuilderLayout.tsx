@@ -185,6 +185,7 @@ export function BuilderLayout<T extends BuilderItem>({
                     size="sm"
                     className="h-7 px-2 text-red-400 hover:text-red-300"
                     disabled={selectedIds.size === 0}
+                    /* eslint-disable-next-line @qontinui-web/no-unwrapped-destructive-handler -- opener; destructive action gated in the dialog's confirm button */
                     onClick={() => setDeleteOpen(true)}
                   >
                     <Trash2 className="size-3.5" />

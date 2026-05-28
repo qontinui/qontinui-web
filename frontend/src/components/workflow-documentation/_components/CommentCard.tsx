@@ -2,6 +2,7 @@ import React from "react";
 import { Action } from "@/lib/action-schema/action-types";
 import { ActionComment } from "@/services/workflow-documentation-service";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Textarea } from "@/components/ui/textarea";
 import {
   DropdownMenu,
@@ -69,12 +70,14 @@ export function CommentCard({
                 <Edit2 className="size-4 mr-2" />
                 Edit
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => onDelete(comment.id)}
-                className="text-destructive focus:text-destructive"
-              >
-                <Trash2 className="size-4 mr-2" />
-                Delete
+              <DropdownMenuItem asChild>
+                <DestructiveButton
+                  onClick={() => onDelete(comment.id)}
+                  className="w-full justify-start text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="size-4 mr-2" />
+                  Delete
+                </DestructiveButton>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

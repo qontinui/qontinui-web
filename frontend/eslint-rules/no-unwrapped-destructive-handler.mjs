@@ -27,8 +27,15 @@
  * Cross-link: plans/2026-05-28-production-safe-ui-bridge-design.md §4.4.
  */
 
+// Match a destructive verb at a camelCase word boundary inside an
+// identifier. The verb must be followed by an uppercase letter, an
+// underscore, or end-of-string — that excludes "Drop" inside "Dropdown"
+// while still catching "handleDelete", "deleteItem", "Approve",
+// "onBulkRevoke", etc. Two case-explicit alternates avoid a single `/i`
+// flag that would re-introduce the "Dropdown" false positive via the
+// trailing lookahead.
 const DESTRUCTIVE_PATTERN =
-  /(?:^|[A-Z_])(?:delete|destroy|drop|revoke|rotate|wipe|purge|approve|discard|erase|kill)/i;
+  /(?:^(?:delete|destroy|drop|revoke|rotate|wipe|purge|approve|discard|erase|kill)|(?:Delete|Destroy|Drop|Revoke|Rotate|Wipe|Purge|Approve|Discard|Erase|Kill))(?=[A-Z_]|$)/;
 
 const ALLOWED_PARENT_COMPONENTS = new Set([
   "DestructiveButton",

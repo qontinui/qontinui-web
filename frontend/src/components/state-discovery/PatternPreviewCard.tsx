@@ -5,6 +5,7 @@
 
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Trash2, Edit2, Check, X } from "lucide-react";
@@ -66,14 +67,13 @@ export function PatternPreviewCard({
         <div className="text-xs font-semibold text-text-muted">
           Pattern #{index + 1}
         </div>
-        <Button
-          variant="ghost"
+        <DestructiveButton
           size="sm"
           onClick={onDelete}
           className="h-6 w-6 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
         >
           <Trash2 className="h-3 w-3" />
-        </Button>
+        </DestructiveButton>
       </div>
 
       {/* Pattern Image */}

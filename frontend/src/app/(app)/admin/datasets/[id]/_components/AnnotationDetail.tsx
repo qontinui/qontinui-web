@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -101,16 +102,15 @@ export function AnnotationDetail({
                 </div>
                 {selectedAnnotationIds.size > 0 && (
                   <div className="flex gap-1">
-                    <Button
+                    <DestructiveButton
                       size="sm"
-                      variant="outline"
                       className="h-7 text-xs text-green-600 border-green-600 hover:bg-green-50"
                       onClick={onBulkApprove}
                       disabled={bulkProcessing}
                     >
                       <Check className="h-3 w-3 mr-1" />
                       Approve
-                    </Button>
+                    </DestructiveButton>
                     <Button
                       size="sm"
                       variant="outline"

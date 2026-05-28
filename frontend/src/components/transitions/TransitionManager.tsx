@@ -4,6 +4,7 @@ import React, { useState, useCallback } from "react";
 import { useAutomation } from "@/contexts/automation-context";
 import { Transition } from "@/contexts/automation-context/types";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -177,14 +178,13 @@ export function TransitionManager() {
               Export
             </Button>
             {selectedTransitions.size > 0 && (
-              <Button
-                variant="outline"
+              <DestructiveButton
                 onClick={handleBulkDelete}
                 className="border-red-400 text-red-400 hover:bg-red-400/20"
               >
                 <Trash2 className="w-4 h-4 mr-2" />
                 Delete ({selectedTransitions.size})
-              </Button>
+              </DestructiveButton>
             )}
           </div>
         </div>
@@ -326,11 +326,10 @@ export function TransitionManager() {
             <AlertDialogCancel className="border-border-default">
               Cancel
             </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteConfirm}
-              className="bg-red-400 hover:bg-red-500 text-white"
-            >
-              Delete
+            <AlertDialogAction asChild>
+              <DestructiveButton onClick={handleDeleteConfirm}>
+                Delete
+              </DestructiveButton>
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

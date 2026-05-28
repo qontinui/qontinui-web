@@ -8,6 +8,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import {
   Card,
   CardContent,
@@ -80,13 +81,12 @@ export function TestCaseDetails({
                 <Copy className="size-4" />
                 Clone
               </Button>
-              <Button
+              <DestructiveButton
                 onClick={() => onDelete(testCase.id)}
-                variant="ghost"
                 size="sm"
               >
                 <Trash2 className="size-4" />
-              </Button>
+              </DestructiveButton>
             </div>
           </div>
         </CardHeader>

@@ -1,5 +1,6 @@
 import React from "react";
 import { X, Check } from "lucide-react";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 
 interface PanelHeaderProps {
   showSaved: boolean;
@@ -20,13 +21,14 @@ const PanelHeader: React.FC<PanelHeaderProps> = ({ showSaved, onDelete }) => (
           </span>
         )}
       </div>
-      <button
+      <DestructiveButton
+        size="icon"
         onClick={onDelete}
         className="p-1 hover:bg-surface-raised/80 rounded"
         title="Delete location"
       >
         <X className="w-4 h-4 text-text-secondary" />
-      </button>
+      </DestructiveButton>
     </div>
   </div>
 );

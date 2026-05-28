@@ -10,7 +10,7 @@ import {
   Trash2,
   Loader2,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -118,8 +118,7 @@ function CollaboratorRow({
                 <SelectItem value="admin">Admin</SelectItem>
               </SelectContent>
             </Select>
-            <Button
-              variant="ghost"
+            <DestructiveButton
               size="icon"
               className="h-8 w-8 text-red-400 hover:text-red-300 hover:bg-red-950/30"
               onClick={() => onRevoke(collaborator.id, collaborator.email)}
@@ -131,7 +130,7 @@ function CollaboratorRow({
               ) : (
                 <Trash2 className="h-4 w-4" />
               )}
-            </Button>
+            </DestructiveButton>
           </>
         )}
       </div>

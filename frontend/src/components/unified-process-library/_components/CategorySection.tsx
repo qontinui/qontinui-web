@@ -2,6 +2,7 @@
 
 import { DragEvent } from "react";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Tooltip,
@@ -188,14 +189,13 @@ export function CategorySection({
           {!isSelectionMode && (
             <>
               {isDeletable ? (
-                <Button
-                  variant="ghost"
+                <DestructiveButton
                   size="sm"
                   className="h-6 w-6 p-0 text-text-muted hover:text-red-400"
                   onClick={() => onDeleteCategory(category.name)}
                 >
                   <Trash2 className="w-3 h-3" />
-                </Button>
+                </DestructiveButton>
               ) : (
                 <div className="h-6 w-6" />
               )}

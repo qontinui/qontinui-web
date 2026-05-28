@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   AlertDialog,
@@ -385,11 +386,10 @@ function ResultCard({
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={onDelete}
-                    className="bg-red-500 hover:bg-red-600"
-                  >
-                    Delete
+                  <AlertDialogAction asChild>
+                    <DestructiveButton onClick={onDelete}>
+                      Delete
+                    </DestructiveButton>
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>

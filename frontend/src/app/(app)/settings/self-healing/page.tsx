@@ -8,6 +8,7 @@ import {
 } from "@/lib/runner-api";
 import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -425,13 +426,12 @@ export default function SelfHealingSettingsPage() {
                         <CheckCircle className="size-4" />
                         API key configured securely
                       </div>
-                      <Button
-                        variant="ghost"
+                      <DestructiveButton
                         size="sm"
                         onClick={handleDeleteApiKey}
                       >
                         <Trash2 className="size-3.5 text-destructive" />
-                      </Button>
+                      </DestructiveButton>
                     </div>
                   ) : (
                     <div className="flex gap-2">

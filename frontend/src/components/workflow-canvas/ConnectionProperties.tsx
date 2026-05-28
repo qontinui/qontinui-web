@@ -14,7 +14,7 @@ import React from "react";
 import { useCanvasStore } from "@/stores/canvas-store";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import {
   Select,
   SelectContent,
@@ -125,15 +125,14 @@ export const ConnectionProperties: React.FC<ConnectionPropertiesProps> = ({
               Connection Properties
             </h3>
           </div>
-          <Button
+          <DestructiveButton
             size="sm"
-            variant="outline"
             onClick={handleDeleteConnection}
             className="h-7 text-xs text-red-400 hover:text-red-300 hover:bg-red-900/20"
           >
             <Trash2 className="w-3 h-3 mr-1" />
             Delete
-          </Button>
+          </DestructiveButton>
         </div>
 
         <Separator className="bg-border-default" />

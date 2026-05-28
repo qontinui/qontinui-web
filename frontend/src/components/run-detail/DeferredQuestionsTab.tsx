@@ -5,6 +5,7 @@ import { runnerFetch } from "@/lib/runner/api-client";
 import { httpClient } from "@/services/service-factory";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Badge } from "@/components/ui/badge";
 import {
   CheckCircle2,
@@ -354,9 +355,9 @@ export function DeferredQuestionsTab({ taskRunId }: DeferredQuestionsTabProps) {
           </div>
         </div>
         {pending.length > 1 && (
-          <Button size="sm" variant="outline" onClick={handleBulkApprove}>
+          <DestructiveButton size="sm" onClick={handleBulkApprove}>
             Approve all ({pending.length})
-          </Button>
+          </DestructiveButton>
         )}
       </div>
 

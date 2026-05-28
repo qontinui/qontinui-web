@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Input } from "@/components/ui/input";
 import {
   AlertDialog,
@@ -286,10 +287,12 @@ export default function ReposSettingsPage() {
                         </AlertDialogHeader>
                         <AlertDialogFooter>
                           <AlertDialogCancel>Cancel</AlertDialogCancel>
-                          <AlertDialogAction
-                            onClick={() => handleDelete(repo.repo)}
-                          >
-                            Remove
+                          <AlertDialogAction asChild>
+                            <DestructiveButton
+                              onClick={() => handleDelete(repo.repo)}
+                            >
+                              Remove
+                            </DestructiveButton>
                           </AlertDialogAction>
                         </AlertDialogFooter>
                       </AlertDialogContent>

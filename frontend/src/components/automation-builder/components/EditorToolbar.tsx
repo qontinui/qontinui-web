@@ -10,6 +10,7 @@
 
 import React from "react";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -180,12 +181,14 @@ export function EditorToolbar({
               )}
 
               {onDelete && (
-                <DropdownMenuItem
-                  onClick={onDelete}
-                  className="text-red-400 focus:text-red-300"
-                >
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  Delete
+                <DropdownMenuItem asChild>
+                  <DestructiveButton
+                    onClick={onDelete}
+                    className="w-full justify-start text-red-400 focus:text-red-300"
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Delete
+                  </DestructiveButton>
                 </DropdownMenuItem>
               )}
             </DropdownMenuContent>
@@ -253,15 +256,14 @@ export function CompactToolbar({
 
       {/* Delete */}
       {item && onDelete && (
-        <Button
+        <DestructiveButton
           onClick={onDelete}
           size="sm"
-          variant="ghost"
           className="h-8 w-8 p-0 text-red-400 hover:text-red-300"
           title="Delete"
         >
           <Trash2 className="w-4 h-4" />
-        </Button>
+        </DestructiveButton>
       )}
     </div>
   );

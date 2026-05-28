@@ -423,11 +423,10 @@ function VariablesPageContent() {
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={confirmDeleteSingle}
-                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                  >
-                    Delete
+                  <AlertDialogAction asChild>
+                    <DestructiveButton onClick={confirmDeleteSingle}>
+                      Delete
+                    </DestructiveButton>
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
@@ -451,11 +450,10 @@ function VariablesPageContent() {
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={confirmBulkDelete}
-                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                  >
-                    Delete All
+                  <AlertDialogAction asChild>
+                    <DestructiveButton onClick={confirmBulkDelete}>
+                      Delete All
+                    </DestructiveButton>
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>

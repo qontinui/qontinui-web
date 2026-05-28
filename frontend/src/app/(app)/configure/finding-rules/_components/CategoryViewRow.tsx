@@ -3,6 +3,7 @@
 import { Lock, Pencil, Trash2, ChevronUp, ChevronDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Switch } from "@/components/ui/switch";
 import type { FindingCategoryConfig } from "@/lib/api-client";
 import { getColorClasses, getActionTypeBadge } from "../finding-rules-utils";
@@ -114,15 +115,14 @@ export function CategoryViewRow({
               >
                 <Pencil className="w-4 h-4" />
               </Button>
-              <Button
-                variant="ghost"
+              <DestructiveButton
                 size="icon"
                 className="h-8 w-8 text-muted-foreground hover:text-red-400"
                 onClick={() => onDelete(cat.id)}
                 title="Delete"
               >
                 <Trash2 className="w-4 h-4" />
-              </Button>
+              </DestructiveButton>
             </>
           )}
         </div>

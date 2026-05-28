@@ -10,6 +10,7 @@ import {
 import type { Project } from "@/lib/schemas";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import {
   Dialog,
   DialogContent,
@@ -350,9 +351,8 @@ export function ProjectManager({
                       >
                         Load
                       </Button>
-                      <Button
+                      <DestructiveButton
                         size="sm"
-                        variant="ghost"
                         onClick={() =>
                           handleDelete({
                             ...project,
@@ -361,7 +361,7 @@ export function ProjectManager({
                         }
                       >
                         <Trash2 className="w-4 h-4" />
-                      </Button>
+                      </DestructiveButton>
                     </div>
                   </div>
                 ))}
