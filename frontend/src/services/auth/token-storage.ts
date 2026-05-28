@@ -1,32 +1,26 @@
-import { ApiConfig } from "../api-config";
-
 /**
- * TokenStorage - Dual auth strategy: in-memory tokens + HttpOnly cookies
+ * TokenStorage - Bearer tokens (sessionStorage-backed) + HttpOnly cookies
  *
- * The backend sets HttpOnly cookies for XSS protection, AND returns tokens in
- * the response body. We store the tokens in memory (not localStorage) so the
- * HttpClient can include them as Authorization headers.
+ * The backend sets HttpOnly cookies for XSS protection AND returns the tokens
+ * in the response body. We keep the tokens both in memory and mirrored to
+ * sessionStorage so the HttpClient can always attach an `Authorization: Bearer`
+ * header — the primary, transport-independent auth path. The HttpOnly cookie
+ * is a redundant bonus the backend's CookieOrBearerScheme also accepts.
  *
- * This dual approach is needed because cross-origin cookie delivery
- * (localhost:3001 -> localhost:8000) is unreliable in development:
- * SameSite=lax cookies may not be sent on cross-origin fetch() requests
- * depending on browser version and platform.
+ * Why the Bearer header is primary (not the cookie): cookie delivery is
+ * fragile across host/origin boundaries — `127.0.0.1` vs `localhost` are
+ * distinct cookie hosts, and `SameSite=lax` drops cookies on cross-origin /
+ * cross-port fetches. A Bearer header has none of those constraints, so
+ * relying on it makes auth work the same regardless of how the dev server is
+ * addressed or whether the backend is same-origin or cross-origin.
  *
- * The backend's CookieOrBearerScheme checks cookies first, then falls back
- * to the Authorization header, so both paths work.
- *
- * In-memory storage means tokens are lost on page refresh, but the HttpOnly
- * cookies serve as a fallback and the refresh flow recovers gracefully.
- *
- * Remote-backend mode (ApiConfig.IS_REMOTE_BACKEND === true): when the
- * frontend is pointed at AWS staging / production via NEXT_PUBLIC_API_URL,
- * the HttpOnly cookies set on *.qontinui.io can't ride along on requests
- * from http://localhost:3001, so the Bearer token is the only working auth
- * path. The token is additionally mirrored to sessionStorage (tab-scoped)
- * so it survives page reloads. sessionStorage is used over localStorage
- * because the token is scoped to a single dev session and shouldn't outlive
- * tab close. Local-backend mode never persists tokens — the HttpOnly cookie
- * is the reload-survival mechanism there.
+ * sessionStorage (tab-scoped, cleared on tab close, wiped by clearAll on
+ * logout) is the reload-survival store in EVERY mode. Persisting and
+ * restoring unconditionally means a page reload never loses the in-memory
+ * tokens, so the reactive refresh always has a body token and a 401 never
+ * cascades into a spurious session teardown. (Previously this was gated to
+ * remote-backend mode, which left local dev dependent on the fragile cookie
+ * path after a reload.)
  */
 export class TokenStorage {
   private readonly TOKEN_EXPIRY_KEY = "token_expiry";
@@ -49,17 +43,20 @@ export class TokenStorage {
    */
   private readonly AUTH_MARKER_COOKIE = "qontinui_auth";
 
-  // In-memory token storage (not localStorage — cleared on page refresh)
-  // This is the primary auth mechanism for API calls via Authorization header.
-  // HttpOnly cookies provide backup auth on the backend side (local-mode only).
+  // Bearer tokens: kept in memory (primary auth via the Authorization header)
+  // and mirrored to sessionStorage so a reload can restore them. The HttpOnly
+  // cookies are a redundant backend-side fallback.
   private accessToken: string | null = null;
   private refreshTokenValue: string | null = null;
 
   constructor() {
-    // Remote-backend mode: restore Bearer tokens from sessionStorage on
-    // construction so a page reload doesn't bounce the user to /login
-    // (cookies can't carry across origins to fill that gap).
-    if (typeof window !== "undefined" && ApiConfig.IS_REMOTE_BACKEND) {
+    // Restore Bearer tokens from sessionStorage on construction so a page
+    // reload never loses the in-memory tokens. Without this, a reload leaves
+    // requests dependent on the HttpOnly cookie, which is dropped across
+    // host/origin boundaries (e.g. 127.0.0.1 vs localhost) — the next 401
+    // then triggers a cookie-only refresh that also fails and tears down the
+    // session. Unconditional in every mode (not just remote-backend).
+    if (typeof window !== "undefined") {
       this.accessToken = sessionStorage.getItem(this.SESSION_ACCESS_TOKEN_KEY);
       this.refreshTokenValue = sessionStorage.getItem(
         this.SESSION_REFRESH_TOKEN_KEY
@@ -68,10 +65,10 @@ export class TokenStorage {
   }
 
   /**
-   * Save access token in memory for Authorization header usage.
-   * Also sets the authentication flag in localStorage for UI state.
-   * In remote-backend mode, mirrors the token to sessionStorage so it
-   * survives page reload (cookies are not cross-origin-deliverable to AWS).
+   * Save access token in memory and mirror it to sessionStorage (so it
+   * survives a page reload), and set the authentication flag in localStorage
+   * for UI state. The Authorization header built from this token is the
+   * primary auth path in every mode.
    */
   saveAccessToken(token?: string): void {
     if (typeof window === "undefined") return;
@@ -88,9 +85,10 @@ export class TokenStorage {
   }
 
   /**
-   * Set the client-readable auth-marker cookie on the dashboard origin
-   * (remote-backend mode only). Session-scoped; `Secure` only over https so
-   * it still works on http://localhost during dev.
+   * Set the client-readable auth-marker cookie on the current origin so the
+   * Next.js middleware soft-gate passes (it carries NO token). Set in every
+   * mode. Session-scoped; `Secure` only over https so it still works on
+   * http://localhost / http://127.0.0.1 during dev.
    */
   private setAuthMarkerCookie(): void {
     if (typeof document === "undefined") return;
@@ -121,17 +119,16 @@ export class TokenStorage {
   }
 
   /**
-   * Save refresh token in memory for token refresh requests.
-   * In remote-backend mode, mirrors to sessionStorage so token refresh
-   * remains possible after page reload.
+   * Save refresh token in memory and mirror it to sessionStorage so token
+   * refresh remains possible after a page reload (the reactive refresh sends
+   * it in the request body — see token-refresh-service). Mirrored in every
+   * mode so reload never falls back to the fragile cookie-only refresh path.
    */
   saveRefreshToken(token?: string): void {
     if (typeof window === "undefined") return;
     if (token) {
       this.refreshTokenValue = token;
-      if (ApiConfig.IS_REMOTE_BACKEND) {
-        sessionStorage.setItem(this.SESSION_REFRESH_TOKEN_KEY, token);
-      }
+      sessionStorage.setItem(this.SESSION_REFRESH_TOKEN_KEY, token);
     }
   }
 
@@ -144,9 +141,9 @@ export class TokenStorage {
   }
 
   /**
-   * Get access token from memory for Authorization header.
-   * Returns null if token was not saved (e.g., after page refresh).
-   * In that case, HttpOnly cookies provide fallback auth on the backend.
+   * Get access token for the Authorization header. Restored from
+   * sessionStorage on construction, so it survives a page reload; null only
+   * when genuinely signed out.
    */
   getAccessToken(): string | null {
     if (typeof window === "undefined") return null;
