@@ -17,7 +17,10 @@ export default defineConfig({
     globals: true,
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
-    include: ["src/**/*.{test,spec}.{ts,tsx}"],
+    include: [
+      "src/**/*.{test,spec}.{ts,tsx}",
+      "eslint-rules/**/*.{test,spec}.{js,mjs}",
+    ],
     exclude: ["node_modules", "tests/e2e/**"],
     coverage: {
       provider: "v8",

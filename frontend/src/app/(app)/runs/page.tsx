@@ -10,6 +10,7 @@ import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
 import { runnerApi } from "@/lib/runner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -249,8 +250,7 @@ export default function RunHistoryPage() {
         {/* Results */}
         {selectedRuns.size > 0 && (
           <div className="flex items-center justify-end">
-            <Button
-              variant="destructive"
+            <DestructiveButton
               size="sm"
               disabled={isDeleting}
               onClick={handleBulkDelete}
@@ -261,7 +261,7 @@ export default function RunHistoryPage() {
                 <Trash2 className="size-4 mr-1" />
               )}
               Delete {selectedRuns.size}
-            </Button>
+            </DestructiveButton>
           </div>
         )}
 
