@@ -31,8 +31,18 @@ import type {
 
 export type ListSessionsScope = "active" | "all";
 
+/** Tenant breadth axis — orthogonal to {@link ListSessionsScope}. */
+export type ListSessionsTenantScope = "active" | "all";
+
 export interface ListSessionsOptions {
+  /** Session-state filter: `active` only vs include closed. */
   scope?: ListSessionsScope;
+  /**
+   * Tenant breadth filter: `active` (caller's active tenant only —
+   * the default + only meaningful value for single-tenant operators)
+   * vs `all` (union across every tenant the caller is a member of).
+   */
+  tenantScope?: ListSessionsTenantScope;
   /** RFC 3339 timestamp; incremental polling. */
   since?: string;
   signal?: AbortSignal;
@@ -43,6 +53,7 @@ export async function listSessions(
 ): Promise<SessionListResponse> {
   const params = new URLSearchParams();
   if (opts.scope) params.set("scope", opts.scope);
+  if (opts.tenantScope) params.set("tenant_scope", opts.tenantScope);
   if (opts.since) params.set("since", opts.since);
 
   const qs = params.toString();

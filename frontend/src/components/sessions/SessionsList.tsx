@@ -34,13 +34,16 @@ import { SessionCard } from "./SessionCard";
 import { listSessions } from "./api";
 import type {
   ListSessionsScope,
+  ListSessionsTenantScope,
   ListSessionsOptions,
 } from "./api";
 import type { SessionRow } from "./types";
 import { classifyHeartbeat } from "./types";
 import { relativeTime } from "@/components/operations/utils";
+import { useTenant } from "@/contexts/tenant-context";
 
 const SCOPE_STORAGE_KEY = "qontinui.sessions.scope";
+const TENANT_SCOPE_STORAGE_KEY = "qontinui.sessions.tenant_scope";
 const POLL_INTERVAL_MS = 5_000;
 
 interface SessionsListProps {
@@ -71,6 +74,21 @@ function writeStoredScope(scope: ListSessionsScope) {
   if (typeof window === "undefined") return;
   try {
     localStorage.setItem(SCOPE_STORAGE_KEY, scope);
+  } catch {
+    // ignore quota / private-mode errors
+  }
+}
+
+function readStoredTenantScope(): ListSessionsTenantScope {
+  if (typeof window === "undefined") return "active";
+  const raw = localStorage.getItem(TENANT_SCOPE_STORAGE_KEY);
+  return raw === "all" ? "all" : "active";
+}
+
+function writeStoredTenantScope(s: ListSessionsTenantScope) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(TENANT_SCOPE_STORAGE_KEY, s);
   } catch {
     // ignore quota / private-mode errors
   }
@@ -228,16 +246,32 @@ export function SessionsList({
 }: SessionsListProps) {
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [scope, setScope] = useState<ListSessionsScope>(() => readStoredScope());
+  const [tenantScope, setTenantScope] = useState<ListSessionsTenantScope>(
+    () => readStoredTenantScope()
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
+  const { tenants, isMultiTenant } = useTenant();
   const doFetch = fetcher ?? listSessions;
+
+  // For single-tenant operators the tenant-breadth control is
+  // structurally hidden; force `tenant_scope=active` over the wire so
+  // a stale localStorage entry from a multi-tenant session can't leak
+  // a `tenant_scope=all` call.
+  const effectiveTenantScope: ListSessionsTenantScope = isMultiTenant
+    ? tenantScope
+    : "active";
 
   const refresh = useCallback(
     async (signal?: AbortSignal) => {
       try {
-        const data = await doFetch({ scope, signal });
+        const data = await doFetch({
+          scope,
+          tenantScope: effectiveTenantScope,
+          signal,
+        });
         setSessions(data.sessions ?? []);
         setError(null);
         setLastUpdated(new Date());
@@ -250,7 +284,7 @@ export function SessionsList({
         setLoading(false);
       }
     },
-    [doFetch, scope]
+    [doFetch, scope, effectiveTenantScope]
   );
 
   useEffect(() => {
@@ -275,6 +309,23 @@ export function SessionsList({
     setLoading(true);
   }, []);
 
+  const onTenantScopeChange = useCallback((next: string) => {
+    const nextScope: ListSessionsTenantScope = next === "all" ? "all" : "active";
+    setTenantScope(nextScope);
+    writeStoredTenantScope(nextScope);
+    setLoading(true);
+  }, []);
+
+  // Tenant name lookup for the per-card chip (only renders when the
+  // user is multi-tenant AND viewing the union).
+  const tenantNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const t of tenants) {
+      m.set(t.id, t.name || t.slug || t.id.slice(0, 8));
+    }
+    return m;
+  }, [tenants]);
+
   const machineGroups = useMemo(
     () => buildMachineGroups(sessions, hostnameFor),
     [sessions, hostnameFor]
@@ -290,22 +341,45 @@ export function SessionsList({
         data-session-count={totalSessions}
       >
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <Tabs value={scope} onValueChange={onScopeChange}>
-            <TabsList data-ui-bridge-id="sessions.scope-tabs">
-              <TabsTrigger
-                value="active"
-                data-ui-bridge-id="sessions.scope-active"
+          <div className="flex flex-wrap items-center gap-3">
+            <Tabs value={scope} onValueChange={onScopeChange}>
+              <TabsList data-ui-bridge-id="sessions.scope-tabs">
+                <TabsTrigger
+                  value="active"
+                  data-ui-bridge-id="sessions.scope-active"
+                >
+                  Active
+                </TabsTrigger>
+                <TabsTrigger
+                  value="all"
+                  data-ui-bridge-id="sessions.scope-all"
+                >
+                  All sessions
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+            {isMultiTenant && (
+              <Tabs
+                value={tenantScope}
+                onValueChange={onTenantScopeChange}
               >
-                Active tenant only
-              </TabsTrigger>
-              <TabsTrigger
-                value="all"
-                data-ui-bridge-id="sessions.scope-all"
-              >
-                All my tenants
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
+                <TabsList data-ui-bridge-id="sessions.tenant-scope-tabs">
+                  <TabsTrigger
+                    value="active"
+                    data-ui-bridge-id="sessions.tenant-scope-active"
+                  >
+                    Active tenant
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="all"
+                    data-ui-bridge-id="sessions.tenant-scope-all"
+                  >
+                    All my tenants
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+            )}
+          </div>
 
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
             <Badge variant="outline" data-ui-bridge-id="sessions.count-badge">
@@ -392,6 +466,11 @@ export function SessionsList({
                       key={session.id}
                       session={session}
                       hostnameFor={hostnameFor}
+                      tenantNameFor={
+                        isMultiTenant && effectiveTenantScope === "all"
+                          ? (id) => tenantNameById.get(id)
+                          : undefined
+                      }
                     />
                   ))}
                 </div>

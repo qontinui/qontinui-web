@@ -37,6 +37,14 @@ import type { SessionRow, SessionIntent, AgentStatus } from "./types";
 interface SessionCardProps {
   session: SessionRow;
   hostnameFor?: (deviceId: string) => string | undefined;
+  /**
+   * Tenant-name lookup. When provided AND the resolved name is
+   * non-empty, the card renders a tenant chip identifying which
+   * tenant the session belongs to — only meaningful when the page is
+   * showing the cross-tenant union view. Omit (default) for the
+   * single-tenant case to keep the card chrome-free.
+   */
+  tenantNameFor?: (tenantId: string) => string | undefined;
 }
 
 const KIND_ICON: Record<string, React.ElementType> = {
@@ -111,12 +119,17 @@ function getIntentPurpose(intent: SessionRow["intent"]): string {
   return "(no purpose declared)";
 }
 
-export function SessionCard({ session, hostnameFor }: SessionCardProps) {
+export function SessionCard({
+  session,
+  hostnameFor,
+  tenantNameFor,
+}: SessionCardProps) {
   const Icon = KIND_ICON[session.session_kind] ?? Cpu;
   const kindLabel = KIND_LABEL[session.session_kind] ?? session.session_kind;
   const health = classifyHeartbeat(session.last_heartbeat_at);
   const hostname = hostnameFor?.(session.device_id);
   const identity = hostname ?? `${session.device_id.slice(0, 8)}…`;
+  const tenantLabel = tenantNameFor?.(session.tenant_id);
 
   const purpose = getIntentPurpose(session.intent);
   const repo = session.repo;
@@ -186,6 +199,16 @@ export function SessionCard({ session, hostnameFor }: SessionCardProps) {
               >
                 {kindLabel}
               </Badge>
+              {tenantLabel && (
+                <Badge
+                  variant="outline"
+                  className="text-[10px] px-1.5 py-0 border-blue-500/40 text-blue-300 bg-blue-500/5"
+                  data-ui-bridge-id="sessions.card-tenant"
+                  data-tenant-id={session.tenant_id}
+                >
+                  {tenantLabel}
+                </Badge>
+              )}
             </div>
             <Badge
               variant="outline"
