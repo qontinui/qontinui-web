@@ -5,8 +5,16 @@
 // (`/api/v1/operations/sessions*`). Centralizes URL building, fetch
 // options (credentials, error mapping), and SSE subscription so
 // `page.tsx` stays declarative.
+//
+// All requests are routed through the shared `httpClient` (from
+// `@/services/service-factory`) which automatically attaches the
+// Bearer token, handles 401-refresh, and adds CSRF headers. SSE
+// streams use `httpClient.getAuthToken()` to build auth headers
+// manually (httpClient.fetch's internal AbortController would
+// conflict with the caller's long-lived signal).
 // ============================================================================
 
+import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_API } from "../operations/utils";
 import type {
   AgentStatusResponse,
@@ -20,12 +28,6 @@ import type {
   SessionRow,
   TenantListResponse,
 } from "./types";
-
-/** Common fetch options — cookie-auth, no client cache. */
-const DEFAULT_INIT: RequestInit = {
-  credentials: "include",
-  cache: "no-store",
-};
 
 export type ListSessionsScope = "active" | "all";
 
@@ -46,7 +48,7 @@ export async function listSessions(
   const qs = params.toString();
   const url = `${OPERATIONS_API}/sessions${qs ? `?${qs}` : ""}`;
 
-  const res = await fetch(url, { ...DEFAULT_INIT, signal: opts.signal });
+  const res = await httpClient.fetch(url, { signal: opts.signal });
   if (!res.ok) {
     throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
   }
@@ -58,7 +60,7 @@ export async function getSession(
   signal?: AbortSignal
 ): Promise<SessionRow> {
   const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(id)}`;
-  const res = await fetch(url, { ...DEFAULT_INIT, signal });
+  const res = await httpClient.fetch(url, { signal });
   if (!res.ok) {
     throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
   }
@@ -98,7 +100,7 @@ export async function getSessionOutput(
   const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(id)}/output${
     qs ? `?${qs}` : ""
   }`;
-  const res = await fetch(url, { ...DEFAULT_INIT, signal: opts.signal });
+  const res = await httpClient.fetch(url, { signal: opts.signal });
   if (!res.ok) {
     throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
   }
@@ -107,10 +109,7 @@ export async function getSessionOutput(
 
 export async function closeSession(id: string): Promise<SessionRow> {
   const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(id)}`;
-  const res = await fetch(url, {
-    ...DEFAULT_INIT,
-    method: "DELETE",
-  });
+  const res = await httpClient.fetch(url, { method: "DELETE" });
   if (!res.ok) {
     throw new SessionsApiError(
       `DELETE ${url} failed: ${res.status}`,
@@ -130,10 +129,8 @@ export async function stealSession(
   body: StealSessionRequest
 ): Promise<unknown> {
   const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(id)}/steal`;
-  const res = await fetch(url, {
-    ...DEFAULT_INIT,
+  const res = await httpClient.fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   if (!res.ok) {
@@ -159,10 +156,8 @@ export async function handoffSession(
   body: HandoffSessionRequest
 ): Promise<unknown> {
   const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(id)}/handoff`;
-  const res = await fetch(url, {
-    ...DEFAULT_INIT,
+  const res = await httpClient.fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   if (!res.ok) {
@@ -176,7 +171,7 @@ export async function getSessionClaims(
   signal?: AbortSignal
 ): Promise<SessionClaimsResponse> {
   const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(sessionId)}/claims`;
-  const res = await fetch(url, { ...DEFAULT_INIT, signal });
+  const res = await httpClient.fetch(url, { signal });
   if (!res.ok) {
     throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
   }
@@ -188,7 +183,7 @@ export async function getSessionAgentStatus(
   signal?: AbortSignal
 ): Promise<AgentStatusResponse> {
   const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(sessionId)}/agent-status`;
-  const res = await fetch(url, { ...DEFAULT_INIT, signal });
+  const res = await httpClient.fetch(url, { signal });
   if (!res.ok) {
     throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
   }
@@ -199,7 +194,7 @@ export async function listTenants(
   signal?: AbortSignal
 ): Promise<TenantListResponse> {
   const url = `${OPERATIONS_API}/tenants`;
-  const res = await fetch(url, { ...DEFAULT_INIT, signal });
+  const res = await httpClient.fetch(url, { signal });
   if (!res.ok) {
     throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
   }
@@ -223,7 +218,7 @@ export async function listRegisteredRepos(
   _repoInflight = (async () => {
     try {
       const url = `${OPERATIONS_API}/repos`;
-      const res = await fetch(url, { ...DEFAULT_INIT, signal });
+      const res = await httpClient.fetch(url, { signal });
       if (!res.ok) {
         throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
       }
@@ -285,10 +280,20 @@ export function subscribeSessionEvents(
 
   void (async () => {
     try {
+      // Build auth headers manually — httpClient.fetch() has its own
+      // internal AbortController which would conflict with the
+      // caller's long-lived SSE signal.
+      const headers: Record<string, string> = {
+        Accept: "text/event-stream",
+      };
+      const token = httpClient.getAuthToken();
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
       const res = await fetch(url, {
         credentials: "include",
         cache: "no-store",
-        headers: { Accept: "text/event-stream" },
+        headers,
         signal: controller.signal,
       });
       if (!res.ok || !res.body) {
@@ -388,10 +393,19 @@ export function subscribeSessionOutput(
 
   void (async () => {
     try {
+      // Build auth headers manually — same rationale as
+      // subscribeSessionEvents (long-lived SSE, own AbortController).
+      const headers: Record<string, string> = {
+        Accept: "text/event-stream",
+      };
+      const token = httpClient.getAuthToken();
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
       const res = await fetch(url, {
         credentials: "include",
         cache: "no-store",
-        headers: { Accept: "text/event-stream" },
+        headers,
         signal: controller.signal,
       });
       if (!res.ok || !res.body) {
