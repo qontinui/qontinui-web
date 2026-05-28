@@ -47,6 +47,10 @@ import {
 import { handlers, relay } from "@/lib/ui-bridge/relay";
 import { NextRequest } from "next/server";
 import { passThroughBody } from "./body-passthrough";
+import {
+  isForbiddenWebRoute,
+  forbiddenWebRouteResponse,
+} from "./web-forbidden-routes";
 
 const sseManager = new SSEManager();
 
@@ -237,6 +241,14 @@ async function wrapHandler(
 ): Promise<Response> {
   const params = await context.params;
   const path = resolvePath(params);
+
+  // Hard reject for paths permanently forbidden on the web surface (e.g.
+  // `/control/page/evaluate` — see `web-forbidden-routes.ts`). Runs BEFORE
+  // any SDK-contract / browser-connected checks so a future SDK release
+  // that adds a forbidden path to UI_BRIDGE_ROUTES cannot re-enable it.
+  if (isForbiddenWebRoute(path)) {
+    return forbiddenWebRouteResponse(path);
+  }
 
   // Pre-process: short-circuit routes the SDK would 404 on. We surface a
   // structured 503 NO_BROWSER_CONNECTED instead of a bare 404 so callers
