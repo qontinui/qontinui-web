@@ -10,6 +10,7 @@
 import React, { useState, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Input } from "@/components/ui/input";
 import {
   Card,
@@ -373,14 +374,13 @@ function VariablesPageContent() {
                       <Badge variant="secondary">
                         {selectedVariableIds.length} selected
                       </Badge>
-                      <Button
-                        variant="destructive"
+                      <DestructiveButton
                         size="sm"
                         onClick={handleBulkDelete}
                       >
                         <Trash2 className="h-4 w-4 mr-2" />
                         Delete Selected
-                      </Button>
+                      </DestructiveButton>
                     </div>
                   )}
                 </div>

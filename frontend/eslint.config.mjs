@@ -2,6 +2,8 @@ import { dirname } from "path";
 import { fileURLToPath } from "url";
 import { FlatCompat } from "@eslint/eslintrc";
 
+import qontinuiWeb from "./eslint-rules/index.mjs";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
@@ -18,9 +20,13 @@ const eslintConfig = [
       "out/**",
       "build/**",
       "next-env.d.ts",
+      "eslint-rules/**/*.test.mjs",
     ],
   },
   {
+    plugins: {
+      "@qontinui-web": qontinuiWeb,
+    },
     rules: {
       // Allow unused variables prefixed with underscore
       "@typescript-eslint/no-unused-vars": [
@@ -33,6 +39,13 @@ const eslintConfig = [
       ],
       // Prefer structured logger over console.* — use createLogger() from @/lib/logger
       "no-console": ["warn", { allow: ["warn", "error"] }],
+      // Phase 0 of the production-safe UI Bridge work
+      // (plans/2026-05-28-production-safe-ui-bridge-design.md §4.4).
+      // Registered but disabled — opt in via
+      //   `npx eslint --rule '@qontinui-web/no-unwrapped-destructive-handler: warn' src/`
+      // to scan ahead of the call-site migration sweep that will promote
+      // this to `error`.
+      "@qontinui-web/no-unwrapped-destructive-handler": "off",
     },
   },
 ];

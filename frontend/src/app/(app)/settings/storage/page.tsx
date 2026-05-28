@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRunnerHealth, runnerApi, type StorageInfo } from "@/lib/runner-api";
 import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { toast } from "sonner";
 import { Loader2, HardDrive, Trash2, Trash, Info } from "lucide-react";
 
@@ -270,10 +271,9 @@ export default function StorageSettingsPage() {
           </div>
 
           <div className="border-t border-border pt-4">
-            <Button
+            <DestructiveButton
               onClick={handleClearAll}
               disabled={clearingAll || cleaningScreenshots || cleaningVideos}
-              variant="destructive"
               size="sm"
             >
               {clearingAll ? (
@@ -282,7 +282,7 @@ export default function StorageSettingsPage() {
                 <Trash className="size-4" />
               )}
               Clear All Storage
-            </Button>
+            </DestructiveButton>
           </div>
 
           <div className="flex items-start gap-2 p-3 rounded-md bg-blue-500/5 border border-blue-500/10">
