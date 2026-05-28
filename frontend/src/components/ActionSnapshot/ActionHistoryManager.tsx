@@ -22,6 +22,7 @@ import {
 import { ActionSnapshot } from "../../lib/integration-testing-framework";
 import { Screenshot } from "../../types/Screenshot";
 import ActionSnapshotBuilder from "./ActionSnapshotBuilder";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 
 interface ActionHistoryManagerProps {
   stateObject: StateImage | StateLocation | StateRegion;
@@ -259,13 +260,14 @@ export const ActionHistoryManager: React.FC<ActionHistoryManagerProps> = ({
                             >
                               <Edit2 className="w-3 h-3" />
                             </button>
-                            <button
+                            <DestructiveButton
+                              size="icon"
                               onClick={() => handleDeleteSnapshot(snapshot.id)}
                               className="p-1 text-text-muted hover:text-red-600 transition-colors"
                               title="Delete"
                             >
                               <Trash2 className="w-3 h-3" />
-                            </button>
+                            </DestructiveButton>
                           </div>
                         </div>
                       </div>

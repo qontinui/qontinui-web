@@ -11,6 +11,7 @@ import {
   FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import {
   Card,
   CardContent,
@@ -71,13 +72,12 @@ export function SuiteCard({
             <Button onClick={() => onEdit(suite)} variant="outline" size="sm">
               <Edit />
             </Button>
-            <Button
+            <DestructiveButton
               onClick={() => onDelete(suite.id)}
-              variant="ghost"
               size="sm"
             >
               <Trash2 />
-            </Button>
+            </DestructiveButton>
           </div>
         </div>
       </CardHeader>

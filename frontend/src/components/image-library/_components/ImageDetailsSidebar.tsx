@@ -21,6 +21,7 @@ import {
   Edit,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -182,15 +183,14 @@ export function ImageDetailsSidebar({
               Download
             </Button>
 
-            <Button
-              variant="outline"
+            <DestructiveButton
               size="sm"
               className="w-full border-red-700 text-red-400 hover:bg-red-900/20"
               onClick={onDelete}
             >
               <Trash2 className="w-4 h-4 mr-2" />
               Delete
-            </Button>
+            </DestructiveButton>
           </div>
         </div>
       </ScrollArea>

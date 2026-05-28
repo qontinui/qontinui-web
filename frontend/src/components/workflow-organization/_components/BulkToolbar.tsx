@@ -12,6 +12,7 @@ import {
   PlayCircle,
 } from "lucide-react";
 import { Button } from "../../ui/button";
+import { DestructiveButton } from "../../ui/destructive-button";
 import { Badge } from "../../ui/badge";
 import {
   DropdownMenu,
@@ -114,12 +115,14 @@ export function BulkToolbar({
                   Run Tests
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={onDeleteClick}
-                  className="text-destructive focus:text-destructive"
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Delete
+                <DropdownMenuItem asChild>
+                  <DestructiveButton
+                    onClick={onDeleteClick}
+                    className="w-full justify-start text-destructive focus:text-destructive"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete
+                  </DestructiveButton>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

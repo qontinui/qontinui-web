@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { DocumentationEditor } from "@/components/workflow-documentation/DocumentationEditor";
 import { DocumentationViewer } from "@/components/workflow-documentation/DocumentationViewer";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -194,6 +195,7 @@ export default function DocumentationPage() {
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
+                          /* eslint-disable-next-line @qontinui-web/no-unwrapped-destructive-handler -- opener; destructive action gated in the dialog's confirm button */
                           onClick={() => setShowDeleteDialog(true)}
                           className="text-red-400 focus:text-red-400"
                         >
@@ -307,11 +309,10 @@ export default function DocumentationPage() {
               <AlertDialogCancel className="bg-transparent border-border">
                 Cancel
               </AlertDialogCancel>
-              <AlertDialogAction
-                onClick={handleDeleteDocumentation}
-                className="bg-red-600 hover:bg-red-700"
-              >
-                Delete
+              <AlertDialogAction asChild>
+                <DestructiveButton onClick={handleDeleteDocumentation}>
+                  Delete
+                </DestructiveButton>
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

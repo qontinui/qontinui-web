@@ -21,6 +21,7 @@ import {
   Edit,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -256,12 +257,14 @@ function FolderTreeNode({
                 Rename
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onClick={() => onDeleteFolder(folder.id)}
-                className="text-red-400"
-              >
-                <Trash2 className="w-4 h-4 mr-2" />
-                Delete
+              <DropdownMenuItem asChild>
+                <DestructiveButton
+                  onClick={() => onDeleteFolder(folder.id)}
+                  className="w-full justify-start text-red-400"
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Delete
+                </DestructiveButton>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

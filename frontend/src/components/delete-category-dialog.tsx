@@ -7,6 +7,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { AlertTriangle } from "lucide-react";
 
 interface DeleteCategoryDialogProps {
@@ -60,13 +61,12 @@ export function DeleteCategoryDialog({
           >
             Move to Main Category
           </Button>
-          <Button
+          <DestructiveButton
             onClick={onDeleteAll}
-            variant="destructive"
             className="w-full"
           >
             Delete All Workflows
-          </Button>
+          </DestructiveButton>
           <Button onClick={onClose} variant="outline" className="w-full">
             Cancel
           </Button>

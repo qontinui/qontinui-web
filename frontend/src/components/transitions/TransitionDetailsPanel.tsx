@@ -5,6 +5,7 @@ import { Transition, State } from "@/contexts/automation-context/types";
 import { Workflow } from "@/lib/action-schema/action-types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -267,13 +268,12 @@ export function TransitionDetailsPanel({
             <Save className="w-4 h-4 mr-2" />
             Save
           </Button>
-          <Button
-            variant="outline"
+          <DestructiveButton
             onClick={() => onDelete(localTransition.id)}
             className="border-red-400 text-red-400 hover:bg-red-400/20"
           >
             <Trash2 className="w-4 h-4" />
-          </Button>
+          </DestructiveButton>
         </div>
       </CardContent>
     </Card>

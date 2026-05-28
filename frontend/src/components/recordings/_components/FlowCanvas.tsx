@@ -12,6 +12,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Check, Trash2, CheckSquare } from "lucide-react";
 
 interface FlowCanvasProps {
@@ -88,10 +89,10 @@ export function FlowCanvas({
             <CheckSquare className="mr-2 h-4 w-4" />
             Accept Selected ({selectedCount})
           </Button>
-          <Button onClick={onDiscard} variant="destructive" size="sm">
+          <DestructiveButton onClick={onDiscard} size="sm">
             <Trash2 className="mr-2 h-4 w-4" />
             Discard
-          </Button>
+          </DestructiveButton>
         </Panel>
       </ReactFlow>
     </div>

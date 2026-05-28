@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Input } from "@/components/ui/input";
 import { Trash2, FolderOpen, Plus, CheckSquare, X } from "lucide-react";
 
@@ -42,15 +43,14 @@ export function LibraryHeader({
                 {selectedCount} selected
               </span>
               {selectedCount > 0 && (
-                <Button
-                  variant="ghost"
+                <DestructiveButton
                   size="sm"
                   className="h-7 px-1.5 text-red-400 hover:text-red-300 hover:bg-red-500/10"
                   onClick={onBatchDelete}
                   title="Delete selected workflows"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
-                </Button>
+                </DestructiveButton>
               )}
               <Button
                 variant="ghost"

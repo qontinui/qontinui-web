@@ -41,11 +41,14 @@ const eslintConfig = [
       "no-console": ["warn", { allow: ["warn", "error"] }],
       // Phase 0 of the production-safe UI Bridge work
       // (plans/2026-05-28-production-safe-ui-bridge-design.md §4.4).
-      // Registered but disabled — opt in via
-      //   `npx eslint --rule '@qontinui-web/no-unwrapped-destructive-handler: warn' src/`
-      // to scan ahead of the call-site migration sweep that will promote
-      // this to `error`.
-      "@qontinui-web/no-unwrapped-destructive-handler": "off",
+      // Promoted to `error` after the call-site migration sweep:
+      // destructive-named onClick/onSubmit handlers must sit inside a
+      // <DestructiveButton> (or an allowed gating wrapper) so that
+      // synthetic clicks from UI Bridge / programmatic dispatch are
+      // blocked. Genuine false positives (dialog openers / cancel buttons
+      // / undoable UI ops) are silenced with an inline disable comment
+      // that carries a rationale.
+      "@qontinui-web/no-unwrapped-destructive-handler": "error",
     },
   },
 ];

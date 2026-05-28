@@ -8,6 +8,7 @@
 import React from "react";
 import { Download, FolderPlus, Trash2 } from "lucide-react";
 import { Button } from "../../ui/button";
+import { DestructiveButton } from "../../ui/destructive-button";
 import { Badge } from "../../ui/badge";
 import {
   Select,
@@ -116,10 +117,10 @@ export function BulkOperationsBar({
         <Download className="h-4 w-4 mr-2" />
         Export
       </Button>
-      <Button variant="destructive" size="sm" onClick={onDelete}>
+      <DestructiveButton size="sm" onClick={onDelete}>
         <Trash2 className="h-4 w-4 mr-2" />
         Delete
-      </Button>
+      </DestructiveButton>
       <Button variant="ghost" size="sm" onClick={onClearSelection}>
         Clear Selection
       </Button>

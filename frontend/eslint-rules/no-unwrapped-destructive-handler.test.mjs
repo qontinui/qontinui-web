@@ -42,6 +42,17 @@ ruleTester.run("no-unwrapped-destructive-handler", rule, {
     { code: "<Button onClick={handleReset} />" },
     { code: "<button onClick={handleRemoveTag} />" }, // 'remove' is also off the list
 
+    // Word-boundary discrimination: a destructive verb that's the prefix
+    // of a longer non-destructive word must NOT match. "Drop" inside
+    // "Dropdown" is the canonical case — UI noun, not a destructive verb.
+    { code: "<Button onClick={setShowWorkflowDropdown} />" },
+    { code: "<Button onClick={toggleDropdown} />" },
+    { code: "<Button onClick={dropdownOpen} />" },
+    // Past-tense participles are not destructive triggers; they're
+    // typically state checks. Verb followed by lowercase fails the
+    // trailing-boundary lookahead.
+    { code: "<Button onClick={onIsDestroyed} />" },
+
     // Member-expression JSX element (Foo.Bar) — out of scope.
     { code: "<Foo.Action onClick={handleDelete} />" },
 

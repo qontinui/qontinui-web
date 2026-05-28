@@ -37,6 +37,7 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -494,6 +495,7 @@ export default function VgaBuilderPage({
             <Button
               variant="outline"
               size="sm"
+              /* eslint-disable-next-line @qontinui-web/no-unwrapped-destructive-handler -- opener; destructive action gated in the dialog's confirm button */
               onClick={() => setIsDeleteOpen(true)}
               aria-label="Delete state machine"
             >
@@ -556,12 +558,16 @@ export default function VgaBuilderPage({
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setIsDeleteOpen(false)}>
+              <Button
+                variant="outline"
+                /* eslint-disable-next-line @qontinui-web/no-unwrapped-destructive-handler -- cancel button; closes the dialog without performing the destructive action */
+                onClick={() => setIsDeleteOpen(false)}
+              >
                 Cancel
               </Button>
-              <Button variant="destructive" onClick={handleDelete}>
+              <DestructiveButton onClick={handleDelete}>
                 <Trash2 className="size-4" /> Delete
-              </Button>
+              </DestructiveButton>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -1199,14 +1205,13 @@ function StateDetailsPane(props: StateDetailsPaneProps) {
           <Label htmlFor="state-name-input" className="text-xs">
             State name
           </Label>
-          <Button
-            variant="ghost"
+          <DestructiveButton
             size="icon"
             aria-label="Delete state"
             onClick={() => onDeleteState(state.id)}
           >
             <Trash2 className="size-4 text-red-500" />
-          </Button>
+          </DestructiveButton>
         </div>
         <Input
           id="state-name-input"
@@ -1268,14 +1273,13 @@ function StateDetailsPane(props: StateDetailsPaneProps) {
                     >
                       <RefreshCw className="size-3" />
                     </Button>
-                    <Button
-                      variant="ghost"
+                    <DestructiveButton
                       size="icon"
                       aria-label="Delete element"
                       onClick={() => onDeleteElement(state.id, el.id)}
                     >
                       <Trash2 className="size-3 text-red-500" />
-                    </Button>
+                    </DestructiveButton>
                   </div>
                 </div>
                 {editingElementId === el.id ? (
@@ -1373,14 +1377,13 @@ function StateDetailsPane(props: StateDetailsPaneProps) {
                       {target?.name ?? "(deleted)"}
                     </span>
                   </span>
-                  <Button
-                    variant="ghost"
+                  <DestructiveButton
                     size="icon"
                     aria-label="Delete transition"
                     onClick={() => onDeleteTransition(t.id)}
                   >
                     <Trash2 className="size-3 text-red-500" />
-                  </Button>
+                  </DestructiveButton>
                 </li>
               );
             })}

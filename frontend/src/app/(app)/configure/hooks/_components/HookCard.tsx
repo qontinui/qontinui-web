@@ -4,6 +4,7 @@ import { useState } from "react";
 import { type Hook, type TestHookResponse } from "@/lib/runner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import {
   Loader2,
   Trash2,
@@ -150,8 +151,7 @@ export function HookCard({
             >
               <Pencil className="w-3.5 h-3.5" />
             </Button>
-            <Button
-              variant="ghost"
+            <DestructiveButton
               size="icon"
               className="h-7 w-7 text-text-muted hover:text-red-400"
               onClick={() => onDelete(hook.id)}
@@ -163,7 +163,7 @@ export function HookCard({
               ) : (
                 <Trash2 className="w-3.5 h-3.5" />
               )}
-            </Button>
+            </DestructiveButton>
             <Button
               variant="ghost"
               size="icon"

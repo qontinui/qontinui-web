@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -276,11 +277,13 @@ export default function CoordMemoryDetailPage() {
                           >
                             Cancel
                           </AlertDialogCancel>
-                          <AlertDialogAction
-                            onClick={onDelete}
-                            data-testid="coord-memory-delete-confirm"
-                          >
-                            Tombstone
+                          <AlertDialogAction asChild>
+                            <DestructiveButton
+                              onClick={onDelete}
+                              data-testid="coord-memory-delete-confirm"
+                            >
+                              Tombstone
+                            </DestructiveButton>
                           </AlertDialogAction>
                         </AlertDialogFooter>
                       </AlertDialogContent>

@@ -1,6 +1,7 @@
 import React from "react";
 import { SkillMetadata } from "./SkillMetadata";
 import type { OrgSkillsListProps } from "./types";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 
 export function OrgSkillsList({
   skills,
@@ -48,24 +49,24 @@ export function OrgSkillsList({
               {actionInProgress === skill.id ? "..." : "Fork"}
             </button>
             {skill.approval_status !== "approved" && (
-              <button
+              <DestructiveButton
                 onClick={() => onApprove(skill.id, "approved")}
                 disabled={actionInProgress === skill.id}
                 className="text-xs text-green-400 hover:text-green-300 px-2 py-1 rounded hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Approve this skill"
               >
                 Approve
-              </button>
+              </DestructiveButton>
             )}
             {skill.approval_status !== "rejected" && (
-              <button
+              <DestructiveButton
                 onClick={() => onApprove(skill.id, "rejected")}
                 disabled={actionInProgress === skill.id}
                 className="text-xs text-red-400 hover:text-red-300 px-2 py-1 rounded hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Reject this skill"
               >
                 Reject
-              </button>
+              </DestructiveButton>
             )}
           </div>
         </div>

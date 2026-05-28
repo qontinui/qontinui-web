@@ -9,6 +9,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { toast } from "sonner";
 import { Upload, Trash2, User, Loader2 } from "lucide-react";
 
@@ -177,15 +178,14 @@ export function AvatarUpload({
             </div>
 
             {avatarUrl && (
-              <Button
+              <DestructiveButton
                 type="button"
                 onClick={handleDeleteAvatar}
-                variant="outline"
                 className="w-full border-red-500/30 hover:border-red-500 hover:bg-red-500/10 text-red-400"
               >
                 <Trash2 className="w-4 h-4 mr-2" />
                 Remove Avatar
-              </Button>
+              </DestructiveButton>
             )}
           </div>
         </div>

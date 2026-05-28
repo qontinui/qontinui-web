@@ -2,6 +2,7 @@
 
 import { Loader2, Play, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Progress } from "@/components/ui/progress";
 import type { TestExecutionState } from "../_types";
 
@@ -67,10 +68,10 @@ export function TestExecutionPanel({
                   <Play className="size-4" />
                   Run Selected
                 </Button>
-                <Button onClick={onDeleteSelected} variant="outline" size="sm">
+                <DestructiveButton onClick={onDeleteSelected} size="sm">
                   <Trash2 className="size-4" />
                   Delete Selected
-                </Button>
+                </DestructiveButton>
                 <Button onClick={onClearSelection} variant="ghost" size="sm">
                   Clear Selection
                 </Button>

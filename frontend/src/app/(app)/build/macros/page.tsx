@@ -411,6 +411,7 @@ function MacrosBuilderPageContent() {
                   variant="ghost"
                   size="sm"
                   className="text-red-400"
+                  /* eslint-disable-next-line @qontinui-web/no-unwrapped-destructive-handler -- opener; destructive action gated in the confirm button */
                   onClick={() => setSingleDeleteOpen(true)}
                 >
                   <Trash2 className="size-4" />

@@ -17,6 +17,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -193,14 +194,14 @@ export function MigrationPreviewDialog({
           <Button variant="outline" onClick={onCancel}>
             Cancel Import
           </Button>
-          <Button
+          <DestructiveButton
             onClick={onApprove}
             disabled={loading || (preview ? !preview.needsMigration : false)}
           >
             {preview && preview.needsMigration
               ? "Approve & Migrate"
               : "Continue"}
-          </Button>
+          </DestructiveButton>
         </DialogFooter>
       </DialogContent>
     </Dialog>

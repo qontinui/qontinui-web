@@ -5,6 +5,7 @@ import { Layers, Loader2, Save, X } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import {
   Popover,
   PopoverContent,
@@ -105,13 +106,14 @@ export function DescriptionSection({
                         <div className="font-medium text-xs truncate min-w-0">
                           {prompt.name}
                         </div>
-                        <button
+                        <DestructiveButton
+                          size="icon"
                           className="shrink-0 p-0.5 rounded hover:bg-destructive/20 text-zinc-500 hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
                           onClick={(e) => onDeleteTemplate(prompt.id, e)}
                           title="Delete template"
                         >
                           <X className="w-3 h-3" />
-                        </button>
+                        </DestructiveButton>
                       </div>
                       <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
                         {prompt.content.substring(0, 120)}

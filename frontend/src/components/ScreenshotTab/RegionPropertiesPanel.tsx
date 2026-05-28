@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { X, Check } from "lucide-react";
 import { ScreenshotRegion, Screenshot } from "../../types/Screenshot";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 
 interface State {
   id: string;
@@ -143,13 +144,14 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
               </span>
             )}
           </div>
-          <button
+          <DestructiveButton
+            size="icon"
             onClick={() => onDelete(region.id)}
             className="p-1 hover:bg-surface-raised/80 rounded"
             title="Delete region"
           >
             <X className="w-4 h-4 text-text-muted" />
-          </button>
+          </DestructiveButton>
         </div>
       </div>
 

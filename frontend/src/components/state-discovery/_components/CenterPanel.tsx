@@ -9,6 +9,7 @@
 import React from "react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Upload } from "lucide-react";
 
 import VisualizationCanvas from "../VisualizationCanvas";
@@ -102,9 +103,9 @@ const CenterPanel: React.FC<CenterPanelProps> = ({
               <Button size="sm" variant="outline" onClick={onClearSelection}>
                 Clear Selection
               </Button>
-              <Button size="sm" variant="destructive" onClick={onBulkDelete}>
+              <DestructiveButton size="sm" onClick={onBulkDelete}>
                 Delete Selected
-              </Button>
+              </DestructiveButton>
             </div>
           )}
         </div>

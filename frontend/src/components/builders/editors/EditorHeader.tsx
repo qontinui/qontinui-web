@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Save, Trash2, Copy, Loader2 } from "lucide-react";
@@ -72,15 +73,14 @@ export function EditorHeader({
       )}
 
       {onDelete && !isNew && (
-        <Button
-          variant="ghost"
+        <DestructiveButton
           size="sm"
           className="h-8 px-2 text-red-400 hover:text-red-300"
           onClick={onDelete}
           title="Delete"
         >
           <Trash2 className="size-3.5" />
-        </Button>
+        </DestructiveButton>
       )}
 
       <Button

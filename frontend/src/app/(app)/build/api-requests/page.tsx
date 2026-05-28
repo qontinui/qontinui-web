@@ -17,6 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import {
   Collapsible,
   CollapsibleContent,
@@ -391,15 +392,14 @@ function ApiRequestsBuilderPageContent() {
             </div>
             <div className="flex items-center gap-2">
               {!isNew && (
-                <Button
-                  variant="ghost"
+                <DestructiveButton
                   size="sm"
                   className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
                   onClick={handleDeleteCurrent}
                 >
                   <Trash2 className="size-4 mr-1" />
                   Delete
-                </Button>
+                </DestructiveButton>
               )}
               {!isNew && (
                 <Button

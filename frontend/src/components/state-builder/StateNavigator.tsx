@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import type { State } from "@/contexts/automation-context";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -273,12 +274,14 @@ export function StateNavigator({
                         Duplicate
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        onClick={() => handleDeleteState(state.id)}
-                        className="text-destructive"
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Delete
+                      <DropdownMenuItem asChild>
+                        <DestructiveButton
+                          onClick={() => handleDeleteState(state.id)}
+                          className="w-full justify-start text-destructive"
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Delete
+                        </DestructiveButton>
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>

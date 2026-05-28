@@ -2,6 +2,7 @@
 
 import React from "react";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ImageIcon, Trash2, Search, Edit } from "lucide-react";
@@ -70,15 +71,14 @@ export function ImageGallery({
                   >
                     <Edit className="w-3 h-3" />
                   </Button>
-                  <Button
-                    variant="ghost"
+                  <DestructiveButton
                     size="sm"
                     className="text-red-400 hover:text-red-300 hover:bg-red-400/20 h-6 w-6 p-0"
                     onClick={() => onDeleteImage(image.id)}
                     title="Delete Image"
                   >
                     <Trash2 className="w-3 h-3" />
-                  </Button>
+                  </DestructiveButton>
                 </div>
               </div>
 

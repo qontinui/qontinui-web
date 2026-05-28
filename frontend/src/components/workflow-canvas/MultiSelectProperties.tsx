@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Users, AlertCircle, Save, RotateCcw } from "lucide-react";
@@ -70,15 +71,14 @@ export const MultiSelectProperties: React.FC<MultiSelectPropertiesProps> = ({
             </h3>
           </div>
           <div className="flex gap-2">
-            <Button
+            <DestructiveButton
               size="sm"
-              variant="outline"
               onClick={discardAllChanges}
               className="h-7 text-xs"
             >
               <RotateCcw className="w-3 h-3 mr-1" />
               Reset
-            </Button>
+            </DestructiveButton>
             <Button
               size="sm"
               onClick={saveAllChanges}

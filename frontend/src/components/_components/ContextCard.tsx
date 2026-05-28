@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -58,15 +59,14 @@ export function ContextCard({ context, onEdit, onDelete }: ContextCardProps) {
               >
                 <Pencil className="w-4 h-4" />
               </Button>
-              <Button
-                variant="ghost"
+              <DestructiveButton
                 size="sm"
                 className="h-8 w-8 p-0 text-text-muted hover:text-red-400"
                 onClick={() => onDelete(context)}
                 title="Delete Context"
               >
                 <Trash2 className="w-4 h-4" />
-              </Button>
+              </DestructiveButton>
             </div>
           </div>
 

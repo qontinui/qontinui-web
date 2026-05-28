@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Textarea } from "@/components/ui/textarea";
 import { Plus, Trash2, Eye } from "lucide-react";
 
@@ -78,14 +79,13 @@ export function ClaudeReviewEditor({
                 <Label className="text-xs text-text-muted">
                   Note {index + 1}
                 </Label>
-                <Button
-                  variant="ghost"
+                <DestructiveButton
                   size="sm"
                   onClick={() => deleteNote(index)}
                   className="h-6 w-6 p-0 text-text-muted hover:text-red-400 hover:bg-red-500/10"
                 >
                   <Trash2 className="w-3 h-3" />
-                </Button>
+                </DestructiveButton>
               </div>
               <Textarea
                 value={note}

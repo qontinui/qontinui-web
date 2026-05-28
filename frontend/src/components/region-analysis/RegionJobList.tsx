@@ -15,6 +15,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -285,6 +286,7 @@ export function RegionJobList({
                           <Eye className="h-4 w-4" />
                         </Button>
                         <Button
+                          /* eslint-disable-next-line @qontinui-web/no-unwrapped-destructive-handler -- opener; destructive action gated in the dialog's confirm button */
                           onClick={() => setJobToDelete(job.id)}
                           variant="ghost"
                           size="icon"
@@ -461,11 +463,10 @@ export function RegionJobList({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteJob}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Delete
+            <AlertDialogAction asChild>
+              <DestructiveButton onClick={handleDeleteJob}>
+                Delete
+              </DestructiveButton>
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -53,15 +53,14 @@ export function TransitionPropertiesPanel({
           <CardTitle className="text-sm font-medium text-brand-secondary">
             Transition Properties
           </CardTitle>
-          <Button
-            variant="ghost"
+          <DestructiveButton
             size="sm"
             className="h-8 w-8 p-0 text-red-400 hover:text-red-300 hover:bg-red-400/20"
             onClick={() => deleteTransition(transition.id)}
             title="Delete Transition"
           >
             <Trash2 className="w-4 h-4" />
-          </Button>
+          </DestructiveButton>
         </div>
       </CardHeader>
       <CardContent className="flex-1 space-y-4 overflow-y-auto p-6">

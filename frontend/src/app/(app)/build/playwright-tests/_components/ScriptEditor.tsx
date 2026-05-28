@@ -24,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Switch } from "@/components/ui/switch";
 import {
   Select,
@@ -131,14 +132,13 @@ export function ScriptEditor({
           >
             Restore Draft
           </Button>
-          <Button
-            variant="ghost"
+          <DestructiveButton
             size="sm"
             className="h-6 px-2 text-xs text-muted-foreground hover:text-muted-foreground"
             onClick={editor.handleDiscardDraft}
           >
             Discard
-          </Button>
+          </DestructiveButton>
         </div>
       )}
 
@@ -662,17 +662,18 @@ export function ScriptEditor({
             </p>
             <div className="flex gap-2 justify-end">
               <button
+                /* eslint-disable-next-line @qontinui-web/no-unwrapped-destructive-handler -- cancel button; closes the dialog without performing the destructive action */
                 onClick={() => editor.setDeleteDialogOpen(false)}
                 className="px-4 py-2 text-sm bg-muted border border-border rounded hover:bg-muted transition-colors"
               >
                 Cancel
               </button>
-              <button
+              <DestructiveButton
                 onClick={editor.handleDelete}
-                className="px-4 py-2 text-sm bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
+                className="px-4 py-2 text-sm"
               >
                 Delete
-              </button>
+              </DestructiveButton>
             </div>
           </div>
         </div>

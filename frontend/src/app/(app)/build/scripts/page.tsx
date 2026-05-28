@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import {
   Collapsible,
   CollapsibleContent,
@@ -334,8 +335,7 @@ function ScriptsBuilderPageContent() {
                 <Copy className="size-3.5" />
                 Duplicate
               </Button>
-              <Button
-                variant="outline"
+              <DestructiveButton
                 size="sm"
                 className="gap-1.5 text-red-400 hover:text-red-300 hover:border-red-500/40"
                 onClick={handleDeleteCurrent}
@@ -343,7 +343,7 @@ function ScriptsBuilderPageContent() {
               >
                 <Trash2 className="size-3.5" />
                 Delete
-              </Button>
+              </DestructiveButton>
               <Button
                 variant="brand-primary"
                 size="sm"

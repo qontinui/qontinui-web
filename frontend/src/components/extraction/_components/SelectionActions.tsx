@@ -2,6 +2,7 @@
 
 import { Copy, Scissors, Clipboard, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import {
   Tooltip,
   TooltipContent,
@@ -98,14 +99,13 @@ export function SelectionActions() {
       {selectedElementIds.length > 0 && (
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
+            <DestructiveButton
               size="sm"
               onClick={handleDeleteSelected}
               className="text-destructive hover:text-destructive"
             >
               <Trash2 className="h-4 w-4" />
-            </Button>
+            </DestructiveButton>
           </TooltipTrigger>
           <TooltipContent side="bottom">
             <p>Delete Selected (Del)</p>

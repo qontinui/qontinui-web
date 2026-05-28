@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import { History, Trash2, RotateCcw, Check } from "lucide-react";
@@ -131,15 +132,14 @@ export function VersionHistoryDialog({
                         {version.id === currentVersionId && (
                           <Check className="h-4 w-4 text-primary mr-2" />
                         )}
-                        <Button
-                          variant="ghost"
+                        <DestructiveButton
                           size="sm"
                           onClick={() => handleDelete(version.id)}
                           className="text-destructive hover:text-destructive"
                           title="Delete this version"
                         >
                           <Trash2 className="h-4 w-4" />
-                        </Button>
+                        </DestructiveButton>
                       </div>
                     </div>
                   </div>

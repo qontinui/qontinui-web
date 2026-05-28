@@ -31,6 +31,7 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
@@ -1016,8 +1017,7 @@ function GatesSection({
                     <TableCell>
                       {isOperatorApproval && g.verdict === "open" ? (
                         <div className="flex items-center gap-1">
-                          <Button
-                            variant="outline"
+                          <DestructiveButton
                             size="sm"
                             className="h-7 text-xs text-green-700 border-green-300 hover:bg-green-50"
                             disabled={actionInFlight === g.gate_id}
@@ -1026,7 +1026,7 @@ function GatesSection({
                           >
                             <CheckCircle className="mr-1 h-3 w-3" />
                             Approve
-                          </Button>
+                          </DestructiveButton>
                           <Button
                             variant="outline"
                             size="sm"

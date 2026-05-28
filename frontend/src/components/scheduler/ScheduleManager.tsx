@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import {
   Card,
   CardContent,
@@ -280,14 +281,13 @@ export function ScheduleManager() {
                             <Edit className="h-4 w-4 mr-2" />
                             Edit
                           </Button>
-                          <Button
+                          <DestructiveButton
                             size="sm"
-                            variant="outline"
                             onClick={() => handleDelete(schedule)}
                           >
                             <Trash2 className="h-4 w-4 mr-2" />
                             Delete
-                          </Button>
+                          </DestructiveButton>
                         </div>
                       </div>
                     </CardContent>

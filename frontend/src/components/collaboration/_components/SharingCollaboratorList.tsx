@@ -1,5 +1,5 @@
 import { Users, Building2, Trash2, Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Label } from "@/components/ui/label";
 import { Avatar } from "@/components/ui/avatar";
 import { SelectValue } from "@/components/ui/select";
@@ -84,8 +84,7 @@ export function SharingCollaboratorList({
                     <SelectValue />
                   </div>
                 </PermissionSelect>
-                <Button
-                  variant="ghost"
+                <DestructiveButton
                   size="icon"
                   onClick={() => onRevoke(collaborator.id, collaborator.name)}
                   disabled={isUpdating}
@@ -96,7 +95,7 @@ export function SharingCollaboratorList({
                   ) : (
                     <Trash2 className="h-4 w-4" />
                   )}
-                </Button>
+                </DestructiveButton>
               </div>
             </div>
           );

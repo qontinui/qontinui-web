@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Trash2 } from "lucide-react";
@@ -68,14 +68,13 @@ export function OCRAssertionEditor({
       {/* Header with delete button */}
       <div className="flex items-center justify-between">
         <Label className="text-sm text-text-secondary">OCR Assertion</Label>
-        <Button
-          variant="ghost"
+        <DestructiveButton
           size="sm"
           onClick={onDelete}
           className="h-8 w-8 p-0 text-text-muted hover:text-red-400 hover:bg-red-500/10"
         >
           <Trash2 className="w-4 h-4" />
-        </Button>
+        </DestructiveButton>
       </div>
 
       {/* Assertion Type */}

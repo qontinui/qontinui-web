@@ -2,6 +2,7 @@
 
 import { CheckCheck, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import {
   Tooltip,
   TooltipContent,
@@ -16,14 +17,13 @@ export function ReviewActions() {
     <div className="flex items-center gap-1">
       <Tooltip>
         <TooltipTrigger asChild>
-          <Button
-            variant="ghost"
+          <DestructiveButton
             size="sm"
             onClick={bulkApprove}
             className="text-green-600 hover:text-green-600"
           >
             <CheckCheck className="h-4 w-4" />
-          </Button>
+          </DestructiveButton>
         </TooltipTrigger>
         <TooltipContent side="bottom">
           <p>Approve Selected</p>
