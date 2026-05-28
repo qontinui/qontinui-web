@@ -62,6 +62,31 @@ def _disabled_response() -> JSONResponse:
     )
 
 
+def _proxy_response(status_code: int, body: Any) -> JSONResponse:
+    """Wrap a downstream StrategyClient ``(status, body)`` as the proxy response.
+
+    Every caller has already passed ``current_active_user``, so the human
+    session is valid. A downstream ``401`` therefore means our service-to-service
+    call to coord was not authenticated — an upstream/integration failure, NOT
+    the user's session. Surfacing it verbatim as a client ``401`` makes the web
+    frontend treat it as session expiry and tear the whole session down (the
+    ``mentions/unread`` poller did exactly this). Remap a downstream ``401`` to
+    ``502`` so an upstream auth failure can never masquerade as session expiry.
+
+    Everything else passes through unchanged, including ``403`` (a genuine
+    per-user authorization decision from coord that the client should see).
+    """
+    if status_code == 401:
+        return JSONResponse(
+            status_code=502,
+            content={
+                "error": "strategy upstream auth failure",
+                "upstream_status": 401,
+            },
+        )
+    return JSONResponse(status_code=status_code, content=body)
+
+
 # --- Phase 1 read-only -----------------------------------------------------
 
 
@@ -74,7 +99,7 @@ async def list_docs(
         status_code, body = await client.list_docs(str(user.id))
     except StrategyDisabledError:
         return _disabled_response()
-    return JSONResponse(status_code=status_code, content=body)
+    return _proxy_response(status_code, body)
 
 
 @router.get("/docs/{name}")
@@ -87,7 +112,7 @@ async def get_doc(
         status_code, body = await client.get_doc(str(user.id), name)
     except StrategyDisabledError:
         return _disabled_response()
-    return JSONResponse(status_code=status_code, content=body)
+    return _proxy_response(status_code, body)
 
 
 # --- Phase 2.3 collaboration proxies ---------------------------------------
@@ -103,7 +128,7 @@ async def list_threads(
         status_code, body = await client.list_threads(str(user.id), name)
     except StrategyDisabledError:
         return _disabled_response()
-    return JSONResponse(status_code=status_code, content=body)
+    return _proxy_response(status_code, body)
 
 
 @router.post("/docs/{name}/threads")
@@ -119,7 +144,7 @@ async def create_thread(
         )
     except StrategyDisabledError:
         return _disabled_response()
-    return JSONResponse(status_code=status_code, content=body)
+    return _proxy_response(status_code, body)
 
 
 @router.get("/threads/{thread_id}")
@@ -132,7 +157,7 @@ async def get_thread(
         status_code, body = await client.get_thread(str(user.id), thread_id)
     except StrategyDisabledError:
         return _disabled_response()
-    return JSONResponse(status_code=status_code, content=body)
+    return _proxy_response(status_code, body)
 
 
 @router.post("/threads/{thread_id}/posts")
@@ -148,7 +173,7 @@ async def create_post(
         )
     except StrategyDisabledError:
         return _disabled_response()
-    return JSONResponse(status_code=status_code, content=body)
+    return _proxy_response(status_code, body)
 
 
 @router.post("/threads/{thread_id}/resolve")
@@ -161,7 +186,7 @@ async def resolve_thread(
         status_code, body = await client.resolve_thread(str(user.id), thread_id)
     except StrategyDisabledError:
         return _disabled_response()
-    return JSONResponse(status_code=status_code, content=body)
+    return _proxy_response(status_code, body)
 
 
 @router.patch("/posts/{post_id}")
@@ -177,7 +202,7 @@ async def edit_post(
         )
     except StrategyDisabledError:
         return _disabled_response()
-    return JSONResponse(status_code=status_code, content=body)
+    return _proxy_response(status_code, body)
 
 
 @router.delete("/posts/{post_id}")
@@ -190,7 +215,7 @@ async def delete_post(
         status_code, body = await client.delete_post(str(user.id), post_id)
     except StrategyDisabledError:
         return _disabled_response()
-    return JSONResponse(status_code=status_code, content=body)
+    return _proxy_response(status_code, body)
 
 
 @router.get("/mentions/unread")
@@ -202,7 +227,7 @@ async def list_unread_mentions(
         status_code, body = await client.list_unread_mentions(str(user.id))
     except StrategyDisabledError:
         return _disabled_response()
-    return JSONResponse(status_code=status_code, content=body)
+    return _proxy_response(status_code, body)
 
 
 @router.post("/mentions/{mention_id}/mark-read")
@@ -215,7 +240,7 @@ async def mark_mention_read(
         status_code, body = await client.mark_mention_read(str(user.id), mention_id)
     except StrategyDisabledError:
         return _disabled_response()
-    return JSONResponse(status_code=status_code, content=body)
+    return _proxy_response(status_code, body)
 
 
 # Strategy Phase 2.5 — bulk mark-as-read for every mention the acting
@@ -232,7 +257,7 @@ async def mark_post_mentions_read(
         status_code, body = await client.mark_post_mentions_read(str(user.id), post_id)
     except StrategyDisabledError:
         return _disabled_response()
-    return JSONResponse(status_code=status_code, content=body)
+    return _proxy_response(status_code, body)
 
 
 # Strategy Phase 2.4 — presence heartbeat. Forwards to coord's
@@ -262,4 +287,4 @@ async def heartbeat(
             status_code=503,
             content={"error": "strategy feature not enabled"},
         )
-    return JSONResponse(status_code=status_code, content=body)
+    return _proxy_response(status_code, body)
