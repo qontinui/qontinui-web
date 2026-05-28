@@ -15,6 +15,7 @@ new ``runners`` table.
 
 import asyncio
 import json
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -77,7 +78,10 @@ from app.services.coord_device_status import (
     fetch_device_status,
     mint_device_status_token,
 )
-from app.services.coord_operator_resolver import resolve_tenant_for_user
+from app.services.coord_operator_resolver import (
+    resolve_tenant_for_user,
+    resolve_tenants_for_user,
+)
 from app.services.dev_dashboard_service import get_fleet_registry
 
 # Timeout for coord proxy reads. The merge queue is a small JSON payload
@@ -2299,15 +2303,29 @@ async def websocket_ci_status(
 async def list_coord_sessions(
     scope: str | None = Query(
         default=None,
-        description="`active` (default) | `all` — passthrough to coord.",
+        description="`active` (default) | `all` — session-state filter, "
+        "passthrough to coord. Orthogonal to `tenant_scope`.",
+    ),
+    tenant_scope: str | None = Query(
+        default=None,
+        description="`active` (default — caller's active tenant only) | "
+        "`all` (union across every tenant the caller is a member of). "
+        "Distinct axis from `scope`: this controls tenant breadth, "
+        "`scope` controls session-state breadth.",
     ),
     since: str | None = Query(
         default=None,
         description="RFC 3339 timestamp; only rows updated at-or-after are returned.",
     ),
-    tenant_id: UUID = Depends(get_tenant_id),
+    current_user: UserModel = Depends(get_current_active_user_async),
+    db: AsyncSession = Depends(get_async_db),
 ) -> Any:
-    """List active (default) or all sessions for the caller's tenant.
+    """List active (default) or all sessions across one or all tenants
+    the caller belongs to.
+
+    `scope` (session-state) and `tenant_scope` (tenant breadth) are
+    independent axes — see plan
+    `2026-05-28-cross-org-tenant-membership-and-session-filter-split.md`.
 
     Wire shape from coord::
 
@@ -2315,7 +2333,18 @@ async def list_coord_sessions(
 
     Where ``SessionRow`` matches ``qontinui-coord/src/sessions.rs::SessionRow``.
     """
-    params: dict[str, Any] = {"tenant_id": str(tenant_id)}
+    params: dict[str, Any] = {}
+    if tenant_scope == "all":
+        tenant_ids = await resolve_tenants_for_user(current_user, db)
+        # Membership is validated above; coord trusts the resolved
+        # set the same way it trusts the single tenant_id today
+        # (the route doesn't enforce the X-Qontinui-Tenant-Id header —
+        # see `qontinui-coord/src/sessions.rs::get_list`).
+        params["tenant_ids"] = ",".join(str(t) for t in tenant_ids)
+    else:
+        # Default + explicit `active`: single-tenant (caller's home).
+        tenant_id = await resolve_tenant_for_user(current_user, db)
+        params["tenant_id"] = str(tenant_id)
     if scope is not None:
         params["scope"] = scope
     if since is not None:
@@ -2482,6 +2511,27 @@ async def handoff_coord_session(
     )
 
 
+# Canonical claim kinds — mirrors ``qontinui-coord/src/claims.rs::ClaimKind``
+# (the ``as_str`` snake-case forms). coord's ``GET /coord/claims/list``
+# REQUIRES a ``kind`` query param and rejects a bare call with HTTP 400
+# ("missing field kind"); it also has no ``machine_id`` filter — it lists
+# every active holder of the given kind. So to surface "all locks held by
+# one device across kinds" we fan out one list call per kind and filter the
+# holders by ``machine_id`` here.
+_CLAIM_KINDS: tuple[str, ...] = (
+    "alembic_revision",
+    "branch_name",
+    "file_glob",
+    "phase",
+    "worktree",
+    "ci_wait",
+    "symbol",
+    "session",
+    "repo_branch",
+    "main_merge",
+)
+
+
 @router.get("/sessions/{session_id}/claims")
 async def get_session_claims(
     session_id: UUID,
@@ -2490,19 +2540,83 @@ async def get_session_claims(
     """Return active claims held by the device owning this session.
 
     Resolves the session's ``device_id`` from the sessions list, then
-    proxies ``GET /coord/claims/list?machine_id=<device_id>`` to return
-    all claim kinds for that device. The dashboard renders these as
-    "file locks" / coordination state on the session card and detail
-    views.
+    aggregates that device's active claims across every claim kind.
+
+    coord's ``GET /coord/claims/list`` (``claims_admin_routes.rs``)
+    REQUIRES a ``kind`` field (a bare call returns HTTP 400 "missing
+    field kind") and exposes no ``machine_id`` filter — it lists all
+    active holders of one kind. We therefore fan out one list call per
+    kind in :data:`_CLAIM_KINDS` (concurrently), keep the holders whose
+    ``machine_id`` matches this session's device, and normalize coord's
+    ``ClaimHolder`` rows into the ``{claims, count}`` envelope the
+    dashboard's "N files locked" badge + claim list consume
+    (``frontend/src/components/sessions/types.ts::SessionClaimsResponse``).
+
+    coord's per-holder shape is
+    ``{kind, resource_key, machine_id, ttl_seconds, status_text?,
+    blocked_on?}`` — no claim ``id`` / ``acquired_at`` / ``expires_at``.
+    We synthesize a stable ``id`` (``<kind>:<resource_key>``), derive
+    ``expires_at`` from ``ttl_seconds`` (now + ttl), and leave
+    ``acquired_at`` as the observation time (best-effort — the list
+    endpoint doesn't expose acquire time).
     """
     session = await _resolve_session_row(session_id, tenant_id)
     device_id = session.get("device_id")
     if not device_id:
         return {"claims": [], "count": 0}
-    return await _proxy_coord_get(
-        "/coord/claims/list",
-        params={"machine_id": str(device_id)},
+    device_str = str(device_id)
+
+    results = await asyncio.gather(
+        *(
+            _proxy_coord_get("/coord/claims/list", params={"kind": kind})
+            for kind in _CLAIM_KINDS
+        ),
+        return_exceptions=True,
     )
+
+    now = datetime.now(UTC)
+    now_iso = now.isoformat()
+    claims: list[dict[str, Any]] = []
+    for kind, result in zip(_CLAIM_KINDS, results, strict=True):
+        if isinstance(result, BaseException):
+            # A single kind failing (e.g. coord transient error) must not
+            # blank the whole badge — degrade to the kinds that answered.
+            logger.warning(
+                "session_claims_kind_fetch_failed",
+                session_id=str(session_id),
+                kind=kind,
+                error=str(result),
+            )
+            continue
+        holders = result.get("holders", []) if isinstance(result, dict) else []
+        for holder in holders:
+            if not isinstance(holder, dict):
+                continue
+            if str(holder.get("machine_id", "")) != device_str:
+                continue
+            resource_key = str(holder.get("resource_key", ""))
+            ttl_seconds = holder.get("ttl_seconds")
+            expires_at: str | None = None
+            if isinstance(ttl_seconds, (int, float)) and ttl_seconds > 0:
+                expires_at = (now + timedelta(seconds=ttl_seconds)).isoformat()
+            metadata: dict[str, Any] = {}
+            if holder.get("status_text") is not None:
+                metadata["status_text"] = holder["status_text"]
+            if holder.get("blocked_on") is not None:
+                metadata["blocked_on"] = holder["blocked_on"]
+            claims.append(
+                {
+                    "id": f"{kind}:{resource_key}",
+                    "kind": kind,
+                    "resource_key": resource_key,
+                    "machine_id": device_str,
+                    "acquired_at": now_iso,
+                    "expires_at": expires_at,
+                    "metadata": metadata,
+                }
+            )
+
+    return {"claims": claims, "count": len(claims)}
 
 
 @router.get("/sessions/{session_id}/agent-status")
@@ -2551,17 +2665,57 @@ async def list_user_tenants(
 ) -> dict[str, Any]:
     """Return the tenants the current operator belongs to.
 
-    Today the resolver yields a single tenant per user — see
-    ``coord_operator_resolver.resolve_tenant_for_user``. The endpoint
-    still returns a list so the frontend `TenantSwitcher` can render
-    the multi-tenant UX uniformly when the resolver grows wider
-    membership in Phase 7 / SSO.
+    Joins ``coord.operators`` → ``coord.operator_roles`` →
+    ``coord.tenants`` so an operator with rows in N tenants comes back
+    with N entries; single-tenant operators come back with one
+    (parity with the pre-multi-tenant behavior). The
+    ``active_tenant_id`` field is the operator's home tenant
+    (`coord.operators.tenant_id`) — the natural default for first-load
+    selection; the frontend persists subsequent switches in
+    localStorage (`tenant-context.tsx`).
 
     Wire shape::
 
         { "tenants": [ { "id": "<uuid>", "slug": "<str>", "name": "<str>" } ],
           "active_tenant_id": "<uuid>" }
     """
+    email = (current_user.email or "").strip().lower()
+    rows = (
+        await db.execute(
+            text(
+                """
+                SELECT DISTINCT t.tenant_id, t.slug, t.display_name, o.tenant_id AS home_tenant_id
+                FROM coord.operators o
+                JOIN coord.operator_roles r
+                  ON r.operator_id = o.operator_id
+                JOIN coord.tenants t
+                  ON t.tenant_id = r.tenant_id
+                WHERE LOWER(o.email) = :email
+                ORDER BY
+                    (t.tenant_id = o.tenant_id) DESC,
+                    t.slug ASC
+                """
+            ),
+            {"email": email},
+        )
+    ).fetchall()
+    if rows:
+        active_tenant_id = str(rows[0][3])
+        return {
+            "tenants": [
+                {
+                    "id": str(row[0]),
+                    "slug": str(row[1]) if row[1] is not None else "",
+                    "name": str(row[2]) if row[2] is not None else "",
+                }
+                for row in rows
+            ],
+            "active_tenant_id": active_tenant_id,
+        }
+
+    # Bootstrap fallback — preserve the pre-membership behavior for
+    # dev users on a fresh DB. Single-element list keyed on the
+    # personal-jspinak tenant.
     tenant_id = await resolve_tenant_for_user(current_user, db)
     row = (
         await db.execute(

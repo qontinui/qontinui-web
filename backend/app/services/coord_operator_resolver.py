@@ -117,3 +117,92 @@ async def resolve_tenant_for_user(user: User, db: AsyncSession) -> UUID:
         status_code=status.HTTP_403_FORBIDDEN,
         detail="tenant_not_resolved",
     )
+
+
+async def resolve_tenants_for_user(user: User, db: AsyncSession) -> list[UUID]:
+    """Resolve the given web user to the full set of coord tenants they
+    belong to.
+
+    Membership is defined as: "operator has ≥1 row in
+    ``coord.operator_roles`` for that tenant." This is the read-side of
+    the existing ``coord.operators`` ↔ ``coord.tenants`` join table
+    (alembic ``coord_sso_rbac.py:108-120``). The SSO first-login flow
+    (`coord/auth_sso.rs:325-338`) and the bootstrap migration
+    (`coord_tenant_scope_columns.py:120-134`) both seed a home-tenant
+    row, so single-tenant operators come back as a one-element list —
+    parity with `resolve_tenant_for_user`.
+
+    Returns the operator's home tenant first (the natural "active"
+    default) followed by the rest of their memberships in
+    deterministic (slug-asc) order.
+
+    Bootstrap fallback: when no operator row matches the user's email
+    (the pre-SSO single-user case), returns the personal-jspinak
+    tenant_id as a single-element list. Identical posture to
+    `resolve_tenant_for_user` — failing closed here would break the
+    /tenants endpoint for dev users on a fresh DB.
+
+    Raises 403 ``tenant_not_resolved`` if neither the email lookup nor
+    the bootstrap fallback yields anything.
+    """
+    email = (user.email or "").strip().lower()
+
+    # Email → operator → roles → tenants. Order by:
+    #   1) the operator's home tenant_id first (matches the
+    #      `active_tenant_id` the UI uses as default)
+    #   2) then by slug alphabetical for everyone else (stable wire
+    #      shape for the dashboard's tenant chip rendering).
+    rows = (
+        await db.execute(
+            text(
+                """
+                SELECT DISTINCT r.tenant_id, t.slug
+                FROM coord.operators o
+                JOIN coord.operator_roles r
+                  ON r.operator_id = o.operator_id
+                JOIN coord.tenants t
+                  ON t.tenant_id = r.tenant_id
+                WHERE LOWER(o.email) = :email
+                ORDER BY
+                    (r.tenant_id = o.tenant_id) DESC,
+                    t.slug ASC
+                """
+            ),
+            {"email": email},
+        )
+    ).fetchall()
+    if rows:
+        return [UUID(str(row[0])) for row in rows]
+
+    # Bootstrap fallback — same posture as resolve_tenant_for_user.
+    # The personal-jspinak tenant is the single-element membership set.
+    fallback = (
+        await db.execute(
+            text(
+                """
+                SELECT tenant_id
+                FROM coord.tenants
+                WHERE slug = :slug
+                LIMIT 1
+                """
+            ),
+            {"slug": PERSONAL_BOOTSTRAP_SLUG},
+        )
+    ).first()
+    if fallback is not None:
+        logger.info(
+            "tenants_resolved_via_bootstrap_fallback",
+            user_email=email,
+            slug=PERSONAL_BOOTSTRAP_SLUG,
+        )
+        return [UUID(str(fallback[0]))]
+
+    logger.warning(
+        "tenants_not_resolved",
+        user_email=email,
+        user_id=str(user.id),
+    )
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="tenant_not_resolved",
+    )
