@@ -80,12 +80,18 @@ def upgrade() -> None:
         )
         """
     )
+    # Partial-index predicate is ``enabled = true`` ONLY. Postgres rejects
+    # ``now()`` in an index predicate ("functions in index predicate must be
+    # marked IMMUTABLE"), and the not-expired filter
+    # (``expires_at IS NULL OR expires_at > now()``) is applied at query time
+    # in ``coord/src/policies/resolver.rs`` regardless, so it does not belong
+    # in the index. Kept in lockstep with the ``ensure_policy_tables``
+    # self-heal in ``policies/table.rs``.
     op.execute(
         """
         CREATE INDEX IF NOT EXISTS idx_policy_rules_tenant_active
             ON coord.policy_rules (tenant_id, enabled, kind)
             WHERE enabled = true
-              AND (expires_at IS NULL OR expires_at > now())
         """
     )
     op.execute(
