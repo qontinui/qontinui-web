@@ -1,0 +1,286 @@
+name: Verify Frontend Deploy
+
+# Post-deploy behavioral smoke for the qontinui-web FRONTEND + auto-rollback.
+#
+# The frontend has no GitHub Actions deploy workflow: it auto-deploys via
+# Vercel's Git integration (vercel.json `git.deploymentEnabled: true`). Vercel
+# emits a GitHub `deployment_status` event when a deploy reaches a terminal
+# state; for a successful PRODUCTION deploy that event carries the new prod URL
+# in `environment_url` and `environment: Production`. We hang a behavioral
+# smoke off that event — the frontend half of replacing the removed manual
+# deploy gate (the backend half is the behavioral smoke + circuit-breaker
+# rollback in deploy-web.yml).
+#
+# What the smoke checks: it drives a headless Chromium over the app's PUBLIC
+# routes on the freshly-deployed prod URL and asserts the SAME run-level
+# invariant Spec CI enforces — ZERO critical browser console errors and ZERO
+# same-origin HTTP-5xx responses — by importing the exact policy modules Spec
+# CI uses (frontend/tests/spec-ci/console-policy.ts +
+# server-error-policy.ts). It is NOT a re-implementation of the gate: the
+# classifier (`classifyConsole`) and the 5xx scope (`isSameOriginServerError`)
+# are reused verbatim.
+#
+# Why a public-route smoke and not `run-spec-ci.ts --base-url <prod>` directly:
+# run-spec-ci.ts DOES accept `--base-url`, but its structural spec lane needs
+# `window.__qontinuiSpecCi__` (a BUILD-TIME surface gated by
+# NEXT_PUBLIC_ENABLE_SPEC_CI, ABSENT from the production bundle) and a
+# same-origin /api auth proxy + a shared ci-bot login. Against the real prod
+# bundle every spec would error and the authed crawl would session-lose,
+# producing a guaranteed false-red. So we reuse run-spec-ci.ts's CONTRACT (the
+# console + 5xx policy modules + its exit-code convention: 0 = clean, 1 =
+# finding) over the unauthenticated public surface, which renders without that
+# build-time hook or a login. The public route list is the authoritative
+# allow-list from frontend/src/middleware.ts (PUBLIC_PATHS + PUBLIC_PREFIXES).
+#
+# Auto-rollback: on a GENUINE smoke failure (the crawl found a console error or
+# a same-origin 5xx) we re-point the Production alias to the prior READY
+# Production deployment via `vercel promote`. A HARNESS error (no token,
+# couldn't find a prior deployment, couldn't reach the Vercel API) fails the
+# job WITHOUT rolling back — we never roll back a possibly-fine deploy because
+# our own tooling broke.
+
+on:
+  deployment_status
+
+# One verify per prod URL. Cancel-in-progress is OFF: a rollback mid-flight
+# (promote requested, alias re-point not yet settled) must not be interrupted.
+concurrency:
+  group: verify-frontend-deploy-${{ github.event.deployment_status.environment_url }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Smoke new prod frontend + auto-rollback
+    runs-on: ubuntu-latest
+    # Only run after a SUCCESSFUL Vercel PRODUCTION deploy. Vercel reports the
+    # environment as either "Production" or "production" depending on the
+    # integration version, so we accept both.
+    if: >-
+      github.event.deployment_status.state == 'success' &&
+      (github.event.deployment_status.environment == 'Production' ||
+       github.event.deployment_status.environment == 'production')
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      deployments: read
+
+    env:
+      # The new prod URL Vercel just deployed (the smoke target). target_url is
+      # the historical field name; environment_url is the current one — prefer
+      # environment_url, fall back to target_url.
+      NEW_PROD_URL: ${{ github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
+      # SSM (the autonomous-work vault) lives in eu-central-1, separate from any
+      # deploy region. Used only IF a Vercel-token param is provisioned there.
+      SSM_REGION: eu-central-1
+
+    steps:
+      - name: Check out qontinui-web
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      # AWS creds are reused from the same secrets deploy-web.yml uses, so the
+      # Vercel token CAN come from SSM (eu-central-1) — consistent with the
+      # backend, no extra GH secret — IF such a param is provisioned. The
+      # resolve-token step below probes SSM first, then falls back to
+      # secrets.VERCEL_TOKEN. Configuring creds is harmless if SSM has no token.
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.SSM_REGION }}
+
+      # Resolve the Vercel token. PREFERENCE ORDER:
+      #   1. SSM SecureString /qontinui/vercel/token (eu-central-1) — the
+      #      autonomous-work vault, consistent with the backend smoke's
+      #      SSM-sourced creds. As of authoring NO such param exists (the
+      #      /qontinui/ inventory has operator*, spec-ci/auth-*, ui-bridge,
+      #      upstash, web/device-bridge-redis-url — no vercel/*), so this branch
+      #      is dormant until the operator provisions it.
+      #   2. secrets.VERCEL_TOKEN — the fallback the operator must provision
+      #      until/unless the SSM param is created.
+      # A missing token is a HARNESS error (token_missing=1) handled by the
+      # smoke gate below — NOT a smoke failure, so it never triggers a rollback.
+      # The token is written to GITHUB_ENV (masked) and never echoed.
+      - name: Resolve Vercel token
+        id: token
+        run: |
+          set -uo pipefail
+          TOKEN=""
+          # Try SSM first (best-effort; a ParameterNotFound / AccessDenied is
+          # not fatal here — we fall through to the GH secret).
+          if SSM_VAL=$(aws ssm get-parameter \
+                --name /qontinui/vercel/token \
+                --with-decryption --region "${SSM_REGION}" \
+                --query Parameter.Value --output text 2>/dev/null); then
+            if [ -n "$SSM_VAL" ] && [ "$SSM_VAL" != "None" ]; then
+              TOKEN="$SSM_VAL"
+              echo "Vercel token source: SSM /qontinui/vercel/token"
+            fi
+          fi
+          # Fall back to the GH secret.
+          if [ -z "$TOKEN" ]; then
+            TOKEN="${{ secrets.VERCEL_TOKEN }}"
+            if [ -n "$TOKEN" ]; then
+              echo "Vercel token source: secrets.VERCEL_TOKEN"
+            fi
+          fi
+          if [ -z "$TOKEN" ]; then
+            echo "::warning::No Vercel token found (neither SSM /qontinui/vercel/token nor secrets.VERCEL_TOKEN). The smoke will run but rollback is impossible — provision one."
+            echo "token_missing=1" >> "$GITHUB_OUTPUT"
+          else
+            # Mask + export without printing the value.
+            echo "::add-mask::$TOKEN"
+            echo "VERCEL_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+            echo "token_missing=0" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Capture the PRIOR READY Production deployment (the last-known-good
+      # rollback target) BEFORE smoking, so it reflects the deploy that was live
+      # immediately before this one. `vercel ls --prod` lists production
+      # deployments newest-first; the just-deployed one is index 0 (matches
+      # NEW_PROD_URL), the prior READY one is the rollback target.
+      #
+      # This is HARNESS work: if no token, or the API can't be reached, or no
+      # prior READY deployment exists (e.g. the very first prod deploy), we
+      # record prior_found=0. The smoke still runs (a broken frontend should
+      # still fail loudly), but the rollback step is skipped — failing the job
+      # WITHOUT rolling back, since there is nothing safe to roll back to.
+      - name: Capture prior Production deployment (rollback target)
+        id: prior
+        if: steps.token.outputs.token_missing == '0'
+        run: |
+          set -uo pipefail
+          # `npx --yes` auto-installs vercel@latest without an interactive
+          # prompt. `vercel ls --prod` prints production deployments newest-first;
+          # we parse the *.vercel.app deployment URLs from the listing.
+          if ! npx --yes vercel@latest ls --prod --token="$VERCEL_TOKEN" > vercel_ls.txt 2>vercel_ls.err; then
+            echo "::warning::could not list Vercel production deployments (harness):"
+            sed -e 's/[A-Za-z0-9._-]*'"$VERCEL_TOKEN"'[A-Za-z0-9._-]*/[redacted]/g' vercel_ls.err || true
+            echo "prior_found=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Extract production deployment URLs, newest-first. The CLI's human
+          # table prints the deployment URL in column 1; we keep only lines that
+          # name a *.vercel.app deployment URL, preserving newest-first order.
+          grep -oE 'https://[A-Za-z0-9.-]+\.vercel\.app[^[:space:]]*' vercel_ls.txt > urls.txt || true
+          # The freshly-deployed URL is the newest (first line of urls.txt); the
+          # PRIOR (rollback target) is the next distinct deployment URL below it.
+          # We skip by POSITION (line 0 = the deploy we just made) rather than by
+          # string-matching NEW_PROD_URL, because NEW_PROD_URL may be a custom
+          # domain alias rather than the *.vercel.app deployment URL the listing
+          # prints — a string match would then never find index 0.
+          PRIOR=""
+          while IFS= read -r u; do
+            u="${u%/}"
+            [ -z "$u" ] && continue
+            # Skip the just-deployed URL (and the alias form, if NEW_PROD_URL is
+            # a custom domain rather than the *.vercel.app deployment URL the
+            # very-newest line will simply be the new deploy → skip index 0).
+            if [ -z "$PRIOR" ]; then
+              # First line = newest = the deploy we just made. Skip it.
+              PRIOR="__skip__"
+              continue
+            fi
+            if [ "$PRIOR" = "__skip__" ]; then
+              PRIOR="$u"
+              break
+            fi
+          done < urls.txt
+          if [ -z "$PRIOR" ] || [ "$PRIOR" = "__skip__" ]; then
+            echo "::warning::no prior READY Production deployment found — cannot auto-rollback (first prod deploy?)."
+            echo "prior_found=0" >> "$GITHUB_OUTPUT"
+          else
+            echo "Prior (last-known-good) Production deployment = $PRIOR"
+            echo "prior_deployment=$PRIOR" >> "$GITHUB_OUTPUT"
+            echo "prior_found=1" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install frontend deps
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        working-directory: ./frontend
+        run: npx playwright install --with-deps chromium
+
+      # The behavioral smoke runs the committed
+      # frontend/tests/spec-ci/verify-deploy-smoke.ts — it imports the SAME
+      # policy modules run-spec-ci.ts uses (./console-policy,
+      # ./server-error-policy), reusing the gate contract verbatim, and drives
+      # Chromium over the public routes on NEW_PROD_URL.
+      #
+      # Exit-code contract for THIS step (read by the gate + rollback steps):
+      #   0  -> smoke clean
+      #   1  -> GENUINE smoke failure (console error / same-origin 5xx found)
+      #   2  -> HARNESS error (couldn't reach the new prod URL at all / launch
+      #         failure). A harness error must NOT roll back.
+      - name: Post-deploy behavioral smoke (public routes)
+        id: smoke
+        working-directory: ./frontend
+        env:
+          NEW_PROD_URL: ${{ env.NEW_PROD_URL }}
+        run: |
+          set -uo pipefail
+          if [ -z "${NEW_PROD_URL:-}" ]; then
+            echo "::error::deployment_status carried no environment_url/target_url — nothing to smoke (harness)."
+            exit 2
+          fi
+          echo "Smoking new prod frontend: $NEW_PROD_URL"
+          set +e
+          npx tsx tests/spec-ci/verify-deploy-smoke.ts
+          rc=$?
+          set -e
+          echo "smoke exit code: $rc"
+          if [ "$rc" = "2" ]; then
+            echo "::error::frontend post-deploy smoke could not run (harness error) — NOT rolling back."
+            echo "harness_error=1" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          exit "$rc"
+
+      # Auto-rollback — fires ONLY when:
+      #   * the smoke step itself concluded 'failure' (a genuine behavioral
+      #     finding: console error / same-origin 5xx), AND
+      #   * it was NOT a harness error (harness_error != 1), AND
+      #   * a token is present and a prior READY deployment was captured.
+      # A build/install/harness failure leaves the new deploy live and this step
+      # correctly skips (failing the job without a rollback). Re-points the
+      # Production alias to the last-known-good deployment via `vercel promote`.
+      - name: Auto-rollback on behavioral smoke failure
+        if: >-
+          failure() &&
+          steps.smoke.conclusion == 'failure' &&
+          steps.smoke.outputs.harness_error != '1' &&
+          steps.token.outputs.token_missing == '0' &&
+          steps.prior.outputs.prior_found == '1'
+        run: |
+          set -uo pipefail
+          PRIOR="${{ steps.prior.outputs.prior_deployment }}"
+          if [ -z "$PRIOR" ]; then
+            echo "::error::behavioral smoke failed but no prior deployment was captured; cannot auto-rollback. Investigate the production frontend manually."
+            exit 1
+          fi
+          echo "Behavioral smoke failed — rolling back Production alias to last-known-good: $PRIOR"
+          npx --yes vercel@latest promote "$PRIOR" --token="$VERCEL_TOKEN"
+          echo "::error::frontend post-deploy smoke failed; rolled back to $PRIOR"
+          exit 1
+
+      # If the smoke failed behaviorally but we could NOT roll back (no token or
+      # no prior deployment), say so loudly — the bad deploy is still live.
+      - name: Flag un-rollable behavioral failure
+        if: >-
+          failure() &&
+          steps.smoke.conclusion == 'failure' &&
+          steps.smoke.outputs.harness_error != '1' &&
+          (steps.token.outputs.token_missing == '1' ||
+           steps.prior.outputs.prior_found != '1')
+        run: |
+          echo "::error::frontend post-deploy smoke FAILED but auto-rollback was not possible (token_missing=${{ steps.token.outputs.token_missing }}, prior_found=${{ steps.prior.outputs.prior_found }}). The bad deploy is STILL LIVE — roll back manually with: vercel promote <prior-deployment> --token=<token> --yes"
+          exit 1
