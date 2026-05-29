@@ -1,7 +1,7 @@
 """coord.gates — migrate single-authored Rust self-heal to alembic
 
 Revision ID: coord_singleauthored_01_gates
-Revises: decision_engine_phase1_kind_nullable
+Revises: decision_engine_phase3
 Create Date: 2026-05-29
 
 First of the chain that drains the `coord_schema_authorship.rs` allowlist to
@@ -26,7 +26,7 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "coord_singleauthored_01_gates"
-down_revision: str | Sequence[str] | None = "decision_engine_phase1_kind_nullable"
+down_revision: str | Sequence[str] | None = "decision_engine_phase3"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
