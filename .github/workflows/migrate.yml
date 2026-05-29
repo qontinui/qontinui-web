@@ -17,6 +17,15 @@ name: Apply Migrations to RDS
 # Memory: proj_staging_pg_schema_drift_2026-05-22 — the manual-only model
 # this workflow replaces silently broke /coord/status + the multi-tenant
 # audit INSERT path. Auto-deploy of migrations is the documented fix.
+#
+# FORWARD-ONLY — NOT covered by deploy auto-rollback. The post-deploy
+# auto-rollback in deploy-web.yml (and verify-frontend-deploy.yml) reverts the
+# APPLICATION (ECS task-def / Vercel alias) to a prior revision, but it does
+# NOT and MUST NOT revert the schema: alembic downgrades are not data-safe
+# (dropped columns/tables lose data). Treat migrations as forward-only —
+# additive + backward-compatible with the currently-live app so a rolled-back
+# app keeps working against the new schema — and fix forward, never auto-revert
+# a migration. (Do not add a naive `alembic downgrade` rollback step here.)
 
 on:
   push:

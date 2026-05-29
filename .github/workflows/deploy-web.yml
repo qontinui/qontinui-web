@@ -52,7 +52,13 @@ env:
   ECS_SERVICE: web
   ECS_CONTAINER: web
   ECS_TASK_FAMILY: qontinui-staging-web
+  API_BASE: https://api.qontinui.io/api/v1
   HEALTH_URL: https://api.qontinui.io/api/v1/health
+  # The behavioral smoke reads CI-bot creds from SSM SecureString. Those
+  # parameters live in eu-central-1 (the autonomous-work vault), NOT the
+  # us-east-1 deploy region, so the get-parameter calls pass this region
+  # explicitly rather than ${AWS_REGION}.
+  SSM_REGION: eu-central-1
 
 jobs:
   deploy:
@@ -116,6 +122,26 @@ jobs:
         run: |
           docker push "${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:${GITHUB_SHA}"
           docker push "${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:staging"
+
+      # Record the currently-live task-def BEFORE we point the service at the
+      # new revision. This is the deterministic last-known-good rollback target
+      # for the behavioral auto-rollback step below — the ECS circuit breaker
+      # only covers boot crashes, not the "boots fine but is behaviorally broken"
+      # class this captures. Must run before update-service so it reflects the
+      # PRIOR image, not the one we are about to deploy.
+      - name: Capture prior (last-known-good) task-def
+        id: prior
+        run: |
+          PRIOR_TD=$(aws ecs describe-services \
+            --cluster "${ECS_CLUSTER}" --services "${ECS_SERVICE}" \
+            --region "${AWS_REGION}" \
+            --query 'services[0].taskDefinition' --output text)
+          if [ -z "$PRIOR_TD" ] || [ "$PRIOR_TD" = "None" ]; then
+            echo "::error::could not resolve the currently-live task-def for ${ECS_SERVICE}"
+            exit 1
+          fi
+          echo "prior_td=$PRIOR_TD" >> "$GITHUB_OUTPUT"
+          echo "Last-known-good task-def = $PRIOR_TD"
 
       # Register a new immutable task-def revision pinned to the commit SHA
       # image (not :staging) so each deploy is a distinct, traceable revision
@@ -189,13 +215,169 @@ jobs:
             exit 1
           fi
 
-      - name: Smoke health endpoint
+      # Behavioral post-deploy smoke (replaces the old shallow liveness curl).
+      # The ECS circuit breaker already covers boot crashes; this is the
+      # BEHAVIORAL layer it can't see — a process that boots green but serves
+      # 5xx for routing/auth, or whose DB-backed readiness never recovers. On
+      # FAILURE the next step auto-rolls-back to the prior task-def.
+      #
+      # Rate-limit awareness: POST /auth/jwt/login is limited to 5/min keyed by
+      # source IP (and behind Vercel/ALB all CI traffic shares an IP pool). So:
+      #   * The unauthenticated readiness/middleware checks run FIRST and absorb
+      #     the post-deploy settle time, so by the time we attempt logins the
+      #     service is already confirmed responsive (few login attempts needed).
+      #   * 429 from login means "app is up, just throttled" — it is treated as
+      #     a transient retry, NOT a smoke failure. Only 5xx / connection
+      #     failure / an unexpected status is a failure.
+      #   * Each distinct login (bogus + valid) is attempted at most twice to
+      #     stay well under the 5/min bucket.
+      - name: Post-deploy behavioral smoke
+        id: smoke
         run: |
-          for i in 1 2 3 4 5; do
-            CODE=$(curl -s -o /dev/null -w '%{http_code}' "${HEALTH_URL}" || echo 000)
-            echo "attempt $i: ${HEALTH_URL} -> $CODE"
-            [ "$CODE" = "200" ] && exit 0
-            sleep 10
+          set -uo pipefail
+
+          # GET retry: succeeds when the endpoint returns $expect within the
+          # 5x10s window. A 5xx or connection failure (000) is retried; an
+          # unexpected non-5xx status fails fast (it will not self-heal).
+          # Echoes the body of the final attempt on failure for debugging.
+          expect_get() {
+            local url="$1" expect="$2" auth="${3:-}"
+            local code
+            for i in 1 2 3 4 5; do
+              if [ -n "$auth" ]; then
+                code=$(curl -s -o /tmp/smoke_body -w '%{http_code}' \
+                  -H "Authorization: Bearer $auth" "$url") || code=000
+              else
+                code=$(curl -s -o /tmp/smoke_body -w '%{http_code}' "$url") || code=000
+              fi
+              echo "  attempt $i: GET $url -> $code (want $expect)"
+              if [ "$code" = "$expect" ]; then return 0; fi
+              # Retry transient conditions; fail fast on a settled wrong answer.
+              if [ "$code" = "000" ] || [ "${code:0:1}" = "5" ]; then
+                sleep 10; continue
+              fi
+              echo "::error::GET $url returned $code, expected $expect"
+              head -c 500 /tmp/smoke_body || true; echo
+              return 1
+            done
+            echo "::error::GET $url never returned $expect (last=$code)"
+            head -c 500 /tmp/smoke_body || true; echo
+            return 1
+          }
+
+          API="${API_BASE}"
+
+          echo "== 1. Readiness + liveness (DB-backed) =="
+          expect_get "${API}/health/ready" 200 || exit 1
+          expect_get "${API}/health" 200 || exit 1
+
+          echo "== 2. Auth middleware up (must not 5xx) =="
+          # Protected route with no credentials must answer 401, not 5xx.
+          expect_get "${API}/auth/users/me" 401 || exit 1
+
+          # Bogus-creds login must answer 401 (routing + auth pipeline alive).
+          # 429 (rate-limited) and 5xx/000 are transient; 401 is the pass.
+          bogus_ok=""
+          for i in 1 2; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' \
+              -X POST "${API}/auth/jwt/login" \
+              -H 'Content-Type: application/x-www-form-urlencoded' \
+              --data-urlencode 'username=ci-smoke-nobody@qontinui.invalid' \
+              --data-urlencode 'password=definitely-not-the-password' || echo 000)
+            echo "  attempt $i: POST /auth/jwt/login (bogus) -> $code (want 401)"
+            if [ "$code" = "401" ]; then bogus_ok=1; break; fi
+            if [ "$code" = "429" ] || [ "$code" = "000" ] || [ "${code:0:1}" = "5" ]; then
+              sleep 10; continue
+            fi
+            echo "::error::bogus login returned $code, expected 401"
+            exit 1
           done
-          echo "::error::health endpoint never returned 200"
+          if [ -z "$bogus_ok" ]; then
+            echo "::error::bogus login never returned 401"
+            exit 1
+          fi
+
+          echo "== 3. Authenticated critical path =="
+          # Read CI-bot creds from SSM (eu-central-1). Never echoed; piped
+          # straight into the form POST below.
+          CI_EMAIL=$(aws ssm get-parameter --name /qontinui/spec-ci/auth-email \
+            --with-decryption --region "${SSM_REGION}" \
+            --query Parameter.Value --output text)
+          CI_PASSWORD=$(aws ssm get-parameter --name /qontinui/spec-ci/auth-password \
+            --with-decryption --region "${SSM_REGION}" \
+            --query Parameter.Value --output text)
+          if [ -z "$CI_EMAIL" ] || [ "$CI_EMAIL" = "None" ] || \
+             [ -z "$CI_PASSWORD" ] || [ "$CI_PASSWORD" = "None" ]; then
+            # Harness/permissions gap, NOT a behavioral failure. Skipping the
+            # authed probe degrades the smoke to its health+routing gate (which
+            # already passed) rather than failing — a missing IAM grant must
+            # never trigger a rollback of a likely-fine deploy. Grant the deploy
+            # IAM principal ssm:GetParameter + kms:Decrypt on
+            # /qontinui/spec-ci/auth-* in ${SSM_REGION} to enable the full
+            # authenticated smoke.
+            echo "::warning::could not read CI-bot creds from SSM (${SSM_REGION}); skipping the authenticated probe (health + routing checks passed). NOT rolling back — a creds/harness gap is not a behavioral failure."
+            exit 0
+          fi
+
+          # Real login -> 200 + access_token. Up to 2 attempts; 429/5xx/000
+          # are transient (the app is up, possibly throttled), anything else
+          # non-200 is a hard failure. The secret never hits stdout.
+          TOKEN=""
+          for i in 1 2; do
+            code=$(curl -s -o /tmp/login_body -w '%{http_code}' \
+              -X POST "${API}/auth/jwt/login" \
+              -H 'Content-Type: application/x-www-form-urlencoded' \
+              --data-urlencode "username=${CI_EMAIL}" \
+              --data-urlencode "password=${CI_PASSWORD}" || echo 000)
+            echo "  attempt $i: POST /auth/jwt/login (valid) -> $code (want 200)"
+            if [ "$code" = "200" ]; then
+              TOKEN=$(python3 -c 'import json,sys; print(json.load(open("/tmp/login_body")).get("access_token",""))' 2>/dev/null || echo "")
+              break
+            fi
+            if [ "$code" = "429" ] || [ "$code" = "000" ] || [ "${code:0:1}" = "5" ]; then
+              sleep 12; continue
+            fi
+            echo "::error::CI-bot login returned $code, expected 200"
+            exit 1
+          done
+          if [ -z "$TOKEN" ]; then
+            echo "::error::CI-bot login did not yield an access_token"
+            exit 1
+          fi
+          echo "  login OK; access token obtained"
+
+          # Two representative authenticated reads with the bearer:
+          #   /auth/users/me -> 200  (identity + coord-tenant resolution path)
+          #   /projects      -> 200  (DB-backed list; empty list is a valid 200)
+          expect_get "${API}/auth/users/me" 200 "$TOKEN" || exit 1
+          expect_get "${API}/projects" 200 "$TOKEN" || exit 1
+
+          echo "Post-deploy behavioral smoke PASSED."
+
+      # Behavioral auto-rollback. Fires ONLY when the smoke step itself failed
+      # (steps.smoke.conclusion == 'failure'), which by construction can only
+      # happen after the new revision is live (it runs after wait-stable +
+      # verify-rollout). An earlier build/register/update failure leaves
+      # PRIOR_TD still serving, so this step is correctly skipped then. Re-points
+      # the service at the deterministic last-known-good task-def, waits for it
+      # to stabilize, and fails the job loudly.
+      - name: Auto-rollback on behavioral smoke failure
+        if: ${{ failure() && steps.smoke.conclusion == 'failure' }}
+        run: |
+          PRIOR_TD="${{ steps.prior.outputs.prior_td }}"
+          if [ -z "$PRIOR_TD" ] || [ "$PRIOR_TD" = "None" ]; then
+            echo "::error::behavioral smoke failed but no prior task-def was captured; cannot auto-rollback. Investigate ${ECS_SERVICE} manually."
+            exit 1
+          fi
+          echo "Behavioral smoke failed — rolling back ${ECS_SERVICE} to last-known-good: $PRIOR_TD"
+          aws ecs update-service \
+            --cluster "${ECS_CLUSTER}" \
+            --service "${ECS_SERVICE}" \
+            --task-definition "$PRIOR_TD" \
+            --region "${AWS_REGION}" >/dev/null
+          aws ecs wait services-stable \
+            --cluster "${ECS_CLUSTER}" \
+            --services "${ECS_SERVICE}" \
+            --region "${AWS_REGION}"
+          echo "::error::post-deploy smoke failed; rolled back to $PRIOR_TD"
           exit 1
