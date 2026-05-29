@@ -32,12 +32,22 @@ name: Verify Frontend Deploy
 # build-time hook or a login. The public route list is the authoritative
 # allow-list from frontend/src/middleware.ts (PUBLIC_PATHS + PUBLIC_PREFIXES).
 #
-# Auto-rollback: on a GENUINE smoke failure (the crawl found a console error or
-# a same-origin 5xx) we re-point the Production alias to the prior READY
-# Production deployment via `vercel promote`. A HARNESS error (no token,
-# couldn't find a prior deployment, couldn't reach the Vercel API) fails the
-# job WITHOUT rolling back — we never roll back a possibly-fine deploy because
-# our own tooling broke.
+# A SECOND, deeper smoke runs AFTER the public-route smoke: the AUTHED smoke
+# (verify-deploy-authed-smoke.ts). It logs in as ci-bot via the prod API,
+# seeds the Bearer/sessionStorage auth surface the app actually boots from,
+# and crawls the AUTHENTICATED routes asserting per-route landmarks + no
+# bounce to /login. This catches authed regressions (e.g. a session teardown)
+# that the public crawl structurally cannot see. A missing ci-bot credential
+# is a HARNESS/SKIP condition (never a rollback). See the step docs below.
+#
+# Auto-rollback: on a GENUINE smoke failure (EITHER the public-route smoke OR
+# the authed smoke found a console error, a same-origin 5xx, a bounce to
+# /login, or a missing authed landmark) we re-point the Production alias to the
+# prior READY Production deployment via `vercel promote`. A HARNESS error (no
+# token, couldn't find a prior deployment, couldn't reach the Vercel API, or
+# the authed smoke could not obtain ci-bot creds) fails/skips WITHOUT rolling
+# back — we never roll back a possibly-fine deploy because our own tooling or a
+# missing credential broke.
 
 on:
   deployment_status
@@ -69,8 +79,13 @@ jobs:
       # the historical field name; environment_url is the current one — prefer
       # environment_url, fall back to target_url.
       NEW_PROD_URL: ${{ github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
+      # The production backend API base the authed smoke logs ci-bot into. The
+      # prod frontend talks to api.qontinui.io; overridable via repo/env config
+      # if the API host ever moves.
+      PROD_API_BASE: https://api.qontinui.io
       # SSM (the autonomous-work vault) lives in eu-central-1, separate from any
-      # deploy region. Used only IF a Vercel-token param is provisioned there.
+      # deploy region. Used IF a Vercel-token param is provisioned there, and
+      # for the ci-bot creds the authed smoke reads (/qontinui/spec-ci/auth-*).
       SSM_REGION: eu-central-1
 
     steps:
@@ -245,19 +260,100 @@ jobs:
           fi
           exit "$rc"
 
-      # Auto-rollback — fires ONLY when:
-      #   * the smoke step itself concluded 'failure' (a genuine behavioral
-      #     finding: console error / same-origin 5xx), AND
-      #   * it was NOT a harness error (harness_error != 1), AND
-      #   * a token is present and a prior READY deployment was captured.
-      # A build/install/harness failure leaves the new deploy live and this step
-      # correctly skips (failing the job without a rollback). Re-points the
-      # Production alias to the last-known-good deployment via `vercel promote`.
+      # The DEEP authed smoke runs the committed
+      # frontend/tests/spec-ci/verify-deploy-authed-smoke.ts. It reads the
+      # shared ci-bot credentials from SSM (/qontinui/spec-ci/auth-email +
+      # auth-password, eu-central-1 — the same creds Spec CI's login harness
+      # uses), logs in against PROD_API_BASE, seeds the Bearer/sessionStorage
+      # auth surface the app boots from, and crawls the AUTHENTICATED routes
+      # asserting per-route landmarks + no /login bounce. This catches authed
+      # regressions the public crawl structurally cannot (e.g. a session
+      # teardown).
+      #
+      # Exit-code contract for the SCRIPT (verify-deploy-authed-smoke.ts):
+      #   0  -> all authed routes stayed authed + landmarks present + clean
+      #   1  -> GENUINE finding (bounce to /login, missing landmark, console
+      #         error, or same-origin 5xx) — eligible for rollback.
+      #   2  -> HARNESS (no env/creds, login failed, or could not reach ANY
+      #         authed route). A harness error must NOT roll back.
+      #
+      # This step itself:
+      #   * If the SSM creds read fails -> ::warning:: + authed_skipped=1, exit 0
+      #     (a creds/harness gap is NOT a deploy failure — never roll back).
+      #   * rc==2 -> ::error:: + authed_harness=1 + exit 1 (no rollback).
+      #   * else  -> exit $rc (0 clean, 1 = genuine finding -> rollback gate).
+      # Creds are exported to the script's env and NEVER echoed.
+      - name: Post-deploy authed smoke
+        id: authed_smoke
+        working-directory: ./frontend
+        env:
+          NEW_PROD_URL: ${{ env.NEW_PROD_URL }}
+          PROD_API_BASE: ${{ env.PROD_API_BASE }}
+          SSM_REGION: ${{ env.SSM_REGION }}
+        run: |
+          set -uo pipefail
+          if [ -z "${NEW_PROD_URL:-}" ]; then
+            echo "::error::deployment_status carried no environment_url/target_url — nothing to authed-smoke (harness)."
+            echo "authed_harness=1" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          # Read the shared ci-bot creds from SSM (best-effort). A read failure
+          # is a creds/harness GAP, not a deploy regression — skip without
+          # rolling back.
+          set +e
+          AUTH_EMAIL=$(aws ssm get-parameter --name /qontinui/spec-ci/auth-email \
+            --with-decryption --region "${SSM_REGION}" \
+            --query Parameter.Value --output text 2>/dev/null)
+          email_rc=$?
+          AUTH_PASSWORD=$(aws ssm get-parameter --name /qontinui/spec-ci/auth-password \
+            --with-decryption --region "${SSM_REGION}" \
+            --query Parameter.Value --output text 2>/dev/null)
+          pw_rc=$?
+          set -e
+          if [ "$email_rc" != "0" ] || [ "$pw_rc" != "0" ] \
+             || [ -z "$AUTH_EMAIL" ] || [ "$AUTH_EMAIL" = "None" ] \
+             || [ -z "$AUTH_PASSWORD" ] || [ "$AUTH_PASSWORD" = "None" ]; then
+            echo "::warning::could not read ci-bot creds from SSM (/qontinui/spec-ci/auth-email|auth-password) — skipping the authed smoke. This is a creds/harness gap, NOT a deploy failure; not rolling back."
+            echo "authed_skipped=1" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Mask so a script error can never leak them into the log.
+          echo "::add-mask::$AUTH_EMAIL"
+          echo "::add-mask::$AUTH_PASSWORD"
+          export QONTINUI_TEST_AUTO_LOGIN_EMAIL="$AUTH_EMAIL"
+          export QONTINUI_TEST_AUTO_LOGIN_PASSWORD="$AUTH_PASSWORD"
+          echo "Authed-smoking new prod frontend: $NEW_PROD_URL (API: $PROD_API_BASE)"
+          set +e
+          npx tsx tests/spec-ci/verify-deploy-authed-smoke.ts
+          rc=$?
+          set -e
+          echo "authed smoke exit code: $rc"
+          if [ "$rc" = "2" ]; then
+            echo "::error::frontend post-deploy AUTHED smoke could not run (harness error) — NOT rolling back."
+            echo "authed_harness=1" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          exit "$rc"
+
+      # Auto-rollback — fires ONLY when a GENUINE behavioral finding was made by
+      # EITHER smoke:
+      #   * the public-route smoke concluded 'failure' AND it was not a harness
+      #     error (harness_error != 1), OR
+      #   * the authed smoke concluded 'failure' AND it was neither a harness
+      #     error (authed_harness != 1) NOR a creds skip (authed_skipped != 1),
+      # AND in both cases a token is present and a prior READY deployment was
+      # captured. A build/install/harness/creds failure leaves the new deploy
+      # live and this step correctly skips (failing the job without a rollback).
+      # Re-points the Production alias to the last-known-good deployment via
+      # `vercel promote`.
       - name: Auto-rollback on behavioral smoke failure
         if: >-
           failure() &&
-          steps.smoke.conclusion == 'failure' &&
-          steps.smoke.outputs.harness_error != '1' &&
+          ((steps.smoke.conclusion == 'failure' &&
+            steps.smoke.outputs.harness_error != '1') ||
+           (steps.authed_smoke.conclusion == 'failure' &&
+            steps.authed_smoke.outputs.authed_harness != '1' &&
+            steps.authed_smoke.outputs.authed_skipped != '1')) &&
           steps.token.outputs.token_missing == '0' &&
           steps.prior.outputs.prior_found == '1'
         run: |
@@ -272,13 +368,16 @@ jobs:
           echo "::error::frontend post-deploy smoke failed; rolled back to $PRIOR"
           exit 1
 
-      # If the smoke failed behaviorally but we could NOT roll back (no token or
+      # If a smoke failed behaviorally but we could NOT roll back (no token or
       # no prior deployment), say so loudly — the bad deploy is still live.
       - name: Flag un-rollable behavioral failure
         if: >-
           failure() &&
-          steps.smoke.conclusion == 'failure' &&
-          steps.smoke.outputs.harness_error != '1' &&
+          ((steps.smoke.conclusion == 'failure' &&
+            steps.smoke.outputs.harness_error != '1') ||
+           (steps.authed_smoke.conclusion == 'failure' &&
+            steps.authed_smoke.outputs.authed_harness != '1' &&
+            steps.authed_smoke.outputs.authed_skipped != '1')) &&
           (steps.token.outputs.token_missing == '1' ||
            steps.prior.outputs.prior_found != '1')
         run: |
