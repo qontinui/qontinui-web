@@ -307,17 +307,118 @@ cookie_or_bearer_transport = CookieOrBearerTransport(
 )
 
 
+def _token_issuer(token: str) -> str | None:
+    """Read the ``iss`` claim WITHOUT verifying the signature.
+
+    Used only to route a presented token to the right verifier (local
+    FastAPI-Users vs. Cognito). The chosen verifier always re-validates
+    the signature + issuer before trusting any claim, so reading ``iss``
+    unverified here is safe.
+    """
+    import jwt as pyjwt
+
+    try:
+        decoded = pyjwt.decode(token, options={"verify_signature": False})
+    except Exception:
+        return None
+    iss = decoded.get("iss")
+    return iss if isinstance(iss, str) else None
+
+
 class DebugJWTStrategy(JWTStrategy):
-    """JWT Strategy with debug logging to track validation failures."""
+    """JWT Strategy with debug logging + Cognito dual-accept.
+
+    The web backend accepts two token families on the same
+    ``Authorization`` header / ``access_token`` cookie:
+
+    * **Local** FastAPI-Users HS256 tokens (the legacy path) — handled by
+      :meth:`JWTStrategy.read_token`.
+    * **AWS Cognito** user-pool RS256 tokens — verified against the pool
+      JWKS, then resolved to a local ``User`` (provision-or-link).
+
+    Routing is by the token's ``iss`` claim: a token issued by the
+    configured Cognito pool takes the Cognito path; everything else takes
+    the unchanged local path. This branch lives in the fastapi-users
+    strategy so *every* exported dependency
+    (``current_active_user``/``current_verified_user``/…) is dual-accept
+    without per-endpoint changes.
+    """
+
+    async def _read_cognito_token(self, token: str, user_manager):
+        """Verify a Cognito token + resolve the local ``User``.
+
+        Returns the ``User`` on success, or ``None`` (the fastapi-users
+        signal for "invalid token" → 401). The DB session used for
+        provisioning is the request-scoped session that ``user_manager``
+        already holds, so a newly-provisioned user commits with the
+        request.
+        """
+        from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
+
+        from app.services.cognito_jwks import (
+            CognitoJWKSUnavailableError,
+            CognitoTokenInvalidError,
+            cognito_jwks_client,
+        )
+        from app.services.cognito_provision import (
+            CognitoClaimError,
+            resolve_user_for_cognito_claims,
+        )
+
+        try:
+            claims = await cognito_jwks_client.verify_token(token)
+        except CognitoJWKSUnavailableError as exc:
+            # JWKS unreachable on cold start — fail closed (401), never
+            # trust an unverified token. Logged loud for ops.
+            logger.error("cognito_jwks_unavailable", error=str(exc))
+            return None
+        except CognitoTokenInvalidError as exc:
+            logger.warning("cognito_token_invalid", error=str(exc))
+            return None
+
+        user_db = user_manager.user_db
+        if not isinstance(user_db, SQLAlchemyUserDatabase):
+            logger.error(
+                "cognito_resolve_no_session",
+                user_db_type=type(user_db).__name__,
+            )
+            return None
+
+        try:
+            user = await resolve_user_for_cognito_claims(user_db.session, claims)
+        except CognitoClaimError as exc:
+            logger.warning("cognito_claims_incomplete", error=str(exc))
+            return None
+
+        logger.info(
+            "cognito_token_accepted",
+            user_id=str(user.id),
+            cognito_sub=claims.get("sub"),
+        )
+        return user
 
     async def read_token(self, token: str | None, user_manager):
-        """Override to add debug logging for JWT validation."""
+        """Route the token to the local or Cognito verifier by ``iss``."""
         if token is None:
             logger.warning("jwt_read_token_none")
             return None
 
         try:
-            # First decode the JWT to see what's in it
+            # Branch on the (unverified) issuer. A token from the
+            # configured Cognito pool takes the Cognito verification path;
+            # the verifier re-checks the signature + issuer before trust.
+            from app.services.cognito_jwks import cognito_jwks_client
+
+            iss = _token_issuer(token)
+            if (
+                cognito_jwks_client.configured
+                and iss is not None
+                and iss == cognito_jwks_client.issuer
+            ):
+                logger.info("jwt_route_cognito", iss=iss)
+                return await self._read_cognito_token(token, user_manager)
+
+            # Local FastAPI-Users path (unchanged).
             import jwt as pyjwt
 
             decoded = pyjwt.decode(token, options={"verify_signature": False})

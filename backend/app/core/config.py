@@ -183,6 +183,71 @@ class Settings(BaseSettings):
         description="sub=service:<name> the web backend mints at coord",
     )
 
+    # AWS Cognito user-pool identity (unified-Cognito-identity Phase 1).
+    # The web backend dual-accepts Cognito user-pool JWTs alongside the
+    # local FastAPI-Users HS256 JWT. Defaults target the production web
+    # pool; override per-environment via env vars. Setting
+    # COGNITO_USER_POOL_ID to "" disables the Cognito accept path
+    # entirely (only the local JWT is honoured).
+    COGNITO_USER_POOL_ID: str = Field(
+        default="us-east-1_rgTB9dbZ1",
+        description="Cognito user pool id (e.g. us-east-1_rgTB9dbZ1). "
+        "Empty disables Cognito JWT acceptance.",
+    )
+    COGNITO_REGION: str = Field(
+        default="us-east-1",
+        description="AWS region of the Cognito user pool",
+    )
+    COGNITO_ISSUER: str = Field(
+        default="",
+        description=(
+            "Cognito token issuer URL. Derived from "
+            "COGNITO_REGION + COGNITO_USER_POOL_ID when left blank: "
+            "https://cognito-idp.<region>.amazonaws.com/<pool_id>"
+        ),
+    )
+    COGNITO_ALLOWED_AUDIENCES: str = Field(
+        # web app-client, runner app-client, mobile app-client. The
+        # runner + mobile present user tokens to /users/me, so their
+        # client ids must be trusted as audiences too.
+        default=(
+            "q6ns1a8bokf2np1mj8v8arl31,"
+            "67f2a1a0cmgileob23lniud5t7,"
+            "7sirquecq6svomsoe34pblfp24"
+        ),
+        description=(
+            "Comma-separated set of accepted Cognito app-client ids. A "
+            "token is accepted if its `aud` (ID tokens) OR `client_id` "
+            "(access tokens) is in this set."
+        ),
+    )
+
+    @field_validator("COGNITO_ISSUER", mode="before")
+    @classmethod
+    def derive_cognito_issuer(cls, v: str | None, info: Any) -> str:
+        """Derive the Cognito issuer from region + pool id when unset.
+
+        An explicit COGNITO_ISSUER always wins; otherwise build the
+        canonical Cognito issuer URL. If no pool id is configured the
+        issuer is empty (Cognito accept disabled).
+        """
+        if v:
+            return v.rstrip("/")
+        pool_id = info.data.get("COGNITO_USER_POOL_ID") or ""
+        region = info.data.get("COGNITO_REGION") or ""
+        if not pool_id or not region:
+            return ""
+        return f"https://cognito-idp.{region}.amazonaws.com/{pool_id}"
+
+    @property
+    def cognito_allowed_audiences_list(self) -> list[str]:
+        """Parse COGNITO_ALLOWED_AUDIENCES into a trimmed, non-empty list."""
+        return [
+            a.strip()
+            for a in (self.COGNITO_ALLOWED_AUDIENCES or "").split(",")
+            if a.strip()
+        ]
+
     # Stripe
     STRIPE_SECRET_KEY: str | None = Field(default=None, description="Stripe secret key")
     STRIPE_PUBLISHABLE_KEY: str | None = Field(
