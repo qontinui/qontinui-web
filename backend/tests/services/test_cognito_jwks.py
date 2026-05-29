@@ -253,9 +253,7 @@ async def test_kid_miss_forces_one_refresh() -> None:
 
     class _RotatingClient(CognitoJWKSClient):
         def __init__(self) -> None:
-            super().__init__(
-                issuer=_ISSUER, allowed_audiences=[_WEB_CLIENT]
-            )
+            super().__init__(issuer=_ISSUER, allowed_audiences=[_WEB_CLIENT])
             self.fetch_count = 0
 
         async def _fetch_jwks(self) -> dict[str, Any]:

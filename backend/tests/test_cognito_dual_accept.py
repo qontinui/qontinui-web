@@ -73,10 +73,14 @@ async def test_resolve_by_existing_sub_is_idempotent(
     assert u1.id == u2.id
 
     rows = (
-        await async_db_session.execute(
-            select(User).where(User.cognito_sub == claims["sub"])
+        (
+            await async_db_session.execute(
+                select(User).where(User.cognito_sub == claims["sub"])
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(rows) == 1
 
 
@@ -181,20 +185,18 @@ async def test_strategy_routes_cognito_issuer_to_cognito_path(monkeypatch) -> No
         auth_config.DebugJWTStrategy, "_read_cognito_token", _fake_cognito
     )
     # Ensure the live client reports the Cognito issuer as configured.
-    monkeypatch.setattr(
-        auth_config, "logger", auth_config.logger
-    )  # no-op keep
+    monkeypatch.setattr(auth_config, "logger", auth_config.logger)  # no-op keep
     from app.services import cognito_jwks
 
     monkeypatch.setattr(cognito_jwks.cognito_jwks_client, "_issuer", _ISSUER)
     monkeypatch.setattr(
-        cognito_jwks.cognito_jwks_client, "_allowed_audiences", {"q6ns1a8bokf2np1mj8v8arl31"}
+        cognito_jwks.cognito_jwks_client,
+        "_allowed_audiences",
+        {"q6ns1a8bokf2np1mj8v8arl31"},
     )
 
     now = int(time.time())
-    token = _unsigned_token(
-        {"iss": _ISSUER, "sub": "s", "exp": now + 3600}
-    )
+    token = _unsigned_token({"iss": _ISSUER, "sub": "s", "exp": now + 3600})
     result = await strategy.read_token(token, MagicMock())
 
     assert called.get("cognito") is True

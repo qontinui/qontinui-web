@@ -119,8 +119,7 @@ class CognitoJWKSClient:
 
         if resp.status_code != 200:
             raise CognitoJWKSUnavailableError(
-                f"Cognito JWKS fetch failed: HTTP {resp.status_code} "
-                f"{resp.text[:200]}"
+                f"Cognito JWKS fetch failed: HTTP {resp.status_code} {resp.text[:200]}"
             )
 
         try:
@@ -183,9 +182,7 @@ class CognitoJWKSClient:
         try:
             header = pyjwt.get_unverified_header(token)
         except InvalidTokenError as exc:
-            raise CognitoTokenInvalidError(
-                f"token header malformed: {exc}"
-            ) from exc
+            raise CognitoTokenInvalidError(f"token header malformed: {exc}") from exc
 
         kid = header.get("kid")
         if not kid:
@@ -205,9 +202,7 @@ class CognitoJWKSClient:
             raise CognitoJWKSUnavailableError(str(exc)) from exc
 
         if jwk_dict is None:
-            raise CognitoTokenInvalidError(
-                f"no JWK with kid={kid!r} in Cognito JWKS"
-            )
+            raise CognitoTokenInvalidError(f"no JWK with kid={kid!r} in Cognito JWKS")
 
         try:
             jwk = pyjwt.PyJWK(jwk_dict)
@@ -230,9 +225,7 @@ class CognitoJWKSClient:
                 leeway=_CLOCK_SKEW_LEEWAY_S,
             )
         except PyJWTError as exc:
-            raise CognitoTokenInvalidError(
-                f"token verification failed: {exc}"
-            ) from exc
+            raise CognitoTokenInvalidError(f"token verification failed: {exc}") from exc
 
         if not isinstance(claims, dict):
             raise CognitoTokenInvalidError("decoded JWT is not a JSON object")

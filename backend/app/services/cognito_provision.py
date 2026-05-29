@@ -76,8 +76,9 @@ def _extract_name(claims: dict[str, Any]) -> str | None:
     return None
 
 
-async def _derive_unique_username(session: AsyncSession, *, email: str | None,
-                                  sub: str) -> str:
+async def _derive_unique_username(
+    session: AsyncSession, *, email: str | None, sub: str
+) -> str:
     """Build a username that satisfies the NOT NULL + UNIQUE constraint.
 
     Prefer the email local-part; fall back to a ``cognito-<sub-prefix>``
@@ -120,9 +121,7 @@ async def resolve_user_for_cognito_claims(
     email_verified = _email_is_verified(claims)
 
     # 1. Steady state: a row already linked to this Cognito sub.
-    by_sub = await session.execute(
-        select(User).where(User.cognito_sub == sub)
-    )
+    by_sub = await session.execute(select(User).where(User.cognito_sub == sub))
     user = by_sub.scalar_one_or_none()
     if user is not None:
         return user
