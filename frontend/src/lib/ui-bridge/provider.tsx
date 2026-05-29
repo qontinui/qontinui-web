@@ -35,6 +35,26 @@ import { CommandRelayListener } from "@qontinui/ui-bridge/react";
 import { getGlobalSpecStore } from "@qontinui/ui-bridge/specs";
 import { RouteAwarenessProvider } from "./RouteAwarenessProvider";
 import { useDiscoveredSpecs } from "./use-discovered-specs";
+import { tokenStorage } from "@/services/service-factory";
+
+/**
+ * Auth-header hook for the SDK's CommandRelayListener (SDK ≥ 0.10.0).
+ *
+ * Reads the current bearer token from sessionStorage on every outbound
+ * relay request so a token rotation is picked up without remounting the
+ * listener. Returns `null` when no token is available — the SDK then
+ * falls back to legacy cookie / unauth'd behavior.
+ *
+ * Required to authenticate against the relay route when
+ * `UI_BRIDGE_REQUIRE_AUTH=1` is set in the deployment env (see
+ * `app/api/ui-bridge/[...path]/_auth.ts`). Default-off in production,
+ * so this hook is a no-op until the env flag is flipped.
+ *
+ * Cross-link: plans/2026-05-28-production-safe-ui-bridge-design.md §4.1.2.
+ */
+function commandRelayAuthHeader(): string | null {
+  return tokenStorage.getAccessToken();
+}
 
 const isDev = process.env.NODE_ENV === "development";
 
@@ -282,8 +302,14 @@ export function UIBridgeWrapper({
         excludeSelectors={["[data-no-register]"]}
         contentDiscovery={{ enabled: true, maxContentElements: 200 }}
       >
-        {/* Command relay listener for remote automation via SSE */}
-        <CommandRelayListener enabled={enableRemoteCommands} />
+        {/* Command relay listener for remote automation via SSE.
+            authHeader wires the session bearer into the SDK transport so
+            the relay's session-bound auth gate (UI_BRIDGE_REQUIRE_AUTH=1)
+            sees the token. Default-off — no-op when the gate is off. */}
+        <CommandRelayListener
+          enabled={enableRemoteCommands}
+          authHeader={commandRelayAuthHeader}
+        />
         <RouteAwarenessProvider>
           {children as Parameters<typeof AutoRegisterProvider>[0]["children"]}
         </RouteAwarenessProvider>
