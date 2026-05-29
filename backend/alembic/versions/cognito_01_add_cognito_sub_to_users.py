@@ -31,7 +31,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "cognito_01_add_cognito_sub"
-down_revision: str | None = "decision_engine_phase1_kind_nullable"
+down_revision: str | None = "decision_engine_phase3"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
