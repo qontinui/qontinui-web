@@ -57,10 +57,10 @@ function AuthCallbackContent() {
       }
 
       if (!code) {
-        setStatus("error");
-        setErrorMessage(
-          "No authorization code was returned. Please try signing in again."
-        );
+        // No `code` and no `error` — this isn't a real OAuth return but a
+        // bare/direct navigation to /auth/callback (e.g. a person typing the
+        // URL, or a crawler). Not an error state; quietly send them to /login.
+        router.replace("/login");
         return;
       }
 
