@@ -62,11 +62,18 @@ jobs:
   verify:
     name: Smoke new prod frontend + auto-rollback
     runs-on: ubuntu-latest
-    # Only run after a SUCCESSFUL Vercel PRODUCTION deploy. Vercel reports the
-    # environment as either "Production" or "production" depending on the
-    # integration version, so we accept both.
+    # Only run after a SUCCESSFUL Vercel PRODUCTION deploy. The creator gate is
+    # decisive: Vercel's GitHub App creates its deployments as `vercel[bot]`,
+    # whereas a GitHub-Actions job that declares `environment: production`
+    # (the backend deploy-web.yml / migrate.yml) creates a deployment_status
+    # whose creator is the workflow actor and whose environment_url is a
+    # github.com Actions job URL — NOT a deployable surface. Without this gate
+    # those backend events tripped the smoke against a github.com URL and fired
+    # spurious rollbacks. Vercel reports the environment as "Production" or
+    # "production" depending on integration version, so we still accept both.
     if: >-
       github.event.deployment_status.state == 'success' &&
+      github.event.deployment.creator.login == 'vercel[bot]' &&
       (github.event.deployment_status.environment == 'Production' ||
        github.event.deployment_status.environment == 'production')
     timeout-minutes: 15
@@ -75,10 +82,20 @@ jobs:
       deployments: read
 
     env:
-      # The new prod URL Vercel just deployed (the smoke target). target_url is
-      # the historical field name; environment_url is the current one — prefer
-      # environment_url, fall back to target_url.
+      # The deployment Vercel just promoted, used ONLY for logging + the
+      # rollback target capture (the prior deployment) — NOT as the smoke
+      # target. target_url is the historical field name; environment_url is the
+      # current one. For a vercel[bot] Production deploy this is the
+      # `*.vercel.app` deployment URL.
       NEW_PROD_URL: ${{ github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
+      # The PUBLIC production surface the smokes actually crawl. We do NOT smoke
+      # NEW_PROD_URL: raw `*.vercel.app` deployment URLs sit behind Vercel
+      # Deployment Protection (HTTP 401 + a FedCM "Vercel authentication" wall),
+      # so crawling them only sees the protection page, never the app, and fails
+      # every deploy. By the time this event fires, Vercel has re-pointed the
+      # prod alias to the new deployment, so the public domain serves the new
+      # code. Overridable if the public prod domain ever changes.
+      PROD_PUBLIC_URL: https://qontinui.io
       # The production backend API base the authed smoke logs ci-bot into. The
       # prod frontend talks to api.qontinui.io; overridable via repo/env config
       # if the API host ever moves.
@@ -234,25 +251,27 @@ jobs:
       # frontend/tests/spec-ci/verify-deploy-smoke.ts — it imports the SAME
       # policy modules run-spec-ci.ts uses (./console-policy,
       # ./server-error-policy), reusing the gate contract verbatim, and drives
-      # Chromium over the public routes on NEW_PROD_URL.
+      # Chromium over the public routes on the PUBLIC prod domain
+      # (SMOKE_BASE_URL = PROD_PUBLIC_URL), never the protection-walled
+      # deployment URL.
       #
       # Exit-code contract for THIS step (read by the gate + rollback steps):
       #   0  -> smoke clean
       #   1  -> GENUINE smoke failure (console error / same-origin 5xx found)
-      #   2  -> HARNESS error (couldn't reach the new prod URL at all / launch
+      #   2  -> HARNESS error (couldn't reach the public prod URL at all / launch
       #         failure). A harness error must NOT roll back.
       - name: Post-deploy behavioral smoke (public routes)
         id: smoke
         working-directory: ./frontend
         env:
-          NEW_PROD_URL: ${{ env.NEW_PROD_URL }}
+          SMOKE_BASE_URL: ${{ env.PROD_PUBLIC_URL }}
         run: |
           set -uo pipefail
-          if [ -z "${NEW_PROD_URL:-}" ]; then
-            echo "::error::deployment_status carried no environment_url/target_url — nothing to smoke (harness)."
+          if [ -z "${SMOKE_BASE_URL:-}" ]; then
+            echo "::error::PROD_PUBLIC_URL is empty — nothing to smoke (harness)."
             exit 2
           fi
-          echo "Smoking new prod frontend: $NEW_PROD_URL"
+          echo "Smoking public prod surface: $SMOKE_BASE_URL (deployment: ${NEW_PROD_URL:-unknown})"
           set +e
           npx tsx tests/spec-ci/verify-deploy-smoke.ts
           rc=$?
@@ -292,13 +311,13 @@ jobs:
         id: authed_smoke
         working-directory: ./frontend
         env:
-          NEW_PROD_URL: ${{ env.NEW_PROD_URL }}
+          SMOKE_BASE_URL: ${{ env.PROD_PUBLIC_URL }}
           PROD_API_BASE: ${{ env.PROD_API_BASE }}
           SSM_REGION: ${{ env.SSM_REGION }}
         run: |
           set -uo pipefail
-          if [ -z "${NEW_PROD_URL:-}" ]; then
-            echo "::error::deployment_status carried no environment_url/target_url — nothing to authed-smoke (harness)."
+          if [ -z "${SMOKE_BASE_URL:-}" ]; then
+            echo "::error::PROD_PUBLIC_URL is empty — nothing to authed-smoke (harness)."
             echo "authed_harness=1" >> "$GITHUB_OUTPUT"
             exit 1
           fi
@@ -327,7 +346,7 @@ jobs:
           echo "::add-mask::$AUTH_PASSWORD"
           export QONTINUI_TEST_AUTO_LOGIN_EMAIL="$AUTH_EMAIL"
           export QONTINUI_TEST_AUTO_LOGIN_PASSWORD="$AUTH_PASSWORD"
-          echo "Authed-smoking new prod frontend: $NEW_PROD_URL (API: $PROD_API_BASE)"
+          echo "Authed-smoking public prod surface: $SMOKE_BASE_URL (API: $PROD_API_BASE; deployment: ${NEW_PROD_URL:-unknown})"
           set +e
           npx tsx tests/spec-ci/verify-deploy-authed-smoke.ts
           rc=$?

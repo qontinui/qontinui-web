@@ -192,13 +192,13 @@ async function login(
 }
 
 async function main(): Promise<number> {
-  const base = (process.env.NEW_PROD_URL || "").replace(/\/$/, "");
+  const base = (process.env.SMOKE_BASE_URL || "").replace(/\/$/, "");
   const apiBase = (process.env.PROD_API_BASE || "").replace(/\/$/, "");
   const email = process.env.QONTINUI_TEST_AUTO_LOGIN_EMAIL || "";
   const password = process.env.QONTINUI_TEST_AUTO_LOGIN_PASSWORD || "";
 
   if (!base) {
-    process.stderr.write("[authed-smoke] no NEW_PROD_URL (harness)\n");
+    process.stderr.write("[authed-smoke] no SMOKE_BASE_URL (harness)\n");
     return 2;
   }
   if (!apiBase) {
@@ -215,7 +215,7 @@ async function main(): Promise<number> {
   try {
     baseOrigin = new URL(base).origin;
   } catch {
-    process.stderr.write(`[authed-smoke] NEW_PROD_URL is not a URL: ${base}\n`);
+    process.stderr.write(`[authed-smoke] SMOKE_BASE_URL is not a URL: ${base}\n`);
     return 2;
   }
 
