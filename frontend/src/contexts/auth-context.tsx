@@ -32,6 +32,19 @@ interface AuthContextType {
   logout: () => Promise<void>;
   updateUser: (data: Partial<User>) => Promise<void>;
   getAccessToken: () => Promise<string | null>;
+  /**
+   * Establish a session from externally-minted tokens (e.g. the Cognito
+   * hosted-UI Authorization Code + PKCE flow). Stores the tokens via the
+   * existing token-storage layer, hydrates the user from the backend (which
+   * dual-accepts Cognito JWTs), sets the in-memory user, and broadcasts the
+   * login to other tabs — i.e. everything `login()` does, minus the
+   * username/password backend call.
+   */
+  completeExternalLogin: (tokens: {
+    access_token: string;
+    refresh_token?: string;
+    expires_in: number;
+  }) => Promise<User>;
 }
 
 const logger = createLogger("AuthContext");
@@ -344,6 +357,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const completeExternalLogin = async (tokens: {
+    access_token: string;
+    refresh_token?: string;
+    expires_in: number;
+  }): Promise<User> => {
+    // Store the externally-minted tokens through the same token-storage layer
+    // the password flow uses, so the HttpClient attaches `Authorization:
+    // Bearer <cognito access_token>` on every request and the middleware
+    // marker cookie is set. `setTokens` derives the access-token expiry from
+    // the JWT `exp` claim; the refresh fields are best-effort (Cognito refresh
+    // tokens are opaque/optional, and the social flow re-auths via the hosted
+    // UI rather than the password refresh endpoint).
+    authService.tokenManager.setTokens({
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token ?? "",
+      token_type: "bearer",
+      expires_in: tokens.expires_in,
+      refresh_expires_in: tokens.expires_in,
+    });
+
+    // Hydrate the user from the backend, which dual-accepts Cognito JWTs.
+    const loggedInUser = await authService.getCurrentUser();
+    setUser(loggedInUser);
+
+    // Broadcast to other tabs (mirrors the password `login` path).
+    if (channelRef.current) {
+      channelRef.current.postMessage({
+        type: "LOGIN",
+        user: loggedInUser,
+      } as AuthBroadcastMessage);
+      logger.debug("Broadcasted LOGIN event to other tabs (external login)");
+    }
+
+    return loggedInUser;
+  };
+
   const register = async (
     email: string,
     username: string,
@@ -459,6 +508,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         logout,
         updateUser,
         getAccessToken,
+        completeExternalLogin,
       }}
     >
       {children}
