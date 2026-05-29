@@ -149,7 +149,7 @@ describe("authenticateBridgeRequest", () => {
     fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     // Default backend URL so route construction is deterministic.
-    vi.stubEnv("API_URL", "http://backend.test");
+    vi.stubEnv("BACKEND_URL", "http://backend.test");
   });
 
   afterEach(() => {

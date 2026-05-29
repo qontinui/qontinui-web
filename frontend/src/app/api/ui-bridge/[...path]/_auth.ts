@@ -98,15 +98,19 @@ function tokenKey(token: string): string {
 }
 
 /**
- * Backend base URL. The web's API config exposes `NEXT_PUBLIC_API_URL`
- * for the browser; on the server we prefer `API_URL` (set on Vercel to
- * the internal hostname) and fall back to `NEXT_PUBLIC_API_URL`. An
- * empty string means same-origin and `fetch` resolves against the
- * current request URL — that's the local-dev path.
+ * Backend base URL. Matches the project's existing server-side pattern
+ * used by `src/app/api/v1/*` route handlers and the `next.config.mjs`
+ * `/api/:path*` rewrite: `BACKEND_URL` → `NEXT_PUBLIC_API_URL` → localhost
+ * fallback. Reading it directly here (instead of relying on the rewrite
+ * via an empty base) makes the gate work on environments that don't ship
+ * the rewrite — preview deploys without `BACKEND_URL` set used to fall
+ * through to a localhost fetch that no Vercel function can reach.
  */
 function backendBaseUrl(): string {
   return (
-    process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || ""
+    process.env.BACKEND_URL ||
+    process.env.NEXT_PUBLIC_API_URL ||
+    "http://localhost:8000"
   );
 }
 
@@ -285,4 +289,3 @@ export function isAllowedOrigin(origin: string | null): boolean {
 export function __resetAuthCache(): void {
   positiveCache.clear();
 }
-// smoke: redeploy trigger 2026-05-29T16:36:32Z
