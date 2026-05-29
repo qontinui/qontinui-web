@@ -22,6 +22,15 @@ const COORD_URL = process.env.COORD_URL || 'http://localhost:9870';
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
+  // `ioredis` powers the UI Bridge cross-instance relay bus
+  // (`@qontinui/ui-bridge` RedisRelayBus, used by lib/ui-bridge/relay.ts).
+  // It's loaded via a variable-specifier dynamic import so the SDK stays
+  // optional-dep-clean, but that defeats @vercel/nft tracing — so without
+  // this the package is absent from the serverless bundle and the bus dies
+  // with `Cannot find module 'ioredis'`, silently degrading to per-lambda
+  // in-memory state (the relay instance-skew). Externalizing it forces
+  // ioredis (+ its transitive deps) into the standalone output.
+  serverExternalPackages: ['ioredis'],
   // Note: @qontinui/ui-bridge uses file: reference (junction on Windows).
   // Do NOT add to transpilePackages — SWC cannot follow Windows junctions.
   // The package dist is pre-compiled so transpilation is unnecessary.
