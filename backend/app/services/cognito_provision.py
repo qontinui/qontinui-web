@@ -47,7 +47,10 @@ def _extract_sub(claims: dict[str, Any]) -> str:
     sub = claims.get("sub")
     if not sub or not isinstance(sub, str):
         raise CognitoClaimError("Cognito token missing 'sub' claim")
-    return sub
+    # `claims` values are `Any`; the isinstance guard narrows to `str`, but
+    # mypy's no-any-return still fires under `mypy app/ --ignore-missing-imports`,
+    # so return an explicit `str` (no-op given the guard).
+    return str(sub)
 
 
 def _extract_email(claims: dict[str, Any]) -> str | None:
