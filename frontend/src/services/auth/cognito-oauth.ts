@@ -1,0 +1,241 @@
+/**
+ * Cognito hosted-UI OAuth helpers — Authorization Code + PKCE.
+ *
+ * The Qontinui web app uses a **public** Cognito app client (no client
+ * secret), so PKCE (RFC 7636, S256) is mandatory for the Authorization Code
+ * flow. "Sign in with Google / Microsoft / GitHub" all route through the same
+ * Cognito hosted UI; the only difference is the `identity_provider` value, so
+ * the entire flow here is provider-agnostic.
+ *
+ * Flow:
+ *  1. `startCognitoLogin(provider)` — mint a PKCE verifier + S256 challenge and
+ *     a random `state`, stash both in sessionStorage, then navigate the browser
+ *     to the Cognito authorize endpoint.
+ *  2. Cognito redirects back to `/auth/callback?code=…&state=…`.
+ *  3. The callback verifies `state`, then `exchangeCodeForTokens(code)` POSTs to
+ *     the token endpoint with the stored verifier (NO client secret) and returns
+ *     the Cognito tokens.
+ *
+ * Config defaults to the production app client / pool; everything is
+ * overridable via `NEXT_PUBLIC_COGNITO_*` env vars so non-prod deployments can
+ * point at a different pool without code changes.
+ */
+
+// Public Cognito web app client (no secret → PKCE mandatory).
+export const COGNITO_CLIENT_ID =
+  process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID || "q6ns1a8bokf2np1mj8v8arl31";
+
+// Hosted-UI domain (custom domain in production).
+export const COGNITO_HOSTED_UI_DOMAIN =
+  process.env.NEXT_PUBLIC_COGNITO_HOSTED_UI_DOMAIN ||
+  "https://auth.qontinui.io";
+
+// OAuth scopes requested from the hosted UI.
+export const COGNITO_SCOPES =
+  process.env.NEXT_PUBLIC_COGNITO_SCOPES || "openid email profile";
+
+/**
+ * Federated identity providers configured on the Cognito app client. These are
+ * the exact `identity_provider` values Cognito expects. `undefined` (the
+ * generic button) omits the param so the hosted UI shows its own chooser.
+ */
+export type CognitoProvider = "Google" | "MicrosoftEntra" | "GitHub";
+
+/** Endpoints derived from the hosted-UI domain. */
+const AUTHORIZE_ENDPOINT = `${COGNITO_HOSTED_UI_DOMAIN}/oauth2/authorize`;
+const TOKEN_ENDPOINT = `${COGNITO_HOSTED_UI_DOMAIN}/oauth2/token`;
+
+// sessionStorage keys for the in-flight PKCE values. Tab-scoped, single-use:
+// cleared by `consumePkceState()` as soon as the callback reads them.
+const PKCE_VERIFIER_KEY = "cognito_pkce_verifier";
+const PKCE_STATE_KEY = "cognito_oauth_state";
+
+/** Cognito token endpoint response (public-client Authorization Code grant). */
+export interface CognitoTokenResponse {
+  id_token: string;
+  access_token: string;
+  refresh_token?: string;
+  expires_in: number;
+  token_type: string;
+}
+
+/**
+ * The redirect URI for the current origin. MUST be one of the URIs registered
+ * on the Cognito app client and MUST be byte-for-byte identical between the
+ * authorize request and the token exchange. Deriving it from the live origin
+ * keeps prod (`https://qontinui.io`) and dev (`http://localhost:3000`) correct
+ * without branching on env.
+ */
+export function getRedirectUri(): string {
+  if (typeof window === "undefined") {
+    // SSR fallback — never used for the actual redirect, which only runs in
+    // the browser, but keeps the function total.
+    return "https://qontinui.io/auth/callback";
+  }
+  return `${window.location.origin}/auth/callback`;
+}
+
+/** Base64url-encode bytes without padding (RFC 7636 §A). */
+function base64UrlEncode(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+/**
+ * Generate a high-entropy PKCE `code_verifier`: 32 random bytes →
+ * base64url = 43 unreserved chars, comfortably inside the RFC's 43-128 range.
+ */
+function generateCodeVerifier(): string {
+  const random = new Uint8Array(32);
+  crypto.getRandomValues(random);
+  return base64UrlEncode(random);
+}
+
+/** S256 PKCE challenge: base64url(SHA-256(verifier)). */
+async function deriveCodeChallenge(verifier: string): Promise<string> {
+  const data = new TextEncoder().encode(verifier);
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return base64UrlEncode(new Uint8Array(digest));
+}
+
+/** Random, opaque CSRF `state` (base64url of 16 random bytes). */
+function generateState(): string {
+  const random = new Uint8Array(16);
+  crypto.getRandomValues(random);
+  return base64UrlEncode(random);
+}
+
+/**
+ * Build the authorize URL and navigate the browser to the Cognito hosted UI to
+ * begin the Authorization Code + PKCE flow. Stores the PKCE verifier + state in
+ * sessionStorage so `/auth/callback` can complete the exchange.
+ *
+ * @param provider Federated IdP to jump straight into, or `undefined` to show
+ *                 the hosted-UI provider chooser.
+ * @param next     Optional post-login destination (a same-origin path). Carried
+ *                 through `state` so the callback can honour it.
+ */
+export async function startCognitoLogin(
+  provider?: CognitoProvider,
+  next?: string
+): Promise<void> {
+  const verifier = generateCodeVerifier();
+  const challenge = await deriveCodeChallenge(verifier);
+  const csrf = generateState();
+
+  // `state` carries the CSRF token and (optionally) the post-login path. We
+  // store only the CSRF token to compare on return; the path is read straight
+  // from the returned state, but we also persist it so a mismatch can't smuggle
+  // an attacker-chosen redirect.
+  const stateValue = next ? `${csrf}.${encodeURIComponent(next)}` : csrf;
+
+  sessionStorage.setItem(PKCE_VERIFIER_KEY, verifier);
+  sessionStorage.setItem(PKCE_STATE_KEY, stateValue);
+
+  const params = new URLSearchParams({
+    response_type: "code",
+    client_id: COGNITO_CLIENT_ID,
+    redirect_uri: getRedirectUri(),
+    scope: COGNITO_SCOPES,
+    code_challenge: challenge,
+    code_challenge_method: "S256",
+    state: stateValue,
+  });
+  if (provider) {
+    params.set("identity_provider", provider);
+  }
+
+  window.location.assign(`${AUTHORIZE_ENDPOINT}?${params.toString()}`);
+}
+
+/**
+ * Validate the `state` returned by Cognito against the one stored before the
+ * redirect, then return the post-login `next` path encoded into it (if any).
+ *
+ * Throws on mismatch (CSRF / replay protection). Does NOT consume the verifier;
+ * the caller exchanges the code afterwards and then calls `consumePkceState()`.
+ */
+export function verifyStateAndExtractNext(
+  returnedState: string | null
+): string | null {
+  const stored = sessionStorage.getItem(PKCE_STATE_KEY);
+  if (!stored || !returnedState || stored !== returnedState) {
+    throw new Error(
+      "OAuth state mismatch — the sign-in attempt could not be verified. Please try again."
+    );
+  }
+  // `state` is `<csrf>` or `<csrf>.<encoded-next>`.
+  const dot = stored.indexOf(".");
+  if (dot === -1) return null;
+  const encodedNext = stored.slice(dot + 1);
+  try {
+    const decoded = decodeURIComponent(encodedNext);
+    // Only honour same-origin absolute paths — never an attacker-controlled
+    // absolute URL (open-redirect guard).
+    return decoded.startsWith("/") && !decoded.startsWith("//")
+      ? decoded
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Exchange the authorization `code` for Cognito tokens via the token endpoint.
+ *
+ * Public client → form-encoded body with `code_verifier`, NO `Authorization:
+ * Basic` / client secret. `redirect_uri` MUST match the authorize request
+ * exactly (same origin-derived value).
+ */
+export async function exchangeCodeForTokens(
+  code: string
+): Promise<CognitoTokenResponse> {
+  const verifier = sessionStorage.getItem(PKCE_VERIFIER_KEY);
+  if (!verifier) {
+    throw new Error(
+      "Missing PKCE verifier — the sign-in session expired. Please try again."
+    );
+  }
+
+  const body = new URLSearchParams({
+    grant_type: "authorization_code",
+    client_id: COGNITO_CLIENT_ID,
+    code,
+    redirect_uri: getRedirectUri(),
+    code_verifier: verifier,
+  });
+
+  const response = await fetch(TOKEN_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
+
+  if (!response.ok) {
+    let detail = `${response.status}`;
+    try {
+      const err = (await response.json()) as {
+        error?: string;
+        error_description?: string;
+      };
+      detail = err.error_description || err.error || detail;
+    } catch {
+      // non-JSON error body — keep the status code
+    }
+    throw new Error(`Token exchange failed: ${detail}`);
+  }
+
+  return (await response.json()) as CognitoTokenResponse;
+}
+
+/** Clear the single-use PKCE verifier + state after the exchange completes. */
+export function consumePkceState(): void {
+  sessionStorage.removeItem(PKCE_VERIFIER_KEY);
+  sessionStorage.removeItem(PKCE_STATE_KEY);
+}

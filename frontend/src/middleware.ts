@@ -31,6 +31,11 @@ const PUBLIC_PATHS = [
   "/reset-password",
   "/verify-email",
   "/privacy-extension",
+  // Cognito hosted-UI OAuth landing. It arrives unauthenticated (no token/
+  // marker cookie yet) carrying `?code=&state=`; it MUST run the PKCE token
+  // exchange in-page rather than being bounced to `/login?next=…`. Exempting
+  // it here is the provider-agnostic fix for all three social IdPs.
+  "/auth/callback",
 ];
 
 const PUBLIC_PREFIXES = [

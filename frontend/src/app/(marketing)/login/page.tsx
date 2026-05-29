@@ -55,7 +55,12 @@ export default function LoginPage() {
           </p>
         </div>
 
-        <AuthForm mode="signin" hideTabs onSuccess={handleSuccess} />
+        <AuthForm
+          mode="signin"
+          hideTabs
+          onSuccess={handleSuccess}
+          next={next && next.startsWith("/") ? next : undefined}
+        />
 
         <p className="text-center text-sm text-muted-foreground">
           Don&apos;t have an account?{" "}
