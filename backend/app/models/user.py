@@ -30,6 +30,14 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     )
     full_name: Mapped[str | None] = mapped_column(String, nullable=True)
     is_beta: Mapped[bool] = mapped_column(Boolean, default=False)
+    # AWS Cognito subject (``sub`` claim) for users that authenticate via
+    # the Cognito user pool. Nullable: local email/password users have no
+    # Cognito identity. Unique so a Cognito ``sub`` links to exactly one
+    # row. Populated on first Cognito login (provision-or-link by verified
+    # email) — see app/services/cognito_provision.py.
+    cognito_sub: Mapped[str | None] = mapped_column(
+        String, unique=True, index=True, nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )
