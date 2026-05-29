@@ -175,7 +175,12 @@ jobs:
           # `npx --yes` auto-installs vercel@latest without an interactive
           # prompt. `vercel ls --prod` prints production deployments newest-first;
           # we parse the *.vercel.app deployment URLs from the listing.
-          if ! npx --yes vercel@latest ls --prod --token="$VERCEL_TOKEN" > vercel_ls.txt 2>vercel_ls.err; then
+          # --scope qontinui pins the team: CI's fresh checkout has no `.vercel`
+          # link, so without it the listing defaults to the token's scope. The
+          # provisioned token is team-scoped (so this is currently redundant)
+          # but pinning keeps it robust to a future full-account token. Slug
+          # confirmed via `vercel teams ls`.
+          if ! npx --yes vercel@latest ls --prod --scope qontinui --token="$VERCEL_TOKEN" > vercel_ls.txt 2>vercel_ls.err; then
             echo "::warning::could not list Vercel production deployments (harness):"
             sed -e 's/[A-Za-z0-9._-]*'"$VERCEL_TOKEN"'[A-Za-z0-9._-]*/[redacted]/g' vercel_ls.err || true
             echo "prior_found=0" >> "$GITHUB_OUTPUT"
@@ -364,7 +369,8 @@ jobs:
             exit 1
           fi
           echo "Behavioral smoke failed — rolling back Production alias to last-known-good: $PRIOR"
-          npx --yes vercel@latest promote "$PRIOR" --token="$VERCEL_TOKEN"
+          # --scope qontinui: pin the team (same rationale as the ls above).
+          npx --yes vercel@latest promote "$PRIOR" --scope qontinui --token="$VERCEL_TOKEN"
           echo "::error::frontend post-deploy smoke failed; rolled back to $PRIOR"
           exit 1
 
