@@ -291,60 +291,12 @@ describe("authenticateBridgeRequest", () => {
     );
   });
 
-  it("accepts an _auth query parameter (SSE fallback path)", async () => {
-    fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ id: "user-sse" }), { status: 200 }),
-    );
-    const req = makeRequest({ query: "_auth=sse-token" });
-    const result = await authenticateBridgeRequest(req);
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.userId).toBe("user-sse");
-    expect(fetchMock).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({
-        headers: { Authorization: "Bearer sse-token" },
-      }),
-    );
-  });
-
-  it("Bearer header takes precedence over _auth query parameter", async () => {
-    fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ id: "user-from-bearer" }), {
-        status: 200,
-      }),
-    );
-    const req = makeRequest({
-      headers: { authorization: "Bearer header-token" },
-      query: "_auth=query-token",
-    });
-    await authenticateBridgeRequest(req);
-    expect(fetchMock).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({
-        headers: { Authorization: "Bearer header-token" },
-      }),
-    );
-  });
-
-  it("access_token cookie takes precedence over _auth query parameter", async () => {
-    fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ id: "user-from-cookie" }), { status: 200 }),
-    );
-    const req = makeRequest({
-      cookie: "access_token=cookie-token",
-      query: "_auth=query-token",
-    });
-    await authenticateBridgeRequest(req);
-    expect(fetchMock).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({
-        headers: { Authorization: "Bearer cookie-token" },
-      }),
-    );
-  });
-
-  it("rejects when _auth query value is empty / whitespace", async () => {
-    const req = makeRequest({ query: "_auth=" });
+  it("ignores the legacy _auth query parameter (SDK ≥ 0.11.0 sends the token as a header)", async () => {
+    // The pre-0.11.0 SDK rode the JWT in the URL as `_auth=<jwt>` because
+    // EventSource couldn't set headers. That branch was deleted to keep
+    // bearer tokens out of request logs. A request that ONLY presents
+    // the query token must NOT authenticate — it's treated as anonymous.
+    const req = makeRequest({ query: "_auth=legacy-token" });
     const result = await authenticateBridgeRequest(req);
     expect(result.ok).toBe(false);
     expect(fetchMock).not.toHaveBeenCalled();
