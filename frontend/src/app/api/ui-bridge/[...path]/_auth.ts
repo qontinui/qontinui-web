@@ -174,14 +174,28 @@ export async function authenticateBridgeRequest(
 }
 
 function extractToken(request: NextRequest): string | null {
+  // 1. Authorization: Bearer header (primary; cross-origin Bearer path).
   const auth = request.headers.get("authorization");
   if (auth) {
     const m = /^bearer\s+(.+)$/i.exec(auth);
     const candidate = m?.[1]?.trim();
     if (candidate) return candidate;
   }
+  // 2. `access_token` cookie (same-origin fallback).
   const cookieToken = request.cookies.get("access_token")?.value;
   if (cookieToken) return cookieToken;
+  // 3. `_auth=<token>` query parameter — SSE-only fallback. EventSource
+  //    cannot set custom headers per the WhatWG spec, so the SDK's
+  //    command-relay transport (@qontinui/ui-bridge ≥ 0.10.0) rides the
+  //    token in the query when opening `/commands/stream`. We accept it
+  //    on ALL paths for symmetry, but only the SSE path needs it. The
+  //    underscore prefix signals "private auth payload" to any access-
+  //    log filter; deployments should redact `_auth` in log policies.
+  const queryToken = request.nextUrl.searchParams.get("_auth");
+  if (queryToken) {
+    const trimmed = queryToken.trim();
+    if (trimmed.length > 0) return trimmed;
+  }
   return null;
 }
 

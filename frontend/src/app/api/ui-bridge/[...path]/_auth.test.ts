@@ -31,12 +31,14 @@ import {
 function makeRequest(init?: {
   headers?: Record<string, string>;
   cookie?: string;
+  query?: string;
 }): NextRequest {
   const headers = new Headers(init?.headers ?? {});
   if (init?.cookie) headers.set("cookie", init.cookie);
-  return new NextRequest("http://localhost/api/ui-bridge/control/snapshot", {
-    headers,
-  });
+  const url = `http://localhost/api/ui-bridge/control/snapshot${
+    init?.query ? `?${init.query}` : ""
+  }`;
+  return new NextRequest(url, { headers });
 }
 
 describe("isAuthGateEnabled", () => {
@@ -287,5 +289,64 @@ describe("authenticateBridgeRequest", () => {
         headers: { Authorization: "Bearer header-token" },
       }),
     );
+  });
+
+  it("accepts an _auth query parameter (SSE fallback path)", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ id: "user-sse" }), { status: 200 }),
+    );
+    const req = makeRequest({ query: "_auth=sse-token" });
+    const result = await authenticateBridgeRequest(req);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.userId).toBe("user-sse");
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        headers: { Authorization: "Bearer sse-token" },
+      }),
+    );
+  });
+
+  it("Bearer header takes precedence over _auth query parameter", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ id: "user-from-bearer" }), {
+        status: 200,
+      }),
+    );
+    const req = makeRequest({
+      headers: { authorization: "Bearer header-token" },
+      query: "_auth=query-token",
+    });
+    await authenticateBridgeRequest(req);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        headers: { Authorization: "Bearer header-token" },
+      }),
+    );
+  });
+
+  it("access_token cookie takes precedence over _auth query parameter", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ id: "user-from-cookie" }), { status: 200 }),
+    );
+    const req = makeRequest({
+      cookie: "access_token=cookie-token",
+      query: "_auth=query-token",
+    });
+    await authenticateBridgeRequest(req);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        headers: { Authorization: "Bearer cookie-token" },
+      }),
+    );
+  });
+
+  it("rejects when _auth query value is empty / whitespace", async () => {
+    const req = makeRequest({ query: "_auth=" });
+    const result = await authenticateBridgeRequest(req);
+    expect(result.ok).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
