@@ -35,6 +35,24 @@ export default function LoginPage() {
     }
   }, [loading, user, next, router]);
 
+  // [rollback-drill] TEMPORARY — operator-supervised live drill of the
+  // post-deploy auto-rollback. Emits a critical console error ONLY on a
+  // deployed host (never localhost/127.0.0.1), so PR-time Spec CI (which
+  // crawls localhost) stays green while the post-deploy public smoke (which
+  // crawls the prod URL) trips on it -> exit 1 -> `vercel promote` rollback.
+  // Reverted immediately after the drill confirms the rollback fired.
+  useEffect(() => {
+    if (
+      typeof window !== "undefined" &&
+      window.location.hostname !== "localhost" &&
+      window.location.hostname !== "127.0.0.1"
+    ) {
+      console.error(
+        "[rollback-drill] intentional prod-only failure — exercising post-deploy auto-rollback",
+      );
+    }
+  }, []);
+
   const handleSuccess = (_signedIn: User) => {
     if (next && next.startsWith("/")) {
       router.replace(next);
