@@ -222,7 +222,14 @@ export class AuthService {
 
     if (!response.ok) {
       const errorText = await response.text();
-      log.error("getCurrentUser failed:", response.status);
+      // A 401 is the expected "not authenticated" signal — e.g. on public
+      // routes while logged out, or after a session expires — not a failure.
+      // Error-logging it emitted a critical console error on every logged-out
+      // page, which tripped the post-deploy public smoke. Only non-401
+      // responses indicate a real problem worth surfacing.
+      if (response.status !== 401) {
+        log.error("getCurrentUser failed:", response.status);
+      }
       throw new Error(
         `Failed to get user info: ${response.status} - ${errorText}`
       );

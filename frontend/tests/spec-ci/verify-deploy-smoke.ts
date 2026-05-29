@@ -4,9 +4,17 @@
  * Invoked by `.github/workflows/verify-frontend-deploy.yml` after a successful
  * Vercel Production deploy. It REUSES the Spec CI gate contract — the same
  * console classifier (`classifyConsole`) and same-origin 5xx scope
- * (`isSameOriginServerError`) — over the app's PUBLIC routes on the freshly
- * deployed prod URL (`NEW_PROD_URL`). Lives in tests/spec-ci/ so the relative
- * imports resolve identically to run-spec-ci.ts.
+ * (`isSameOriginServerError`) — over the app's PUBLIC routes on the public
+ * production surface (`SMOKE_BASE_URL`, e.g. https://qontinui.io). Lives in
+ * tests/spec-ci/ so the relative imports resolve identically to run-spec-ci.ts.
+ *
+ * NB: the smoke targets the PUBLIC PRODUCTION DOMAIN, not the raw
+ * deployment_status `environment_url` (a `*.vercel.app` deployment URL). Those
+ * deployment URLs sit behind Vercel Deployment Protection (HTTP 401 + a FedCM
+ * "Vercel authentication" wall), so crawling them yields the protection page's
+ * console noise — never the real app — failing every deploy. By the time the
+ * production deployment_status fires, Vercel has already re-pointed the prod
+ * alias to the new deployment, so the public domain serves the new code.
  *
  * Why public-routes only (not run-spec-ci.ts --base-url against prod): the
  * structural spec lane needs the build-time `window.__qontinuiSpecCi__` surface
@@ -48,16 +56,16 @@ const PUBLIC_ROUTES = [
 ];
 
 async function main(): Promise<number> {
-  const base = (process.env.NEW_PROD_URL || "").replace(/\/$/, "");
+  const base = (process.env.SMOKE_BASE_URL || "").replace(/\/$/, "");
   if (!base) {
-    process.stderr.write("[verify-deploy] no NEW_PROD_URL\n");
+    process.stderr.write("[verify-deploy] no SMOKE_BASE_URL\n");
     return 2;
   }
   let baseOrigin: string;
   try {
     baseOrigin = new URL(base).origin;
   } catch {
-    process.stderr.write(`[verify-deploy] NEW_PROD_URL is not a URL: ${base}\n`);
+    process.stderr.write(`[verify-deploy] SMOKE_BASE_URL is not a URL: ${base}\n`);
     return 2;
   }
 
