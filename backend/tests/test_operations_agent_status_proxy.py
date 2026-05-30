@@ -98,12 +98,21 @@ class TestGetAgentStatus:
 
         assert resp.status_code == 200
         assert resp.json() == coord_payload
-        # coord path + tenant_id query param (NOT the X-Qontinui-Tenant-Id
-        # header — coord's /coord/agent-status reads tenant from the query).
+        # coord derives the tenant from the forwarded Cognito bearer
+        # (Wave 2 fail-closed); web no longer sends the tenant_id query
+        # param. With no correlation_topic the params dict is empty →
+        # forwarded as None.
         called_url = instance.get.call_args.args[0]
         assert called_url.endswith("/coord/agent-status")
-        called_params = instance.get.call_args.kwargs.get("params", {})
-        assert called_params.get("tenant_id") == str(TEST_TENANT)
+        called_params = instance.get.call_args.kwargs.get("params") or {}
+        assert "tenant_id" not in called_params
+        # Bearer-forward is wired (headers dict passed, not None) so coord
+        # can resolve the OperatorContext from the forwarded token. (The
+        # get_tenant_id override here bypasses the actual bearer capture,
+        # so the header is empty under test — what matters is that
+        # _proxy_coord_get was called with tenant_id= to trigger
+        # _tenant_headers rather than omitting it.)
+        assert "headers" in instance.get.call_args.kwargs
         # No correlation_topic forwarded when not requested.
         assert "correlation_topic" not in called_params
 
@@ -117,9 +126,10 @@ class TestGetAgentStatus:
                 f"{API_PREFIX}/agent-status?correlation_topic=plan-42"
             )
         assert resp.status_code == 200
-        called_params = instance.get.call_args.kwargs.get("params", {})
+        called_params = instance.get.call_args.kwargs.get("params") or {}
         assert called_params.get("correlation_topic") == "plan-42"
-        assert called_params.get("tenant_id") == str(TEST_TENANT)
+        # Wave 2: tenant_id is no longer sent on the wire (coord derives it).
+        assert "tenant_id" not in called_params
 
     def test_empty_rows_pass_through(self, auth_client: TestClient):
         # Zero rows is a valid response (dual-read fallback is the

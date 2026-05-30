@@ -1001,10 +1001,17 @@ async def get_agent_status(
     Optional ``correlation_topic`` narrows to a single topic. The response
     envelope mirrors coord: ``{"agents": [...], "count": N}``.
     """
-    params: dict[str, Any] = {"tenant_id": str(tenant_id)}
+    # coord derives the tenant from the forwarded Cognito bearer
+    # (fail-closed `OperatorContext`); we no longer send the
+    # web-computed tenant_id param. The bearer is forwarded by passing
+    # ``tenant_id=`` to ``_proxy_coord_get`` (triggers ``_tenant_headers``,
+    # which emits only ``Authorization: Bearer``).
+    params: dict[str, Any] = {}
     if correlation_topic is not None:
         params["correlation_topic"] = correlation_topic
-    return await _proxy_coord_get("/coord/agent-status", params=params)
+    return await _proxy_coord_get(
+        "/coord/agent-status", params=params or None, tenant_id=tenant_id
+    )
 
 
 # ---- Coord gates-dashboard proxy ------------------------------------------
@@ -2424,6 +2431,12 @@ async def list_coord_sessions(
         default=None,
         description="RFC 3339 timestamp; only rows updated at-or-after are returned.",
     ),
+    # `get_tenant_id` captures the caller's Cognito bearer into the
+    # request-scoped ContextVar so `_proxy_coord_get(..., tenant_id=...)`
+    # forwards it — coord derives the home tenant from it on the
+    # single-tenant path. The returned UUID is otherwise unused on the
+    # wire here (the `scope=all` path computes its own `tenant_ids`).
+    tenant_id: UUID = Depends(get_tenant_id),
     current_user: UserModel = Depends(get_current_active_user_async),
     db: AsyncSession = Depends(get_async_db),
 ) -> Any:
@@ -2442,21 +2455,24 @@ async def list_coord_sessions(
     """
     params: dict[str, Any] = {}
     if tenant_scope == "all":
+        # Multi-tenant: coord's single-tenant `OperatorContext` cannot
+        # reproduce the operator's full membership set, so we still
+        # compute + send the explicit `tenant_ids`. Coord trusts the
+        # resolved set (see `qontinui-coord/src/sessions.rs::get_list` —
+        # `scope=all`/`tenant_ids` membership path preserved verbatim
+        # under Wave 2).
         tenant_ids = await resolve_tenants_for_user(current_user, db)
-        # Membership is validated above; coord trusts the resolved
-        # set the same way it trusts the single tenant_id today
-        # (the route doesn't enforce the X-Qontinui-Tenant-Id header —
-        # see `qontinui-coord/src/sessions.rs::get_list`).
         params["tenant_ids"] = ",".join(str(t) for t in tenant_ids)
-    else:
-        # Default + explicit `active`: single-tenant (caller's home).
-        tenant_id = await resolve_tenant_for_user(current_user, db)
-        params["tenant_id"] = str(tenant_id)
+    # Default + explicit `active` (single-tenant home): send NEITHER
+    # param — coord derives the home tenant fail-closed from the
+    # forwarded Cognito bearer's `OperatorContext`.
     if scope is not None:
         params["scope"] = scope
     if since is not None:
         params["since"] = since
-    return await _proxy_coord_get("/sessions", params=params)
+    return await _proxy_coord_get(
+        "/sessions", params=params or None, tenant_id=tenant_id
+    )
 
 
 @router.get("/sessions/{session_id}")
@@ -2467,13 +2483,17 @@ async def get_coord_session(
     """Fetch a single session row by id (read-only).
 
     Coord's `GET /sessions/:id` is not separately exposed today; we
-    derive the row from `GET /sessions?scope=all&tenant_id=...` and
-    filter client-side. Cheap because the tenant list is small in
-    pilot and the row is small.
+    derive the row from `GET /sessions?scope=all` (session-state
+    breadth — NOT a multi-tenant `tenant_ids` set) and filter
+    client-side. coord scopes to the caller's home tenant fail-closed
+    from the forwarded Cognito bearer; we no longer send the
+    web-computed `tenant_id` param. Cheap because the row set is small
+    in pilot.
     """
     payload = await _proxy_coord_get(
         "/sessions",
-        params={"tenant_id": str(tenant_id), "scope": "all"},
+        params={"scope": "all"},
+        tenant_id=tenant_id,
     )
     sessions = payload.get("sessions", []) if isinstance(payload, dict) else []
     for row in sessions:
@@ -2734,10 +2754,12 @@ async def get_session_agent_status(
     """Return agent_status rows for the device owning this session.
 
     Resolves the session's ``device_id`` then proxies
-    ``GET /coord/agent-status?device_id=<device_id>&tenant_id=<tenant_id>``.
-    The dashboard renders agent coordination state (status_text,
-    blocked_on, intent_globs, correlation_topic) on the session detail
-    view.
+    ``GET /coord/agent-status?device_id=<device_id>``. coord derives the
+    tenant fail-closed from the forwarded Cognito bearer's
+    ``OperatorContext``; we no longer send the web-computed ``tenant_id``
+    param (the bearer is forwarded via ``tenant_id=``). The dashboard
+    renders agent coordination state (status_text, blocked_on,
+    intent_globs, correlation_topic) on the session detail view.
     """
     session = await _resolve_session_row(session_id, tenant_id)
     device_id = session.get("device_id")
@@ -2745,18 +2767,23 @@ async def get_session_agent_status(
         return {"agents": [], "count": 0}
     return await _proxy_coord_get(
         "/coord/agent-status",
-        params={"device_id": str(device_id), "tenant_id": str(tenant_id)},
+        params={"device_id": str(device_id)},
+        tenant_id=tenant_id,
     )
 
 
 async def _resolve_session_row(session_id: UUID, tenant_id: UUID) -> dict[str, Any]:
     """Look up a single session row from coord's session list.
 
-    Reuses the same list-and-filter approach as ``get_coord_session``.
+    Reuses the same list-and-filter approach as ``get_coord_session``:
+    coord scopes to the caller's home tenant fail-closed from the
+    forwarded bearer, so we send no web-computed `tenant_id` param
+    (only forward the bearer via ``tenant_id=``).
     """
     payload = await _proxy_coord_get(
         "/sessions",
-        params={"tenant_id": str(tenant_id), "scope": "all"},
+        params={"scope": "all"},
+        tenant_id=tenant_id,
     )
     sessions = payload.get("sessions", []) if isinstance(payload, dict) else []
     for row in sessions:
