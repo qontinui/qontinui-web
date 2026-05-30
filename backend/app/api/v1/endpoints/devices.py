@@ -25,7 +25,7 @@ from uuid import UUID, uuid4
 
 import httpx
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from qontinui_schemas.common import utc_now
 from qontinui_schemas.generated.per_type.runner import (
     Runner as RunnerWire,
@@ -63,6 +63,26 @@ from app.services.strategy import strategy_client
 logger = structlog.get_logger(__name__)
 
 router = APIRouter()
+
+
+def _extract_caller_token(request: Request) -> str | None:
+    """Pull the caller's bearer token from the ``access_token`` cookie or
+    the ``Authorization`` header — the same two sources the backend's own
+    ``CookieOrBearerScheme`` reads (mirrors
+    :func:`app.api.v1.endpoints.operations._extract_caller_token`; replicated
+    here rather than imported to avoid an ``operations`` <-> ``devices``
+    circular import). A Cognito-authenticated session carries a Cognito token
+    here, which coord's ``resolve_operator_optional`` middleware uses to derive
+    the operator/tenant."""
+    cookie = request.cookies.get("access_token")
+    if cookie:
+        return cookie
+    auth = request.headers.get("Authorization")
+    if auth and auth.lower().startswith("bearer "):
+        token = auth[7:].strip()
+        if token:
+            return token
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -360,7 +380,7 @@ async def pair_confirm(
 )
 async def pair_cli(
     *,
-    db: AsyncSession = Depends(get_async_db),
+    request: Request,
     current_user: UserModel = Depends(get_current_active_user_async),
     payload: PairCliRequest,
 ) -> Any:
@@ -369,17 +389,21 @@ async def pair_cli(
     The runner POSTs here with its existing user access-token in
     ``Authorization: Bearer …`` (the same token it just exchanged via
     ``/api/v1/auth/jwt/login``) and the ``(device_id, hostname, name)``
-    triple it already knows. The backend resolves the calling user's
-    ``tenant_id`` via :func:`resolve_tenant_for_user` and forwards to
-    coord's ``POST /coord/devices/pair-cli`` with ``tenant_id`` +
-    ``user_id`` added.
+    triple it already knows.
 
-    This replaces the runner's previous direct call to coord, which
-    omitted ``tenant_id`` and started getting rejected with 422 after
-    coord's Phase 2 default-tenant-propagation made it required (plan
-    ``D:/qontinui-root/plans/2026-05-20-default-tenant-propagation.md``).
-    Keeping tenant resolution server-side means runners stay agnostic of
-    tenancy — the same architecture pair-confirm has used since Wave 3c.
+    The backend forwards the caller's **Cognito operator bearer** (cookie
+    ``access_token`` or ``Authorization: Bearer``) straight through to
+    coord's ``POST /coord/devices/pair-cli``. Coord's mounted
+    ``resolve_operator_optional`` middleware builds an ``OperatorContext``
+    from that bearer and DERIVES ``tenant_id`` itself when the body omits
+    it — so web no longer resolves or sends a ``tenant_id``. The
+    ``X-Qontinui-User-Id`` header is still sent for user attribution.
+
+    See follow-up #1 of plan
+    ``D:/qontinui-root/plans/2026-05-30-coord-operator-resolver-removal.md``.
+    Coord already accepts the optional ``tenant_id`` + derives it from the
+    operator bearer (``routes_phase3.rs::post_pair_cli``); this change just
+    forwards the right credential.
     """
     if not strategy_client.enabled:
         raise HTTPException(
@@ -390,16 +414,29 @@ async def pair_cli(
             ),
         )
 
-    tenant_id = await resolve_tenant_for_user(current_user, db)
+    caller_token = _extract_caller_token(request)
+    if not caller_token:
+        logger.warning(
+            "pair_cli_missing_caller_bearer",
+            user_id=str(current_user.id),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=(
+                "Missing operator bearer token; coord cannot derive the device tenant."
+            ),
+        )
 
     coord_url = settings.COORD_URL.rstrip("/")
-    headers = await strategy_client._headers(str(current_user.id))  # noqa: SLF001
+    headers: dict[str, str] = {
+        "Authorization": f"Bearer {caller_token}",
+        "X-Qontinui-User-Id": str(current_user.id),
+    }
     body: dict[str, Any] = {
         "device_id": str(payload.device_id),
         "hostname": payload.hostname,
         "name": payload.name or payload.hostname,
         "user_id": str(current_user.id),
-        "tenant_id": str(tenant_id),
     }
 
     try:
