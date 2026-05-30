@@ -218,23 +218,104 @@ function parseArgs(): Args {
 // Auth (cookies attach to the browser context — same shape as headless-launcher)
 // ---------------------------------------------------------------------------
 
+// Cognito CI app client (`qontinui-ci`): a public, USER_PASSWORD_AUTH-only
+// client created for the legacy-auth teardown (Phase T1). Lets CI mint a
+// ci-bot token via the unauthenticated InitiateAuth API — no AWS creds. The
+// id is NOT a secret (it's an app-client id, like the audiences hard-coded in
+// `backend/app/core/config.py`); override via env for non-prod pools.
+const COGNITO_CI_CLIENT_ID =
+  process.env.QONTINUI_COGNITO_CI_CLIENT_ID ?? "tb0epbojige1900ipu6q80j6b";
+const COGNITO_REGION = process.env.QONTINUI_COGNITO_REGION ?? "us-east-1";
+
+/**
+ * Mint a Cognito **id token** for ci-bot via the public InitiateAuth API.
+ *
+ * Uses USER_PASSWORD_AUTH against the dedicated CI app client (no secret →
+ * no SigV4, just an unauthenticated JSON POST). Returns the id token (which
+ * carries `email` + `email_verified` so the backend can provision/link the
+ * `auth.users` row) or null on any failure — the caller falls back to the
+ * legacy local login so a Cognito hiccup never reds the run before T3.
+ */
+async function mintCognitoIdToken(): Promise<string | null> {
+  const username = process.env.QONTINUI_TEST_AUTO_LOGIN_EMAIL;
+  const password = process.env.QONTINUI_TEST_AUTO_LOGIN_PASSWORD;
+  if (!username || !password) return null;
+  try {
+    const resp = await fetch(`https://cognito-idp.${COGNITO_REGION}.amazonaws.com/`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-amz-json-1.1",
+        "X-Amz-Target": "AWSCognitoIdentityProviderService.InitiateAuth",
+      },
+      body: JSON.stringify({
+        AuthFlow: "USER_PASSWORD_AUTH",
+        ClientId: COGNITO_CI_CLIENT_ID,
+        AuthParameters: { USERNAME: username, PASSWORD: password },
+      }),
+    });
+    if (!resp.ok) {
+      process.stderr.write(`[spec-ci] cognito InitiateAuth http_${resp.status}\n`);
+      return null;
+    }
+    const body = (await resp.json()) as {
+      AuthenticationResult?: { IdToken?: string };
+    };
+    return body.AuthenticationResult?.IdToken ?? null;
+  } catch (e) {
+    process.stderr.write(
+      `[spec-ci] cognito InitiateAuth error: ${e instanceof Error ? e.message : String(e)}\n`,
+    );
+    return null;
+  }
+}
+
 async function programmaticLogin(
   context: BrowserContext,
-  apiBase: string,
-): Promise<{ ok: boolean; reason?: string }> {
+  baseUrl: string,
+): Promise<{ ok: boolean; reason?: string; mode?: "cognito" | "local" }> {
   const email = process.env.QONTINUI_TEST_AUTO_LOGIN_EMAIL;
   const password = process.env.QONTINUI_TEST_AUTO_LOGIN_PASSWORD;
   if (!email || !password) return { ok: false, reason: "no_credentials" };
 
+  // Cognito-first (Phase T1): mint a ci-bot id token and seed it as the
+  // `access_token` cookie on the browser origin. The backend's CookieOrBearer
+  // scheme reads that cookie and routes it to the Cognito verifier by `iss`
+  // (dual-accept). The cookie lives on the *frontend* origin because every
+  // API call goes through the same-origin proxy, exactly like the Set-Cookie
+  // the legacy login produced.
+  //
+  // We VERIFY the token actually authenticates (a real authed GET) before
+  // committing to it: until the backend deploy that trusts the CI app-client
+  // audience lands, a minted token is rejected 401. On a miss we clear the
+  // cookie and fall through to the legacy local login, so the run stays green
+  // across the deploy window. The local arm is removed in Phase T3.
+  const idToken = await mintCognitoIdToken();
+  if (idToken) {
+    await context.addCookies([{ name: "access_token", value: idToken, url: baseUrl }]);
+    const probe = await context.request.get(
+      `${baseUrl.replace(/\/$/, "")}/api/v1/projects`,
+    );
+    if (probe.ok()) {
+      return { ok: true, mode: "cognito" };
+    }
+    process.stderr.write(
+      `[spec-ci] cognito token not yet accepted (probe http_${probe.status()}) — falling back to local login\n`,
+    );
+    await context.clearCookies();
+  }
+
+  // Fallback: legacy FastAPI-Users local login (removed in Phase T3). The
+  // POST goes through the same-origin proxy, so its Set-Cookie lands on the
+  // browser origin too.
   const form = new URLSearchParams({ username: email, password }).toString();
-  const resp = await context.request.post(`${apiBase.replace(/\/$/, "")}/api/v1/auth/jwt/login`, {
+  const resp = await context.request.post(`${baseUrl.replace(/\/$/, "")}/api/v1/auth/jwt/login`, {
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     data: form,
   });
   if (!resp.ok()) {
     return { ok: false, reason: `http_${resp.status()}` };
   }
-  return { ok: true };
+  return { ok: true, mode: "local" };
 }
 
 // ---------------------------------------------------------------------------
@@ -1289,7 +1370,7 @@ async function main(): Promise<number> {
   // and the localhost route guard would never see it.
   const auth = await programmaticLogin(context, args.baseUrl);
   process.stderr.write(
-    `[spec-ci] api-auth: ${auth.ok ? "ok" : `failed (${auth.reason})`}\n`,
+    `[spec-ci] api-auth: ${auth.ok ? `ok (${auth.mode})` : `failed (${auth.reason})`}\n`,
   );
 
   // Seed the fixture project (Unlock 1) so `<RequireProject>`-gated pages

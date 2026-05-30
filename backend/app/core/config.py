@@ -207,13 +207,17 @@ class Settings(BaseSettings):
         ),
     )
     COGNITO_ALLOWED_AUDIENCES: str = Field(
-        # web app-client, runner app-client, mobile app-client. The
-        # runner + mobile present user tokens to /users/me, so their
-        # client ids must be trusted as audiences too.
+        # web app-client, runner app-client, mobile app-client, CI app-client.
+        # The runner + mobile present user tokens to /users/me, so their
+        # client ids must be trusted as audiences too. The CI client
+        # (`qontinui-ci`, USER_PASSWORD_AUTH-only, public) lets Spec CI + E2E
+        # mint a ci-bot token without AWS creds — its `aud`/`client_id` must
+        # therefore be accepted here (Phase T1 of the legacy-auth-teardown).
         default=(
             "q6ns1a8bokf2np1mj8v8arl31,"
             "67f2a1a0cmgileob23lniud5t7,"
-            "7sirquecq6svomsoe34pblfp24"
+            "7sirquecq6svomsoe34pblfp24,"
+            "tb0epbojige1900ipu6q80j6b"
         ),
         description=(
             "Comma-separated set of accepted Cognito app-client ids. A "
