@@ -2808,7 +2808,7 @@ async def list_user_tenants(
                   ON r.operator_id = o.operator_id
                 JOIN coord.tenants t
                   ON t.tenant_id = r.tenant_id
-                WHERE (:cognito_sub IS NOT NULL AND o.sso_subject = :cognito_sub)
+                WHERE o.sso_subject = :cognito_sub
                    OR LOWER(o.email) = :email
                 GROUP BY t.tenant_id, t.slug, t.display_name, o.tenant_id
                 ORDER BY

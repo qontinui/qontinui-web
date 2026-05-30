@@ -60,7 +60,7 @@ async def read_users_me(
                 SELECT o.tenant_id, t.slug
                 FROM coord.operators o
                 LEFT JOIN coord.tenants t ON t.tenant_id = o.tenant_id
-                WHERE (:cognito_sub IS NOT NULL AND o.sso_subject = :cognito_sub)
+                WHERE o.sso_subject = :cognito_sub
                    OR LOWER(o.email) = :email
                 ORDER BY (o.sso_subject = :cognito_sub) DESC NULLS LAST
                 LIMIT 1

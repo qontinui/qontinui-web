@@ -79,10 +79,15 @@ def _identity_params(user: User) -> dict[str, str | None]:
 # choice is a single round-trip (no ordered two-query dance). The ORDER BY
 # ranks a ``sso_subject`` match ahead of an email-only match when both a
 # sub-keyed and an email-keyed row exist; LIMIT 1 then takes the preferred
-# one. When ``:cognito_sub`` is NULL the first predicate is unsatisfiable, so
-# only the email arm contributes.
+# one. When ``:cognito_sub`` is NULL the ``sso_subject = :cognito_sub`` arm is
+# simply never true (``= NULL`` yields NULL, not a match), so only the email
+# arm contributes — no explicit ``IS NOT NULL`` guard is needed. (An explicit
+# ``:cognito_sub IS NOT NULL`` guard is in fact harmful here: asyncpg cannot
+# infer the parameter's type from a bare ``$1 IS NOT NULL`` and raises
+# AmbiguousParameterError. Comparing it to the ``text`` column ``sso_subject``
+# gives the driver the type it needs.)
 _OPERATOR_SUB_OR_EMAIL_PREDICATE = """
-    (:cognito_sub IS NOT NULL AND {op}.sso_subject = :cognito_sub)
+    {op}.sso_subject = :cognito_sub
     OR LOWER({op}.email) = :email
 """
 
