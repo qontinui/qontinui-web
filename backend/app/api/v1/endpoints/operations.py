@@ -14,6 +14,7 @@ new ``runners`` table.
 """
 
 import asyncio
+import contextvars
 import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -28,6 +29,7 @@ from fastapi import (
     Depends,
     HTTPException,
     Query,
+    Request,
     WebSocket,
     WebSocketDisconnect,
 )
@@ -114,7 +116,38 @@ router = APIRouter()
 # different file and aren't part of the operations dashboard.
 
 
+# Phase T2 — the caller's raw Cognito token, captured per-request by
+# ``get_tenant_id`` and forwarded to coord by ``_tenant_headers`` so coord
+# can authorize on the token's operator identity (its ``sub``) rather than
+# the ``X-Qontinui-Tenant-Id`` email-bridge header. The header is retained
+# as a transition fallback and removed in Phase T2b once forwarding is
+# proven live. ContextVar is task-local, so each request sees only its own
+# token (no cross-request leakage).
+_caller_bearer: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "coord_caller_bearer", default=None
+)
+
+
+def _extract_caller_token(request: Request) -> str | None:
+    """Pull the caller's bearer token from the ``access_token`` cookie or
+    the ``Authorization`` header — the same two sources the backend's own
+    ``CookieOrBearerScheme`` reads. A Cognito-authenticated session carries
+    a Cognito token here; a legacy local-login session carries a local JWT
+    (which coord's verifier rejects and falls back to the header for, until
+    Phase T3 removes local login)."""
+    cookie = request.cookies.get("access_token")
+    if cookie:
+        return cookie
+    auth = request.headers.get("Authorization")
+    if auth and auth.lower().startswith("bearer "):
+        token = auth[7:].strip()
+        if token:
+            return token
+    return None
+
+
 async def get_tenant_id(
+    request: Request,
     current_user: UserModel = Depends(get_current_active_user_async),
     db: AsyncSession = Depends(get_async_db),
 ) -> UUID:
@@ -123,17 +156,28 @@ async def get_tenant_id(
     See ``app.services.coord_operator_resolver`` for the resolution
     policy. Raises 403 ``tenant_not_resolved`` if the user isn't linked
     to a coord operator row (and the bootstrap fallback also misses).
+
+    Side effect (Phase T2): captures the caller's bearer token into a
+    request-scoped ContextVar so ``_tenant_headers`` can forward it to
+    coord for token-based authorization.
     """
+    _caller_bearer.set(_extract_caller_token(request))
     return await resolve_tenant_for_user(current_user, db)
 
 
 def _tenant_headers(tenant_id: UUID) -> dict[str, str]:
     """Build the request-headers dict carrying the tenant scope.
 
-    Centralised so adding a future header (e.g. ``X-Qontinui-Operator-Id``
-    for audit-log stamping) is a one-line change.
+    Includes the ``X-Qontinui-Tenant-Id`` header (the email-bridge, kept as
+    a transition fallback) and — when the caller presented one — the
+    forwarded ``Authorization: Bearer`` Cognito token (Phase T2), which
+    coord prefers over the header.
     """
-    return {TENANT_HEADER: str(tenant_id)}
+    headers = {TENANT_HEADER: str(tenant_id)}
+    token = _caller_bearer.get()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
 
 
 # ---- Cross-machine beacon (unauth, LAN-only — kept verbatim) -------------
