@@ -44,6 +44,12 @@ import { join, resolve } from "node:path";
 interface SpecCiReport {
   evaluatedAt?: string;
   passed?: boolean;
+  /** Per-spec match outcomes — drives the failing-spec breakdown. */
+  specs?: Array<{
+    specId?: string;
+    matchOutcome?: string;
+    matchRate?: number;
+  }>;
   summary?: {
     minMatchRate?: number;
     transitionPassRate?: number;
@@ -72,7 +78,11 @@ interface SpecCiReport {
       status?: number;
       method?: string;
     }>;
-    run?: { githubRunId?: string | null; githubRunAttempt?: string | null };
+    run?: {
+      githubRunId?: string | null;
+      githubRunAttempt?: string | null;
+      githubSha?: string | null;
+    };
   };
 }
 
@@ -138,6 +148,13 @@ function derivePassed(r: SpecCiReport): boolean {
 interface FeatureRow {
   label: string;
   passed: boolean;
+  /**
+   * The commit SHA this run tested (`diagnostics.run.githubSha`). The axis that
+   * SEPARATES a flake from a legitimate failure: a run that fails on a SHA whose
+   * sibling runs pass is a flake; a run that fails on a SHA with no passing
+   * sibling is Spec CI correctly catching a real code change. `null` off-CI.
+   */
+  sha: string | null;
   sessionLost: boolean;
   notableCount: number;
   serverErrors: number;
@@ -149,6 +166,8 @@ interface FeatureRow {
   durationMs: number;
   /** routeTemplate(`host METHOD path status`) -> count, for concentration. */
   notableByRoute: Map<string, number>;
+  /** Specs that did NOT full_match this run (the per-spec failure breakdown). */
+  failingSpecs: Array<{ specId: string; matchOutcome: string; matchRate: number }>;
 }
 
 function templatize(url: string): string {
@@ -174,9 +193,17 @@ function toRow(label: string, r: SpecCiReport): FeatureRow {
     const key = `${n.method ?? "?"} ${templatize(n.url ?? "")} ${n.status ?? "?"}`;
     notableByRoute.set(key, (notableByRoute.get(key) ?? 0) + 1);
   }
+  const failingSpecs = (r.specs ?? [])
+    .filter((s) => s.matchOutcome !== undefined && s.matchOutcome !== "full_match")
+    .map((s) => ({
+      specId: s.specId ?? "(unknown)",
+      matchOutcome: s.matchOutcome ?? "(unknown)",
+      matchRate: s.matchRate ?? 0,
+    }));
   return {
     label,
     passed: derivePassed(r),
+    sha: d.run?.githubSha ?? null,
     sessionLost: d.crawlSessionLost ?? r.crawl?.sessionLost ?? false,
     notableCount: (d.notableResponses ?? []).length,
     serverErrors: r.summary?.serverErrors?.total ?? 0,
@@ -188,6 +215,7 @@ function toRow(label: string, r: SpecCiReport): FeatureRow {
     minMatchRate: r.summary?.minMatchRate ?? 1,
     durationMs: d.durationMs ?? 0,
     notableByRoute,
+    failingSpecs,
   };
 }
 
@@ -276,7 +304,22 @@ interface Analysis {
   total: number;
   passes: number;
   fails: number;
-  flakeRate: number;
+  /** Raw fail fraction (fails/total) — NOT the flake rate. See `trueFlakeShas`. */
+  failRate: number;
+  /** Runs whose report carried no `diagnostics.run.githubSha` (can't group). */
+  rowsWithoutSha: number;
+  /**
+   * THE flake metric: SHAs that produced BOTH a pass and a fail. A fail on a
+   * SHA with a passing sibling is a genuine same-code flake. The plan's
+   * reactivate criterion is `trueFlakeShas.length >= 3`.
+   */
+  trueFlakeShas: Array<{ sha: string; passes: number; fails: number }>;
+  /**
+   * SHAs that ONLY failed (no passing sibling). These are most likely Spec CI
+   * correctly catching a real code change — NOT flakes — though an un-rerun
+   * single failure could hide a flake. The failing-spec breakdown disambiguates.
+   */
+  failOnlyShas: Array<{ sha: string; fails: number }>;
   booleanFeatures: Array<{
     feature: string;
     passRate: number;
@@ -292,6 +335,18 @@ interface Analysis {
   }>;
   /** For FAIL rows: how concentrated are the notable 5xx/4xx across routes? */
   failNotableConcentration: Array<{ route: string; runs: number; total: number }>;
+  /**
+   * Across FAIL runs: which specs did not full_match, in how many fail runs,
+   * and their worst match rate. A spec failing across runs of DIFFERENT SHAs
+   * with a clear before/after is a real change; one spec flickering on the SAME
+   * SHA is the flake to chase.
+   */
+  failingSpecBreakdown: Array<{
+    specId: string;
+    failRuns: number;
+    outcomes: string;
+    minMatchRate: number;
+  }>;
 }
 
 function analyze(rows: FeatureRow[]): Analysis {
@@ -352,21 +407,105 @@ function analyze(rows: FeatureRow[]): Analysis {
     .sort((a, b) => b.runs - a.runs || b.total - a.total)
     .slice(0, 15);
 
+  // Same-SHA flake detection — the metric that distinguishes a flake from a
+  // legitimate failure. Group runs by the SHA they tested; a SHA with both a
+  // pass and a fail is a genuine same-code flake.
+  const bySha = new Map<string, { passes: number; fails: number }>();
+  let rowsWithoutSha = 0;
+  for (const r of rows) {
+    if (!r.sha) {
+      rowsWithoutSha++;
+      continue;
+    }
+    const e = bySha.get(r.sha) ?? { passes: 0, fails: 0 };
+    if (r.passed) e.passes++;
+    else e.fails++;
+    bySha.set(r.sha, e);
+  }
+  const trueFlakeShas = [...bySha.entries()]
+    .filter(([, v]) => v.passes > 0 && v.fails > 0)
+    .map(([sha, v]) => ({ sha, passes: v.passes, fails: v.fails }))
+    .sort((a, b) => b.fails - a.fails);
+  const failOnlyShas = [...bySha.entries()]
+    .filter(([, v]) => v.fails > 0 && v.passes === 0)
+    .map(([sha, v]) => ({ sha, fails: v.fails }))
+    .sort((a, b) => b.fails - a.fails);
+
+  // Per-spec failure breakdown across FAIL runs — which specs are the ones that
+  // actually red the gate, so "is it one auth refactor or a real flake?" is
+  // answerable at a glance.
+  const specAgg = new Map<
+    string,
+    { failRuns: number; outcomes: Set<string>; minMatchRate: number }
+  >();
+  for (const r of fails) {
+    for (const s of r.failingSpecs) {
+      const e =
+        specAgg.get(s.specId) ?? { failRuns: 0, outcomes: new Set(), minMatchRate: 1 };
+      e.failRuns++;
+      e.outcomes.add(s.matchOutcome);
+      e.minMatchRate = Math.min(e.minMatchRate, s.matchRate);
+      specAgg.set(s.specId, e);
+    }
+  }
+  const failingSpecBreakdown = [...specAgg.entries()]
+    .map(([specId, v]) => ({
+      specId,
+      failRuns: v.failRuns,
+      outcomes: [...v.outcomes].sort().join(","),
+      minMatchRate: v.minMatchRate,
+    }))
+    .sort((a, b) => b.failRuns - a.failRuns)
+    .slice(0, 20);
+
   return {
     total: rows.length,
     passes: passes.length,
     fails: fails.length,
-    flakeRate: rows.length === 0 ? 0 : fails.length / rows.length,
+    failRate: rows.length === 0 ? 0 : fails.length / rows.length,
+    rowsWithoutSha,
+    trueFlakeShas,
+    failOnlyShas,
     booleanFeatures,
     numericFeatures,
     failNotableConcentration,
+    failingSpecBreakdown,
   };
 }
 
 function printText(a: Analysis): void {
   const pct = (x: number) => `${(x * 100).toFixed(0)}%`;
+  const short = (sha: string) => sha.slice(0, 8);
   const lines: string[] = [];
-  lines.push(`Spec CI flake analysis — ${a.total} runs, ${a.passes} pass / ${a.fails} fail (flake rate ${pct(a.flakeRate)})`);
+  lines.push(`Spec CI flake analysis — ${a.total} runs, ${a.passes} pass / ${a.fails} fail (raw fail rate ${pct(a.failRate)})`);
+  lines.push("");
+  // The headline verdict: true flakes vs legitimate failures.
+  lines.push(`VERDICT — true same-SHA flakes: ${a.trueFlakeShas.length} SHA(s) that both passed AND failed.`);
+  if (a.trueFlakeShas.length > 0) {
+    for (const f of a.trueFlakeShas) {
+      lines.push(`  FLAKE ${short(f.sha)}: ${f.passes} pass / ${f.fails} fail on the same commit`);
+    }
+  } else {
+    lines.push("  → 0 same-code flakes. Every failure is on a SHA with no passing sibling (below):");
+  }
+  if (a.failOnlyShas.length > 0) {
+    lines.push(`  fail-only SHAs (likely real code changes Spec CI caught, NOT flakes): ${a.failOnlyShas.length}`);
+    for (const f of a.failOnlyShas.slice(0, 10)) {
+      lines.push(`    ${short(f.sha)}: ${f.fails} fail, 0 pass`);
+    }
+  }
+  if (a.rowsWithoutSha > 0) {
+    lines.push(`  (${a.rowsWithoutSha} run(s) had no githubSha in the report — pre-diagnostics or off-CI — excluded from SHA grouping)`);
+  }
+  lines.push("");
+  lines.push("Failing specs across FAIL runs (specId — #fail-runs, outcomes, worst matchRate):");
+  if (a.failingSpecBreakdown.length === 0) {
+    lines.push("  (no per-spec failures recorded — fails were crawl/console/server-only)");
+  } else {
+    for (const s of a.failingSpecBreakdown) {
+      lines.push(`  ${s.specId.padEnd(28)} — ${s.failRuns} run(s), [${s.outcomes}], minMatchRate=${s.minMatchRate.toFixed(2)}`);
+    }
+  }
   lines.push("");
   lines.push("Boolean features (sorted by how cleanly they separate pass vs fail):");
   for (const f of a.booleanFeatures) {
@@ -391,10 +530,13 @@ function printText(a: Analysis): void {
     }
   }
   lines.push("");
-  lines.push("Read: a feature with high `separation` AND aligned numeric medians is the");
-  lines.push("dominant flake driver. crawlSessionLost dominant => H1 (ci-bot collision).");
-  lines.push("Notable 5xx concentrated on one route => endpoint/upstream regression;");
-  lines.push("spread across many => blanket backend pressure (H2).");
+  lines.push("Read: START with the VERDICT. `trueFlakeShas` is the only true flake count —");
+  lines.push("a fail on a SHA whose sibling passed. `failOnlyShas` + the failing-spec list");
+  lines.push("are almost always Spec CI correctly catching real code changes (look up the");
+  lines.push("PR for that SHA; if the failing specs are the pages it changed, it's not a");
+  lines.push("flake). Only THEN read the feature tables to attribute a confirmed flake:");
+  lines.push("crawlSessionLost dominant => H1 (ci-bot collision); notable 5xx concentrated");
+  lines.push("on one route => endpoint/upstream regression; spread across many => H2.");
   process.stdout.write(lines.join("\n") + "\n");
 }
 
@@ -423,13 +565,7 @@ function main(): number {
 
   const result = analyze(rows);
   if (args.json) {
-    process.stdout.write(
-      JSON.stringify(
-        { ...result, failNotableConcentration: result.failNotableConcentration },
-        null,
-        2,
-      ) + "\n",
-    );
+    process.stdout.write(JSON.stringify(result, null, 2) + "\n");
   } else {
     printText(result);
   }
