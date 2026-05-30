@@ -18,7 +18,6 @@ async def test_create_personal_organization(async_db_session):
         email="test@example.com",
         username="testuser",
         full_name="Test User",
-        hashed_password="hashed_password",
     )
     async_db_session.add(user)
     await async_db_session.commit()
@@ -59,7 +58,6 @@ async def test_create_personal_organization_idempotency(async_db_session):
         email="test2@example.com",
         username="testuser2",
         full_name="Test User 2",
-        hashed_password="hashed_password",
     )
     async_db_session.add(user)
     await async_db_session.commit()
@@ -101,7 +99,6 @@ async def test_create_personal_organization_username_only(async_db_session):
         email="test3@example.com",
         username="johndoe",
         full_name="",
-        hashed_password="hashed_password",
     )
     async_db_session.add(user)
     await async_db_session.commit()
@@ -126,7 +123,6 @@ async def test_create_personal_organization_email_only(async_db_session):
         email="jane.smith@example.com",
         username="janesmith",  # Username is required, so we use email prefix
         full_name=None,
-        hashed_password="hashed_password",
     )
     async_db_session.add(user)
     await async_db_session.commit()
@@ -151,7 +147,6 @@ async def test_personal_organization_slug_uniqueness(async_db_session):
         email="user1@example.com",
         username="user1",
         full_name="User One",
-        hashed_password="hashed_password",
     )
     async_db_session.add(user1)
     await async_db_session.commit()
@@ -162,7 +157,6 @@ async def test_personal_organization_slug_uniqueness(async_db_session):
         email="user2@example.com",
         username="user2",
         full_name="User Two",
-        hashed_password="hashed_password",
     )
     async_db_session.add(user2)
     await async_db_session.commit()

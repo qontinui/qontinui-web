@@ -47,8 +47,6 @@ import {
 const PUBLIC_ROUTES = [
   "/",
   "/login",
-  "/forgot-password",
-  "/reset-password",
   "/privacy-extension",
   "/runner",
   "/docs",

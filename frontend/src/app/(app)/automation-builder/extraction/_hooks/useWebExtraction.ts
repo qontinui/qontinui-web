@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { toast } from "sonner";
-import { extractionService } from "@/services/service-factory";
+import { authService, extractionService } from "@/services/service-factory";
 import { useExtractions, useCreateExtraction } from "@/hooks/use-extractions";
-import { useAuth } from "@/contexts/auth-context";
 import { runnerClient } from "@/lib/runner-client";
 import {
   useExtractionAnnotationStore,
@@ -38,7 +37,6 @@ export function useWebExtraction({
   webConfig,
   isLoaded: _isLoaded,
 }: UseWebExtractionArgs) {
-  const { getAccessToken } = useAuth();
   const createExtraction = useCreateExtraction();
   const annotationStore = useExtractionAnnotationStore();
 
@@ -579,7 +577,9 @@ export function useWebExtraction({
       extractionId: sessionResult.id,
     }));
 
-    const authToken = await getAccessToken();
+    // Hand the runner the Cognito access token the app already holds; the
+    // backend accepts it directly. `null` when unauthenticated → omitted below.
+    const authToken = authService.tokenManager.getAccessToken();
 
     const response = await runnerClient.startExtraction({
       urls: validUrls,
@@ -609,7 +609,7 @@ export function useWebExtraction({
     toast.info("Starting web extraction...");
     stateRef.current.setIsExtracting(true);
     stateRef.current.setMainTab("results");
-  }, [projectId, webConfig, createExtraction, getAccessToken]);
+  }, [projectId, webConfig, createExtraction]);
 
   return {
     extractionHistory,

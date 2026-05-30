@@ -30,7 +30,6 @@ export function getDownloadLabel(platform: Platform): string {
 
 export function useLandingPage() {
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
-  const [signupMode, setSignupMode] = useState(true);
   const [platform, setPlatform] = useState<Platform>("unknown");
   const { user } = useAuth();
   const router = useRouter();
@@ -49,14 +48,12 @@ export function useLandingPage() {
   };
 
   const openSignIn = () => {
-    setSignupMode(false);
     setAuthDialogOpen(true);
   };
 
   return {
     authDialogOpen,
     setAuthDialogOpen,
-    signupMode,
     platform,
     user,
     router,

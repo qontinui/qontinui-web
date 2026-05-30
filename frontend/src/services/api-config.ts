@@ -33,11 +33,11 @@ export class ApiConfig {
   static readonly RUNNER_URL =
     process.env.NEXT_PUBLIC_RUNNER_URL || "http://127.0.0.1:9876";
 
-  // Auth endpoints (fastapi-users JWT routes)
-  static readonly AUTH_LOGIN = `${ApiConfig.API_BASE_URL}/api/v1/auth/jwt/login`;
-  static readonly AUTH_REGISTER = `${ApiConfig.API_BASE_URL}/api/v1/auth/register`;
-  static readonly AUTH_LOGOUT = `${ApiConfig.API_BASE_URL}/api/v1/auth/jwt/logout`;
-  static readonly AUTH_REFRESH = `${ApiConfig.API_BASE_URL}/api/v1/auth/jwt/refresh`;
+  // Current-user endpoint. Authentication is Cognito-only: the access token
+  // minted by the hosted-UI flow is attached as `Authorization: Bearer` and the
+  // backend dual-accepts Cognito JWTs. There are no local jwt/login, register,
+  // jwt/logout, or jwt/refresh routes — sign-in / sign-up / password-reset /
+  // sign-out all happen in the Cognito hosted UI.
   static readonly USERS_ME = `${ApiConfig.API_BASE_URL}/api/v1/auth/users/me`;
 
   /**

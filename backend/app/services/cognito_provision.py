@@ -7,15 +7,14 @@ needed. The resolution order is:
 
 1. **By Cognito sub** — a row whose ``cognito_sub`` already equals the
    token's ``sub``. This is the steady-state path after the first login.
-2. **Link by verified email** — an existing local (email/password) user
-   with the same email gets its ``cognito_sub`` stamped, unifying the
-   two identities. Requires the token's ``email_verified`` to be true
-   (an unverified email must never be trusted to claim an existing
-   account — that would be an account-takeover vector).
+2. **Link by verified email** — an existing user with the same email gets
+   its ``cognito_sub`` stamped, unifying the identity. Requires the
+   token's ``email_verified`` to be true (an unverified email must never
+   be trusted to claim an existing account — that would be an
+   account-takeover vector).
 3. **Create** — no existing row matches; mint a fresh ``auth.users`` row
-   from the token claims (email, name, ``cognito_sub``). Cognito-only
-   users have no local password, so a random unusable hash is stored;
-   they authenticate exclusively via Cognito.
+   from the token claims (email, name, ``cognito_sub``). Cognito is the
+   sole authentication mechanism; the row carries no local password.
 
 This mirrors ``qontinui-coord/src/auth_sso.rs::lookup_or_provision_operator``
 (the coord operator equivalent) but targets the web ``User`` model.
@@ -28,15 +27,12 @@ import uuid
 from typing import Any
 
 import structlog
-from fastapi_users.password import PasswordHelper
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
 
 logger = structlog.get_logger(__name__)
-
-_password_helper = PasswordHelper()
 
 
 class CognitoClaimError(RuntimeError):
@@ -177,16 +173,15 @@ async def resolve_user_for_cognito_claims(
         email_verified = False
 
     username = await _derive_unique_username(session, email=email, sub=sub)
-    # Cognito-only users have no local password. Store a random unusable
-    # hash so the NOT NULL column is satisfied; they never log in locally.
-    unusable_hash = _password_helper.hash(secrets.token_urlsafe(48))
+    # Cognito is the sole authentication mechanism: the ``hashed_password``
+    # column no longer exists on the model (dropped from auth.users), so
+    # nothing password-related is set here.
 
     user = User(
         id=uuid.uuid4(),
         email=email,
         username=username,
         full_name=_extract_name(claims),
-        hashed_password=unusable_hash,
         cognito_sub=sub,
         is_active=True,
         # Trust Cognito's email verification signal for the verified flag.

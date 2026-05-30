@@ -3,7 +3,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.security import get_password_hash
 
 # Import Base and all models to register them with SQLAlchemy metadata
 from app.db.base import Base  # noqa: F401
@@ -40,11 +39,19 @@ logger = structlog.get_logger(__name__)
 
 
 async def init_db(db: AsyncSession) -> None:
-    """Initialize database with first superuser (async version)."""
+    """Initialize the database with the first superuser (async version).
+
+    Cognito is the sole authentication mechanism, so the seeded superuser
+    has no local password. It is a shell ``auth.users`` row keyed on
+    ``FIRST_SUPERUSER_EMAIL``; on that operator's first Cognito login the
+    provision-or-link path (see :mod:`app.services.cognito_provision`)
+    stamps their ``cognito_sub`` onto this row by verified email, so they
+    inherit the pre-seeded superuser grant.
+    """
     # Tables are created via Alembic migrations, not here
     # Base.metadata.create_all(bind=engine) is incompatible with async engines
 
-    # Create first superuser if it doesn't exist
+    # Create the first superuser shell if it doesn't exist
     if settings.FIRST_SUPERUSER_EMAIL:
         # Use async select query
         result = await db.execute(
@@ -53,12 +60,9 @@ async def init_db(db: AsyncSession) -> None:
         user = result.scalar_one_or_none()
 
         if not user:
-            # Create user directly
-            hashed_password = get_password_hash(settings.FIRST_SUPERUSER_PASSWORD)  # type: ignore[arg-type]
             user = User(
                 email=settings.FIRST_SUPERUSER_EMAIL,
                 username=settings.FIRST_SUPERUSER_EMAIL.split("@")[0],
-                hashed_password=hashed_password,
                 full_name="Admin User",
                 is_superuser=True,
                 is_verified=True,

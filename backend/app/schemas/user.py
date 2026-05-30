@@ -41,12 +41,28 @@ class UserCreate(schemas.BaseUserCreate):
 
 
 class UserUpdate(schemas.BaseUserUpdate):
-    """Schema for updating users (fastapi-users compatible)."""
+    """Schema for updating users (fastapi-users compatible).
+
+    Cognito is the sole authentication mechanism: there is no local
+    password. The inherited ``password`` field is force-dropped from the
+    update dict so the fastapi-users manager never tries to set a
+    (now-nonexistent) ``hashed_password`` column.
+    """
 
     username: str | None = None
     full_name: str | None = None
     company: str | None = None
     phone: str | None = None
+
+    def create_update_dict(self) -> dict:
+        data: dict = super().create_update_dict()
+        data.pop("password", None)
+        return data
+
+    def create_update_dict_superuser(self) -> dict:
+        data: dict = super().create_update_dict_superuser()
+        data.pop("password", None)
+        return data
 
 
 # Backward compatibility aliases

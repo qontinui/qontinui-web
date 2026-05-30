@@ -96,11 +96,10 @@ def mock_user_token(test_client: TestClient) -> str:
     """
     Create a mock authentication token for testing.
     """
-    # In real implementation, would create actual test user and token
-    # For now, return a mock token
-    from app.core.security import create_access_token
-
-    return create_access_token("test_user_id")
+    # Local token minting was removed (Cognito-only). This is a static
+    # placeholder bearer for tests that only need an Authorization header
+    # shape; tests that exercise real auth mock the Cognito verifier.
+    return "test-mock-token"
 
 
 @pytest.fixture(scope="function")
@@ -210,7 +209,6 @@ async def test_user(async_db_session: AsyncSession):
         email=f"testuser_{uuid4()}@example.com",
         username=f"testuser_{uuid4().hex[:8]}",
         full_name="Test User",
-        hashed_password="hashed_password",
         is_active=True,
         is_verified=True,
     )

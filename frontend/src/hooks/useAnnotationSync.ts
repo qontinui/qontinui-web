@@ -11,7 +11,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useAuth } from "@/contexts/auth-context";
+import { authService } from "@/services/service-factory";
 import { createLogger } from "@/lib/logger";
 
 const log = createLogger("useAnnotationSync");
@@ -149,7 +149,6 @@ export function useAnnotationSync(
   annotationSetId: string | null,
   options: UseAnnotationSyncOptions = {}
 ): UseAnnotationSyncReturn {
-  const { getAccessToken } = useAuth();
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<Error | null>(null);
@@ -170,13 +169,17 @@ export function useAnnotationSync(
   const getWebSocketUrl = useCallback(async (): Promise<string | null> => {
     if (!annotationSetId) return null;
 
-    const token = await getAccessToken();
+    // Present the Cognito access token the app already holds. The annotation
+    // WebSocket verifier accepts the Cognito token directly — there is no
+    // separate runner-token mint. If we're not authenticated there's no token,
+    // so the caller skips connecting (same behaviour as before).
+    const token = authService.tokenManager.getAccessToken();
     if (!token) return null;
 
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const host = window.location.host;
     return `${protocol}//${host}/api/v1/ws/annotations/${annotationSetId}?token=${token}`;
-  }, [annotationSetId, getAccessToken]);
+  }, [annotationSetId]);
 
   /**
    * Handle incoming WebSocket messages

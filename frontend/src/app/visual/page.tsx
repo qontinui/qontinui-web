@@ -22,7 +22,6 @@ import { Footer } from "@/components/marketing/footer";
 
 function VisualLandingContent() {
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
-  const [signupMode, setSignupMode] = useState(true);
   const { user } = useAuth();
   const router = useRouter();
 
@@ -30,13 +29,11 @@ function VisualLandingContent() {
     // Set product mode BEFORE opening auth dialog so the post-login
     // redirect (via /dashboard) routes to the visual dashboard
     localStorage.setItem("qontinui-product-mode", "visual");
-    setSignupMode(true);
     setAuthDialogOpen(true);
   };
 
   const openSignIn = () => {
     localStorage.setItem("qontinui-product-mode", "visual");
-    setSignupMode(false);
     setAuthDialogOpen(true);
   };
 
@@ -402,11 +399,7 @@ function VisualLandingContent() {
       </section>
 
       {/* Auth Dialog */}
-      <AuthDialog
-        open={authDialogOpen}
-        onOpenChange={setAuthDialogOpen}
-        defaultTab={signupMode ? "signup" : "signin"}
-      />
+      <AuthDialog open={authDialogOpen} onOpenChange={setAuthDialogOpen} />
 
       <Footer />
     </div>

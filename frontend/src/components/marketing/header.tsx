@@ -10,7 +10,6 @@ import { useAuth } from "@/contexts/auth-context";
 
 export function Header() {
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
-  const [signupMode, setSignupMode] = useState(false);
   const { user } = useAuth();
   const router = useRouter();
 
@@ -92,7 +91,6 @@ export function Header() {
               <Button
                 variant="ghost"
                 onClick={() => {
-                  setSignupMode(false);
                   setAuthDialogOpen(true);
                 }}
                 className="hover:bg-primary/10"
@@ -106,11 +104,7 @@ export function Header() {
       </header>
 
       {/* Auth Dialog */}
-      <AuthDialog
-        open={authDialogOpen}
-        onOpenChange={setAuthDialogOpen}
-        defaultTab={signupMode ? "signup" : "signin"}
-      />
+      <AuthDialog open={authDialogOpen} onOpenChange={setAuthDialogOpen} />
     </>
   );
 }

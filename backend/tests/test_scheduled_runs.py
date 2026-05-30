@@ -257,7 +257,6 @@ class TestCrud:
                 email=f"other_{uuid4()}@x.com",
                 username=f"other_{uuid4().hex[:8]}",
                 full_name="Other",
-                hashed_password="h",
                 is_active=True,
                 is_verified=True,
             )

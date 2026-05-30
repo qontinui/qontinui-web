@@ -4,7 +4,6 @@ import { useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AuthForm } from "@/components/auth-form";
 import { useAuth } from "@/contexts/auth-context";
-import type { User } from "@/types/auth-types";
 
 export const dynamic = "force-dynamic";
 
@@ -35,16 +34,6 @@ export default function LoginPage() {
     }
   }, [loading, user, next, router]);
 
-  const handleSuccess = (_signedIn: User) => {
-    if (next && next.startsWith("/")) {
-      router.replace(next);
-      return;
-    }
-    // See note above: default landing is the mode-aware `/dashboard`, never
-    // the admin hub, regardless of superuser status.
-    router.replace("/dashboard");
-  };
-
   return (
     <div className="container mx-auto px-4 py-16 flex items-center justify-center">
       <div className="w-full max-w-md space-y-6 rounded-lg border border-border bg-card p-8 shadow-sm">
@@ -55,12 +44,7 @@ export default function LoginPage() {
           </p>
         </div>
 
-        <AuthForm
-          mode="signin"
-          hideTabs
-          onSuccess={handleSuccess}
-          next={next && next.startsWith("/") ? next : undefined}
-        />
+        <AuthForm next={next && next.startsWith("/") ? next : undefined} />
 
         <p className="text-center text-sm text-muted-foreground">
           Don&apos;t have an account?{" "}
