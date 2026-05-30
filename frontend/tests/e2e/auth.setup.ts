@@ -29,7 +29,101 @@ const getCredentials = () => {
   return { username, password };
 };
 
-setup("authenticate", async ({ page }) => {
+// Cognito CI app client — see `frontend/tests/spec-ci/run-spec-ci.ts`. The
+// id is a public app-client id, not a secret.
+const COGNITO_CI_CLIENT_ID =
+  process.env.QONTINUI_COGNITO_CI_CLIENT_ID || "tb0epbojige1900ipu6q80j6b";
+const COGNITO_REGION = process.env.QONTINUI_COGNITO_REGION || "us-east-1";
+
+/**
+ * Mint a Cognito id token for the ci-bot account via the public
+ * InitiateAuth API (USER_PASSWORD_AUTH, no secret → unauthenticated POST).
+ * Returns null on any failure so the caller falls back to the UI form.
+ */
+async function mintCognitoIdToken(
+  username: string,
+  password: string,
+): Promise<string | null> {
+  try {
+    const resp = await fetch(`https://cognito-idp.${COGNITO_REGION}.amazonaws.com/`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-amz-json-1.1",
+        "X-Amz-Target": "AWSCognitoIdentityProviderService.InitiateAuth",
+      },
+      body: JSON.stringify({
+        AuthFlow: "USER_PASSWORD_AUTH",
+        ClientId: COGNITO_CI_CLIENT_ID,
+        AuthParameters: { USERNAME: username, PASSWORD: password },
+      }),
+    });
+    if (!resp.ok) {
+      console.warn(`[Auth Setup] Cognito InitiateAuth http_${resp.status}`);
+      return null;
+    }
+    const body = (await resp.json()) as {
+      AuthenticationResult?: { IdToken?: string };
+    };
+    return body.AuthenticationResult?.IdToken ?? null;
+  } catch (e) {
+    console.warn(
+      `[Auth Setup] Cognito InitiateAuth error: ${e instanceof Error ? e.message : String(e)}`,
+    );
+    return null;
+  }
+}
+
+setup("authenticate", async ({ page, context }) => {
+  // Cognito-first lane (Phase T1 of the legacy-auth teardown). Opt-in: only
+  // when ci-bot prod credentials (`QONTINUI_TEST_AUTO_LOGIN_*`) are present —
+  // i.e. CI/staging runs against the real Cognito pool. Local-dev runs (which
+  // use the local `dev-credentials.json` user against a local backend) have no
+  // such env and keep the UI-form path below unchanged.
+  const ciEmail = process.env.QONTINUI_TEST_AUTO_LOGIN_EMAIL;
+  const ciPassword = process.env.QONTINUI_TEST_AUTO_LOGIN_PASSWORD;
+  if (ciEmail && ciPassword) {
+    const idToken = await mintCognitoIdToken(ciEmail, ciPassword);
+    if (idToken) {
+      console.log(`[Auth Setup] Cognito login as: ${ciEmail}`);
+      await page.goto("/");
+      await page.waitForLoadState("domcontentloaded");
+      const origin = new URL(page.url()).origin;
+      // Seed the access_token cookie (backend routes it to the Cognito
+      // verifier by `iss`) + the client-side `is_authenticated` flag the
+      // route guard reads, then reload so the app hydrates authenticated.
+      await context.addCookies([
+        { name: "access_token", value: idToken, url: origin },
+      ]);
+      await page.addInitScript(() => {
+        window.localStorage.setItem("is_authenticated", "true");
+      });
+      await page.reload();
+      await page.waitForLoadState("domcontentloaded");
+      await page.waitForTimeout(1000);
+      // Verify the token actually authenticated (until the backend deploy
+      // trusting the CI audience lands, a minted token is rejected and the
+      // app falls back to a signed-out state). If a Sign in button is still
+      // showing, clear the stale cookie and fall through to the UI form.
+      const stillSignedOut = await page
+        .getByRole("button", { name: /sign in/i })
+        .isVisible()
+        .catch(() => false);
+      if (!stillSignedOut) {
+        await page.context().storageState({ path: STORAGE_STATE_PATH });
+        console.log(
+          `[Auth Setup] Authentication state (Cognito) saved to ${STORAGE_STATE_PATH}`,
+        );
+        return;
+      }
+      console.warn(
+        "[Auth Setup] Cognito token not accepted yet — falling back to UI form",
+      );
+      await context.clearCookies();
+    } else {
+      console.warn("[Auth Setup] Cognito mint failed — falling back to UI form");
+    }
+  }
+
   const { username, password } = getCredentials();
 
   console.log(`[Auth Setup] Logging in as: ${username}`);
