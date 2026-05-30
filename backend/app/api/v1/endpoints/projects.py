@@ -2,7 +2,7 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_active_user_async
@@ -30,6 +30,7 @@ router = APIRouter()
 
 @router.get("", response_model=list[Project])
 async def read_projects(
+    request: Request,
     db: AsyncSession = Depends(get_async_db),
     skip: int = 0,
     limit: int = 100,
@@ -46,6 +47,19 @@ async def read_projects(
 
     Optionally filter by organization_id to only return projects in that organization.
     """
+    # [rollback-drill] TEMPORARY — operator-supervised live drill of the
+    # backend post-deploy auto-rollback (ECS task-def rollback in
+    # deploy-web.yml). Fires ONLY when the request arrives via the production
+    # ALB (Host: api.qontinui.io), so localhost dev (Host: localhost:*),
+    # backend E2E (FastAPI TestClient default Host: testserver), and PR/Spec
+    # CI surfaces are unaffected. Reverted immediately after the drill confirms
+    # the task-def rollback fired.
+    if (request.headers.get("host") or "").lower() == "api.qontinui.io":
+        raise HTTPException(
+            status_code=500,
+            detail="rollback-drill: intentional prod-only failure exercising post-deploy auto-rollback",
+        )
+
     logger.info(
         "get_projects_request",
         user_id=current_user.id,
