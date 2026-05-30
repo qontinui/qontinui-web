@@ -294,6 +294,70 @@ class TestTreesEndpoints:
 
 
 # ---------------------------------------------------------------------------
+# Pull decisions (repo_pull audit feed) — plan 2026-05-30-coord-pull-decision-ui
+# ---------------------------------------------------------------------------
+
+
+class TestPullDecisionsEndpoint:
+    def test_pull_decisions_pins_repo_pull_domain(self, client: TestClient):
+        """The proxy always forwards ``decision_domain=repo_pull`` to coord's
+        ``/coord/policies/resolutions`` and forwards the optional filters."""
+        coord_payload = {
+            "resolutions": [
+                {
+                    "resolution_id": "00000000-0000-0000-0000-0000000000aa",
+                    "resolved_at": "2026-05-30T00:00:00Z",
+                    "device_id": "00000000-0000-0000-0000-00000000000a",
+                    "repo": "qontinui-coord",
+                    "kind": "decision",
+                    "verdict": "pull",
+                    "timing": "now",
+                }
+            ],
+            "count": 1,
+        }
+        mock_resp = _mock_response(json_data=coord_payload)
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = mock_resp
+            _configure_mock_client(MockClient, instance)
+            resp = client.get(
+                f"{API_PREFIX}/coord/pull-decisions"
+                "?device_id=00000000-0000-0000-0000-00000000000a"
+                "&repo=qontinui-coord&limit=50&since=2026-05-29T00:00:00Z"
+            )
+
+        assert resp.status_code == 200
+        assert resp.json() == coord_payload
+        called_url = instance.get.call_args.args[0]
+        assert called_url.endswith("/coord/policies/resolutions")
+        called_params = instance.get.call_args.kwargs.get("params", {})
+        assert called_params.get("decision_domain") == "repo_pull"
+        assert called_params.get("device_id") == "00000000-0000-0000-0000-00000000000a"
+        assert called_params.get("repo") == "qontinui-coord"
+        assert called_params.get("limit") == 50
+        assert called_params.get("since") == "2026-05-29T00:00:00Z"
+        _assert_tenant_header_forwarded(instance.get.call_args)
+
+    def test_pull_decisions_default_only_domain(self, client: TestClient):
+        """With no filters, only ``decision_domain=repo_pull`` is forwarded."""
+        mock_resp = _mock_response(json_data={"resolutions": [], "count": 0})
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = mock_resp
+            _configure_mock_client(MockClient, instance)
+            resp = client.get(f"{API_PREFIX}/coord/pull-decisions")
+        assert resp.status_code == 200
+        called_params = instance.get.call_args.kwargs.get("params", {})
+        assert called_params == {"decision_domain": "repo_pull"}
+        _assert_tenant_header_forwarded(instance.get.call_args)
+
+    def test_pull_decisions_tenant_not_resolved(self, unresolved_client: TestClient):
+        resp = unresolved_client.get(f"{API_PREFIX}/coord/pull-decisions")
+        assert resp.status_code == 403
+
+
+# ---------------------------------------------------------------------------
 # Alerts (full rollup)
 # ---------------------------------------------------------------------------
 

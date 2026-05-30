@@ -20,6 +20,7 @@ import {
   FileText,
   GitBranch,
   GitMerge,
+  GitPullRequest,
   History as HistoryIcon,
   Inbox,
   Rocket,
@@ -110,6 +111,12 @@ const PRIMARY_TABS: NavItem[] = [
     label: "Policies",
     icon: Scale,
     testId: "coord-nav-policies",
+  },
+  {
+    href: "/admin/coord/pull-decisions",
+    label: "Pull Decisions",
+    icon: GitPullRequest,
+    testId: "coord-nav-pull-decisions",
   },
 ];
 
