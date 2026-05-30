@@ -2813,18 +2813,16 @@ async def list_user_tenants(
         { "tenants": [ { "id": "<uuid>", "slug": "<str>", "name": "<str>" } ],
           "active_tenant_id": "<uuid>" }
     """
-    # Operator lookup keyed on the Cognito identity (sub-preferred,
-    # email-fallback) — matches ``resolve_tenants_for_user``. The
-    # ``sso_subject = :cognito_sub`` predicate is unsatisfiable when
-    # ``cognito_sub`` is NULL, so an un-backfilled user falls back to the
-    # email predicate (no regression).
+    # Operator lookup keyed sub-only on the Cognito identity
+    # (``o.sso_subject = :cognito_sub``) — matches
+    # ``resolve_tenants_for_user``. A miss falls through to the
+    # ``resolve_tenant_for_user`` call below, which fails closed (403).
     #
     # GROUP BY (not DISTINCT) so an operator with multiple roles in
     # the same tenant doesn't multiply rows. Postgres rejects
     # `SELECT DISTINCT ... ORDER BY <expression-not-in-select-list>`
     # which the home-tenant predicate would otherwise trigger.
     cognito_sub = getattr(current_user, "cognito_sub", None) or None
-    email = (current_user.email or "").strip().lower()
     rows = (
         await db.execute(
             text(
@@ -2836,14 +2834,13 @@ async def list_user_tenants(
                 JOIN coord.tenants t
                   ON t.tenant_id = r.tenant_id
                 WHERE o.sso_subject = :cognito_sub
-                   OR LOWER(o.email) = :email
                 GROUP BY t.tenant_id, t.slug, t.display_name, o.tenant_id
                 ORDER BY
                     (t.tenant_id = o.tenant_id) DESC,
                     t.slug ASC
                 """
             ),
-            {"cognito_sub": cognito_sub, "email": email},
+            {"cognito_sub": cognito_sub},
         )
     ).fetchall()
     if rows:
@@ -2860,9 +2857,11 @@ async def list_user_tenants(
             "active_tenant_id": active_tenant_id,
         }
 
-    # Bootstrap fallback — preserve the pre-membership behavior for
-    # dev users on a fresh DB. Single-element list keyed on the
-    # personal-jspinak tenant.
+    # No operator_roles membership rows — fall back to the operator's
+    # home tenant (``coord.operators.tenant_id``) as a single-element
+    # list. ``resolve_tenant_for_user`` is now sub-only / fail-closed, so
+    # an unknown identity raises 403 ``tenant_not_resolved`` here rather
+    # than resolving to the bootstrap tenant.
     tenant_id = await resolve_tenant_for_user(current_user, db)
     row = (
         await db.execute(

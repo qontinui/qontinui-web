@@ -1,23 +1,19 @@
 """Unit tests for ``user_is_coord_tenant_admin`` in
 ``app.services.coord_operator_resolver``.
 
-Covers the four key decision branches:
+Covers the four key decision branches (sub-only operator lookup):
 
-1. Admin-role row present → True.
+1. Admin-role row present (matched by Cognito sub) → True.
 2. Operator exists but NO admin role → False.
 3. No operator row, tenant_id matches personal-jspinak bootstrap → True
-   (bootstrap-parity branch).
+   (bootstrap-parity admin safety net — deliberately PRESERVED).
 4. No operator row, tenant_id does NOT match personal-jspinak → False.
 
 All database I/O is replaced with ``AsyncMock`` stubs so no live DB is
-required. The mocking style mirrors ``test_coord_operator_resolver.py``:
-a ``_StubResult`` wrapper that implements ``.first()`` so the resolver's
-``(await db.execute(...)).first()`` call chain works correctly.
-
-The operator lookup is keyed on the Cognito identity (``o.sso_subject =
-:cognito_sub`` preferred, ``LOWER(o.email) = :email`` transitional
-fallback); the query *count* per branch is unchanged from the email-only
-implementation since both predicates run in one combined WHERE clause.
+required. The operator lookup is keyed SOLELY on the Cognito identity
+(``o.sso_subject = :cognito_sub``); there is no email fallback. The
+bootstrap-parity branch (#3) is an authz safety net, not a tenant
+resolution fallback — resolution itself is sub-only / fail-closed.
 """
 
 from unittest.mock import AsyncMock, MagicMock
@@ -71,7 +67,7 @@ def _stub_db(*rows):
 
 
 # ---------------------------------------------------------------------------
-# Tests — Step 1: direct admin-role check
+# Tests — Step 1: direct admin-role check (sub-only)
 # ---------------------------------------------------------------------------
 
 
@@ -88,40 +84,36 @@ async def test_admin_role_row_present_via_sub_returns_true():
     assert result is True
     # Only the admin-role query fired; bootstrap sub-queries stay unfired.
     assert db.execute.await_count == 1
-    # Both identity params bound; sub preferred, email is the fallback arm.
+    # Only the Cognito sub is bound — no email param.
     call_kwargs = db.execute.await_args_list[0].args[1]
     assert call_kwargs["cognito_sub"] == "sub-admin-1"
-    assert call_kwargs["email"] == "admin@qontinui.io"
+    assert "email" not in call_kwargs
     assert call_kwargs["tid"] == str(tenant_id)
 
 
 @pytest.mark.asyncio
-async def test_admin_role_row_present_via_email_fallback_returns_true():
-    """cognito_sub NULL → admin still resolves via the email arm → True."""
+async def test_admin_check_null_sub_falls_through_to_bootstrap():
+    """cognito_sub NULL → admin-role query misses (no email arm); falls
+    through to the operator-exists + bootstrap-parity checks.
+
+    With no operator row and a non-bootstrap tenant, the result is False —
+    confirming there is no email fallback keeping a NULL-sub user admin.
+    """
     user = _mock_user(email="legacy.admin@qontinui.io", cognito_sub=None)
     tenant_id = uuid4()
-    db = _stub_db((1,))
+    bootstrap_tenant_id = uuid4()  # different → not the bootstrap tenant
+    # Query 1: admin-role JOIN → miss (sub is NULL).
+    # Query 2: operator-exists → miss.
+    # Query 3: bootstrap tenant → a DIFFERENT uuid.
+    db = _stub_db(None, None, (str(bootstrap_tenant_id),))
 
     result = await user_is_coord_tenant_admin(user, tenant_id, db)
 
-    assert result is True
-    assert db.execute.await_count == 1
+    assert result is False
+    assert db.execute.await_count == 3
     call_kwargs = db.execute.await_args_list[0].args[1]
     assert call_kwargs["cognito_sub"] is None
-    assert call_kwargs["email"] == "legacy.admin@qontinui.io"
-
-
-@pytest.mark.asyncio
-async def test_email_lowercased_in_admin_check():
-    """Email casing is normalised before the admin-role query."""
-    user = _mock_user(email="ADMIN@QONTINUI.IO", cognito_sub=None)
-    tenant_id = uuid4()
-    db = _stub_db((1,))
-
-    await user_is_coord_tenant_admin(user, tenant_id, db)
-
-    call_kwargs = db.execute.await_args_list[0].args[1]
-    assert call_kwargs["email"] == "admin@qontinui.io"
+    assert "email" not in call_kwargs
 
 
 # ---------------------------------------------------------------------------
@@ -132,7 +124,7 @@ async def test_email_lowercased_in_admin_check():
 @pytest.mark.asyncio
 async def test_operator_exists_no_admin_role_returns_false():
     """Operator row exists (for a different role) → deny (no bootstrap bypass)."""
-    user = _mock_user(email="member@qontinui.io")
+    user = _mock_user(email="member@qontinui.io", cognito_sub="sub-member")
     tenant_id = uuid4()
     # Query 1: admin-role JOIN → miss.
     # Query 2: operator-exists check → row found (operator IS registered).
@@ -146,15 +138,15 @@ async def test_operator_exists_no_admin_role_returns_false():
 
 
 # ---------------------------------------------------------------------------
-# Tests — Step 2: no operator row → bootstrap-parity check
+# Tests — Step 2: no operator row → bootstrap-parity check (PRESERVED)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_no_operator_matching_bootstrap_tenant_returns_true():
     """No operator row AND tenant_id matches personal-jspinak → True
-    (bootstrap-parity: the sole pre-SSO user is the owner)."""
-    user = _mock_user(email="bootstrap@example.com")
+    (bootstrap-parity admin safety net: the sole pre-SSO user is owner)."""
+    user = _mock_user(email="bootstrap@example.com", cognito_sub="sub-fresh")
     bootstrap_tenant_id = uuid4()
     # Query 1: admin-role JOIN → miss.
     # Query 2: operator-exists → miss (no operator row at all).
@@ -173,7 +165,7 @@ async def test_no_operator_matching_bootstrap_tenant_returns_true():
 @pytest.mark.asyncio
 async def test_no_operator_different_tenant_returns_false():
     """No operator row AND tenant_id does NOT match personal-jspinak → False."""
-    user = _mock_user(email="ghost@example.com")
+    user = _mock_user(email="ghost@example.com", cognito_sub="sub-ghost")
     caller_tenant_id = uuid4()  # the tenant the caller is asking about
     bootstrap_tenant_id = uuid4()  # different UUID returned by the slug query
     assert caller_tenant_id != bootstrap_tenant_id
@@ -190,7 +182,7 @@ async def test_no_operator_different_tenant_returns_false():
 @pytest.mark.asyncio
 async def test_no_operator_bootstrap_tenant_missing_returns_false():
     """No operator row AND no personal-jspinak tenant in DB → False."""
-    user = _mock_user(email="nobody@example.com")
+    user = _mock_user(email="nobody@example.com", cognito_sub="sub-nobody")
     tenant_id = uuid4()
     # Query 1: admin-role JOIN → miss.
     # Query 2: operator-exists → miss.

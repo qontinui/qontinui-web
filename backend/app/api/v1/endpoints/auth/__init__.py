@@ -44,15 +44,13 @@ async def read_users_me(
     but never raises: an unresolved tenant returns ``None`` so the UI
     can render ``(not assigned)`` instead of a 403.
     """
-    # Sub-preferred / email-fallback operator lookup — same key as
-    # ``resolve_tenant_for_user``'s notion of the user's home tenant
-    # (``coord.operators.tenant_id``). Keyed on the Cognito identity
-    # (``o.sso_subject = :cognito_sub``) with ``LOWER(o.email)`` as a
-    # transitional fallback so un-backfilled ``cognito_sub`` users still
-    # resolve. Returns None (no raise) on no-match → UI shows
-    # "(not assigned)".
+    # Sub-only operator lookup — same key as ``resolve_tenant_for_user``'s
+    # notion of the user's home tenant (``coord.operators.tenant_id``),
+    # keyed solely on the Cognito identity (``o.sso_subject =
+    # :cognito_sub``). Returns None (no raise) on no-match → UI shows
+    # "(not assigned)". This is the display path, so a miss is rendered as
+    # unassigned rather than 403.
     cognito_sub = getattr(current_user, "cognito_sub", None) or None
-    email = (current_user.email or "").strip().lower()
     row = (
         await db.execute(
             text(
@@ -61,12 +59,10 @@ async def read_users_me(
                 FROM coord.operators o
                 LEFT JOIN coord.tenants t ON t.tenant_id = o.tenant_id
                 WHERE o.sso_subject = :cognito_sub
-                   OR LOWER(o.email) = :email
-                ORDER BY (o.sso_subject = :cognito_sub) DESC NULLS LAST
                 LIMIT 1
                 """
             ),
-            {"cognito_sub": cognito_sub, "email": email},
+            {"cognito_sub": cognito_sub},
         )
     ).first()
 
