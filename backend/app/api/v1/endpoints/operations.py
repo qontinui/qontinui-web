@@ -54,6 +54,7 @@ from starlette.websockets import WebSocketState
 # at runtime the symbol is identical to `websockets.connect`.
 from websockets.asyncio.client import connect as websockets_connect  # noqa: E402
 
+from app.api.admin_deps import require_admin
 from app.api.deps import (
     get_async_db,
     get_current_active_user_async,
@@ -81,6 +82,7 @@ from app.services.coord_device_status import (
 from app.services.coord_operator_resolver import (
     resolve_tenant_for_user,
     resolve_tenants_for_user,
+    user_is_coord_tenant_admin,
 )
 from app.services.dev_dashboard_service import get_fleet_registry
 
@@ -125,6 +127,24 @@ async def get_tenant_id(
     to a coord operator row (and the bootstrap fallback also misses).
     """
     return await resolve_tenant_for_user(current_user, db)
+
+
+async def require_coord_tenant_admin(
+    current_user: UserModel = Depends(get_current_active_user_async),
+    db: AsyncSession = Depends(get_async_db),
+) -> UUID:
+    """Resolve the user's coord tenant AND require admin on it.
+
+    Returns the tenant_id. Raises 403 ``not_coord_tenant_admin`` when the
+    user's operator row exists but carries no ``admin`` role for the
+    resolved tenant. The bootstrap-parity branch (pre-SSO single-user)
+    is handled inside ``user_is_coord_tenant_admin`` — the sole bootstrap
+    user is never locked out.
+    """
+    tenant_id = await resolve_tenant_for_user(current_user, db)
+    if not await user_is_coord_tenant_admin(current_user, tenant_id, db):
+        raise HTTPException(status_code=403, detail="not_coord_tenant_admin")
+    return tenant_id
 
 
 def _tenant_headers(tenant_id: UUID) -> dict[str, str]:
@@ -433,6 +453,40 @@ async def _proxy_coord_patch(
     async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
         try:
             resp = await client.patch(url, json=body, headers=headers)
+        except httpx.ConnectError:
+            raise HTTPException(
+                status_code=502,
+                detail="coord is not reachable",
+            )
+        except httpx.TimeoutException:
+            raise HTTPException(
+                status_code=504,
+                detail="timeout waiting for coord",
+            )
+    if resp.status_code >= 400:
+        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+    return resp.json()
+
+
+async def _proxy_coord_put(
+    path: str,
+    body: Any,
+    *,
+    tenant_id: UUID | None = None,
+) -> Any:
+    """Proxy a PUT request to coord. Returns the JSON body.
+
+    Clone of ``_proxy_coord_patch`` for HTTP PUT semantics. Used by the
+    decision-engine next-step-settings endpoint (§5.3 of plan
+    ``2026-05-30-decision-engine-tenant-ui.md``) where coord expects a
+    full-replacement PUT rather than a partial PATCH. Same posture:
+    tenant header, timeout/connect-error mapping.
+    """
+    url = f"{settings.COORD_URL}{path}"
+    headers = _tenant_headers(tenant_id) if tenant_id is not None else None
+    async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
+        try:
+            resp = await client.put(url, json=body, headers=headers)
         except httpx.ConnectError:
             raise HTTPException(
                 status_code=502,
@@ -2786,3 +2840,81 @@ async def deregister_repo(
         params={"repo": repo},
         tenant_id=tenant_id,
     )
+
+
+# ---- Decision-engine next-step-settings proxy (§5.3 + §7) ---------------
+#
+# Plan ``2026-05-30-decision-engine-tenant-ui.md`` §5.3 + §7.
+#
+# Three endpoints exposing the coord "next-step-settings" façade so the
+# cloud-control UI can render and mutate per-tenant autonomy levels without
+# the browser hitting coord cross-origin.
+#
+# Auth posture:
+#   GET  (per-tenant) — any authenticated user whose tenant resolves.
+#                       Response carries ``can_edit: bool`` so the UI can
+#                       gate the Save button without a separate authz call.
+#   PUT  (per-tenant) — coord-tenant ADMIN only (``require_coord_tenant_admin``
+#                       dependency).  NOT gated on cloud-control org ownership
+#                       or ``is_superuser`` — the setting scopes to a coord
+#                       tenant, and the authoritative RBAC is
+#                       ``coord.operator_roles``.
+#   GET  /fleet        — ``is_superuser`` staff view (``require_admin``).
+#                       No tenant header — intentionally tenant-blind.
+
+
+@router.get("/coord/next-step-settings")
+async def get_next_step_settings(
+    tenant_id: UUID = Depends(get_tenant_id),
+    current_user: UserModel = Depends(get_current_active_user_async),
+    db: AsyncSession = Depends(get_async_db),
+) -> Any:
+    """Per-tenant read of the decision-engine autonomy settings.
+
+    Returns the coord payload (``master_enabled``, ``domains`` list with
+    ``decision_domain``, ``label``, ``description``, ``autonomy_level``,
+    ``default_autonomy_level``, ``mode``, ``resolved_from``,
+    ``requires_master``, ``effective``) plus a synthesised ``can_edit``
+    field so the UI can enable/disable the Save controls without a
+    separate authz round-trip.
+    """
+    body = await _proxy_coord_get("/coord/next-step-settings", tenant_id=tenant_id)
+    # Honesty signal: tell the UI whether save controls should be enabled.
+    body["can_edit"] = await user_is_coord_tenant_admin(current_user, tenant_id, db)
+    return body
+
+
+@router.put("/coord/next-step-settings")
+async def put_next_step_settings(
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Overwrite the tenant's per-domain autonomy levels.
+
+    Requires coord-tenant ADMIN role (``require_coord_tenant_admin``).
+    Body: ``{"domains": [{"decision_domain": "<str>",
+    "autonomy_level": "always_escalate"|"guidance_only"|"auto_decide"}]}``.
+    Returns the same shape as the GET (post-write view from coord).
+    Body-supplied tenant is never trusted — the tenant is resolved from
+    the caller's credential exclusively.
+    """
+    return await _proxy_coord_put(
+        "/coord/next-step-settings", body, tenant_id=tenant_id
+    )
+
+
+@router.get("/coord/next-step-settings/fleet")
+async def get_next_step_settings_fleet(
+    current_user: UserModel = Depends(require_admin),  # is_superuser staff view
+) -> Any:
+    """Fleet/staff read of autonomy settings across all tenants.
+
+    No ``X-Qontinui-Tenant-Id`` header is sent — coord returns the
+    full multi-tenant view (``master_enabled``, ``tenants`` list with
+    ``tenant_id``, ``slug``, ``autonomy_level``, ``effective``,
+    ``updated_at``). Read-only; mutations stay per-tenant.
+
+    Requires ``is_superuser`` (``require_admin``).
+    """
+    # Fleet/staff endpoint — tenant-blind (no X-Qontinui-Tenant-Id).
+    return await _proxy_coord_get("/coord/next-step-settings/fleet")
