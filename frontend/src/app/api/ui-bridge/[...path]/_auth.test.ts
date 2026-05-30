@@ -8,8 +8,8 @@
  *   - When ON, an absent/invalid Bearer fails closed with 401.
  *   - When ON, a valid Bearer that the backend accepts succeeds and the
  *     positive result is cached for 30s.
- *   - The cookie path (`access_token`) works the same as Bearer for
- *     same-origin deploys.
+ *   - The cookie path was removed (Bearer-only; CSRF-resistant by
+ *     construction). An access_token cookie alone authenticates nothing.
  *   - Origin allowlist accepts qontinui.io, *.qontinui.io, *.vercel.app.
  *   - Non-production additionally accepts localhost / 127.0.0.1.
  *
@@ -157,7 +157,7 @@ describe("authenticateBridgeRequest", () => {
     vi.unstubAllGlobals();
   });
 
-  it("rejects requests with no Bearer header and no access_token cookie", async () => {
+  it("rejects requests with no Bearer header", async () => {
     const req = makeRequest();
     const result = await authenticateBridgeRequest(req);
     expect(result.ok).toBe(false);
@@ -186,14 +186,15 @@ describe("authenticateBridgeRequest", () => {
     );
   });
 
-  it("accepts an access_token cookie when no Bearer header is present", async () => {
-    fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ id: "user-cookie" }), { status: 200 }),
-    );
+  it("rejects requests authenticated only via access_token cookie (Bearer-only)", async () => {
+    // The cookie path was removed (CSRF resistance). Cookies alone =
+    // anonymous, even if the user has an HttpOnly access_token set by
+    // the backend. SDK transports MUST attach Authorization: Bearer.
     const req = makeRequest({ cookie: "access_token=cookie-token" });
     const result = await authenticateBridgeRequest(req);
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.userId).toBe("user-cookie");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.status).toBe(401);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("rejects a Bearer that the backend returns 401 for", async () => {
@@ -272,7 +273,9 @@ describe("authenticateBridgeRequest", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("Bearer header takes precedence over access_token cookie", async () => {
+  it("Bearer header authenticates even when an unrelated access_token cookie is present", async () => {
+    // The cookie path is no longer consulted at all; a present cookie
+    // must not affect the Bearer flow in any way.
     fetchMock.mockResolvedValueOnce(
       new Response(JSON.stringify({ id: "user-from-bearer" }), {
         status: 200,
