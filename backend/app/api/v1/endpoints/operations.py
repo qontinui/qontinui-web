@@ -1254,6 +1254,47 @@ async def get_trees_contention(
     return await _proxy_coord_get("/coord/trees/contention", tenant_id=tenant_id)
 
 
+# ---- Pull-decision audit feed (repo_pull domain) -------------------------
+#
+# Plan ``2026-05-30-coord-pull-decision-ui.md`` Phase 2 (Feature A). Verbatim
+# proxy of coord's ``GET /coord/policies/resolutions`` filtered to the
+# ``repo_pull`` decision domain — the audit feed for the autonomous
+# "is now a safe moment to pull origin/main?" judgment. Coord parses each
+# ``coord.policy_rule_resolutions`` row into a clean ``PullDecisionRow`` DTO
+# server-side, so this proxy forwards the JSON untouched (same posture as
+# ``get_trees_by_device``). Tenant-scoped: coord derives the tenant from the
+# forwarded Cognito bearer (post-T2b — no ``X-Qontinui-Tenant-Id`` header).
+
+
+@router.get("/coord/pull-decisions")
+async def get_pull_decisions(
+    device_id: str | None = Query(default=None),
+    repo: str | None = Query(default=None),
+    limit: int | None = Query(default=None, ge=1, le=500),
+    since: str | None = Query(default=None),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return the ``repo_pull`` decision audit feed from coord (tenant-scoped).
+
+    Forwards to coord's ``GET /coord/policies/resolutions`` with
+    ``decision_domain=repo_pull`` always pinned, plus the optional
+    ``device_id`` / ``repo`` / ``limit`` / ``since`` filters. Drives the
+    ``/admin/coord/pull-decisions`` activity page.
+    """
+    params: dict[str, Any] = {"decision_domain": "repo_pull"}
+    if device_id:
+        params["device_id"] = device_id
+    if repo:
+        params["repo"] = repo
+    if limit:
+        params["limit"] = limit
+    if since:
+        params["since"] = since
+    return await _proxy_coord_get(
+        "/coord/policies/resolutions", tenant_id=tenant_id, params=params
+    )
+
+
 # ---- Alerts (full rollup; sibling of /claims/alerts) ---------------------
 
 
