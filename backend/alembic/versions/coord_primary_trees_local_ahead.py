@@ -1,7 +1,7 @@
 """coord.primary_trees.local_ahead — unpushed-ahead count on the local default branch
 
 Revision ID: coord_primary_trees_local_ahead
-Revises: twin_02_coord_infra_drift_observations
+Revises: coord_sessions_plan_linkage
 Create Date: 2026-05-30
 
 Phase 0 of plan
@@ -38,9 +38,13 @@ that already carries the column from a manual reconcile) is a strict
 no-op. Mirrors the ``coord.primary_trees`` test fixture in
 ``qontinui-coord/src/primary_trees.rs::create_primary_trees_for_test``.
 
-Chains off ``twin_02_coord_infra_drift_observations`` — the single linear
-head of the coord migration chain verified via ``alembic heads`` 2026-05-30
-(``feedback_verify_origin_state_before_phase_start``).
+Chains off ``coord_sessions_plan_linkage`` (re-parented from
+``twin_02_coord_infra_drift_observations``): ``coord_sessions_plan_linkage``
+landed + applied to the canonical RDS first, leaving this migration a
+divergent sibling head off ``twin_02``; re-parenting linearizes the chain
+(twin_02 → coord_sessions_plan_linkage → here) so ``alembic upgrade head``
+resolves a single head. This migration was NOT yet applied when re-parented,
+so the move is safe.
 
 alembic is the SOLE author of ``coord.*`` schema
 (``proj_alembic_sole_author_coord_schema``); the coord Rust binary asserts
@@ -55,7 +59,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_primary_trees_local_ahead"
-down_revision: str = "twin_02_coord_infra_drift_observations"
+down_revision: str = "coord_sessions_plan_linkage"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
