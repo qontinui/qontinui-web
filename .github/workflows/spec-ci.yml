@@ -114,6 +114,12 @@ jobs:
 
       - name: Run Spec CI
         working-directory: ./frontend
+        # GH_TOKEN lets the Phase 0 flake-diagnostics take a `gh run list
+        # --status in_progress` snapshot at run start (overlapping Spec CI runs
+        # — the H1/H2 concurrency signal). Best-effort: if gh/token is absent
+        # the snapshot degrades to available:false and the run is unaffected.
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           npx tsx tests/spec-ci/run-spec-ci.ts \
             --base-url http://localhost:3001 \
@@ -162,8 +168,12 @@ jobs:
               "- consoleErrors: \(.summary.consoleErrors.total)",
               "- serverErrors: \(.summary.serverErrors.total)",
               "- apiAssertionPassRate: \(.summary.apiAssertionPassRate)",
-              "- crawl: \(.crawl.visited) routes visited, \(.crawl.gatingFindings) gating findings (passRate \(.crawl.passRate))\(if .crawl.sessionLost then " — SESSION-LOST mid-crawl (\(.crawl.sessionLostRoutes) routes bounced to /login; environmental auth/rate-limit, re-run)" else "" end)"
+              "- crawl: \(.crawl.visited) routes visited, \(.crawl.gatingFindings) gating findings (passRate \(.crawl.passRate))\(if .crawl.sessionLost then " — SESSION-LOST mid-crawl (\(.crawl.sessionLostRoutes) routes bounced to /login; environmental auth/rate-limit, re-run)" else "" end)",
+              "- diagnostics (Phase 0): \(.diagnostics.totalResponses) responses, \(.diagnostics.notableResponses | length) notable (5xx/4xx-not-401), auth{login=\(.diagnostics.auth.loginAttempts) refresh=\(.diagnostics.auth.refreshRotations) 429=\(.diagnostics.auth.authEndpoint429s)}, concurrency \(if .diagnostics.concurrencyAtStart.available then "\(.diagnostics.concurrencyAtStart.inProgressRuns | length) overlapping run(s)" else "unavailable (\(.diagnostics.concurrencyAtStart.reason))" end), runId \(.diagnostics.run.githubRunId) attempt \(.diagnostics.run.githubRunAttempt)"
             ' frontend/spec-ci-report.json >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Notable responses (Phase 0 diagnostics — same-origin 5xx / 4xx-not-401):" >> "$GITHUB_STEP_SUMMARY"
+            jq -r '.diagnostics.notableResponses[]? | "- [\(.method) \(.status)] \(.url)\(if (.headers["x-amzn-trace-id"] // "") != "" then " trace=\(.headers["x-amzn-trace-id"])" else "" end)"' frontend/spec-ci-report.json >> "$GITHUB_STEP_SUMMARY" || true
             echo "" >> "$GITHUB_STEP_SUMMARY"
             echo "Failing specs:" >> "$GITHUB_STEP_SUMMARY"
             jq -r '.specs[] | select(.matchOutcome != "full_match") | "- \(.specId) (\(.matchOutcome), matchRate=\(.matchRate))"' frontend/spec-ci-report.json >> "$GITHUB_STEP_SUMMARY" || true
