@@ -44,6 +44,11 @@ import {
 import { evaluateApiCheck, type ApiCheckResult } from "./api-contract";
 import { discoverAppRoutes } from "./route-manifest";
 import { applyCrawlWaivers } from "./crawl-baseline";
+import {
+  DiagnosticsCollector,
+  snapshotConcurrency,
+  type Diagnostics,
+} from "./diagnostics";
 
 // ---------------------------------------------------------------------------
 // Console-error capture (the run-level invariant; see console-policy.ts)
@@ -1237,10 +1242,31 @@ interface FullReport {
     /** Mean API-assertion pass rate across all non-error specs (1.0 = all pass / vacuous). */
     apiAssertionPassRate: number;
   };
+  /**
+   * Phase 0 flake-diagnostics (read-only). Per-request histogram + enriched
+   * notable responses + auth-churn + run identity + GH-Actions concurrency
+   * context, so a flake-PASS and a flake-FAIL run of the same commit can be
+   * diffed. NOTHING in the gate reads this. See `diagnostics.ts`.
+   */
+  diagnostics?: Diagnostics;
+  /**
+   * The gate verdict, persisted so consumers (the Phase 0 backfill harness,
+   * dashboards) don't have to re-derive the multi-clause pass formula from the
+   * summary + crawl fields and risk drifting from it. Single source of truth:
+   * computed once in main() from the same inputs that drive the exit code.
+   */
+  passed?: boolean;
 }
 
 async function main(): Promise<number> {
   const args = parseArgs();
+  // Phase 0 flake-diagnostics: stamp run start + snapshot concurrent Spec CI
+  // runs BEFORE any work, so `concurrencyAtStart` reflects the field at launch
+  // (the overlap window H1/H2 care about). Both are read-only + best-effort.
+  const diagStartedMs = Date.now();
+  const diagStartedAt = new Date(diagStartedMs).toISOString();
+  const concurrencyAtStart = snapshotConcurrency(process.env.GITHUB_RUN_ID ?? null);
+
   const specs = discoverSpecs(args.specsDir);
   if (specs.length === 0) {
     process.stderr.write(`[spec-ci] no specs found under ${args.specsDir}\n`);
@@ -1416,6 +1442,10 @@ async function main(): Promise<number> {
   const baseOrigin = new URL(args.baseUrl).origin;
   const serverErrors: ServerErrorEntry[] = [];
   attachResponseCapture(page, baseOrigin, () => captureCtx, serverErrors);
+  // Phase 0 flake-diagnostics: observes the FULL response stream (gate-irrelevant)
+  // on the same pages, reusing the gate's `captureCtx` for spec attribution.
+  const diag = new DiagnosticsCollector(baseOrigin);
+  diag.attach(page, () => captureCtx);
 
   // Confirm the browser app session took. The same-origin `api-auth` login
   // above sets the session cookie on localhost (via the /api proxy), so a
@@ -1467,6 +1497,7 @@ async function main(): Promise<number> {
     // single shared-page listener would silently miss).
     attachConsoleCapture(unauthPage, () => captureCtx, criticalConsole);
     attachResponseCapture(unauthPage, baseOrigin, () => captureCtx, serverErrors);
+    diag.attach(unauthPage, () => captureCtx);
     try {
       return await evaluateSpec(
         unauthPage,
@@ -1726,6 +1757,14 @@ async function main(): Promise<number> {
   const crawlPassRate =
     crawlResults.length === 0 ? 1 : crawlCleanRoutes / crawlResults.length;
 
+  const diagnostics = await diag.finalize({
+    startedAt: diagStartedAt,
+    startedMs: diagStartedMs,
+    concurrencyAtStart,
+    crawlSessionLost,
+    crawlSessionLostRoutes,
+  });
+
   const report: FullReport = {
     baseUrl: args.baseUrl,
     apiBase: args.apiBase,
@@ -1759,11 +1798,32 @@ async function main(): Promise<number> {
       serverErrors: { total: serverErrorTotal, bySpec: serverErrorBySpec },
       apiAssertionPassRate,
     },
+    diagnostics,
   };
+
+  // CI gate verdict — see the clause-by-clause rationale at the `return` below.
+  // Computed here (before the report is written) so it can be persisted as
+  // `report.passed`, the single source of truth the exit code also uses.
+  const consoleClean = report.summary.consoleErrors.total === 0;
+  const serverClean = report.summary.serverErrors.total === 0;
+  const apiContractClean = report.summary.apiAssertionPassRate >= 0.999;
+  const crawlClean = crawlGatingFindings === 0;
+  const passed =
+    errorCount === 0 &&
+    report.summary.minMatchRate >= 0.8 &&
+    report.summary.transitionPassRate >= 0.999 &&
+    consoleClean &&
+    serverClean &&
+    apiContractClean &&
+    crawlClean;
+  report.passed = passed;
 
   writeFileSync(args.output, JSON.stringify(report, null, 2), "utf-8");
   process.stderr.write(
     `[spec-ci] wrote ${args.output}: ${fullMatch} full, ${partialMatch} partial, ${noMatch} no_match, ${errorCount} error · min ${report.summary.minMatchRate.toFixed(2)} · mean ${report.summary.meanMatchRate.toFixed(2)} · transitionPassRate ${report.summary.transitionPassRate.toFixed(2)} · consoleErrors ${report.summary.consoleErrors.total} · serverErrors ${report.summary.serverErrors.total} · apiAssertionPassRate ${report.summary.apiAssertionPassRate.toFixed(2)} · crawl ${crawlResults.length} routes, ${crawlConsoleTotal}/${crawlServerTotal} raw console/server, ${crawlGatingFindings} GATING (${crawlUnwaivedConsole} console + ${crawlUnwaivedServer} server + ${crawlHealthFails} health${crawlSessionLost ? ` + SESSION-LOST(${crawlSessionLostRoutes} routes)` : ""}), passRate ${crawlPassRate.toFixed(2)}\n`,
+  );
+  process.stderr.write(
+    `[spec-ci] diagnostics: ${diagnostics.totalResponses} responses, ${diagnostics.notableResponses.length} notable (5xx/4xx-not-401), auth{login=${diagnostics.auth.loginAttempts} refresh=${diagnostics.auth.refreshRotations} 429=${diagnostics.auth.authEndpoint429s}}, concurrency ${diagnostics.concurrencyAtStart.available ? `${diagnostics.concurrencyAtStart.inProgressRuns?.length ?? 0} overlapping run(s)` : `unavailable (${diagnostics.concurrencyAtStart.reason})`}, durationMs ${diagnostics.durationMs}\n`,
   );
 
   // Surface the gating crawl findings explicitly so a red is actionable from
@@ -1807,18 +1867,7 @@ async function main(): Promise<number> {
   // per-URL-class baseline waivers (crawl-baseline.ts) are subtracted. This
   // extends the same per-spec consoleClean/serverClean folding to the ~200
   // routes that have no IR spec, so the gate is no longer blind to them.
-  const consoleClean = report.summary.consoleErrors.total === 0;
-  const serverClean = report.summary.serverErrors.total === 0;
-  const apiContractClean = report.summary.apiAssertionPassRate >= 0.999;
-  const crawlClean = crawlGatingFindings === 0;
-  const passed =
-    errorCount === 0 &&
-    report.summary.minMatchRate >= 0.8 &&
-    report.summary.transitionPassRate >= 0.999 &&
-    consoleClean &&
-    serverClean &&
-    apiContractClean &&
-    crawlClean;
+  // (`passed` is computed + persisted above, before the report is written.)
   return passed ? 0 : 1;
 }
 
