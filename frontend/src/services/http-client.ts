@@ -181,63 +181,16 @@ export class HttpClient {
       return false;
     }
 
-    try {
-      log.debug("Refreshing token at:", ApiConfig.AUTH_REFRESH);
-
-      // Include refresh token in request body (in-memory token).
-      // Also sends HttpOnly cookie via credentials: 'include' as fallback.
-      // Backend checks cookie first, then falls back to body.
-      const refreshToken = this.tokenManager.getRefreshToken();
-      const body = refreshToken
-        ? JSON.stringify({ refresh_token: refreshToken })
-        : undefined;
-
-      const response = await fetch(ApiConfig.AUTH_REFRESH, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: "include",
-        body,
-      });
-
-      if (response.ok) {
-        const tokens = await response.json();
-        log.debug("Token refresh successful");
-        this.tokenManager.setTokens(tokens);
-        return true;
-      } else {
-        console.error(
-          "[HttpClient] Token refresh failed with status:",
-          response.status
-        );
-
-        // If refresh token is invalid (401/403), session has truly expired
-        if (response.status === 401 || response.status === 403) {
-          console.error(
-            "[HttpClient] Refresh token is invalid - triggering session expiry"
-          );
-          this.tokenManager.clearTokens();
-
-          // Trigger session expired handler (which dispatches the event)
-          if (this.onSessionExpired) {
-            this.onSessionExpired();
-          }
-        } else {
-          // For other errors, keep tokens and allow retry
-          console.warn(
-            "[HttpClient] Refresh failed but keeping tokens - may be temporary server issue"
-          );
-        }
-      }
-    } catch (error) {
-      console.error("[HttpClient] Failed to refresh token:", error);
-      // Network errors - keep tokens for retry
-      console.warn(
-        "[HttpClient] Network error during refresh - keeping tokens for retry"
-      );
+    // Authentication is Cognito-only: there is no backend password-refresh
+    // endpoint to silently mint a new access token. A stale access token means
+    // the session has truly expired, so clear local state and trigger the
+    // session-expired handler, which routes the user back to the Cognito hosted
+    // UI via /login. Always returns false — there is no refreshed token.
+    log.debug("No backend refresh under Cognito-only auth - session expired");
+    this.tokenManager.clearTokens();
+    if (this.onSessionExpired) {
+      this.onSessionExpired();
     }
-
     return false;
   }
 

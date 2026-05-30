@@ -44,6 +44,7 @@ export type CognitoProvider = "Google" | "MicrosoftEntra" | "GitHub";
 /** Endpoints derived from the hosted-UI domain. */
 const AUTHORIZE_ENDPOINT = `${COGNITO_HOSTED_UI_DOMAIN}/oauth2/authorize`;
 const TOKEN_ENDPOINT = `${COGNITO_HOSTED_UI_DOMAIN}/oauth2/token`;
+const LOGOUT_ENDPOINT = `${COGNITO_HOSTED_UI_DOMAIN}/logout`;
 
 // sessionStorage keys for the in-flight PKCE values. Tab-scoped, single-use:
 // cleared by `consumePkceState()` as soon as the callback reads them.
@@ -73,6 +74,21 @@ export function getRedirectUri(): string {
     return "https://qontinui.io/auth/callback";
   }
   return `${window.location.origin}/auth/callback`;
+}
+
+/**
+ * Post-logout landing URL for the current origin. MUST be registered as an
+ * "Allowed sign-out URL" on the Cognito app client and match byte-for-byte.
+ * After Cognito clears its hosted-UI session it redirects here, so we send the
+ * user straight back to the app's login page. Origin-derived to keep prod
+ * (`https://qontinui.io/login`) and dev (`http://localhost:3000/login`)
+ * correct without branching on env.
+ */
+export function getLogoutRedirectUri(): string {
+  if (typeof window === "undefined") {
+    return "https://qontinui.io/login";
+  }
+  return `${window.location.origin}/login`;
 }
 
 /** Base64url-encode bytes without padding (RFC 7636 §A). */
@@ -238,4 +254,23 @@ export async function exchangeCodeForTokens(
 export function consumePkceState(): void {
   sessionStorage.removeItem(PKCE_VERIFIER_KEY);
   sessionStorage.removeItem(PKCE_STATE_KEY);
+}
+
+/**
+ * Sign the user out of the Cognito hosted-UI session (true SSO logout) by
+ * navigating to the hosted `/logout` endpoint. This revokes the Cognito
+ * session cookie so a subsequent sign-in re-prompts for credentials instead of
+ * silently re-federating. Cognito then redirects the browser to
+ * `logout_uri` (the app's `/login` page).
+ *
+ * The hosted `/logout` endpoint is a top-level navigation (no CORS) — it cannot
+ * be called via fetch, so this performs a full-page redirect and never returns.
+ * Local token state should already be cleared by the caller before invoking it.
+ */
+export function startCognitoLogout(): void {
+  const params = new URLSearchParams({
+    client_id: COGNITO_CLIENT_ID,
+    logout_uri: getLogoutRedirectUri(),
+  });
+  window.location.assign(`${LOGOUT_ENDPOINT}?${params.toString()}`);
 }

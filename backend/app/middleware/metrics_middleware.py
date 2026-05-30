@@ -38,26 +38,14 @@ class MetricsMiddleware(BaseHTTPMiddleware):
         # Calculate response time
         response_time = time.time() - start_time
 
-        # Try to get user ID from request state (set by auth dependency)
+        # Try to get user ID from request state (set by auth dependency).
+        # The legacy local-HS256 ``decode_token`` Authorization-header
+        # fallback was removed with the local token stack — Cognito tokens
+        # are not locally decodable, and authenticated routes already set
+        # ``request.state.user``.
         user_id: UUID | None = None
         if hasattr(request.state, "user"):
             user_id = getattr(request.state.user, "id", None)
-
-        # Alternative: Try to extract from Authorization header if needed
-        if user_id is None:
-            auth_header = request.headers.get("authorization")
-            if auth_header and auth_header.startswith("Bearer "):
-                try:
-                    from app.core.security import decode_token
-
-                    token = auth_header.replace("Bearer ", "")
-                    payload = decode_token(token)
-                    if payload:
-                        sub_value = payload.get("sub")
-                        if sub_value:
-                            user_id = UUID(str(sub_value))
-                except Exception as e:
-                    logger.debug("token_extraction_failed", error=str(e))
 
         # Only track metrics for authenticated users
         if user_id:

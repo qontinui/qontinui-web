@@ -8,7 +8,7 @@ import {
   useCreateExtraction,
   useDeleteExtraction,
 } from "@/hooks/use-extractions";
-import { extractionService } from "@/services/service-factory";
+import { authService, extractionService } from "@/services/service-factory";
 import { usePlaywrightExtraction } from "@/hooks/use-playwright-extraction";
 import {
   getVisionExtractionService,
@@ -16,7 +16,6 @@ import {
 } from "@/services/vision-extraction-service";
 import { toast } from "sonner";
 import { runnerClient } from "@/lib/runner-client";
-import { useAuth } from "@/contexts/auth-context";
 import { useExtractionConfig } from "@/hooks/use-extraction-config";
 import { useRunnerMonitors } from "@/hooks/useRunnerMonitors";
 import type {
@@ -53,7 +52,6 @@ export function useWebExtractionState() {
   const { data: extractions } = useExtractions(projectId || "", !!projectId);
   const createExtraction = useCreateExtraction();
   const deleteExtraction = useDeleteExtraction();
-  const { getAccessToken } = useAuth();
 
   // Persistent config from hook
   const extractionConfig = useExtractionConfig();
@@ -246,7 +244,9 @@ export function useWebExtractionState() {
       // Now trigger the actual extraction on the runner
       const extractionCfg = config.config ?? {};
       logger.debug("Starting extraction with config:", extractionCfg);
-      const authToken = await getAccessToken();
+      // Hand the runner the Cognito access token the app already holds; the
+      // backend accepts it directly. `null` when unauthenticated → omitted.
+      const authToken = authService.tokenManager.getAccessToken();
       const runnerResult = await runnerClient.startExtraction({
         urls: config.source_urls,
         viewports: extractionCfg.viewports ?? [[1920, 1080]],

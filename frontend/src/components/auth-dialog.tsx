@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import {
   Dialog,
   DialogContent,
@@ -9,30 +8,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { AuthForm } from "@/components/auth-form";
-import type { User } from "@/types/auth-types";
 
 interface AuthDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  defaultTab?: "signin" | "signup";
 }
 
-export function AuthDialog({
-  open,
-  onOpenChange,
-  defaultTab = "signin",
-}: AuthDialogProps) {
-  const router = useRouter();
-
-  const handleSuccess = (_user: User) => {
-    onOpenChange(false);
-    // Land on the general, mode-aware home. `/dashboard` forwards to
-    // `/build/workflows` (AI Dev) or `/tools/visual-automation` (Visual)
-    // based on the stored product mode. Superusers are NOT sent to the
-    // admin-only hub on login — Admin is an opt-in sidebar destination.
-    router.push("/dashboard");
-  };
-
+export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
+  // Sign-in is a full-page redirect to the Cognito hosted UI, so there is no
+  // in-dialog success callback — the `/auth/callback` route establishes the
+  // session and lands the user on `/dashboard` after the round-trip.
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
@@ -43,11 +28,7 @@ export function AuthDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <AuthForm
-          mode={defaultTab}
-          onSuccess={handleSuccess}
-          onForgotPasswordClick={() => onOpenChange(false)}
-        />
+        <AuthForm next="/dashboard" />
       </DialogContent>
     </Dialog>
   );

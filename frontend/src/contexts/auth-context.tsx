@@ -9,8 +9,7 @@ import React, {
   useRef,
 } from "react";
 import { createLogger } from "@/lib/logger";
-import { authService, httpClient } from "@/services/service-factory";
-import { ApiConfig } from "@/services/api-config";
+import { authService } from "@/services/service-factory";
 import { User } from "@/types/auth-types";
 import { pageStateDB } from "@/stores/page-state";
 import { clearExtractionConfig } from "@/hooks/use-extraction-config";
@@ -18,20 +17,8 @@ import { clearExtractionConfig } from "@/hooks/use-extraction-config";
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: (
-    username: string,
-    password: string,
-    rememberMe?: boolean
-  ) => Promise<User>;
-  register: (
-    email: string,
-    username: string,
-    password: string,
-    fullName?: string
-  ) => Promise<void>;
   logout: () => Promise<void>;
   updateUser: (data: Partial<User>) => Promise<void>;
-  getAccessToken: () => Promise<string | null>;
   /**
    * Establish a session from externally-minted tokens (e.g. the Cognito
    * hosted-UI Authorization Code + PKCE flow). Stores the tokens via the
@@ -51,45 +38,6 @@ const logger = createLogger("AuthContext");
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Development auto-login credentials (from environment variables)
-// Set NEXT_PUBLIC_DEV_EMAIL and NEXT_PUBLIC_DEV_PASSWORD in .env.local for dev auto-login
-const DEV_AUTO_LOGIN = {
-  username: process.env.NEXT_PUBLIC_DEV_EMAIL || "",
-  password: process.env.NEXT_PUBLIC_DEV_PASSWORD || "",
-};
-
-/**
- * Check if dev auto-login should be skipped.
- * Skip when:
- * - Running Playwright tests (detected via navigator.webdriver or URL param)
- * - Explicitly disabled via NEXT_PUBLIC_DISABLE_DEV_AUTO_LOGIN
- */
-function shouldSkipDevAutoLogin(): boolean {
-  if (typeof window === "undefined") return true;
-
-  // Skip if explicitly disabled
-  if (process.env.NEXT_PUBLIC_DISABLE_DEV_AUTO_LOGIN === "true") {
-    return true;
-  }
-
-  // Skip if running in Playwright/automated browser (webdriver flag)
-  if (navigator.webdriver) {
-    logger.debug(
-      "Dev auto-login skipped: Running in automated browser (Playwright/Selenium)"
-    );
-    return true;
-  }
-
-  // Skip if URL has skip_auto_login param (useful for testing login flow)
-  const urlParams = new URLSearchParams(window.location.search);
-  if (urlParams.has("skip_auto_login")) {
-    logger.debug("Dev auto-login skipped: skip_auto_login URL param present");
-    return true;
-  }
-
-  return false;
-}
-
 // Cross-tab auth event types
 type AuthBroadcastMessage =
   | { type: "LOGIN"; user: User }
@@ -101,7 +49,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const channelRef = useRef<BroadcastChannel | null>(null);
-  const hasAttemptedDevLogin = useRef(false);
   const hasAttemptedRestore = useRef(false);
 
   useEffect(() => {
@@ -124,9 +71,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             break;
 
           case "LOGOUT":
-            // Another tab logged out - clear local state
+            // Another tab logged out - clear local state ONLY. The tab that
+            // initiated the logout drives the Cognito hosted-UI sign-out
+            // redirect; other tabs must not each navigate to /logout (pass
+            // `false`), they just drop their local session and go home.
             logger.debug("Syncing logout from another tab");
-            authService.logout(); // Clear tokens
+            void authService.logout(false);
             setUser(null);
             if (window.location.pathname !== "/") {
               window.location.href = "/";
@@ -195,7 +145,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
           if (!refreshSuccess) {
             logger.info("Token refresh failed, user needs to re-login");
-            authService.logout();
+            // Background cleanup — clear local state only, do not redirect the
+            // browser to the Cognito hosted-UI logout.
+            void authService.logout(false);
             return;
           }
 
@@ -243,117 +195,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     } catch (error) {
       logger.error("Auth check failed:", error);
-      authService.logout();
+      // Background cleanup — clear local state only, no hosted-UI redirect.
+      void authService.logout(false);
     } finally {
       logger.debug("Setting loading to false");
       setLoading(false);
-    }
-  };
-
-  /**
-   * Development mode auto-login
-   * Automatically logs in with dev credentials when not authenticated in dev mode.
-   * Skipped for Playwright tests (navigator.webdriver) to allow testing the login flow.
-   */
-  useEffect(() => {
-    // Only run in development mode
-    if (process.env.NODE_ENV !== "development") {
-      return;
-    }
-
-    // Only attempt once to avoid infinite loops
-    if (hasAttemptedDevLogin.current) {
-      return;
-    }
-
-    // Wait for auth check to complete
-    if (loading) {
-      return;
-    }
-
-    // If already authenticated, redirect away from landing page
-    if (user) {
-      logger.debug("Dev mode: Already authenticated, skipping auto-login");
-      if (window.location.pathname === "/") {
-        // Always land on the general AI-Dev home, never the admin-only hub.
-        window.location.href = "/build/workflows";
-      }
-      return;
-    }
-
-    // Skip for Playwright tests or when explicitly disabled
-    if (shouldSkipDevAutoLogin()) {
-      hasAttemptedDevLogin.current = true;
-      return;
-    }
-
-    // Check if dev credentials are configured via environment variables
-    if (!DEV_AUTO_LOGIN.username || !DEV_AUTO_LOGIN.password) {
-      logger.debug(
-        "Dev mode: No auto-login credentials configured (set NEXT_PUBLIC_DEV_EMAIL and NEXT_PUBLIC_DEV_PASSWORD in .env.local)"
-      );
-      return;
-    }
-
-    // Auto-login in development
-    logger.info(
-      "Dev mode: Not authenticated, attempting auto-login with",
-      DEV_AUTO_LOGIN.username
-    );
-    hasAttemptedDevLogin.current = true;
-
-    authService
-      .login({
-        username: DEV_AUTO_LOGIN.username,
-        password: DEV_AUTO_LOGIN.password,
-      })
-      .then((loggedInUser) => {
-        logger.info("Dev mode auto-login successful");
-        setUser(loggedInUser);
-        // Redirect to the general AI-Dev home after dev auto-login. Never
-        // the admin-only hub, regardless of superuser status.
-        if (window.location.pathname === "/") {
-          window.location.href = "/build/workflows";
-        }
-      })
-      .catch((err: unknown) => {
-        // Properly extract error message for logging
-        const errorMessage =
-          err instanceof Error
-            ? err.message
-            : typeof err === "object" && err !== null
-              ? JSON.stringify(err)
-              : String(err);
-        logger.error("Dev mode auto-login failed:", errorMessage);
-      });
-  }, [loading, user]);
-
-  const login = async (
-    username: string,
-    password: string,
-    rememberMe?: boolean
-  ) => {
-    try {
-      const loggedInUser = await authService.login({
-        username,
-        password,
-        remember_me: rememberMe,
-      });
-      setUser(loggedInUser);
-
-      // Broadcast login event to other tabs
-      if (channelRef.current) {
-        channelRef.current.postMessage({
-          type: "LOGIN",
-          user: loggedInUser,
-        } as AuthBroadcastMessage);
-        logger.debug("Broadcasted LOGIN event to other tabs");
-      }
-
-      return loggedInUser;
-    } catch (error) {
-      logger.error("Login failed:", error);
-      throw error;
     }
   };
 
@@ -362,13 +208,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     refresh_token?: string;
     expires_in: number;
   }): Promise<User> => {
-    // Store the externally-minted tokens through the same token-storage layer
-    // the password flow uses, so the HttpClient attaches `Authorization:
-    // Bearer <cognito access_token>` on every request and the middleware
-    // marker cookie is set. `setTokens` derives the access-token expiry from
-    // the JWT `exp` claim; the refresh fields are best-effort (Cognito refresh
-    // tokens are opaque/optional, and the social flow re-auths via the hosted
-    // UI rather than the password refresh endpoint).
+    // Store the Cognito tokens through the token-storage layer so the
+    // HttpClient attaches `Authorization: Bearer <cognito access_token>` on
+    // every request and the middleware marker cookie is set. `setTokens`
+    // derives the access-token expiry from the JWT `exp` claim; the refresh
+    // fields are best-effort (Cognito refresh tokens are opaque/optional, and
+    // the app re-auths via the hosted UI rather than a password refresh
+    // endpoint).
     authService.tokenManager.setTokens({
       access_token: tokens.access_token,
       refresh_token: tokens.refresh_token ?? "",
@@ -381,7 +227,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const loggedInUser = await authService.getCurrentUser();
     setUser(loggedInUser);
 
-    // Broadcast to other tabs (mirrors the password `login` path).
+    // Broadcast the login to other tabs.
     if (channelRef.current) {
       channelRef.current.postMessage({
         type: "LOGIN",
@@ -391,27 +237,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     return loggedInUser;
-  };
-
-  const register = async (
-    email: string,
-    username: string,
-    password: string,
-    fullName?: string
-  ) => {
-    try {
-      await authService.register({
-        email,
-        username,
-        password,
-        full_name: fullName,
-      });
-      // After registration, log the user in
-      await login(username, password);
-    } catch (error) {
-      logger.error("Registration failed:", error);
-      throw error;
-    }
   };
 
   const logout = async () => {
@@ -431,10 +256,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearExtractionConfig();
     logger.debug("Extraction config cleared");
 
-    authService.logout();
     setUser(null);
 
-    // Broadcast logout event to other tabs
+    // Broadcast logout event to other tabs (they clear local state only — see
+    // the LOGOUT broadcast handler — without each redirecting to /logout).
     if (channelRef.current) {
       channelRef.current.postMessage({
         type: "LOGOUT",
@@ -442,9 +267,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logger.debug("Broadcasted LOGOUT event to other tabs");
     }
 
-    if (typeof window !== "undefined") {
-      window.location.href = "/";
-    }
+    // Clears local token state, then redirects this tab to the Cognito
+    // hosted-UI `/logout` (true SSO sign-out). Cognito redirects back to the
+    // app's `/login` page afterwards, so no extra navigation is needed here —
+    // this call ends in a full-page redirect and does not return.
+    await authService.logout();
   };
 
   const updateUser = async (data: Partial<User>) => {
@@ -468,46 +295,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const getAccessToken = async (): Promise<string | null> => {
-    try {
-      // Check if user is authenticated
-      if (!authService.isAuthenticated()) {
-        logger.debug("Not authenticated, cannot get runner token");
-        return null;
-      }
-
-      // Fetch a short-lived runner token from the backend. Goes through
-      // httpClient.fetch so the Bearer header is attached in remote/staging
-      // mode where HttpOnly cookies can't cross origins.
-      const response = await httpClient.fetch(
-        `${ApiConfig.API_BASE_URL}/api/v1/auth/runner-token`,
-        { method: "POST" }
-      );
-
-      if (!response.ok) {
-        logger.error("Failed to get runner token:", response.status);
-        return null;
-      }
-
-      const data = await response.json();
-      logger.debug("Got runner token, expires in", data.expires_in, "seconds");
-      return data.token;
-    } catch (error) {
-      logger.error("Failed to get access token:", error);
-      return null;
-    }
-  };
-
   return (
     <AuthContext.Provider
       value={{
         user,
         loading,
-        login,
-        register,
         logout,
         updateUser,
-        getAccessToken,
         completeExternalLogin,
       }}
     >

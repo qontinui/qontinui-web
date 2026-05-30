@@ -1,24 +1,23 @@
-"""Tests for Cognito dual-accept: iss-branching strategy + provisioning.
+"""Tests for Cognito-only auth: provisioning + the single verify path.
 
-Two surfaces:
+Cognito is the sole user-authentication mechanism. Two surfaces:
 
 * ``app.services.cognito_provision.resolve_user_for_cognito_claims`` —
   provision-or-link by Cognito ``sub`` / verified email (DB-backed,
   uses the ``async_db_session`` fixture from ``conftest.py``).
-* ``app.auth.config.DebugJWTStrategy.read_token`` — routes a token to
-  the Cognito verifier vs. the local FastAPI-Users path by its ``iss``
-  claim (the Cognito verifier + user_manager are mocked so this isolates
-  the routing decision).
+* ``app.auth.config.CognitoJWTStrategy.read_token`` — the only user-token
+  verifier; it delegates to the shared
+  ``app.auth.cognito_user.verify_cognito_token_and_resolve_user`` helper.
+  An invalid / unverifiable token yields ``None`` (→ 401). There is no
+  local HS256 / password fallback.
 """
 
 from __future__ import annotations
 
-import time
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
-import jwt as pyjwt
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -59,7 +58,8 @@ async def test_provision_creates_new_user(async_db_session: AsyncSession) -> Non
     assert user.full_name == "Cognito User"
     assert user.is_active is True
     assert user.is_verified is True  # mirrors email_verified
-    assert user.hashed_password  # unusable hash stored, not empty
+    # No local password column exists anymore (Cognito-only).
+    assert not hasattr(user, "hashed_password")
 
 
 @pytest.mark.asyncio
@@ -93,7 +93,6 @@ async def test_links_existing_local_user_by_verified_email(
         id=uuid4(),
         email=email,
         username=f"local_{uuid4().hex[:8]}",
-        hashed_password="hashed_pw",
         is_active=True,
         is_verified=True,
     )
@@ -122,7 +121,6 @@ async def test_unverified_email_collision_is_rejected(
         id=uuid4(),
         email=email,
         username=f"victim_{uuid4().hex[:8]}",
-        hashed_password="hashed_pw",
         is_active=True,
         is_verified=True,
     )
@@ -157,98 +155,61 @@ async def test_missing_sub_raises(async_db_session: AsyncSession) -> None:
 
 
 # ---------------------------------------------------------------------------
-# iss-branching in the strategy
+# The single Cognito verify path (CognitoJWTStrategy)
 # ---------------------------------------------------------------------------
 
 
-def _unsigned_token(claims: dict[str, Any]) -> str:
-    """A token whose signature we don't care about — the strategy reads
-    ``iss`` unverified to route, and the verifier is mocked."""
-    return pyjwt.encode(claims, "irrelevant-secret", algorithm="HS256")
+def _strategy():
+    from app.auth import config as auth_config
+
+    # secret is unused — the strategy never decodes locally.
+    return auth_config.CognitoJWTStrategy(secret="x" * 32, lifetime_seconds=3600)
+
+
+def _user_manager_with_session(session: AsyncSession) -> MagicMock:
+    """A fastapi-users user_manager mock exposing a real SQLAlchemy
+    user_db.session so the shared helper can provision against it."""
+    from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
+
+    user_db = MagicMock(spec=SQLAlchemyUserDatabase)
+    user_db.session = session
+    manager = MagicMock()
+    manager.user_db = user_db
+    return manager
 
 
 @pytest.mark.asyncio
-async def test_strategy_routes_cognito_issuer_to_cognito_path(monkeypatch) -> None:
-    from app.auth import config as auth_config
-
-    strategy = auth_config.DebugJWTStrategy(secret="x" * 32, lifetime_seconds=3600)
-
-    sentinel_user = MagicMock(spec=User)
-    sentinel_user.id = uuid4()
-    called = {}
-
-    async def _fake_cognito(self, token, user_manager):  # noqa: ANN001
-        called["cognito"] = True
-        return sentinel_user
-
-    monkeypatch.setattr(
-        auth_config.DebugJWTStrategy, "_read_cognito_token", _fake_cognito
-    )
-    # Ensure the live client reports the Cognito issuer as configured.
-    monkeypatch.setattr(auth_config, "logger", auth_config.logger)  # no-op keep
+async def test_strategy_resolves_valid_cognito_token(
+    monkeypatch, async_db_session: AsyncSession
+) -> None:
+    """A verifiable Cognito token resolves to a provisioned User via the
+    one shared verify+provision helper."""
     from app.services import cognito_jwks
 
+    claims = _claims()
     monkeypatch.setattr(cognito_jwks.cognito_jwks_client, "_issuer", _ISSUER)
     monkeypatch.setattr(
         cognito_jwks.cognito_jwks_client,
-        "_allowed_audiences",
-        {"q6ns1a8bokf2np1mj8v8arl31"},
+        "verify_token",
+        AsyncMock(return_value=claims),
     )
 
-    now = int(time.time())
-    token = _unsigned_token({"iss": _ISSUER, "sub": "s", "exp": now + 3600})
-    result = await strategy.read_token(token, MagicMock())
+    strategy = _strategy()
+    manager = _user_manager_with_session(async_db_session)
+    result = await strategy.read_token("any-token", manager)
 
-    assert called.get("cognito") is True
-    assert result is sentinel_user
+    assert result is not None
+    assert result.cognito_sub == claims["sub"]
+    assert result.email == claims["email"]
 
 
 @pytest.mark.asyncio
-async def test_strategy_routes_local_issuer_to_super(monkeypatch) -> None:
-    """A non-Cognito token takes the unchanged local fastapi-users path."""
-    from app.auth import config as auth_config
-
-    strategy = auth_config.DebugJWTStrategy(secret="x" * 32, lifetime_seconds=3600)
-
-    cognito_called = {"v": False}
-
-    async def _fake_cognito(self, token, user_manager):  # noqa: ANN001
-        cognito_called["v"] = True
-        return None
-
-    monkeypatch.setattr(
-        auth_config.DebugJWTStrategy, "_read_cognito_token", _fake_cognito
-    )
-
-    super_user = MagicMock(spec=User)
-
-    async def _fake_super(self, token, user_manager):  # noqa: ANN001
-        return super_user
-
-    # Patch the parent JWTStrategy.read_token so we don't need a real
-    # fastapi-users token; we only assert the LOCAL branch was taken.
-    from fastapi_users.authentication import JWTStrategy
-
-    monkeypatch.setattr(JWTStrategy, "read_token", _fake_super)
-
-    # A token with a non-Cognito issuer (fastapi-users tokens carry
-    # aud=fastapi-users:auth and no Cognito iss).
-    token = _unsigned_token({"sub": "local-user", "aud": "fastapi-users:auth"})
-    result = await strategy.read_token(token, MagicMock())
-
-    assert cognito_called["v"] is False  # cognito path NOT taken
-    assert result is super_user
-
-
-@pytest.mark.asyncio
-async def test_cognito_path_returns_none_on_invalid_token(monkeypatch) -> None:
-    """A Cognito-issuer token that fails verification yields None (→ 401),
-    never an exception that escapes the dependency."""
-    from app.auth import config as auth_config
+async def test_strategy_returns_none_on_invalid_token(monkeypatch) -> None:
+    """A token that fails Cognito verification yields None (→ 401), never
+    an exception that escapes the dependency. There is NO local fallback."""
     from app.services import cognito_jwks
     from app.services.cognito_jwks import CognitoTokenInvalidError
 
-    strategy = auth_config.DebugJWTStrategy(secret="x" * 32, lifetime_seconds=3600)
     monkeypatch.setattr(cognito_jwks.cognito_jwks_client, "_issuer", _ISSUER)
 
     async def _raise(token):  # noqa: ANN001
@@ -258,7 +219,26 @@ async def test_cognito_path_returns_none_on_invalid_token(monkeypatch) -> None:
         cognito_jwks.cognito_jwks_client, "verify_token", AsyncMock(side_effect=_raise)
     )
 
-    now = int(time.time())
-    token = _unsigned_token({"iss": _ISSUER, "sub": "s", "exp": now + 3600})
-    result = await strategy.read_token(token, MagicMock())
+    strategy = _strategy()
+    result = await strategy.read_token("bad-token", MagicMock())
     assert result is None
+
+
+@pytest.mark.asyncio
+async def test_strategy_returns_none_when_cognito_not_configured(monkeypatch) -> None:
+    """If Cognito is not configured the strategy authenticates no one
+    (fails closed → None), rather than falling back to any local path."""
+    from app.services import cognito_jwks
+
+    # Empty issuer → ``configured`` is False.
+    monkeypatch.setattr(cognito_jwks.cognito_jwks_client, "_issuer", "")
+
+    strategy = _strategy()
+    result = await strategy.read_token("some-token", MagicMock())
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_strategy_returns_none_on_missing_token() -> None:
+    strategy = _strategy()
+    assert await strategy.read_token(None, MagicMock()) is None

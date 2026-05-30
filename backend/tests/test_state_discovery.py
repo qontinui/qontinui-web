@@ -22,7 +22,6 @@ async def test_discover_states_empty_session(async_db_session):
         email="test@example.com",
         username="testuser",
         full_name="Test User",
-        hashed_password="hashed_password",
         is_active=True,
     )
     async_db_session.add(user)
@@ -63,7 +62,6 @@ async def test_discover_states_single_state(async_db_session):
         email="test2@example.com",
         username="testuser2",
         full_name="Test User",
-        hashed_password="hashed_password",
         is_active=True,
     )
     async_db_session.add(user)
@@ -125,7 +123,6 @@ async def test_discover_states_multiple_states(async_db_session):
         email="test3@example.com",
         username="testuser3",
         full_name="Test User",
-        hashed_password="hashed_password",
         is_active=True,
     )
     async_db_session.add(user)
@@ -223,7 +220,6 @@ async def test_discover_states_with_input_events(async_db_session):
         email="test4@example.com",
         username="testuser4",
         full_name="Test User",
-        hashed_password="hashed_password",
         is_active=True,
     )
     async_db_session.add(user)
@@ -316,7 +312,6 @@ async def test_discover_states_custom_parameters(async_db_session):
         email="test5@example.com",
         username="testuser5",
         full_name="Test User",
-        hashed_password="hashed_password",
         is_active=True,
     )
     async_db_session.add(user)
@@ -388,7 +383,6 @@ async def test_discover_states_processing_time(async_db_session):
         email="test6@example.com",
         username="testuser6",
         full_name="Test User",
-        hashed_password="hashed_password",
         is_active=True,
     )
     async_db_session.add(user)

@@ -3,10 +3,9 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import get_password_hash, verify_password
 from app.models.audit_log import AuditLog
 from app.models.user import User
-from app.schemas.user import UserCreate, UserProfileUpdate, UserUpdate
+from app.schemas.user import UserProfileUpdate, UserUpdate
 
 
 async def get_user(db: AsyncSession, user_id: UUID) -> User | None:
@@ -29,27 +28,12 @@ async def get_users(db: AsyncSession, skip: int = 0, limit: int = 100) -> list[U
     return list(result.scalars().all())
 
 
-async def create_user(db: AsyncSession, user: UserCreate) -> User:
-    hashed_password = get_password_hash(user.password)
-    db_user = User(
-        email=user.email,
-        username=user.username,
-        full_name=user.full_name,
-        hashed_password=hashed_password,
-    )
-    db.add(db_user)
-    await db.commit()
-    await db.refresh(db_user)
-    return db_user
-
-
 async def update_user(db: AsyncSession, user: User, user_update: UserUpdate) -> User:
     update_data = user_update.dict(exclude_unset=True)
 
-    if "password" in update_data:
-        hashed_password = get_password_hash(update_data["password"])
-        del update_data["password"]
-        update_data["hashed_password"] = hashed_password
+    # Local passwords no longer exist (Cognito-only). If a stale client
+    # still sends a ``password`` field, drop it rather than persist it.
+    update_data.pop("password", None)
 
     for field, value in update_data.items():
         setattr(user, field, value)
@@ -67,19 +51,6 @@ async def delete_user(db: AsyncSession, user_id: UUID) -> bool:
         await db.commit()
         return True
     return False
-
-
-async def authenticate_user(
-    db: AsyncSession, username: str, password: str
-) -> User | None:
-    user = await get_user_by_username(db, username)
-    if not user:
-        user = await get_user_by_email(db, username)
-    if not user:
-        return None
-    if not verify_password(password, user.hashed_password):
-        return None
-    return user
 
 
 async def update_user_profile(

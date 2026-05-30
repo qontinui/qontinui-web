@@ -1,12 +1,16 @@
 """
 Authentication endpoints package.
 
-Provides authentication endpoints including:
-- JWT authentication (login, logout, refresh)
-- Device management
-- Device verification
-- Password management
-- Bootstrap-first-admin (one-shot endpoint to promote initial superuser)
+Cognito is the sole user-authentication mechanism: sign-up, password
+reset, and email verification are owned by the Cognito hosted UI, so the
+FastAPI-Users register / reset-password / email-verify routers and the
+local JWT login/refresh/logout + password-change endpoints are gone.
+
+Remaining endpoints:
+- ``/users/me`` override (enriches the user with coord tenant identity)
+- fastapi-users user-management router (profile read/update)
+- Device management + DEVICE verification (NOT email verification)
+- Bootstrap-first-admin (promote an existing user to superuser)
 """
 
 # Import sub-routers
@@ -17,12 +21,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.api.v1.endpoints.auth.bootstrap import router as bootstrap_router
 from app.api.v1.endpoints.auth.devices import router as devices_router
-from app.api.v1.endpoints.auth.jwt import router as jwt_router
-from app.api.v1.endpoints.auth.password import router as password_router
 from app.api.v1.endpoints.auth.verification import router as verification_router
 from app.auth.config import fastapi_users
 from app.models.user import User as UserModel
-from app.schemas.user import UserCreate, UserRead, UserUpdate
+from app.schemas.user import UserRead, UserUpdate
 
 # Main auth router
 router = APIRouter()
@@ -89,38 +91,16 @@ async def read_users_me(
     )
 
 
-# FastAPI-Users routers
-# NOTE: We use custom auth routes (login, logout, refresh) in jwt.py instead of
-# fastapi-users auto-generated routes because we need HttpOnly cookie support.
-
-# Register user registration route
-router.include_router(
-    fastapi_users.get_register_router(UserRead, UserCreate),
-    tags=["auth"],
-)
-
-# Register password reset routes
-router.include_router(
-    fastapi_users.get_reset_password_router(),
-    tags=["auth"],
-)
-
-# Register email verification routes
-router.include_router(
-    fastapi_users.get_verify_router(UserRead),
-    tags=["auth"],
-)
-
-# Register user management routes (me, update, etc.)
+# FastAPI-Users user-management routes (profile read/update).
+# Sign-up / password-reset / email-verify routers are intentionally NOT
+# included — Cognito's hosted UI owns those flows.
 router.include_router(
     fastapi_users.get_users_router(UserRead, UserUpdate),
     prefix="/users",
     tags=["users"],
 )
 
-# Include custom auth sub-routers
-router.include_router(jwt_router, tags=["auth"])
+# Include custom auth sub-routers (device management + device verification).
 router.include_router(devices_router, tags=["auth"])
 router.include_router(verification_router, tags=["auth"])
-router.include_router(password_router, tags=["auth"])
 router.include_router(bootstrap_router, tags=["auth-bootstrap"])

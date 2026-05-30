@@ -20,19 +20,6 @@ export interface User {
   tenant_slug?: string | null;
 }
 
-export interface LoginRequest {
-  username: string;
-  password: string;
-  remember_me?: boolean;
-}
-
-export interface RegisterRequest {
-  email: string;
-  username: string;
-  password: string;
-  full_name?: string;
-}
-
 export interface TokenResponse {
   access_token: string;
   refresh_token: string;

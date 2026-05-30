@@ -7,25 +7,13 @@ from app.core.security.code_policy import (
     CodeSecurityPolicy,
 )
 
-# Re-export token/password utilities from tokens.py
+# Re-export the surviving token-revocation helpers from tokens.py. Local
+# token minting / password hashing / password-reset / runner-token helpers
+# were removed when Cognito became the sole authentication mechanism.
 from app.core.tokens import (
     blacklist_token,
     clean_expired_tokens,
-    create_access_token,
-    create_password_reset_token,
-    create_refresh_token,
-    decode_refresh_token,
-    decode_token,
-    generate_runner_token,
-    get_password_hash,
-    get_session_jti_from_refresh_token,
-    get_token_expiry_time,
-    hash_runner_token,
     is_token_blacklisted,
-    is_token_expiring_soon,
-    verify_password,
-    verify_password_reset_token,
-    verify_runner_token,
 )
 
 __all__ = [
@@ -34,22 +22,8 @@ __all__ = [
     "BLOCKED_IMPORTS",
     "DEFAULT_ALLOWED_IMPORTS",
     "CodeSecurityPolicy",
-    # Token utilities
+    # Token revocation
     "blacklist_token",
     "clean_expired_tokens",
-    "create_access_token",
-    "create_password_reset_token",
-    "create_refresh_token",
-    "decode_refresh_token",
-    "decode_token",
-    "generate_runner_token",
-    "get_password_hash",
-    "get_session_jti_from_refresh_token",
-    "get_token_expiry_time",
-    "hash_runner_token",
     "is_token_blacklisted",
-    "is_token_expiring_soon",
-    "verify_password",
-    "verify_password_reset_token",
-    "verify_runner_token",
 ]

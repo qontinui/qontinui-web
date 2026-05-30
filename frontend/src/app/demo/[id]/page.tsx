@@ -124,7 +124,7 @@ export default function DemoProjectPage() {
               </p>
             </div>
           </div>
-          <Link href="/auth/register">
+          <Link href="/login">
             <Button
               size="sm"
               className="bg-white text-blue-600 hover:bg-zinc-100"
@@ -282,7 +282,7 @@ export default function DemoProjectPage() {
                   <li>Delete the project</li>
                 </ul>
                 <div className="pt-4 space-y-2">
-                  <Link href="/auth/register" className="block">
+                  <Link href="/login" className="block">
                     <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white">
                       Create Your Own Project
                     </Button>

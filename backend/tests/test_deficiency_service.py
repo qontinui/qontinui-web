@@ -170,7 +170,6 @@ class TestDeficiencyService:
         user = User(
             email=f"defuser_{uuid4().hex[:8]}@example.com",
             username=f"defuser_{uuid4().hex[:8]}",
-            hashed_password="x",
             is_active=True,
             is_verified=True,
         )
@@ -248,7 +247,6 @@ class TestDeficiencyService:
         user = User(
             email=f"linkuser_{uuid4().hex[:8]}@example.com",
             username=f"linkuser_{uuid4().hex[:8]}",
-            hashed_password="x",
             is_active=True,
             is_verified=True,
         )

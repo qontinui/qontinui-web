@@ -20,7 +20,6 @@ function LandingContent() {
   const {
     authDialogOpen,
     setAuthDialogOpen,
-    signupMode,
     platform,
     user,
     router,
@@ -40,11 +39,7 @@ function LandingContent() {
       <ResearchSection />
       <DownloadCTASection platform={platform} handleDownload={handleDownload} />
 
-      <AuthDialog
-        open={authDialogOpen}
-        onOpenChange={setAuthDialogOpen}
-        defaultTab={signupMode ? "signup" : "signin"}
-      />
+      <AuthDialog open={authDialogOpen} onOpenChange={setAuthDialogOpen} />
 
       <Footer />
     </div>

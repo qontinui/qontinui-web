@@ -20,14 +20,11 @@ __all__ = [
     "get_authenticated_device_user",
 ]
 
-from typing import cast
 from uuid import UUID
 
 import structlog
 from fastapi import HTTPException, status
-from jose import JWTError, jwt
 
-from app.core.config import settings
 from app.models.user import User
 
 logger = structlog.get_logger(__name__)
@@ -54,88 +51,51 @@ get_verified_user_async = current_verified_user
 
 async def get_current_user_from_ws(token: str) -> User:
     """
-    Authenticate user from WebSocket token.
+    Authenticate a WebSocket connection from a Cognito access token.
+
+    This is the WebSocket equivalent of the ``current_active_user`` HTTP
+    dependency and goes through the *same* single Cognito verification +
+    provision-or-link path as the fastapi-users strategy
+    (:class:`app.auth.config.CognitoJWTStrategy`). The frontend repoints
+    its collaboration / runner / device sockets to send the Cognito
+    ``access_token``, matching the token kind the HTTP path accepts.
 
     Args:
-        token: JWT access token
+        token: Cognito user-pool access token (the same bearer the HTTP
+            ``Authorization`` header carries).
 
     Returns:
-        User object if authenticated
+        The authenticated, active :class:`User`.
 
     Raises:
-        HTTPException if authentication fails
+        HTTPException: 401 if the token is missing/invalid or the resolved
+            user is inactive.
     """
-    try:
-        # Log what we're trying to decode
-        logger.info(
-            "ws_jwt_decode_attempt",
-            token_length=len(token) if token else 0,
-            secret_key_set=bool(settings.ACCESS_SECRET_KEY),
-            algorithm=settings.ALGORITHM,
-        )
-
-        # Decode JWT token
-        # fastapi-users uses "fastapi-users:auth" as the audience claim
-        # ACCESS_SECRET_KEY is validated to be non-None by pydantic validator
-        secret_key = cast(str, settings.ACCESS_SECRET_KEY)
-        payload = jwt.decode(
-            token,
-            secret_key,
-            algorithms=[settings.ALGORITHM],
-            audience="fastapi-users:auth",
-        )
-
-        logger.info(
-            "ws_jwt_decode_success",
-            sub=payload.get("sub"),
-            claims=list(payload.keys()),
-        )
-
-        # Extract user ID from token
-        user_id_str: str | None = payload.get("sub")
-        if user_id_str is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid authentication token",
-            )
-
-        user_id = UUID(user_id_str)
-
-    except JWTError as e:
-        logger.error(
-            "ws_jwt_decode_error",
-            error=str(e),
-            error_type=type(e).__name__,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-        )
-    except ValueError as e:
-        logger.error("ws_invalid_user_id", error=str(e))
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid user ID in token",
-        )
-
-    # Get user from database
-    # Use the db session from the generator - do NOT call close() explicitly
-    # as the async context manager in get_async_db() handles cleanup
-    from sqlalchemy import select
-
+    from app.auth.cognito_user import (
+        CognitoAuthError,
+        verify_cognito_token_and_resolve_user,
+    )
     from app.db.session import AsyncSessionLocal
 
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(
-            select(User).where(User.id == user_id)  # type: ignore[arg-type]
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing authentication token",
         )
-        user = result.scalar_one_or_none()
 
-        if user is None:
+    # A dedicated session: the provision-or-link path may create/link a
+    # user row on first Cognito login, so it must commit. The fastapi-users
+    # HTTP path commits via the request-scoped session; the WS path has no
+    # request session, so own one here.
+    async with AsyncSessionLocal() as db:
+        try:
+            user = await verify_cognito_token_and_resolve_user(token, db)
+        except CognitoAuthError as exc:
+            logger.warning("ws_cognito_auth_failed", error=str(exc))
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User not found",
-            )
+                detail="Invalid or expired token",
+            ) from exc
 
         if not user.is_active:
             raise HTTPException(
@@ -143,6 +103,8 @@ async def get_current_user_from_ws(token: str) -> User:
                 detail="User is not active",
             )
 
+        # Commit any provision-or-link writes before the session closes.
+        await db.commit()
         return user
 
 

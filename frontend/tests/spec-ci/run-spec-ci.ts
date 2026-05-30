@@ -868,8 +868,6 @@ function routeForSpec(
     "testing-run-detail": "/testing/runs/spec-ci-sentinel-run",
     "qa-dashboard-run-detail": "/qa-dashboard/runs/spec-ci-sentinel-run",
     "marketplace-detail": "/marketplace/spec-ci-sentinel-pkg",
-    // Token-carrying override — query param threads through string concat.
-    "reset-password": "/reset-password?token=spec-ci-reset-token",
     // Nested slug → path overrides (default /${specId} maps to single segment).
     "configure-finding-rules": "/configure/finding-rules",
     "configure-hooks": "/configure/hooks",
@@ -1164,7 +1162,7 @@ async function evaluateSpec(
     const DUMP_SPECS_SET = [
       "recordings-detail", "runs-detail", "testing-run-detail",
       "qa-dashboard-run-detail", "configure-finding-rules",
-      "verify-email", "marketplace-detail",
+      "marketplace-detail",
     ];
     if (DUMP_SPECS_SET.includes(spec.id)) {
       try {

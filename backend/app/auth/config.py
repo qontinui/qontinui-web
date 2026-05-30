@@ -5,8 +5,8 @@ from typing import cast
 
 import structlog
 from fastapi import Depends, Request, Response
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from fastapi_users import BaseUserManager, FastAPIUsers, UUIDIDMixin, exceptions
+from fastapi.security import OAuth2PasswordBearer
+from fastapi_users import BaseUserManager, FastAPIUsers, UUIDIDMixin
 from fastapi_users.authentication import AuthenticationBackend, JWTStrategy
 from fastapi_users.authentication.transport import (
     Transport,
@@ -88,7 +88,12 @@ class CookieOrBearerTransport(Transport):
     scheme: CookieOrBearerScheme
 
     def __init__(
-        self, cookie_name: str = "access_token", tokenUrl: str = "api/v1/auth/jwt/login"
+        self,
+        cookie_name: str = "access_token",
+        # OpenAPI/Swagger hint only — there is no local token endpoint
+        # anymore (Cognito's hosted UI issues tokens). The transport still
+        # *extracts* the presented Cognito bearer from the cookie/header.
+        tokenUrl: str = "cognito",
     ):
         self.cookie_name = cookie_name
         self.scheme = CookieOrBearerScheme(tokenUrl=tokenUrl, cookie_name=cookie_name)
@@ -142,16 +147,29 @@ async def get_user_db(session: AsyncSession = Depends(get_async_db)):
 
 
 class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
-    """User manager for handling user registration, password reset, etc."""
+    """User manager for fastapi-users user-DB lookups.
 
-    reset_password_token_secret: str = settings.RESET_PASSWORD_SECRET_KEY or ""
-    verification_token_secret: str = settings.VERIFICATION_SECRET_KEY or ""
+    Cognito is the sole authentication mechanism, so this manager no
+    longer performs local password verification, password reset, or
+    email verification (the Cognito hosted UI owns sign-up / reset /
+    verify). It exists only so the fastapi-users machinery can fetch the
+    authenticated ``User`` by id for the ``current_active_user`` family of
+    dependencies; the actual token verification lives in
+    :class:`CognitoJWTStrategy`.
+    """
 
     async def on_after_register(self, user: User, request: Request | None = None):
-        """Called after a user successfully registers."""
+        """Create the new user's personal organization.
+
+        Local self-service registration is gone (Cognito hosted UI owns
+        sign-up), but a ``User`` row is still created on first Cognito
+        login via provision-or-link. This hook is invoked by
+        :meth:`BaseUserManager.create`; provisioning goes through
+        :mod:`app.services.cognito_provision` instead, so this stays a
+        thin org-bootstrap shim retained for any programmatic ``create``.
+        """
         logger.info("user_registered", user_id=str(user.id), email=user.email)
 
-        # Create personal organization for the new user
         from app.services.organization_service import organization_service
 
         # Cast user_db to SQLAlchemyUserDatabase to access session attribute
@@ -173,126 +191,6 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
                 user_id=str(user.id),
             )
 
-        # Send welcome email via background task
-        from app.services.auth.token_service import token_service
-        from app.worker.queue import task_queue
-
-        # Generate verification token
-        verification_token = token_service.create_email_verification_token(user.email)
-
-        # Send verification email in background
-        job_id = await task_queue.send_verification_email(
-            to_email=user.email,
-            username=user.username,
-            verification_token=verification_token,
-        )
-        if job_id:
-            logger.info("verification_email_enqueued", email=user.email, job_id=job_id)
-        else:
-            logger.error("verification_email_enqueue_failed", email=user.email)
-
-        # Send admin notification for new user signup. Cloud-control-only;
-        # OSS-only deployments don't ship the admin_notification_service
-        # module, so the local import is wrapped together with the call.
-        try:
-            from app.services.admin_notification_service import (
-                admin_notification_service,
-            )
-
-            await admin_notification_service.notify_user_signup(
-                db=user_db.session,
-                user_email=user.email,
-                username=user.username,
-                user_id=user.id,
-            )
-        except Exception as e:
-            # Don't fail registration if admin notification fails
-            logger.error(
-                "admin_notification_user_signup_failed",
-                error=str(e),
-                user_id=str(user.id),
-            )
-
-    async def on_after_forgot_password(
-        self, user: User, token: str, request: Request | None = None
-    ):
-        """Called after a user requests a password reset."""
-        logger.info("password_reset_requested", user_id=str(user.id), email=user.email)
-        # Send password reset email via background task
-        from app.worker.queue import task_queue
-
-        job_id = await task_queue.send_password_reset_email(
-            to_email=user.email,
-            username=user.username,
-            reset_token=token,
-        )
-        if job_id:
-            logger.info(
-                "password_reset_email_enqueued", email=user.email, job_id=job_id
-            )
-        else:
-            logger.error("password_reset_email_enqueue_failed", email=user.email)
-
-    async def on_after_request_verify(
-        self, user: User, token: str, request: Request | None = None
-    ):
-        """Called after a user requests email verification."""
-        logger.info("verification_requested", user_id=str(user.id), email=user.email)
-        # Send verification email via background task
-        from app.worker.queue import task_queue
-
-        job_id = await task_queue.send_verification_email(
-            to_email=user.email,
-            username=user.username,
-            verification_token=token,
-        )
-        if job_id:
-            logger.info("verification_email_enqueued", email=user.email, job_id=job_id)
-        else:
-            logger.error("verification_email_enqueue_failed", email=user.email)
-
-    async def authenticate(self, credentials: OAuth2PasswordRequestForm) -> User | None:
-        """
-        Authenticate and return a user following a username/email and password.
-
-        Supports authentication with both email and username.
-        Will automatically upgrade password hash if necessary.
-
-        :param credentials: The user credentials (username field can be email or username).
-        """
-        # First try to get user by email
-        user: User | None
-        try:
-            user = await self.get_by_email(credentials.username)
-        except exceptions.UserNotExists:
-            # Try to get user by username instead
-            from sqlalchemy import select
-
-            # Cast user_db to SQLAlchemyUserDatabase to access session attribute
-            user_db = cast(SQLAlchemyUserDatabase, self.user_db)
-            result = await user_db.session.execute(
-                select(User).filter(User.username == credentials.username)
-            )
-            user = result.scalar_one_or_none()
-
-            if not user:
-                # Run the hasher to mitigate timing attack
-                self.password_helper.hash(credentials.password)
-                return None
-
-        # Verify password
-        verified, updated_password_hash = self.password_helper.verify_and_update(
-            credentials.password, user.hashed_password
-        )
-        if not verified:
-            return None
-
-        # Update password hash to a more robust one if needed
-        if updated_password_hash is not None:
-            await self.user_db.update(user, {"hashed_password": updated_password_hash})
-
-        return user
-
 
 async def get_user_manager(user_db=Depends(get_user_db)):
     """Get user manager instance."""
@@ -301,80 +199,49 @@ async def get_user_manager(user_db=Depends(get_user_db)):
 
 # ===== AUTHENTICATION BACKEND =====
 
-# Use custom transport that supports both cookies and bearer tokens
+# Custom transport that extracts the Cognito bearer from either the
+# access_token cookie or the Authorization header.
 cookie_or_bearer_transport = CookieOrBearerTransport(
-    cookie_name="access_token", tokenUrl="api/v1/auth/jwt/login"
+    cookie_name="access_token", tokenUrl="cognito"
 )
 
 
-def _token_issuer(token: str) -> str | None:
-    """Read the ``iss`` claim WITHOUT verifying the signature.
+class CognitoJWTStrategy(JWTStrategy):
+    """The sole user-token verifier: AWS Cognito user-pool JWTs only.
 
-    Used only to route a presented token to the right verifier (local
-    FastAPI-Users vs. Cognito). The chosen verifier always re-validates
-    the signature + issuer before trusting any claim, so reading ``iss``
-    unverified here is safe.
-    """
-    import jwt as pyjwt
+    Cognito is the only user-authentication mechanism. Every bearer token
+    presented on the ``Authorization`` header / ``access_token`` cookie is
+    verified against the configured Cognito pool JWKS and resolved to a
+    local ``User`` (provision-or-link). There is no local HS256 / password
+    fallback — a non-Cognito or otherwise invalid token returns ``None``,
+    which fastapi-users surfaces as a 401.
 
-    try:
-        decoded = pyjwt.decode(token, options={"verify_signature": False})
-    except Exception:
-        return None
-    iss = decoded.get("iss")
-    return iss if isinstance(iss, str) else None
-
-
-class DebugJWTStrategy(JWTStrategy):
-    """JWT Strategy with debug logging + Cognito dual-accept.
-
-    The web backend accepts two token families on the same
-    ``Authorization`` header / ``access_token`` cookie:
-
-    * **Local** FastAPI-Users HS256 tokens (the legacy path) — handled by
-      :meth:`JWTStrategy.read_token`.
-    * **AWS Cognito** user-pool RS256 tokens — verified against the pool
-      JWKS, then resolved to a local ``User`` (provision-or-link).
-
-    Routing is by the token's ``iss`` claim: a token issued by the
-    configured Cognito pool takes the Cognito path; everything else takes
-    the unchanged local path. This branch lives in the fastapi-users
-    strategy so *every* exported dependency
-    (``current_active_user``/``current_verified_user``/…) is dual-accept
-    without per-endpoint changes.
+    This lives in the fastapi-users strategy so *every* exported
+    dependency (``current_active_user``/``current_verified_user``/…)
+    authenticates through the one Cognito path without per-endpoint
+    changes. The verification logic itself is shared with the WebSocket
+    authenticator via
+    :func:`app.auth.cognito_user.verify_cognito_token_and_resolve_user`.
     """
 
-    async def _read_cognito_token(self, token: str, user_manager):
-        """Verify a Cognito token + resolve the local ``User``.
+    async def read_token(self, token: str | None, user_manager):
+        """Verify a Cognito token and resolve the local ``User``.
 
         Returns the ``User`` on success, or ``None`` (the fastapi-users
-        signal for "invalid token" → 401). The DB session used for
-        provisioning is the request-scoped session that ``user_manager``
-        already holds, so a newly-provisioned user commits with the
-        request.
+        signal for "invalid token" → 401). Provisioning uses the
+        request-scoped session that ``user_manager`` already holds, so a
+        newly-provisioned/linked user commits with the request.
         """
+        if token is None:
+            logger.warning("jwt_read_token_none")
+            return None
+
         from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
 
-        from app.services.cognito_jwks import (
-            CognitoJWKSUnavailableError,
-            CognitoTokenInvalidError,
-            cognito_jwks_client,
+        from app.auth.cognito_user import (
+            CognitoAuthError,
+            verify_cognito_token_and_resolve_user,
         )
-        from app.services.cognito_provision import (
-            CognitoClaimError,
-            resolve_user_for_cognito_claims,
-        )
-
-        try:
-            claims = await cognito_jwks_client.verify_token(token)
-        except CognitoJWKSUnavailableError as exc:
-            # JWKS unreachable on cold start — fail closed (401), never
-            # trust an unverified token. Logged loud for ops.
-            logger.error("cognito_jwks_unavailable", error=str(exc))
-            return None
-        except CognitoTokenInvalidError as exc:
-            logger.warning("cognito_token_invalid", error=str(exc))
-            return None
 
         user_db = user_manager.user_db
         if not isinstance(user_db, SQLAlchemyUserDatabase):
@@ -385,76 +252,23 @@ class DebugJWTStrategy(JWTStrategy):
             return None
 
         try:
-            user = await resolve_user_for_cognito_claims(user_db.session, claims)
-        except CognitoClaimError as exc:
-            logger.warning("cognito_claims_incomplete", error=str(exc))
-            return None
-
-        logger.info(
-            "cognito_token_accepted",
-            user_id=str(user.id),
-            cognito_sub=claims.get("sub"),
-        )
-        return user
-
-    async def read_token(self, token: str | None, user_manager):
-        """Route the token to the local or Cognito verifier by ``iss``."""
-        if token is None:
-            logger.warning("jwt_read_token_none")
-            return None
-
-        try:
-            # Branch on the (unverified) issuer. A token from the
-            # configured Cognito pool takes the Cognito verification path;
-            # the verifier re-checks the signature + issuer before trust.
-            from app.services.cognito_jwks import cognito_jwks_client
-
-            iss = _token_issuer(token)
-            if (
-                cognito_jwks_client.configured
-                and iss is not None
-                and iss == cognito_jwks_client.issuer
-            ):
-                logger.info("jwt_route_cognito", iss=iss)
-                return await self._read_cognito_token(token, user_manager)
-
-            # Local FastAPI-Users path (unchanged).
-            import jwt as pyjwt
-
-            decoded = pyjwt.decode(token, options={"verify_signature": False})
-            logger.info(
-                "jwt_decoded_payload",
-                sub=decoded.get("sub"),
-                type=decoded.get("type"),
-                has_device_fp=("device_fp" in decoded),
-                all_claims=list(decoded.keys()),
-            )
-
-            # Now try fastapi-users' validation
-            logger.info("jwt_decode_attempt", token_length=len(token))
-            result = await super().read_token(token, user_manager)
-            logger.info(
-                "jwt_decode_result",
-                user_id=str(result) if result else None,
-                result_type=type(result).__name__,
-            )
-            return result
-        except Exception as e:
-            logger.warning(
-                "jwt_decode_failed",
-                error=str(e),
-                error_type=type(e).__name__,
-                token_preview=token[:50] if token else None,
-            )
-            # Return None instead of raising - this tells fastapi-users the token is invalid
-            # and will result in a proper 401 Unauthorized response
+            return await verify_cognito_token_and_resolve_user(token, user_db.session)
+        except CognitoAuthError:
+            # Invalid/unverifiable token → 401 (fastapi-users treats None
+            # as "no authenticated user"). Detail already logged in helper.
             return None
 
 
 def get_jwt_strategy() -> JWTStrategy:
-    """Get JWT authentication strategy with debug logging."""
-    return DebugJWTStrategy(
-        secret=settings.ACCESS_SECRET_KEY or "",
+    """Get the Cognito-only JWT authentication strategy.
+
+    ``secret``/``lifetime_seconds`` are inherited from ``JWTStrategy`` but
+    unused: :meth:`CognitoJWTStrategy.read_token` never decodes locally —
+    it delegates entirely to the Cognito JWKS verifier. A non-empty secret
+    is supplied only to satisfy the base ``__init__`` contract.
+    """
+    return CognitoJWTStrategy(
+        secret="cognito-only-unused",
         lifetime_seconds=settings.ACCESS_TOKEN_EXPIRE_SECONDS,
     )
 

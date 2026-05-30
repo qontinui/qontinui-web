@@ -1,6 +1,7 @@
+import uuid
 from datetime import UTC, datetime
 
-from fastapi_users.db import SQLAlchemyBaseUserTableUUID
+from fastapi_users_db_sqlalchemy.generics import GUID
 from sqlalchemy import Boolean, DateTime, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -8,21 +9,36 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 
-class User(SQLAlchemyBaseUserTableUUID, Base):
-    """
-    User model extending fastapi-users base with UUID IDs.
+class User(Base):
+    """User model — Cognito-authenticated, UUID-keyed.
 
-    Inherited fields from SQLAlchemyBaseUserTableUUID:
-    - id: UUID (primary key)
-    - email: String (unique, indexed)
-    - hashed_password: String
-    - is_active: Boolean
-    - is_superuser: Boolean
-    - is_verified: Boolean
+    Cognito is the sole user-authentication mechanism, so this model
+    deliberately does NOT inherit ``SQLAlchemyBaseUserTableUUID`` (whose
+    ``hashed_password`` column was dropped from ``auth.users``). The
+    fastapi-users compatible columns are declared directly below:
+
+    - ``id``: UUID (primary key)
+    - ``email``: String (unique, indexed)
+    - ``is_active`` / ``is_superuser`` / ``is_verified``: Boolean
+
+    There is intentionally NO ``hashed_password`` column. fastapi-users'
+    user-DB lookups (``get``/``get_by_email``) used by
+    ``current_active_user`` only reference ``id``/``email``, so they keep
+    working; identity comes from the verified Cognito ``sub`` resolved via
+    :mod:`app.services.cognito_provision`.
     """
 
     __tablename__ = "users"
     __table_args__ = {"schema": "auth"}
+
+    # fastapi-users compatible columns (declared directly; no hashed_password)
+    id: Mapped[uuid.UUID] = mapped_column(GUID, primary_key=True, default=uuid.uuid4)
+    email: Mapped[str] = mapped_column(
+        String(length=320), unique=True, index=True, nullable=False
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_superuser: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Custom fields
     username: Mapped[str] = mapped_column(

@@ -71,7 +71,7 @@ export default function DemoPage() {
               action.
             </p>
             <div className="mt-8 flex justify-center gap-4">
-              <Link href="/auth/register">
+              <Link href="/login">
                 <Button
                   size="lg"
                   className="bg-[#00D9FF] hover:bg-[#00B8D9] text-black font-semibold"
@@ -172,7 +172,7 @@ export default function DemoPage() {
             Join Qontinui and create powerful automation workflows with our
             visual builder. No coding required.
           </p>
-          <Link href="/auth/register">
+          <Link href="/login">
             <Button
               size="lg"
               className="bg-white text-blue-600 hover:bg-zinc-100 font-semibold"

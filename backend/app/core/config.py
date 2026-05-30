@@ -54,20 +54,10 @@ class Settings(BaseSettings):
         default=30, description="Absolute maximum session duration in days"
     )
 
-    # fastapi-users secrets (should be different from SECRET_KEY)
-    ACCESS_SECRET_KEY: str | None = Field(
-        default=None,
-        min_length=32,
-        description="Secret key for access tokens (fastapi-users)",
-    )
-    RESET_PASSWORD_SECRET_KEY: str | None = Field(
-        default=None, min_length=32, description="Secret key for password reset tokens"
-    )
-    VERIFICATION_SECRET_KEY: str | None = Field(
-        default=None,
-        min_length=32,
-        description="Secret key for email verification tokens",
-    )
+    # NOTE: the local FastAPI-Users token secrets (ACCESS_SECRET_KEY /
+    # RESET_PASSWORD_SECRET_KEY / VERIFICATION_SECRET_KEY) were removed —
+    # Cognito is the sole user-authentication mechanism and the local
+    # HS256 token / password-reset / email-verify stack is gone.
     ACCESS_TOKEN_EXPIRE_SECONDS: int = 3600  # 1 hour
 
     # CORS
@@ -403,25 +393,6 @@ class Settings(BaseSettings):
                     "SECRET_KEY must be at least 32 characters in production"
                 )
             warnings.warn("Using weak SECRET_KEY in development mode", stacklevel=2)
-        return v
-
-    @field_validator(
-        "ACCESS_SECRET_KEY", "RESET_PASSWORD_SECRET_KEY", "VERIFICATION_SECRET_KEY"
-    )
-    @classmethod
-    def validate_fastapi_users_secrets(cls, v: str | None, info: Any) -> str:
-        """Default fastapi-users secrets to SECRET_KEY if not provided."""
-        if v is None:
-            # Get SECRET_KEY from values (already validated)
-            secret_key = info.data.get("SECRET_KEY")
-            if secret_key:
-                warnings.warn(
-                    f"{info.field_name} not set, using SECRET_KEY as fallback. "
-                    "Consider setting unique secrets for production.",
-                    stacklevel=2,
-                )
-                return cast(str, secret_key)
-            raise ValueError(f"{info.field_name} or SECRET_KEY must be set")
         return v
 
     @field_validator("ENVIRONMENT")

@@ -42,7 +42,6 @@ async def test_user(async_db_session: AsyncSession) -> User:
         email=f"testuser_{uuid4()}@example.com",
         username=f"testuser_{uuid4().hex[:8]}",
         full_name="Test User",
-        hashed_password="hashed_password",
         is_active=True,
         is_verified=True,
     )
