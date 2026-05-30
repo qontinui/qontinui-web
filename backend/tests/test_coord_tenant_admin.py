@@ -13,6 +13,11 @@ All database I/O is replaced with ``AsyncMock`` stubs so no live DB is
 required. The mocking style mirrors ``test_coord_operator_resolver.py``:
 a ``_StubResult`` wrapper that implements ``.first()`` so the resolver's
 ``(await db.execute(...)).first()`` call chain works correctly.
+
+The operator lookup is keyed on the Cognito identity (``o.sso_subject =
+:cognito_sub`` preferred, ``LOWER(o.email) = :email`` transitional
+fallback); the query *count* per branch is unchanged from the email-only
+implementation since both predicates run in one combined WHERE clause.
 """
 
 from unittest.mock import AsyncMock, MagicMock
@@ -30,10 +35,14 @@ from app.services.coord_operator_resolver import (
 # ---------------------------------------------------------------------------
 
 
-def _mock_user(email: str = "user@example.com") -> MagicMock:
+def _mock_user(
+    email: str = "user@example.com",
+    cognito_sub: str | None = None,
+) -> MagicMock:
     user = MagicMock()
     user.id = uuid4()
     user.email = email
+    user.cognito_sub = cognito_sub
     return user
 
 
@@ -67,9 +76,9 @@ def _stub_db(*rows):
 
 
 @pytest.mark.asyncio
-async def test_admin_role_row_present_returns_true():
-    """operator row with role='admin' for the tenant → True."""
-    user = _mock_user(email="admin@qontinui.io")
+async def test_admin_role_row_present_via_sub_returns_true():
+    """operator matched by Cognito sub with role='admin' → True."""
+    user = _mock_user(email="admin@qontinui.io", cognito_sub="sub-admin-1")
     tenant_id = uuid4()
     # First execute: admin-role JOIN query returns a row.
     db = _stub_db((1,))
@@ -79,12 +88,33 @@ async def test_admin_role_row_present_returns_true():
     assert result is True
     # Only the admin-role query fired; bootstrap sub-queries stay unfired.
     assert db.execute.await_count == 1
+    # Both identity params bound; sub preferred, email is the fallback arm.
+    call_kwargs = db.execute.await_args_list[0].args[1]
+    assert call_kwargs["cognito_sub"] == "sub-admin-1"
+    assert call_kwargs["email"] == "admin@qontinui.io"
+    assert call_kwargs["tid"] == str(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_admin_role_row_present_via_email_fallback_returns_true():
+    """cognito_sub NULL → admin still resolves via the email arm → True."""
+    user = _mock_user(email="legacy.admin@qontinui.io", cognito_sub=None)
+    tenant_id = uuid4()
+    db = _stub_db((1,))
+
+    result = await user_is_coord_tenant_admin(user, tenant_id, db)
+
+    assert result is True
+    assert db.execute.await_count == 1
+    call_kwargs = db.execute.await_args_list[0].args[1]
+    assert call_kwargs["cognito_sub"] is None
+    assert call_kwargs["email"] == "legacy.admin@qontinui.io"
 
 
 @pytest.mark.asyncio
 async def test_email_lowercased_in_admin_check():
     """Email casing is normalised before the admin-role query."""
-    user = _mock_user(email="ADMIN@QONTINUI.IO")
+    user = _mock_user(email="ADMIN@QONTINUI.IO", cognito_sub=None)
     tenant_id = uuid4()
     db = _stub_db((1,))
 
