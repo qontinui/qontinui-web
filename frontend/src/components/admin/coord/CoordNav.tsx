@@ -23,6 +23,7 @@ import {
   History as HistoryIcon,
   Inbox,
   Rocket,
+  Scale,
   ScrollText,
   ShieldCheck,
   Users,
@@ -103,6 +104,12 @@ const PRIMARY_TABS: NavItem[] = [
     label: "History",
     icon: HistoryIcon,
     testId: "coord-nav-history",
+  },
+  {
+    href: "/admin/coord/policies",
+    label: "Policies",
+    icon: Scale,
+    testId: "coord-nav-policies",
   },
 ];
 
