@@ -97,9 +97,12 @@ def _configure_mock_client(MockClient, mock_instance):
 
 
 def _assert_tenant_header(call) -> None:
+    # Phase T2b — the legacy ``X-Qontinui-Tenant-Id`` email-bridge header is
+    # no longer sent; coord resolves the tenant from the forwarded Cognito
+    # bearer. The scoped proxy still passes a (possibly empty) headers dict.
     headers = call.kwargs.get("headers")
     assert headers is not None
-    assert headers.get(TENANT_HEADER) == str(_FIXTURE_TENANT_ID)
+    assert TENANT_HEADER not in headers
 
 
 API_PREFIX = "/api/v1/operations"

@@ -120,11 +120,14 @@ def _configure_mock_client(MockClient, mock_instance):
 
 
 def _assert_tenant_header_forwarded(call) -> None:
-    """Helper: every dashboard proxy call must carry the tenant header."""
+    """Helper: Phase T2b — the legacy ``X-Qontinui-Tenant-Id`` email-bridge
+    header must NOT be sent on the coord call. Coord resolves the tenant from
+    the forwarded Cognito bearer instead; the proxy still passes a (possibly
+    empty) ``headers`` dict to httpx for tenant-scoped routes."""
     headers = call.kwargs.get("headers")
-    assert headers is not None, "tenant header must be set on coord call"
-    assert headers.get(TENANT_HEADER) == str(_FIXTURE_TENANT_ID), (
-        f"expected {TENANT_HEADER}={_FIXTURE_TENANT_ID}, got {headers}"
+    assert headers is not None, "scoped coord call must pass a headers dict"
+    assert TENANT_HEADER not in headers, (
+        f"{TENANT_HEADER} must no longer be sent (T2b), got {headers}"
     )
 
 

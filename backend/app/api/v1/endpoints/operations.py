@@ -92,12 +92,11 @@ from app.services.dev_dashboard_service import get_fleet_registry
 # served from PG; if coord takes longer than 5s something is wrong.
 _COORD_TIMEOUT = httpx.Timeout(5.0)
 
-# Header coord uses to scope every SQL query on the dashboard's data
-# tables (coord.plans, coord.agent_*, coord.memories, coord.primary_trees,
-# coord.agent_worktrees). Coord-side enforcement lives in
-# `qontinui-coord/src/tenant_scope.rs`. Failing closed: web rejects
-# the request with 403 ``tenant_not_resolved`` before it ever hits coord.
-TENANT_HEADER = "X-Qontinui-Tenant-Id"
+# Phase T2b — the legacy ``X-Qontinui-Tenant-Id`` email-bridge header is no
+# longer sent to coord. Coord resolves the operator/tenant from the
+# forwarded Cognito bearer (``resolve_operator_optional`` middleware,
+# enforced in ``qontinui-coord/src/tenant_scope.rs``). ``_tenant_headers``
+# now forwards only ``Authorization: Bearer``.
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()
@@ -109,8 +108,9 @@ router = APIRouter()
 # replaces the old ``require_admin`` posture — instead of "must be a
 # superuser," the new rule is "any authenticated user, scoped to their
 # resolved tenant." The dependency resolves the user → operator →
-# tenant_id chain and returns the UUID; handlers forward it as the
-# ``X-Qontinui-Tenant-Id`` header on the underlying coord call.
+# tenant_id chain and returns the UUID. As of Phase T2b the tenant_id is
+# NOT forwarded as a header; coord resolves it from the forwarded Cognito
+# bearer instead (the UUID is still used by web-side authz / query params).
 #
 # The operator-management surfaces (``/admin/coord/operators/*``,
 # ``/admin/coord/audit/*``) — when they land — will stay
@@ -118,13 +118,13 @@ router = APIRouter()
 # different file and aren't part of the operations dashboard.
 
 
-# Phase T2 — the caller's raw Cognito token, captured per-request by
+# Phase T2b — the caller's raw Cognito token, captured per-request by
 # ``get_tenant_id`` and forwarded to coord by ``_tenant_headers`` so coord
-# can authorize on the token's operator identity (its ``sub``) rather than
-# the ``X-Qontinui-Tenant-Id`` email-bridge header. The header is retained
-# as a transition fallback and removed in Phase T2b once forwarding is
-# proven live. ContextVar is task-local, so each request sees only its own
-# token (no cross-request leakage).
+# authorizes on the token's operator identity (its ``sub``) and resolves the
+# tenant from it. The legacy ``X-Qontinui-Tenant-Id`` email-bridge header is
+# no longer sent (removed in T2b once token-forwarding went live in T3).
+# ContextVar is task-local, so each request sees only its own token (no
+# cross-request leakage).
 _caller_bearer: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "coord_caller_bearer", default=None
 )
@@ -186,14 +186,17 @@ async def require_coord_tenant_admin(
 
 
 def _tenant_headers(tenant_id: UUID) -> dict[str, str]:
-    """Build the request-headers dict carrying the tenant scope.
+    """Build the request-headers dict forwarded to coord.
 
-    Includes the ``X-Qontinui-Tenant-Id`` header (the email-bridge, kept as
-    a transition fallback) and — when the caller presented one — the
-    forwarded ``Authorization: Bearer`` Cognito token (Phase T2), which
-    coord prefers over the header.
+    Phase T2b — forwards ONLY the caller's Cognito bearer
+    (``Authorization: Bearer <token>``) when present. After T3 every caller
+    presents a Cognito token and coord resolves the operator/tenant from it
+    (the ``resolve_operator_optional`` middleware), so the legacy
+    ``X-Qontinui-Tenant-Id`` email-bridge header is no longer sent. The
+    ``tenant_id`` arg is retained for call-site compatibility (callers still
+    resolve + pass it) but no longer goes on the wire.
     """
-    headers = {TENANT_HEADER: str(tenant_id)}
+    headers: dict[str, str] = {}
     token = _caller_bearer.get()
     if token:
         headers["Authorization"] = f"Bearer {token}"
