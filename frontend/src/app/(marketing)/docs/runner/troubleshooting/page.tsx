@@ -178,7 +178,7 @@ export default function TroubleshootingPage() {
               ]}
               solutions={[
                 "Check your internet connection",
-                "Verify Qontinui Web is accessible in your browser: https://app.qontinui.io",
+                "Verify Qontinui Web is accessible in your browser: https://qontinui.io",
                 "Try logging out and back in",
                 "Check firewall settings - Runner needs HTTPS access",
                 "If using corporate network, ensure WebSockets are allowed",
