@@ -28,7 +28,7 @@ jobs:
     name: Verify Session-Id + Session-Name trailers on every PR commit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           # Need full history so we can walk the PR's commit range.
           fetch-depth: 0
