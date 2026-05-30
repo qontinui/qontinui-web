@@ -8,9 +8,11 @@
  * class of failure the unauthenticated public crawl structurally cannot see.
  *
  * How it authenticates against PROD (no build-time hook, no /api proxy):
- *   1. Log ci-bot in via the prod API directly — POST
- *      `${PROD_API_BASE}/api/v1/auth/jwt/login` (form-encoded username/password)
- *      -> { access_token, refresh_token, expires_in, ... } (TokenResponse).
+ *   1. Mint a ci-bot Cognito id token directly from Cognito — POST
+ *      `https://cognito-idp.<region>.amazonaws.com/` `InitiateAuth`
+ *      (USER_PASSWORD_AUTH, public CI app-client, no secret) -> IdToken. (The
+ *      local `/api/v1/auth/jwt/login` was deleted in the legacy-auth teardown
+ *      (T3); the backend now verifies the Cognito id token.)
  *   2. SEED the exact storage surface the app boots authenticated from
  *      (frontend/src/services/auth/token-storage.ts) BEFORE any navigation via
  *      page.addInitScript:
@@ -140,28 +142,43 @@ interface LoginTokens {
  * Never logs the credentials or the tokens.
  */
 async function login(
-  apiBase: string,
+  _apiBase: string,
   email: string,
   password: string,
 ): Promise<LoginTokens | null> {
-  const url = `${apiBase}/api/v1/auth/jwt/login`;
-  const body = new URLSearchParams({ username: email, password });
+  // Cognito is the sole auth mechanism (legacy-auth teardown T3): the local
+  // /api/v1/auth/jwt/login endpoint was deleted (it now 404s). Mint a ci-bot
+  // id token via the public CI app-client (USER_PASSWORD_AUTH InitiateAuth, no
+  // AWS creds / no client secret) — the same path the backend deploy smoke and
+  // E2E setup use. The backend's Cognito arm verifies the id token (the CI
+  // client id is in COGNITO_ALLOWED_AUDIENCES); the seeded bearer then
+  // authenticates the smoke's authed page loads.
+  const region = process.env.QONTINUI_COGNITO_REGION || "us-east-1";
+  const clientId =
+    process.env.QONTINUI_COGNITO_CI_CLIENT_ID || "tb0epbojige1900ipu6q80j6b";
   let res: Response;
   try {
-    res = await fetch(url, {
+    res = await fetch(`https://cognito-idp.${region}.amazonaws.com/`, {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-amz-json-1.1",
+        "X-Amz-Target": "AWSCognitoIdentityProviderService.InitiateAuth",
+      },
+      body: JSON.stringify({
+        AuthFlow: "USER_PASSWORD_AUTH",
+        ClientId: clientId,
+        AuthParameters: { USERNAME: email, PASSWORD: password },
+      }),
     });
   } catch (e) {
     process.stderr.write(
-      `[authed-smoke] login request failed (harness): ${e instanceof Error ? e.message : String(e)}\n`,
+      `[authed-smoke] Cognito InitiateAuth request failed (harness): ${e instanceof Error ? e.message : String(e)}\n`,
     );
     return null;
   }
   if (!res.ok) {
     process.stderr.write(
-      `[authed-smoke] login returned non-2xx (harness): ${res.status}\n`,
+      `[authed-smoke] Cognito InitiateAuth returned non-2xx (harness): ${res.status}\n`,
     );
     return null;
   }
@@ -169,25 +186,24 @@ async function login(
   try {
     json = await res.json();
   } catch {
-    process.stderr.write("[authed-smoke] login response was not JSON (harness)\n");
+    process.stderr.write("[authed-smoke] Cognito response was not JSON (harness)\n");
     return null;
   }
-  const tok = json as {
-    access_token?: unknown;
-    refresh_token?: unknown;
-    expires_in?: unknown;
-  };
-  if (typeof tok.access_token !== "string" || tok.access_token.length === 0) {
+  const ar = (
+    json as {
+      AuthenticationResult?: { IdToken?: unknown; ExpiresIn?: unknown };
+    }
+  ).AuthenticationResult;
+  if (!ar || typeof ar.IdToken !== "string" || ar.IdToken.length === 0) {
     process.stderr.write(
-      "[authed-smoke] login response had no access_token (harness)\n",
+      "[authed-smoke] Cognito response had no IdToken (harness)\n",
     );
     return null;
   }
   return {
-    accessToken: tok.access_token,
-    refreshToken:
-      typeof tok.refresh_token === "string" ? tok.refresh_token : "",
-    expiresIn: typeof tok.expires_in === "number" ? tok.expires_in : 0,
+    accessToken: ar.IdToken,
+    refreshToken: "",
+    expiresIn: typeof ar.ExpiresIn === "number" ? ar.ExpiresIn : 3600,
   };
 }
 
