@@ -6,7 +6,16 @@ import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
 import { useAuth } from "@/contexts/auth-context";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, User, Wifi, Tag, ExternalLink, Building2 } from "lucide-react";
+import {
+  Loader2,
+  User,
+  Wifi,
+  Tag,
+  ExternalLink,
+  Building2,
+  Network,
+  ChevronRight,
+} from "lucide-react";
 import Link from "next/link";
 
 export default function AccountSettingsPage() {
@@ -312,6 +321,26 @@ export default function AccountSettingsPage() {
           )}
         </div>
       </div>
+
+      {/* Coordination & automation — coord-tenant autonomous next-step settings */}
+      <Link
+        href="/settings/coordination"
+        className="block rounded-lg border border-border p-4 hover:border-primary transition-colors"
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div className="space-y-1">
+            <h2 className="text-sm font-medium flex items-center gap-2">
+              <Network className="w-4 h-4" />
+              Coordination &amp; automation
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              Configure whether coordination can autonomously start your next
+              step of work when your session goes stale.
+            </p>
+          </div>
+          <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+        </div>
+      </Link>
     </div>
   );
 }
