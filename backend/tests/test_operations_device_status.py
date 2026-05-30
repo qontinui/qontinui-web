@@ -32,6 +32,30 @@ from fastapi.testclient import TestClient
 _FIXTURE_TENANT_ID = UUID("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
 
 
+def _fixture_identity() -> Any:
+    """A `CoordIdentity` whose home tenant is `_FIXTURE_TENANT_ID`.
+
+    Stands in for coord's `/admin/coord/me` payload in the WS-bridge
+    tests, which patch `get_coord_identity_for_token` to return this.
+    """
+    from app.services.coord_identity import CoordIdentity, CoordTenant
+
+    return CoordIdentity(
+        operator_id=uuid4(),
+        home_tenant_id=_FIXTURE_TENANT_ID,
+        email="phase13.user@example.com",
+        roles=("member",),
+        tenants=(
+            CoordTenant(
+                tenant_id=_FIXTURE_TENANT_ID,
+                slug="personal",
+                roles=("member",),
+            ),
+        ),
+        is_admin=False,
+    )
+
+
 def _build_test_app(*, resolves_tenant: bool = True) -> FastAPI:
     """Build a minimal FastAPI app exposing the operations router.
 
@@ -388,17 +412,11 @@ class TestDeviceStatusWsBridge:
         async def fake_get_user_from_ws(token: str) -> Any:
             return mock_user
 
-        # The session loading inside the WS handler uses
-        # AsyncSessionLocal; bypass it with a trivial context manager.
-        class _FakeSession:
-            async def __aenter__(self) -> _FakeSession:
-                return self
-
-            async def __aexit__(self, *args: Any) -> None:
-                return None
-
-        async def fake_resolve_tenant_for_user(user: Any, db: Any) -> UUID:
-            return _FIXTURE_TENANT_ID
+        # The WS handler now sources the tenant from coord's
+        # `/admin/coord/me` via `get_coord_identity_for_token` — stub it
+        # to return the fixture home tenant.
+        async def fake_get_identity(token: str | None) -> Any:
+            return _fixture_identity()
 
         with (
             patch(
@@ -406,12 +424,8 @@ class TestDeviceStatusWsBridge:
                 fake_get_user_from_ws,
             ),
             patch(
-                "app.api.v1.endpoints.operations.AsyncSessionLocal",
-                lambda: _FakeSession(),
-            ),
-            patch(
-                "app.api.v1.endpoints.operations.resolve_tenant_for_user",
-                fake_resolve_tenant_for_user,
+                "app.api.v1.endpoints.operations.get_coord_identity_for_token",
+                fake_get_identity,
             ),
             patch(
                 "app.api.v1.endpoints.operations.mint_device_status_token",
@@ -481,15 +495,8 @@ class TestDeviceStatusWsBridge:
         async def fake_get_user_from_ws(token: str) -> Any:
             return mock_user
 
-        class _FakeSession:
-            async def __aenter__(self) -> _FakeSession:
-                return self
-
-            async def __aexit__(self, *args: Any) -> None:
-                return None
-
-        async def fake_resolve_tenant_for_user(user: Any, db: Any) -> UUID:
-            return _FIXTURE_TENANT_ID
+        async def fake_get_identity(token: str | None) -> Any:
+            return _fixture_identity()
 
         with (
             patch(
@@ -497,12 +504,8 @@ class TestDeviceStatusWsBridge:
                 fake_get_user_from_ws,
             ),
             patch(
-                "app.api.v1.endpoints.operations.AsyncSessionLocal",
-                lambda: _FakeSession(),
-            ),
-            patch(
-                "app.api.v1.endpoints.operations.resolve_tenant_for_user",
-                fake_resolve_tenant_for_user,
+                "app.api.v1.endpoints.operations.get_coord_identity_for_token",
+                fake_get_identity,
             ),
             patch(
                 "app.api.v1.endpoints.operations.mint_device_status_token",

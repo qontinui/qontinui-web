@@ -14,17 +14,16 @@ Remaining endpoints:
 """
 
 # Import sub-routers
-from fastapi import APIRouter, Depends
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Depends, HTTPException, Request
 
-from app.api.deps import get_async_db, get_current_active_user_async
+from app.api.deps import get_current_active_user_async
 from app.api.v1.endpoints.auth.bootstrap import router as bootstrap_router
 from app.api.v1.endpoints.auth.devices import router as devices_router
 from app.api.v1.endpoints.auth.verification import router as verification_router
 from app.auth.config import fastapi_users
 from app.models.user import User as UserModel
 from app.schemas.user import UserRead, UserUpdate
+from app.services.coord_identity import get_coord_identity
 
 # Main auth router
 router = APIRouter()
@@ -33,41 +32,31 @@ router = APIRouter()
 @router.get("/users/me", response_model=UserRead, tags=["users"])
 async def read_users_me(
     *,
-    db: AsyncSession = Depends(get_async_db),
+    request: Request,
     current_user: UserModel = Depends(get_current_active_user_async),
 ) -> UserRead:
     """Return the current user enriched with their coord tenant identity.
 
     Overrides the fastapi-users default ``/users/me`` so the dropdown
-    avatar can render ``Tenant: <slug>``. Tenant lookup mirrors
-    :func:`app.services.coord_operator_resolver.resolve_tenant_for_user`
-    but never raises: an unresolved tenant returns ``None`` so the UI
-    can render ``(not assigned)`` instead of a 403.
+    avatar can render ``Tenant: <slug>``. Identity is sourced from coord's
+    ``GET /admin/coord/me`` over the HTTP boundary (no cross-schema read).
+    An unresolved/unlinked operator (coord 403s) returns ``None`` so the
+    UI can render ``(not assigned)`` instead of failing the page.
     """
-    # Sub-only operator lookup — same key as ``resolve_tenant_for_user``'s
-    # notion of the user's home tenant (``coord.operators.tenant_id``),
-    # keyed solely on the Cognito identity (``o.sso_subject =
-    # :cognito_sub``). Returns None (no raise) on no-match → UI shows
-    # "(not assigned)". This is the display path, so a miss is rendered as
-    # unassigned rather than 403.
-    cognito_sub = getattr(current_user, "cognito_sub", None) or None
-    row = (
-        await db.execute(
-            text(
-                """
-                SELECT o.tenant_id, t.slug
-                FROM coord.operators o
-                LEFT JOIN coord.tenants t ON t.tenant_id = o.tenant_id
-                WHERE o.sso_subject = :cognito_sub
-                LIMIT 1
-                """
-            ),
-            {"cognito_sub": cognito_sub},
-        )
-    ).first()
-
-    tenant_id = row[0] if row is not None else None
-    tenant_slug = row[1] if row is not None else None
+    # Source the home tenant + its slug from coord over HTTP, authorized
+    # on the forwarded Cognito bearer. Never raise: a coord 403 for an
+    # un-linked operator → ``(not assigned)`` rather than a hard error on
+    # the user's own profile read.
+    tenant_id = None
+    tenant_slug = None
+    try:
+        identity = await get_coord_identity(request)
+        tenant_id = identity.home_tenant_id
+        tenant_slug = identity.slug_for(identity.home_tenant_id)
+    except HTTPException:
+        # Unlinked operator / coord unreachable — degrade to "(not
+        # assigned)" instead of surfacing a 403/502 on /users/me.
+        pass
 
     return UserRead.model_validate(
         {

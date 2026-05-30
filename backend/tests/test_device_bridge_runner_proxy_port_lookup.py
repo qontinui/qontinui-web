@@ -1,71 +1,175 @@
 """Regression test for the device-bridge runner-proxy port lookup.
 
-The Unified Devices Registry migration (Phase 5/8 of
-``D:/qontinui-root/plans/2026-05-18-unified-devices-registry.md``)
-renamed ``auth.runners`` → ``coord.devices``. The port-lookup SQL in
-:func:`app.api.v1.endpoints.device_bridge_ws.runner_proxy` still
-referenced the old table for several weeks, fell through to
-``UndefinedTable``, and the ``runner_proxy_port_lookup_failed`` log
-event fired on every mobile proxy call. The code's fallback to the
-default port 9876 masked the breakage from end-users but spammed the
-log channel — and any time the runner ran on a non-default port the
-lookup would silently return the wrong destination.
+History: the port-lookup in
+:func:`app.api.v1.endpoints.device_bridge_ws.runner_proxy` was a raw-SQL
+read of ``coord.devices`` (originally mis-pointed at the renamed
+``runners`` table, which spammed ``runner_proxy_port_lookup_failed`` and
+silently returned the wrong port).
 
-This test pins the post-fix query shape:
+Phase 3 of ``2026-05-30-web-coord-schema-boundary-decoupling.md`` moved
+that read off coord's Postgres schema onto coord's HTTP boundary
+(``GET /coord/devices/routing/active`` via
+:func:`app.services.coord_device.get_active_routing_port`). This test pins
+the post-migration shape:
 
-* The SQL targets ``coord.devices`` (NOT the renamed ``runners``).
-* It filters on ``capability_user_paired = true`` so only user-paired
-  runner rows (not coord-only fleet devices that share the unified
-  table) are considered.
-* It keeps the legacy ``user_id`` + ``ws_session_id IS NOT NULL`` +
-  ``ORDER BY ws_connected_at DESC`` selection rule.
+* the handler no longer contains any ``coord.devices`` SQL string, and
+* it sources the port from the coord routing client (with a default-9876
+  fallback when the client returns ``None``).
 """
 
 from __future__ import annotations
 
-import re
+import inspect
+from types import SimpleNamespace
+
+import pytest
 
 from app.api.v1.endpoints import device_bridge_ws
 
-
-def _normalize_ws(s: str) -> str:
-    """Collapse runs of whitespace to a single space for substring matching."""
-    return re.sub(r"\s+", " ", s).strip()
+USER_ID = "22222222-2222-2222-2222-222222222222"
 
 
-def test_runner_proxy_port_lookup_targets_coord_devices() -> None:
-    """The runner-proxy port-lookup SQL must target ``coord.devices``.
+class _FakeURL:
+    def __init__(self, query: str) -> None:
+        self.query = query
 
-    We don't execute the query — we read the source of the
-    ``runner_proxy`` handler and assert the literal SQL it constructs
-    is the post-migration shape. This is intentionally a source-level
-    pin: the SQL is built inline, the handler has no DI seam to mock
-    cheaply, and the regression is observable as "the file changed
-    such that the renamed table reappears". A source-level assertion
-    catches that with zero infrastructure.
+
+class _FakeRequest:
+    def __init__(self, *, headers: dict[str, str] | None = None) -> None:
+        self.method = "GET"
+        self.headers = headers or {}
+        self.cookies: dict[str, str] = {}
+        self.url = _FakeURL("")
+
+    async def body(self) -> bytes:
+        return b""
+
+
+def test_runner_proxy_no_longer_reads_coord_devices_sql() -> None:
+    """The runner-proxy handler must not contain ``coord.devices`` SQL.
+
+    The read is now coord HTTP. We pin the *absence* of the raw-SQL read
+    (a source-level boundary check mirroring the schema-boundary guard)
+    and the *presence* of the coord routing-client call.
     """
-    import inspect
+    source = inspect.getsource(device_bridge_ws.runner_proxy)
 
-    source = _normalize_ws(inspect.getsource(device_bridge_ws.runner_proxy))
-
-    # The renamed table must be gone — the regression we're pinning.
-    # ``FROM runners`` would re-introduce ``runner_proxy_port_lookup_failed``
-    # log spam on every mobile proxy call.
-    assert "FROM runners" not in source, (
-        "runner_proxy still queries the legacy ``runners`` table; the "
-        "Unified Devices Registry migration renamed it to coord.devices."
+    # No raw-SQL execution machinery remains in the handler body. We check
+    # the execution seams (`text(`, `AsyncSessionLocal`, `.execute(`) rather
+    # than the literal `FROM coord.devices` token, since the explanatory
+    # comment legitimately quotes the former SQL for history.
+    assert "AsyncSessionLocal" not in source, (
+        "runner_proxy still opens a DB session for the port lookup; the read "
+        "moved onto coord's GET /coord/devices/routing/active."
+    )
+    assert "text(" not in source, (
+        "runner_proxy still builds raw SQL for the port lookup."
+    )
+    assert "FROM runners" not in source
+    assert "get_active_routing_port" in source, (
+        "runner_proxy must source the port from the coord routing client."
     )
 
-    # The new canonical table.
-    assert "FROM coord.devices" in source, (
-        "runner_proxy must query coord.devices for the port lookup."
+
+@pytest.mark.asyncio
+async def test_runner_proxy_uses_coord_routing_port(monkeypatch):
+    """The co-located path uses the port the coord routing client returns."""
+    captured: dict[str, object] = {}
+
+    async def _fake_active_port(*, bearer, user_id):
+        captured["bearer"] = bearer
+        captured["user_id"] = user_id
+        return 9880
+
+    monkeypatch.setattr(
+        device_bridge_ws.coord_device,
+        "get_active_routing_port",
+        _fake_active_port,
+        raising=True,
     )
 
-    # Selection rule preserved.
-    assert "user_id = :uid" in source
-    assert "ws_session_id IS NOT NULL" in source
-    assert "ORDER BY ws_connected_at DESC" in source
+    # Stub the urllib path so we observe only the resolved target port.
+    opened: dict[str, str] = {}
 
-    # We only want user-paired runner rows, not coord-only fleet
-    # devices that share the unified table.
-    assert "capability_user_paired = true" in source
+    class _FakeResp:
+        status = 200
+
+        def read(self) -> bytes:
+            return b"ok"
+
+        def getheaders(self):
+            return []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def _fake_urlopen(req, timeout=0):
+        opened["url"] = req.full_url
+        return _FakeResp()
+
+    monkeypatch.setattr(
+        device_bridge_ws.urllib.request, "urlopen", _fake_urlopen, raising=True
+    )
+
+    request = _FakeRequest(headers={"Authorization": "Bearer tok-abc"})
+    resp = await device_bridge_ws.runner_proxy(
+        request, "health", user=SimpleNamespace(id=USER_ID)
+    )
+
+    assert resp.status_code == 200
+    # The coord-resolved port (9880) is the proxy target.
+    assert "127.0.0.1:9880/health" in opened["url"]
+    # The caller's bearer + user id were forwarded to the coord client.
+    assert captured["bearer"] == "tok-abc"
+    assert captured["user_id"] == USER_ID
+
+
+@pytest.mark.asyncio
+async def test_runner_proxy_falls_back_to_default_port_on_none(monkeypatch):
+    """When coord reports no active runner (None), the default 9876 is used."""
+
+    async def _fake_active_port(*, bearer, user_id):
+        return None
+
+    monkeypatch.setattr(
+        device_bridge_ws.coord_device,
+        "get_active_routing_port",
+        _fake_active_port,
+        raising=True,
+    )
+
+    opened: dict[str, str] = {}
+
+    class _FakeResp:
+        status = 200
+
+        def read(self) -> bytes:
+            return b"ok"
+
+        def getheaders(self):
+            return []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def _fake_urlopen(req, timeout=0):
+        opened["url"] = req.full_url
+        return _FakeResp()
+
+    monkeypatch.setattr(
+        device_bridge_ws.urllib.request, "urlopen", _fake_urlopen, raising=True
+    )
+
+    request = _FakeRequest()
+    resp = await device_bridge_ws.runner_proxy(
+        request, "health", user=SimpleNamespace(id=USER_ID)
+    )
+
+    assert resp.status_code == 200
+    assert "127.0.0.1:9876/health" in opened["url"]

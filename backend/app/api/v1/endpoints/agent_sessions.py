@@ -4,45 +4,41 @@ Side D / Phase 4 of plan
 ``D:/qontinui-root/plans/coord-agent-session-id-tracking.md`` — the
 ``/admin/agent-sessions`` panel backend.
 
-Two read-only endpoints exposing the lineage data shipped by Phase 1
-(alembic ``coord_agent_session_id_lineage``) + Phase 2 (coord HTTP
-mutating handlers persisting ``agent_session_id``):
+Two read-only endpoints exposing the agent-session lineage data:
 
-* ``GET /api/v1/admin/agent-sessions`` — list rows from
-  ``coord.agent_sessions`` with live/user/since/limit filters.
+* ``GET /api/v1/admin/agent-sessions`` — list sessions with
+  live/user/since/limit filters.
 
 * ``GET /api/v1/admin/agent-sessions/{session_id}/lineage`` — the
-  per-session action timeline. Runs the UNION ALL query from the
-  plan's Verification §3 across four lineage tables
-  (agent_worktrees / claims_audit / build_events / merge_proposals).
+  per-session action timeline.
 
-Architectural decision (vs. proxying to coord): the canonical PG
-already owns the ``coord.agent_sessions`` table and lineage columns —
-the web backend's alembic chain stamps them (see
-``alembic/versions/coord_agent_session_id_lineage.py``). Reads can go
-direct to PG via the same async session pool, avoiding a cross-repo
-HTTP hop that would (a) require new coord routes (none today), (b)
-introduce a coord-availability dependency for a read-only dashboard,
-and (c) double-count tail latency. Writes still go agent → coord per
-plan Side A; this surface is observability-only.
+Architectural decision (Phase 2 of
+``2026-05-30-web-coord-schema-boundary-decoupling.md``): the web
+backend no longer reads coord's schema directly. Both endpoints proxy
+to coord's HTTP API (``GET /coord/agent-sessions`` and
+``GET /coord/agent-sessions/:id/lineage``, deployed via coord PR
+#212), forwarding the caller's Cognito bearer so coord authorizes and
+scopes the read. This keeps the web→coord boundary clean — coord owns
+its tables; web is a presentation/authz layer over coord's HTTP API.
 
-Auth: ``require_admin`` (superuser flag). The lineage data covers
-all users, so this is fleet-operator surface, not per-user.
+Auth: ``require_admin`` (superuser flag). The web side continues to
+enforce admin; it just changed the data source from cross-schema SQL
+to a coord HTTP call.
 """
 
 from __future__ import annotations
 
+import contextvars
 from datetime import datetime
 from typing import Any
 from uuid import UUID
 
+import httpx
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from app.api.admin_deps import require_admin
-from app.api.deps import get_async_db
+from app.core.config import settings
 from app.models.user import User
 
 logger = structlog.get_logger(__name__)
@@ -55,15 +51,88 @@ router = APIRouter()
 # query (`live=true`) is naturally bounded by concurrent Claude Code
 # sessions on a fleet (low double digits). 500 covers the "show me
 # every session in the last week" historical view without unbounded
-# pagination machinery.
+# pagination machinery. Validated web-side before forwarding to coord.
 _LIST_MAX_LIMIT = 500
 _LIST_DEFAULT_LIMIT = 100
 
-# Cap on lineage actions per session. A 12-hour Claude session
-# typically generates O(100) coord-mediated actions; 500 is the
-# plan's stated cap (Verification §3) and matches the UNION ALL
-# query verbatim.
-_LINEAGE_MAX_ACTIONS = 500
+# Timeout for coord proxy reads. Mirrors operations.py — a small JSON
+# payload served from PG; if coord takes longer than 5s something is
+# wrong.
+_COORD_TIMEOUT = httpx.Timeout(5.0)
+
+
+# ---- Coord proxy plumbing -------------------------------------------------
+#
+# Replicates the web→coord call pattern from
+# ``app.api.v1.endpoints.operations`` (``_caller_bearer`` ContextVar +
+# ``_extract_caller_token`` + ``_proxy_coord_get``). These routes are
+# ``require_admin``-gated rather than ``get_tenant_id``-gated, so they
+# don't go through operations.py's bearer-capturing dependency — we
+# capture the caller's bearer here (per-route ``Request`` param) so it
+# can be forwarded to coord for token-based authorization.
+
+
+_caller_bearer: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "agent_sessions_caller_bearer", default=None
+)
+
+
+def _extract_caller_token(request: Request) -> str | None:
+    """Pull the caller's bearer token from the ``access_token`` cookie or
+    the ``Authorization`` header — the same two sources the backend's own
+    ``CookieOrBearerScheme`` reads (and the same logic operations.py uses
+    to forward the bearer to coord)."""
+    cookie = request.cookies.get("access_token")
+    if cookie:
+        return cookie
+    auth = request.headers.get("Authorization")
+    if auth and auth.lower().startswith("bearer "):
+        token = auth[7:].strip()
+        if token:
+            return token
+    return None
+
+
+def _coord_headers() -> dict[str, str]:
+    """Forward the captured caller bearer (``Authorization: Bearer``) to
+    coord so coord authorizes on the token's operator identity. Mirrors
+    operations.py ``_tenant_headers`` (bearer-only since T2b)."""
+    headers: dict[str, str] = {}
+    token = _caller_bearer.get()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
+async def _proxy_coord_get(
+    path: str,
+    *,
+    params: dict[str, Any] | None = None,
+) -> Any:
+    """Proxy a GET request to coord and return the JSON body.
+
+    Same posture as operations.py ``_proxy_coord_get``: forwards the
+    caller bearer, maps ``ConnectError`` → 502 and ``TimeoutException``
+    → 504, and re-raises coord's own ``>= 400`` status with its body.
+    """
+    url = f"{settings.COORD_URL}{path}"
+    headers = _coord_headers()
+    async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
+        try:
+            resp = await client.get(url, params=params, headers=headers)
+        except httpx.ConnectError:
+            raise HTTPException(
+                status_code=502,
+                detail="coord is not reachable",
+            )
+        except httpx.TimeoutException:
+            raise HTTPException(
+                status_code=504,
+                detail="timeout waiting for coord",
+            )
+    if resp.status_code >= 400:
+        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+    return resp.json()
 
 
 # ---- GET /admin/agent-sessions -------------------------------------------
@@ -71,9 +140,10 @@ _LINEAGE_MAX_ACTIONS = 500
 
 @router.get("/agent-sessions")
 async def list_agent_sessions(
+    request: Request,
     live: bool = Query(
         False,
-        description="If true, filter to rows where closed_at IS NULL.",
+        description="If true, filter to live (not-yet-closed) sessions.",
     ),
     user_id: UUID | None = Query(
         None,
@@ -93,158 +163,43 @@ async def list_agent_sessions(
         description=f"Max rows to return (capped at {_LIST_MAX_LIMIT}).",
     ),
     _admin: User = Depends(require_admin),
-    db: AsyncSession = Depends(get_async_db),
-) -> dict[str, Any]:
-    """List sessions from ``coord.agent_sessions``.
+) -> Any:
+    """List agent sessions via coord's ``GET /coord/agent-sessions``.
 
-    Ordered by ``last_seen DESC`` so the most-recent activity surfaces
-    first. The ``idx_agent_sessions_live`` partial index from the
-    Phase 1 migration covers the ``live=true`` path.
+    Forwards the ``live`` / ``user_id`` / ``since`` / ``limit`` filters as
+    query params. ``limit`` (1..500) and the RFC3339 ``since`` are
+    validated by FastAPI before forwarding. Returns coord's
+    ``{"sessions": [...], "count": N}`` envelope verbatim — the shape the
+    frontend expects.
     """
-    where_clauses: list[str] = []
-    params: dict[str, Any] = {"limit": limit}
+    _caller_bearer.set(_extract_caller_token(request))
 
-    if live:
-        where_clauses.append("closed_at IS NULL")
+    params: dict[str, Any] = {"limit": limit, "live": live}
     if user_id is not None:
-        where_clauses.append("user_id = :user_id")
-        params["user_id"] = user_id
+        params["user_id"] = str(user_id)
     if since is not None:
-        where_clauses.append("last_seen >= :since")
-        params["since"] = since
+        params["since"] = since.isoformat()
 
-    where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
-    sql = text(
-        f"""
-        SELECT id, user_id, device_id, first_seen, last_seen, label, closed_at
-        FROM coord.agent_sessions
-        {where_sql}
-        ORDER BY last_seen DESC
-        LIMIT :limit
-        """
-    )
-
-    try:
-        result = await db.execute(sql, params)
-        rows = result.mappings().all()
-    except Exception as exc:  # pragma: no cover — surface DB issues clearly
-        logger.exception(
-            "list_agent_sessions_failed",
-            error=str(exc),
-            live=live,
-            user_id=str(user_id) if user_id else None,
-        )
-        raise HTTPException(
-            status_code=500,
-            detail=f"failed to query agent_sessions: {exc}",
-        )
-
-    sessions = [
-        {
-            "id": str(r["id"]),
-            "user_id": str(r["user_id"]) if r["user_id"] else None,
-            "device_id": str(r["device_id"]) if r["device_id"] else None,
-            "first_seen": r["first_seen"].isoformat() if r["first_seen"] else None,
-            "last_seen": r["last_seen"].isoformat() if r["last_seen"] else None,
-            "label": r["label"],
-            "closed_at": r["closed_at"].isoformat() if r["closed_at"] else None,
-        }
-        for r in rows
-    ]
-    return {"sessions": sessions, "count": len(sessions)}
+    return await _proxy_coord_get("/coord/agent-sessions", params=params)
 
 
 # ---- GET /admin/agent-sessions/{id}/lineage ------------------------------
 
 
-# UNION ALL query from plan Verification §3, extended in
-# ``2026-05-19-coordinator-production-readiness.md`` Phase 5 with the
-# ``coord.agent_logs`` arm. Five lineage tables now carry the bulk of
-# audit history; ``coord.coordinator_decisions`` and ``coord.devices``
-# also have the column but are excluded from the timeline view
-# (decisions are coordinator-internal; devices show the latest-session
-# pointer, not a per-session action). Both surface in follow-up rollup
-# views (see plan §"Out-of-scope follow-ups").
-#
-# Each branch synthesises a uniform ``(kind, handle, occurred_at)``
-# shape so the client renders a single timeline without per-kind
-# field gymnastics. ``handle`` is the row's natural identifier
-# (agent_id, claims_audit row id, build_id, proposal_id, or for
-# ``agent_log`` a human-readable ``"<level> <event>"`` string) for
-# operator drill-down. Per the readiness plan: ``agent_log`` is
-# expected to dominate row counts for active sessions — the 500-row
-# LIMIT applies post-UNION, so a noisy agent doesn't crowd out the
-# four lower-volume kinds.
-_LINEAGE_SQL = text(
-    """
-    SELECT 'agent_worktree'  AS kind,
-           agent_id::text    AS handle,
-           created_at        AS occurred_at
-      FROM coord.agent_worktrees    WHERE agent_session_id = :session_id
-    UNION ALL
-    SELECT 'claim_event'     AS kind,
-           id::text          AS handle,
-           occurred_at       AS occurred_at
-      FROM coord.claims_audit       WHERE agent_session_id = :session_id
-    UNION ALL
-    SELECT 'build_event'     AS kind,
-           build_id::text    AS handle,
-           started_at        AS occurred_at
-      FROM coord.build_events       WHERE agent_session_id = :session_id
-    UNION ALL
-    SELECT 'merge_proposal'  AS kind,
-           proposal_id::text AS handle,
-           created_at        AS occurred_at
-      FROM coord.merge_proposals    WHERE agent_session_id = :session_id
-    UNION ALL
-    SELECT 'agent_log'       AS kind,
-           level || ' ' || event AS handle,
-           occurred_at       AS occurred_at
-      FROM coord.agent_logs         WHERE agent_session_id = :session_id
-    ORDER BY occurred_at DESC
-    LIMIT :limit
-    """
-)
-
-
 @router.get("/agent-sessions/{session_id}/lineage")
 async def get_agent_session_lineage(
+    request: Request,
     session_id: UUID,
     _admin: User = Depends(require_admin),
-    db: AsyncSession = Depends(get_async_db),
-) -> dict[str, Any]:
-    """Return the per-session action timeline.
+) -> Any:
+    """Return the per-session action timeline via coord's
+    ``GET /coord/agent-sessions/:id/lineage``.
 
-    Runs the four-branch UNION ALL from plan Verification §3, capped
-    at 500 actions (plan-stated). Returns an empty ``actions`` list
-    for unknown / never-active session UUIDs — the endpoint does not
-    404 on "no rows" because the session row itself may have been
-    soft-closed and rolled out of the lookup table, yet the audit
-    trail still survives via the ``ON DELETE SET NULL`` FK posture.
+    Coord returns ``{"session_id": "...", "actions": [{kind, handle,
+    occurred_at}]}`` already capped at 500 actions and never-404 (an
+    unknown / soft-closed session yields an empty ``actions`` list). The
+    payload passes through verbatim.
     """
-    try:
-        result = await db.execute(
-            _LINEAGE_SQL,
-            {"session_id": session_id, "limit": _LINEAGE_MAX_ACTIONS},
-        )
-        rows = result.mappings().all()
-    except Exception as exc:  # pragma: no cover
-        logger.exception(
-            "agent_session_lineage_failed",
-            session_id=str(session_id),
-            error=str(exc),
-        )
-        raise HTTPException(
-            status_code=500,
-            detail=f"failed to query lineage: {exc}",
-        )
+    _caller_bearer.set(_extract_caller_token(request))
 
-    actions = [
-        {
-            "kind": r["kind"],
-            "handle": r["handle"],
-            "occurred_at": (r["occurred_at"].isoformat() if r["occurred_at"] else None),
-        }
-        for r in rows
-    ]
-    return {"session_id": str(session_id), "actions": actions}
+    return await _proxy_coord_get(f"/coord/agent-sessions/{session_id}/lineage")
