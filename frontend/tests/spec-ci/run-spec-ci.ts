@@ -182,6 +182,66 @@ function readExpectedServerErrors(doc: Record<string, unknown>): RegExp[] {
 }
 
 // ---------------------------------------------------------------------------
+// Gateway-class re-probe (502/503/504 transient-vs-persistent confirmation)
+//
+// The `page.on("response")` capture above gates on any same-origin status
+// >= 500 (per `isSameOriginServerError`). In practice the localhost:3001 →
+// `api.qontinui.io` proxy intermittently returns 502/503/504 when the upstream
+// blips for sub-second windows — global background calls (e.g.
+// `/api/v1/operations/tenants`, fleet-devices) catch one and red the whole
+// run while the page itself rendered perfectly (full_match). That's an
+// upstream-availability artifact, not the backend-failure signal the invariant
+// exists to surface.
+//
+// Distinguish the two by re-probing each captured GET gateway-class entry
+// ONCE: a real persistent outage re-probes to >= 500 (kept, gates); a
+// transient blip re-probes to < 500 (dropped). App 500/501/505+ pass through
+// unchanged — a single app 500 is the exact signal we want to catch.
+// Non-GET 5xx pass through too (re-probing a mutating verb is unsafe).
+// Re-probe failures / page-evaluate errors keep the entry (ambiguous —
+// default to "don't hide a possibly real failure").
+//
+// The re-probe runs via `page.evaluate(fetch, {credentials:'include'})` so it
+// inherits the page's cookies / auth, matching the original failing request.
+// ---------------------------------------------------------------------------
+
+const GATEWAY_STATUSES: ReadonlySet<number> = new Set([502, 503, 504]);
+
+async function confirmGatewayPersistence(
+  page: Page,
+  entries: ServerErrorEntry[],
+): Promise<{ kept: ServerErrorEntry[]; dropped: ServerErrorEntry[] }> {
+  const kept: ServerErrorEntry[] = [];
+  const dropped: ServerErrorEntry[] = [];
+  for (const e of entries) {
+    if (!GATEWAY_STATUSES.has(e.status) || e.method !== "GET") {
+      kept.push(e);
+      continue;
+    }
+    let reprobed: number;
+    try {
+      reprobed = await page.evaluate(async (url: string) => {
+        try {
+          const r = await fetch(url, { credentials: "include", cache: "no-store" });
+          return r.status;
+        } catch {
+          return 0;
+        }
+      }, e.url);
+    } catch {
+      kept.push(e);
+      continue;
+    }
+    if (reprobed >= 100 && reprobed < 500) {
+      dropped.push(e);
+    } else {
+      kept.push(e);
+    }
+  }
+  return { kept, dropped };
+}
+
+// ---------------------------------------------------------------------------
 // CLI args
 // ---------------------------------------------------------------------------
 
@@ -1550,11 +1610,20 @@ async function main(): Promise<number> {
       .slice(consoleBefore)
       .filter((e) => !expected.some((rx) => rx.test(e.text)));
     // Same slice mechanism for same-origin 5xx, dropping expectedServerErrors
-    // waivers (matched against the response URL).
+    // waivers (matched against the response URL). Gateway-class (502/503/504)
+    // entries are then re-probed once — a persistent backend outage re-probes
+    // to >=500 (kept); a transient upstream blip re-probes <500 (dropped).
     const expectedServer = readExpectedServerErrors(spec.doc);
-    r.serverErrors = serverErrors
+    const sliced = serverErrors
       .slice(serverBefore)
       .filter((e) => !expectedServer.some((rx) => rx.test(e.url)));
+    const { kept: serverKept, dropped: serverDropped } = await confirmGatewayPersistence(page, sliced);
+    r.serverErrors = serverKept;
+    for (const d of serverDropped) {
+      process.stderr.write(
+        `[spec-ci] ${spec.id} gateway-reprobe dropped: ${d.method} ${d.status} ${d.url}\n`,
+      );
+    }
     results.push(r);
     process.stderr.write(
       `${r.matchOutcome} matchRate=${r.matchRate.toFixed(2)} transitions=${r.transitions.length} passRate=${r.transitionPassRate.toFixed(2)} consoleErrors=${r.consoleErrors.length} serverErrors=${r.serverErrors.length}${r.error ? ` error=${r.error}` : ""}\n`,
@@ -1646,7 +1715,19 @@ async function main(): Promise<number> {
     const sessionLost =
       !navigatedOk && navError !== null && /\/login(\?|"|$)/.test(navError);
     const crawlConsole = criticalConsole.slice(consoleBefore);
-    const crawlServer = serverErrors.slice(serverBefore);
+    // Re-probe gateway-class (502/503/504) entries before they reach the
+    // waiver registry — same rationale as the spec lane: transient upstream
+    // blips on shared background calls drop; real persistent app/upstream
+    // failures stay and gate.
+    const { kept: crawlServer, dropped: crawlServerDropped } = await confirmGatewayPersistence(
+      page,
+      serverErrors.slice(serverBefore),
+    );
+    for (const d of crawlServerDropped) {
+      process.stderr.write(
+        `[spec-ci] crawl ${route.path} gateway-reprobe dropped: ${d.method} ${d.status} ${d.url}\n`,
+      );
+    }
     // Fold the raw findings through the crawl waiver registry (crawl-baseline
     // .ts): global CI-env URL classes (/coord-api/*, /api/vga/*) + per-route
     // waivers. Whatever survives GATES, attributed to this route.
