@@ -162,6 +162,12 @@ async def get_tenant_id(
     Side effect (Phase T2): captures the caller's bearer token into a
     request-scoped ContextVar so ``_tenant_headers`` can forward it to
     coord for token-based authorization.
+
+    Ordering invariant (Phase 2): the bearer capture runs BEFORE — and
+    independent of — tenant resolution, so the forwarded bearer survives
+    even if resolution changes or raises. Coord authorizes on the bearer,
+    not on the web-computed tenant, so this capture must never be coupled
+    to the resolver outcome.
     """
     _caller_bearer.set(_extract_caller_token(request))
     return await resolve_tenant_for_user(current_user, db)
@@ -2780,11 +2786,18 @@ async def list_user_tenants(
         { "tenants": [ { "id": "<uuid>", "slug": "<str>", "name": "<str>" } ],
           "active_tenant_id": "<uuid>" }
     """
-    email = (current_user.email or "").strip().lower()
+    # Operator lookup keyed on the Cognito identity (sub-preferred,
+    # email-fallback) — matches ``resolve_tenants_for_user``. The
+    # ``sso_subject = :cognito_sub`` predicate is unsatisfiable when
+    # ``cognito_sub`` is NULL, so an un-backfilled user falls back to the
+    # email predicate (no regression).
+    #
     # GROUP BY (not DISTINCT) so an operator with multiple roles in
     # the same tenant doesn't multiply rows. Postgres rejects
     # `SELECT DISTINCT ... ORDER BY <expression-not-in-select-list>`
     # which the home-tenant predicate would otherwise trigger.
+    cognito_sub = getattr(current_user, "cognito_sub", None) or None
+    email = (current_user.email or "").strip().lower()
     rows = (
         await db.execute(
             text(
@@ -2795,14 +2808,15 @@ async def list_user_tenants(
                   ON r.operator_id = o.operator_id
                 JOIN coord.tenants t
                   ON t.tenant_id = r.tenant_id
-                WHERE LOWER(o.email) = :email
+                WHERE (:cognito_sub IS NOT NULL AND o.sso_subject = :cognito_sub)
+                   OR LOWER(o.email) = :email
                 GROUP BY t.tenant_id, t.slug, t.display_name, o.tenant_id
                 ORDER BY
                     (t.tenant_id = o.tenant_id) DESC,
                     t.slug ASC
                 """
             ),
-            {"email": email},
+            {"cognito_sub": cognito_sub, "email": email},
         )
     ).fetchall()
     if rows:
