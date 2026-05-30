@@ -7,21 +7,33 @@ coord can inject the resolver tenant into the
 ``X-Qontinui-Tenant-Id`` header — coord-side handlers then scope every
 SQL query to that tenant.
 
-Resolution policy:
+Resolution policy (expand/contract — Cognito sub primary, email fallback):
 
-1. The single-user bootstrap case (`coord_tenant_scope_columns` alembic)
-   maps ``email`` only: every qontinui-web user signs in via cookie auth
-   today, no SSO subject is minted yet. The bootstrap migration inserts
-   one operator row with ``sso_provider='' AND sso_subject=''``, keyed
-   by email.
-2. The future-SSO case will prefer ``(sso_provider, sso_subject)`` — the
-   IdP natural key — which is the UNIQUE constraint on
-   ``coord.operators``. The email column is retained as a fallback.
+1. PRIMARY — Cognito subject. When the web user has a ``cognito_sub``
+   (``auth.users.cognito_sub``, populated on every Cognito login and
+   unique-indexed), match it against ``coord.operators.sso_subject``
+   (stamped by coord on SSO first-login). This is the natural IdP key
+   shared across both halves of the database and is the canonical link.
+2. SECONDARY (fallback) — ``LOWER(email) = :email`` against
+   ``coord.operators``. Retained for any operator row whose
+   ``sso_subject`` has not yet been back-filled (the column is nullable
+   on the coord side). For a fully back-filled operator the sub and the
+   email converge on the SAME row, so keeping email is behavior-
+   preserving — it only adds coverage for the backfill gap.
+3. FINAL (bootstrap-slug) — fall through to the ``personal-jspinak``
+   tenant via ``coord.tenants.slug``. Recovery posture for a fresh DB
+   whose alembic ran but whose operator row was lost / has a slightly
+   different email.
 
-If no operator row matches, the resolver raises 403 ``tenant_not_resolved``.
+If no path matches, the resolver raises 403 ``tenant_not_resolved``.
 That posture is intentional: the dashboard endpoints require a tenant
 context to scope coord queries, and failing closed is safer than
 silently exposing fleet-wide data.
+
+CONTRACT NOTE: the email predicate and the bootstrap-slug fallback are
+both kept for now and are slated for removal once a prod backfill of
+``coord.operators.sso_subject`` is confirmed (the later "contract"
+phase). Each fallback is tagged with a ``# CONTRACT:`` comment.
 """
 
 from __future__ import annotations
@@ -49,26 +61,45 @@ PERSONAL_BOOTSTRAP_SLUG = "personal-jspinak"
 async def resolve_tenant_for_user(user: User, db: AsyncSession) -> UUID:
     """Resolve the given web user to a coord tenant_id.
 
-    Lookup order:
+    Lookup order (expand/contract — sub primary, email fallback):
 
-    1. ``coord.operators.email`` exact-match against ``user.email``
-       (lowercased on both sides to dodge the ad-hoc casing the
-       fastapi-users layer doesn't normalise).
-    2. If a single-user bootstrap is the only operator in the DB (the
-       canonical-PG state post-`coord_tenant_scope_columns`), fall
-       through to that operator's tenant via the
-       `personal-jspinak` slug. This guards against a user whose web
-       email is slightly different from the migration's bootstrap
-       email — the dashboard still resolves to the only sensible
-       tenant until SSO actually provisions per-user operator rows.
+    1. ``coord.operators.sso_subject`` exact-match against
+       ``user.cognito_sub`` (only when the user has a Cognito subject).
+    2. ``coord.operators.email`` exact-match against ``user.email``
+       (lowercased on both sides). Fallback for operator rows whose
+       ``sso_subject`` isn't back-filled yet.
+    3. ``personal-jspinak`` bootstrap-slug fallback: resolve the only
+       sensible tenant for a fresh DB / slightly-mismatched email.
 
-    Raises 403 ``tenant_not_resolved`` if neither path returns a row.
+    Raises 403 ``tenant_not_resolved`` if no path returns a row.
     """
     email = (user.email or "").strip().lower()
+    sub = getattr(user, "cognito_sub", None)
 
-    # Step 1 — direct email match. (LOWER() on the column side so the
-    # query plan can use the standard btree index if one exists; email
-    # in coord.operators is TEXT, no UNIQUE, no LOWER-index — small
+    # Step 1 — PRIMARY: Cognito subject → operator.sso_subject. Only
+    # attempted when the user actually carries a Cognito sub (local /
+    # not-yet-migrated users have NULL here and fall through to email).
+    if sub is not None:
+        sub_row = (
+            await db.execute(
+                text(
+                    """
+                    SELECT tenant_id
+                    FROM coord.operators
+                    WHERE sso_subject = :sub
+                    LIMIT 1
+                    """
+                ),
+                {"sub": sub},
+            )
+        ).first()
+        if sub_row is not None:
+            return UUID(str(sub_row[0]))
+
+    # CONTRACT: drop email+bootstrap fallback once cognito_sub backfill confirmed
+    # Step 2 — FALLBACK: direct email match. (LOWER() on the column side
+    # so the query plan can use the standard btree index if one exists;
+    # email in coord.operators is TEXT, no UNIQUE, no LOWER-index — small
     # table, sequential scan is fine.)
     row = (
         await db.execute(
@@ -86,7 +117,8 @@ async def resolve_tenant_for_user(user: User, db: AsyncSession) -> UUID:
     if row is not None:
         return UUID(str(row[0]))
 
-    # Step 2 — bootstrap fallback by slug.
+    # CONTRACT: drop email+bootstrap fallback once cognito_sub backfill confirmed
+    # Step 3 — bootstrap fallback by slug.
     fallback = (
         await db.execute(
             text(
@@ -127,11 +159,13 @@ async def user_is_coord_tenant_admin(
     Authorizes against ``coord.operator_roles`` (the object the setting
     scopes to), NOT cloud-control org ownership and NOT ``is_superuser``.
 
-    Decision logic:
+    Decision logic (expand/contract — sub primary, email fallback):
 
     1. Direct role check: ``coord.operators ⋈ coord.operator_roles`` where
-       ``LOWER(email) = :email AND tenant_id = :tid AND role = 'admin'``.
-       Returns ``True`` on any hit.
+       the operator is matched by ``o.sso_subject = :sub`` (when the user
+       carries a Cognito subject) else ``LOWER(o.email) = :email``, plus
+       ``r.tenant_id = :tid AND r.role = 'admin'``. Returns ``True`` on
+       any hit.
 
     2. Bootstrap-parity branch (mirrors ``resolve_tenant_for_user``'s
        fallback so the pre-SSO single user isn't locked out before any
@@ -144,22 +178,36 @@ async def user_is_coord_tenant_admin(
        no-operator cases.
     """
     email = (user.email or "").strip().lower()
+    sub = getattr(user, "cognito_sub", None)
+
+    # The operator-match predicate is sub-primary / email-fallback. We
+    # build it once so the admin-role JOIN and the operator-exists check
+    # below stay in lockstep on which operator row they target.
+    if sub is not None:
+        # CONTRACT: drop email+bootstrap fallback once cognito_sub backfill confirmed
+        op_match_sql = "o.sso_subject = :sub"
+        op_match_params: dict[str, str] = {"sub": sub}
+        op_exists_match_sql = "sso_subject = :sub"
+    else:
+        op_match_sql = "LOWER(o.email) = :email"
+        op_match_params = {"email": email}
+        op_exists_match_sql = "LOWER(email) = :email"
 
     # Step 1 — direct admin-role match.
     admin_row = (
         await db.execute(
             text(
-                """
+                f"""
                 SELECT 1
                 FROM coord.operators o
                 JOIN coord.operator_roles r ON r.operator_id = o.operator_id
-                WHERE LOWER(o.email) = :email
+                WHERE {op_match_sql}
                   AND r.tenant_id = :tid
                   AND r.role = 'admin'
                 LIMIT 1
                 """
             ),
-            {"email": email, "tid": str(tenant_id)},
+            {**op_match_params, "tid": str(tenant_id)},
         )
     ).first()
     if admin_row is not None:
@@ -171,18 +219,19 @@ async def user_is_coord_tenant_admin(
     #   a) does the user have any operator row?
     #   b) does tenant_id equal the personal-jspinak bootstrap tenant?
     # If (a) is empty AND (b) matches → return True (bootstrap owner).
+    # CONTRACT: drop email+bootstrap fallback once cognito_sub backfill confirmed
 
     op_row = (
         await db.execute(
             text(
-                """
+                f"""
                 SELECT 1
                 FROM coord.operators
-                WHERE LOWER(email) = :email
+                WHERE {op_exists_match_sql}
                 LIMIT 1
                 """
             ),
-            {"email": email},
+            op_match_params,
         )
     ).first()
     if op_row is not None:
@@ -233,18 +282,31 @@ async def resolve_tenants_for_user(user: User, db: AsyncSession) -> list[UUID]:
     default) followed by the rest of their memberships in
     deterministic (slug-asc) order.
 
-    Bootstrap fallback: when no operator row matches the user's email
-    (the pre-SSO single-user case), returns the personal-jspinak
-    tenant_id as a single-element list. Identical posture to
-    `resolve_tenant_for_user` — failing closed here would break the
-    /tenants endpoint for dev users on a fresh DB.
+    Operator match is sub-primary / email-fallback (expand/contract),
+    same as ``resolve_tenant_for_user``.
 
-    Raises 403 ``tenant_not_resolved`` if neither the email lookup nor
+    Bootstrap fallback: when no operator row matches (the pre-SSO
+    single-user case), returns the personal-jspinak tenant_id as a
+    single-element list. Identical posture to ``resolve_tenant_for_user``
+    — failing closed here would break the /tenants endpoint for dev users
+    on a fresh DB.
+
+    Raises 403 ``tenant_not_resolved`` if neither the operator lookup nor
     the bootstrap fallback yields anything.
     """
     email = (user.email or "").strip().lower()
+    sub = getattr(user, "cognito_sub", None)
 
-    # Email → operator → roles → tenants. Order by:
+    # Operator match predicate — sub-primary / email-fallback.
+    if sub is not None:
+        op_match_sql = "o.sso_subject = :sub"
+        op_match_params: dict[str, str] = {"sub": sub}
+    else:
+        # CONTRACT: drop email+bootstrap fallback once cognito_sub backfill confirmed
+        op_match_sql = "LOWER(o.email) = :email"
+        op_match_params = {"email": email}
+
+    # operator → roles → tenants. Order by:
     #   1) the operator's home tenant_id first (matches the
     #      `active_tenant_id` the UI uses as default)
     #   2) then by slug alphabetical for everyone else (stable wire
@@ -257,26 +319,27 @@ async def resolve_tenants_for_user(user: User, db: AsyncSession) -> list[UUID]:
     rows = (
         await db.execute(
             text(
-                """
+                f"""
                 SELECT r.tenant_id, t.slug, o.tenant_id AS home_tenant_id
                 FROM coord.operators o
                 JOIN coord.operator_roles r
                   ON r.operator_id = o.operator_id
                 JOIN coord.tenants t
                   ON t.tenant_id = r.tenant_id
-                WHERE LOWER(o.email) = :email
+                WHERE {op_match_sql}
                 GROUP BY r.tenant_id, t.slug, o.tenant_id
                 ORDER BY
                     (r.tenant_id = o.tenant_id) DESC,
                     t.slug ASC
                 """
             ),
-            {"email": email},
+            op_match_params,
         )
     ).fetchall()
     if rows:
         return [UUID(str(row[0])) for row in rows]
 
+    # CONTRACT: drop email+bootstrap fallback once cognito_sub backfill confirmed
     # Bootstrap fallback — same posture as resolve_tenant_for_user.
     # The personal-jspinak tenant is the single-element membership set.
     fallback = (

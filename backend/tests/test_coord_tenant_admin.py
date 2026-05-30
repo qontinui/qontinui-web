@@ -1,9 +1,10 @@
 """Unit tests for ``user_is_coord_tenant_admin`` in
 ``app.services.coord_operator_resolver``.
 
-Covers the four key decision branches:
+Covers the key decision branches (sub-primary / email-fallback re-key):
 
-1. Admin-role row present → True.
+1. Admin-role row present → True (via email fallback when no sub, and
+   via the sub-keyed predicate when ``cognito_sub`` is set).
 2. Operator exists but NO admin role → False.
 3. No operator row, tenant_id matches personal-jspinak bootstrap → True
    (bootstrap-parity branch).
@@ -30,10 +31,16 @@ from app.services.coord_operator_resolver import (
 # ---------------------------------------------------------------------------
 
 
-def _mock_user(email: str = "user@example.com") -> MagicMock:
+def _mock_user(
+    email: str = "user@example.com",
+    cognito_sub: str | None = None,
+) -> MagicMock:
     user = MagicMock()
     user.id = uuid4()
     user.email = email
+    # Default None so the sub-primary branch is only taken when a test
+    # explicitly sets a sub (a bare MagicMock attr would be truthy).
+    user.cognito_sub = cognito_sub
     return user
 
 
@@ -79,6 +86,42 @@ async def test_admin_role_row_present_returns_true():
     assert result is True
     # Only the admin-role query fired; bootstrap sub-queries stay unfired.
     assert db.execute.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_admin_via_cognito_sub_binds_sub_predicate():
+    """User with cognito_sub → admin-role JOIN matches on sso_subject."""
+    user = _mock_user(email="admin@qontinui.io", cognito_sub="admin-sub-9")
+    tenant_id = uuid4()
+    db = _stub_db((1,))
+
+    result = await user_is_coord_tenant_admin(user, tenant_id, db)
+
+    assert result is True
+    assert db.execute.await_count == 1
+    # The admin-role query binds :sub (sub-primary), not :email.
+    bound = db.execute.await_args_list[0].args[1]
+    assert bound["sub"] == "admin-sub-9"
+    assert "email" not in bound
+
+
+@pytest.mark.asyncio
+async def test_admin_sub_miss_uses_operator_exists_by_sub():
+    """cognito_sub set but no admin row → operator-exists check also keys
+    on sub; an operator row found by sub (no admin role) → deny."""
+    user = _mock_user(email="member@qontinui.io", cognito_sub="member-sub")
+    tenant_id = uuid4()
+    # Query 1: admin-role JOIN (sub) → miss.
+    # Query 2: operator-exists (sub) → row found → deny, no bootstrap.
+    db = _stub_db(None, (1,))
+
+    result = await user_is_coord_tenant_admin(user, tenant_id, db)
+
+    assert result is False
+    assert db.execute.await_count == 2
+    # Both queries keyed on :sub.
+    assert db.execute.await_args_list[0].args[1]["sub"] == "member-sub"
+    assert db.execute.await_args_list[1].args[1] == {"sub": "member-sub"}
 
 
 @pytest.mark.asyncio

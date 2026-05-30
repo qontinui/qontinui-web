@@ -45,18 +45,29 @@ async def read_users_me(
     can render ``(not assigned)`` instead of a 403.
     """
     email = (current_user.email or "").strip().lower()
+    sub = current_user.cognito_sub
+    # Operator match is sub-primary / email-fallback (expand/contract),
+    # mirroring app.services.coord_operator_resolver. Never raises — a
+    # miss yields tenant_id=None so the UI shows "(not assigned)".
+    if sub is not None:
+        op_match_sql = "o.sso_subject = :sub"
+        op_match_params: dict[str, str] = {"sub": sub}
+    else:
+        # CONTRACT: drop email fallback once cognito_sub backfill confirmed
+        op_match_sql = "LOWER(o.email) = :email"
+        op_match_params = {"email": email}
     row = (
         await db.execute(
             text(
-                """
+                f"""
                 SELECT o.tenant_id, t.slug
                 FROM coord.operators o
                 LEFT JOIN coord.tenants t ON t.tenant_id = o.tenant_id
-                WHERE LOWER(o.email) = :email
+                WHERE {op_match_sql}
                 LIMIT 1
                 """
             ),
-            {"email": email},
+            op_match_params,
         )
     ).first()
 

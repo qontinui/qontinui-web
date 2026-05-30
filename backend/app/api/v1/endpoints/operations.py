@@ -148,10 +148,25 @@ def _extract_caller_token(request: Request) -> str | None:
     return None
 
 
+async def capture_caller_bearer(request: Request) -> None:
+    """Dependency: capture the caller's bearer token into a request-scoped
+    ContextVar so ``_tenant_headers`` can forward it to coord for
+    token-based authorization (Phase T2).
+
+    Decoupled from ``get_tenant_id`` so the bearer capture is reusable on
+    its own — endpoints that proxy to coord but don't need a resolved
+    tenant_id (a later wave) can depend on this directly. Introducing the
+    standalone dependency here does NOT change any endpoint's behavior:
+    ``get_tenant_id`` and ``require_coord_tenant_admin`` still depend on
+    it, so the same capture happens for every call site that did before.
+    """
+    _caller_bearer.set(_extract_caller_token(request))
+
+
 async def get_tenant_id(
-    request: Request,
     current_user: UserModel = Depends(get_current_active_user_async),
     db: AsyncSession = Depends(get_async_db),
+    _: None = Depends(capture_caller_bearer),
 ) -> UUID:
     """Dependency: resolve the current user's tenant_id (UUID).
 
@@ -159,17 +174,17 @@ async def get_tenant_id(
     policy. Raises 403 ``tenant_not_resolved`` if the user isn't linked
     to a coord operator row (and the bootstrap fallback also misses).
 
-    Side effect (Phase T2): captures the caller's bearer token into a
-    request-scoped ContextVar so ``_tenant_headers`` can forward it to
-    coord for token-based authorization.
+    The caller's bearer token is captured by the ``capture_caller_bearer``
+    sub-dependency (request-scoped ContextVar) so ``_tenant_headers`` can
+    forward it to coord for token-based authorization.
     """
-    _caller_bearer.set(_extract_caller_token(request))
     return await resolve_tenant_for_user(current_user, db)
 
 
 async def require_coord_tenant_admin(
     current_user: UserModel = Depends(get_current_active_user_async),
     db: AsyncSession = Depends(get_async_db),
+    _: None = Depends(capture_caller_bearer),
 ) -> UUID:
     """Resolve the user's coord tenant AND require admin on it.
 
@@ -2781,6 +2796,16 @@ async def list_user_tenants(
           "active_tenant_id": "<uuid>" }
     """
     email = (current_user.email or "").strip().lower()
+    sub = current_user.cognito_sub
+    # Operator match is sub-primary / email-fallback (expand/contract),
+    # same posture as app.services.coord_operator_resolver.
+    if sub is not None:
+        op_match_sql = "o.sso_subject = :sub"
+        op_match_params: dict[str, str] = {"sub": sub}
+    else:
+        # CONTRACT: drop email fallback once cognito_sub backfill confirmed
+        op_match_sql = "LOWER(o.email) = :email"
+        op_match_params = {"email": email}
     # GROUP BY (not DISTINCT) so an operator with multiple roles in
     # the same tenant doesn't multiply rows. Postgres rejects
     # `SELECT DISTINCT ... ORDER BY <expression-not-in-select-list>`
@@ -2788,21 +2813,21 @@ async def list_user_tenants(
     rows = (
         await db.execute(
             text(
-                """
+                f"""
                 SELECT t.tenant_id, t.slug, t.display_name, o.tenant_id AS home_tenant_id
                 FROM coord.operators o
                 JOIN coord.operator_roles r
                   ON r.operator_id = o.operator_id
                 JOIN coord.tenants t
                   ON t.tenant_id = r.tenant_id
-                WHERE LOWER(o.email) = :email
+                WHERE {op_match_sql}
                 GROUP BY t.tenant_id, t.slug, t.display_name, o.tenant_id
                 ORDER BY
                     (t.tenant_id = o.tenant_id) DESC,
                     t.slug ASC
                 """
             ),
-            {"email": email},
+            op_match_params,
         )
     ).fetchall()
     if rows:

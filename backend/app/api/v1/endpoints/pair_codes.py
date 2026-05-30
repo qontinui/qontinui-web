@@ -71,6 +71,12 @@ async def mint_pair_code_endpoint(
     correctly-scoped device JWT without trusting any runner-supplied
     tenant_id.
     """
+    # Tenant is resolved + captured HERE, at mint time, while the user is
+    # authenticated (sub-primary / email-fallback re-key, expand/contract).
+    # It is burned into the pair-code row so the LATER, UNAUTHENTICATED
+    # redeem can mint a correctly-scoped device JWT without re-resolving —
+    # the redeem has no user identity, so this resolution cannot be
+    # offloaded to it.
     tenant_id = await resolve_tenant_for_user(current_user, db)
     row = await pair_code_crud.mint_pair_code(
         db,
