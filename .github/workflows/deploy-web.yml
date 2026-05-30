@@ -221,16 +221,13 @@ jobs:
       # 5xx for routing/auth, or whose DB-backed readiness never recovers. On
       # FAILURE the next step auto-rolls-back to the prior task-def.
       #
-      # Rate-limit awareness: POST /auth/jwt/login is limited to 5/min keyed by
-      # source IP (and behind Vercel/ALB all CI traffic shares an IP pool). So:
-      #   * The unauthenticated readiness/middleware checks run FIRST and absorb
-      #     the post-deploy settle time, so by the time we attempt logins the
-      #     service is already confirmed responsive (few login attempts needed).
-      #   * 429 from login means "app is up, just throttled" — it is treated as
-      #     a transient retry, NOT a smoke failure. Only 5xx / connection
-      #     failure / an unexpected status is a failure.
-      #   * Each distinct login (bogus + valid) is attempted at most twice to
-      #     stay well under the 5/min bucket.
+      # Auth model (post Cognito legacy-auth teardown): there is no local
+      # /auth/jwt/login — it must 404. The authenticated probe mints a CI-bot
+      # Cognito id token via the public CI app-client (USER_PASSWORD_AUTH
+      # InitiateAuth against cognito-idp), then exercises two bearer-protected
+      # reads. The unauthenticated readiness/middleware checks run FIRST and
+      # absorb the post-deploy settle time; transient 5xx/000 on any probe are
+      # retried, a settled wrong status is a hard (rollback-triggering) failure.
       - name: Post-deploy behavioral smoke
         id: smoke
         run: |
@@ -275,25 +272,27 @@ jobs:
           # Protected route with no credentials must answer 401, not 5xx.
           expect_get "${API}/auth/users/me" 401 || exit 1
 
-          # Bogus-creds login must answer 401 (routing + auth pipeline alive).
-          # 429 (rate-limited) and 5xx/000 are transient; 401 is the pass.
-          bogus_ok=""
-          for i in 1 2; do
+          # The local password endpoint was deleted in the Cognito legacy-auth
+          # teardown: POST /auth/jwt/login must now 404 (routed, endpoint gone).
+          # A deterministic 404 is the post-teardown pass (was 401 pre-teardown);
+          # 5xx/000 are transient and retried.
+          gone_ok=""
+          for i in 1 2 3; do
             code=$(curl -s -o /dev/null -w '%{http_code}' \
               -X POST "${API}/auth/jwt/login" \
               -H 'Content-Type: application/x-www-form-urlencoded' \
               --data-urlencode 'username=ci-smoke-nobody@qontinui.invalid' \
               --data-urlencode 'password=definitely-not-the-password' || echo 000)
-            echo "  attempt $i: POST /auth/jwt/login (bogus) -> $code (want 401)"
-            if [ "$code" = "401" ]; then bogus_ok=1; break; fi
-            if [ "$code" = "429" ] || [ "$code" = "000" ] || [ "${code:0:1}" = "5" ]; then
+            echo "  attempt $i: POST /auth/jwt/login -> $code (want 404, local auth removed)"
+            if [ "$code" = "404" ]; then gone_ok=1; break; fi
+            if [ "$code" = "000" ] || [ "${code:0:1}" = "5" ]; then
               sleep 10; continue
             fi
-            echo "::error::bogus login returned $code, expected 401"
+            echo "::error::POST /auth/jwt/login returned $code, expected 404 (local auth must be deleted)"
             exit 1
           done
-          if [ -z "$bogus_ok" ]; then
-            echo "::error::bogus login never returned 401"
+          if [ -z "$gone_ok" ]; then
+            echo "::error::POST /auth/jwt/login never returned 404"
             exit 1
           fi
 
@@ -319,32 +318,28 @@ jobs:
             exit 0
           fi
 
-          # Real login -> 200 + access_token. Up to 2 attempts; 429/5xx/000
-          # are transient (the app is up, possibly throttled), anything else
-          # non-200 is a hard failure. The secret never hits stdout.
+          # Cognito is the sole auth mechanism post-teardown: mint a CI-bot id
+          # token via the public CI app-client (USER_PASSWORD_AUTH InitiateAuth,
+          # no secret) instead of the deleted /auth/jwt/login. The backend's
+          # Cognito arm verifies it (the CI client id is in
+          # COGNITO_ALLOWED_AUDIENCES). The password never hits stdout — only
+          # the JSON response is captured and parsed for the IdToken.
+          COGNITO_CI_CLIENT_ID="tb0epbojige1900ipu6q80j6b"
           TOKEN=""
-          for i in 1 2; do
-            code=$(curl -s -o /tmp/login_body -w '%{http_code}' \
-              -X POST "${API}/auth/jwt/login" \
-              -H 'Content-Type: application/x-www-form-urlencoded' \
-              --data-urlencode "username=${CI_EMAIL}" \
-              --data-urlencode "password=${CI_PASSWORD}" || echo 000)
-            echo "  attempt $i: POST /auth/jwt/login (valid) -> $code (want 200)"
-            if [ "$code" = "200" ]; then
-              TOKEN=$(python3 -c 'import json,sys; print(json.load(open("/tmp/login_body")).get("access_token",""))' 2>/dev/null || echo "")
-              break
-            fi
-            if [ "$code" = "429" ] || [ "$code" = "000" ] || [ "${code:0:1}" = "5" ]; then
-              sleep 12; continue
-            fi
-            echo "::error::CI-bot login returned $code, expected 200"
-            exit 1
+          for i in 1 2 3; do
+            resp=$(curl -s -X POST "https://cognito-idp.us-east-1.amazonaws.com/" \
+              -H 'Content-Type: application/x-amz-json-1.1' \
+              -H 'X-Amz-Target: AWSCognitoIdentityProviderService.InitiateAuth' \
+              -d "{\"AuthFlow\":\"USER_PASSWORD_AUTH\",\"ClientId\":\"${COGNITO_CI_CLIENT_ID}\",\"AuthParameters\":{\"USERNAME\":\"${CI_EMAIL}\",\"PASSWORD\":\"${CI_PASSWORD}\"}}" || echo "")
+            TOKEN=$(printf '%s' "$resp" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("AuthenticationResult",{}).get("IdToken",""))' 2>/dev/null || echo "")
+            if [ -n "$TOKEN" ]; then echo "  Cognito InitiateAuth OK; id token obtained"; break; fi
+            echo "  attempt $i: Cognito InitiateAuth yielded no IdToken; retrying"
+            sleep 10
           done
           if [ -z "$TOKEN" ]; then
-            echo "::error::CI-bot login did not yield an access_token"
+            echo "::error::CI-bot Cognito InitiateAuth did not yield an IdToken"
             exit 1
           fi
-          echo "  login OK; access token obtained"
 
           # Two representative authenticated reads with the bearer:
           #   /auth/users/me -> 200  (identity + coord-tenant resolution path)
