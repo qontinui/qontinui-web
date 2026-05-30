@@ -178,23 +178,27 @@ export async function authenticateBridgeRequest(
 }
 
 function extractToken(request: NextRequest): string | null {
-  // 1. Authorization: Bearer header (primary; cross-origin Bearer path).
+  // Bearer-only. The SDK's command-relay transport
+  // (@qontinui/ui-bridge ≥ 0.11.0) attaches `Authorization: Bearer <jwt>`
+  // to every outbound call — POST /commands, POST /heartbeat, AND the
+  // streaming GET /commands/stream (which switched from EventSource to
+  // fetch precisely so it could send headers). There is no longer a
+  // cookie / query fallback.
+  //
+  // Why drop the cookie path: cross-origin cookies are CSRF-vulnerable
+  // (a logged-in user visiting a malicious site has bank.com's cookies
+  // auto-attached on cross-origin requests). Authorization headers
+  // require CORS preflight for cross-origin, and JWTs in sessionStorage
+  // are not auto-attached by the browser at all. Bearer-only =
+  // CSRF-resistant by construction; one code path; one threat model.
+  // Local dev uses Bearer the same as prod (TokenStorage already
+  // mirrors to sessionStorage in every mode).
   const auth = request.headers.get("authorization");
   if (auth) {
     const m = /^bearer\s+(.+)$/i.exec(auth);
     const candidate = m?.[1]?.trim();
     if (candidate) return candidate;
   }
-  // 2. `access_token` cookie (same-origin fallback).
-  const cookieToken = request.cookies.get("access_token")?.value;
-  if (cookieToken) return cookieToken;
-  // The SDK's command-relay transport (@qontinui/ui-bridge ≥ 0.11.0)
-  // streams `/commands/stream` via `fetch` (not EventSource), so the
-  // Authorization header above carries the token on the SSE path too.
-  // Earlier SDKs rode the token in a `_auth=<token>` query parameter
-  // because EventSource couldn't set headers — that branch was removed
-  // (token in URL → bearer in request logs). Anything still passing
-  // `_auth=...` is treated as anonymous; only header + cookie are honored.
   return null;
 }
 

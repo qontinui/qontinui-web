@@ -251,14 +251,14 @@ async function wrapHandler(
 
   // Session-bound relay gate (Phase 1 of the production-safe UI Bridge
   // plan, §4.1 + partial §4.3). Off by default — gated by env var
-  // `UI_BRIDGE_REQUIRE_AUTH=1` — because the current SDK transport
-  // doesn't attach an Authorization header yet. Flip the flag per
-  // environment once the transport-side Bearer hook lands.
+  // `UI_BRIDGE_REQUIRE_AUTH=1`. Flip the flag per environment when the
+  // SDK transport's Bearer hook is wired on the consumer side.
   //
   // Auth runs BEFORE the forbidden-route + isKnownRoute checks: a hostile
   // anonymous caller shouldn't be able to distinguish "valid route, you
   // can't access it" from "no such route" — both must yield the same
   // 401 without any route-existence signal.
+  let callerUserId: string | null = null;
   if (isAuthGateEnabled()) {
     if (!isAllowedOrigin(request.headers.get("origin"))) {
       return originForbiddenResponse();
@@ -267,6 +267,7 @@ async function wrapHandler(
     if (!auth.ok) {
       return unauthenticatedResponse();
     }
+    callerUserId = auth.userId;
   }
 
   // Hard reject paths forbidden on a DEPLOYED web surface (e.g.
@@ -305,9 +306,47 @@ async function wrapHandler(
   // `Content-Type: application/json` header. Closes the field-strip class
   // of bug observed on Vercel deploys where e.g. a `{text:"X"}` body
   // arrived at the relay with `text` missing.
-  const forwardRequest = await passThroughBody(request, method);
+  const bodyPreserved = await passThroughBody(request, method);
+
+  // Per-user tab scoping (§4.2, SDK ≥ 0.12.0): when the auth gate
+  // produced an authenticated userId, splice it onto the forwarded
+  // request as `X-Caller-User-Id` so the SDK relay's per-user filtering
+  // path (listOwnedTabs / ownerCheck) sees it. The SDK contract requires
+  // this header be set ONLY from a server-verified identity, NEVER from
+  // a browser-supplied value — the auth gate above is that point of
+  // verification. Header is omitted when the auth gate is off (admin
+  // mode at the SDK relay: returns all tabs).
+  const forwardRequest = callerUserId
+    ? withCallerUserId(bodyPreserved, callerUserId)
+    : bodyPreserved;
 
   return handler(forwardRequest, { params: { path: params.path.join("/") } });
+}
+
+/**
+ * Return a fresh `NextRequest` identical to `request` but with
+ * `X-Caller-User-Id` set to the given verified userId. The original
+ * request is not mutated (Next request headers are read-only).
+ */
+function withCallerUserId(request: NextRequest, userId: string): NextRequest {
+  const headers = new Headers(request.headers);
+  headers.set("x-caller-user-id", userId);
+  const NextRequestCtor = request.constructor as new (
+    input: string | URL,
+    init?: RequestInit
+  ) => NextRequest;
+  // Preserve method + body. `arrayBuffer()` was already consumed by
+  // `passThroughBody` when a body exists, so any body present on
+  // `request` here is the re-wrapped one — its body stream can be
+  // duplicated via `.body` on the underlying Request.
+  return new NextRequestCtor(request.url, {
+    method: request.method,
+    headers,
+    body: request.body,
+    // Required for Node fetch when body is a stream:
+    // @ts-expect-error — duplex is a Node-only field not in the DOM Request type.
+    duplex: "half",
+  });
 }
 
 export async function GET(

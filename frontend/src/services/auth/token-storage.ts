@@ -22,6 +22,40 @@
  * remote-backend mode, which left local dev dependent on the fragile cookie
  * path after a reload.)
  */
+/**
+ * Decode the payload (middle segment) of a JWT and return its claims as
+ * a plain object. The signature is NOT verified — only the backend can
+ * verify; this helper exists so the client can read its own `sub` /
+ * `jti` etc. without a backend round-trip. Returns null for any malformed
+ * input (missing segments, non-base64url payload, non-JSON, etc).
+ *
+ * Note: the SDK's per-user tab scoping (`registrationMetadata`) is the
+ * primary consumer. The relay re-verifies the same token on the server
+ * via the auth gate, so a client that lies about its claims here is
+ * caught at the gate — this is purely for ergonomic identity reads.
+ */
+function decodeJwtClaims(token: string | null): Record<string, unknown> | null {
+  if (!token) return null;
+  const parts = token.split(".");
+  if (parts.length !== 3) return null;
+  try {
+    // JWT uses base64url; convert to base64 then decode.
+    const base64url = parts[1];
+    if (!base64url) return null;
+    const base64 = base64url.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "=");
+    if (typeof atob !== "function") return null;
+    const json = atob(padded);
+    const parsed = JSON.parse(json);
+    if (parsed && typeof parsed === "object") {
+      return parsed as Record<string, unknown>;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export class TokenStorage {
   private readonly TOKEN_EXPIRY_KEY = "token_expiry";
   private readonly REFRESH_TOKEN_EXPIRY_KEY = "refresh_token_expiry";
@@ -156,6 +190,36 @@ export class TokenStorage {
   getRefreshToken(): string | null {
     if (typeof window === "undefined") return null;
     return this.refreshTokenValue;
+  }
+
+  /**
+   * Get the user id from the current access token's `sub` claim.
+   * Returns null when no access token is present OR when the token is
+   * malformed. Used by callers that need a stable user identifier
+   * client-side without making a backend round-trip (e.g. the UI Bridge
+   * SDK's per-user tab scoping — `registrationMetadata.userId`).
+   */
+  getUserId(): string | null {
+    const claims = decodeJwtClaims(this.getAccessToken());
+    if (claims && typeof claims.sub === "string" && claims.sub.length > 0) {
+      return claims.sub;
+    }
+    return null;
+  }
+
+  /**
+   * Get a session id from the current access token's `jti` claim. The
+   * JWT issuer (`fastapi-users`) mints a fresh `jti` for every token,
+   * so this rotates on every refresh — adequate for per-request audit
+   * correlation and for the UI Bridge SDK's per-session scoping
+   * (`registrationMetadata.sessionId`).
+   */
+  getSessionId(): string | null {
+    const claims = decodeJwtClaims(this.getAccessToken());
+    if (claims && typeof claims.jti === "string" && claims.jti.length > 0) {
+      return claims.jti;
+    }
+    return null;
   }
 
   /**

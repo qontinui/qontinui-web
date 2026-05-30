@@ -56,6 +56,33 @@ function commandRelayAuthHeader(): string | null {
   return tokenStorage.getAccessToken();
 }
 
+/**
+ * Per-user tab scoping hook for the SDK's CommandRelayListener
+ * (SDK ≥ 0.12.0).
+ *
+ * Returns `{userId, sessionId}` from the current access token's `sub`
+ * / `jti` claims when available. The SDK sends this with every
+ * heartbeat; the relay rejects heartbeats without it (strict mode) and
+ * uses it to filter `/tabs` + `targetTabId` lookups + unscoped fanout
+ * to caller-owned tabs only.
+ *
+ * Returns null on the pre-login (no JWT) path so the listener's
+ * `enabled` gate (below) keeps the listener un-mounted until both the
+ * user and session ids are resolvable. Once enabled, this hook is
+ * called fresh per heartbeat so a token rotation (re-login → new jti)
+ * picks up without remounting.
+ *
+ * Cross-link: plans/2026-05-28-production-safe-ui-bridge-design.md §4.2.
+ */
+function commandRelayRegistrationMetadata():
+  | { userId: string; sessionId: string }
+  | null {
+  const userId = tokenStorage.getUserId();
+  const sessionId = tokenStorage.getSessionId();
+  if (!userId || !sessionId) return null;
+  return { userId, sessionId };
+}
+
 const isDev = process.env.NODE_ENV === "development";
 
 // Production opt-in for the UI Bridge command relay. When this env var is
@@ -305,10 +332,14 @@ export function UIBridgeWrapper({
         {/* Command relay listener for remote automation via SSE.
             authHeader wires the session bearer into the SDK transport so
             the relay's session-bound auth gate (UI_BRIDGE_REQUIRE_AUTH=1)
-            sees the token. Default-off — no-op when the gate is off. */}
+            sees the token. registrationMetadata wires the {userId,
+            sessionId} envelope so the relay's per-user tab scoping (SDK
+            ≥ 0.12.0, strict mode) accepts the heartbeat. Default-off —
+            no-op when the build-time flag is off. */}
         <CommandRelayListener
           enabled={enableRemoteCommands}
           authHeader={commandRelayAuthHeader}
+          registrationMetadata={commandRelayRegistrationMetadata}
         />
         <RouteAwarenessProvider>
           {children as Parameters<typeof AutoRegisterProvider>[0]["children"]}
