@@ -169,7 +169,10 @@ async def resolve_user_for_cognito_claims(
         # email-based pool, but a federated identity may hide it. Without
         # an email we cannot create a usable account row (email is unique
         # + NOT NULL), so synthesize a stable, non-deliverable address.
-        email = f"{sub}@cognito.local"
+        # Use a real (controlled, MX-less) domain rather than the reserved
+        # `.local` TLD — the latter is a special-use name that `EmailStr`
+        # (and RFC validators) reject, which would 500 the user on read.
+        email = f"{sub}@no-reply.qontinui.io"
         email_verified = False
 
     username = await _derive_unique_username(session, email=email, sub=sub)

@@ -18,6 +18,13 @@ class UserPreferences(BaseModel):
 class UserRead(schemas.BaseUser[uuid.UUID]):
     """Schema for reading user data (fastapi-users compatible with UUID)."""
 
+    # Override the inherited ``EmailStr`` with a plain ``str``. A read schema
+    # must never 500 on already-stored data: a federated identity that hid its
+    # email is provisioned with a synthetic placeholder address, and write-time
+    # validation already guards new rows. Keeping ``EmailStr`` here turned any
+    # such user's /users/me into an unhandled ValidationError (500). Validation
+    # of *incoming* emails stays on ``UserCreate``/``UserUpdate`` (still EmailStr).
+    email: str
     username: str
     full_name: str | None = None
     company: str | None = None
