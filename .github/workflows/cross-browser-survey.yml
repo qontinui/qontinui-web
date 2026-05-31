@@ -79,7 +79,6 @@ jobs:
       - name: Clone sibling dependencies
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CC_TOKEN: ${{ secrets.web_ci_cloud_control_read }}
         run: |
           set -euo pipefail
           for spec in \
@@ -89,6 +88,7 @@ jobs:
             "qontinui/qontinui-workflow-ui" \
             "qontinui/qontinui-workflow-utils" \
             "qontinui/qontinui-navigation" \
+            "qontinui/qontinui-cloud-control" \
           ; do
             repo_name="${spec#*/}"
             target="../${repo_name}"
@@ -98,11 +98,6 @@ jobs:
               "${target}"
             echo "::endgroup::"
           done
-          echo "::group::Cloning jspinak/qontinui-cloud-control → ../qontinui-cloud-control"
-          git clone --depth 1 \
-            "https://x-access-token:${CC_TOKEN}@github.com/jspinak/qontinui-cloud-control.git" \
-            "../qontinui-cloud-control"
-          echo "::endgroup::"
 
       - name: Set up Python
         uses: actions/setup-python@v5
