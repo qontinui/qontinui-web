@@ -20,6 +20,7 @@ from fastapi.testclient import TestClient
 def _build_test_app(*, authenticated: bool = True) -> FastAPI:
     """Build a minimal FastAPI app exposing the operations router."""
     from app.api.deps import get_current_active_user_async
+    from app.api.v1.endpoints.operations import get_tenant_id
     from app.api.v1.endpoints.operations import router as operations_router
 
     test_app = FastAPI()
@@ -30,6 +31,10 @@ def _build_test_app(*, authenticated: bool = True) -> FastAPI:
         mock_user.is_active = True
         mock_user.is_verified = True
         test_app.dependency_overrides[get_current_active_user_async] = lambda: mock_user
+        # The merge proxies now depend on get_tenant_id (to forward the
+        # operator bearer so coord gates these fleet-wide endpoints). Override
+        # it so the proxy path doesn't hit a real DB for tenant resolution.
+        test_app.dependency_overrides[get_tenant_id] = lambda: uuid4()
     test_app.include_router(operations_router, prefix="/api/v1/operations")
     return test_app
 

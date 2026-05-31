@@ -427,11 +427,14 @@ async def _proxy_coord_get(
     (Phase 5 of plan 2026-05-18-agent-spawn-coordination.md) take
     ``kind``, ``prefix``, ``limit``, ``since`` filters.
 
-    ``tenant_id`` — when set, the ``X-Qontinui-Tenant-Id`` header is
-    injected so coord can scope every SQL query on the dashboard's
-    data tables. Fleet-wide / staff-only endpoints (``/merge/queue``,
-    ``/claims/*``) leave it ``None``; those callers are coord-staff
-    only and intentionally tenant-blind in the pilot.
+    ``tenant_id`` — when set, the caller's Cognito bearer is forwarded
+    (via :func:`_tenant_headers`) so coord can authenticate the operator
+    and scope its SQL. Tenant-scoped dashboard endpoints pass their
+    resolved tenant. Fleet-wide endpoints (``/merge/queue``,
+    ``/pr-merge/prs``) ALSO pass it now — not to scope (they stay
+    fleet-wide) but to forward the bearer so coord requires an
+    authenticated operator. Only truly anonymous callers (``/claims/*``)
+    leave it ``None``.
     """
     url = f"{settings.COORD_URL}{path}"
     headers = _tenant_headers(tenant_id) if tenant_id is not None else None
@@ -455,35 +458,40 @@ async def _proxy_coord_get(
 
 @router.get("/merge/queue")
 async def get_merge_queue(
-    current_user: UserModel = Depends(get_current_active_user_async),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
-    """Return the in-flight merge proposals from coord."""
-    return await _proxy_coord_get("/merge/queue")
+    """Return the in-flight merge proposals from coord (fleet-wide).
+
+    Forwards the operator bearer so coord can require an authenticated
+    operator — retires the pilot-anonymous posture (operator decision
+    2026-05-31). The endpoint stays fleet-wide; ``tenant_id`` is resolved
+    only to trigger bearer-forwarding, not to scope the query."""
+    return await _proxy_coord_get("/merge/queue", tenant_id=tenant_id)
 
 
 @router.get("/merge/{proposal_id}")
 async def get_merge_proposal(
     proposal_id: str,
-    current_user: UserModel = Depends(get_current_active_user_async),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
-    """Return a single merge proposal's detail from coord."""
-    return await _proxy_coord_get(f"/merge/{proposal_id}")
+    """Return a single merge proposal's detail from coord (fleet-wide;
+    bearer forwarded so coord requires an authenticated operator)."""
+    return await _proxy_coord_get(f"/merge/{proposal_id}", tenant_id=tenant_id)
 
 
 @router.get("/pr-merge/prs")
 async def get_pr_merge_prs(
-    current_user: UserModel = Depends(get_current_active_user_async),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """PR Merge Orchestrator Phase 1 D1.6 + D1.7 -- proxy coord's
     ``GET /pr-merge/prs`` (read-only list of all open PRs joined to
     per-(repo, head_sha) CI lifecycle).
 
-    Anonymous in the pilot, mirroring ``/merge/queue`` per coord's
-    routes.rs comment ("§4.5 anonymous in the pilot"). The web side
-    still requires an authenticated dashboard user; coord-side
-    tenant scoping arrives in Phase 2.
+    Fleet-wide. Forwards the operator bearer so coord requires an
+    authenticated operator — retires the pilot-anonymous posture
+    (operator decision 2026-05-31), mirroring ``/merge/queue``.
     """
-    return await _proxy_coord_get("/pr-merge/prs")
+    return await _proxy_coord_get("/pr-merge/prs", tenant_id=tenant_id)
 
 
 # ---- PR Merge Orchestrator Phase 2 D2.4 — per-tenant settings ------------
