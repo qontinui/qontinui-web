@@ -60,12 +60,8 @@ def test_list_query_always_scopes_to_calling_user() -> None:
     # Compile to text WITH literal binds so the user_id appears inline in
     # the SQL string (so two different users yield two different queries —
     # the strongest unit-level evidence the predicate is present).
-    sql_a = str(
-        stmt_a.compile(compile_kwargs={"literal_binds": True})
-    )
-    sql_b = str(
-        stmt_b.compile(compile_kwargs={"literal_binds": True})
-    )
+    sql_a = str(stmt_a.compile(compile_kwargs={"literal_binds": True}))
+    sql_b = str(stmt_b.compile(compile_kwargs={"literal_binds": True}))
 
     # SQLAlchemy's literal_binds renders Python UUIDs as their `.hex`
     # form (no dashes) on PG, so we check the hex repr.
