@@ -24,9 +24,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { GitBranch, GitCommitVertical, RefreshCw } from "lucide-react";
-import { ApiConfig } from "@/services/api-config";
+import { httpClient } from "@/services/service-factory";
 
-const API = `${ApiConfig.API_BASE_URL}/api/v1/operations`;
+const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 30_000;
 
 // ---- Types ----------------------------------------------------------------
@@ -282,16 +282,12 @@ export default function CoordGitOpsPage() {
       if (repoFilter.trim()) qs.set("repo", repoFilter.trim());
       qs.set("limit", "200");
 
-      const [listRes, branchesRes] = await Promise.all([
-        fetch(`${API}/git-ops/list?${qs.toString()}`),
-        fetch(`${API}/git-ops/branches`),
+      const [listBody, branchesBody] = await Promise.all([
+        httpClient.get<GitOpsListResponse>(
+          `${API}/git-ops/list?${qs.toString()}`
+        ),
+        httpClient.get<GitOpsBranchesResponse>(`${API}/git-ops/branches`),
       ]);
-      if (!listRes.ok) throw new Error(`list HTTP ${listRes.status}`);
-      if (!branchesRes.ok)
-        throw new Error(`branches HTTP ${branchesRes.status}`);
-
-      const listBody: GitOpsListResponse = await listRes.json();
-      const branchesBody: GitOpsBranchesResponse = await branchesRes.json();
       setOps(listBody.ops ?? listBody.items ?? []);
       setBranches(branchesBody.branches ?? branchesBody.items ?? []);
       setError(null);

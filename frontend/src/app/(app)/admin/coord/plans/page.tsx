@@ -23,9 +23,9 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { FileText, Filter, RefreshCw } from "lucide-react";
 import { PlanCard, type CoordPlanRow } from "@/components/admin/coord/PlanCard";
-import { ApiConfig } from "@/services/api-config";
+import { httpClient } from "@/services/service-factory";
 
-const API = `${ApiConfig.API_BASE_URL}/api/v1/operations`;
+const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 10_000;
 
 const STATUS_FILTERS = [
@@ -51,11 +51,12 @@ export default function CoordPlansListPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const url = new URL(`${API}/plans`, window.location.origin);
-      if (status && status !== "any") url.searchParams.set("status", status);
-      const res = await fetch(url.toString());
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body: PlansListResponse = await res.json();
+      const qs = new URLSearchParams();
+      if (status && status !== "any") qs.set("status", status);
+      const suffix = qs.toString() ? `?${qs.toString()}` : "";
+      const body = await httpClient.get<PlansListResponse>(
+        `${API}/plans${suffix}`
+      );
       setData(body);
       setError(null);
     } catch (e) {

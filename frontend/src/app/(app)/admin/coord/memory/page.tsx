@@ -26,9 +26,9 @@ import {
   MemoryCard,
   type CoordMemoryRow,
 } from "@/components/admin/coord/MemoryCard";
-import { ApiConfig } from "@/services/api-config";
+import { httpClient } from "@/services/service-factory";
 
-const API = `${ApiConfig.API_BASE_URL}/api/v1/operations`;
+const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 15_000;
 
 interface MemoryListResponse {
@@ -59,9 +59,9 @@ export default function CoordMemoryListPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const res = await fetch(`${API}/memory/list`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body: MemoryListResponse = await res.json();
+      const body = await httpClient.get<MemoryListResponse>(
+        `${API}/memory/list`
+      );
       setData(body);
       setError(null);
     } catch (e) {

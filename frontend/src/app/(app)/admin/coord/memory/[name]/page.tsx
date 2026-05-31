@@ -55,9 +55,9 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { ApiConfig } from "@/services/api-config";
+import { httpClient } from "@/services/service-factory";
 
-const API = `${ApiConfig.API_BASE_URL}/api/v1/operations`;
+const API = "/api/v1/operations";
 
 interface MemoryVersionEntry {
   version: number;
@@ -99,9 +99,9 @@ export default function CoordMemoryDetailPage() {
   const fetchMemory = useCallback(async () => {
     if (!name) return;
     try {
-      const res = await fetch(`${API}/memory/${encodeURIComponent(name)}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body: CoordMemoryDetail = await res.json();
+      const body = await httpClient.get<CoordMemoryDetail>(
+        `${API}/memory/${encodeURIComponent(name)}`
+      );
       setMemory(body);
       setDraft(body.content ?? "");
       setError(null);
@@ -121,20 +121,12 @@ export default function CoordMemoryDetailPage() {
     if (!name) return;
     setSaving(true);
     try {
-      const res = await fetch(`${API}/memory/upsert`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name,
-          content: draft,
-          description: memory?.description ?? undefined,
-          type: memory?.type ?? undefined,
-        }),
+      await httpClient.post(`${API}/memory/upsert`, {
+        name,
+        content: draft,
+        description: memory?.description ?? undefined,
+        type: memory?.type ?? undefined,
       });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`HTTP ${res.status}: ${text.slice(0, 120)}`);
-      }
       toast.success("Memory saved (new version)");
       setEditing(false);
       await fetchMemory();
@@ -149,13 +141,7 @@ export default function CoordMemoryDetailPage() {
     if (!name) return;
     setDeleting(true);
     try {
-      const res = await fetch(`${API}/memory/${encodeURIComponent(name)}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`HTTP ${res.status}: ${text.slice(0, 120)}`);
-      }
+      await httpClient.delete(`${API}/memory/${encodeURIComponent(name)}`);
       toast.success("Memory tombstoned (recoverable via restore)");
       router.push("/admin/coord/memory");
     } catch (e) {

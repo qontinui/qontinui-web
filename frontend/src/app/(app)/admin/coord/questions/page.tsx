@@ -33,9 +33,9 @@ import {
   QuestionCard,
   type AgentQuestionRow,
 } from "@/components/admin/coord/QuestionCard";
-import { ApiConfig } from "@/services/api-config";
+import { httpClient } from "@/services/service-factory";
 
-const API = `${ApiConfig.API_BASE_URL}/api/v1/operations`;
+const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 10_000;
 const ANSWERED_LIMIT = 50;
 
@@ -52,9 +52,9 @@ export default function CoordQuestionsPage() {
 
   const fetchPending = useCallback(async () => {
     try {
-      const res = await fetch(`${API}/agent-questions/pending`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body = await res.json();
+      const body = await httpClient.get<unknown>(
+        `${API}/agent-questions/pending`
+      );
       if (Array.isArray(body)) {
         setPending(body as AgentQuestionRow[]);
       } else {
@@ -71,19 +71,12 @@ export default function CoordQuestionsPage() {
 
   const fetchAnswered = useCallback(async () => {
     try {
-      const res = await fetch(
+      // The answered endpoint may not be wired yet on every coord build;
+      // any failure (incl. 404/501) is tolerated by the catch below, which
+      // leaves the answered list empty so the pending tab still works.
+      const body = await httpClient.get<unknown>(
         `${API}/agent-questions/answered?limit=${ANSWERED_LIMIT}`
       );
-      if (!res.ok) {
-        // Answered endpoint may not be wired yet on every coord build;
-        // tolerate a 404/501 silently so the pending tab still works.
-        if (res.status === 404 || res.status === 501) {
-          setAnswered([]);
-          return;
-        }
-        throw new Error(`HTTP ${res.status}`);
-      }
-      const body = await res.json();
       if (Array.isArray(body)) {
         setAnswered(body as AgentQuestionRow[]);
       } else {

@@ -31,9 +31,9 @@ import {
   PullDecisionCard,
   type PullDecisionRow,
 } from "@/components/admin/coord/PullDecisionCard";
-import { ApiConfig } from "@/services/api-config";
+import { httpClient } from "@/services/service-factory";
 
-const API = `${ApiConfig.API_BASE_URL}/api/v1/operations`;
+const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 10_000;
 
 interface PullDecisionsResponse {
@@ -59,10 +59,10 @@ export default function CoordPullDecisionsPage() {
       if (deviceId) qs.set("device_id", deviceId);
       if (repo) qs.set("repo", repo);
       const suffix = qs.toString() ? `?${qs.toString()}` : "";
-      const res = await fetch(`${API}/coord/pull-decisions${suffix}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       // Tolerate both the `{resolutions: [...]}` envelope and a bare array.
-      const body = await res.json();
+      const body = await httpClient.get<unknown>(
+        `${API}/coord/pull-decisions${suffix}`
+      );
       const normalized: PullDecisionsResponse = Array.isArray(body)
         ? { resolutions: body as PullDecisionRow[] }
         : (body as PullDecisionsResponse);

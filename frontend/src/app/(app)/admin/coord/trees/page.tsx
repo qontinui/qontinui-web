@@ -27,9 +27,9 @@ import {
   TreeCard,
   type PrimaryTreeRow,
 } from "@/components/admin/coord/TreeCard";
-import { ApiConfig } from "@/services/api-config";
+import { httpClient } from "@/services/service-factory";
 
-const API = `${ApiConfig.API_BASE_URL}/api/v1/operations`;
+const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 10_000;
 
 interface ContentionRow {
@@ -61,11 +61,9 @@ function TreesByDevicePanel({ initialDeviceId }: { initialDeviceId: string }) {
     }
     setLoading(true);
     try {
-      const res = await fetch(
+      const body = await httpClient.get<TreesByDeviceResponse>(
         `${API}/trees/by-device/${encodeURIComponent(deviceId)}`
       );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body: TreesByDeviceResponse = await res.json();
       setData(body);
       setError(null);
     } catch (e) {
@@ -148,9 +146,9 @@ function ContentionPanel() {
 
   const fetchData = useCallback(async () => {
     try {
-      const res = await fetch(`${API}/trees/contention`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body: ContentionResponse = await res.json();
+      const body = await httpClient.get<ContentionResponse>(
+        `${API}/trees/contention`
+      );
       setData(body);
       setError(null);
     } catch (e) {

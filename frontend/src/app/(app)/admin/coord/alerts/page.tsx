@@ -24,9 +24,9 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, Filter, RefreshCw } from "lucide-react";
 import { AlertCard, type CoordAlertRow } from "@/components/admin/coord/AlertCard";
-import { ApiConfig } from "@/services/api-config";
+import { httpClient } from "@/services/service-factory";
 
-const API = `${ApiConfig.API_BASE_URL}/api/v1/operations`;
+const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 10_000;
 
 const SEVERITIES = [
@@ -58,18 +58,18 @@ export default function CoordAlertsPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const url = new URL(`${API}/alerts`, window.location.origin);
-      url.searchParams.set("include_resolved", String(includeResolved));
-      if (severity !== "any") url.searchParams.set("severity", severity);
-      if (kind !== "any") url.searchParams.set("kind", kind);
-      const res = await fetch(url.toString());
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body = await res.json();
+      const qs = new URLSearchParams();
+      qs.set("include_resolved", String(includeResolved));
+      if (severity !== "any") qs.set("severity", severity);
+      if (kind !== "any") qs.set("kind", kind);
+      const body = await httpClient.get<unknown>(
+        `${API}/alerts?${qs.toString()}`
+      );
       // Tolerate both `{alerts: [...]}` and bare list shapes.
       if (Array.isArray(body)) {
         setData({ alerts: body });
       } else {
-        setData(body);
+        setData(body as AlertsResponse);
       }
       setError(null);
     } catch (e) {

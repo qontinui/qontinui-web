@@ -27,9 +27,9 @@ import {
   type AgentLogRow,
 } from "@/components/admin/coord/LogRow";
 import { cn } from "@/lib/utils";
-import { ApiConfig } from "@/services/api-config";
+import { httpClient } from "@/services/service-factory";
 
-const API = `${ApiConfig.API_BASE_URL}/api/v1/operations`;
+const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 5_000;
 const RECENT_LIMIT = 200;
 const ALL_LEVELS = ["trace", "debug", "info", "warn", "error"] as const;
@@ -52,15 +52,15 @@ export default function CoordAgentsRecentPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const url = new URL(`${API}/agent-logs/recent`, window.location.origin);
-      url.searchParams.set("limit", String(RECENT_LIMIT));
-      const res = await fetch(url.toString());
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body = await res.json();
+      const qs = new URLSearchParams();
+      qs.set("limit", String(RECENT_LIMIT));
+      const body = await httpClient.get<unknown>(
+        `${API}/agent-logs/recent?${qs.toString()}`
+      );
       // Tolerate bare list shape too.
       const normalized: RecentResponse = Array.isArray(body)
         ? { logs: body }
-        : body;
+        : (body as RecentResponse);
       setData(normalized);
       setError(null);
     } catch (e) {

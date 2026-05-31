@@ -17,9 +17,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { ExternalLink, HeartPulse, RefreshCw } from "lucide-react";
 import { FleetOverview } from "@/components/operations";
-import { ApiConfig } from "@/services/api-config";
+import { httpClient } from "@/services/service-factory";
 
-const API = `${ApiConfig.API_BASE_URL}/api/v1/operations`;
+const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 10_000;
 
 interface FleetHealthDevice {
@@ -40,9 +40,9 @@ function HealthSummaryCard() {
 
   const fetchData = useCallback(async () => {
     try {
-      const res = await fetch(`${API}/fleet/health`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body: FleetHealthPayload = await res.json();
+      const body = await httpClient.get<FleetHealthPayload>(
+        `${API}/fleet/health`
+      );
       setData(body);
       setError(null);
     } catch (e) {
