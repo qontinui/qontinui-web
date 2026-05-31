@@ -2,7 +2,7 @@
   "version": "1.0",
   "id": "runners",
   "name": "Runners",
-  "description": "Runner Management page (/runners) — manage paired devices, session history, and auth tokens. Authored against the empty SPEC_CI test account, which has no paired devices: the page renders its header, the tab strip, the Devices panel, and the 'No Registered Devices' empty state with the download-and-pair onboarding steps. Asserts always-present structure, not device rows.",
+  "description": "Runner Management page (/runners) — manage paired devices, session history, and auth tokens. Asserts always-present structure: the page header, the tab strip (Devices / Session History / Auth Tokens), and the Devices panel (heading + online-only filter). Does NOT assert the empty 'No Registered Devices' state — the SPEC_CI account now has a paired device (since the device-registration / coord-HTTP boundary work), so that empty slice is no longer reachable in CI. Asserts always-present structure, not volatile device rows.",
   "provenance": {
     "source": "ai-generated",
     "appId": "qontinui-web"
@@ -94,59 +94,6 @@
             "type": "search",
             "criteria": { "id": "devices-online-only" },
             "label": "Online-only toggle"
-          },
-          "source": "ai-generated",
-          "reviewed": false,
-          "enabled": true
-        }
-      ],
-      "provenance": { "source": "ai-generated" }
-    },
-    {
-      "id": "runners-empty",
-      "name": "No registered devices empty state",
-      "description": "Empty-state slice shown when no devices are paired (the SPEC_CI test-account default): the 'No Registered Devices' headline and the Download Runner onboarding affordance.",
-      "assertions": [
-        {
-          "id": "runners-empty-elem-0",
-          "description": "h3 'No Registered Devices' headlines the empty state.",
-          "category": "element-presence",
-          "severity": "critical",
-          "assertionType": "exists",
-          "target": {
-            "type": "search",
-            "criteria": { "id": "heading-3-no-registered-devices" },
-            "label": "No Registered Devices heading"
-          },
-          "source": "ai-generated",
-          "reviewed": false,
-          "enabled": true
-        },
-        {
-          "id": "runners-empty-elem-1",
-          "description": "Empty-state hint explains no devices are paired yet.",
-          "category": "element-presence",
-          "severity": "warning",
-          "assertionType": "exists",
-          "target": {
-            "type": "search",
-            "criteria": { "id": "content-paragraph-you-havent-paired-an-0" },
-            "label": "No-devices hint paragraph"
-          },
-          "source": "ai-generated",
-          "reviewed": false,
-          "enabled": true
-        },
-        {
-          "id": "runners-empty-elem-2",
-          "description": "Download Runner link starts the pair-a-device onboarding.",
-          "category": "element-presence",
-          "severity": "warning",
-          "assertionType": "exists",
-          "target": {
-            "type": "search",
-            "criteria": { "id": "link-download-runner" },
-            "label": "Download Runner link"
           },
           "source": "ai-generated",
           "reviewed": false,
