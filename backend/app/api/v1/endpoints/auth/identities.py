@@ -81,9 +81,7 @@ async def _resolve_username(current_user: User) -> str:
 
 async def _list_identities(username: str) -> IdentityListResponse:
     try:
-        raw = await asyncio.to_thread(
-            cognito_admin.list_user_identities, username
-        )
+        raw = await asyncio.to_thread(cognito_admin.list_user_identities, username)
     except CognitoAdminError as exc:
         logger.error("identities_list_failed", error=str(exc))
         raise HTTPException(
@@ -338,9 +336,7 @@ async def unlink_identity(
             target.user_id,
         )
     except CognitoAdminError as exc:
-        logger.error(
-            "identities_unlink_failed", provider=provider, error=str(exc)
-        )
+        logger.error("identities_unlink_failed", provider=provider, error=str(exc))
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Could not unlink the identity.",

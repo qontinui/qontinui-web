@@ -141,9 +141,7 @@ def list_user_identities(username: str) -> list[dict[str, Any]]:
     try:
         resp = client.admin_get_user(UserPoolId=_pool_id(), Username=username)
     except (BotoCoreError, ClientError) as exc:
-        logger.error(
-            "cognito_admin_get_user_failed", username=username, error=str(exc)
-        )
+        logger.error("cognito_admin_get_user_failed", username=username, error=str(exc))
         raise CognitoAdminError(f"AdminGetUser failed: {exc}") from exc
 
     attrs = _attributes_to_dict(resp.get("UserAttributes") or [])
@@ -284,9 +282,7 @@ def unlink_provider(
             source_provider=source_provider,
             error=str(exc),
         )
-        raise CognitoAdminError(
-            f"AdminDisableProviderForUser failed: {exc}"
-        ) from exc
+        raise CognitoAdminError(f"AdminDisableProviderForUser failed: {exc}") from exc
 
     logger.info(
         "cognito_unlink_provider_ok",
@@ -316,9 +312,7 @@ def delete_federated_user(username: str) -> None:
         if "UserNotFoundException" in message or "not found" in message.lower():
             logger.info("cognito_delete_user_absent", username=username)
             return
-        logger.error(
-            "cognito_delete_user_failed", username=username, error=message
-        )
+        logger.error("cognito_delete_user_failed", username=username, error=message)
         raise CognitoAdminError(f"AdminDeleteUser failed: {exc}") from exc
     except BotoCoreError as exc:
         raise CognitoAdminError(f"AdminDeleteUser failed: {exc}") from exc
