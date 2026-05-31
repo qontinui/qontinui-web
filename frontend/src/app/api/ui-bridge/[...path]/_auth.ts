@@ -115,7 +115,7 @@ function backendBaseUrl(): string {
 }
 
 export type AuthResult =
-  | { ok: true; userId: string; tokenKeyHash: string }
+  | { ok: true; userId: string; tokenKeyHash: string; token: string }
   | { ok: false; status: 401 };
 
 /**
@@ -143,7 +143,7 @@ export async function authenticateBridgeRequest(
   const now = Date.now();
   const cached = positiveCache.get(key);
   if (cached && cached.expiresAt > now) {
-    return { ok: true, userId: cached.userId, tokenKeyHash: key };
+    return { ok: true, userId: cached.userId, tokenKeyHash: key, token };
   }
 
   const base = backendBaseUrl();
@@ -174,7 +174,7 @@ export async function authenticateBridgeRequest(
   }
 
   positiveCache.set(key, { userId, expiresAt: now + POSITIVE_TTL_MS });
-  return { ok: true, userId, tokenKeyHash: key };
+  return { ok: true, userId, tokenKeyHash: key, token };
 }
 
 function extractToken(request: NextRequest): string | null {

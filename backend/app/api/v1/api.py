@@ -33,6 +33,7 @@ from app.api.v1.endpoints import (
     capture,
     chat_sessions,
     clipboard,
+    co_pilot_activity,
     code_execution,
     code_packages,
     collaboration,
@@ -125,6 +126,14 @@ api_router.include_router(health.router, tags=["health"])
 api_router.include_router(public.router, prefix="/public", tags=["public"])
 api_router.include_router(auth_pkg.router, prefix="/auth", tags=["auth"])
 api_router.include_router(users.router, prefix="/users", tags=["users"])
+# UI Bridge co-pilot activity feed (§4.8 of production-safe UI Bridge plan).
+# Mounted as a sibling under /users/me so the Next.js relay's
+# server-to-server insert lives under the caller's own URL space.
+api_router.include_router(
+    co_pilot_activity.router,
+    prefix="/users/me/co-pilot",
+    tags=["co-pilot-activity"],
+)
 api_router.include_router(projects.router, prefix="/projects", tags=["projects"])
 api_router.include_router(project_sync.router, tags=["project-sync"])
 api_router.include_router(

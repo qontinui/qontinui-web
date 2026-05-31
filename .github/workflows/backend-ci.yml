@@ -195,6 +195,8 @@ jobs:
             -c "CREATE SCHEMA IF NOT EXISTS auth;" \
             -c "CREATE SCHEMA IF NOT EXISTS cloud;" \
             -c "CREATE SCHEMA IF NOT EXISTS coord;" \
+            -c "CREATE SCHEMA IF NOT EXISTS strategy;" \
+            -c "CREATE SCHEMA IF NOT EXISTS web;" \
             -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
       - name: Run tests with coverage
