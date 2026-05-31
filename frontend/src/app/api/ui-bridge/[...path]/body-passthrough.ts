@@ -41,14 +41,52 @@ export async function passThroughBody(
   request: NextRequest,
   method: string
 ): Promise<NextRequest> {
-  if (!BODY_METHODS.has(method)) return request;
+  const { request: out } = await passThroughBodyWithPeek(request, method);
+  return out;
+}
+
+/**
+ * Pre-read the request body once and return both the fresh `NextRequest`
+ * AND a best-effort parsed JSON peek of the body — without reading the
+ * bytes twice. The peek lets the audit-log middleware extract a safe
+ * summary (elementId, action, textLength) on the same single read.
+ *
+ * Returns `{request, parsedBody: undefined}` when:
+ *   - The method has no body (GET/DELETE/HEAD/OPTIONS).
+ *   - The body is empty.
+ *   - Reading the body throws.
+ *   - The body is non-JSON / unparseable.
+ *
+ * The returned `request` carries the same bytes as the original (re-wrapped
+ * with `Content-Type: application/json`) so the SDK's `request.json()`
+ * still works downstream.
+ */
+export async function passThroughBodyWithPeek(
+  request: NextRequest,
+  method: string
+): Promise<{ request: NextRequest; parsedBody: unknown | undefined }> {
+  if (!BODY_METHODS.has(method)) {
+    return { request, parsedBody: undefined };
+  }
   let raw: ArrayBuffer;
   try {
     raw = await request.arrayBuffer();
   } catch {
-    return request;
+    return { request, parsedBody: undefined };
   }
-  if (raw.byteLength === 0) return request;
+  if (raw.byteLength === 0) {
+    return { request, parsedBody: undefined };
+  }
+
+  // Best-effort JSON peek. If the body isn't JSON the audit summary just
+  // gets `undefined` here and the row records the command without a
+  // summary — never blocks the request.
+  let parsedBody: unknown | undefined;
+  try {
+    parsedBody = JSON.parse(Buffer.from(raw).toString("utf-8"));
+  } catch {
+    parsedBody = undefined;
+  }
 
   // Copy ALL inbound headers, then force Content-Type to JSON. Some clients
   // (curl without `-H` for instance) post bodies with no Content-Type at
@@ -66,9 +104,10 @@ export async function passThroughBody(
     input: string | URL,
     init?: RequestInit
   ) => NextRequest;
-  return new NextRequestCtor(request.url, {
+  const out = new NextRequestCtor(request.url, {
     method,
     headers,
     body: raw,
   });
+  return { request: out, parsedBody };
 }

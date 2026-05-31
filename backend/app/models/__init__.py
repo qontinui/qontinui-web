@@ -19,6 +19,7 @@ from app.models.automation_log import AutomationLog
 from app.models.automation_screenshot import AutomationScreenshot
 from app.models.automation_session import AutomationSession
 from app.models.automation_video import AutomationVideo
+from app.models.bridge_audit_log import BridgeAuditLog
 from app.models.capture import (
     CaptureAction,
     CaptureDetectedElement,
@@ -278,6 +279,8 @@ __all__ = [
     "SessionActivity",
     # Audit
     "AuditLog",
+    # UI Bridge co-pilot audit (§4.8)
+    "BridgeAuditLog",
     # Analytics
     "AnalyticsEvent",
     # Detected Issues

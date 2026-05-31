@@ -46,7 +46,7 @@ import {
 } from "@qontinui/ui-bridge/server";
 import { handlers, relay } from "@/lib/ui-bridge/relay";
 import { NextRequest } from "next/server";
-import { passThroughBody } from "./body-passthrough";
+import { passThroughBodyWithPeek } from "./body-passthrough";
 import {
   isWebRouteRejected,
   forbiddenWebRouteResponse,
@@ -58,6 +58,19 @@ import {
   originForbiddenResponse,
   unauthenticatedResponse,
 } from "./_auth";
+import {
+  commandNameFromPath,
+  isAuditablePath,
+  recordAudit,
+  summarizeBody,
+  tabIdFor,
+  targetElementIdFor,
+} from "./_audit";
+import {
+  checkRateLimit,
+  kindForMethod,
+  rateLimitedResponse,
+} from "./_rate-limit";
 
 const sseManager = new SSEManager();
 
@@ -259,6 +272,7 @@ async function wrapHandler(
   // can't access it" from "no such route" — both must yield the same
   // 401 without any route-existence signal.
   let callerUserId: string | null = null;
+  let callerToken: string | null = null;
   if (isAuthGateEnabled()) {
     if (!isAllowedOrigin(request.headers.get("origin"))) {
       return originForbiddenResponse();
@@ -268,6 +282,23 @@ async function wrapHandler(
       return unauthenticatedResponse();
     }
     callerUserId = auth.userId;
+    callerToken = auth.token;
+  }
+
+  // Per-user rate limit (§4.8). Runs AFTER auth (we need a userId to
+  // key against) and BEFORE the body-preservation pass-through so the
+  // 429 path short-circuits as cheaply as possible. Only active when
+  // the auth gate is on — in admin/local-dev mode there's no userId to
+  // key against and the limit doesn't apply.
+  //
+  // The check is fail-OPEN when Redis is unreachable: `checkRateLimit`
+  // returns `allowed: true, redisOffline: true` and we let the request
+  // through. See `_rate-limit.ts::checkRateLimit` for the rationale.
+  if (callerUserId) {
+    const rl = await checkRateLimit(callerUserId, kindForMethod(method));
+    if (!rl.allowed) {
+      return rateLimitedResponse(rl);
+    }
   }
 
   // Hard reject paths forbidden on a DEPLOYED web surface (e.g.
@@ -306,7 +337,14 @@ async function wrapHandler(
   // `Content-Type: application/json` header. Closes the field-strip class
   // of bug observed on Vercel deploys where e.g. a `{text:"X"}` body
   // arrived at the relay with `text` missing.
-  const bodyPreserved = await passThroughBody(request, method);
+  //
+  // We use `passThroughBodyWithPeek` (a `passThroughBody` superset) so we
+  // get a best-effort parsed JSON copy back on the same read — needed
+  // for the audit-log safe summary in the auditable-write branch below.
+  const { request: bodyPreserved, parsedBody } = await passThroughBodyWithPeek(
+    request,
+    method,
+  );
 
   // Per-user tab scoping (§4.2, SDK ≥ 0.12.0): when the auth gate
   // produced an authenticated userId, splice it onto the forwarded
@@ -320,7 +358,44 @@ async function wrapHandler(
     ? withCallerUserId(bodyPreserved, callerUserId)
     : bodyPreserved;
 
-  return handler(forwardRequest, { params: { path: params.path.join("/") } });
+  const response = await handler(forwardRequest, {
+    params: { path: params.path.join("/") },
+  });
+
+  // Audit log (§4.8). Record one row per WRITE command the user issued
+  // through the relay. Fire-and-forget: the `recordAudit` call doesn't
+  // block the response and never throws — a failure is logged at
+  // warn-level inside `recordAudit` itself. We only audit when:
+  //
+  //   - the auth gate is on (we need a verified userId + Bearer to write),
+  //   - the (path, method) classifies as auditable (`/control/*` or
+  //     `/ai/*` POST/PUT/DELETE excluding render-log + transport endpoints),
+  //
+  // …so reads (every GET, including `/control/snapshot` and `/tabs`) and
+  // SDK transport endpoints (`/heartbeat`, `/commands`, `/commands/stream`)
+  // never hit the table — keeping the activity feed about user-issued
+  // commands, not the SDK's own bookkeeping.
+  if (callerUserId && callerToken && isAuditablePath(path, method as HttpMethod)) {
+    const commandName = commandNameFromPath(path);
+    const summary = summarizeBody(parsedBody, commandName);
+    const targetElementId = targetElementIdFor(path, parsedBody);
+    const tabId = tabIdFor(parsedBody, request.headers.get("x-caller-tab-id"));
+    // Intentionally not awaited; per the spec this is fire-and-forget.
+    void recordAudit({
+      token: callerToken,
+      sessionId: null,
+      tabId,
+      commandName,
+      targetElementId,
+      path,
+      method,
+      origin: request.headers.get("origin"),
+      statusCode: response.status,
+      payloadSummary: summary,
+    });
+  }
+
+  return response;
 }
 
 /**
