@@ -49,7 +49,15 @@ export function ServerForm({
   };
 
   return (
-    <div className="rounded-lg border border-primary/30">
+    // §4.6 — form-level redaction. This form's `headers` Textarea routinely
+    // carries `Authorization: Bearer <token>` JSON, and stdio command/args
+    // can contain inline secrets. Wrap the whole subtree so the UI Bridge
+    // SDK's snapshot pipeline redacts every value field; the SDK walks
+    // ancestors, so individual inputs don't each need the marker.
+    <div
+      className="rounded-lg border border-primary/30"
+      data-bridge-redact="true"
+    >
       <div className="px-4 py-3 border-b border-border bg-muted/50">
         <h3 className="text-sm font-medium">
           {isEditing ? "Edit Server" : "Add Server"}
