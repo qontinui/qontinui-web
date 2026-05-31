@@ -30,9 +30,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ArrowLeft, FileText, GitCommit, History } from "lucide-react";
-import { ApiConfig } from "@/services/api-config";
+import { httpClient } from "@/services/service-factory";
 
-const API = `${ApiConfig.API_BASE_URL}/api/v1/operations`;
+const API = "/api/v1/operations";
 
 const TRANSITION_TARGETS = [
   "drafted",
@@ -86,16 +86,18 @@ export default function CoordPlanDetailPage() {
   const fetchAll = useCallback(async () => {
     if (!slug) return;
     try {
-      const [planRes, historyRes] = await Promise.all([
-        fetch(`${API}/plans/${encodeURIComponent(slug)}`),
-        fetch(`${API}/plans/${encodeURIComponent(slug)}/history`),
-      ]);
-      if (!planRes.ok) throw new Error(`plan HTTP ${planRes.status}`);
-      const planBody: CoordPlanDetail = await planRes.json();
+      const planBody = await httpClient.get<CoordPlanDetail>(
+        `${API}/plans/${encodeURIComponent(slug)}`
+      );
       setPlan(planBody);
-      if (historyRes.ok) {
-        const historyBody: PlanHistoryResponse = await historyRes.json();
+      // History is best-effort — don't fail the whole page if it errors.
+      try {
+        const historyBody = await httpClient.get<PlanHistoryResponse>(
+          `${API}/plans/${encodeURIComponent(slug)}/history`
+        );
         setHistory(historyBody.history ?? []);
+      } catch {
+        // ignore — history is supplementary
       }
       setError(null);
     } catch (e) {
@@ -114,21 +116,13 @@ export default function CoordPlanDetailPage() {
     if (!slug || !newStatus) return;
     setTransitioning(true);
     try {
-      const res = await fetch(
+      await httpClient.post(
         `${API}/plans/${encodeURIComponent(slug)}/transition`,
         {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            status: newStatus,
-            note: note || undefined,
-          }),
+          status: newStatus,
+          note: note || undefined,
         }
       );
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`HTTP ${res.status}: ${text.slice(0, 120)}`);
-      }
       toast.success(`Plan transitioned to ${newStatus}`);
       setNote("");
       await fetchAll();

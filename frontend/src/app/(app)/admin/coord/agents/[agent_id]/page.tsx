@@ -44,9 +44,9 @@ import {
   type AgentLogRow,
 } from "@/components/admin/coord/LogRow";
 import { cn } from "@/lib/utils";
-import { ApiConfig } from "@/services/api-config";
+import { httpClient } from "@/services/service-factory";
 
-const API = `${ApiConfig.API_BASE_URL}/api/v1/operations`;
+const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 5_000;
 const FETCH_LIMIT = 500;
 const ALL_LEVELS = ["trace", "debug", "info", "warn", "error"] as const;
@@ -96,24 +96,21 @@ export default function CoordAgentLogPage() {
   const fetchData = useCallback(async () => {
     if (!agentId) return;
     try {
-      const url = new URL(
-        `${API}/agent-logs/by-agent/${encodeURIComponent(agentId)}`,
-        window.location.origin,
-      );
-      url.searchParams.set("limit", String(FETCH_LIMIT));
+      const qs = new URLSearchParams();
+      qs.set("limit", String(FETCH_LIMIT));
       const sinceOpt = SINCE_OPTIONS.find((o) => o.value === sinceKey);
       if (sinceOpt?.minutes != null) {
         const sinceIso = new Date(
           Date.now() - sinceOpt.minutes * 60_000,
         ).toISOString();
-        url.searchParams.set("since", sinceIso);
+        qs.set("since", sinceIso);
       }
-      const res = await fetch(url.toString());
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body = await res.json();
+      const body = await httpClient.get<unknown>(
+        `${API}/agent-logs/by-agent/${encodeURIComponent(agentId)}?${qs.toString()}`,
+      );
       const normalized: ByAgentResponse = Array.isArray(body)
         ? { logs: body }
-        : body;
+        : (body as ByAgentResponse);
       setData(normalized);
       setError(null);
     } catch (e) {

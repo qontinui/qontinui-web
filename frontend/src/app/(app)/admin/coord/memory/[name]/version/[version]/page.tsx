@@ -37,9 +37,9 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { ArrowLeft, BookOpen, RotateCcw } from "lucide-react";
-import { ApiConfig } from "@/services/api-config";
+import { httpClient } from "@/services/service-factory";
 
-const API = `${ApiConfig.API_BASE_URL}/api/v1/operations`;
+const API = "/api/v1/operations";
 
 interface CoordMemoryVersionDetail {
   name: string;
@@ -75,11 +75,9 @@ export default function CoordMemoryVersionPage() {
   const fetchVersion = useCallback(async () => {
     if (!name || !version) return;
     try {
-      const res = await fetch(
+      const body = await httpClient.get<CoordMemoryVersionDetail>(
         `${API}/memory/${encodeURIComponent(name)}/version/${encodeURIComponent(version)}`
       );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body: CoordMemoryVersionDetail = await res.json();
       setEntry(body);
       setError(null);
     } catch (e) {
@@ -98,18 +96,10 @@ export default function CoordMemoryVersionPage() {
     if (!name || !version) return;
     setRestoring(true);
     try {
-      const res = await fetch(
+      await httpClient.post(
         `${API}/memory/${encodeURIComponent(name)}/restore`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ version: Number(version) }),
-        }
+        { version: Number(version) }
       );
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`HTTP ${res.status}: ${text.slice(0, 120)}`);
-      }
       toast.success(`Restored v${version} as the new head version`);
       router.push(`/admin/coord/memory/${encodeURIComponent(name)}`);
     } catch (e) {

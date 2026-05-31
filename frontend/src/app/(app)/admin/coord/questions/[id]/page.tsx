@@ -36,14 +36,14 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { cn } from "@/lib/utils";
-import { ApiConfig } from "@/services/api-config";
+import { httpClient } from "@/services/service-factory";
 import {
   formatRelative,
   type AgentQuestionOption,
   type AgentQuestionRow,
 } from "@/components/admin/coord/QuestionCard";
 
-const API = `${ApiConfig.API_BASE_URL}/api/v1/operations`;
+const API = "/api/v1/operations";
 
 function normalizeOptions(
   raw: AgentQuestionRow["options"]
@@ -78,11 +78,9 @@ export default function CoordQuestionDetailPage() {
   const fetchOne = useCallback(async () => {
     if (!id) return;
     try {
-      const res = await fetch(
+      const body = await httpClient.get<AgentQuestionRow>(
         `${API}/agent-questions/${encodeURIComponent(id)}`
       );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body = (await res.json()) as AgentQuestionRow;
       setQuestion(body);
       setError(null);
     } catch (e) {
@@ -101,21 +99,13 @@ export default function CoordQuestionDetailPage() {
     if (!id || !response.trim()) return;
     setSubmitting(true);
     try {
-      const res = await fetch(
+      await httpClient.post(
         `${API}/agent-questions/${encodeURIComponent(id)}/respond`,
         {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            response: response.trim(),
-            responded_by_operator: user?.email ?? "operator",
-          }),
+          response: response.trim(),
+          responded_by_operator: user?.email ?? "operator",
         }
       );
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`HTTP ${res.status}: ${text.slice(0, 160)}`);
-      }
       toast.success("Response sent to agent");
       router.push("/admin/coord/questions");
     } catch (e) {

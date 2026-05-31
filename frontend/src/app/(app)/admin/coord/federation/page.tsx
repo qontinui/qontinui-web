@@ -24,9 +24,9 @@ import {
   GitMerge,
   RefreshCw,
 } from "lucide-react";
-import { ApiConfig } from "@/services/api-config";
+import { httpClient } from "@/services/service-factory";
 
-const API = `${ApiConfig.API_BASE_URL}/api/v1/operations`;
+const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 30_000;
 
 // ---- Types ----------------------------------------------------------------
@@ -192,9 +192,9 @@ export default function CoordFederationPage() {
       const qs = new URLSearchParams();
       if (since) qs.set("since", since);
       qs.set("limit", "200");
-      const res = await fetch(`${API}/federation/reports?${qs.toString()}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body: FederationReportsResponse = await res.json();
+      const body = await httpClient.get<FederationReportsResponse>(
+        `${API}/federation/reports?${qs.toString()}`
+      );
       setReports(body.reports ?? body.items ?? []);
       setError(null);
     } catch (e) {

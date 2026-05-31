@@ -18,9 +18,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { History, RefreshCw, FileCheck, Archive } from "lucide-react";
 import { PlanCard, type CoordPlanRow } from "@/components/admin/coord/PlanCard";
-import { ApiConfig } from "@/services/api-config";
+import { httpClient } from "@/services/service-factory";
 
-const API = `${ApiConfig.API_BASE_URL}/api/v1/operations`;
+const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 30_000;
 
 function HistorySection({
@@ -40,12 +40,12 @@ function HistorySection({
 
   const fetchData = useCallback(async () => {
     try {
-      const url = new URL(`${API}/plans`, window.location.origin);
-      url.searchParams.set("status", status);
-      url.searchParams.set("limit", "50");
-      const res = await fetch(url.toString());
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body = await res.json();
+      const qs = new URLSearchParams();
+      qs.set("status", status);
+      qs.set("limit", "50");
+      const body = await httpClient.get<{ plans?: CoordPlanRow[] }>(
+        `${API}/plans?${qs.toString()}`
+      );
       setPlans(body.plans ?? []);
       setError(null);
     } catch (e) {

@@ -27,9 +27,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { RefreshCw, Scale } from "lucide-react";
-import { ApiConfig } from "@/services/api-config";
+import { httpClient } from "@/services/service-factory";
 
-const API = `${ApiConfig.API_BASE_URL}/api/v1/operations`;
+const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 30_000;
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -104,11 +104,9 @@ export default function CoordPoliciesPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const res = await fetch(
+      const body = await httpClient.get<FleetResponse>(
         `${API}/coord/next-step-settings/fleet`
       );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body: FleetResponse = await res.json();
       setData(body);
       setError(null);
     } catch (e) {
