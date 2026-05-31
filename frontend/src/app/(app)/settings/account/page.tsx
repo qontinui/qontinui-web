@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRunnerHealth, runnerApi, type DeviceInfo } from "@/lib/runner-api";
 import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
+import { ConnectedAccounts } from "./_components/ConnectedAccounts";
 import { useAuth } from "@/contexts/auth-context";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -58,8 +59,27 @@ export default function AccountSettingsPage() {
     );
   }
 
+  // When the runner is offline, the runner-specific cards can't be shown, but
+  // account identity + connected-accounts management are independent of the
+  // runner (they hit the cloud API), so keep them available.
   if (isOffline) {
-    return <RunnerOfflineState />;
+    return (
+      <div className="p-6 space-y-6">
+        <div>
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <User className="size-5" />
+            Account
+          </h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Identity information and connected accounts
+          </p>
+        </div>
+        <Suspense fallback={null}>
+          <ConnectedAccounts />
+        </Suspense>
+        <RunnerOfflineState />
+      </div>
+    );
   }
 
   const isConnected = !!health;
@@ -208,6 +228,11 @@ export default function AccountSettingsPage() {
           </div>
         </div>
       )}
+
+      {/* Connected accounts — cross-IdP identity linking */}
+      <Suspense fallback={null}>
+        <ConnectedAccounts />
+      </Suspense>
 
       {/* Connected Runner */}
       <div className="rounded-lg border border-border">

@@ -10,8 +10,10 @@ import { useAuth } from "@/contexts/auth-context";
 import {
   consumePkceState,
   exchangeCodeForTokens,
+  isLinkModeState,
   verifyStateAndExtractNext,
 } from "@/services/auth/cognito-oauth";
+import { linkIdentity } from "@/lib/api/identities";
 import { createLogger } from "@/lib/logger";
 
 const logger = createLogger("AuthCallback");
@@ -64,12 +66,41 @@ function AuthCallbackContent() {
         return;
       }
 
+      // Link mode vs login mode is decided BEFORE the CSRF check consumes the
+      // state, but `verifyStateAndExtractNext` still validates the full state
+      // string (marker included) so a tampered marker fails CSRF.
+      const linkMode = isLinkModeState(returnedState);
+
       try {
         // CSRF / replay guard + recover the optional post-login destination.
         const next = verifyStateAndExtractNext(returnedState);
 
         const tokens = await exchangeCodeForTokens(code);
 
+        // Single-use PKCE values are done either way — clear them now.
+        consumePkceState();
+
+        if (linkMode) {
+          // LINK MODE — connecting an ADDITIONAL IdP to the already signed-in
+          // canonical account.
+          //
+          // SECURITY (the load-bearing part of this whole feature): we must
+          // NOT establish a session from `tokens.id_token`. Calling
+          // `completeExternalLogin` would store the federated token as the
+          // session bearer and effectively log the user in AS the federated
+          // identity, clobbering their canonical session. Instead we POST the
+          // federated id_token to the link endpoint, which is authenticated by
+          // the EXISTING canonical bearer (`httpClient` attaches it). The
+          // federated token never touches token storage — it only rides in the
+          // request body — so the canonical session survives untouched.
+          await linkIdentity(tokens.id_token);
+
+          setStatus("success");
+          router.replace("/settings/account?connect=success");
+          return;
+        }
+
+        // LOGIN MODE — establish the session from the federated identity.
         // Send the ID token, NOT the access token, as the bearer. Only the
         // Cognito ID token carries the identity claims (`email`, `name`, `sub`)
         // the backend provisions the user from; the access token has none, so
@@ -82,9 +113,6 @@ function AuthCallbackContent() {
           expires_in: tokens.expires_in,
         });
 
-        // Single-use PKCE values are done — clear them.
-        consumePkceState();
-
         setStatus("success");
 
         const dest = next && next.startsWith("/") ? next : "/dashboard";
@@ -92,6 +120,23 @@ function AuthCallbackContent() {
       } catch (error: unknown) {
         consumePkceState();
         logger.error("Cognito callback failed:", error);
+
+        if (linkMode) {
+          // Surface the failure on the settings page (where the connect button
+          // lives) rather than the generic sign-in error card. The canonical
+          // session is intact — the user is still signed in — so send them back.
+          const reason =
+            error instanceof Error
+              ? error.message
+              : "The account could not be connected.";
+          router.replace(
+            `/settings/account?connect=error&reason=${encodeURIComponent(
+              reason
+            )}`
+          );
+          return;
+        }
+
         setStatus("error");
         setErrorMessage(
           error instanceof Error

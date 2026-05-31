@@ -51,6 +51,15 @@ const LOGOUT_ENDPOINT = `${COGNITO_HOSTED_UI_DOMAIN}/logout`;
 const PKCE_VERIFIER_KEY = "cognito_pkce_verifier";
 const PKCE_STATE_KEY = "cognito_oauth_state";
 
+// Marker, embedded in the OAuth `state`, that flags a "link mode" round-trip
+// (connecting an additional IdP to the ALREADY signed-in canonical account)
+// as opposed to a normal sign-in. The callback inspects this to decide whether
+// to establish a session (login) or POST the federated id_token to the link
+// endpoint WITHOUT clobbering the canonical session bearer. It is part of the
+// signed-against-itself `state` (verified by `verifyStateAndExtractNext`), so a
+// tampered marker fails the CSRF check rather than silently changing behaviour.
+const LINK_MODE_STATE_PREFIX = "link:";
+
 /** Cognito token endpoint response (public-client Authorization Code grant). */
 export interface CognitoTokenResponse {
   id_token: string;
@@ -141,15 +150,54 @@ export async function startCognitoLogin(
   provider?: CognitoProvider,
   next?: string
 ): Promise<void> {
-  const verifier = generateCodeVerifier();
-  const challenge = await deriveCodeChallenge(verifier);
-  const csrf = generateState();
-
   // `state` carries the CSRF token and (optionally) the post-login path. We
   // store only the CSRF token to compare on return; the path is read straight
   // from the returned state, but we also persist it so a mismatch can't smuggle
   // an attacker-chosen redirect.
+  const csrf = generateState();
   const stateValue = next ? `${csrf}.${encodeURIComponent(next)}` : csrf;
+  await beginAuthorize(provider, stateValue);
+}
+
+/**
+ * Begin a **link-mode** Authorization Code + PKCE round-trip: connect an
+ * additional federated IdP (Google / Microsoft / GitHub) to the account the
+ * user is ALREADY signed in to, WITHOUT logging them in as the federated
+ * identity. The only wire-level difference from `startCognitoLogin` is the
+ * `link:` marker baked into `state`; the callback reads it to branch.
+ *
+ * SECURITY: the federated `id_token` produced by this round-trip must NOT be
+ * stored as the session bearer (that would clobber the canonical session and
+ * effectively switch the user to the federated identity). The callback instead
+ * POSTs it to `/auth/identities/link` using the EXISTING canonical bearer. See
+ * `app/(marketing)/auth/callback/page.tsx`.
+ *
+ * Cognito always shows its credential prompt for the chosen IdP, so this links
+ * whichever account the user authenticates with at the IdP — it never silently
+ * links the current hosted-UI session.
+ */
+export async function startCognitoLink(
+  provider: CognitoProvider
+): Promise<void> {
+  const csrf = generateState();
+  // `link:<csrf>` — verified intact on return by `verifyStateAndExtractNext`
+  // (it compares the whole stored string), so the marker can't be tampered
+  // with without failing the CSRF check.
+  const stateValue = `${LINK_MODE_STATE_PREFIX}${csrf}`;
+  await beginAuthorize(provider, stateValue);
+}
+
+/**
+ * Shared authorize-URL builder + redirect for both login and link modes. Mints
+ * the PKCE verifier/challenge, stashes the verifier + the caller-built `state`
+ * in sessionStorage, and navigates to the Cognito hosted UI.
+ */
+async function beginAuthorize(
+  provider: CognitoProvider | undefined,
+  stateValue: string
+): Promise<void> {
+  const verifier = generateCodeVerifier();
+  const challenge = await deriveCodeChallenge(verifier);
 
   sessionStorage.setItem(PKCE_VERIFIER_KEY, verifier);
   sessionStorage.setItem(PKCE_STATE_KEY, stateValue);
@@ -168,6 +216,16 @@ export async function startCognitoLogin(
   }
 
   window.location.assign(`${AUTHORIZE_ENDPOINT}?${params.toString()}`);
+}
+
+/**
+ * Whether the `state` returned by Cognito marks a link-mode round-trip (an
+ * additional-IdP connect) rather than a normal sign-in. The callback uses this
+ * to decide whether to establish a session or link an identity. Returns false
+ * for `null` so a bare/direct callback hit is treated as login.
+ */
+export function isLinkModeState(returnedState: string | null): boolean {
+  return !!returnedState && returnedState.startsWith(LINK_MODE_STATE_PREFIX);
 }
 
 /**

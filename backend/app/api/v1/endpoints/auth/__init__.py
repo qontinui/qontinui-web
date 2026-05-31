@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from app.api.deps import get_current_active_user_async
 from app.api.v1.endpoints.auth.bootstrap import router as bootstrap_router
 from app.api.v1.endpoints.auth.devices import router as devices_router
+from app.api.v1.endpoints.auth.identities import router as identities_router
 from app.api.v1.endpoints.auth.verification import router as verification_router
 from app.auth.config import fastapi_users
 from app.models.user import User as UserModel
@@ -99,3 +100,5 @@ router.include_router(
 router.include_router(devices_router, tags=["auth"])
 router.include_router(verification_router, tags=["auth"])
 router.include_router(bootstrap_router, tags=["auth-bootstrap"])
+# Cross-IdP account linking (paths: /api/v1/auth/identities*).
+router.include_router(identities_router, tags=["auth-identities"])
