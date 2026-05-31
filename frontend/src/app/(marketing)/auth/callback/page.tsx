@@ -70,8 +70,14 @@ function AuthCallbackContent() {
 
         const tokens = await exchangeCodeForTokens(code);
 
+        // Send the ID token, NOT the access token, as the bearer. Only the
+        // Cognito ID token carries the identity claims (`email`, `name`, `sub`)
+        // the backend provisions the user from; the access token has none, so
+        // a federated (e.g. Google) sign-in would provision an email-less user
+        // and 500 on /users/me. The backend's verifier dual-accepts ID tokens
+        // (aud == client_id). See cognito_provision._extract_email.
         await completeExternalLogin({
-          access_token: tokens.access_token,
+          access_token: tokens.id_token,
           refresh_token: tokens.refresh_token,
           expires_in: tokens.expires_in,
         });
