@@ -1,4 +1,17 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+
+// purgeStaleSession only fires in remote-backend mode (a missing sessionStorage
+// Bearer is unambiguously stale only there — see the method's SCOPE doc). Mock
+// ApiConfig so individual tests can toggle the mode; default is remote (true).
+const { apiConfigMock } = vi.hoisted(() => ({ apiConfigMock: { remote: true } }));
+vi.mock("../api-config", () => ({
+  ApiConfig: {
+    get IS_REMOTE_BACKEND() {
+      return apiConfigMock.remote;
+    },
+  },
+}));
+
 import { TokenStorage } from "./token-storage";
 
 /**
@@ -35,6 +48,9 @@ describe("TokenStorage.purgeStaleSession", () => {
     sessionStorage.clear();
     // Best-effort clear of the marker cookie between tests.
     document.cookie = `${AUTH_MARKER_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`;
+    // Default to remote-backend mode (where purge is active). The same-origin
+    // gate test flips this off explicitly.
+    apiConfigMock.remote = true;
   });
 
   it("(a) purges when is_authenticated=true but no sessionStorage token", () => {
@@ -118,5 +134,23 @@ describe("TokenStorage.purgeStaleSession", () => {
     expect(storage.getAccessToken()).toBeNull();
     expect(localStorage.getItem(AUTHENTICATED_KEY)).toBeNull();
     expect(hasMarkerCookie()).toBe(false);
+  });
+
+  it("(e) does NOT purge in same-origin (cookie-backed) mode, even with marker + no token", () => {
+    // Same-origin / local-dev sessions are backed by the HttpOnly refresh cookie,
+    // so a missing sessionStorage Bearer is normal and recoverable. The gate must
+    // skip the purge here (otherwise it tears down valid cookie sessions like the
+    // Spec CI crawler's). Regression guard for the IS_REMOTE_BACKEND gate.
+    apiConfigMock.remote = false;
+    localStorage.setItem(AUTHENTICATED_KEY, "true");
+    localStorage.setItem(TOKEN_EXPIRY_KEY, String(Date.now() + 60 * 60 * 1000));
+    setMarkerCookie();
+    const storage = new TokenStorage();
+
+    const purged = storage.purgeStaleSession();
+
+    expect(purged).toBe(false);
+    expect(localStorage.getItem(AUTHENTICATED_KEY)).toBe("true");
+    expect(hasMarkerCookie()).toBe(true);
   });
 });

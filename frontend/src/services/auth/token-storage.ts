@@ -22,6 +22,8 @@
  * remote-backend mode, which left local dev dependent on the fragile cookie
  * path after a reload.)
  */
+import { ApiConfig } from "../api-config";
+
 /**
  * Decode the payload (middle segment) of a JWT and return its claims as
  * a plain object. The signature is NOT verified — only the backend can
@@ -276,9 +278,20 @@ export class TokenStorage {
    *
    * When stale, clears EVERYTHING (clearAll + explicit marker-cookie clear) and
    * returns true. Otherwise returns false. SSR-safe and never throws.
+   *
+   * SCOPE: remote-backend mode only. In same-origin / local-dev mode the session
+   * is backed by the HttpOnly refresh cookie, so "marker present + no sessionStorage
+   * Bearer" is a NORMAL, recoverable state (the next request re-mints the token via
+   * the cookie). Purging there would wrongly tear down valid cookie-based sessions —
+   * e.g. the Spec CI crawler, which authenticates via the refresh cookie + seeded
+   * markers and deliberately carries no Bearer. Only cross-origin (remote) mode makes
+   * a missing Bearer unambiguously stale: the backend's auth cookies never land on the
+   * dashboard origin, so there is no cookie-refresh path and the sessionStorage Bearer
+   * is the sole session anchor.
    */
   purgeStaleSession(): boolean {
     if (typeof window === "undefined") return false;
+    if (!ApiConfig.IS_REMOTE_BACKEND) return false;
     try {
       const markerPresent =
         this.isAuthenticated() ||
