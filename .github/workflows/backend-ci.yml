@@ -41,17 +41,14 @@ jobs:
       # Backend's pyproject.toml has path-deps on sibling repos
       # (qontinui-schemas, qontinui). actions/checkout@v5 refuses
       # `path:` outside the workspace, so clone them via git directly.
-      # qontinui-cloud-control is private — clone with auth so the test
+      # qontinui-cloud-control is now AGPL/public — plain clone so the test
       # harness can side-effect-import it (see backend/tests/conftest.py).
       - name: Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)
-        env:
-          CC_TOKEN: ${{ secrets.web_ci_cloud_control_read }}
         run: |
           cd "$GITHUB_WORKSPACE/.."
           git clone --depth 1 https://github.com/qontinui/qontinui-schemas.git
           git clone --depth 1 https://github.com/jspinak/qontinui.git
-          git clone --depth 1 \
-            "https://x-access-token:${CC_TOKEN}@github.com/jspinak/qontinui-cloud-control.git"
+          git clone --depth 1 https://github.com/qontinui/qontinui-cloud-control.git
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -146,17 +143,14 @@ jobs:
       # Backend's pyproject.toml has path-deps on sibling repos
       # (qontinui-schemas, qontinui). actions/checkout@v5 refuses
       # `path:` outside the workspace, so clone them via git directly.
-      # qontinui-cloud-control is private — clone with auth so the test
+      # qontinui-cloud-control is now AGPL/public — plain clone so the test
       # harness can side-effect-import it (see backend/tests/conftest.py).
       - name: Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)
-        env:
-          CC_TOKEN: ${{ secrets.web_ci_cloud_control_read }}
         run: |
           cd "$GITHUB_WORKSPACE/.."
           git clone --depth 1 https://github.com/qontinui/qontinui-schemas.git
           git clone --depth 1 https://github.com/jspinak/qontinui.git
-          git clone --depth 1 \
-            "https://x-access-token:${CC_TOKEN}@github.com/jspinak/qontinui-cloud-control.git"
+          git clone --depth 1 https://github.com/qontinui/qontinui-cloud-control.git
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -280,14 +274,11 @@ jobs:
           swap-storage: false
 
       - name: Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)
-        env:
-          CC_TOKEN: ${{ secrets.web_ci_cloud_control_read }}
         run: |
           cd "$GITHUB_WORKSPACE/.."
           git clone --depth 1 https://github.com/qontinui/qontinui-schemas.git
           git clone --depth 1 https://github.com/jspinak/qontinui.git
-          git clone --depth 1 \
-            "https://x-access-token:${CC_TOKEN}@github.com/jspinak/qontinui-cloud-control.git"
+          git clone --depth 1 https://github.com/qontinui/qontinui-cloud-control.git
 
       - name: Set up Python
         uses: actions/setup-python@v5
