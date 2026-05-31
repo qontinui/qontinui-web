@@ -56,7 +56,8 @@ from app.schemas.device import (
     PairConfirmRequest,
     PairConfirmResponse,
 )
-from app.services.coord_operator_resolver import resolve_tenant_for_user
+from app.services import coord_device
+from app.services.coord_identity import get_coord_identity
 from app.services.runner_websocket_manager import get_runner_websocket_manager
 from app.services.strategy import strategy_client
 
@@ -174,16 +175,67 @@ def _device_to_wire(device: Device) -> RunnerWire:
     )
 
 
-def _ensure_owned(device: Device | None, user_id: UUID) -> Device:
-    if device is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Device not found"
-        )
-    if device.user_id != user_id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Device not found"
-        )
-    return device
+# ---------------------------------------------------------------------------
+# coord-JSON-row variants (Phase 3 of
+# ``2026-05-30-web-coord-schema-boundary-decoupling.md``)
+#
+# The device reads now come over coord's HTTP API as full ``coord.devices``
+# JSON rows (snake_case keys from coord's ``to_jsonb``) instead of ORM
+# ``Device`` objects. These dict-consuming twins of ``_derive_status`` /
+# ``_device_to_wire`` read the same columns from the coord row. Date columns
+# (``last_heartbeat``, ``created_at``) arrive as ISO strings already, so they
+# pass through verbatim (no ``.isoformat()``).
+# ---------------------------------------------------------------------------
+
+
+def _derive_status_from_row(row: dict[str, Any]) -> RunnerStatus:
+    """Compute the canonical status from a coord ``coord.devices`` JSON row.
+
+    Same preference order as :func:`_derive_status` (the ORM twin): WS
+    presence (``ws_session_id``) wins, then ``ui_error``, then the stored
+    ``derived_status`` column.
+    """
+    if row.get("ws_session_id") is not None:
+        return RunnerStatus.healthy
+    if row.get("ui_error") is not None:
+        return RunnerStatus.errored
+    raw = str(row.get("derived_status") or "offline").lower()
+    if raw == "healthy":
+        return RunnerStatus.healthy
+    if raw == "degraded":
+        return RunnerStatus.degraded
+    if raw == "starting":
+        return RunnerStatus.starting
+    if raw == "errored":
+        return RunnerStatus.errored
+    return RunnerStatus.offline
+
+
+def _device_row_to_wire(row: dict[str, Any]) -> RunnerWire:
+    """Convert a coord ``coord.devices`` JSON row to the canonical wire shape.
+
+    Dict-consuming twin of :func:`_device_to_wire`. The row carries every
+    ``coord.devices`` column via coord's ``to_jsonb`` (snake_case keys);
+    ``last_heartbeat`` / ``created_at`` are already ISO strings.
+    """
+    user_id = row.get("user_id")
+    return RunnerWire(
+        id=str(row.get("device_id")),
+        userId=str(user_id) if user_id else "",
+        name=str(row.get("name") or ""),
+        hostname=row.get("hostname"),
+        ipAddress=None,
+        port=row.get("port") or 0,
+        os=row.get("os"),
+        osVersion=row.get("os_version"),
+        capabilities=list(row.get("capabilities") or []),
+        derivedStatus=_derive_status_from_row(row),
+        lastHeartbeat=row.get("last_heartbeat"),
+        wsConnected=row.get("ws_session_id") is not None,
+        uiError=_ui_error_from(row.get("ui_error")),
+        recentCrash=_recent_crash_from(row.get("recent_crash")),
+        createdAt=str(row.get("created_at") or ""),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -194,7 +246,7 @@ def _ensure_owned(device: Device | None, user_id: UUID) -> Device:
 @router.get("", response_model=list[RunnerWire])
 async def list_devices_endpoint(
     *,
-    db: AsyncSession = Depends(get_async_db),
+    request: Request,
     current_user: UserModel = Depends(get_current_active_user_async),
     status_filter: str | None = Query(
         default=None,
@@ -207,12 +259,13 @@ async def list_devices_endpoint(
 ) -> Any:
     """List all user-paired devices for ``current_user``.
 
-    Reads ``coord.devices`` directly. The data is the same set that
-    coord's ``GET /coord/fleet/state`` would return scoped to this user;
-    we read locally because canonical PG is shared.
+    Sourced over coord's HTTP boundary (``GET /coord/devices/by-user``,
+    scoped by the ``x-qontinui-user-id`` header + forwarded bearer) — Phase
+    3 of ``2026-05-30-web-coord-schema-boundary-decoupling.md``. Replaces
+    the former direct ``coord.devices`` ORM read; coord owns its table.
     """
-    devices = await device_crud.list_devices(db, current_user.id)
-    wire = [_device_to_wire(d) for d in devices]
+    rows = await coord_device.list_devices_for_user(request, str(current_user.id))
+    wire = [_device_row_to_wire(r) for r in rows]
 
     if status_filter:
         allowed = {s.strip() for s in status_filter.split(",") if s.strip()}
@@ -253,23 +306,22 @@ async def list_connections(
 )
 async def pair_confirm(
     *,
-    db: AsyncSession = Depends(get_async_db),
+    request: Request,
     current_user: UserModel = Depends(get_current_active_user_async),
     payload: PairConfirmRequest,
 ) -> Any:
     """Complete an OAuth-loopback pairing flow.
 
-    Forwards ``(state, user_id, tenant_id)`` to coord's ``POST
+    Forwards ``(state, user_id)`` to coord's ``POST
     /coord/devices/pair-complete``; returns the issued device-token JWT
     and ``device_id`` so the browser can redirect the runner's localhost
     callback handler.
 
-    Phase 2 of the default-tenant-propagation plan
-    (``D:/qontinui-root/plans/2026-05-20-default-tenant-propagation.md``):
-    resolves the calling user's tenant_id via
-    :func:`resolve_tenant_for_user` BEFORE the outbound POST and
-    forwards it to coord. The 403 ``tenant_not_resolved`` raised by the
-    resolver propagates as-is.
+    Coord resolves the tenant from the pair-start flow it stored, so web
+    does not compute or forward a tenant_id here. We still gate the route
+    on a linked operator by calling coord's ``/admin/coord/me`` (it 403s
+    an unlinked caller — the same fail-closed posture the old resolver
+    gate provided, now sourced over the HTTP boundary).
     """
     if not strategy_client.enabled:
         # Reuse the StrategyClient's service-token plumbing for the
@@ -285,12 +337,12 @@ async def pair_confirm(
             ),
         )
 
-    # Resolve tenant_id BEFORE the outbound call; let 403
-    # `tenant_not_resolved` propagate. This is the same resolver the
-    # `/api/v1/operations/*` proxy uses (PR #66 / readiness Wave 3c).
-    # The result is unused here (coord resolves tenant from the pairing
-    # flow stored at pair-start), but the call is kept as an authz gate.
-    _tenant_id = await resolve_tenant_for_user(current_user, db)
+    # Authz gate BEFORE the outbound call: coord's `/admin/coord/me` 403s
+    # an operator that isn't a linked tenant member, so the 403
+    # `tenant_not_resolved` propagates as-is. The resolved value is unused
+    # (coord resolves tenant from the pair-start flow it stored); the call
+    # is kept purely as the linked-operator gate.
+    await get_coord_identity(request)
 
     coord_url = settings.COORD_URL.rstrip("/")
     headers = await strategy_client._headers(str(current_user.id))  # noqa: SLF001
@@ -513,14 +565,19 @@ async def pair_cli(
 @router.get("/{device_id}", response_model=RunnerWire)
 async def get_device_endpoint(
     *,
-    db: AsyncSession = Depends(get_async_db),
+    request: Request,
     current_user: UserModel = Depends(get_current_active_user_async),
     device_id: UUID,
 ) -> Any:
-    """Fetch a single device by id (must be owned by ``current_user``)."""
-    record = await device_crud.get_device(db, device_id)
-    record = _ensure_owned(record, current_user.id)
-    return _device_to_wire(record)
+    """Fetch a single device by id (must be owned by ``current_user``).
+
+    Sourced over coord's HTTP boundary (``GET /coord/devices/:id/owned``) —
+    Phase 3 of ``2026-05-30-web-coord-schema-boundary-decoupling.md``.
+    Coord's ownership check (404 if not owned by the caller) replaces the
+    web-side ``_ensure_owned``.
+    """
+    row = await coord_device.get_owned_device(request, device_id, str(current_user.id))
+    return _device_row_to_wire(row)
 
 
 @router.delete("/{device_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -546,7 +603,7 @@ async def deregister_device_endpoint(
 )
 async def dispatch_to_device(
     *,
-    db: AsyncSession = Depends(get_async_db),
+    request: Request,
     current_user: UserModel = Depends(get_current_active_user_async),
     device_id: UUID,
     payload: DispatchDeviceRequest,
@@ -554,16 +611,23 @@ async def dispatch_to_device(
     """Dispatch a workflow to a connected device.
 
     Sends a typed ``dispatch`` message over the device's WebSocket if it
-    is currently connected (``device.ws_session_id IS NOT NULL``); 503
-    otherwise. WS is the sole dispatch channel.
+    is currently connected (``ws_session_id IS NOT NULL``); 503 otherwise.
+    WS is the sole dispatch channel.
+
+    The ownership read is sourced over coord's HTTP boundary
+    (``GET /coord/devices/:id/owned``) — Phase 3 of
+    ``2026-05-30-web-coord-schema-boundary-decoupling.md`` — replacing the
+    former ``device_crud.get_device`` + ``_ensure_owned``. The dispatch
+    itself still goes over the local WS manager.
     """
-    record = await device_crud.get_device(db, device_id)
-    record = _ensure_owned(record, current_user.id)
+    record = await coord_device.get_owned_device(
+        request, device_id, str(current_user.id)
+    )
 
     redis = await get_redis()
     manager = await get_runner_websocket_manager(redis)
 
-    if record.ws_session_id is None or not manager.is_connected(record.device_id):
+    if record.get("ws_session_id") is None or not manager.is_connected(device_id):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={
@@ -574,7 +638,7 @@ async def dispatch_to_device(
 
     run_id = str(uuid4())
     sent = await manager.send_dispatch(
-        record.device_id,
+        device_id,
         {
             "run_id": run_id,
             "workflow_id": str(payload.workflow_id),

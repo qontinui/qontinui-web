@@ -6,9 +6,9 @@ Plan:
 Two endpoints, mounted under ``/api/v1/devices/pair-codes``:
 
 * ``POST /api/v1/devices/pair-codes`` — **operator JWT required.** Mints
-  a fresh 6-char code with a 5-minute TTL. Tenant is resolved from the
-  authenticated user via :func:`resolve_tenant_for_user` and burned in
-  at mint time.
+  a fresh 6-char code with a 5-minute TTL. The operator's home tenant is
+  sourced from coord's ``GET /admin/coord/me`` (over the HTTP boundary)
+  and burned in at mint time.
 
 * ``POST /api/v1/devices/pair-codes/{code}/redeem`` — **no operator JWT
   required.** The runner posts ``(device_id, hostname)`` and gets back
@@ -27,7 +27,7 @@ from uuid import UUID
 
 import httpx
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_active_user_async
@@ -40,7 +40,7 @@ from app.schemas.pair_code import (
     PairCodeRedeemIn,
     PairCodeRedeemOut,
 )
-from app.services.coord_operator_resolver import resolve_tenant_for_user
+from app.services.coord_identity import get_coord_identity
 from app.services.strategy import strategy_client
 
 logger = structlog.get_logger(__name__)
@@ -60,18 +60,26 @@ router = APIRouter()
 )
 async def mint_pair_code_endpoint(
     *,
+    request: Request,
     db: AsyncSession = Depends(get_async_db),
     current_user: UserModel = Depends(get_current_active_user_async),
     _payload: PairCodeMintIn = PairCodeMintIn(),
 ) -> Any:
     """Mint a fresh single-use pair code (5-minute TTL).
 
-    The operator's tenant is resolved from the auth context and burned
-    into the row so the runner that later redeems the code gets a
+    The operator's home tenant is sourced from coord's ``/admin/coord/me``
+    (over the HTTP boundary, authorized on the forwarded bearer) and
+    burned into the row so the runner that later redeems the code gets a
     correctly-scoped device JWT without trusting any runner-supplied
-    tenant_id.
+    tenant_id. A coord 403 for an unlinked operator propagates as-is.
     """
-    tenant_id = await resolve_tenant_for_user(current_user, db)
+    identity = await get_coord_identity(request)
+    tenant_id = identity.home_tenant_id
+    if tenant_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="tenant_not_resolved",
+        )
     row = await pair_code_crud.mint_pair_code(
         db,
         tenant_id=tenant_id,

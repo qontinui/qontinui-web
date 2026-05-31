@@ -46,7 +46,6 @@ from qontinui_schemas.generated.per_type.memory_restore_request import (
 from qontinui_schemas.generated.per_type.memory_upsert_request import (
     MemoryUpsertRequest,
 )
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.websockets import WebSocketState
 
@@ -65,7 +64,6 @@ from app.api.deps import (
 from app.api.v1.endpoints.devices import _device_to_wire as _runner_to_wire
 from app.core.config import settings
 from app.crud import runner_crud
-from app.db.session import AsyncSessionLocal
 from app.models.user import User as UserModel
 from app.schemas.dev_dashboard import (
     AggregatedTaskRuns,
@@ -81,10 +79,9 @@ from app.services.coord_device_status import (
     fetch_device_status,
     mint_device_status_token,
 )
-from app.services.coord_operator_resolver import (
-    resolve_tenant_for_user,
-    resolve_tenants_for_user,
-    user_is_coord_tenant_admin,
+from app.services.coord_identity import (
+    get_coord_identity,
+    get_coord_identity_for_token,
 )
 from app.services.dev_dashboard_service import get_fleet_registry
 
@@ -151,44 +148,58 @@ def _extract_caller_token(request: Request) -> str | None:
 async def get_tenant_id(
     request: Request,
     current_user: UserModel = Depends(get_current_active_user_async),
-    db: AsyncSession = Depends(get_async_db),
 ) -> UUID:
-    """Dependency: resolve the current user's tenant_id (UUID).
+    """Dependency: resolve the current user's home tenant_id (UUID).
 
-    See ``app.services.coord_operator_resolver`` for the resolution
-    policy. Raises 403 ``tenant_not_resolved`` if the user isn't linked
-    to a coord operator row (and the bootstrap fallback also misses).
+    Identity is sourced from coord's ``GET /admin/coord/me`` over the HTTP
+    boundary (no cross-schema read). Coord 403s an operator that isn't a
+    linked tenant member, surfaced here as 403 ``tenant_not_resolved`` —
+    the same fail-closed gate the old ``coord_operator_resolver`` provided.
 
     Side effect (Phase T2): captures the caller's bearer token into a
     request-scoped ContextVar so ``_tenant_headers`` can forward it to
     coord for token-based authorization.
 
     Ordering invariant (Phase 2): the bearer capture runs BEFORE — and
-    independent of — tenant resolution, so the forwarded bearer survives
-    even if resolution changes or raises. Coord authorizes on the bearer,
-    not on the web-computed tenant, so this capture must never be coupled
-    to the resolver outcome.
+    independent of — identity resolution, so the forwarded bearer survives
+    even if resolution raises. Coord authorizes on the bearer, not on the
+    web-returned tenant (``_tenant_headers`` no longer puts the tenant on
+    the wire), so this capture must never be coupled to the resolver
+    outcome.
+
+    The returned UUID is retained for call-site compatibility (handlers
+    still pass it to ``_proxy_coord_get(..., tenant_id=...)`` to trigger
+    bearer forwarding) but no longer goes on the wire.
     """
     _caller_bearer.set(_extract_caller_token(request))
-    return await resolve_tenant_for_user(current_user, db)
+    identity = await get_coord_identity(request)
+    if identity.home_tenant_id is None:
+        raise HTTPException(status_code=403, detail="tenant_not_resolved")
+    return identity.home_tenant_id
 
 
 async def require_coord_tenant_admin(
+    request: Request,
     current_user: UserModel = Depends(get_current_active_user_async),
-    db: AsyncSession = Depends(get_async_db),
 ) -> UUID:
-    """Resolve the user's coord tenant AND require admin on it.
+    """Resolve the user's coord home tenant AND require admin on it.
 
-    Returns the tenant_id. Raises 403 ``not_coord_tenant_admin`` when the
-    user's operator row exists but carries no ``admin`` role for the
-    resolved tenant. The bootstrap-parity branch (pre-SSO single-user)
-    is handled inside ``user_is_coord_tenant_admin`` — the sole bootstrap
-    user is never locked out.
+    Returns the home tenant_id. Raises 403 ``not_coord_tenant_admin`` when
+    coord reports the operator is not an admin (``is_admin`` on
+    ``/admin/coord/me``).
+
+    Web-side gate posture (plan Phase 1 #4): the ``is_admin`` flag from
+    coord is the source; the web-side gate is kept so the proxied
+    settings-write route is not silently opened. Coord-side enforcement on
+    the write route is a noted follow-up, not this PR.
     """
-    tenant_id = await resolve_tenant_for_user(current_user, db)
-    if not await user_is_coord_tenant_admin(current_user, tenant_id, db):
+    _caller_bearer.set(_extract_caller_token(request))
+    identity = await get_coord_identity(request)
+    if identity.home_tenant_id is None:
+        raise HTTPException(status_code=403, detail="tenant_not_resolved")
+    if not identity.is_admin:
         raise HTTPException(status_code=403, detail="not_coord_tenant_admin")
-    return tenant_id
+    return identity.home_tenant_id
 
 
 def _tenant_headers(tenant_id: UUID) -> dict[str, str]:
@@ -1974,9 +1985,13 @@ async def websocket_device_status(
         return
 
     # --- Tenant resolution + token mint ----------------------------------
+    # Source the home tenant from coord's `/admin/coord/me` over the HTTP
+    # boundary (forwarding the WS-auth bearer), not a cross-schema read.
     try:
-        async with AsyncSessionLocal() as db:
-            tenant_id = await resolve_tenant_for_user(user, db)
+        identity = await get_coord_identity_for_token(token)
+        tenant_id = identity.home_tenant_id
+        if tenant_id is None:
+            raise HTTPException(status_code=403, detail="tenant_not_resolved")
     except HTTPException as http_exc:
         await websocket.send_json({"type": "error", "error": http_exc.detail})
         await websocket.close(code=1008, reason=str(http_exc.detail))
@@ -2289,9 +2304,13 @@ async def websocket_ci_status(
         return
 
     # --- Tenant resolution + token mint ----------------------------------
+    # Source the home tenant from coord's `/admin/coord/me` over the HTTP
+    # boundary (forwarding the WS-auth bearer), not a cross-schema read.
     try:
-        async with AsyncSessionLocal() as db:
-            tenant_id = await resolve_tenant_for_user(user, db)
+        identity = await get_coord_identity_for_token(token)
+        tenant_id = identity.home_tenant_id
+        if tenant_id is None:
+            raise HTTPException(status_code=403, detail="tenant_not_resolved")
     except HTTPException as http_exc:
         await websocket.send_json({"type": "error", "error": http_exc.detail})
         await websocket.close(code=1008, reason=str(http_exc.detail))
@@ -2456,6 +2475,7 @@ async def websocket_ci_status(
 
 @router.get("/sessions")
 async def list_coord_sessions(
+    request: Request,
     scope: str | None = Query(
         default=None,
         description="`active` (default) | `all` — session-state filter, "
@@ -2479,7 +2499,6 @@ async def list_coord_sessions(
     # wire here (the `scope=all` path computes its own `tenant_ids`).
     tenant_id: UUID = Depends(get_tenant_id),
     current_user: UserModel = Depends(get_current_active_user_async),
-    db: AsyncSession = Depends(get_async_db),
 ) -> Any:
     """List active (default) or all sessions across one or all tenants
     the caller belongs to.
@@ -2498,11 +2517,14 @@ async def list_coord_sessions(
     if tenant_scope == "all":
         # Multi-tenant: coord's single-tenant `OperatorContext` cannot
         # reproduce the operator's full membership set, so we still
-        # compute + send the explicit `tenant_ids`. Coord trusts the
-        # resolved set (see `qontinui-coord/src/sessions.rs::get_list` —
-        # `scope=all`/`tenant_ids` membership path preserved verbatim
-        # under Wave 2).
-        tenant_ids = await resolve_tenants_for_user(current_user, db)
+        # compute + send the explicit `tenant_ids`. The membership set is
+        # sourced from coord's `/admin/coord/me` over the HTTP boundary
+        # (cached per-request by `get_tenant_id`'s prior call). Coord
+        # trusts the resolved set (see
+        # `qontinui-coord/src/sessions.rs::get_list` —
+        # `scope=all`/`tenant_ids` membership path preserved verbatim).
+        identity = await get_coord_identity(request)
+        tenant_ids = identity.tenant_ids()
         params["tenant_ids"] = ",".join(str(t) for t in tenant_ids)
     # Default + explicit `active` (single-tenant home): send NEITHER
     # param — coord derives the home tenant fail-closed from the
@@ -2835,102 +2857,53 @@ async def _resolve_session_row(session_id: UUID, tenant_id: UUID) -> dict[str, A
 
 @router.get("/tenants")
 async def list_user_tenants(
+    request: Request,
     current_user: UserModel = Depends(get_current_active_user_async),
-    db: AsyncSession = Depends(get_async_db),
 ) -> dict[str, Any]:
     """Return the tenants the current operator belongs to.
 
-    Joins ``coord.operators`` → ``coord.operator_roles`` →
-    ``coord.tenants`` so an operator with rows in N tenants comes back
-    with N entries; single-tenant operators come back with one
-    (parity with the pre-multi-tenant behavior). The
-    ``active_tenant_id`` field is the operator's home tenant
-    (`coord.operators.tenant_id`) — the natural default for first-load
-    selection; the frontend persists subsequent switches in
-    localStorage (`tenant-context.tsx`).
+    Sourced from coord's ``GET /admin/coord/me`` over the HTTP boundary
+    (no cross-schema read): an operator with rows in N tenants comes back
+    with N entries; single-tenant operators come back with one. The
+    ``active_tenant_id`` field is the operator's home tenant — the natural
+    default for first-load selection; the frontend persists subsequent
+    switches in localStorage (`tenant-context.tsx`).
+
+    Coord returns ``tenants[]`` home-tenant-first (slug-asc otherwise);
+    ``CoordIdentity.tenant_ids()`` re-confirms the home-first ordering so
+    the first entry is the active default. A coord 403 for an unlinked
+    operator propagates as ``tenant_not_resolved``.
+
+    The per-tenant ``name`` field is not in the ``/me`` payload (coord
+    returns ``{tenant_id, slug, roles}``); the dashboard tenant chip
+    renders the slug, so ``name`` falls back to the slug.
 
     Wire shape::
 
         { "tenants": [ { "id": "<uuid>", "slug": "<str>", "name": "<str>" } ],
           "active_tenant_id": "<uuid>" }
     """
-    # Operator lookup keyed sub-only on the Cognito identity
-    # (``o.sso_subject = :cognito_sub``) — matches
-    # ``resolve_tenants_for_user``. A miss falls through to the
-    # ``resolve_tenant_for_user`` call below, which fails closed (403).
-    #
-    # GROUP BY (not DISTINCT) so an operator with multiple roles in
-    # the same tenant doesn't multiply rows. Postgres rejects
-    # `SELECT DISTINCT ... ORDER BY <expression-not-in-select-list>`
-    # which the home-tenant predicate would otherwise trigger.
-    cognito_sub = getattr(current_user, "cognito_sub", None) or None
-    rows = (
-        await db.execute(
-            text(
-                """
-                SELECT t.tenant_id, t.slug, t.display_name, o.tenant_id AS home_tenant_id
-                FROM coord.operators o
-                JOIN coord.operator_roles r
-                  ON r.operator_id = o.operator_id
-                JOIN coord.tenants t
-                  ON t.tenant_id = r.tenant_id
-                WHERE o.sso_subject = :cognito_sub
-                GROUP BY t.tenant_id, t.slug, t.display_name, o.tenant_id
-                ORDER BY
-                    (t.tenant_id = o.tenant_id) DESC,
-                    t.slug ASC
-                """
-            ),
-            {"cognito_sub": cognito_sub},
-        )
-    ).fetchall()
-    if rows:
-        active_tenant_id = str(rows[0][3])
-        return {
-            "tenants": [
-                {
-                    "id": str(row[0]),
-                    "slug": str(row[1]) if row[1] is not None else "",
-                    "name": str(row[2]) if row[2] is not None else "",
-                }
-                for row in rows
-            ],
-            "active_tenant_id": active_tenant_id,
-        }
+    identity = await get_coord_identity(request)
+    ordered_ids = identity.tenant_ids()
+    if not ordered_ids:
+        raise HTTPException(status_code=403, detail="tenant_not_resolved")
 
-    # No operator_roles membership rows — fall back to the operator's
-    # home tenant (``coord.operators.tenant_id``) as a single-element
-    # list. ``resolve_tenant_for_user`` is now sub-only / fail-closed, so
-    # an unknown identity raises 403 ``tenant_not_resolved`` here rather
-    # than resolving to the bootstrap tenant.
-    tenant_id = await resolve_tenant_for_user(current_user, db)
-    row = (
-        await db.execute(
-            text(
-                """
-                SELECT tenant_id, slug, display_name
-                FROM coord.tenants
-                WHERE tenant_id = :id
-                LIMIT 1
-                """
-            ),
-            {"id": str(tenant_id)},
-        )
-    ).first()
-    if row is None:
-        return {
-            "tenants": [{"id": str(tenant_id), "slug": "personal", "name": "Personal"}],
-            "active_tenant_id": str(tenant_id),
-        }
-    return {
-        "tenants": [
+    by_id = {t.tenant_id: t for t in identity.tenants}
+    tenants_out: list[dict[str, str]] = []
+    for tid in ordered_ids:
+        member = by_id.get(tid)
+        slug = member.slug if member is not None else ""
+        tenants_out.append(
             {
-                "id": str(row[0]),
-                "slug": str(row[1]) if row[1] is not None else "",
-                "name": str(row[2]) if row[2] is not None else "",
+                "id": str(tid),
+                "slug": slug,
+                # `/me` carries no display_name; the UI renders the slug.
+                "name": slug,
             }
-        ],
-        "active_tenant_id": str(tenant_id),
+        )
+    return {
+        "tenants": tenants_out,
+        "active_tenant_id": str(ordered_ids[0]),
     }
 
 
@@ -2993,9 +2966,9 @@ async def deregister_repo(
 
 @router.get("/coord/next-step-settings")
 async def get_next_step_settings(
+    request: Request,
     tenant_id: UUID = Depends(get_tenant_id),
     current_user: UserModel = Depends(get_current_active_user_async),
-    db: AsyncSession = Depends(get_async_db),
 ) -> Any:
     """Per-tenant read of the decision-engine autonomy settings.
 
@@ -3008,7 +2981,11 @@ async def get_next_step_settings(
     """
     body = await _proxy_coord_get("/coord/next-step-settings", tenant_id=tenant_id)
     # Honesty signal: tell the UI whether save controls should be enabled.
-    body["can_edit"] = await user_is_coord_tenant_admin(current_user, tenant_id, db)
+    # Sourced from coord's `/admin/coord/me` `is_admin` (cached per-request
+    # by `get_tenant_id`'s prior call) — UI gating only; coord remains the
+    # authority on the PUT route.
+    identity = await get_coord_identity(request)
+    body["can_edit"] = identity.is_admin
     return body
 
 

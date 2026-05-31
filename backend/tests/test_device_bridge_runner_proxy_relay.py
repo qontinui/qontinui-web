@@ -25,7 +25,6 @@ lookup so ownership/connection state is controllable. They assert:
 from __future__ import annotations
 
 import base64
-import contextlib
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -59,6 +58,7 @@ class _FakeRequest:
     ) -> None:
         self.method = method
         self.headers = headers or {}
+        self.cookies: dict[str, str] = {}
         self.url = _FakeURL(query)
         self._body = body
 
@@ -67,24 +67,24 @@ class _FakeRequest:
 
 
 def _install_device_lookup(monkeypatch, row) -> None:
-    """Patch AsyncSessionLocal so the relay device-lookup returns ``row``."""
+    """Patch the coord device-routing client so the relay lookup returns ``row``.
 
-    class _FakeResult:
-        def fetchone(self):
-            return row
+    Phase 3 of ``2026-05-30-web-coord-schema-boundary-decoupling.md``: the
+    relay's ownership/ws-session lookup moved off the direct ``coord.devices``
+    SQL read onto coord's ``GET /coord/devices/:id/routing`` (the
+    :func:`app.services.coord_device.get_device_routing` client). ``row`` is
+    the JSON-dict shape coord returns (``{"device_id", "ws_session_id"}``) or
+    ``None`` for an unowned device.
+    """
 
-    class _FakeSession:
-        async def execute(self, *_a, **_kw):
-            return _FakeResult()
-
-    @contextlib.asynccontextmanager
-    async def _factory():
-        yield _FakeSession()
-
-    import app.db.session as session_mod
+    async def _fake_get_device_routing(device_id, *, bearer, user_id):
+        return row
 
     monkeypatch.setattr(
-        session_mod, "AsyncSessionLocal", lambda: _factory(), raising=True
+        device_bridge_ws.coord_device,
+        "get_device_routing",
+        _fake_get_device_routing,
+        raising=True,
     )
 
 
@@ -119,7 +119,9 @@ async def test_relay_builds_http_request_envelope_and_translates_response(
     monkeypatch,
 ):
     """Happy path: envelope shape + response translation + header filtering."""
-    _install_device_lookup(monkeypatch, (DEVICE_ID, "ws-session-abc"))
+    _install_device_lookup(
+        monkeypatch, {"device_id": DEVICE_ID, "ws_session_id": 12345}
+    )
 
     resp_body = b'{"ok":true}'
     dispatch = AsyncMock(
@@ -190,7 +192,9 @@ async def test_relay_builds_http_request_envelope_and_translates_response(
 @pytest.mark.asyncio
 async def test_relay_empty_body_envelope(monkeypatch):
     """A bodyless GET produces an empty body_b64 string."""
-    _install_device_lookup(monkeypatch, (DEVICE_ID, "ws-session-abc"))
+    _install_device_lookup(
+        monkeypatch, {"device_id": DEVICE_ID, "ws_session_id": 12345}
+    )
     dispatch = AsyncMock(
         return_value={
             "type": "command_response",
@@ -217,7 +221,9 @@ async def test_relay_empty_body_envelope(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_relay_runner_not_connected_maps_503(monkeypatch):
-    _install_device_lookup(monkeypatch, (DEVICE_ID, "ws-session-abc"))
+    _install_device_lookup(
+        monkeypatch, {"device_id": DEVICE_ID, "ws_session_id": 12345}
+    )
     dispatch = AsyncMock(side_effect=RunnerNotConnectedError(DEVICE_ID))
     _install_manager(monkeypatch, dispatch=dispatch)
 
@@ -230,7 +236,9 @@ async def test_relay_runner_not_connected_maps_503(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_relay_timeout_maps_504(monkeypatch):
-    _install_device_lookup(monkeypatch, (DEVICE_ID, "ws-session-abc"))
+    _install_device_lookup(
+        monkeypatch, {"device_id": DEVICE_ID, "ws_session_id": 12345}
+    )
     dispatch = AsyncMock(
         side_effect=RunnerCommandTimeoutError(DEVICE_ID, "req-1", 30.0)
     )
@@ -245,7 +253,9 @@ async def test_relay_timeout_maps_504(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_relay_oversize_request_body_maps_413(monkeypatch):
-    _install_device_lookup(monkeypatch, (DEVICE_ID, "ws-session-abc"))
+    _install_device_lookup(
+        monkeypatch, {"device_id": DEVICE_ID, "ws_session_id": 12345}
+    )
     dispatch = AsyncMock()
     _install_manager(monkeypatch, dispatch=dispatch)
 
@@ -281,7 +291,7 @@ async def test_relay_device_not_owned_maps_404(monkeypatch):
 @pytest.mark.asyncio
 async def test_relay_runner_not_connected_when_ws_session_null_maps_503(monkeypatch):
     # Row exists but ws_session_id IS NULL -> 503 before dispatch.
-    _install_device_lookup(monkeypatch, (DEVICE_ID, None))
+    _install_device_lookup(monkeypatch, {"device_id": DEVICE_ID, "ws_session_id": None})
     dispatch = AsyncMock()
     _install_manager(monkeypatch, dispatch=dispatch)
 
@@ -309,7 +319,9 @@ async def test_relay_malformed_device_id_maps_400(monkeypatch):
 @pytest.mark.asyncio
 async def test_relay_timeout_header_clamped(monkeypatch):
     """X-Qontinui-Timeout-Ms is parsed + clamped and converted to seconds."""
-    _install_device_lookup(monkeypatch, (DEVICE_ID, "ws-session-abc"))
+    _install_device_lookup(
+        monkeypatch, {"device_id": DEVICE_ID, "ws_session_id": 12345}
+    )
     dispatch = AsyncMock(return_value={"status": 200, "headers": {}, "body_b64": ""})
     _install_manager(monkeypatch, dispatch=dispatch)
 

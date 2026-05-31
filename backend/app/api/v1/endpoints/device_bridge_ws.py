@@ -27,6 +27,7 @@ import structlog
 from fastapi import (
     APIRouter,
     Depends,
+    HTTPException,
     Request,
     Response,
     WebSocket,
@@ -39,6 +40,7 @@ from app.api.deps import current_active_user, get_current_user_from_ws
 from app.config.redis_config import get_redis
 from app.core.config import settings
 from app.models.user import User
+from app.services import coord_device
 from app.services.device_bridge_service import DeviceBridgeService
 
 router = APIRouter()
@@ -684,35 +686,23 @@ async def runner_proxy(
     if device_id_hdr is not None:
         return await _runner_proxy_relay(request, path, user_id, device_id_hdr)
 
-    # Find the runner port from the unified device registry.
-    #
-    # The Unified Devices Registry migration (Phase 5/8 of
-    # ``D:/qontinui-root/plans/2026-05-18-unified-devices-registry.md``)
-    # renamed ``auth.runners`` → ``coord.devices``. The ``port``,
-    # ``user_id``, ``ws_session_id`` and ``ws_connected_at`` columns
-    # carried over unchanged. We additionally filter on
-    # ``capability_user_paired`` so we only consider user-paired runners
-    # (not coord-only fleet devices that share the unified table).
+    # Find the runner port over coord's HTTP boundary (Phase 3 of
+    # ``2026-05-30-web-coord-schema-boundary-decoupling.md``). Replaces the
+    # former direct ``SELECT port FROM coord.devices WHERE user_id=:uid AND
+    # capability_user_paired AND ws_session_id IS NOT NULL ORDER BY
+    # ws_connected_at DESC LIMIT 1`` — coord now owns that read behind
+    # ``GET /coord/devices/routing/active`` (scoped by the
+    # ``x-qontinui-user-id`` header). We forward the caller's bearer.
+    # A null/error result falls back to the default 9876, preserving the
+    # prior behavior. Transport failures (502/504) propagate as HTTP errors.
     runner_port = 9876  # default
     try:
-        from sqlalchemy import text
-
-        from app.db.session import AsyncSessionLocal
-
-        async with AsyncSessionLocal() as db:
-            result = await db.execute(
-                text(
-                    "SELECT port FROM coord.devices "
-                    "WHERE user_id = :uid "
-                    "  AND capability_user_paired = true "
-                    "  AND ws_session_id IS NOT NULL "
-                    "ORDER BY ws_connected_at DESC NULLS LAST LIMIT 1"
-                ),
-                {"uid": user_id},
-            )
-            row = result.fetchone()
-            if row and row[0]:
-                runner_port = row[0]
+        active_port = await coord_device.get_active_routing_port(
+            bearer=coord_device.extract_bearer(request),
+            user_id=user_id,
+        )
+        if active_port:
+            runner_port = active_port
     except Exception as e:
         logger.debug("runner_proxy_port_lookup_failed", error=str(e))
 
@@ -803,8 +793,6 @@ async def _runner_proxy_relay(
     relay works across horizontally-scaled backend replicas.
     """
     # Lazy imports keep the module import graph light for the legacy path.
-    from sqlalchemy import text
-
     from app.services.runner import (
         RunnerCommandTimeoutError,
         RunnerNotConnectedError,
@@ -822,28 +810,28 @@ async def _runner_proxy_relay(
             content={"detail": "X-Qontinui-Device-Id is not a valid UUID"},
         )
 
+    # Resolve the device routing over coord's HTTP boundary (Phase 3 of
+    # ``2026-05-30-web-coord-schema-boundary-decoupling.md``). Replaces the
+    # former direct ``SELECT device_id, ws_session_id FROM coord.devices
+    # WHERE device_id=:id AND user_id=:uid AND capability_user_paired`` —
+    # coord now owns that ownership-checked read behind
+    # ``GET /coord/devices/:id/routing`` (scoped by ``x-qontinui-user-id``).
+    # Coord's 404 (device not owned) maps to ``row is None``, the same
+    # signal the prior query carried. Coord transport faults surface as the
+    # 502/504 ``HTTPException`` from the client; any other unexpected error
+    # preserves the prior 500-on-lookup-error posture (a real fault, not a
+    # relay-connectivity problem).
     try:
-        from app.db.session import AsyncSessionLocal
-
-        async with AsyncSessionLocal() as db:
-            result = await db.execute(
-                text(
-                    "SELECT device_id, ws_session_id FROM coord.devices "
-                    "WHERE device_id = :device_id "
-                    "  AND user_id = :uid "
-                    "  AND capability_user_paired = true"
-                ),
-                {"device_id": str(device_uuid), "uid": user_id},
-            )
-            row = result.fetchone()
+        row = await coord_device.get_device_routing(
+            device_uuid,
+            bearer=coord_device.extract_bearer(request),
+            user_id=user_id,
+        )
+    except HTTPException:
+        # 502/504 transport mapping from the coord client — re-raise so
+        # FastAPI renders the gateway error verbatim.
+        raise
     except Exception:
-        # A failure here is a query/programming error (bad SQL, schema
-        # drift, connection loss) — NOT an upstream-relay problem. The
-        # original broad ``except`` masked an ``UndefinedColumnError``
-        # (querying the nonexistent ``id`` column on ``coord.devices``,
-        # whose PK is ``device_id``) behind a misleading 502. Log the
-        # full traceback and surface a 500 so the real fault is
-        # diagnosable; reserve 502 for genuine relay-connectivity faults.
         logger.exception(
             "runner_proxy_relay_device_lookup_failed",
             device_id=str(device_uuid),
@@ -858,7 +846,7 @@ async def _runner_proxy_relay(
             status_code=404,
             content={"detail": "device not found or not owned by caller"},
         )
-    if row[1] is None:  # ws_session_id IS NULL
+    if row.get("ws_session_id") is None:  # ws_session_id IS NULL
         return JSONResponse(
             status_code=503,
             content={"detail": "runner not connected"},
