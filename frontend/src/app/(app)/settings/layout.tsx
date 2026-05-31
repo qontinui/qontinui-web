@@ -9,6 +9,23 @@ import {
 } from "qontinui-navigation";
 import { resolveIcon } from "@/components/navigation/sidebar/icon-resolver";
 
+/**
+ * Locally-defined extra settings entries that haven't been added to the
+ * shared ``qontinui-navigation`` package yet. The co-pilot entry is
+ * §4.5 of the production-safe UI Bridge plan; we surface it here
+ * directly rather than gating on a navigation-package release.
+ */
+const LOCAL_EXTRA_SETTINGS: NavigationItem[] = [
+  {
+    id: "settings-co-pilot",
+    label: "AI Co-Pilot",
+    icon: "Bot",
+    description: "Opt in to the AI co-pilot and view activity audit log",
+    route: "/settings/co-pilot",
+    color: "#FFD700",
+  },
+];
+
 function getSettingsNavItems(): {
   id: string;
   label: string;
@@ -16,15 +33,15 @@ function getSettingsNavItems(): {
   href: string;
   description: string;
 }[] {
-  return SETTINGS_ITEMS.filter((item) => isItemAvailable(item, "web")).map(
-    (item: NavigationItem) => ({
+  return [...SETTINGS_ITEMS, ...LOCAL_EXTRA_SETTINGS]
+    .filter((item) => isItemAvailable(item, "web"))
+    .map((item: NavigationItem) => ({
       id: item.id,
       label: item.label,
       icon: resolveIcon(item.icon, "size-4"),
       href: item.route ?? `/settings/${item.id.replace("settings-", "")}`,
       description: item.description ?? "",
-    })
-  );
+    }));
 }
 
 export default function SettingsLayout({

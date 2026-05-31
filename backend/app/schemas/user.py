@@ -2,7 +2,7 @@ import uuid
 from typing import Literal
 
 from fastapi_users import schemas
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.schemas.base import IsoDatetime
 
@@ -11,6 +11,16 @@ class UserPreferences(BaseModel):
     """User preferences stored as JSON."""
 
     product_mode: Literal["ai", "visual"] | None = None
+    ui_bridge_co_pilot_enabled: bool = Field(
+        default=False,
+        description=(
+            "Per-user durable opt-in for the UI Bridge AI co-pilot. When "
+            "false (default), the relay listener never mounts. When true, "
+            "the listener still requires a per-session consent grant before "
+            "mounting (sessionStorage). See "
+            "plans/2026-05-28-production-safe-ui-bridge-design.md §4.5."
+        ),
+    )
 
     model_config = ConfigDict(extra="allow")
 
@@ -149,6 +159,14 @@ class UserPreferencesUpdate(BaseModel):
     """Request model for updating user preferences. Merges with existing preferences."""
 
     product_mode: Literal["ai", "visual"] | None = None
+    ui_bridge_co_pilot_enabled: bool | None = Field(
+        default=None,
+        description=(
+            "When set, persists the per-user UI Bridge co-pilot opt-in. "
+            "Pass `true` to enable, `false` to disable, omit to leave "
+            "unchanged. See §4.5 of the production-safe plan."
+        ),
+    )
 
     model_config = ConfigDict(extra="ignore")
 

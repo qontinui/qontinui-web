@@ -52,6 +52,18 @@ const RecordingIndicator = nextDynamic(
     })),
   { ssr: false }
 );
+// §4.5 — "AI in control" banner. Top of every authenticated page when
+// the relay has issued >=1 command in the last 30s. SSR-disabled
+// because activity detection relies on sessionStorage + browser
+// timers; lazy-load also keeps the marketing layout out of the
+// banner's dependency closure.
+const CoPilotActiveBanner = nextDynamic(
+  () =>
+    import("@/components/co-pilot/CoPilotActiveBanner").then((m) => ({
+      default: m.CoPilotActiveBanner,
+    })),
+  { ssr: false }
+);
 
 function SidebarSkeleton({ isCollapsed }: { isCollapsed: boolean }) {
   return (
@@ -102,6 +114,14 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-screen bg-background overflow-hidden">
+      {/* §4.5 "AI in control" banner — fixed-top, z-9999, only renders
+          when the co-pilot is actively driving the tab. The component
+          itself is wrapped in data-bridge-invisible so the SDK auto-
+          register's ancestor walk skips it (bridge can't click its own
+          Stop button + silence the indicator). */}
+      <Suspense fallback={null}>
+        <CoPilotActiveBanner />
+      </Suspense>
       <Suspense fallback={<SidebarSkeleton isCollapsed={isCollapsed} />}>
         <UnifiedSidebar />
       </Suspense>
