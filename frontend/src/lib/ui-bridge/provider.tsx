@@ -36,6 +36,9 @@ import { getGlobalSpecStore } from "@qontinui/ui-bridge/specs";
 import { RouteAwarenessProvider } from "./RouteAwarenessProvider";
 import { useDiscoveredSpecs } from "./use-discovered-specs";
 import { tokenStorage } from "@/services/service-factory";
+import { useCoPilotPreference } from "@/hooks/useCoPilotPreference";
+import { useCoPilotSessionConsent } from "@/hooks/useCoPilotSessionConsent";
+import { CoPilotConsentModal } from "@/components/co-pilot/CoPilotConsentModal";
 
 /**
  * Auth-header hook for the SDK's CommandRelayListener (SDK ≥ 0.10.0).
@@ -166,8 +169,10 @@ function BundledSpecsLoader() {
 interface UIBridgeWrapperProps {
   children: React.ReactNode;
   /**
-   * Enable remote command listening for automation.
-   * Defaults to true in development, or in production when
+   * Build-time / env-level enablement of the command relay. This is the
+   * OUTER gate; the inner gates (per-user preference + per-session
+   * consent) compose with it inside the wrapper. Defaults to true in
+   * development, or in production when
    * NEXT_PUBLIC_UI_BRIDGE_REMOTE_COMMANDS=1 is set at build time.
    */
   enableRemoteCommands?: boolean;
@@ -187,8 +192,26 @@ interface UIBridgeWrapperProps {
  */
 export function UIBridgeWrapper({
   children,
-  enableRemoteCommands = isDev || remoteCommandsOptIn,
+  enableRemoteCommands: envEnableRemoteCommands = isDev || remoteCommandsOptIn,
 }: UIBridgeWrapperProps) {
+  // §4.5 consent layer — compose the env-level gate with the per-user
+  // durable preference AND the per-session transient consent. The
+  // CommandRelayListener only mounts when ALL THREE are positive:
+  //
+  //     (envEnableRemoteCommands)            // dev OR build-time opt-in
+  //   && userPreference.enabled              // toggled in /settings/co-pilot
+  //   && sessionConsent.state === "granted"  // explicit per-session OK
+  //
+  // The per-user preference is a single GET; in OSS/loopback or when the
+  // user is unauthenticated it returns false (the hook gracefully
+  // resolves enabled=false on error), keeping the listener off.
+  const userPreference = useCoPilotPreference();
+  const sessionConsent = useCoPilotSessionConsent();
+  const enableRemoteCommands =
+    envEnableRemoteCommands &&
+    userPreference.enabled === true &&
+    sessionConsent.state === "granted";
+
   const bufferRef = useRef<BridgeEvent[]>([]);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const perfBufferRef = useRef<AnyCapturedEvent[]>([]);
@@ -341,6 +364,16 @@ export function UIBridgeWrapper({
           authHeader={commandRelayAuthHeader}
           registrationMetadata={commandRelayRegistrationMetadata}
         />
+        {/* §4.5 — global per-session consent modal. Renders ONLY when
+            the user-level preference is on AND the session decision is
+            still null. The wrapper sits inside the AutoRegisterProvider
+            so the modal's Switch/Buttons get the usual auto-register
+            treatment (the SDK already skips ``data-bridge-invisible``
+            subtrees; the modal itself is not invisible since it IS the
+            user surfacing the consent decision). */}
+        {envEnableRemoteCommands && userPreference.enabled && (
+          <CoPilotConsentModal />
+        )}
         <RouteAwarenessProvider>
           {children as Parameters<typeof AutoRegisterProvider>[0]["children"]}
         </RouteAwarenessProvider>
