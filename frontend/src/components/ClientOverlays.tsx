@@ -26,14 +26,6 @@ import nextDynamic from "next/dynamic";
 //   { ssr: false }
 // );
 
-const RefreshTokenExpiryWarning = nextDynamic(
-  () =>
-    import("@/components/refresh-token-expiry-warning").then((m) => ({
-      default: m.RefreshTokenExpiryWarning,
-    })),
-  { ssr: false }
-);
-
 const DBErrorHandler = nextDynamic(
   () =>
     import("@/components/db-error-handler").then((m) => ({
@@ -62,7 +54,6 @@ export function ClientOverlays() {
   return (
     <>
       <DBErrorHandler />
-      <RefreshTokenExpiryWarning />
       <OfflineIndicator />
       <MemoryGrowthOverlay />
     </>

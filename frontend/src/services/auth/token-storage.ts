@@ -257,6 +257,55 @@ export class TokenStorage {
   }
 
   /**
+   * Synchronously detect-and-clear a STALE session at boot.
+   *
+   * The "logged-out tab thinks it has a session" bug: Bearer tokens live in
+   * sessionStorage (cleared when the tab/browser closes), but the auth markers
+   * persist in localStorage (`is_authenticated`, `refresh_token_expiry`) plus
+   * the `qontinui_auth` marker cookie. A reopened browser therefore has the
+   * markers but no usable token, and post-Cognito-teardown there is no local
+   * refresh path to re-mint one — so the tab renders as "authenticated" (the
+   * middleware soft-gate sees the cookie) until something tears it down.
+   *
+   * STALE := a marker is present AND there is no usable access token.
+   *   - marker present  = `isAuthenticated()` (the `is_authenticated` flag) OR
+   *                       a persisted `refresh_token_expiry` value.
+   *   - usable token     = `getAccessToken()` is a non-empty string AND, if a
+   *                       token-expiry timestamp exists, it is still in the
+   *                       future (> Date.now()).
+   *
+   * When stale, clears EVERYTHING (clearAll + explicit marker-cookie clear) and
+   * returns true. Otherwise returns false. SSR-safe and never throws.
+   */
+  purgeStaleSession(): boolean {
+    if (typeof window === "undefined") return false;
+    try {
+      const markerPresent =
+        this.isAuthenticated() ||
+        localStorage.getItem(this.REFRESH_TOKEN_EXPIRY_KEY) !== null;
+
+      if (!markerPresent) return false;
+
+      const token = this.getAccessToken();
+      const expiry = this.getTokenExpiry();
+      const usableToken =
+        typeof token === "string" &&
+        token.length > 0 &&
+        (expiry === null || expiry > Date.now());
+
+      if (usableToken) return false;
+
+      // Marker present but no usable token -> stale. Clear all auth state and
+      // the marker cookie so the tab boots as cleanly logged-out.
+      this.clearAll();
+      this.clearAuthMarkerCookie();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Clear all authentication state (memory + localStorage + sessionStorage).
    * HttpOnly cookies are cleared by the backend /logout endpoint.
    */

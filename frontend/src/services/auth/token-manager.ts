@@ -55,6 +55,17 @@ export class TokenManager {
   }
 
   /**
+   * Detect-and-clear a stale session synchronously at boot. A session is stale
+   * when an auth marker (the `is_authenticated` flag or a persisted
+   * `refresh_token_expiry`) is present but no usable access token exists —
+   * e.g. a reopened browser whose tab-scoped sessionStorage Bearer token is
+   * gone. Returns true if it purged. Delegates to the storage layer.
+   */
+  purgeStaleSession(): boolean {
+    return this.storage.purgeStaleSession();
+  }
+
+  /**
    * Get current access token
    */
   getAccessToken(): string | null {
