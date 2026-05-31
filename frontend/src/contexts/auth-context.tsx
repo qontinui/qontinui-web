@@ -134,6 +134,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const checkAuth = async () => {
     logger.debug("Checking authentication...");
     try {
+      // Purge a stale session BEFORE reading any auth state. A reopened browser
+      // keeps the localStorage markers (`is_authenticated`, `refresh_token_expiry`)
+      // and the `qontinui_auth` marker cookie, but its tab-scoped sessionStorage
+      // Bearer token is gone — so the tab would otherwise render as
+      // "authenticated" with no usable token (and pop a spurious session-expiry
+      // warning). This synchronous storage clear runs before the first
+      // authenticated render and before overlays mount, so a stale tab boots
+      // cleanly logged-out. No-op for genuine sessions and genuine logged-out tabs.
+      if (authService.tokenManager.purgeStaleSession()) {
+        logger.info("Purged stale session at boot (markers without a usable token)");
+      }
+
       const isAuth = authService.isAuthenticated();
       logger.debug("Is authenticated:", isAuth);
 

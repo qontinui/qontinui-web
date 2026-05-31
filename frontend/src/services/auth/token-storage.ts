@@ -22,6 +22,8 @@
  * remote-backend mode, which left local dev dependent on the fragile cookie
  * path after a reload.)
  */
+import { ApiConfig } from "../api-config";
+
 /**
  * Decode the payload (middle segment) of a JWT and return its claims as
  * a plain object. The signature is NOT verified — only the backend can
@@ -254,6 +256,66 @@ export class TokenStorage {
   isAuthenticated(): boolean {
     if (typeof window === "undefined") return false;
     return localStorage.getItem(this.AUTHENTICATED_KEY) === "true";
+  }
+
+  /**
+   * Synchronously detect-and-clear a STALE session at boot.
+   *
+   * The "logged-out tab thinks it has a session" bug: Bearer tokens live in
+   * sessionStorage (cleared when the tab/browser closes), but the auth markers
+   * persist in localStorage (`is_authenticated`, `refresh_token_expiry`) plus
+   * the `qontinui_auth` marker cookie. A reopened browser therefore has the
+   * markers but no usable token, and post-Cognito-teardown there is no local
+   * refresh path to re-mint one — so the tab renders as "authenticated" (the
+   * middleware soft-gate sees the cookie) until something tears it down.
+   *
+   * STALE := a marker is present AND there is no usable access token.
+   *   - marker present  = `isAuthenticated()` (the `is_authenticated` flag) OR
+   *                       a persisted `refresh_token_expiry` value.
+   *   - usable token     = `getAccessToken()` is a non-empty string AND, if a
+   *                       token-expiry timestamp exists, it is still in the
+   *                       future (> Date.now()).
+   *
+   * When stale, clears EVERYTHING (clearAll + explicit marker-cookie clear) and
+   * returns true. Otherwise returns false. SSR-safe and never throws.
+   *
+   * SCOPE: remote-backend mode only. In same-origin / local-dev mode the session
+   * is backed by the HttpOnly refresh cookie, so "marker present + no sessionStorage
+   * Bearer" is a NORMAL, recoverable state (the next request re-mints the token via
+   * the cookie). Purging there would wrongly tear down valid cookie-based sessions —
+   * e.g. the Spec CI crawler, which authenticates via the refresh cookie + seeded
+   * markers and deliberately carries no Bearer. Only cross-origin (remote) mode makes
+   * a missing Bearer unambiguously stale: the backend's auth cookies never land on the
+   * dashboard origin, so there is no cookie-refresh path and the sessionStorage Bearer
+   * is the sole session anchor.
+   */
+  purgeStaleSession(): boolean {
+    if (typeof window === "undefined") return false;
+    if (!ApiConfig.IS_REMOTE_BACKEND) return false;
+    try {
+      const markerPresent =
+        this.isAuthenticated() ||
+        localStorage.getItem(this.REFRESH_TOKEN_EXPIRY_KEY) !== null;
+
+      if (!markerPresent) return false;
+
+      const token = this.getAccessToken();
+      const expiry = this.getTokenExpiry();
+      const usableToken =
+        typeof token === "string" &&
+        token.length > 0 &&
+        (expiry === null || expiry > Date.now());
+
+      if (usableToken) return false;
+
+      // Marker present but no usable token -> stale. Clear all auth state and
+      // the marker cookie so the tab boots as cleanly logged-out.
+      this.clearAll();
+      this.clearAuthMarkerCookie();
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /**
