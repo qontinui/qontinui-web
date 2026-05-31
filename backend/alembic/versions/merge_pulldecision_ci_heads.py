@@ -16,10 +16,9 @@ from collections.abc import Sequence
 
 # revision identifiers, used by Alembic.
 revision: str = "merge_pulldecision_ci_heads"
-down_revision: str | None = (
-    "pull_decision_resolutions_index",
-    "twin_ci_01_ci_runs",
-)
+# NOTE: keep this tuple on a SINGLE line — the alembic-heads-pr gate parses
+# down_revision with a line-based regex and will miscount heads otherwise.
+down_revision: str | None = ("pull_decision_resolutions_index", "twin_ci_01_ci_runs")
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
