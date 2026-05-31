@@ -14,10 +14,12 @@
  */
 
 import noUnwrappedDestructiveHandler from "./no-unwrapped-destructive-handler.mjs";
+import noUnredactedSensitiveInput from "./no-unredacted-sensitive-input.mjs";
 
 const qontinuiWebPlugin = {
   rules: {
     "no-unwrapped-destructive-handler": noUnwrappedDestructiveHandler,
+    "no-unredacted-sensitive-input": noUnredactedSensitiveInput,
   },
 };
 

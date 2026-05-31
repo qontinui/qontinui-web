@@ -101,12 +101,19 @@ export function CreateRunnerTokenDialog({
             <div className="space-y-2">
               <Label htmlFor="runner-token-value">Token</Label>
               <div className="flex gap-2">
+                {/*
+                  §4.6 — the plaintext bearer token rendered into a readOnly
+                  text input (we can't use type="password" because the user
+                  needs to be able to see + select-all + copy). Mark it so
+                  a UI Bridge snapshot redacts the value.
+                */}
                 <Input
                   id="runner-token-value"
                   value={created.plain_token}
                   readOnly
                   className="font-mono text-xs"
                   onFocus={(e) => e.currentTarget.select()}
+                  data-bridge-redact="true"
                 />
                 <Button
                   type="button"
@@ -153,6 +160,14 @@ export function CreateRunnerTokenDialog({
           >
             <div className="space-y-2">
               <Label htmlFor="runner-token-name">Name</Label>
+              {/*
+                The `id` contains "token" so the rule flags it, but this is
+                the user-chosen friendly LABEL for the token (e.g.
+                "Production runner - us-east-1"), not the token value.
+                Redacting it would hide useful UI Bridge labels with no
+                security benefit.
+              */}
+              {/* eslint-disable-next-line @qontinui-web/no-unredacted-sensitive-input */}
               <Input
                 id="runner-token-name"
                 value={name}
@@ -170,6 +185,12 @@ export function CreateRunnerTokenDialog({
               <Label htmlFor="runner-token-expires">
                 Expires in (days, optional)
               </Label>
+              {/*
+                The `id` contains "token" so the rule flags it, but this is
+                a number-of-days expiration value (e.g. "30"), not the
+                token itself. Not sensitive.
+              */}
+              {/* eslint-disable-next-line @qontinui-web/no-unredacted-sensitive-input */}
               <Input
                 id="runner-token-expires"
                 type="number"

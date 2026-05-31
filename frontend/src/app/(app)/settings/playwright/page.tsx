@@ -139,6 +139,13 @@ export default function PlaywrightSettingsPage() {
               Password
             </Label>
             <div className="relative">
+              {/*
+                §4.6 — explicit redaction. The "show password" eye toggle
+                flips `type` to `"text"`, at which point the SDK's
+                unconditional password-input redaction stops applying. Mark
+                this input explicitly so a UI Bridge snapshot redacts the
+                value regardless of the toggle state.
+              */}
               <Input
                 id="test-password"
                 type={showPassword ? "text" : "password"}
@@ -146,6 +153,7 @@ export default function PlaywrightSettingsPage() {
                 value={testPassword}
                 onChange={(e) => setTestPassword(e.target.value)}
                 className="pr-10"
+                data-bridge-redact="true"
               />
               <button
                 type="button"

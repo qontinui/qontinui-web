@@ -49,6 +49,16 @@ const eslintConfig = [
       // / undoable UI ops) are silenced with an inline disable comment
       // that carries a rationale.
       "@qontinui-web/no-unwrapped-destructive-handler": "error",
+      // Phase 0 of §4.6 (sensitive-data redaction). Sensitive-named
+      // form inputs (token / secret / API key / OTP / connection string
+      // / card-number) must carry data-bridge-redact="true" — either
+      // directly OR on a JSX ancestor (e.g. the enclosing <form>) — so
+      // the @qontinui/ui-bridge SDK's snapshot pipeline redacts the
+      // value. Native <input type="password"> is exempt (SDK redacts
+      // those unconditionally). Genuine false positives (search field
+      // with "token" in its placeholder etc.) are silenced with an
+      // inline disable comment carrying a one-sentence rationale.
+      "@qontinui-web/no-unredacted-sensitive-input": "error",
     },
   },
 ];
