@@ -16,7 +16,11 @@ logger = logging.getLogger(__name__)
 # Use Redis if enabled for scalable, persistent rate limiting across instances
 # Fall back to memory storage for development/testing when Redis is disabled
 if settings.REDIS_ENABLED:
-    storage_uri = (
+    # REDIS_URL is canonical and takes precedence over REDIS_HOST/PORT/DB
+    # (mirrors RedisConfig + the ARQ pool). It carries scheme/TLS/auth, so
+    # the limiter works against managed Redis (Upstash/ElastiCache) that
+    # requires rediss:// + an AuthToken; localhost:6379 is the dev fallback.
+    storage_uri = settings.REDIS_URL or (
         f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
     )
 else:
