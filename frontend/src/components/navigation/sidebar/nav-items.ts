@@ -594,6 +594,15 @@ export const devNavItems: NavItem[] = [
         color: "#FF6B6B",
         adminOnly: true,
       },
+      {
+        id: "admin-coord",
+        label: "Coord Console",
+        description: "Coordination layer — fleet, trees, pull decisions, plans",
+        icon: React.createElement(Network, { className: "size-4" }),
+        route: "/admin/coord",
+        color: "#FF6B6B",
+        adminOnly: true,
+      },
     ],
   },
 ];
