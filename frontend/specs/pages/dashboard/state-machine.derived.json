@@ -8,7 +8,8 @@
     "appId": "qontinui-web"
   },
   "metadata": {
-    "tags": ["dashboard", "visual-mode", "visual-automation", "projects"]
+    "tags": ["dashboard", "visual-mode", "visual-automation", "projects"],
+    "settleUntilPresent": [{ "id": "heading-4-spec-ci-fixture", "role": "heading" }]
   },
   "states": [
     {
