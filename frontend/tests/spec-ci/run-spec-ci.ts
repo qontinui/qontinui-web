@@ -549,6 +549,74 @@ function extraSettleMs(doc: Record<string, unknown>): number {
 }
 
 // ---------------------------------------------------------------------------
+// Per-spec deterministic settle-until-present (data-dependent anchors)
+//
+// `extraSettleMs` above widens a FIXED wait — still a race: a data fetch slower
+// than the (clamped) window snapshots an unrendered page. For a spec whose
+// matchable content arrives only AFTER an async fetch (e.g. the Visual-mode
+// dashboard's project grid, whose seeded `spec-ci-fixture` card renders once the
+// projects query resolves), a fixed settle is the wrong tool — it either flakes
+// (too short on a slow run) or wastes wall-clock (too long on a fast one).
+//
+// A spec opts into a DETERMINISTIC pre-snapshot gate via
+// `metadata.settleUntilPresent`: a list of element-criteria (same `{id,role,
+// text}` shape as an assertion's `target.criteria`). Before the matcher
+// snapshots, we poll the SAME UI-Bridge registry the matcher reads
+// (`__qontinuiSpecCi__.getRegistry()` + `findFirst`) until EVERY listed anchor
+// is present, or a hard bound elapses. This dodges the load race at its root —
+// we snapshot exactly when the data-driven content has rendered, not on a guess.
+//
+// Integrity: on timeout we PROCEED anyway. A genuinely-absent anchor (a real
+// regression, or a failed fixture seed) then surfaces as the matcher's normal
+// `no_candidates` and reds the gate — the wait never HIDES an absence, it only
+// declines to snapshot prematurely. Author criteria that the page is EXPECTED
+// to render; never list an anchor whose absence should pass.
+// ---------------------------------------------------------------------------
+
+const SETTLE_POLL_INTERVAL_MS = 250;
+const MAX_SETTLE_POLL_MS = 15_000;
+
+function settleUntilCriteria(doc: Record<string, unknown>): Array<Record<string, unknown>> {
+  const meta = (doc as { metadata?: { settleUntilPresent?: unknown } }).metadata;
+  const raw = meta?.settleUntilPresent;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(
+    (c): c is Record<string, unknown> => typeof c === "object" && c !== null && !Array.isArray(c),
+  );
+}
+
+/**
+ * Poll the in-page UI-Bridge registry until every `metadata.settleUntilPresent`
+ * anchor matches (via the same `findFirst` the matcher uses), or `MAX_SETTLE_
+ * POLL_MS` elapses. No-op for specs without the field. Returns whether all
+ * anchors were observed present (false on timeout) — purely advisory for
+ * logging; the caller proceeds either way so a real absence still reds the gate.
+ */
+async function settleUntilPresent(page: Page, doc: Record<string, unknown>): Promise<boolean> {
+  const criteria = settleUntilCriteria(doc);
+  if (criteria.length === 0) return true;
+  const deadline = Date.now() + MAX_SETTLE_POLL_MS;
+  for (;;) {
+    const allPresent = await page
+      .evaluate((crits) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- injected dev-only surface
+        const ns = (window as any).__qontinuiSpecCi__;
+        if (!ns) return false;
+        try {
+          const elements = ns.getRegistry().getAllElements();
+          return crits.every((c: unknown) => !!ns.findFirst(elements, c)?.match);
+        } catch {
+          return false;
+        }
+      }, criteria)
+      .catch(() => false);
+    if (allPresent) return true;
+    if (Date.now() >= deadline) return false;
+    await page.waitForTimeout(SETTLE_POLL_INTERVAL_MS);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Secret substitution (Unlock 3)
 //
 // The login transition needs ci-bot's password, which must NEVER live in a
@@ -937,6 +1005,16 @@ async function evaluateSpec(
     // render before the matcher snapshots the registry, dodging the load race.
     await page.goto(route, { waitUntil: "domcontentloaded", timeout: 60_000 });
     await page.waitForTimeout(2500 + extraSettleMs(spec.doc));
+    // Deterministic gate for specs whose matchable content arrives via an async
+    // fetch (e.g. dashboard's seeded project grid): wait until the declared
+    // anchors are actually in the registry before snapshotting, dodging the
+    // load-state race a fixed settle can't close. No-op for specs without the
+    // field; on timeout we proceed so a real absence still reds the gate.
+    if (!(await settleUntilPresent(page, spec.doc))) {
+      process.stderr.write(
+        `[spec-ci] ${spec.id} settle-until-present timed out (${MAX_SETTLE_POLL_MS}ms) — snapshotting anyway; a genuinely-absent anchor will surface as no_candidates\n`,
+      );
+    }
     result.navigatedOk = page.url().includes(route.split("?")[0].replace(baseUrl, "")) || true;
 
     // Substitute any `{{SECRET}}` placeholder (e.g. the login password) into a
