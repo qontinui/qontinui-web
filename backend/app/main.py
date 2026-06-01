@@ -295,11 +295,18 @@ async def startup_event():
     # Initialize ARQ connection pool (optional, requires Redis)
     if settings.REDIS_ENABLED:
         try:
+            from redis.exceptions import RedisError
+
             from app.worker.arq_pool import get_arq_pool
 
             await get_arq_pool()
             logger.info("arq_pool_initialized", status="connected")
-        except (ConnectionError, TimeoutError, OSError) as e:
+        except (RedisError, ConnectionError, TimeoutError, OSError) as e:
+            # redis.exceptions.RedisError (incl. its ConnectionError) does NOT
+            # subclass the builtin ConnectionError, so it must be listed
+            # explicitly — otherwise a Redis hiccup escapes this guard and
+            # aborts app startup ("Application startup failed. Exiting.")
+            # instead of degrading to "no task queue".
             logger.warning(
                 "arq_initialization_failed",
                 error=str(e),

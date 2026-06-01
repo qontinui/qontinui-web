@@ -27,7 +27,19 @@ from app.worker.tasks.partition_tasks import (
 
 
 def get_arq_redis_settings() -> RedisSettings:
-    """Get Redis settings for ARQ worker."""
+    """Get Redis settings for ARQ worker.
+
+    REDIS_URL is the canonical input and takes precedence over
+    REDIS_HOST/PORT/DB (see app.core.config.Settings.REDIS_URL and the
+    RedisConfig client). A full URL carries scheme (redis:// or rediss://
+    for TLS), auth, host, port and db in one place, so ARQ works against
+    managed Redis (Upstash/ElastiCache) that requires TLS + an AuthToken.
+    RedisSettings.from_dsn parses all of those, including ssl=True for the
+    rediss:// scheme. REDIS_HOST/PORT/DB remain the local-dev fallback when
+    REDIS_URL is unset.
+    """
+    if settings.REDIS_URL:
+        return RedisSettings.from_dsn(settings.REDIS_URL)
     return RedisSettings(
         host=settings.REDIS_HOST,
         port=settings.REDIS_PORT,
