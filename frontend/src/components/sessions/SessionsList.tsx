@@ -38,7 +38,6 @@ import type {
   ListSessionsOptions,
 } from "./api";
 import type { SessionRow } from "./types";
-import { classifyHeartbeat } from "./types";
 import { relativeTime } from "@/components/operations/utils";
 import { useTenant } from "@/contexts/tenant-context";
 
@@ -62,6 +61,7 @@ interface MachineSessionGroup {
   sessions: SessionRow[];
   activeSessions: number;
   staleSessions: number;
+  closedSessions: number;
 }
 
 function readStoredScope(): ListSessionsScope {
@@ -124,11 +124,16 @@ function buildMachineGroups(
       deviceId,
       hostname: hostnameFor?.(deviceId) ?? `${deviceId.slice(0, 8)}…`,
       sessions: sorted,
+      // Counts reflect coord's session STATE (the source of truth), not
+      // heartbeat age. The old heartbeat-age classification counted every
+      // `closed` row (whose last_heartbeat_at is naturally old) as "stale",
+      // which inflated the rollup to hundreds while the cards correctly read
+      // "closed". Heartbeat freshness stays a per-card health signal.
       activeSessions: sorted.filter((s) => s.state === "active").length,
       staleSessions: sorted.filter(
-        (s) => classifyHeartbeat(s.last_heartbeat_at) === "stale" ||
-               classifyHeartbeat(s.last_heartbeat_at) === "dead"
+        (s) => s.state === "stale" || s.state === "pending_resolution"
       ).length,
+      closedSessions: sorted.filter((s) => s.state === "closed").length,
     });
   }
 
@@ -146,18 +151,21 @@ function CrossMachineSummary({ sessions }: { sessions: SessionRow[] }) {
     const kindCounts = new Map<string, number>();
     let active = 0;
     let stale = 0;
+    let closed = 0;
     const deviceIds = new Set<string>();
 
     for (const s of sessions) {
       deviceIds.add(s.device_id);
       const kind = s.session_kind;
       kindCounts.set(kind, (kindCounts.get(kind) ?? 0) + 1);
+      // Count by coord STATE (source of truth) — NOT heartbeat age, which
+      // mislabels every `closed` row (old last_heartbeat_at) as "stale".
       if (s.state === "active") active++;
-      const health = classifyHeartbeat(s.last_heartbeat_at);
-      if (health === "stale" || health === "dead") stale++;
+      else if (s.state === "stale" || s.state === "pending_resolution") stale++;
+      else if (s.state === "closed") closed++;
     }
 
-    return { kindCounts, active, stale, machines: deviceIds.size, total: sessions.length };
+    return { kindCounts, active, stale, closed, machines: deviceIds.size, total: sessions.length };
   }, [sessions]);
 
   if (stats.total === 0) return null;
@@ -187,6 +195,14 @@ function CrossMachineSummary({ sessions }: { sessions: SessionRow[] }) {
           <span className="text-xs text-muted-foreground">Stale</span>
           <Badge variant="outline" className="ml-auto text-xs border-yellow-500/40 text-yellow-300 bg-yellow-500/5">
             {stats.stale}
+          </Badge>
+        </div>
+      )}
+      {stats.closed > 0 && (
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-muted/30">
+          <span className="text-xs text-muted-foreground">Closed</span>
+          <Badge variant="outline" className="ml-auto text-xs text-muted-foreground">
+            {stats.closed}
           </Badge>
         </div>
       )}
@@ -233,6 +249,11 @@ function MachineHeader({ group }: { group: MachineSessionGroup }) {
           className="text-[10px] border-yellow-500/40 text-yellow-300 bg-yellow-500/5"
         >
           {group.staleSessions} stale
+        </Badge>
+      )}
+      {group.closedSessions > 0 && (
+        <Badge variant="outline" className="text-[10px] text-muted-foreground">
+          {group.closedSessions} closed
         </Badge>
       )}
     </div>
