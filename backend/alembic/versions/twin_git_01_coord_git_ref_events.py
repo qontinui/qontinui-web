@@ -1,7 +1,7 @@
 """twin git 01 coord.git_ref_events — Ξ_Git ref-mutation oplog + repo_branches.close_cause
 
 Revision ID: twin_git_01_coord_git_ref_events
-Revises: bridge_audit_log_01
+Revises: twin_06_coord_error_observations
 Create Date: 2026-06-02
 
 Phase 1 of the Ξ_Git twin-observer plan
@@ -100,7 +100,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "twin_git_01_coord_git_ref_events"
-down_revision: str | Sequence[str] | None = "bridge_audit_log_01"
+down_revision: str | Sequence[str] | None = "twin_06_coord_error_observations"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
