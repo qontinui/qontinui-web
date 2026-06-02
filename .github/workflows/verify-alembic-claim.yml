@@ -1,0 +1,76 @@
+name: verify-alembic-claim
+
+# Phase 5C of the multi-machine coordinator plan
+# (D:/qontinui-root/tmp_multimachine_coordinator_plan.md §9).
+#
+# Pre-claim gate: every PR adding an alembic revision must show that the
+# contributor pre-claimed the HEAD it chains off (the `down_revision`)
+# via the coord service. Pairs with the post-merge informational
+# alembic-graph-check workflow and the pre-merge alembic-graph-pr gate:
+#
+#   alembic-graph-check.yml      — runs after merge; comments on the
+#                                  merging PR if the chain forked.
+#   alembic-graph-pr.yml         — runs on every PR; fails if the chain
+#                                  would have >1 head after merge.
+#   verify-alembic-claim.yml     — runs on every PR; checks that the new
+#                                  revisions' heads were pre-claimed.
+#
+# The coord service exposes a generic POST /coord/claims/check that
+# answers "was this (kind, resource_key) claimed?". The claim is a mutex
+# on the HEAD (`down_revision`) being chained off, NOT the child revision
+# id, so the script POSTs:
+#
+#   {"kind": "alembic_revision", "resource_key": "<down_revision>"}
+#
+# and expects {matched: bool, reason: str}.
+#
+# NOT required / does not touch branch protection: this lands as a
+# non-required check. It gets promoted to required later, once the claim
+# flow is wired into /implement-plan.
+#
+# Configuration:
+#
+#   The coord URL defaults to the public prod coord service
+#   (https://coord.qontinui.io) since no COORD_URL secret is established
+#   in this repo. A repo variable `vars.COORD_URL` overrides it if set
+#   (e.g. to point a fork at a different coord instance); leave it unset
+#   to use the default.
+
+on:
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "backend/alembic/versions/**"
+
+permissions:
+  contents: read
+
+jobs:
+  verify-claim:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          # Need full history so git diff against the PR base resolves.
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run verify_alembic_claim.py
+        env:
+          # Default to prod coord; override via repo variable COORD_URL.
+          COORD_URL: ${{ vars.COORD_URL || 'https://coord.qontinui.io' }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          # base-ref is the branch the PR targets, prefixed with
+          # origin/ for the local diff. We fetched depth=0 so the
+          # ref exists locally; fetch it explicitly as a belt-and-braces
+          # in case the default checkout pruned it.
+          git fetch origin "${BASE_REF}" --depth=200 || true
+          python scripts/verify_alembic_claim.py \
+            --base-ref "origin/${BASE_REF}" \
+            --coord-url "${COORD_URL}"
