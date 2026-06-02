@@ -30,6 +30,7 @@ import {
   Server,
   CalendarClock,
   Activity,
+  Bot,
 } from "lucide-react";
 import type { NavItem } from "./types";
 
@@ -41,6 +42,23 @@ import type { NavItem } from "./types";
 // =============================================================================
 
 export const devNavItems: NavItem[] = [
+  // ===========================================================================
+  // AI Co-Pilot (production-visible). Natural-language command surface that
+  // plans a prompt and drives this app through the paired runner. Local entry
+  // because the shared qontinui-navigation package (node_modules) does not yet
+  // expose it; the sidebar merges these non-admin devNavItems as production
+  // items in use-sidebar-navigation.ts.
+  // ===========================================================================
+  {
+    id: "co-pilot",
+    label: "Co-Pilot",
+    description: "Describe a task in plain language; the AI plans and runs it",
+    icon: React.createElement(Bot, { className: "size-5" }),
+    route: "/co-pilot",
+    color: "#6366F1",
+    group: "Runners",
+  },
+
   // ===========================================================================
   // Runners (production-visible). The unified /runners page covers online
   // runners, session history, and auth tokens — Phase 4B folded the old

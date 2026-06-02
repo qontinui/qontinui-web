@@ -16,6 +16,7 @@ import Link from "next/link";
 import { Bot, Info, Loader2, ScrollText } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { CoPilotReadyStatus } from "@/components/co-pilot/CoPilotReadyStatus";
 import { useCoPilotPreference } from "@/hooks/useCoPilotPreference";
 
 export default function CoPilotSettingsPage() {
@@ -36,11 +37,14 @@ export default function CoPilotSettingsPage() {
 
       {/* Toggle */}
       <div className="rounded-lg border border-border">
-        <div className="px-4 py-3 border-b border-border bg-muted/50">
-          <h3 className="text-sm font-medium">Account-level opt-in</h3>
-          <p className="text-xs text-muted-foreground">
-            Persists across sessions and devices.
-          </p>
+        <div className="px-4 py-3 border-b border-border bg-muted/50 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h3 className="text-sm font-medium">Account-level opt-in</h3>
+            <p className="text-xs text-muted-foreground">
+              Persists across sessions and devices.
+            </p>
+          </div>
+          <CoPilotReadyStatus />
         </div>
         <div className="p-4 space-y-4">
           <div className="flex items-center justify-between gap-4">
