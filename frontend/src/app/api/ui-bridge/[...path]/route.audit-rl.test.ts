@@ -229,6 +229,9 @@ describe("route.ts §4.8 audit + rate-limit branches", () => {
       path: "/control/element/btn-42/action",
       method: "POST",
       statusCode: 200,
+      // Bug 3b: the mocked relay handler returns `{success:true}` → the audit
+      // row records EXECUTION (executed), not merely receipt (statusCode 200).
+      executionStatus: "executed",
       payloadSummary: expect.objectContaining({
         action: "element.action",
         elementId: "btn-42",

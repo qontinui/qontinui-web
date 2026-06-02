@@ -11,7 +11,7 @@ inserts (``web.bridge_audit_log``). Two operations:
 """
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -53,6 +53,17 @@ class BridgeAuditLogCreate(BaseModel):
         None, max_length=256, description="Request Origin header (browser-set)."
     )
     status_code: int = Field(..., description="HTTP status the relay returned.")
+    execution_status: Literal["received", "executed", "failed"] = Field(
+        "received",
+        description=(
+            "Execution outcome distinct from receipt (Bug 3b). `status_code` "
+            "is the relay-delivery HTTP status (200 on delivery); this records "
+            "whether the target tab actually RAN the command: `received` "
+            "(delivered, outcome unknown — the default), `executed` (tab "
+            "confirmed it ran), or `failed` (tab reported it did NOT run, even "
+            "if status_code is 200)."
+        ),
+    )
     payload_summary: dict[str, Any] | None = Field(
         None,
         description=(
@@ -74,6 +85,7 @@ class BridgeAuditLogResponse(BaseModel):
     method: str
     origin: str | None
     status_code: int
+    execution_status: str
     occurred_at: IsoDatetime
     payload_summary: dict[str, Any] | None
 

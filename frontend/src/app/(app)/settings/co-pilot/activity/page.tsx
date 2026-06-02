@@ -8,8 +8,9 @@
  * filters by ``user_id = current_user.id``) means we never display
  * another user's rows, regardless of what the page does.
  *
- * Columns: occurred_at, command_name, target_element_id, status_code,
- * path, origin. Filters: 24h/7d/30d/custom time window, command, status.
+ * Columns: occurred_at, command_name, target_element_id, status_code
+ * (relay receipt), execution_status (did the tab run it? — Bug 3b), path,
+ * origin. Filters: 24h/7d/30d/custom time window, command, status.
  * Pagination: cursor-based (``next_before`` from the response).
  */
 
@@ -73,10 +74,17 @@ function ActivityRow({
   const r = items[index];
   if (!r) return null;
   const ok = r.status_code < 400;
+  // Bug 3b: execution outcome is distinct from the relay-receipt status_code.
+  const execColor =
+    r.execution_status === "executed"
+      ? "text-emerald-500"
+      : r.execution_status === "failed"
+        ? "text-rose-500"
+        : "text-amber-500";
   return (
     <div
       style={style}
-      className="grid grid-cols-[170px_180px_220px_70px_1fr_180px] gap-3 px-3 py-2 border-b border-border text-xs items-center hover:bg-muted/40"
+      className="grid grid-cols-[170px_180px_200px_70px_90px_1fr_160px] gap-3 px-3 py-2 border-b border-border text-xs items-center hover:bg-muted/40"
     >
       <span className="text-muted-foreground">
         {format(new Date(r.occurred_at), "yyyy-MM-dd HH:mm:ss")}
@@ -87,9 +95,17 @@ function ActivityRow({
       </span>
       <span
         className={ok ? "text-emerald-500" : "text-rose-500"}
-        aria-label={ok ? "success" : "failed"}
+        aria-label={ok ? "receipt ok" : "receipt failed"}
+        title="Relay receipt (HTTP) status"
       >
         {r.status_code}
+      </span>
+      <span
+        className={`${execColor} truncate`}
+        aria-label={`execution ${r.execution_status}`}
+        title="Execution outcome (did the target tab run it?)"
+      >
+        {r.execution_status}
       </span>
       <span className="font-mono truncate text-muted-foreground">{r.path}</span>
       <span className="truncate text-muted-foreground">{r.origin ?? "—"}</span>
@@ -249,11 +265,12 @@ export default function CoPilotActivityPage() {
       {/* Table */}
       <div className="rounded-lg border border-border overflow-hidden">
         {/* Header row */}
-        <div className="grid grid-cols-[170px_180px_220px_70px_1fr_180px] gap-3 px-3 py-2 bg-muted/50 border-b border-border text-xs font-medium text-muted-foreground">
+        <div className="grid grid-cols-[170px_180px_200px_70px_90px_1fr_160px] gap-3 px-3 py-2 bg-muted/50 border-b border-border text-xs font-medium text-muted-foreground">
           <span>Time</span>
           <span>Command</span>
           <span>Target element</span>
-          <span>Status</span>
+          <span title="Relay receipt (HTTP) status">Receipt</span>
+          <span title="Execution outcome (did the target tab run it?)">Exec</span>
           <span>Path</span>
           <span>Origin</span>
         </div>

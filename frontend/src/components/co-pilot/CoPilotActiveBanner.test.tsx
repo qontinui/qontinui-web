@@ -142,6 +142,43 @@ describe("<CoPilotActiveBanner>", () => {
     });
   });
 
+  it("exposes a bridge-VISIBLE state sentinel (data-copilot-active) OUTSIDE the invisible subtree", async () => {
+    // Bug 3a: the lit state must be observable in a UI-Bridge snapshot. The
+    // sentinel carries data-copilot-active and must NOT be nested under any
+    // data-bridge-invisible ancestor (else AutoRegister's ancestor walk skips
+    // it and the lit state is unverifiable on the page).
+    window.sessionStorage.setItem(__CO_PILOT_SESSION_CONSENT_KEY__, "granted");
+    const recent = new Date(Date.now() - 2_000).toISOString();
+    fetchMock.mockImplementation((url: string) => {
+      if (typeof url === "string" && url.includes("/preferences")) {
+        return Promise.resolve(preferenceResponse(true));
+      }
+      return Promise.resolve(activityResponse([{ occurred_at: recent }]));
+    });
+    renderBanner();
+    await waitFor(() => {
+      const sentinel = screen.getByTestId("co-pilot-active-state");
+      expect(sentinel.getAttribute("data-copilot-active")).toBe("true");
+      // No data-bridge-invisible ancestor → snapshot-visible.
+      expect(sentinel.closest("[data-bridge-invisible='true']")).toBeNull();
+    });
+  });
+
+  it("state sentinel reads data-copilot-active='false' and stays visible when idle", async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (typeof url === "string" && url.includes("/preferences")) {
+        return Promise.resolve(preferenceResponse(false));
+      }
+      return Promise.resolve(activityResponse([]));
+    });
+    renderBanner();
+    await waitFor(() => {
+      const sentinel = screen.getByTestId("co-pilot-active-state");
+      expect(sentinel.getAttribute("data-copilot-active")).toBe("false");
+      expect(sentinel.closest("[data-bridge-invisible='true']")).toBeNull();
+    });
+  });
+
   it("Stop button revokes session consent AND fires a consent.revoked audit POST", async () => {
     window.sessionStorage.setItem(
       __CO_PILOT_SESSION_CONSENT_KEY__,

@@ -55,6 +55,20 @@ class BridgeAuditLog(Base):
     method = Column(String(16), nullable=False)
     origin = Column(String(256), nullable=True)
     status_code = Column(Integer, nullable=False)
+    # Execution outcome distinct from the relay-receipt ``status_code`` (Bug 3b).
+    # ``status_code`` is the HTTP status the relay returned (200 on *delivery*);
+    # ``execution_status`` records whether the TARGET TAB actually ran the
+    # command, derived from the relay response body's ``success``/``code``:
+    #   - ``received`` — relay delivered; tab outcome not (yet) known (default).
+    #   - ``executed`` — tab confirmed the command ran (route changed / acted).
+    #   - ``failed``   — tab reported the command did NOT execute (timeout /
+    #                    error / no browser), even when ``status_code`` is 200.
+    # CHECK + ``DEFAULT 'received'`` live in migration bridge_audit_log_02.
+    execution_status = Column(
+        String(16),
+        nullable=False,
+        server_default=text("'received'"),
+    )
     occurred_at = Column(
         DateTime(timezone=True),
         nullable=False,
