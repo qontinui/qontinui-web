@@ -1,7 +1,7 @@
 """twin 05 coord.health_observations — Ξ_Health observation oplog
 
 Revision ID: twin_05_coord_health_observations
-Revises: agent_tool_access_01
+Revises: edit_effect_01_coord_edit_effect_tables
 Create Date: 2026-06-02
 
 Phase 2 of the digital-twin Runtime Health & Error/Log layer plan
@@ -47,7 +47,7 @@ from sqlalchemy.dialects import postgresql
 from alembic import op
 
 revision: str = "twin_05_coord_health_observations"
-down_revision: str = "bridge_audit_log_01"
+down_revision: str = "edit_effect_01_coord_edit_effect_tables"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
