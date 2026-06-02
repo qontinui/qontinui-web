@@ -24,15 +24,13 @@
  */
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   Activity,
   ChevronDown,
   ChevronRight,
+  ExternalLink,
   Filter,
-  GitBranch,
-  Hammer,
-  Layers,
-  Lock,
   RefreshCw,
   Users,
 } from "lucide-react";
@@ -40,11 +38,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
@@ -56,6 +49,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { LineageTimeline } from "@/components/sessions/LineageTimeline";
+import type { LineageResponse } from "@/components/sessions/types";
 import { ApiConfig } from "@/services/api-config";
 import { httpClient } from "@/services/service-factory";
 
@@ -82,22 +77,10 @@ interface SessionsResponse {
   count: number;
 }
 
-type ActionKind =
-  | "agent_worktree"
-  | "claim_event"
-  | "build_event"
-  | "merge_proposal";
-
-interface LineageAction {
-  kind: ActionKind;
-  handle: string;
-  occurred_at: string | null;
-}
-
-interface LineageResponse {
-  session_id: string;
-  actions: LineageAction[];
-}
+// Lineage wire shapes (`LineageActionKind` / `LineageAction` /
+// `LineageResponse`) + the grouped <LineageTimeline /> renderer are
+// shared with the per-session drill-down — imported from
+// `@/components/sessions`.
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -120,32 +103,6 @@ function relativeTime(iso?: string | null): string {
 function shortId(id?: string | null): string {
   if (!id) return "—";
   return id.length > 12 ? `${id.slice(0, 8)}…` : id;
-}
-
-function kindIcon(kind: ActionKind) {
-  switch (kind) {
-    case "agent_worktree":
-      return <GitBranch className="h-3.5 w-3.5" />;
-    case "claim_event":
-      return <Lock className="h-3.5 w-3.5" />;
-    case "build_event":
-      return <Hammer className="h-3.5 w-3.5" />;
-    case "merge_proposal":
-      return <Layers className="h-3.5 w-3.5" />;
-  }
-}
-
-function kindLabel(kind: ActionKind): string {
-  switch (kind) {
-    case "agent_worktree":
-      return "Worktree spawn";
-    case "claim_event":
-      return "Claim event";
-    case "build_event":
-      return "Build event";
-    case "merge_proposal":
-      return "Merge proposal";
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -276,17 +233,6 @@ function LineagePanel({
     return () => clearInterval(interval);
   }, [fetchData, isLive]);
 
-  const grouped = useMemo(() => {
-    if (!data) return new Map<ActionKind, LineageAction[]>();
-    const m = new Map<ActionKind, LineageAction[]>();
-    for (const a of data.actions) {
-      const arr = m.get(a.kind) ?? [];
-      arr.push(a);
-      m.set(a.kind, arr);
-    }
-    return m;
-  }, [data]);
-
   if (loading && !data) {
     return <Skeleton className="h-24 w-full" data-testid="lineage-loading" />;
   }
@@ -308,59 +254,7 @@ function LineagePanel({
     );
   }
 
-  const kinds: ActionKind[] = [
-    "agent_worktree",
-    "claim_event",
-    "build_event",
-    "merge_proposal",
-  ];
-
-  return (
-    <div className="space-y-2" data-testid="lineage-panel">
-      {kinds
-        .filter((k) => (grouped.get(k) ?? []).length > 0)
-        .map((kind) => {
-          const actions = grouped.get(kind) ?? [];
-          return (
-            <Collapsible key={kind} defaultOpen>
-              <CollapsibleTrigger
-                className="flex w-full items-center gap-2 rounded border border-border bg-muted/40 px-3 py-2 text-left text-sm font-medium hover:bg-muted/60"
-                data-testid={`lineage-group-${kind}`}
-              >
-                <ChevronDown className="h-3 w-3" />
-                {kindIcon(kind)}
-                {kindLabel(kind)}
-                <Badge variant="outline" className="ml-auto">
-                  {actions.length}
-                </Badge>
-              </CollapsibleTrigger>
-              <CollapsibleContent className="mt-1">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>handle</TableHead>
-                      <TableHead className="w-[160px]">when</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {actions.map((a, idx) => (
-                      <TableRow key={`${a.kind}:${a.handle}:${idx}`}>
-                        <TableCell className="font-mono text-xs">
-                          {a.handle}
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
-                          {relativeTime(a.occurred_at)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CollapsibleContent>
-            </Collapsible>
-          );
-        })}
-    </div>
-  );
+  return <LineageTimeline actions={data.actions} />;
 }
 
 // ---------------------------------------------------------------------------
@@ -550,6 +444,27 @@ export default function AgentSessionsDashboard() {
 
   return (
     <div className="space-y-6">
+      <Card
+        className="border-blue-500/30 bg-blue-500/5"
+        data-testid="agent-sessions-fleet-callout"
+      >
+        <CardContent className="flex flex-wrap items-center gap-2 py-3 text-sm text-muted-foreground">
+          <span>
+            This is the narrower <strong>Coordination Audit</strong> lens
+            (per-user rollup + lineage). For the full real-time fleet view of
+            all sessions, see
+          </span>
+          <Link
+            href="/sessions"
+            className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+            data-testid="agent-sessions-live-sessions-link"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            Live Sessions
+          </Link>
+        </CardContent>
+      </Card>
+
       <Card data-testid="agent-sessions-filters">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">

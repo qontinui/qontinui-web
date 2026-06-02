@@ -42,10 +42,18 @@ import {
   Globe,
   Check,
   ExternalLink,
+  Layers,
+  ChevronRight,
+  ChevronDown,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { relativeTime } from "@/components/operations/utils";
@@ -54,11 +62,13 @@ import {
   getSession,
   getSessionClaims,
   getSessionAgentStatus,
+  getSessionLineage,
   subscribeSessionEvents,
   listRegisteredRepos,
   findRegisteredRepo,
   registeredRepoSlugs,
 } from "./api";
+import { LineageTimeline } from "./LineageTimeline";
 import { classifyHeartbeat } from "./types";
 import { StealModal, getDashboardMachineId } from "./StealModal";
 import { HandoffModal, type HandoffTarget } from "./HandoffModal";
@@ -75,6 +85,7 @@ import type {
   SessionClaim,
   AgentStatus,
   RegisteredRepo,
+  LineageAction,
 } from "./types";
 
 interface SessionDetailProps {
@@ -145,6 +156,7 @@ export function SessionDetail({
 
   const [claims, setClaims] = useState<SessionClaim[]>([]);
   const [agentStatuses, setAgentStatuses] = useState<AgentStatus[]>([]);
+  const [lineageActions, setLineageActions] = useState<LineageAction[]>([]);
   const [coordLoading, setCoordLoading] = useState(true);
   const [repoRegistration, setRepoRegistration] = useState<RegisteredRepo | null>(null);
   const [repoIsCoordinated, setRepoIsCoordinated] = useState<boolean | null>(null);
@@ -174,12 +186,16 @@ export function SessionDetail({
     Promise.allSettled([
       getSessionClaims(sessionId, ctrl.signal),
       getSessionAgentStatus(sessionId, ctrl.signal),
-    ]).then(([claimsResult, statusResult]) => {
+      getSessionLineage(sessionId, ctrl.signal),
+    ]).then(([claimsResult, statusResult, lineageResult]) => {
       if (claimsResult.status === "fulfilled") {
         setClaims(claimsResult.value.claims ?? []);
       }
       if (statusResult.status === "fulfilled") {
         setAgentStatuses(statusResult.value.agents ?? []);
+      }
+      if (lineageResult.status === "fulfilled") {
+        setLineageActions(lineageResult.value.actions ?? []);
       }
       setCoordLoading(false);
     });
@@ -539,6 +555,7 @@ export function SessionDetail({
         <CoordinationCard
           claims={claims}
           agentStatuses={agentStatuses}
+          lineageActions={lineageActions}
           primaryAgent={primaryAgent}
           correlatedAgents={correlatedAgents}
           loading={coordLoading}
@@ -656,17 +673,21 @@ export function SessionDetail({
 function CoordinationCard({
   claims,
   agentStatuses,
+  lineageActions,
   primaryAgent,
   correlatedAgents,
   loading,
 }: {
   claims: SessionClaim[];
   agentStatuses: AgentStatus[];
+  lineageActions: LineageAction[];
   primaryAgent: AgentStatus | null;
   correlatedAgents: AgentStatus[];
   loading: boolean;
 }) {
-  const hasData = claims.length > 0 || agentStatuses.length > 0;
+  const [lineageOpen, setLineageOpen] = useState(false);
+  const hasData =
+    claims.length > 0 || agentStatuses.length > 0 || lineageActions.length > 0;
 
   if (loading) {
     return (
@@ -721,6 +742,17 @@ function CoordinationCard({
             <Badge variant="outline" className="text-[10px] gap-1 border-red-500/40 text-red-300">
               <Ban className="h-2.5 w-2.5" />
               blocked
+            </Badge>
+          )}
+          {lineageActions.length > 0 && (
+            <Badge
+              variant="outline"
+              className="text-[10px] gap-1 border-indigo-500/40 text-indigo-300"
+              data-ui-bridge-id="sessions.detail-lineage-badge"
+            >
+              <Layers className="h-2.5 w-2.5" />
+              {lineageActions.length} coord{" "}
+              {lineageActions.length === 1 ? "action" : "actions"}
             </Badge>
           )}
         </CardTitle>
@@ -819,6 +851,33 @@ function CoordinationCard({
               </div>
             </div>
           </div>
+        )}
+
+        {lineageActions.length > 0 && (
+          <Collapsible
+            open={lineageOpen}
+            onOpenChange={setLineageOpen}
+            data-ui-bridge-id="sessions.detail-lineage"
+          >
+            <CollapsibleTrigger
+              className="flex w-full items-center gap-2 rounded border border-border bg-muted/40 px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground hover:bg-muted/60"
+              data-ui-bridge-id="sessions.detail-lineage-toggle"
+            >
+              {lineageOpen ? (
+                <ChevronDown className="h-3 w-3" />
+              ) : (
+                <ChevronRight className="h-3 w-3" />
+              )}
+              <Layers className="h-3.5 w-3.5" />
+              Coordination lineage
+              <Badge variant="outline" className="ml-auto text-[10px]">
+                {lineageActions.length}
+              </Badge>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="mt-2">
+              <LineageTimeline actions={lineageActions} />
+            </CollapsibleContent>
+          </Collapsible>
         )}
       </CardContent>
     </Card>

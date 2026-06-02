@@ -176,6 +176,31 @@ export interface AgentStatusResponse {
 }
 
 /**
+ * Lineage action kind — one row of the UNION ALL timeline coord builds
+ * across `agent_worktrees` / `claims_audit` / `build_events` /
+ * `merge_proposals`. Mirrors the shape in
+ * `components/admin/agent-sessions/AgentSessionsDashboard.tsx`.
+ */
+export type LineageActionKind =
+  | "agent_worktree"
+  | "claim_event"
+  | "build_event"
+  | "merge_proposal";
+
+/** One row of the coord agent-session lineage timeline. */
+export interface LineageAction {
+  kind: LineageActionKind;
+  handle: string;
+  occurred_at: string | null;
+}
+
+/** Wire shape from `GET /api/v1/operations/sessions/:id/lineage`. */
+export interface LineageResponse {
+  session_id: string;
+  actions: LineageAction[];
+}
+
+/**
  * Heartbeat-staleness buckets per plan §D13.
  *
  * - fresh:  last_heartbeat_at < 45s   → green

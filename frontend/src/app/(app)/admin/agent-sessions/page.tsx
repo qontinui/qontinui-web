@@ -57,7 +57,7 @@ export default function AgentSessionsPage() {
             Admin
           </Button>
           <span className="text-muted-foreground">/</span>
-          <h1 className="text-lg font-semibold">Agent sessions</h1>
+          <h1 className="text-lg font-semibold">Coordination Audit</h1>
         </div>
       </div>
 
