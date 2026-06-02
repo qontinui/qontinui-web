@@ -41,6 +41,7 @@ import {
   isSameOriginServerError,
   type ServerErrorEntry,
 } from "./server-error-policy";
+import { reportServerErrorsToCoord } from "./report-server-errors-to-coord";
 import { evaluateApiCheck, type ApiCheckResult } from "./api-contract";
 import { discoverAppRoutes } from "./route-manifest";
 import { applyCrawlWaivers } from "./crawl-baseline";
@@ -2025,6 +2026,19 @@ async function main(): Promise<number> {
   // extends the same per-spec consoleClean/serverClean folding to the ~200
   // routes that have no IR spec, so the gate is no longer blind to them.
   // (`passed` is computed + persisted above, before the report is written.)
+
+  // Best-effort corroboration leg: ship ALL same-origin 5xx observed this run
+  // (per-spec + crawl) to coord's Ξ_Log ingest as a second observer. This is
+  // observability ONLY — it does NOT touch the gate verdict (`passed` is already
+  // final above), fires regardless of pass/fail, and is fully non-blocking:
+  // a no-op without COORD_HTTP_URL+COORD_INGEST_TOKEN, swallows all errors, and
+  // is bounded by a short timeout so an unreachable coord can't hang the run.
+  const allServerErrors = [
+    ...results.flatMap((r) => r.serverErrors),
+    ...crawlResults.flatMap((r) => r.serverErrors),
+  ];
+  await reportServerErrorsToCoord(allServerErrors);
+
   return passed ? 0 : 1;
 }
 
