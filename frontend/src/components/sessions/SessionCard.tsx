@@ -16,6 +16,7 @@ import {
   Link2,
   Check,
   AlertTriangle,
+  Layers,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -28,6 +29,7 @@ import { relativeTime } from "@/components/operations/utils";
 import {
   getSessionClaims,
   getSessionAgentStatus,
+  getSessionLineage,
   listRegisteredRepos,
   registeredRepoSlugs,
 } from "./api";
@@ -138,6 +140,7 @@ export function SessionCard({
   const [claimsCount, setClaimsCount] = useState<number | null>(null);
   const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
   const [repoCoordinated, setRepoCoordinated] = useState<boolean | null>(null);
+  const [lineageCount, setLineageCount] = useState<number | null>(null);
 
   useEffect(() => {
     if (session.state === "closed") return;
@@ -150,6 +153,9 @@ export function SessionCard({
         const first = res.agents?.[0] ?? null;
         setAgentStatus(first);
       })
+      .catch(() => {});
+    void getSessionLineage(session.id, ctrl.signal)
+      .then((res) => setLineageCount(res.actions?.length ?? 0))
       .catch(() => {});
     if (repo) {
       void listRegisteredRepos(ctrl.signal)
@@ -262,7 +268,8 @@ export function SessionCard({
 
           {(claimsCount !== null && claimsCount > 0) ||
            agentStatus?.blocked_on ||
-           agentStatus?.correlation_topic ? (
+           agentStatus?.correlation_topic ||
+           (lineageCount !== null && lineageCount > 0) ? (
             <div
               className="flex flex-wrap items-center gap-1.5"
               data-ui-bridge-id="sessions.card-coordination"
@@ -295,6 +302,16 @@ export function SessionCard({
                 >
                   <Link2 className="h-2.5 w-2.5" />
                   {agentStatus.correlation_topic}
+                </Badge>
+              )}
+              {lineageCount !== null && lineageCount > 0 && (
+                <Badge
+                  variant="outline"
+                  className="text-[10px] px-1.5 py-0 gap-1 border-indigo-500/40 text-indigo-300 bg-indigo-500/5"
+                  data-ui-bridge-id="sessions.card-lineage"
+                >
+                  <Layers className="h-2.5 w-2.5" />
+                  {lineageCount} coord {lineageCount === 1 ? "action" : "actions"}
                 </Badge>
               )}
             </div>

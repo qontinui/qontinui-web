@@ -18,6 +18,7 @@ import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_API } from "../operations/utils";
 import type {
   AgentStatusResponse,
+  LineageResponse,
   OutputChunkFrame,
   OutputHistoryResponse,
   RegisteredRepo,
@@ -199,6 +200,25 @@ export async function getSessionAgentStatus(
     throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
   }
   return (await res.json()) as AgentStatusResponse;
+}
+
+/**
+ * Fetch the coord agent-session lineage (worktree/claim/build/merge
+ * timeline) for a session. Proxies coord's
+ * `GET /coord/agent-sessions/:id/lineage` via the web backend. The
+ * same data the admin Coordination Audit dashboard renders, folded
+ * into the per-session drill-down.
+ */
+export async function getSessionLineage(
+  sessionId: string,
+  signal?: AbortSignal
+): Promise<LineageResponse> {
+  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(sessionId)}/lineage`;
+  const res = await httpClient.fetch(url, { signal });
+  if (!res.ok) {
+    throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
+  }
+  return (await res.json()) as LineageResponse;
 }
 
 export async function listTenants(

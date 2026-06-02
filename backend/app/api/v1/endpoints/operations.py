@@ -2843,6 +2843,29 @@ async def get_session_agent_status(
     )
 
 
+@router.get("/sessions/{session_id}/lineage")
+async def get_session_lineage(
+    session_id: UUID,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return the agent-session lineage (worktree/claim/build/merge timeline).
+
+    Proxies coord ``GET /coord/agent-sessions/{session_id}/lineage`` and
+    returns its ``{session_id, actions:[{kind, handle, occurred_at}]}``
+    envelope verbatim — the same UNION ALL timeline the admin
+    ``/admin/agent-sessions`` dashboard renders, folded into the
+    per-session drill-down so ``/sessions`` is the canonical fleet view.
+
+    Auth: user-authenticated via ``get_tenant_id`` (NOT admin); the
+    operator's Cognito bearer is forwarded so coord derives the tenant
+    fail-closed from its ``OperatorContext``.
+    """
+    return await _proxy_coord_get(
+        f"/coord/agent-sessions/{session_id}/lineage",
+        tenant_id=tenant_id,
+    )
+
+
 async def _resolve_session_row(session_id: UUID, tenant_id: UUID) -> dict[str, Any]:
     """Look up a single session row from coord's session list.
 
