@@ -6,7 +6,8 @@
   "provenance": { "source": "ai-generated", "appId": "qontinui-web" },
   "metadata": {
     "tags": ["marketplace", "package", "detail", "not-found"],
-    "extraSettleMs": 6000
+    "extraSettleMs": 6000,
+    "settleUntilPresent": [{ "id": "button-back-to-marketplace" }]
   },
   "states": [
     {
