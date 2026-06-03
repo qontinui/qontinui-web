@@ -43,6 +43,11 @@ import {
   scrubPathTemplate,
   scrubStack,
 } from "./scrub";
+import {
+  envelopeEndpoint,
+  parseDsn,
+  toSentryEnvelope,
+} from "./sentry-envelope";
 import { getSessionHash } from "./session-hash";
 import type { ClientTelemetryEvent, ClientTelemetryFrame } from "./types";
 
@@ -63,7 +68,13 @@ const MAX_FRAMES = 10;
 
 interface BeaconState {
   installed: boolean;
+  /** The raw configured ingest URL (a Sentry DSN in DSN-mode, else a generic URL). */
   ingestUrl: string;
+  /** The endpoint we actually POST to (the Sentry envelope endpoint in DSN-mode). */
+  transmitUrl: string;
+  /** The DSN string when in Sentry-envelope mode; null for the generic raw-JSON contract. */
+  dsn: string | null;
+  /** The host used for self-observation exclusion (DSN host in DSN-mode). */
   ingestHost: string | null;
   release: string;
   sampleRate: number;
@@ -224,7 +235,17 @@ function transmit(event: ClientTelemetryEvent): void {
   if (Math.random() > state.sampleRate) return; // sampling
 
   state.sentTimestamps.push(Date.now());
-  const body = JSON.stringify(event);
+  // DSN-mode: serialize a Sentry envelope sent as text/plain (CORS-safelisted →
+  // no preflight; auth rides in the envelope header's dsn field). Generic mode:
+  // the raw scrubbed-event JSON to the configured ingest URL (the §3.3 contract).
+  const dsnMode = state.dsn !== null;
+  const body = dsnMode
+    ? toSentryEnvelope(event, state.dsn as string)
+    : JSON.stringify(event);
+  const contentType = dsnMode
+    ? "text/plain;charset=UTF-8"
+    : "application/json";
+  const url = state.transmitUrl;
 
   let ok = false;
   try {
@@ -232,8 +253,8 @@ function transmit(event: ClientTelemetryEvent): void {
       typeof navigator !== "undefined" &&
       typeof navigator.sendBeacon === "function"
     ) {
-      const blob = new Blob([body], { type: "application/json" });
-      ok = navigator.sendBeacon(state.ingestUrl, blob);
+      const blob = new Blob([body], { type: contentType });
+      ok = navigator.sendBeacon(url, blob);
     }
   } catch {
     ok = false;
@@ -242,7 +263,7 @@ function transmit(event: ClientTelemetryEvent): void {
   if (!ok) {
     // Fallback to keepalive fetch. We do NOT await — best-effort.
     try {
-      void fetchKeepalive(state.ingestUrl, body)
+      void fetchKeepalive(url, body, contentType)
         .then(() => onTransmitSuccess())
         .catch(() => onTransmitFailure());
       return;
@@ -254,7 +275,11 @@ function transmit(event: ClientTelemetryEvent): void {
   onTransmitSuccess();
 }
 
-function fetchKeepalive(url: string, body: string): Promise<unknown> {
+function fetchKeepalive(
+  url: string,
+  body: string,
+  contentType: string
+): Promise<unknown> {
   // Use the ORIGINAL fetch (captured before we wrapped it) so our own beacon
   // POST never re-enters the fetch wrapper / observes itself.
   const f = state?.originalFetch ?? fetch;
@@ -262,7 +287,7 @@ function fetchKeepalive(url: string, body: string): Promise<unknown> {
     method: "POST",
     body,
     keepalive: true,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": contentType },
     // No credentials — the ingest origin is decoupled from the app (§3.3) and
     // we never want to attach app cookies to telemetry.
     credentials: "omit",
@@ -462,11 +487,25 @@ export function installBeacon(): boolean {
   // NOTHING — we will not fall back to the app API.
   if (!ingestUrl || !ingestUrl.trim()) return false;
 
+  // Vendor detection: if the ingest URL parses as a Sentry DSN, switch to the
+  // Sentry-envelope transport; otherwise keep the generic raw-JSON contract.
+  const trimmedIngestUrl = ingestUrl.trim();
+  const parsedDsn = parseDsn(trimmedIngestUrl);
+  const dsn = parsedDsn ? trimmedIngestUrl : null;
+  const transmitUrl =
+    (dsn && envelopeEndpoint(trimmedIngestUrl)) || trimmedIngestUrl;
+
+  // Self-observation exclusion host: the DSN's ingest host in DSN-mode (so the
+  // fetch wrapper never observes our own envelope POST), else the ingest URL host.
   let ingestHost: string | null = null;
-  try {
-    ingestHost = new URL(ingestUrl).host;
-  } catch {
-    ingestHost = null;
+  if (parsedDsn) {
+    ingestHost = parsedDsn.host;
+  } else {
+    try {
+      ingestHost = new URL(trimmedIngestUrl).host;
+    } catch {
+      ingestHost = null;
+    }
   }
 
   const sampleRateRaw = process.env.NEXT_PUBLIC_TELEMETRY_SAMPLE_RATE;
@@ -476,7 +515,9 @@ export function installBeacon(): boolean {
 
   state = {
     installed: true,
-    ingestUrl: ingestUrl.trim(),
+    ingestUrl: trimmedIngestUrl,
+    transmitUrl,
+    dsn,
     ingestHost,
     release: resolveRelease(),
     sampleRate,

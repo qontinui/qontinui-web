@@ -27,6 +27,7 @@ import { NextRequest, NextResponse } from "next/server";
 const PUBLIC_PATHS = [
   "/",
   "/login",
+  "/privacy",
   "/privacy-extension",
   // Cognito hosted-UI OAuth landing. It arrives unauthenticated (no token/
   // marker cookie yet) carrying `?code=&state=`; it MUST run the PKCE token
