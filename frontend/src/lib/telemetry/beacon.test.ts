@@ -208,3 +208,159 @@ describe("third-party / extension frame carve-out (§4.1)", () => {
     expect(typeof isOptedOut()).toBe("boolean");
   });
 });
+
+describe("Sentry DSN-mode transport", () => {
+  const DSN = "https://abc123def456@o4509.ingest.de.sentry.io/1234567";
+  const ENVELOPE_ENDPOINT =
+    "https://o4509.ingest.de.sentry.io/api/1234567/envelope/";
+  let sentBodies: Array<{ url: string; body: string; contentType?: string }>;
+
+  function installFetchCapture() {
+    sentBodies = [];
+    // sendBeacon returns false → force the keepalive-fetch fallback so we can
+    // capture the body + content type.
+    const sendBeacon = vi.fn(() => false);
+    Object.defineProperty(navigator, "sendBeacon", {
+      configurable: true,
+      value: sendBeacon,
+    });
+    const err = new TypeError("Failed to fetch");
+    const own = window.location.origin;
+    err.stack = [
+      "TypeError: Failed to fetch",
+      `    at getCurrentUser (${own}/_next/app.js:10:5)`,
+      `    at fetch (${own}/_next/app.js:20:3)`,
+    ].join("\n");
+    window.fetch = vi.fn(
+      (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : String(input);
+        if (url.startsWith("https://o4509.ingest.de.sentry.io")) {
+          sentBodies.push({
+            url,
+            body: String(init?.body ?? ""),
+            contentType: (init?.headers as Record<string, string>)?.[
+              "Content-Type"
+            ],
+          });
+          return Promise.resolve(new Response(null, { status: 200 }));
+        }
+        return Promise.reject(err);
+      }
+    ) as unknown as typeof fetch;
+    return err;
+  }
+
+  beforeEach(() => {
+    uninstallBeacon();
+    clearOptOut();
+    vi.stubEnv("NEXT_PUBLIC_TELEMETRY_BEACON_ENABLED", "1");
+  });
+
+  afterEach(() => {
+    uninstallBeacon();
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it("DSN ingest URL → sends a Sentry envelope as text/plain to the envelope endpoint", async () => {
+    vi.stubEnv("NEXT_PUBLIC_TELEMETRY_INGEST_URL", DSN);
+    installFetchCapture();
+    expect(installBeacon()).toBe(true);
+
+    await expect(
+      window.fetch(
+        "https://web.staging.qontinui.io/api/v1/users/88888888?token=secret&email=jspinak@gmail.com"
+      )
+    ).rejects.toBeTruthy();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(sentBodies.length).toBeGreaterThan(0);
+    const sent = sentBodies[0];
+    expect(sent.url).toBe(ENVELOPE_ENDPOINT);
+    expect(sent.contentType).toBe("text/plain;charset=UTF-8");
+
+    // Three-line envelope.
+    const lines = sent.body.split("\n");
+    expect(lines).toHaveLength(3);
+    const header = JSON.parse(lines[0]);
+    expect(header.dsn).toBe(DSN);
+    expect(header.event_id).toMatch(/^[0-9a-f]{32}$/);
+    expect(JSON.parse(lines[1])).toEqual({ type: "event" });
+    const ev = JSON.parse(lines[2]);
+    expect(ev.platform).toBe("javascript");
+    expect(ev.tags.request_host).toBe("web.staging.qontinui.io");
+    expect(ev.tags.request_path_tmpl).toBe("/api/v1/users/:id");
+    // No raw query / id leaks; no identity fields.
+    expect(sent.body).not.toContain("token=secret");
+    expect(sent.body).not.toContain("jspinak@gmail.com");
+    expect(sent.body).not.toContain("88888888"); // raw id templatized away
+    expect(sent.body).not.toMatch(/"user"|"ip_address"|"request":/);
+  });
+
+  it("non-DSN ingest URL → keeps the generic raw-JSON contract (application/json)", async () => {
+    const RAW = "https://telemetry.qontinui.example/ingest";
+    sentBodies = [];
+    vi.stubEnv("NEXT_PUBLIC_TELEMETRY_INGEST_URL", RAW);
+    const sendBeacon = vi.fn(() => false);
+    Object.defineProperty(navigator, "sendBeacon", {
+      configurable: true,
+      value: sendBeacon,
+    });
+    const err = new TypeError("Failed to fetch");
+    const own = window.location.origin;
+    err.stack = [
+      "TypeError: Failed to fetch",
+      `    at getCurrentUser (${own}/_next/app.js:10:5)`,
+    ].join("\n");
+    window.fetch = vi.fn(
+      (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : String(input);
+        if (url.startsWith(RAW)) {
+          sentBodies.push({
+            url,
+            body: String(init?.body ?? ""),
+            contentType: (init?.headers as Record<string, string>)?.[
+              "Content-Type"
+            ],
+          });
+          return Promise.resolve(new Response(null, { status: 204 }));
+        }
+        return Promise.reject(err);
+      }
+    ) as unknown as typeof fetch;
+
+    expect(installBeacon()).toBe(true);
+    await expect(
+      window.fetch("https://web.staging.qontinui.io/api/v1/users/1")
+    ).rejects.toBeTruthy();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(sentBodies.length).toBeGreaterThan(0);
+    const sent = sentBodies[0];
+    expect(sent.url).toBe(RAW); // raw ingest URL, not an envelope endpoint
+    expect(sent.contentType).toBe("application/json");
+    // The body is the raw scrubbed event JSON (one object, not a 3-line envelope).
+    const parsed = JSON.parse(sent.body);
+    expect(parsed.kind).toBe("cors_failure");
+    expect(parsed.request_host).toBe("web.staging.qontinui.io");
+  });
+
+  it("self-observation exclusion uses the DSN host (never observes its own envelope POST)", async () => {
+    vi.stubEnv("NEXT_PUBLIC_TELEMETRY_INGEST_URL", DSN);
+    installFetchCapture();
+    installBeacon();
+
+    // Drive a failing app fetch → one envelope POST is made to the Sentry host.
+    await expect(
+      window.fetch("https://web.staging.qontinui.io/api/v1/users/1")
+    ).rejects.toBeTruthy();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Exactly one POST captured: the beacon's own envelope POST to the Sentry
+    // host did NOT re-enter the wrapper to generate a second telemetry event.
+    expect(sentBodies.length).toBe(1);
+  });
+});
