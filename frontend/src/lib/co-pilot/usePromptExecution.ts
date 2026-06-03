@@ -97,13 +97,22 @@ const INITIAL_STATE: PromptExecutionState = {
 function errorFromPlanFailure(err: PlanError): ExecutionError {
   switch (err.reason) {
     case "no-device-id":
+      // No device id only — the runner genuinely isn't selected/paired.
       return { kind: "no-runner-connected", message: err.message };
     case "auth-required":
       return { kind: "auth-required", message: err.message };
     case "runner-not-connected":
+      // 503 — the runner isn't WS-connected. This is the only plan-side reason
+      // that is truly "connect a runner" (and the only one the no-runner latch
+      // effect may auto-clear on reconnect).
+      return { kind: "no-runner-connected", message: err.message };
     case "device-not-owned":
     case "runner-unreachable":
-      return { kind: "no-runner-connected", message: err.message };
+      // 502/504/timeout/abort — the runner is paired but the relay transport
+      // failed or planning ran past the deadline. This is NOT "no runner": map
+      // to `plan-failed` (retry the prompt) so the timeout message is shown and
+      // is NOT silently cleared by the no-runner-connected reconnect latch.
+      return { kind: "plan-failed", message: err.message };
     case "prompt-rejected":
     case "malformed-plan":
     case "planning-failed":

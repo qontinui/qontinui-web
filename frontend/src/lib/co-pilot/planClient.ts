@@ -86,6 +86,29 @@ const PLAN_PATH =
 /** Header the runner-proxy reads to relay to a specific paired runner. */
 const DEVICE_ID_HEADER = "X-Qontinui-Device-Id";
 
+/**
+ * Per-request relay timeout, in ms, sent to the web backend via
+ * `X-Qontinui-Timeout-Ms`. The backend (`device_bridge_ws.py`) clamps this to
+ * [1s, 120s] and uses it instead of the relay's 30s default. Runner planning
+ * routinely takes ~20s+ (more with explain-mode / complex prompts), so the 30s
+ * default produced spurious 504s. We give planning the largest sync window that
+ * still clears the upstream API gateway's hard ~60s request cap.
+ */
+const PLAN_RELAY_TIMEOUT_MS = 55000;
+const PLAN_TIMEOUT_HEADER = "X-Qontinui-Timeout-Ms";
+
+/**
+ * Client-side hard deadline for the whole plan fetch, in ms. Set slightly above
+ * the relay timeout (so the server-side timeout normally wins and returns a
+ * structured 504) but well under any indefinite hang: if the fetch promise has
+ * not settled by this point we abort it and throw a `runner-unreachable`
+ * PlanError, so the UI can never sit on "Planning…" forever.
+ */
+const PLAN_CLIENT_TIMEOUT_MS = 58000;
+
+/** Sentinel returned by the client-side timeout race (never resolves the fetch). */
+const PLAN_TIMEOUT_SENTINEL = Symbol("plan-client-timeout");
+
 export interface RequestPlanInput {
   /** Raw user prompt. */
   prompt: string;
@@ -206,24 +229,73 @@ export async function requestPlan(
 
   const pageCatalog = buildPageCatalog();
 
-  let response: Response;
+  // Hard client-side deadline. The shared httpClient owns its own AbortController
+  // (and overwrites any caller-supplied signal), so we can't hand it one; instead
+  // we race the fetch against a timer. On timeout we abort our local controller
+  // (best-effort cancellation of any in-flight retry the httpClient is doing) and
+  // throw a structured `runner-unreachable` so `run()` reaches the error phase.
+  const clientAbort = new AbortController();
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<typeof PLAN_TIMEOUT_SENTINEL>((resolve) => {
+    timeoutHandle = setTimeout(() => {
+      clientAbort.abort();
+      resolve(PLAN_TIMEOUT_SENTINEL);
+    }, PLAN_CLIENT_TIMEOUT_MS);
+  });
+
+  let raced: Response | typeof PLAN_TIMEOUT_SENTINEL;
   try {
-    response = await httpClient.fetch(`${ApiConfig.API_BASE_URL}${PLAN_PATH}`, {
-      method: "POST",
-      headers: { [DEVICE_ID_HEADER]: deviceId },
-      // The runner accepts a caller-supplied `pages` list and grounds the plan
-      // on it; `pageCatalog` additionally carries the discovered element labels.
-      body: JSON.stringify({
-        prompt: trimmed,
-        explain,
-        pageCatalog,
-        pages: copilotPages,
+    raced = await Promise.race([
+      httpClient.fetch(`${ApiConfig.API_BASE_URL}${PLAN_PATH}`, {
+        method: "POST",
+        // No automatic retries on the planner call. A 502/504/5xx here is a
+        // planning failure the user must see immediately — the default 3x 5xx
+        // retry would chain multiple 60s request timeouts and present as an
+        // indefinite "Planning…" hang (the E2E symptom). Surface it once.
+        maxRetries: 0,
+        signal: clientAbort.signal,
+        headers: {
+          [DEVICE_ID_HEADER]: deviceId,
+          // Give the relay the full sync window (backend clamps to <=120s) so
+          // ~20s+ planning doesn't trip the relay's 30s default → spurious 504.
+          [PLAN_TIMEOUT_HEADER]: String(PLAN_RELAY_TIMEOUT_MS),
+        },
+        // The runner accepts a caller-supplied `pages` list and grounds the plan
+        // on it; `pageCatalog` additionally carries the discovered element labels.
+        body: JSON.stringify({
+          prompt: trimmed,
+          explain,
+          pageCatalog,
+          pages: copilotPages,
+        }),
       }),
-    });
+      timeoutPromise,
+    ]);
   } catch (err) {
+    if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
+    // An AbortError (our client deadline, or the httpClient's internal 60s
+    // timeout) is a planning timeout, not a generic network failure.
+    const name = err instanceof Error ? err.name : "";
     const msg = err instanceof Error ? err.message : "Network error";
+    if (name === "AbortError" || /timeout/i.test(msg)) {
+      throw new PlanError(
+        "runner-unreachable",
+        "Planning timed out — the runner took too long. Try again or a simpler prompt.",
+      );
+    }
     throw new PlanError("planning-failed", `Could not reach the planner: ${msg}`);
   }
+
+  if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
+
+  if (raced === PLAN_TIMEOUT_SENTINEL) {
+    throw new PlanError(
+      "runner-unreachable",
+      "Planning timed out — the runner took too long. Try again or a simpler prompt.",
+    );
+  }
+
+  const response: Response = raced;
 
   if (!response.ok) {
     const reason = reasonForStatus(response.status);
