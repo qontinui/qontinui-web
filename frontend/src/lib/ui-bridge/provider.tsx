@@ -35,7 +35,7 @@ import { CommandRelayListener } from "@qontinui/ui-bridge/react";
 import { getGlobalSpecStore } from "@qontinui/ui-bridge/specs";
 import { RouteAwarenessProvider } from "./RouteAwarenessProvider";
 import { useDiscoveredSpecs } from "./use-discovered-specs";
-import { tokenStorage } from "@/services/service-factory";
+import { tokenStorage, authService } from "@/services/service-factory";
 import { useCoPilotPreference } from "@/hooks/useCoPilotPreference";
 import { useCoPilotSessionConsent } from "@/hooks/useCoPilotSessionConsent";
 import { CoPilotConsentModal } from "@/components/co-pilot/CoPilotConsentModal";
@@ -60,28 +60,105 @@ function commandRelayAuthHeader(): string | null {
 }
 
 /**
+ * sessionStorage key for the stable per-tab relay session id.
+ *
+ * The previous implementation sourced `sessionId` from the access
+ * token's `jti` claim — but under HttpOnly-cookie auth there is no
+ * JS-readable token after a page load/refresh (the token lives in an
+ * HttpOnly cookie + in-memory only on the login navigation), so the
+ * claim is unavailable and registration never resolved. A stable
+ * per-tab UUID is the correct identifier here: the relay uses
+ * `sessionId` to scope/identify the tab's session, and the
+ * AUTHORITATIVE user scoping is done server-side via the
+ * `X-Caller-User-Id` header the relay route injects from the verified
+ * cookie session (see `app/api/ui-bridge/[...path]/route.ts` +
+ * `_auth.ts`). The SDK contract does not require `sessionId` to match
+ * any token claim — it only requires a non-empty `{userId, sessionId}`.
+ */
+const RELAY_SESSION_ID_KEY = "ui_bridge_relay_session_id";
+
+/**
+ * Module-scoped cache of the current user's id, resolved once per tab
+ * via a cookie-authed `GET /api/v1/auth/users/me` (see
+ * `resolveRelayUserId` below). `commandRelayRegistrationMetadata` is a
+ * SYNC function the SDK calls per heartbeat, so it cannot itself await
+ * the `/me` round-trip; the wrapper pre-fetches on mount and writes the
+ * id here. Null until resolved (or when logged out), which keeps the
+ * registration metadata — and therefore the listener's `enabled` gate
+ * — off until a real user id is known.
+ */
+let cachedRelayUserId: string | null = null;
+
+/**
+ * Get (or lazily create) the stable per-tab relay session id. Persisted
+ * in `sessionStorage` so it survives a same-tab reload but is unique per
+ * browser tab (sessionStorage is tab-scoped), which matches the relay's
+ * per-tab session semantics. SSR-safe: returns null when `window` is
+ * unavailable.
+ */
+function getRelaySessionId(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    let id = sessionStorage.getItem(RELAY_SESSION_ID_KEY);
+    if (!id) {
+      id =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `relay-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      sessionStorage.setItem(RELAY_SESSION_ID_KEY, id);
+    }
+    return id;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve the current user's id via the cookie-authed `/me` endpoint and
+ * cache it in `cachedRelayUserId`. Uses the app's `authService`, which
+ * sends `credentials: "include"` (cookie auth) and attaches the in-memory
+ * Bearer when present — so it works on the post-refresh, JS-token-absent
+ * path that the old `tokenStorage.getUserId()` (token `sub` claim) could
+ * not. Best-effort: a 401 / network error leaves the cache null (listener
+ * stays unmounted). Idempotent — no-op once resolved.
+ */
+async function resolveRelayUserId(): Promise<void> {
+  if (cachedRelayUserId) return;
+  try {
+    const user = await authService.getCurrentUser();
+    if (user && typeof user.id === "string" && user.id.length > 0) {
+      cachedRelayUserId = user.id;
+    }
+  } catch {
+    // Logged out / cookie session not (yet) established. Leave null; the
+    // listener's `enabled` gate keeps it unmounted until a retry resolves.
+  }
+}
+
+/**
  * Per-user tab scoping hook for the SDK's CommandRelayListener
  * (SDK ≥ 0.12.0).
  *
- * Returns `{userId, sessionId}` from the current access token's `sub`
- * / `jti` claims when available. The SDK sends this with every
- * heartbeat; the relay rejects heartbeats without it (strict mode) and
- * uses it to filter `/tabs` + `targetTabId` lookups + unscoped fanout
- * to caller-owned tabs only.
+ * Returns `{userId, sessionId}` where `userId` is the id resolved from a
+ * cookie-authed `/me` call (cached in `cachedRelayUserId` by the
+ * wrapper's mount effect) and `sessionId` is a stable per-tab UUID. The
+ * SDK sends this with every heartbeat; the relay rejects heartbeats
+ * without it (strict mode) and uses it to identify the tab's session.
+ * The authoritative per-user scoping is enforced server-side via the
+ * `X-Caller-User-Id` header injected from the verified cookie session.
  *
- * Returns null on the pre-login (no JWT) path so the listener's
- * `enabled` gate (below) keeps the listener un-mounted until both the
- * user and session ids are resolvable. Once enabled, this hook is
- * called fresh per heartbeat so a token rotation (re-login → new jti)
- * picks up without remounting.
+ * Returns null until the `/me` id resolves (and on the logged-out path),
+ * so the listener's `enabled` gate (below) keeps the listener un-mounted
+ * until a real user id + tab session id are both available. Called fresh
+ * per heartbeat so it picks up the resolved id without remounting.
  *
  * Cross-link: plans/2026-05-28-production-safe-ui-bridge-design.md §4.2.
  */
 function commandRelayRegistrationMetadata():
   | { userId: string; sessionId: string }
   | null {
-  const userId = tokenStorage.getUserId();
-  const sessionId = tokenStorage.getSessionId();
+  const userId = cachedRelayUserId;
+  const sessionId = getRelaySessionId();
   if (!userId || !sessionId) return null;
   return { userId, sessionId };
 }
@@ -95,6 +172,31 @@ const isDev = process.env.NODE_ENV === "development";
 // /control/* command fails with "No browser connected".
 const remoteCommandsOptIn =
   process.env.NEXT_PUBLIC_UI_BRIDGE_REMOTE_COMMANDS === "1";
+
+/**
+ * Build-time / env-level enablement of the command relay — the OUTER gate
+ * that composes with the per-user preference + per-session consent. True
+ * in development or when `NEXT_PUBLIC_UI_BRIDGE_REMOTE_COMMANDS=1` is set
+ * at build time. Exported so the readiness badge can mirror the provider's
+ * gate exactly instead of re-deriving it (and drifting).
+ */
+export function isRemoteCommandsEnvEnabled(): boolean {
+  return isDev || remoteCommandsOptIn;
+}
+
+/**
+ * True once the relay registration metadata is fully resolvable — i.e. a
+ * cookie-authed `/me` user id has been cached AND a per-tab session id
+ * exists. The readiness badge uses this to distinguish "consent granted
+ * but relay not yet registered/connecting" from "actually ready to drive
+ * the page". The SDK exposes no connection/registration callback (its
+ * `CommandRelayListener` returns `null` with no status prop), so this
+ * metadata-resolved signal is the closest client-side proxy for "the tab
+ * can register and heartbeats will carry the required envelope".
+ */
+export function isRelayRegistrationReady(): boolean {
+  return commandRelayRegistrationMetadata() !== null;
+}
 
 /**
  * Feature configuration for UI Bridge
@@ -192,7 +294,7 @@ interface UIBridgeWrapperProps {
  */
 export function UIBridgeWrapper({
   children,
-  enableRemoteCommands: envEnableRemoteCommands = isDev || remoteCommandsOptIn,
+  enableRemoteCommands: envEnableRemoteCommands = isRemoteCommandsEnvEnabled(),
 }: UIBridgeWrapperProps) {
   // §4.5 consent layer — compose the env-level gate with the per-user
   // durable preference AND the per-session transient consent. The
@@ -207,10 +309,39 @@ export function UIBridgeWrapper({
   // resolves enabled=false on error), keeping the listener off.
   const userPreference = useCoPilotPreference();
   const sessionConsent = useCoPilotSessionConsent();
-  const enableRemoteCommands =
+  const consentGranted =
     envEnableRemoteCommands &&
     userPreference.enabled === true &&
     sessionConsent.state === "granted";
+
+  // Resolve the relay user id via a cookie-authed `/me` once all three
+  // consent gates pass. Under HttpOnly-cookie auth the access token is
+  // NOT JS-readable after a load/refresh, so the registration metadata
+  // (userId) can't come from a token claim — it comes from `/me`. The
+  // SDK's `commandRelayRegistrationMetadata` is sync (called per
+  // heartbeat) so we pre-fetch the id here into a module-scoped cache and
+  // flip `relayUserIdReady` to re-render once it's available.
+  const [relayUserIdReady, setRelayUserIdReady] = React.useState(
+    cachedRelayUserId !== null
+  );
+  useEffect(() => {
+    if (!consentGranted || relayUserIdReady) return;
+    let cancelled = false;
+    void resolveRelayUserId().then(() => {
+      if (!cancelled && cachedRelayUserId !== null) {
+        setRelayUserIdReady(true);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [consentGranted, relayUserIdReady]);
+
+  // The listener mounts only once the user id + per-tab session id are
+  // both resolvable, so `commandRelayRegistrationMetadata` never returns
+  // null while mounted — strict-mode heartbeats always carry the
+  // {userId, sessionId} envelope.
+  const enableRemoteCommands = consentGranted && relayUserIdReady;
 
   const bufferRef = useRef<BridgeEvent[]>([]);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
