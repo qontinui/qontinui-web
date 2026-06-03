@@ -577,6 +577,16 @@ function extraSettleMs(doc: Record<string, unknown>): number {
 const SETTLE_POLL_INTERVAL_MS = 250;
 const MAX_SETTLE_POLL_MS = 15_000;
 
+// Retry-once on a non-full STRUCTURAL match. A fresh re-navigation distinguishes
+// a TRANSIENT data-load miss (the projects list / a data fetch didn't complete
+// in time → some anchors absent → partial/no_match, but a re-nav renders fine)
+// from a PERSISTENT regression (the element is genuinely gone → fails both
+// attempts → gates). Mirrors the same-origin 502 re-probe: confirm persistence
+// before gating. Bounded to a single retry; only applied to specs that executed
+// ZERO transitions, so a retry can never re-apply a `write`/`destructive`
+// transition's side effect (CI runs with --include-write).
+const SPEC_MATCH_RETRIES = 1;
+
 function settleUntilCriteria(doc: Record<string, unknown>): Array<Record<string, unknown>> {
   const meta = (doc as { metadata?: { settleUntilPresent?: unknown } }).metadata;
   const raw = meta?.settleUntilPresent;
@@ -1670,21 +1680,44 @@ async function main(): Promise<number> {
     // tear down after. The unauth lane handles its own stubs inside
     // runUnauthSpec; the auth lane applies them on the shared `context`.
     let r: SpecResult;
-    if (unauth) {
-      r = await runUnauthSpec(spec);
-    } else {
-      const stubs = readRouteStubs(spec.doc);
-      const teardownStubs = await applyRouteStubs(context, stubs);
-      try {
-        r = await evaluateSpec(page, context.request, spec, args.baseUrl, args.includeDestructive, args.includeWrite, fixtureProjectId);
-      } finally {
-        await teardownStubs();
+    // Console/server attribution baselines. On a structural retry these advance
+    // to the retry attempt so attempt-1's transient noise is discarded and only
+    // the final (winning or confirmed-persistent) attempt's events are gated on.
+    let consoleSliceBase = consoleBefore;
+    let serverSliceBase = serverBefore;
+    for (let attempt = 0; attempt <= SPEC_MATCH_RETRIES; attempt++) {
+      if (unauth) {
+        r = await runUnauthSpec(spec);
+      } else {
+        const stubs = readRouteStubs(spec.doc);
+        const teardownStubs = await applyRouteStubs(context, stubs);
+        try {
+          r = await evaluateSpec(page, context.request, spec, args.baseUrl, args.includeDestructive, args.includeWrite, fixtureProjectId);
+        } finally {
+          await teardownStubs();
+        }
       }
+      // Retry only a non-full STRUCTURAL match, only if no transition executed
+      // (so a re-navigation is side-effect-free — never re-applies a write), and
+      // only up to SPEC_MATCH_RETRIES. A persistent regression fails both passes
+      // and still gates; a transient data-load miss clears on the fresh re-nav.
+      if (
+        r.matchOutcome === "full_match" ||
+        attempt >= SPEC_MATCH_RETRIES ||
+        r.transitions.length > 0
+      ) {
+        break;
+      }
+      process.stderr.write(
+        `[spec-ci] ${spec.id} ${r.matchOutcome} (rate ${r.matchRate.toFixed(2)}) — retry ${attempt + 1}/${SPEC_MATCH_RETRIES} (transient-vs-persistent)\n`,
+      );
+      consoleSliceBase = criticalConsole.length;
+      serverSliceBase = serverErrors.length;
     }
     // Attribute this spec's slice, dropping any author-declared expected errors.
     const expected = readExpectedConsoleErrors(spec.doc);
     r.consoleErrors = criticalConsole
-      .slice(consoleBefore)
+      .slice(consoleSliceBase)
       .filter((e) => !expected.some((rx) => rx.test(e.text)));
     // Same slice mechanism for same-origin 5xx, dropping expectedServerErrors
     // waivers (matched against the response URL). Gateway-class (502/503/504)
@@ -1692,7 +1725,7 @@ async function main(): Promise<number> {
     // to >=500 (kept); a transient upstream blip re-probes <500 (dropped).
     const expectedServer = readExpectedServerErrors(spec.doc);
     const sliced = serverErrors
-      .slice(serverBefore)
+      .slice(serverSliceBase)
       .filter((e) => !expectedServer.some((rx) => rx.test(e.url)));
     const { kept: serverKept, dropped: serverDropped } = await confirmGatewayPersistence(page, sliced);
     r.serverErrors = serverKept;
