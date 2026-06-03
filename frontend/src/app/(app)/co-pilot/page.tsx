@@ -517,7 +517,13 @@ export default function CoPilotPage() {
   // ---- Gate 2: preference OFF → opt-in CTA ----
   if (!preference.enabled) {
     return (
-      <div className="max-w-2xl space-y-6 p-6">
+      // data-bridge-invisible: the co-pilot only ever drives OTHER pages
+      // (after it soft-navigates away), so its OWN surface must never be a
+      // bridge target — otherwise the planner can ground steps on this page's
+      // controls or "navigate to /co-pilot" from /co-pilot. Marking the root
+      // wrapper invisible makes AutoRegister's ancestor walk skip the whole
+      // co-pilot surface. Mirrors the guard on CoPilotActiveBanner.tsx.
+      <div data-bridge-invisible="true" className="max-w-2xl space-y-6 p-6">
         {header}
         <OptInCta />
       </div>
@@ -527,7 +533,9 @@ export default function CoPilotPage() {
   // ---- Gate 3: consent not granted → consent affordance ----
   if (consent.state !== "granted") {
     return (
-      <div className="max-w-2xl space-y-6 p-6">
+      // data-bridge-invisible — see the opt-in branch above. Keeps the
+      // co-pilot's own surface off the bridge so the planner can't target it.
+      <div data-bridge-invisible="true" className="max-w-2xl space-y-6 p-6">
         {header}
         <ConsentCta onGrant={reConsent} />
       </div>
@@ -539,7 +547,11 @@ export default function CoPilotPage() {
   const steps = state.plan?.steps ?? [];
 
   return (
-    <div className="max-w-2xl space-y-6 p-6">
+    // data-bridge-invisible — see the opt-in branch above. The whole prompt
+    // surface (form, summary, step timeline, suggestions, Clear/Run) is kept
+    // off the bridge so the planner can never ground a step on the co-pilot's
+    // own controls.
+    <div data-bridge-invisible="true" className="max-w-2xl space-y-6 p-6">
       {header}
 
       {/* No runner affordance (non-error pre-flight hint) */}
