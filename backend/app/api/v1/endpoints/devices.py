@@ -38,7 +38,9 @@ from qontinui_schemas.generated.per_type.runner import (
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
+    DeviceTokenContext,
     get_async_db,
+    get_authenticated_device,
     get_current_active_user_async,
 )
 from app.config.redis_config import get_redis
@@ -49,6 +51,7 @@ from app.models.device import Device
 from app.models.user import User as UserModel
 from app.schemas.device import (
     DeviceConnectionResponse,
+    DeviceIdentityResponse,
     DispatchDeviceRequest,
     DispatchDeviceResponse,
     PairCliRequest,
@@ -292,6 +295,40 @@ async def list_connections(
         offset=offset,
     )
     return [DeviceConnectionResponse.model_validate(c) for c in connections]
+
+
+# ---------------------------------------------------------------------------
+# Device-authenticated identity — the disjoint device principal path
+# ---------------------------------------------------------------------------
+
+
+@router.get("/me", response_model=DeviceIdentityResponse)
+async def get_device_identity(
+    *,
+    device_ctx: DeviceTokenContext = Depends(get_authenticated_device),
+) -> Any:
+    """Resolve the device principal for a coord-issued device-token JWT.
+
+    The relay's ``_auth.ts`` forwards the device-token JWT as a bearer to
+    this route to resolve the caller into a ``(device_id, user_id,
+    tenant_id)`` principal. This is the disjoint device path: the
+    Cognito-only ``/api/v1/auth/users/me`` rejects a device-JWT.
+
+    Declared before ``GET /{device_id}`` so ``me`` is never captured as a
+    device-id path parameter.
+    """
+    raw_tenant = device_ctx.claims.get("tenant_id")
+    if not raw_tenant:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Device token missing tenant_id claim",
+        )
+
+    return DeviceIdentityResponse(
+        device_id=str(device_ctx.device_id),
+        user_id=str(device_ctx.user_id),
+        tenant_id=str(raw_tenant),
+    )
 
 
 # ---------------------------------------------------------------------------

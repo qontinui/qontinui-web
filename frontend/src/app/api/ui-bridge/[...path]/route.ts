@@ -272,7 +272,16 @@ async function wrapHandler(
   // anonymous caller shouldn't be able to distinguish "valid route, you
   // can't access it" from "no such route" — both must yield the same
   // 401 without any route-existence signal.
+  // `callerUserId` is the identity spliced as `X-Caller-User-Id` for tab
+  // scoping. For a `user` principal it's the operator's own id; for a
+  // `device` principal it's the PAIRED operator's id (resolved by
+  // `/devices/me`), so a device sees the same owned-tab set as its operator.
+  //
+  // `callerRateLimitKey` is the rate-limit bucket key. It is NAMESPACED by
+  // principal kind so a device and a user whose UUIDs collide can't share a
+  // bucket: `dev:<deviceId>` for a device, the bare `userId` for a user.
   let callerUserId: string | null = null;
+  let callerRateLimitKey: string | null = null;
   let callerToken: string | null = null;
   if (isAuthGateEnabled()) {
     if (!isAllowedOrigin(request.headers.get("origin"))) {
@@ -284,19 +293,23 @@ async function wrapHandler(
     }
     callerUserId = auth.userId;
     callerToken = auth.token;
+    callerRateLimitKey =
+      auth.kind === "device" ? `dev:${auth.deviceId}` : auth.userId;
   }
 
-  // Per-user rate limit (§4.8). Runs AFTER auth (we need a userId to
-  // key against) and BEFORE the body-preservation pass-through so the
-  // 429 path short-circuits as cheaply as possible. Only active when
-  // the auth gate is on — in admin/local-dev mode there's no userId to
-  // key against and the limit doesn't apply.
+  // Per-principal rate limit (§4.8). Runs AFTER auth (we need a verified
+  // identity to key against) and BEFORE the body-preservation pass-through
+  // so the 429 path short-circuits as cheaply as possible. Only active when
+  // the auth gate is on — in admin/local-dev mode there's no principal to
+  // key against and the limit doesn't apply. The key is namespaced per
+  // principal kind (`dev:<deviceId>` vs the bare userId) so a device gets
+  // its own budget separate from its paired operator.
   //
   // The check is fail-OPEN when Redis is unreachable: `checkRateLimit`
   // returns `allowed: true, redisOffline: true` and we let the request
   // through. See `_rate-limit.ts::checkRateLimit` for the rationale.
-  if (callerUserId) {
-    const rl = await checkRateLimit(callerUserId, kindForMethod(method));
+  if (callerRateLimitKey) {
+    const rl = await checkRateLimit(callerRateLimitKey, kindForMethod(method));
     if (!rl.allowed) {
       return rateLimitedResponse(rl);
     }

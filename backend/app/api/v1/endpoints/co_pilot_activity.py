@@ -22,13 +22,18 @@ same path as every other ``/api/v1/users/*`` route):
 
 from datetime import datetime
 from typing import Any, cast
+from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import and_, desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_async_db, get_current_active_user_async
+from app.api.deps import (
+    get_async_db,
+    get_audit_actor_user_id,
+    get_current_active_user_async,
+)
 from app.models.bridge_audit_log import BridgeAuditLog
 from app.models.user import User as UserModel
 from app.schemas.co_pilot_activity import (
@@ -57,17 +62,25 @@ async def insert_bridge_audit_log(
     *,
     payload: BridgeAuditLogCreate,
     db: AsyncSession = Depends(get_async_db),
-    current_user: UserModel = Depends(get_current_active_user_async),
+    actor_user_id: UUID = Depends(get_audit_actor_user_id),
 ) -> Any:
-    """Insert a single audit row for the calling user.
+    """Insert a single audit row for the acting principal.
 
-    Called server-to-server by the Next.js relay route. Bearer in the
-    Authorization header is the SAME token the relay just verified, so
-    ``current_user`` here is the same user the row will be attributed
-    to — there is no path to inject rows under another user's id.
+    Called server-to-server by the Next.js relay route. The bearer in the
+    Authorization header is the SAME token the relay just verified, and is
+    EITHER a Cognito user JWT or a coord-issued device-token JWT:
+
+    * Cognito user JWT — the row is attributed to that user.
+    * Device-token JWT — a device write (e.g. the runner forwarding a
+      write-command audit). The row is attributed to the paired operator
+      (the device's owning user), resolved by
+      :func:`~app.api.deps.get_audit_actor_user_id`.
+
+    In both cases ``actor_user_id`` is derived solely from the verified
+    token, so there is no path to inject rows under another user's id.
     """
     row = BridgeAuditLog(
-        user_id=current_user.id,
+        user_id=actor_user_id,
         session_id=payload.session_id,
         tab_id=payload.tab_id,
         command_name=payload.command_name,
