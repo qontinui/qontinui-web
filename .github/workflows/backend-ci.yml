@@ -34,7 +34,12 @@ env:
 jobs:
   lint:
     name: Lint & Format Check
-    runs-on: ubuntu-latest
+    # Self-hosted runners (label 'qontinui') have Python 3.12 pre-installed
+    # plus a persistent pip cache — avoids the ubuntu-latest cold-boot tax
+    # (~90s of action downloads + apt + pip warmup per run). Requires a
+    # self-hosted runner to be online; if none are available the job
+    # queues until one comes up (no automatic ubuntu-latest fallback).
+    runs-on: [self-hosted, qontinui]
     defaults:
       run:
         working-directory: ./backend
@@ -42,27 +47,17 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # qontinui (a path-dep) pulls in torch from pytorch-cu128 — wheels
-      # are large enough to overflow the runner's default disk. Remove
-      # preinstalled SDKs/runtimes that this workflow doesn't use.
-      - name: Free disk space
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: false
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: false
-          swap-storage: false
-
       # Backend's pyproject.toml has path-deps on sibling repos
       # (qontinui-schemas, qontinui). actions/checkout@v5 refuses
       # `path:` outside the workspace, so clone them via git directly.
       # qontinui-cloud-control is now AGPL/public — plain clone so the test
       # harness can side-effect-import it (see backend/tests/conftest.py).
+      # Self-hosted runners reuse $GITHUB_WORKSPACE/..; remove stale clones
+      # first so each run starts from a known state.
       - name: Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)
         run: |
           cd "$GITHUB_WORKSPACE/.."
+          rm -rf qontinui-schemas qontinui qontinui-cloud-control
           git clone --depth 1 https://github.com/qontinui/qontinui-schemas.git
           git clone --depth 1 https://github.com/jspinak/qontinui.git
           git clone --depth 1 https://github.com/qontinui/qontinui-cloud-control.git
