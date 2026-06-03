@@ -60,6 +60,7 @@ import {
 } from "./_auth";
 import {
   commandNameFromPath,
+  deriveExecutionStatus,
   isAuditablePath,
   recordAudit,
   summarizeBody,
@@ -376,13 +377,37 @@ async function wrapHandler(
   // never hit the table — keeping the activity feed about user-issued
   // commands, not the SDK's own bookkeeping.
   if (callerUserId && callerToken && isAuditablePath(path, method as HttpMethod)) {
+    // Capture into a const so the async closure below sees the narrowed
+    // non-null type (the `let callerToken` is reassigned above, so TS would
+    // otherwise widen it back to `string | null` inside the closure).
+    const auditToken = callerToken;
     const commandName = commandNameFromPath(path);
     const summary = summarizeBody(parsedBody, commandName);
     const targetElementId = targetElementIdFor(path, parsedBody);
     const tabId = tabIdFor(parsedBody, request.headers.get("x-caller-tab-id"));
+
+    // Bug 3b: record the EXECUTION outcome, not merely receipt. `response.status`
+    // is the relay-delivery status (200 once the relay accepted/delivered the
+    // command to the target tab); whether the tab actually RAN it is carried in
+    // the response BODY's `success`/`code`. Clone the response so reading the
+    // body here does NOT consume the stream returned to the caller, and parse
+    // the clone BEFORE firing the (still fire-and-forget) audit insert. Parse
+    // is best-effort: a non-JSON / unreadable body falls back to `received`
+    // (we never over-claim execution).
+    let parsedResponse: unknown = null;
+    try {
+      parsedResponse = await response.clone().json();
+    } catch {
+      // Non-JSON or empty body → leave null → deriveExecutionStatus() returns
+      // `received` (delivered, outcome unknown).
+    }
+    const executionStatus = deriveExecutionStatus(
+      response.status,
+      parsedResponse,
+    );
     // Intentionally not awaited; per the spec this is fire-and-forget.
     void recordAudit({
-      token: callerToken,
+      token: auditToken,
       sessionId: null,
       tabId,
       commandName,
@@ -391,6 +416,7 @@ async function wrapHandler(
       method,
       origin: request.headers.get("origin"),
       statusCode: response.status,
+      executionStatus,
       payloadSummary: summary,
     });
   }

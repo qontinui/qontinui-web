@@ -43,6 +43,7 @@ router = APIRouter()
 
 
 _ALLOWED_STATUS_FILTERS = {"success", "failed"}
+_ALLOWED_EXECUTION_FILTERS = {"received", "executed", "failed"}
 _MAX_LIMIT = 500
 _DEFAULT_LIMIT = 100
 
@@ -75,6 +76,7 @@ async def insert_bridge_audit_log(
         method=payload.method,
         origin=payload.origin,
         status_code=payload.status_code,
+        execution_status=payload.execution_status,
         payload_summary=payload.payload_summary,
     )
     db.add(row)
@@ -111,7 +113,16 @@ async def list_my_bridge_audit_log(
     status: str | None = Query(
         None,
         description=(
-            "Coarse status filter: `success` = HTTP 2xx, `failed` = anything else."
+            "Coarse RECEIPT status filter: `success` = HTTP 2xx, `failed` = "
+            "anything else. This is the relay-delivery status, NOT execution."
+        ),
+    ),
+    execution: str | None = Query(
+        None,
+        description=(
+            "EXECUTION outcome filter (Bug 3b): `received` (delivered, outcome "
+            "unknown), `executed` (tab confirmed it ran), or `failed` (tab "
+            "reported it did not run). Distinct from `status`, which is receipt."
         ),
     ),
 ) -> Any:
@@ -132,6 +143,8 @@ async def list_my_bridge_audit_log(
             conditions.append(BridgeAuditLog.status_code < 400)
         else:
             conditions.append(BridgeAuditLog.status_code >= 400)
+    if execution is not None and execution in _ALLOWED_EXECUTION_FILTERS:
+        conditions.append(BridgeAuditLog.execution_status == execution)
 
     stmt = (
         select(BridgeAuditLog)

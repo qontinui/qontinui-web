@@ -249,6 +249,49 @@ function backendBaseUrl(): string {
   );
 }
 
+/**
+ * Execution outcome distinct from the relay-receipt `statusCode` (Bug 3b).
+ *
+ *   - `received` — the relay accepted/delivered the command; the target tab's
+ *     execution outcome is not (yet) known from the response. The conservative
+ *     default — it's what the pre-#3b code recorded implicitly (a 200 "row
+ *     written" that proved only receipt).
+ *   - `executed` — the target tab confirmed the command RAN (the relay
+ *     response body reported `success:true`).
+ *   - `failed`   — the target tab reported the command did NOT execute
+ *     (`success:false` / an error `code` like `UB-ACTION-TIMEOUT` /
+ *     `NO_BROWSER_CONNECTED`), even when the HTTP status is 200.
+ */
+export type ExecutionStatus = "received" | "executed" | "failed";
+
+/**
+ * Derive the execution outcome from the relay's response. The relay HTTP
+ * `status` is RECEIPT (200 once the relay delivered the command); the actual
+ * execution outcome is carried in the response BODY's `success`/`code`, which
+ * the target tab's `CommandRelayListener` populates on the same round-trip the
+ * route handler already awaits. So an audit row can record whether the command
+ * actually executed — not merely that it was received.
+ *
+ *   - HTTP >= 400                → `failed` (relay rejected outright).
+ *   - body `success === false`   → `failed` (tab reported non-execution, incl.
+ *     `NO_BROWSER_CONNECTED` 503 and `UB-ACTION-TIMEOUT`).
+ *   - body `success === true`    → `executed`.
+ *   - body has no `success` field → `received` (e.g. a route whose response
+ *     doesn't carry an execution verdict — we don't over-claim execution).
+ */
+export function deriveExecutionStatus(
+  statusCode: number,
+  responseBody: unknown,
+): ExecutionStatus {
+  if (statusCode >= 400) return "failed";
+  if (responseBody && typeof responseBody === "object") {
+    const success = (responseBody as { success?: unknown }).success;
+    if (success === true) return "executed";
+    if (success === false) return "failed";
+  }
+  return "received";
+}
+
 export interface AuditInsertInput {
   /** Caller's Bearer (same one the auth gate just verified). */
   token: string;
@@ -260,6 +303,8 @@ export interface AuditInsertInput {
   method: string;
   origin: string | null;
   statusCode: number;
+  /** Execution outcome distinct from receipt (`statusCode`). See above. */
+  executionStatus: ExecutionStatus;
   payloadSummary: Record<string, unknown> | null;
 }
 
@@ -291,6 +336,7 @@ export async function recordAudit(input: AuditInsertInput): Promise<void> {
         method: input.method,
         origin: input.origin,
         status_code: input.statusCode,
+        execution_status: input.executionStatus,
         payload_summary: input.payloadSummary,
       }),
     });

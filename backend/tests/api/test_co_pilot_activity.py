@@ -140,3 +140,56 @@ def test_bridge_audit_log_row_defaults() -> None:
         assert row.occurred_at.tzinfo.utcoffset(row.occurred_at) == UTC.utcoffset(
             row.occurred_at
         )
+
+
+def test_bridge_audit_log_has_execution_status_column() -> None:
+    """Bug 3b: execution_status (receipt-vs-execution) column exists with a
+    server_default of 'received' so the prior insert path (no execution_status)
+    stays valid and old rows backfill honestly to 'received'.
+    """
+    col = BridgeAuditLog.__table__.c.execution_status
+    assert col is not None
+    assert col.nullable is False
+    # server_default renders the literal 'received'.
+    assert col.server_default is not None
+    assert "received" in str(col.server_default.arg)
+
+
+def test_bridge_audit_create_schema_defaults_execution_status_received() -> None:
+    """The server-to-server insert payload defaults execution_status to
+    'received' when the relay omits it (e.g. a legacy relay build), and
+    rejects values outside the receipt/execution vocabulary.
+    """
+    from pydantic import ValidationError
+
+    from app.schemas.co_pilot_activity import BridgeAuditLogCreate
+
+    minimal = BridgeAuditLogCreate(
+        command_name="page.navigate",
+        path="/control/page/navigate",
+        method="POST",
+        status_code=200,
+    )
+    assert minimal.execution_status == "received"
+
+    explicit = BridgeAuditLogCreate(
+        command_name="page.navigate",
+        path="/control/page/navigate",
+        method="POST",
+        status_code=200,
+        execution_status="executed",
+    )
+    assert explicit.execution_status == "executed"
+
+    try:
+        BridgeAuditLogCreate(
+            command_name="page.navigate",
+            path="/control/page/navigate",
+            method="POST",
+            status_code=200,
+            execution_status="bogus",  # type: ignore[arg-type]
+        )
+    except ValidationError:
+        pass
+    else:  # pragma: no cover - guard
+        raise AssertionError("execution_status='bogus' should be rejected")

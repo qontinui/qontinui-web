@@ -38,6 +38,18 @@ export function useLandingPage() {
     setPlatform(detectPlatform());
   }, []);
 
+  // The co-pilot is the logged-in Home surface (web #390 plan §"Home").
+  // `/` itself stays the public marketing landing for anonymous visitors, but
+  // an authenticated user who lands on `/` is forwarded to the co-pilot Home —
+  // otherwise `/` shows marketing and the co-pilot Home is unreachable at the
+  // root (the routing gap from #390: the page exists at /co-pilot but nothing
+  // wires `/` → it for a signed-in user). Mirrors the /dashboard redirect shim.
+  useEffect(() => {
+    if (user) {
+      router.replace("/co-pilot");
+    }
+  }, [user, router]);
+
   const handleDownload = () => {
     if (platform === "windows") {
       window.location.href =

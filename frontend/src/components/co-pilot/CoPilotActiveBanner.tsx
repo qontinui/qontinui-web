@@ -11,13 +11,27 @@
  *   - a "Disable for this account" link that ALSO flips the per-user
  *     durable preference back to false so a fresh session won't re-prompt.
  *
- * # data-bridge-invisible="true"
+ * # data-bridge-invisible="true" (interactive subtree only)
  *
- * The OUTERMOST element is wrapped in ``data-bridge-invisible="true"`` so
- * the SDK's AutoRegister ancestor walk skips this subtree. Critical:
- * without this gate the bridge could click its own Stop button + silence
- * the indicator that proves it's running, defeating the whole purpose.
- * (See ``data-bridge-redact`` precedent in §4.6.)
+ * The INTERACTIVE banner subtree (Stop / Disable buttons) is wrapped in
+ * ``data-bridge-invisible="true"`` so the SDK's AutoRegister ancestor walk
+ * skips it. Critical: without this gate the bridge could click its own Stop
+ * button + silence the indicator that proves it's running, defeating the
+ * whole purpose. (See ``data-bridge-redact`` precedent in §4.6.)
+ *
+ * # Bridge-VISIBLE state sentinel
+ *
+ * Wrapping the WHOLE component in ``data-bridge-invisible`` had a flip side
+ * (Bug 3a): a UI-Bridge snapshot then couldn't observe whether the "AI in
+ * control" banner was lit — so the lit state was unverifiable on the page,
+ * which is exactly the signal an observer needs to confirm the co-pilot is
+ * driving. The fix splits the subtree:
+ *   - the interactive controls stay bridge-INVISIBLE (un-clickable by the AI);
+ *   - a sibling, NON-interactive ``<span role="status" data-copilot-active>``
+ *     sentinel sits OUTSIDE the invisible wrapper, so it registers and the
+ *     ``data-copilot-active="true|false"`` state + ``co-pilot-active-state``
+ *     testid are discoverable in the snapshot. It carries no action, so the
+ *     bridge can read the lit state but cannot toggle anything from it.
  *
  * # Activity detection
  *
@@ -38,7 +52,7 @@
  * Cross-link: plans/2026-05-28-production-safe-ui-bridge-design.md §4.5.
  */
 
-import { useMemo } from "react";
+import { Fragment, useMemo } from "react";
 import { Bot, X } from "lucide-react";
 import { httpClient } from "@/services/service-factory";
 import { ApiConfig } from "@/services/api-config";
@@ -100,10 +114,39 @@ export function CoPilotActiveBanner() {
 
   const ago = useMemo(() => relativeAgo(lastActionAt), [lastActionAt]);
 
+  // Bridge-VISIBLE state sentinel (Bug 3a). Lives OUTSIDE every
+  // data-bridge-invisible wrapper so AutoRegister picks it up (role="status"
+  // + data-ui-bridge-content + data-testid are all registration triggers) and
+  // a snapshot can read `data-copilot-active`. Non-interactive: no action, so
+  // the bridge can observe the lit state but cannot toggle it. Visually hidden
+  // (sr-only) — the lit UI is the banner below; this is the machine-readable
+  // mirror. Always rendered (true OR false) so an observer can distinguish
+  // "banner dark" from "component not mounted".
+  const activeSentinel = (
+    <span
+      role="status"
+      aria-live="polite"
+      data-ui-bridge-content="true"
+      data-copilot-active={visible ? "true" : "false"}
+      data-testid="co-pilot-active-state"
+      className="sr-only"
+    >
+      {visible ? "AI co-pilot is active" : "AI co-pilot is idle"}
+    </span>
+  );
+
   if (!visible) {
-    // CRITICAL: still wrap the empty render in data-bridge-invisible so
-    // a transient activity flip can't reveal a non-invisible mount.
-    return <div data-bridge-invisible="true" data-testid="co-pilot-active-banner-hidden" />;
+    return (
+      <Fragment>
+        {activeSentinel}
+        {/* CRITICAL: still wrap the empty render in data-bridge-invisible so
+            a transient activity flip can't reveal a non-invisible mount. */}
+        <div
+          data-bridge-invisible="true"
+          data-testid="co-pilot-active-banner-hidden"
+        />
+      </Fragment>
+    );
   }
 
   const handleStop = () => {
@@ -118,12 +161,14 @@ export function CoPilotActiveBanner() {
   };
 
   return (
-    <div
-      data-bridge-invisible="true"
-      data-testid="co-pilot-active-banner"
-      style={{ zIndex: 9999 }}
-      className="fixed top-0 left-0 right-0 bg-amber-950 text-amber-100 border-b border-amber-800 shadow-lg"
-    >
+    <Fragment>
+      {activeSentinel}
+      <div
+        data-bridge-invisible="true"
+        data-testid="co-pilot-active-banner"
+        style={{ zIndex: 9999 }}
+        className="fixed top-0 left-0 right-0 bg-amber-950 text-amber-100 border-b border-amber-800 shadow-lg"
+      >
       <div className="flex items-center justify-between gap-4 px-4 py-2 text-sm">
         <div className="flex items-center gap-2 min-w-0">
           <Bot className="size-4 shrink-0" aria-hidden />
@@ -157,6 +202,7 @@ export function CoPilotActiveBanner() {
           </button>
         </div>
       </div>
-    </div>
+      </div>
+    </Fragment>
   );
 }

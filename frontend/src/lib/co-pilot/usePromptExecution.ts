@@ -21,7 +21,7 @@
  * affordances (re-auth, connect runner, retry, etc.).
  */
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useActiveRunner } from "@/contexts/active-runner-context";
 import {
   requestPlan,
@@ -124,6 +124,31 @@ export function usePromptExecution(): UsePromptExecutionReturn {
     abortRef.current = true;
     setState(INITIAL_STATE);
   }, []);
+
+  // Bug 2 (web-side auto-recover): the `no-runner-connected` error is a
+  // LATCH — once a prompt is attempted with no runner, the error card sticks
+  // until the user manually retries. The runner→prod connection flaps within
+  // ~1 device-JWT TTL of pairing; the runner-side root cause (the refresher /
+  // status-signal / banner all gating on the legacy `runner_token` proxy) is
+  // fixed in qontinui-runner (plan §"Phase 1 Rust root-cause fix", shipped),
+  // so the device re-registers and `activeRunner` re-resolves on its own via
+  // the realtime-connections WS/poll. This effect closes the WEB-side gap:
+  // when a runner becomes available again, clear the stale
+  // `no-runner-connected` latch so the indicator reflects reconnection
+  // automatically instead of staying stuck on "No runner connected". We only
+  // clear THAT specific idle-error latch — never an in-flight run, and never
+  // a different error (plan-failed / rate-limited / not-consented), which the
+  // user must see and act on.
+  useEffect(() => {
+    if (
+      activeRunner &&
+      !runningRef.current &&
+      state.phase === "error" &&
+      state.error?.kind === "no-runner-connected"
+    ) {
+      setState(INITIAL_STATE);
+    }
+  }, [activeRunner, state.phase, state.error]);
 
   const run = useCallback(
     async (prompt: string, options?: { explain?: boolean }) => {

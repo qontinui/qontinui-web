@@ -16,12 +16,37 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   commandNameFromPath,
+  deriveExecutionStatus,
   isAuditablePath,
   recordAudit,
   summarizeBody,
   tabIdFor,
   targetElementIdFor,
 } from "./_audit";
+
+describe("deriveExecutionStatus (Bug 3b: receipt vs execution)", () => {
+  it("HTTP >= 400 → failed regardless of body", () => {
+    expect(deriveExecutionStatus(500, { success: true })).toBe("failed");
+    expect(deriveExecutionStatus(503, null)).toBe("failed");
+  });
+  it("body success:true → executed", () => {
+    expect(deriveExecutionStatus(200, { success: true })).toBe("executed");
+  });
+  it("body success:false → failed even on a 200 receipt", () => {
+    // The relay returned 200 (delivered) but the tab reported non-execution.
+    expect(
+      deriveExecutionStatus(200, { success: false, code: "UB-ACTION-TIMEOUT" }),
+    ).toBe("failed");
+    expect(
+      deriveExecutionStatus(200, { success: false, code: "NO_BROWSER_CONNECTED" }),
+    ).toBe("failed");
+  });
+  it("no success field → received (don't over-claim execution)", () => {
+    expect(deriveExecutionStatus(200, { data: { foo: 1 } })).toBe("received");
+    expect(deriveExecutionStatus(200, null)).toBe("received");
+    expect(deriveExecutionStatus(200, "not-json")).toBe("received");
+  });
+});
 
 describe("isAuditablePath", () => {
   it("audits POST /control/element/:id/action", () => {
@@ -233,6 +258,7 @@ describe("recordAudit", () => {
       method: "POST",
       origin: "https://qontinui.io",
       statusCode: 200,
+      executionStatus: "executed",
       payloadSummary: { action: "element.action", elementId: "btn-1" },
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -248,6 +274,7 @@ describe("recordAudit", () => {
       command_name: "element.action",
       target_element_id: "btn-1",
       status_code: 200,
+      execution_status: "executed",
     });
   });
 
@@ -266,6 +293,7 @@ describe("recordAudit", () => {
         method: "POST",
         origin: null,
         statusCode: 200,
+        executionStatus: "received",
         payloadSummary: null,
       }),
     ).resolves.toBeUndefined();
@@ -284,6 +312,7 @@ describe("recordAudit", () => {
         method: "POST",
         origin: null,
         statusCode: 200,
+        executionStatus: "received",
         payloadSummary: null,
       }),
     ).resolves.toBeUndefined();

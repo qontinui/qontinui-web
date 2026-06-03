@@ -18,6 +18,13 @@ export interface BridgeAuditLogEntry {
   method: string;
   origin: string | null;
   status_code: number;
+  /**
+   * Execution outcome distinct from `status_code` (the relay-receipt HTTP
+   * status). `received` = delivered, outcome unknown; `executed` = the tab
+   * confirmed the command ran; `failed` = the tab reported it did NOT run
+   * (even when `status_code` is 200). See Bug 3b.
+   */
+  execution_status: "received" | "executed" | "failed";
   occurred_at: string;
   payload_summary: Record<string, unknown> | null;
 }
@@ -34,8 +41,13 @@ export interface CoPilotActivityFilters {
   before?: string;
   /** Exact `command_name` filter. */
   command?: string;
-  /** Coarse status filter: `success` = HTTP 2xx, `failed` = anything else. */
+  /** Coarse RECEIPT status filter: `success` = HTTP 2xx, `failed` = otherwise. */
   status?: "success" | "failed";
+  /**
+   * EXECUTION outcome filter (Bug 3b), distinct from `status` (receipt):
+   * `received` (delivered, unknown), `executed`, or `failed`.
+   */
+  execution?: "received" | "executed" | "failed";
   /** Page size (default 100, max 500). */
   limit?: number;
 }
@@ -54,6 +66,7 @@ export async function fetchCoPilotActivity(
   if (filters.before) params.set("before", filters.before);
   if (filters.command) params.set("command", filters.command);
   if (filters.status) params.set("status", filters.status);
+  if (filters.execution) params.set("execution", filters.execution);
   if (filters.limit) params.set("limit", String(filters.limit));
   const qs = params.toString();
   const url = `/api/v1/users/me/co-pilot/activity${qs ? `?${qs}` : ""}`;
