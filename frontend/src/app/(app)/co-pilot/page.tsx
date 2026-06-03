@@ -22,6 +22,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
   Bot,
@@ -156,13 +157,7 @@ function stepLabel(step: PlanStep): string {
   return step.instruction ?? "Action";
 }
 
-function StepIcon({
-  status,
-  active,
-}: {
-  status: StepStatus;
-  active: boolean;
-}) {
+function StepIcon({ status, active }: { status: StepStatus; active: boolean }) {
   if (status === "done") {
     return <CheckCircle2 className="size-4 text-success" aria-hidden />;
   }
@@ -170,9 +165,7 @@ function StepIcon({
     return <XCircle className="size-4 text-destructive" aria-hidden />;
   }
   if (status === "running" || active) {
-    return (
-      <Loader2 className="size-4 animate-spin text-primary" aria-hidden />
-    );
+    return <Loader2 className="size-4 animate-spin text-primary" aria-hidden />;
   }
   if (status === "skipped") {
     return <X className="size-4 text-muted-foreground/50" aria-hidden />;
@@ -181,7 +174,7 @@ function StepIcon({
 }
 
 function statusBadgeVariant(
-  status: StepStatus,
+  status: StepStatus
 ): "default" | "secondary" | "destructive" | "success" | "outline" {
   switch (status) {
     case "done":
@@ -444,6 +437,15 @@ export default function CoPilotPage() {
   const { activeRunner } = useActiveRunner();
   const { state, run, reset } = usePromptExecution();
 
+  // DEBUG-ONLY: ?bridgeDebug=1 re-exposes co-pilot controls to the UI Bridge for automated end-to-end testing. Off by default (preserves the §8.2 self-targeting guard). Self-scoped + still requires session consent; remove or env-guard once co-pilot E2E is otherwise automatable.
+  const bridgeDebug = useSearchParams().get("bridgeDebug") === "1";
+  // When debug mode is on, drop the data-bridge-invisible marker so the
+  // co-pilot's own controls become bridge-drivable/observable. Default keeps
+  // every root wrapper invisible (the §8.2 self-targeting guard).
+  const bridgeHidden = bridgeDebug
+    ? {}
+    : { "data-bridge-invisible": "true" as const };
+
   const [prompt, setPrompt] = useState("");
   const [explain, setExplain] = useState(false);
   const [history, setHistory] = useState<string[]>([]);
@@ -459,7 +461,7 @@ export default function CoPilotPage() {
     setHistory((prev) => {
       const next = [trimmed, ...prev.filter((p) => p !== trimmed)].slice(
         0,
-        HISTORY_LIMIT,
+        HISTORY_LIMIT
       );
       writeHistory(next);
       return next;
@@ -514,6 +516,14 @@ export default function CoPilotPage() {
     </div>
   );
 
+  // ---- Bridge-debug sentinel (rendered OUTSIDE any invisible wrapper) ----
+  // Lets an automated client confirm debug mode is on via a snapshot.
+  const bridgeDebugSentinel = bridgeDebug ? (
+    <div data-testid="co-pilot-bridge-debug-active" className="sr-only">
+      co-pilot bridge debug mode active
+    </div>
+  ) : null;
+
   // ---- Gate 2: preference OFF → opt-in CTA ----
   if (!preference.enabled) {
     return (
@@ -523,10 +533,14 @@ export default function CoPilotPage() {
       // controls or "navigate to /co-pilot" from /co-pilot. Marking the root
       // wrapper invisible makes AutoRegister's ancestor walk skip the whole
       // co-pilot surface. Mirrors the guard on CoPilotActiveBanner.tsx.
-      <div data-bridge-invisible="true" className="max-w-2xl space-y-6 p-6">
-        {header}
-        <OptInCta />
-      </div>
+      // Gated on !bridgeDebug so the debug automator can drive this surface.
+      <>
+        {bridgeDebugSentinel}
+        <div {...bridgeHidden} className="max-w-2xl space-y-6 p-6">
+          {header}
+          <OptInCta />
+        </div>
+      </>
     );
   }
 
@@ -535,10 +549,28 @@ export default function CoPilotPage() {
     return (
       // data-bridge-invisible — see the opt-in branch above. Keeps the
       // co-pilot's own surface off the bridge so the planner can't target it.
-      <div data-bridge-invisible="true" className="max-w-2xl space-y-6 p-6">
-        {header}
-        <ConsentCta onGrant={reConsent} />
-      </div>
+      <>
+        {bridgeDebugSentinel}
+        <div {...bridgeHidden} className="max-w-2xl space-y-6 p-6">
+          {header}
+          <ConsentCta onGrant={reConsent} />
+          {/* DEBUG-ONLY consent grant: in bridgeDebug mode a fresh automated
+              session has no consent, so the global consent modal's relay
+              listener never mounts. This button invokes the SAME per-session
+              grant the modal would, letting the automator grant via one bridge
+              click. Self-scoped to bridgeDebug. */}
+          {bridgeDebug && (
+            <Button
+              onClick={() => consent.grant()}
+              data-testid="co-pilot-debug-grant-consent"
+              variant="outline"
+            >
+              <ShieldCheck className="size-4" aria-hidden />
+              Debug: grant session consent
+            </Button>
+          )}
+        </div>
+      </>
     );
   }
 
@@ -550,170 +582,176 @@ export default function CoPilotPage() {
     // data-bridge-invisible — see the opt-in branch above. The whole prompt
     // surface (form, summary, step timeline, suggestions, Clear/Run) is kept
     // off the bridge so the planner can never ground a step on the co-pilot's
-    // own controls.
-    <div data-bridge-invisible="true" className="max-w-2xl space-y-6 p-6">
-      {header}
+    // own controls. Gated on !bridgeDebug for automated E2E.
+    <>
+      {bridgeDebugSentinel}
+      <div {...bridgeHidden} className="max-w-2xl space-y-6 p-6">
+        {header}
 
-      {/* No runner affordance (non-error pre-flight hint) */}
-      {!activeRunner && (
-        <Card
-          className="border-warning/40"
-          data-testid="co-pilot-no-runner-hint"
-        >
-          <CardHeader>
-            <div className="flex items-start gap-3">
-              <Server className="mt-0.5 size-5 text-warning" aria-hidden />
-              <div className="min-w-0 flex-1">
-                <CardTitle className="text-base">
-                  No runner connected
-                </CardTitle>
-                <CardDescription className="mt-1">
-                  Connect a runner so the co-pilot has a place to act.
-                </CardDescription>
+        {/* No runner affordance (non-error pre-flight hint) */}
+        {!activeRunner && (
+          <Card
+            className="border-warning/40"
+            data-testid="co-pilot-no-runner-hint"
+          >
+            <CardHeader>
+              <div className="flex items-start gap-3">
+                <Server className="mt-0.5 size-5 text-warning" aria-hidden />
+                <div className="min-w-0 flex-1">
+                  <CardTitle className="text-base">
+                    No runner connected
+                  </CardTitle>
+                  <CardDescription className="mt-1">
+                    Connect a runner so the co-pilot has a place to act.
+                  </CardDescription>
+                </div>
               </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <Button asChild size="sm" variant="outline">
-              <Link href="/connect-runner">
-                <Server className="size-4" aria-hidden />
-                Connect a runner
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Prompt box */}
-      <Card>
-        <CardContent className="space-y-4 pt-0">
-          <Textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            onKeyDown={(e) => {
-              // Cmd/Ctrl+Enter submits.
-              if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-                e.preventDefault();
-                handleSubmit();
-              }
-            }}
-            placeholder="e.g. Create a new workflow and open the canvas"
-            rows={3}
-            disabled={busy}
-            data-testid="co-pilot-prompt-input"
-          />
-
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Switch
-                id="co-pilot-explain"
-                checked={explain}
-                disabled={busy}
-                onCheckedChange={(next: boolean) => setExplain(next)}
-                data-testid="co-pilot-explain-toggle"
-              />
-              <Label
-                htmlFor="co-pilot-explain"
-                className="text-sm text-muted-foreground"
-              >
-                Explain each step
-              </Label>
-            </div>
-
-            <div className="flex items-center gap-2">
-              {(state.phase !== "idle" || prompt.length > 0) && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={busy}
-                  onClick={() => {
-                    reset();
-                    setPrompt("");
-                  }}
-                  data-testid="co-pilot-reset"
-                >
-                  <RotateCcw className="size-4" aria-hidden />
-                  Clear
-                </Button>
-              )}
-              <Button
-                onClick={handleSubmit}
-                disabled={busy || prompt.trim().length === 0}
-                data-testid="co-pilot-submit"
-              >
-                {busy ? (
-                  <Loader2 className="size-4 animate-spin" aria-hidden />
-                ) : (
-                  <Send className="size-4" aria-hidden />
-                )}
-                {state.phase === "planning"
-                  ? "Planning…"
-                  : state.phase === "executing"
-                    ? "Running…"
-                    : "Run"}
-              </Button>
-            </div>
-          </div>
-
-          <PromptSuggestions
-            history={history}
-            onSelect={(p) => setPrompt(p)}
-            onClear={clearHistory}
-            disabled={busy}
-          />
-        </CardContent>
-      </Card>
-
-      {/* Plan summary */}
-      {state.summary && (
-        <Card data-testid="co-pilot-summary">
-          <CardHeader>
-            <div className="flex items-start gap-3">
-              <ChevronRight className="mt-0.5 size-5 text-primary" aria-hidden />
-              <div className="min-w-0 flex-1">
-                <CardTitle className="text-base">Plan</CardTitle>
-                <CardDescription className="mt-1 break-words">
-                  {state.summary}
-                </CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          {steps.length > 0 && (
+            </CardHeader>
             <CardContent>
-              <ProgressTimeline
-                steps={steps}
-                statuses={state.stepStatuses}
-                currentStepIndex={state.currentStepIndex}
-              />
+              <Button asChild size="sm" variant="outline">
+                <Link href="/connect-runner">
+                  <Server className="size-4" aria-hidden />
+                  Connect a runner
+                </Link>
+              </Button>
             </CardContent>
-          )}
-        </Card>
-      )}
+          </Card>
+        )}
 
-      {/* Success */}
-      {state.phase === "done" && (
-        <Card className="border-success/40" data-testid="co-pilot-done">
-          <CardContent className="flex items-center gap-2 pt-0 text-sm text-success">
-            <CheckCircle2 className="size-4" aria-hidden />
-            {steps.length === 0
-              ? "Done — nothing to run for that prompt."
-              : "All steps completed."}
+        {/* Prompt box */}
+        <Card>
+          <CardContent className="space-y-4 pt-0">
+            <Textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              onKeyDown={(e) => {
+                // Cmd/Ctrl+Enter submits.
+                if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                  e.preventDefault();
+                  handleSubmit();
+                }
+              }}
+              placeholder="e.g. Create a new workflow and open the canvas"
+              rows={3}
+              disabled={busy}
+              data-testid="co-pilot-prompt-input"
+            />
+
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="co-pilot-explain"
+                  checked={explain}
+                  disabled={busy}
+                  onCheckedChange={(next: boolean) => setExplain(next)}
+                  data-testid="co-pilot-explain-toggle"
+                />
+                <Label
+                  htmlFor="co-pilot-explain"
+                  className="text-sm text-muted-foreground"
+                >
+                  Explain each step
+                </Label>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {(state.phase !== "idle" || prompt.length > 0) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => {
+                      reset();
+                      setPrompt("");
+                    }}
+                    data-testid="co-pilot-reset"
+                  >
+                    <RotateCcw className="size-4" aria-hidden />
+                    Clear
+                  </Button>
+                )}
+                <Button
+                  onClick={handleSubmit}
+                  disabled={busy || prompt.trim().length === 0}
+                  data-testid="co-pilot-submit"
+                >
+                  {busy ? (
+                    <Loader2 className="size-4 animate-spin" aria-hidden />
+                  ) : (
+                    <Send className="size-4" aria-hidden />
+                  )}
+                  {state.phase === "planning"
+                    ? "Planning…"
+                    : state.phase === "executing"
+                      ? "Running…"
+                      : "Run"}
+                </Button>
+              </div>
+            </div>
+
+            <PromptSuggestions
+              history={history}
+              onSelect={(p) => setPrompt(p)}
+              onClear={clearHistory}
+              disabled={busy}
+            />
           </CardContent>
         </Card>
-      )}
 
-      {/* Error affordances */}
-      {state.phase === "error" && error && (
-        <ErrorAffordance
-          kind={error.kind}
-          message={error.message}
-          onRetry={() => {
-            reset();
-            handleSubmit();
-          }}
-          onReConsent={reConsent}
-        />
-      )}
-    </div>
+        {/* Plan summary */}
+        {state.summary && (
+          <Card data-testid="co-pilot-summary">
+            <CardHeader>
+              <div className="flex items-start gap-3">
+                <ChevronRight
+                  className="mt-0.5 size-5 text-primary"
+                  aria-hidden
+                />
+                <div className="min-w-0 flex-1">
+                  <CardTitle className="text-base">Plan</CardTitle>
+                  <CardDescription className="mt-1 break-words">
+                    {state.summary}
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            {steps.length > 0 && (
+              <CardContent>
+                <ProgressTimeline
+                  steps={steps}
+                  statuses={state.stepStatuses}
+                  currentStepIndex={state.currentStepIndex}
+                />
+              </CardContent>
+            )}
+          </Card>
+        )}
+
+        {/* Success */}
+        {state.phase === "done" && (
+          <Card className="border-success/40" data-testid="co-pilot-done">
+            <CardContent className="flex items-center gap-2 pt-0 text-sm text-success">
+              <CheckCircle2 className="size-4" aria-hidden />
+              {steps.length === 0
+                ? "Done — nothing to run for that prompt."
+                : "All steps completed."}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Error affordances */}
+        {state.phase === "error" && error && (
+          <ErrorAffordance
+            kind={error.kind}
+            message={error.message}
+            onRetry={() => {
+              reset();
+              handleSubmit();
+            }}
+            onReConsent={reConsent}
+          />
+        )}
+      </div>
+    </>
   );
 }
