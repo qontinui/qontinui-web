@@ -1,0 +1,60 @@
+{
+  "$comment": [
+    "Style-gate routes manifest (Phase 1 of the CI style-gating plan).",
+    "One entry per route the headless capture renders. The capture spec",
+    "(style-capture.spec.ts) produces, per route, a UI-Bridge snapshot JSON",
+    "(.artifacts/snapshots/<id>.json) and a deterministic PNG screenshot",
+    "(.artifacts/frames/<id>.png); a later phase feeds both to the",
+    "vision-audit analyzer bin.",
+    "",
+    "ALL seed routes are AUTHENTICATED. The capture's snapshot path",
+    "(/control/snapshot via the relay) requires the in-page CommandRelayListener,",
+    "and that listener returns null without a resolved {userId, sessionId}",
+    "(provider.tsx commandRelayRegistrationMetadata) -- so a public/unauthenticated",
+    "route (e.g. /login) can NEVER serve /control/snapshot and would always 503.",
+    "Public/unauthenticated routes therefore need a relay-INDEPENDENT snapshot",
+    "path (a Playwright in-page UI-Bridge SDK eval, not the relay proxy) -- that's",
+    "deferred to a later phase. The `public` field is RETAINED in the schema for",
+    "that future path; today every route is `public: false`.",
+    "",
+    "Fields:",
+    "  id          filesystem-safe slug, also the artifact basename.",
+    "  path        route path passed to page.goto().",
+    "  public      true  -> unauthenticated route. RESERVED for a future",
+    "              relay-independent capture path; NOT supported today (the relay",
+    "              snapshot route requires an authenticated user+session). Keep",
+    "              false for all current routes.",
+    "              false -> rendered WITH the setup-minted storageState (style-gate project).",
+    "  settleMs    extra wait after networkidle before capture; the top flake",
+    "              source is late-mounting content, so bump this per route as",
+    "              burn-in reveals slow surfaces.",
+    "  description human note on what the route is.",
+    "",
+    "Deliberately SMALL high-value seed set (3 authed routes). The set EXPANDS",
+    "after burn-in once the capture+baseline loop is proven stable in CI",
+    "(Phases 2-4). Add routes by appending objects here -- no code change required."
+  ],
+  "routes": [
+    {
+      "id": "co-pilot",
+      "path": "/co-pilot",
+      "public": false,
+      "settleMs": 3000,
+      "description": "Authenticated Home landing (src/app/(app)/co-pilot/page.tsx). An authed visit to / forwards here (use-landing-page.ts) -- this IS the post-login Home surface."
+    },
+    {
+      "id": "build-workflows",
+      "path": "/build/workflows",
+      "public": false,
+      "settleMs": 3000,
+      "description": "Authenticated workflow builder (src/app/(app)/build/workflows/page.tsx). /dashboard redirect-shim resolves here in ai product-mode (dashboard/page.tsx)."
+    },
+    {
+      "id": "library",
+      "path": "/library",
+      "public": false,
+      "settleMs": 3000,
+      "description": "Authenticated Library landing (src/app/(app)/library/page.tsx). Self-contained category-card grid -- no RequireProject gate, so it renders a stable content surface regardless of selected project."
+    }
+  ]
+}

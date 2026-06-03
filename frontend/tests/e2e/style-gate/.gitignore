@@ -1,0 +1,4 @@
+# Per-run CI capture artifacts (snapshots + frames). Regenerated every run by
+# style-capture.spec.ts and consumed by the vision-audit analyzer (later phase).
+# Never committed.
+.artifacts/
