@@ -29,8 +29,16 @@ name: alembic graph PR gate
 on:
   pull_request:
     branches: [main, develop]
-    paths:
-      - "backend/alembic/versions/**"
+    # NOTE: deliberately NO `paths:` filter. This check is wired into branch
+    # protection as a REQUIRED status (strict mode). A required check that is
+    # skipped by a paths filter leaves every non-alembic PR stuck on
+    # "Expected — waiting for status" and unable to merge. So the job runs on
+    # EVERY PR; the head count is a cheap offline scan that passes trivially
+    # when main is single-headed (the normal state) and only fails on a real
+    # fork. Combined with `strict` branch protection, this forces a stale-base
+    # alembic PR to update against main, which re-runs this check and fails on
+    # the resulting 2-head chain — converting the sequential-merge fork race
+    # from "lands + breaks migrate.yml" into "PR cannot merge until re-pointed".
 
 permissions:
   contents: read
