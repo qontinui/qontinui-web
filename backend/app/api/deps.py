@@ -254,9 +254,7 @@ _optional_bearer_scheme = HTTPBearer(auto_error=False)
 
 async def get_audit_actor_user_id(
     user: User | None = Depends(current_active_user_optional),
-    credentials: HTTPAuthorizationCredentials | None = Depends(
-        _optional_bearer_scheme
-    ),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_optional_bearer_scheme),
 ) -> UUID:
     """Resolve the acting user id from EITHER a Cognito user JWT OR a
     coord-issued device-token JWT.
