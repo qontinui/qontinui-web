@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
-import { ApiConfig } from "@/services/api-config";
 import {
   CI_STATUS_API,
   CI_STATUS_POLL_FALLBACK_MS,
@@ -139,9 +138,9 @@ export function useCiStatusStream(): UseCiStatusStreamResult {
     // consumer uses.
     let token: string | null = null;
     try {
-      const tokResp = await httpClient.fetch(
-        `${ApiConfig.API_BASE_URL}/api/v1/ws-token`,
-      );
+      // Same-origin ONLY — `/api/v1/ws-token` is a Next.js cookie-reading route,
+      // not a backend endpoint. See realtime-connections-context for why.
+      const tokResp = await httpClient.fetch("/api/v1/ws-token");
       if (tokResp.ok) {
         const data = (await tokResp.json()) as { token?: string };
         token = data.token ?? null;
