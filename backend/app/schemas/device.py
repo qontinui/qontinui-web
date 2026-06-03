@@ -55,6 +55,20 @@ class DeviceConnectionResponse(BaseModel):
     session_id: str | None
 
 
+class DeviceIdentityResponse(BaseModel):
+    """Response shape for ``GET /api/v1/devices/me``.
+
+    The device-principal identity resolved from a coord-issued device-token
+    JWT: the device's own id, the paired operator (owning user), and the
+    tenant the device belongs to. All three are emitted as UUID strings so
+    the relay's ``_auth.ts`` can use them directly as a principal.
+    """
+
+    device_id: str
+    user_id: str
+    tenant_id: str
+
+
 class PairConfirmRequest(BaseModel):
     """Request body for ``POST /api/v1/devices/pair-confirm``.
 

@@ -18,6 +18,7 @@ __all__ = [
     "get_current_user_from_ws",
     "get_authenticated_device",
     "get_authenticated_device_user",
+    "get_audit_actor_user_id",
 ]
 
 from uuid import UUID
@@ -243,3 +244,40 @@ async def get_authenticated_device_user(
     return the owning :class:`~app.models.user.User`."""
     _claims, user = await _verify_device_jwt(credentials.credentials)
     return user
+
+
+# A non-auto-error bearer scheme so the dual-auth dependency can fall back to
+# device-token verification only when the Cognito path did not resolve a user,
+# without raising on a missing/cookie-only request before we have tried both.
+_optional_bearer_scheme = HTTPBearer(auto_error=False)
+
+
+async def get_audit_actor_user_id(
+    user: User | None = Depends(current_active_user_optional),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_optional_bearer_scheme),
+) -> UUID:
+    """Resolve the acting user id from EITHER a Cognito user JWT OR a
+    coord-issued device-token JWT.
+
+    Used by endpoints the relay calls with whichever bearer it holds:
+
+    * A Cognito user JWT — resolved by fastapi-users (cookie or bearer);
+      the row is attributed to that user.
+    * A coord device-token JWT — not a Cognito token, so the optional
+      Cognito dependency yields ``None``; we then verify the presented
+      bearer as a device token and attribute the row to the paired
+      operator (the device's owning user).
+
+    Returns the owning user's id. Raises 401 if neither path authenticates.
+    """
+    if user is not None:
+        return user.id
+
+    if credentials is not None:
+        _claims, device_user = await _verify_device_jwt(credentials.credentials)
+        return device_user.id
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Authentication required.",
+    )

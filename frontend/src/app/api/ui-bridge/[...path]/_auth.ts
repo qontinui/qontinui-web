@@ -16,12 +16,15 @@
  *
  * # What this implements
  *
- * 1. **`authenticateBridgeRequest(request)`** — extract the caller's token
- *    (Authorization: Bearer header preferred for cross-origin deploys;
- *    `access_token` HttpOnly cookie as same-origin fallback), verify it
- *    against the FastAPI backend's `/api/v1/auth/users/me` endpoint, and
- *    return the resolved user id. Positive results are cached for 30s
- *    keyed on the token hash to avoid hammering the backend.
+ * 1. **`authenticateBridgeRequest(request)`** — extract the caller's
+ *    `Authorization: Bearer` token and verify it against the FastAPI
+ *    backend along one of two disjoint paths: a Cognito operator bearer
+ *    via `/api/v1/auth/users/me` (resolves a `kind:"user"` principal), or
+ *    a coord device-JWT via `/api/v1/devices/me` (resolves a
+ *    `kind:"device"` principal whose `userId` is the paired operator).
+ *    The user path is tried first; the device path is the fallback. The
+ *    resolved principal is returned and positive results are cached for
+ *    30s keyed on the token hash to avoid hammering the backend.
  *
  * 2. **`isAllowedOrigin(origin)`** — Origin/Referer allowlist. Production
  *    accepts qontinui.io + *.qontinui.io + *.vercel.app (Vercel preview
@@ -77,8 +80,20 @@ export function isAuthGateEnabled(): boolean {
 /* Token extraction + verification                                      */
 /* -------------------------------------------------------------------- */
 
-interface CachedUser {
-  userId: string;
+/**
+ * A successfully-verified principal. Two disjoint token types resolve to
+ * two principal kinds:
+ *   - `user`   — a Cognito operator bearer verified via `/auth/users/me`.
+ *   - `device` — a coord device-JWT verified via `/devices/me`; `userId`
+ *     is the PAIRED operator's id (so a device sees its operator's
+ *     owned-tab set), `deviceId`/`tenantId` carry the device principal.
+ */
+type CachedPrincipal =
+  | { kind: "user"; userId: string }
+  | { kind: "device"; deviceId: string; userId: string; tenantId: string };
+
+interface CachedEntry {
+  principal: CachedPrincipal;
   /** Epoch millis after which this cache entry is stale. */
   expiresAt: number;
 }
@@ -89,9 +104,11 @@ const POSITIVE_TTL_MS = 30_000;
  * Per-process positive-result cache. Keyed on SHA-256(token) so a heap
  * dump doesn't trivially leak the bearer. Negative results are NEVER
  * cached — a token that just refreshed must work on the next request,
- * not after the negative-cache TTL.
+ * not after the negative-cache TTL. Holds both user and device
+ * principals (the cache key is the token hash, which is unique per token
+ * regardless of type).
  */
-const positiveCache = new Map<string, CachedUser>();
+const positiveCache = new Map<string, CachedEntry>();
 
 function tokenKey(token: string): string {
   return createHash("sha256").update(token).digest("hex");
@@ -114,22 +131,58 @@ function backendBaseUrl(): string {
   );
 }
 
+/**
+ * Result of authenticating a UI Bridge relay request.
+ *
+ * The success variant is discriminated on `kind`:
+ *   - `kind:"user"`   — Cognito operator bearer. `userId` is the operator.
+ *   - `kind:"device"` — coord device-JWT. `userId` is the PAIRED operator
+ *     (so the device is scoped to its operator's owned tabs); `deviceId`
+ *     and `tenantId` carry the device principal for rate-limit namespacing
+ *     and downstream attribution.
+ *
+ * Both success variants carry `token` (the verified incoming bearer, to be
+ * forwarded to the audit endpoint) and `tokenKeyHash` (SHA-256 of the token,
+ * used as the positive-cache key).
+ */
 export type AuthResult =
-  | { ok: true; userId: string; tokenKeyHash: string; token: string }
+  | {
+      ok: true;
+      kind: "user";
+      userId: string;
+      tokenKeyHash: string;
+      token: string;
+    }
+  | {
+      ok: true;
+      kind: "device";
+      deviceId: string;
+      userId: string;
+      tenantId: string;
+      tokenKeyHash: string;
+      token: string;
+    }
   | { ok: false; status: 401 };
 
 /**
  * Authenticate an incoming UI Bridge relay request.
  *
- * Order of token extraction:
- *   1. `Authorization: Bearer <jwt>` header — primary for cross-origin
- *      deploys (qontinui.io browser → /api/ui-bridge/* same-origin,
- *      Bearer attached by the relay transport).
- *   2. `access_token` cookie — same-origin local/staging fallback.
+ * Token extraction is Bearer-only: `Authorization: Bearer <jwt>`
+ * (the relay transport attaches it on every outbound call). There is no
+ * cookie or query fallback — see `extractToken`.
  *
- * Verification is via the FastAPI `/api/v1/auth/users/me` endpoint. A
- * 2xx response with a `{ id: string }` body counts as success; anything
- * else is failure.
+ * Two disjoint verification paths, tried in order:
+ *   1. The Cognito operator bearer is verified via the FastAPI
+ *      `/api/v1/auth/users/me` endpoint. A 2xx with a `{ id: string }`
+ *      body resolves a `kind:"user"` principal.
+ *   2. If (and only if) the user path does not resolve a principal, the
+ *      same incoming bearer is tried against `/api/v1/devices/me` — a
+ *      coord device-JWT. A 2xx with `{ device_id, user_id, tenant_id }`
+ *      resolves a `kind:"device"` principal whose `userId` is the paired
+ *      operator. `/auth/users/me` rejects a device-JWT (401) and
+ *      `/devices/me` rejects a Cognito bearer (401), so the two paths are
+ *      disjoint and the order only affects which fetch fires first, never
+ *      the outcome.
  */
 export async function authenticateBridgeRequest(
   request: NextRequest,
@@ -143,10 +196,46 @@ export async function authenticateBridgeRequest(
   const now = Date.now();
   const cached = positiveCache.get(key);
   if (cached && cached.expiresAt > now) {
-    return { ok: true, userId: cached.userId, tokenKeyHash: key, token };
+    return principalToResult(cached.principal, key, token);
   }
 
   const base = backendBaseUrl();
+
+  // Path 1: Cognito operator bearer.
+  const userPrincipal = await verifyUserToken(base, token);
+  if (userPrincipal) {
+    positiveCache.set(key, {
+      principal: userPrincipal,
+      expiresAt: now + POSITIVE_TTL_MS,
+    });
+    return principalToResult(userPrincipal, key, token);
+  }
+
+  // Path 2: coord device-JWT. Only reached when the user path did not
+  // resolve a principal (wrong token type or a backend reject).
+  const devicePrincipal = await verifyDeviceToken(base, token);
+  if (devicePrincipal) {
+    positiveCache.set(key, {
+      principal: devicePrincipal,
+      expiresAt: now + POSITIVE_TTL_MS,
+    });
+    return principalToResult(devicePrincipal, key, token);
+  }
+
+  return { ok: false, status: 401 };
+}
+
+/**
+ * Verify a Cognito operator bearer against `/api/v1/auth/users/me`.
+ * Returns the resolved `user` principal on success, or null on any
+ * failure (network error, non-2xx, unparseable body, missing id) — null
+ * means "not a valid user bearer", which lets the caller fall through to
+ * the device path.
+ */
+async function verifyUserToken(
+  base: string,
+  token: string,
+): Promise<{ kind: "user"; userId: string } | null> {
   let resp: Response;
   try {
     resp = await fetch(`${base}/api/v1/auth/users/me`, {
@@ -154,27 +243,86 @@ export async function authenticateBridgeRequest(
       headers: { Authorization: `Bearer ${token}` },
     });
   } catch {
-    // Network error talking to the backend. Treat as auth failure so a
+    // Network error talking to the backend. Treat as a non-match so a
     // misconfigured `API_URL` doesn't silently grant access.
-    return { ok: false, status: 401 };
+    return null;
   }
   if (!resp.ok) {
-    return { ok: false, status: 401 };
+    return null;
   }
-
   let body: unknown;
   try {
     body = await resp.json();
   } catch {
-    return { ok: false, status: 401 };
+    return null;
   }
   const userId = extractUserId(body);
   if (!userId) {
-    return { ok: false, status: 401 };
+    return null;
   }
+  return { kind: "user", userId };
+}
 
-  positiveCache.set(key, { userId, expiresAt: now + POSITIVE_TTL_MS });
-  return { ok: true, userId, tokenKeyHash: key, token };
+/**
+ * Verify a coord device-JWT against `/api/v1/devices/me`. Same fetch
+ * idiom and base-URL resolution as the user path. Returns the resolved
+ * `device` principal (with the paired operator's `userId`) on success, or
+ * null on any failure.
+ */
+async function verifyDeviceToken(
+  base: string,
+  token: string,
+): Promise<{
+  kind: "device";
+  deviceId: string;
+  userId: string;
+  tenantId: string;
+} | null> {
+  let resp: Response;
+  try {
+    resp = await fetch(`${base}/api/v1/devices/me`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch {
+    return null;
+  }
+  if (!resp.ok) {
+    return null;
+  }
+  let body: unknown;
+  try {
+    body = await resp.json();
+  } catch {
+    return null;
+  }
+  return extractDevicePrincipal(body);
+}
+
+/** Build the discriminated `AuthResult` for a verified principal. */
+function principalToResult(
+  principal: CachedPrincipal,
+  tokenKeyHash: string,
+  token: string,
+): AuthResult {
+  if (principal.kind === "user") {
+    return {
+      ok: true,
+      kind: "user",
+      userId: principal.userId,
+      tokenKeyHash,
+      token,
+    };
+  }
+  return {
+    ok: true,
+    kind: "device",
+    deviceId: principal.deviceId,
+    userId: principal.userId,
+    tenantId: principal.tenantId,
+    tokenKeyHash,
+    token,
+  };
 }
 
 function extractToken(request: NextRequest): string | null {
@@ -206,6 +354,39 @@ function extractUserId(body: unknown): string | null {
   if (body && typeof body === "object" && "id" in body) {
     const id = (body as { id: unknown }).id;
     if (typeof id === "string" && id.length > 0) return id;
+  }
+  return null;
+}
+
+/**
+ * Pull the device principal out of a `/api/v1/devices/me` response body.
+ * Requires all three of `device_id`, `user_id`, `tenant_id` as non-empty
+ * strings — a partial body is treated as a non-match (returns null).
+ */
+function extractDevicePrincipal(body: unknown): {
+  kind: "device";
+  deviceId: string;
+  userId: string;
+  tenantId: string;
+} | null {
+  if (!body || typeof body !== "object") return null;
+  const b = body as {
+    device_id?: unknown;
+    user_id?: unknown;
+    tenant_id?: unknown;
+  };
+  const deviceId = b.device_id;
+  const userId = b.user_id;
+  const tenantId = b.tenant_id;
+  if (
+    typeof deviceId === "string" &&
+    deviceId.length > 0 &&
+    typeof userId === "string" &&
+    userId.length > 0 &&
+    typeof tenantId === "string" &&
+    tenantId.length > 0
+  ) {
+    return { kind: "device", deviceId, userId, tenantId };
   }
   return null;
 }

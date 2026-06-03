@@ -177,13 +177,18 @@ describe("authenticateBridgeRequest", () => {
     });
     const result = await authenticateBridgeRequest(req);
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.userId).toBe("user-abc");
+    if (result.ok) {
+      expect(result.kind).toBe("user");
+      expect(result.userId).toBe("user-abc");
+    }
     expect(fetchMock).toHaveBeenCalledWith(
       "http://backend.test/api/v1/auth/users/me",
       expect.objectContaining({
         headers: { Authorization: "Bearer good-token" },
       }),
     );
+    // User path succeeded → device path must NOT be consulted.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("rejects requests authenticated only via access_token cookie (Bearer-only)", async () => {
@@ -197,42 +202,62 @@ describe("authenticateBridgeRequest", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("rejects a Bearer that the backend returns 401 for", async () => {
-    fetchMock.mockResolvedValueOnce(new Response(null, { status: 401 }));
+  it("rejects a Bearer that both backend verify paths return 401 for", async () => {
+    // User path 401, then the device-path fallback also 401 → anonymous.
+    fetchMock
+      .mockResolvedValueOnce(new Response(null, { status: 401 }))
+      .mockResolvedValueOnce(new Response(null, { status: 401 }));
     const req = makeRequest({ headers: { authorization: "Bearer bad" } });
     const result = await authenticateBridgeRequest(req);
     expect(result.ok).toBe(false);
+    // Both disjoint verify paths were attempted.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "http://backend.test/api/v1/auth/users/me",
+      expect.anything(),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://backend.test/api/v1/devices/me",
+      expect.anything(),
+    );
   });
 
-  it("rejects when the backend returns 200 with no id", async () => {
-    fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({}), { status: 200 }),
-    );
+  it("rejects when the user path returns 200 with no id and device path 401s", async () => {
+    // No `id` on the user response → not a user; device fallback 401s → anonymous.
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 401 }));
     const req = makeRequest({ headers: { authorization: "Bearer weird" } });
     const result = await authenticateBridgeRequest(req);
     expect(result.ok).toBe(false);
   });
 
-  it("rejects when the backend returns 200 with a non-string id", async () => {
-    fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ id: 42 }), { status: 200 }),
-    );
+  it("rejects when the user path returns a non-string id and device path 401s", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: 42 }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 401 }));
     const req = makeRequest({ headers: { authorization: "Bearer odd" } });
     const result = await authenticateBridgeRequest(req);
     expect(result.ok).toBe(false);
   });
 
-  it("rejects when the backend body is unparseable", async () => {
-    fetchMock.mockResolvedValueOnce(
-      new Response("not json", { status: 200 }),
-    );
+  it("rejects when both verify paths return an unparseable body", async () => {
+    fetchMock
+      .mockResolvedValueOnce(new Response("not json", { status: 200 }))
+      .mockResolvedValueOnce(new Response("not json", { status: 200 }));
     const req = makeRequest({ headers: { authorization: "Bearer t" } });
     const result = await authenticateBridgeRequest(req);
     expect(result.ok).toBe(false);
   });
 
-  it("fails closed on a backend network error", async () => {
-    fetchMock.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+  it("fails closed when both verify paths hit a backend network error", async () => {
+    fetchMock
+      .mockRejectedValueOnce(new Error("ECONNREFUSED"))
+      .mockRejectedValueOnce(new Error("ECONNREFUSED"));
     const req = makeRequest({ headers: { authorization: "Bearer t" } });
     const result = await authenticateBridgeRequest(req);
     expect(result.ok).toBe(false);
@@ -257,7 +282,10 @@ describe("authenticateBridgeRequest", () => {
   });
 
   it("does NOT cache negative results", async () => {
+    // Call 1: user path 401, device fallback 401 → anonymous (NOT cached).
+    // Call 2: token now valid on the user path → success on a fresh round-trip.
     fetchMock
+      .mockResolvedValueOnce(new Response(null, { status: 401 }))
       .mockResolvedValueOnce(new Response(null, { status: 401 }))
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ id: "user-rotated" }), { status: 200 }),
@@ -270,7 +298,8 @@ describe("authenticateBridgeRequest", () => {
     );
     expect(r1.ok).toBe(false);
     expect(r2.ok).toBe(true);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // 2 (failed user+device) on call 1, 1 (successful user) on call 2.
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it("Bearer header authenticates even when an unrelated access_token cookie is present", async () => {
@@ -303,5 +332,100 @@ describe("authenticateBridgeRequest", () => {
     const result = await authenticateBridgeRequest(req);
     expect(result.ok).toBe(false);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the device path when the user path 401s, resolving the paired operator", async () => {
+    // User path rejects a device-JWT (401); device path resolves it.
+    fetchMock
+      .mockResolvedValueOnce(new Response(null, { status: 401 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            device_id: "device-1",
+            user_id: "operator-7",
+            tenant_id: "tenant-9",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+    const req = makeRequest({
+      headers: { authorization: "Bearer device-jwt" },
+    });
+    const result = await authenticateBridgeRequest(req);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.kind).toBe("device");
+      if (result.kind === "device") {
+        expect(result.deviceId).toBe("device-1");
+        // userId is the PAIRED operator (so the device sees its tabs).
+        expect(result.userId).toBe("operator-7");
+        expect(result.tenantId).toBe("tenant-9");
+      }
+    }
+    // Order: user path first, device path second, both with the same bearer.
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "http://backend.test/api/v1/auth/users/me",
+      expect.objectContaining({
+        headers: { Authorization: "Bearer device-jwt" },
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://backend.test/api/v1/devices/me",
+      expect.objectContaining({
+        headers: { Authorization: "Bearer device-jwt" },
+      }),
+    );
+  });
+
+  it("rejects a device-path 200 missing required fields", async () => {
+    // Partial /devices/me body (no tenant_id) → not a valid device principal.
+    fetchMock
+      .mockResolvedValueOnce(new Response(null, { status: 401 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ device_id: "device-1", user_id: "operator-7" }),
+          { status: 200 },
+        ),
+      );
+    const req = makeRequest({
+      headers: { authorization: "Bearer partial-device" },
+    });
+    const result = await authenticateBridgeRequest(req);
+    expect(result.ok).toBe(false);
+  });
+
+  it("caches a device principal for 30s (second call does not hit backend)", async () => {
+    fetchMock
+      .mockResolvedValueOnce(new Response(null, { status: 401 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            device_id: "device-cached",
+            user_id: "operator-cached",
+            tenant_id: "tenant-cached",
+          }),
+          { status: 200 },
+        ),
+      );
+    const req1 = makeRequest({
+      headers: { authorization: "Bearer dev-same" },
+    });
+    const req2 = makeRequest({
+      headers: { authorization: "Bearer dev-same" },
+    });
+    const r1 = await authenticateBridgeRequest(req1);
+    const r2 = await authenticateBridgeRequest(req2);
+    expect(r1.ok).toBe(true);
+    expect(r2.ok).toBe(true);
+    if (r1.ok && r2.ok && r1.kind === "device" && r2.kind === "device") {
+      expect(r1.deviceId).toBe(r2.deviceId);
+      expect(r1.userId).toBe(r2.userId);
+      expect(r1.tenantId).toBe(r2.tenantId);
+    }
+    // Two fetches on the first call (user 401 + device 200), zero on the
+    // second (served from the positive cache).
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
