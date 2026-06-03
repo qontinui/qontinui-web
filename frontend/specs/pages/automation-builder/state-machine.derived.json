@@ -8,7 +8,8 @@
     "appId": "qontinui-web"
   },
   "metadata": {
-    "tags": ["automation-builder", "workflows", "builder-landing"]
+    "tags": ["automation-builder", "workflows", "builder-landing"],
+    "settleUntilPresent": [{ "id": "heading-1-spec-ci-fixture", "role": "heading" }]
   },
   "states": [
     {
