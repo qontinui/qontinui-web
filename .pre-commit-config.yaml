@@ -31,8 +31,11 @@ repos:
 
       - id: mypy
         name: Python type check (mypy)
-        entry: bash -c 'cd backend && poetry run mypy .'
-        language: system
+        # Wrapper provisions the poetry env once in fresh worktrees, then runs
+        # mypy strictly in-env — never the silent system-PATH fallback that
+        # produced bogus stale-qontinui_schemas errors (see run_mypy.sh).
+        entry: .pre-commit-hooks/run_mypy.sh
+        language: script
         pass_filenames: false
         files: ^backend/.*\.py$
 
