@@ -3,7 +3,6 @@ import type { AiSessionState, AiMessage } from "@qontinui/shared-types";
 import { parseOutputLog } from "@qontinui/workflow-utils";
 import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
-import { ApiConfig } from "@/services/api-config";
 
 const log = createLogger("useChatWebSocket");
 
@@ -71,9 +70,9 @@ export function useChatWebSocket({
 
     let token: string | null = null;
     try {
-      const response = await httpClient.fetch(
-        `${ApiConfig.API_BASE_URL}/api/v1/ws-token`
-      );
+      // Same-origin ONLY — `/api/v1/ws-token` is a Next.js cookie-reading route,
+      // not a backend endpoint. See realtime-connections-context for why.
+      const response = await httpClient.fetch("/api/v1/ws-token");
       if (response.ok) {
         const data = await response.json();
         token = data.token || null;

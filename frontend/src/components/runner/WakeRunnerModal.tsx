@@ -136,9 +136,10 @@ export function WakeRunnerModal({
 
     const open_ws = async () => {
       try {
-        const resp = await httpClient.fetch(
-          `${ApiConfig.API_BASE_URL}/api/v1/ws-token`
-        );
+        // Same-origin ONLY — `/api/v1/ws-token` is a Next.js cookie-reading
+        // route, not a backend endpoint. (The /wake call below IS a backend
+        // route, so it correctly keeps the API_BASE_URL prefix.)
+        const resp = await httpClient.fetch("/api/v1/ws-token");
         if (!resp.ok) return;
         const data = await resp.json();
         const token: string | undefined = data?.token;
