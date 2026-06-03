@@ -9,14 +9,23 @@
  * badge surfaces the composed readiness state at all times so a user who
  * "enabled it but nothing happened" can see exactly which gate is unmet.
  *
- * Composes the two gates that feed ``enableRemoteCommands``:
+ * Composes the gates that feed ``enableRemoteCommands`` in
+ * ``lib/ui-bridge/provider.tsx`` — previously this badge showed green from
+ * preference + consent ALONE, so it claimed "ready" even when the relay was
+ * never going to connect because the build-time env gate was off. That masked
+ * a "co-pilot silently no-ops" bug. The badge now ALSO requires the env gate,
+ * mirroring the provider's expression exactly so the two can't drift:
+ *
+ *   - the build-time env gate
+ *     (``isDev || NEXT_PUBLIC_UI_BRIDGE_REMOTE_COMMANDS === "1"``).
  *   - {@link useCoPilotPreference} — the durable per-user opt-in.
  *   - {@link useCoPilotSessionConsent} — the transient per-session consent.
  *
  * Rendered states:
+ *   - env gate OFF                          → "⚠ Co-pilot unavailable here"
  *   - preference OFF                        → "⚠ Co-pilot disabled" (→ settings)
  *   - preference ON, consent !granted       → "⚠ Enabled, consent not granted this session"
- *   - preference ON + consent granted       → "✓ Enabled & consented this session"
+ *   - env + preference + consent granted    → "✓ Enabled & consented this session"
  *
  * Cross-link: plans/2026-05-28-production-safe-ui-bridge-design.md §4.5.
  */
@@ -26,6 +35,17 @@ import { Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useCoPilotPreference } from "@/hooks/useCoPilotPreference";
 import { useCoPilotSessionConsent } from "@/hooks/useCoPilotSessionConsent";
+
+/**
+ * Build-time / env-level enablement of the command relay — the OUTER gate that
+ * composes with the per-user preference + per-session consent. Mirrors the
+ * exact expression used for ``enableRemoteCommands`` in
+ * ``lib/ui-bridge/provider.tsx`` (``isDev || remoteCommandsOptIn``) so the
+ * badge can never claim "ready" on a build where the relay can't connect.
+ */
+const isDev = process.env.NODE_ENV === "development";
+const isRemoteCommandsEnvEnabled =
+  isDev || process.env.NEXT_PUBLIC_UI_BRIDGE_REMOTE_COMMANDS === "1";
 
 export function CoPilotReadyStatus() {
   const { enabled, isLoading } = useCoPilotPreference();
@@ -40,6 +60,19 @@ export function CoPilotReadyStatus() {
       >
         <Loader2 className="animate-spin" aria-hidden />
         Checking co-pilot…
+      </Badge>
+    );
+  }
+
+  // ---- env gate OFF (relay can never connect on this build) ----
+  if (!isRemoteCommandsEnvEnabled) {
+    return (
+      <Badge
+        variant="warning"
+        data-testid="co-pilot-ready-status"
+        data-status="env-disabled"
+      >
+        ⚠ Co-pilot unavailable here
       </Badge>
     );
   }
@@ -71,7 +104,7 @@ export function CoPilotReadyStatus() {
     );
   }
 
-  // ---- preference ON + consent granted ----
+  // ---- env + preference ON + consent granted ----
   return (
     <Badge
       variant="success"

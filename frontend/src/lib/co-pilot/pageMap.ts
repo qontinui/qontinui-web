@@ -37,6 +37,15 @@ function routeForItem(item: NavigationItem): string {
 }
 
 /**
+ * The co-pilot's OWN route. Excluded from the targetable page list so the
+ * planner can never ground a step on the co-pilot surface or "navigate to
+ * /co-pilot" from /co-pilot (self-targeting). The co-pilot only ever drives
+ * OTHER pages after it soft-navigates away, so its own page is never a valid
+ * target. Pairs with the `data-bridge-invisible` guard on the page wrappers.
+ */
+const SELF_ROUTE = "/co-pilot";
+
+/**
  * Build a short description for the planner's page list. Prefers the
  * registry's `description`; falls back to the `label` so every page carries
  * at least a human-readable name.
@@ -64,7 +73,8 @@ function collectItems(): NavigationItem[] {
     seen.add(item.id);
     const route = routeForItem(item);
     // Skip parameterized routes — not navigable without runtime context.
-    if (!route.includes(":")) {
+    // Skip the co-pilot's own route — the planner must never target itself.
+    if (!route.includes(":") && route !== SELF_ROUTE) {
       out.push(item);
     }
     // NavigationItem children are not embedded on the item in the shared
