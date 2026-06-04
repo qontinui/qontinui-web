@@ -1874,9 +1874,7 @@ async def get_lands(
     if repo:
         params["repo"] = repo
     params["limit"] = str(limit)
-    return await _proxy_coord_get(
-        "/coord/lands", tenant_id=tenant_id, params=params
-    )
+    return await _proxy_coord_get("/coord/lands", tenant_id=tenant_id, params=params)
 
 
 @router.get("/lands/preview")
