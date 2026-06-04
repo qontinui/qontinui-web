@@ -485,30 +485,32 @@ test.beforeAll(async ({ request }) => {
 // init script that runs before any page script on every navigation.
 //
 // Gate 0 — why this is needed: the diagnostic proved the routes bounce to
-// `/login` CLIENT-SIDE, not at the middleware. `auth.setup` seeds only the
-// `access_token` cookie (so backend `/users/me` is 200 via the cookie
-// fallback), but the client's PRIMARY auth signal is a Bearer token in
-// sessionStorage (`auth_bearer_access_token`) plus the `is_authenticated`
-// localStorage flag — see `services/auth/token-storage.ts` `saveAccessToken`.
-// Those are never populated (a real login sets them; `auth.setup` mints the
-// token out-of-band and `storageState` cannot persist sessionStorage), so the
-// page-level auth guard treats the session as signed-out, clears the
-// `qontinui_auth` marker, and redirects. Fix: replicate `saveAccessToken` by
-// bridging the seeded `access_token` cookie (non-HttpOnly) into the Bearer +
-// authed-flag + marker the client expects, on every navigation.
-const SESSION_BEARER_KEY = "auth_bearer_access_token";
+// `/login` CLIENT-SIDE (the `(app)` route guard's `useAuth()` had no user), NOT
+// at the middleware (the `access_token` cookie is present and well-scoped, and
+// `/users/me` is 200 via it). The client-side AuthProvider
+// (`contexts/auth-context.tsx`): when `is_authenticated` is set it checks
+// `isAccessTokenExpired()` and, if expired, tries `refreshAccessToken()` — which
+// fails here (no refresh cookie) → `logout()` → redirect. The fix is the SAME
+// proven recipe Spec CI uses for same-origin authed crawling
+// (`tests/spec-ci/run-spec-ci.ts:1506-1519`): seed `is_authenticated=true` AND a
+// FUTURE `token_expiry`, so `isAccessTokenExpired()` returns false, the refresh
+// branch is skipped, and `getCurrentUser()` (cookie-backed) populates the user.
+// The `access_token` cookie (from `auth.setup`) covers both the middleware gate
+// and `getCurrentUser`; no Bearer or marker cookie is needed.
 const IS_AUTHENTICATED_KEY = "is_authenticated";
-const AUTH_MARKER_COOKIE = "qontinui_auth";
+const TOKEN_EXPIRY_KEY = "token_expiry";
+const TOKEN_EXPIRY_WINDOW_MS = 3600 * 1000;
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(
-    ({ consentKey, consentValue, bearerKey, authedKey, markerCookie }) => {
+    ({ consentKey, consentValue, authedKey, expiryKey, expiryWindowMs }) => {
       try {
-        const m = document.cookie.match(/(?:^|;\s*)access_token=([^;]+)/);
-        if (m && m[1]) {
-          window.sessionStorage.setItem(bearerKey, m[1]);
-          window.localStorage.setItem(authedKey, "true");
-          document.cookie = `${markerCookie}=1; Path=/; SameSite=Lax`;
-        }
+        window.localStorage.setItem(authedKey, "true");
+        // Date.now() here runs in the BROWSER at navigation time (page JS), not
+        // in the workflow — a future expiry so isAccessTokenExpired() is false.
+        window.localStorage.setItem(
+          expiryKey,
+          (Date.now() + expiryWindowMs).toString()
+        );
         window.sessionStorage.setItem(consentKey, consentValue);
       } catch {
         // best effort — privacy modes can throw on storage access.
@@ -517,9 +519,9 @@ test.beforeEach(async ({ page }) => {
     {
       consentKey: CO_PILOT_CONSENT_KEY,
       consentValue: CO_PILOT_CONSENT_GRANTED,
-      bearerKey: SESSION_BEARER_KEY,
       authedKey: IS_AUTHENTICATED_KEY,
-      markerCookie: AUTH_MARKER_COOKIE,
+      expiryKey: TOKEN_EXPIRY_KEY,
+      expiryWindowMs: TOKEN_EXPIRY_WINDOW_MS,
     }
   );
 });
