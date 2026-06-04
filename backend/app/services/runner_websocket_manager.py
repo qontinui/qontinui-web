@@ -102,31 +102,56 @@ class RunnerWebSocketManager:
         """
         rid = _rid(runner_id)
 
+        # Registration must be ALL-OR-NOTHING. Each step below acquires a
+        # resource that holds a Redis connection for the lifetime of the
+        # registration: ``save_connection_state`` / ``_save_user_runner_mapping``
+        # issue pooled commands, and — critically — each relay
+        # ``start_runner_listener`` spawns a task that runs ``pubsub.subscribe``
+        # and holds a *dedicated* pooled connection until the task is cancelled
+        # and its ``finally`` runs ``pubsub.close()``.
+        #
+        # If a step raises midway (observed on prod: the ``self._redis.set`` in
+        # ``save_connection_state`` raising ``redis.exceptions.ConnectionError:
+        # Too many connections`` under runner-reconnect churn), the caller's
+        # except path closes the socket and returns WITHOUT calling
+        # ``unregister`` — so the in-memory registry entry, send lock, and any
+        # listener tasks + their pubsub connections are orphaned. Each failed
+        # reconnect then drains the pool a little further, a self-reinforcing
+        # leak until the pool is exhausted and every registration fails.
+        #
+        # Wrap the whole body so that on ANY failure we tear down every
+        # resource acquired so far (cancelling listeners returns their pubsub
+        # connections to the pool) before re-raising. The success path is
+        # unchanged.
         self._registry.register_runner(rid, websocket)
         self._ws_send_locks[rid] = asyncio.Lock()
 
-        await self._state_repo.save_connection_state(
-            runner_id=rid,
-            user_id=str(user_id),
-            connected_at=connected_at or "",
-            runner_name=runner_name,
-            ip_address=ip_address,
-        )
-        await self._save_user_runner_mapping(user_id, rid)
+        try:
+            await self._state_repo.save_connection_state(
+                runner_id=rid,
+                user_id=str(user_id),
+                connected_at=connected_at or "",
+                runner_name=runner_name,
+                ip_address=ip_address,
+            )
+            await self._save_user_runner_mapping(user_id, rid)
 
-        send_lock = self._ws_send_locks[rid]
+            send_lock = self._ws_send_locks[rid]
 
-        async def locked_send(data: dict[str, Any]) -> None:
-            async with send_lock:
-                await websocket.send_json(data)
+            async def locked_send(data: dict[str, Any]) -> None:
+                async with send_lock:
+                    await websocket.send_json(data)
 
-        await self._relay.start_runner_listener(rid, websocket, send_fn=locked_send)
-        await self._chat_relay.start_runner_listener(
-            rid, websocket, send_fn=locked_send
-        )
-        await self._terminal_relay.start_runner_listener(
-            rid, websocket, send_fn=locked_send
-        )
+            await self._relay.start_runner_listener(rid, websocket, send_fn=locked_send)
+            await self._chat_relay.start_runner_listener(
+                rid, websocket, send_fn=locked_send
+            )
+            await self._terminal_relay.start_runner_listener(
+                rid, websocket, send_fn=locked_send
+            )
+        except Exception:
+            await self._rollback_partial_registration(rid)
+            raise
 
         logger.info(
             "runner_ws_registered",
@@ -134,6 +159,56 @@ class RunnerWebSocketManager:
             user_id=str(user_id),
             runner_name=runner_name,
         )
+
+    async def _rollback_partial_registration(self, rid: str) -> None:
+        """Tear down resources acquired by a ``register`` that failed midway.
+
+        Cancels any relay listener tasks (so their ``finally`` runs
+        ``pubsub.close()`` and the dedicated pubsub connection returns to the
+        pool), drops the in-memory registry entry and send lock, and best-effort
+        clears the Redis connection state. Each step is independently guarded so
+        one failing teardown never masks another — the goal is to leak nothing
+        on the failure path. Safe to call when a step never ran (the relay
+        ``stop_runner_listener`` / registry helpers are no-ops for unknown ids).
+        """
+        for name, teardown in (
+            ("command_listener", self._relay.stop_runner_listener),
+            ("chat_listener", self._chat_relay.stop_runner_listener),
+            ("terminal_listener", self._terminal_relay.stop_runner_listener),
+        ):
+            try:
+                await teardown(rid)
+            except Exception as exc:
+                logger.warning(
+                    "register_rollback_step_failed",
+                    runner_id=rid,
+                    step=name,
+                    error=str(exc),
+                )
+
+        try:
+            self._registry.unregister_runner(rid)
+        except Exception as exc:
+            logger.warning(
+                "register_rollback_step_failed",
+                runner_id=rid,
+                step="registry_unregister",
+                error=str(exc),
+            )
+
+        self._ws_send_locks.pop(rid, None)
+
+        try:
+            await self._state_repo.delete_connection_state(rid)
+        except Exception as exc:
+            logger.warning(
+                "register_rollback_step_failed",
+                runner_id=rid,
+                step="delete_connection_state",
+                error=str(exc),
+            )
+
+        logger.info("runner_ws_register_rolled_back", runner_id=rid)
 
     async def unregister(
         self,
