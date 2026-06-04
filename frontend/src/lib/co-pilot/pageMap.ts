@@ -88,11 +88,85 @@ function collectItems(): NavigationItem[] {
     }
   };
 
-  for (const group of getWebNavigation()) {
-    for (const item of group.items) visit(item);
+  // Defensive: the registry accessor should always return the static web
+  // navigation groups, but guard against it throwing or yielding nothing so a
+  // registry regression can't silently produce an EMPTY page list. An empty
+  // `pages` array is exactly what makes the runner planner fall back to its
+  // hardcoded `page-…` ids (the live-E2E failure) — so we treat "no items" as a
+  // bug to surface, not a state to ship.
+  let groups: ReturnType<typeof getWebNavigation> = [];
+  try {
+    groups = getWebNavigation() ?? [];
+  } catch {
+    groups = [];
+  }
+  for (const group of groups) {
+    for (const item of group.items ?? []) visit(item);
+  }
+  if (out.length === 0 && typeof console !== "undefined") {
+    console.error(
+      "[co-pilot] getWebNavigation() yielded no navigable pages — the planner " +
+        "will receive an empty page list and fall back to runner page ids.",
+    );
   }
   return out;
 }
+
+/**
+ * Defensive alias map: a handful of common RUNNER page-ids the planner might
+ * still emit, mapped to the WEB page-id whose route they should resolve to.
+ *
+ * Why this exists: the runner's planner is prompted with a long system prompt
+ * whose hardcoded fallback page list uses `page-…`-prefixed ids (see
+ * `qontinui-runner/.../prompt_home.rs`'s `SYSTEM_PROMPT_RUNNER_PAGES`). Even
+ * when we supply the web's OWN (un-prefixed) `pages` list, the LLM sometimes
+ * leaks that `page-…` convention and emits e.g. `page-gui-automation` instead
+ * of the web id `gui-automation` we advertised. That id is not in `pageMap`,
+ * so the executor dead-ends with "unknown page id". This map is a fallback so a
+ * stray runner-id still resolves to the nearest web route instead of failing.
+ *
+ * Most runner ids are just the web id with a `page-` prefix, so `pageIdToUrl`
+ * first tries stripping the prefix and re-looking-up the real map; this table
+ * only needs the handful whose runner name differs from the web id (or has no
+ * exact web equivalent and should resolve to the nearest page). Keep it small.
+ */
+const RUNNER_PAGE_ID_ALIASES: Readonly<Record<string, string>> = {
+  // "Run and schedule workflows" page — the planner's most common target for
+  // "go to the workflows page". Runner id is page-gui-automation; web id is
+  // gui-automation (route /execute). This is the exact live-E2E failure.
+  "page-gui-automation": "gui-automation",
+  // Workflow authoring surface (route /build/workflows).
+  "page-unified-workflow-builder": "unified-workflow-builder",
+  // Scheduled / queued runs → nearest web pages.
+  "page-workflow-queue": "tasks",
+  "page-active": "active",
+  "page-runs": "runs",
+  "page-run-recap": "runs",
+  "page-run-findings": "run-findings",
+  "page-runs-history": "runs",
+  // Observe / knowledge surfaces → web "memory" (semantic/knowledge).
+  "page-memory-search": "memory",
+  "page-knowledge-explorer": "memory",
+  // Settings family (runner splits into sub-pages the web doesn't have).
+  "page-settings": "settings",
+  "page-settings-ai": "settings",
+  "page-settings-agentic": "settings",
+  "page-settings-general": "settings",
+  // Library / specs / builders.
+  "page-library": "library",
+  "page-specs": "specs",
+  "page-step-builders": "step-builders",
+  "page-state-machine": "state-machine",
+  // Misc 1:1 (also covered by prefix-strip, listed for clarity).
+  "page-error-monitor": "error-monitor",
+  "page-processes": "processes",
+  "page-triggers": "triggers",
+  "page-tasks": "tasks",
+  "page-prompt-home": "prompt-home",
+  "page-reflection": "reflection",
+  "page-architecture": "architecture",
+  "page-help": "help",
+};
 
 /**
  * Memoized derivation. The navigation registry is static for the process
@@ -138,9 +212,37 @@ export const pageMap: Readonly<Record<string, string>> = build().urlMap;
 
 /**
  * Resolve a planner-emitted page id to its app-relative URL. Returns
- * `undefined` for an unknown id so the executor can surface a clear
+ * `undefined` for a genuinely unknown id so the executor can surface a clear
  * "no such page" error rather than navigating somewhere unexpected.
+ *
+ * Resolution order:
+ *   1. The real registry-derived map (the happy path — the id we advertised).
+ *   2. Fallback for runner-id leakage: strip a leading `page-` and retry the
+ *      real map (most runner ids are just the web id with that prefix).
+ *   3. The explicit {@link RUNNER_PAGE_ID_ALIASES} table, for runner ids whose
+ *      name differs from the web id or that have no exact web equivalent.
  */
 export function pageIdToUrl(id: string): string | undefined {
-  return build().urlMap[id];
+  const urlMap = build().urlMap;
+
+  // 1. Exact, registry-derived web id — the id the planner SHOULD emit.
+  const direct = urlMap[id];
+  if (direct !== undefined) return direct;
+
+  // 2. Runner-id leakage: the planner prefixed a web id with `page-`. Strip it
+  //    and retry the real map so e.g. `page-library` -> `library` -> /library.
+  if (id.startsWith("page-")) {
+    const stripped = urlMap[id.slice("page-".length)];
+    if (stripped !== undefined) return stripped;
+  }
+
+  // 3. Explicit alias for runner ids that don't match by prefix-strip (e.g.
+  //    `page-memory-search` -> memory, `page-settings-ai` -> settings).
+  const aliasWebId = RUNNER_PAGE_ID_ALIASES[id];
+  if (aliasWebId !== undefined) {
+    const aliased = urlMap[aliasWebId];
+    if (aliased !== undefined) return aliased;
+  }
+
+  return undefined;
 }
