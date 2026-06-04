@@ -66421,6 +66421,156 @@
         ]
       }
     },
+    "/api/v1/operations/lands": {
+      "get": {
+        "description": "List recent declared lands + their verifications from coord.\n\nForwards the optional ``repo`` filter and ``limit`` cap to coord.",
+        "operationId": "api_v1_operations_lands_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "repo",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Repo"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 200,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Lands Api V1 Operations Lands Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Lands",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/lands/precision": {
+      "get": {
+        "description": "Return per-dimension land-predictor precision/recall from coord.",
+        "operationId": "api_v1_operations_lands_precision_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Lands Precision Api V1 Operations Lands Precision Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Lands Precision",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/lands/preview": {
+      "get": {
+        "description": "Return the pre-land PredictedLandEffect + risk verdict for a PR.\n\n``repo`` (owner/name) and ``pr`` (PR number) are required. Coord\nreturns 422 on bad params and 404 when the PR is not found; both\npropagate through ``_proxy_coord_get`` unchanged.",
+        "operationId": "api_v1_operations_lands_preview_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "title": "Repo",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pr",
+            "required": true,
+            "schema": {
+              "title": "Pr",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Lands Preview Api V1 Operations Lands Preview Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Lands Preview",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/memory/list": {
       "get": {
         "description": "List entries from the canonical memory substrate.",
