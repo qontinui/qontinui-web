@@ -28,6 +28,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
+import pytest
 from sqlalchemy import and_, desc, select
 
 from app.models.bridge_audit_log import BridgeAuditLog
@@ -193,3 +194,83 @@ def test_bridge_audit_create_schema_defaults_execution_status_received() -> None
         pass
     else:  # pragma: no cover - guard
         raise AssertionError("execution_status='bogus' should be rejected")
+
+
+# ---------------------------------------------------------------------------
+# Insert-attribution invariant (PR #412 — dual-auth audit actor)
+# ---------------------------------------------------------------------------
+#
+# The companion to the GET cross-user-isolation guard above: the INSERT path
+# (`insert_bridge_audit_log`) now keys the row's `user_id` on the
+# dependency-resolved `actor_user_id` (from `get_audit_actor_user_id`), NOT
+# on a body field. This is the only thing standing between a forwarded
+# device/Cognito token and an honest attribution — a regression that read
+# `user_id` from the payload, or dropped the actor binding, would let a
+# caller insert rows under another user's id. We lock the binding by calling
+# the endpoint directly with a stub session that captures the added row.
+
+
+class _RecordingSession:
+    """Minimal AsyncSession stand-in: captures the single `add`ed row and
+    treats commit/refresh as async no-ops (the endpoint does
+    add -> await commit -> await refresh)."""
+
+    def __init__(self) -> None:
+        self.added: list[object] = []
+        self.committed = False
+        self.refreshed = False
+
+    def add(self, obj: object) -> None:
+        self.added.append(obj)
+
+    async def commit(self) -> None:
+        self.committed = True
+
+    async def refresh(self, obj: object) -> None:  # noqa: ARG002
+        self.refreshed = True
+
+
+@pytest.mark.asyncio
+async def test_insert_attributes_row_to_dependency_resolved_actor() -> None:
+    """The inserted row's `user_id` MUST equal the dependency-resolved
+    `actor_user_id` — never anything from the request body.
+
+    `get_audit_actor_user_id` derives the actor solely from the verified
+    token (Cognito user OR device-token owner); this test confirms the
+    endpoint actually keys the persisted row on that value, so there is no
+    path to inject a row under another user's id.
+    """
+    from app.api.v1.endpoints.co_pilot_activity import insert_bridge_audit_log
+    from app.schemas.co_pilot_activity import BridgeAuditLogCreate
+
+    actor_user_id = uuid.uuid4()
+    payload = BridgeAuditLogCreate(
+        command_name="element.action",
+        path="/control/element/btn-1/action",
+        method="POST",
+        status_code=200,
+        # A body cannot carry user_id (the schema has none), but the
+        # invariant is that attribution is the dep value regardless.
+    )
+    session = _RecordingSession()
+
+    returned = await insert_bridge_audit_log(
+        payload=payload,
+        db=session,  # type: ignore[arg-type]
+        actor_user_id=actor_user_id,
+    )
+
+    # Exactly one row was added, and it was committed + refreshed.
+    assert len(session.added) == 1
+    assert session.committed is True
+    assert session.refreshed is True
+
+    row = session.added[0]
+    assert isinstance(row, BridgeAuditLog)
+    # The load-bearing assertion: attribution == the resolved actor.
+    assert row.user_id == actor_user_id
+    # And the payload fields flow through onto the row.
+    assert row.command_name == "element.action"
+    assert row.status_code == 200
+    # The endpoint returns the same row it persisted.
+    assert returned is row
