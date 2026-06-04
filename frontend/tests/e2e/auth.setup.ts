@@ -125,8 +125,28 @@ async function seedAndVerifyToken(
     return false;
   }
 
+  // Seed the client-side auth markers the route guard reads. CRITICAL: both
+  // are required for the browser app session to render (not just the API).
+  //   - `is_authenticated` — AuthProvider.checkAuth's fast-path flag
+  //     (token-storage.ts `isAuthenticated()`).
+  //   - `token_expiry` (FUTURE) — without it `isAccessTokenExpired()` returns
+  //     true, so checkAuth tries `refreshAccessToken()`; in same-origin local
+  //     mode there is no refresh cookie (we only seeded `access_token`), so the
+  //     refresh fails -> logout -> AppAuthGate redirects to /login (the exact
+  //     bounce that made the capture audit the login page). With a future
+  //     expiry, checkAuth skips refresh and calls `getCurrentUser()` directly,
+  //     which authenticates via the `access_token` cookie. Mirrors the proven
+  //     recipe in tests/spec-ci/run-spec-ci.ts.
   await page.addInitScript(() => {
-    window.localStorage.setItem("is_authenticated", "true");
+    try {
+      window.localStorage.setItem("is_authenticated", "true");
+      window.localStorage.setItem(
+        "token_expiry",
+        (Date.now() + 3600 * 1000).toString(),
+      );
+    } catch {
+      // localStorage unavailable — best effort.
+    }
   });
   await page.reload();
   await page.waitForLoadState("domcontentloaded");
