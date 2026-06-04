@@ -113,6 +113,41 @@ function base64UrlEncode(bytes: Uint8Array): string {
 }
 
 /**
+ * Base64url-decode to bytes (inverse of `base64UrlEncode`). Restores the
+ * standard alphabet (`-`→`+`, `_`→`/`) and the padding that the unpadded
+ * encoder stripped, then `atob`s. Throws on a malformed input (callers wrap
+ * this in try/catch and treat a failure as "no usable value").
+ */
+function base64UrlDecode(value: string): Uint8Array {
+  const standard = value.replace(/-/g, "+").replace(/_/g, "/");
+  // atob requires padding to a multiple of 4.
+  const padded = standard.padEnd(
+    standard.length + ((4 - (standard.length % 4)) % 4),
+    "="
+  );
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+/**
+ * Base64url-encode a string as UTF-8. We go through `TextEncoder` first so that
+ * non-Latin1 characters (any unicode path segment) survive — `btoa` alone
+ * throws on code points > 0xFF.
+ */
+function base64UrlEncodeString(value: string): string {
+  return base64UrlEncode(new TextEncoder().encode(value));
+}
+
+/** Base64url-decode a UTF-8 string (inverse of `base64UrlEncodeString`). */
+function base64UrlDecodeString(value: string): string {
+  return new TextDecoder().decode(base64UrlDecode(value));
+}
+
+/**
  * Generate a high-entropy PKCE `code_verifier`: 32 random bytes →
  * base64url = 43 unreserved chars, comfortably inside the RFC's 43-128 range.
  */
@@ -150,13 +185,29 @@ export async function startCognitoLogin(
   provider?: CognitoProvider,
   next?: string
 ): Promise<void> {
-  // `state` carries the CSRF token and (optionally) the post-login path. We
-  // store only the CSRF token to compare on return; the path is read straight
-  // from the returned state, but we also persist it so a mismatch can't smuggle
-  // an attacker-chosen redirect.
-  const csrf = generateState();
-  const stateValue = next ? `${csrf}.${encodeURIComponent(next)}` : csrf;
-  await beginAuthorize(provider, stateValue);
+  // `state` carries the CSRF token and (optionally) the post-login path. The
+  // WHOLE state string is stored verbatim and compared byte-for-byte on return
+  // (that equality IS the CSRF/replay check), so the path can't be swapped for
+  // an attacker-chosen redirect without failing verification.
+  await beginAuthorize(provider, buildLoginState(generateState(), next));
+}
+
+/**
+ * Build the login-mode OAuth `state`: the CSRF token, optionally followed by
+ * `.` + the **base64url** of the post-login `next` path.
+ *
+ * WHY base64url (and not `encodeURIComponent`): base64url output is drawn from
+ * `A-Za-z0-9-_` and the `.` separator and CSRF token are themselves base64url,
+ * so the entire state string contains NO `%xx` sequences. That makes it
+ * byte-stable (idempotent) under any number of percent-encode/decode round
+ * trips on ANY Cognito return path. The hosted-UI **email** (form-POST) return
+ * path applies one EXTRA percent-decode to `state`; with the old
+ * `encodeURIComponent` packing, a `next` containing `/` (e.g. `%2Fco-pilot`)
+ * came back decoded to `/co-pilot`, breaking the strict-equality CSRF check and
+ * failing every email sign-in that carried a `next` — the prod bug this fixes.
+ */
+export function buildLoginState(csrf: string, next?: string): string {
+  return next ? `${csrf}.${base64UrlEncodeString(next)}` : csrf;
 }
 
 /**
@@ -244,12 +295,12 @@ export function verifyStateAndExtractNext(
       "OAuth state mismatch — the sign-in attempt could not be verified. Please try again."
     );
   }
-  // `state` is `<csrf>` or `<csrf>.<encoded-next>`.
+  // `state` is `<csrf>` or `<csrf>.<base64url(next)>`.
   const dot = stored.indexOf(".");
   if (dot === -1) return null;
   const encodedNext = stored.slice(dot + 1);
   try {
-    const decoded = decodeURIComponent(encodedNext);
+    const decoded = base64UrlDecodeString(encodedNext);
     // Only honour same-origin absolute paths — never an attacker-controlled
     // absolute URL (open-redirect guard).
     return decoded.startsWith("/") && !decoded.startsWith("//")
