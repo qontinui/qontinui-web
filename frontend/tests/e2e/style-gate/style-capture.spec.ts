@@ -49,6 +49,7 @@
 import { test, expect, type Page, type APIRequestContext } from "@playwright/test";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { enrichElements } from "./normalize";
 
 /** A single gated route as declared in `routes.json`. */
 interface StyleGateRoute {
@@ -253,10 +254,20 @@ function normalizeBboxes(elements: unknown[]): void {
 }
 
 /**
- * Apply the bbox-normalization adapter to a parsed snapshot body and return the
- * re-serialized JSON ready to write. When no element array is found (shouldn't
- * happen — the caller's element-count guard fires first), the original raw text
- * is returned unchanged so we never silently drop a snapshot we couldn't parse.
+ * Normalize a parsed snapshot body for the analyzer and return the
+ * re-serialized JSON ready to write. Two transforms, in order:
+ *   1. `normalizeBboxes` — map the SDK's `{x,y,width,height}` floats to the Rust
+ *      `Region` `{x,y,w,h}` u32 (the one geometry transform).
+ *   2. `enrichElements` (tests/e2e/style-gate/normalize.ts) — derive the
+ *      analyzer's visual/interactivity fields (`interactable`, `fg_color`,
+ *      `bg_color`, `font_size_px`, `font_family`, `line_height_px`, `text`,
+ *      `role`) from the SDK's `state.computedStyles` / actions / category, so
+ *      the color, typography, and element-coverage analyzers have the inputs
+ *      they need. Absent fields are OMITTED (the Rust `Element` defaults apply).
+ *
+ * When no element array is found (shouldn't happen — the caller's element-count
+ * guard fires first), the original raw text is returned unchanged so we never
+ * silently drop a snapshot we couldn't parse.
  */
 function normalizeSnapshotForAnalyzer(
   raw: string,
@@ -265,6 +276,7 @@ function normalizeSnapshotForAnalyzer(
   const elements = locateElements(body);
   if (!elements) return raw;
   normalizeBboxes(elements);
+  enrichElements(elements);
   return JSON.stringify(body);
 }
 
@@ -399,6 +411,69 @@ async function recordAuthDiagnostics(
 const SNAPSHOT_PATH = "/api/ui-bridge/control/snapshot";
 
 /**
+ * LOGIN-SURFACE GUARD (P0).
+ *
+ * The whole point of the style gate is to audit the REAL authed app. If auth
+ * silently fails, every "authed" route renders the sign-in screen and the gate
+ * audits the wrong page byte-for-byte (the original P0 incident). After
+ * navigation we assert the rendered surface is NOT the login screen; on a hit we
+ * throw a LOUD, capture-unavailable-flavored failure so the run artifact/log
+ * makes "we audited the login page" impossible to miss. The thrown test failure
+ * yields no snapshot/frame for the route, which the workflow scores as
+ * CAPTURE-UNAVAILABLE (green in SHADOW, but visible) — matching the plan's
+ * shadow-soft semantics while never silently passing a login capture.
+ *
+ * Detection signals (any present => login surface). Kept deliberately broad +
+ * cheap so a markup tweak doesn't silently defeat the guard:
+ *   - the email input the Cognito-less local login form renders (`input#email`),
+ *   - the canonical sign-in heading copy ("Sign in to Qontinui"),
+ *   - a redirect that parked us on `/login`.
+ */
+const LOGIN_EMAIL_SELECTOR = "input#email";
+const LOGIN_HEADING_TEXT = "Sign in to Qontinui";
+
+async function assertNotLoginSurface(
+  page: Page,
+  route: StyleGateRoute,
+): Promise<void> {
+  // 1. Parked on /login (route guard redirected an unauthenticated visit).
+  const onLoginRoute = /\/login(\b|\/|\?|#|$)/.test(new URL(page.url()).pathname);
+
+  // 2. The email field the sign-in form renders.
+  const hasEmailInput =
+    (await page.locator(LOGIN_EMAIL_SELECTOR).count().catch(() => 0)) > 0;
+
+  // 3. The canonical sign-in heading copy (case-insensitive, substring).
+  const hasSignInHeading =
+    (await page
+      .getByText(LOGIN_HEADING_TEXT, { exact: false })
+      .count()
+      .catch(() => 0)) > 0;
+
+  if (onLoginRoute || hasEmailInput || hasSignInHeading) {
+    const signals = [
+      onLoginRoute ? `url=${page.url()} (on /login)` : null,
+      hasEmailInput ? `${LOGIN_EMAIL_SELECTOR} present` : null,
+      hasSignInHeading ? `"${LOGIN_HEADING_TEXT}" heading present` : null,
+    ]
+      .filter(Boolean)
+      .join("; ");
+    throw new Error(
+      `[style-gate] CAPTURE-UNAVAILABLE — route "${route.id}" (${route.path}) ` +
+        `rendered the LOGIN surface, not the authed app (${signals}).\n` +
+        `Authentication did not take effect, so the gate would have audited the ` +
+        `sign-in page instead of the real app (the P0 incident). NO snapshot/frame ` +
+        `is written for this route -> the workflow scores it CAPTURE-UNAVAILABLE ` +
+        `(green in SHADOW, but reported loudly here). Check the auth lane: the ` +
+        `style-gate workflow mints a hermetic id token (QONTINUI_TEST_ID_TOKEN) ` +
+        `that auth.setup.ts seeds; verify the run-local JWKS server is up, ` +
+        `COGNITO_ISSUER/COGNITO_ALLOWED_AUDIENCES match the token, and the backend ` +
+        `JIT-provisioned the ci-bot user. See tests/e2e/style-gate/README.md.`,
+    );
+  }
+}
+
+/**
  * Poll the relay until a browser tab is registered, then fetch the snapshot.
  * Returns the parsed body once a non-503 element-bearing snapshot is obtained.
  * Throws with an actionable message if the relay never attaches within budget.
@@ -522,10 +597,16 @@ for (const route of AUTHED_ROUTES) {
     await page.setViewportSize(VIEWPORT);
     await navigateAndSettle(page, route);
 
-    // Auth/routing diagnostic BEFORE the snapshot — captures whether the page
-    // actually landed on the authed surface or bounced to login, even if the
-    // snapshot step later fails.
+    // Auth/routing diagnostic BEFORE the snapshot — records whether the page
+    // landed on the authed surface or bounced to login (to an uploaded
+    // artifact), even if a later step fails. Best-effort, never throws.
     await recordAuthDiagnostics(page, route);
+
+    // P0 GUARD: refuse to capture the login surface. If auth silently failed
+    // this throws a loud CAPTURE-UNAVAILABLE failure (no snapshot/frame written)
+    // instead of auditing the sign-in page byte-for-byte. Runs AFTER the
+    // diagnostic so the diagnostic artifact still records the bounce.
+    await assertNotLoginSurface(page, route);
 
     // Snapshot first (fail loudly if the relay never attached), then frame.
     const { raw, body } = await captureSnapshot(page, route);

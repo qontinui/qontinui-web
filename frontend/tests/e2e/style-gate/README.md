@@ -32,16 +32,28 @@ workflow that runs the capture and feeds `.artifacts/` to the analyzer.
 Written by `style-capture.spec.ts`, keyed by each route's `id` slug:
 
 ```
-tests/e2e/style-gate/.artifacts/snapshots/<id>.json   # /control/snapshot body, VERBATIM
+tests/e2e/style-gate/.artifacts/snapshots/<id>.json   # /control/snapshot body, NORMALIZED
 tests/e2e/style-gate/.artifacts/frames/<id>.png       # 1280x800 viewport screenshot
 ```
 
 Seed route ids (all authed): `co-pilot`, `build-workflows`, `library`.
 
-The snapshot body is written **verbatim** (no hand-transform): the relay's
-`/control/snapshot` returns the runner-native shape, which is exactly what the
-analyzer's `parse_snapshot` accepts (`{elements:[...]}` /
-`{data:{elements:[...]}}` / `{data:[...]}`).
+The snapshot body keeps the relay's `/control/snapshot` envelope (one of the
+shapes `parse_snapshot` accepts — `{elements:[...]}` / `{data:{elements:[...]}}`
+/ `{data:[...]}`) but each element is **normalized** for the analyzer before
+write (see `normalize.ts` + `normalizeSnapshotForAnalyzer` in the spec):
+
+- **bbox** — the SDK's `{x,y,width,height}` floats → the Rust `Region`
+  `{x,y,w,h}` u32.
+- **analyzer visual/interactivity fields** — `interactable` (from
+  category/actions/tag/role), `fg_color`/`bg_color` (parsed from
+  `state.computedStyles.color`/`backgroundColor`), `font_size_px`/
+  `line_height_px` (parsed from computed px), `font_family` (if the SDK ever
+  exposes it), `text`/`role` (visible text / a11y role). Absent fields are
+  OMITTED so the Rust `Element` serde defaults apply.
+
+All other SDK fields pass through (the Rust `Element` has no
+`deny_unknown_fields`).
 
 ## Project
 

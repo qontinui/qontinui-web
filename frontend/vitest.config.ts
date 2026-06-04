@@ -20,8 +20,15 @@ export default defineConfig({
     include: [
       "src/**/*.{test,spec}.{ts,tsx}",
       "eslint-rules/**/*.{test,spec}.{js,mjs}",
+      // Pure, dependency-free helpers under tests/e2e may carry vitest unit
+      // tests (e.g. the style-gate snapshot normalizer). The Playwright SPECS
+      // (*.spec.ts) stay excluded below — only `*.test.ts` here is collected.
+      "tests/e2e/**/*.test.ts",
     ],
-    exclude: ["node_modules", "tests/e2e/**"],
+    // Exclude the Playwright e2e SPECS (they import @playwright/test and run
+    // under `playwright test`, not vitest) but NOT the `*.test.ts` unit tests
+    // included above.
+    exclude: ["node_modules", "tests/e2e/**/*.spec.ts"],
     coverage: {
       provider: "v8",
       reporter: ["text", "json", "html"],

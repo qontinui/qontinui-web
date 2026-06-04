@@ -132,12 +132,21 @@ jobs:
       # DB the captured backend + migrations + seed all share. Matches the value
       # hardcoded in global-setup.ts and the e2e-tests.yml Frontend E2E job.
       DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
-      # Cognito CI test creds — SAME secret names + mapping Spec CI uses
-      # (.github/workflows/spec-ci.yml). The Phase 1 auth `setup` project
-      # (frontend/tests/e2e/auth.setup.ts) reads these to mint a Cognito id
-      # token for the ci-bot account.
-      QONTINUI_TEST_AUTO_LOGIN_EMAIL: ${{ secrets.SPEC_CI_AUTH_EMAIL }}
-      QONTINUI_TEST_AUTO_LOGIN_PASSWORD: ${{ secrets.SPEC_CI_AUTH_PASSWORD }}
+      # HERMETIC AUTH (mirrors spec-ci.yml — the canonical pattern). The capture
+      # renders against the LOCAL backend booted by global-setup.ts; a real
+      # Cognito token's `iss` is NOT trusted by that local backend, so the
+      # previous real-Cognito creds lane left every authed route bounced to
+      # /login (the P0 "the gate audits the login page"). Instead the
+      # "Mint local id token + serve JWKS" step below mints an RS256 id token
+      # against a RUN-LOCAL issuer and exports QONTINUI_TEST_ID_TOKEN; the local
+      # backend's verifier is pointed at that issuer and JIT-provisions the
+      # ci-bot user. auth.setup.ts's injected lane seeds it as the access_token
+      # cookie. No real Cognito, no shared account, no create_admin.py seed.
+      SECRET_KEY: style-gate-secret-key-for-ci-only-minimum-32-chars-long
+      ENVIRONMENT: development
+      COGNITO_USER_POOL_ID: style-gate-local-pool
+      COGNITO_ISSUER: http://127.0.0.1:8770
+      COGNITO_ALLOWED_AUDIENCES: style-gate-local
       # The style-gate spec self-enables the per-user co-pilot pref + seeds
       # consent; the build-time relay surface mirrors Spec CI.
       NEXT_PUBLIC_UI_BRIDGE_REMOTE_COMMANDS: "1"
@@ -352,39 +361,56 @@ jobs:
         run: |
           alembic upgrade heads
 
-      # The auth.setup.ts fixture logs in as the canonical dev user. Migrations
-      # only create empty tables; create_admin.py (idempotent) seeds the user.
+      # HERMETIC AUTH (canonical pattern, ported from spec-ci.yml's "Mint local
+      # id token + serve JWKS" step). Generate an ephemeral RS256 keypair + JWKS,
+      # serve the JWKS at COGNITO_ISSUER (http://127.0.0.1:8770), and mint the
+      # ci-bot id token that auth.setup.ts's injected lane seeds as the
+      # access_token cookie. The LOCAL backend booted by global-setup.ts (it
+      # inherits the job-level COGNITO_* env via `...process.env`) verifies the
+      # token through its REAL verifier (RS256/iss/aud/exp) and JIT-provisions
+      # the ci-bot auth.users row on auth.setup's first authed probe — so NO
+      # create_admin.py / dev-user seed step is needed (the dead create_admin.py
+      # reference that previously soft-failed here is gone).
       #
-      # BURN-IN TODO (backend provisioning): `backend/create_admin.py` is NOT
-      # tracked in this repo on ANY ref (origin/main, this branch) and is NOT
-      # provided by any sibling clone or a pip console-script — so this step
-      # fails with "can't open file '.../backend/create_admin.py'". This step was
-      # ported from e2e-tests.yml's "Frontend E2E Tests" job, but that job is
-      # gated `if: github.event_name != 'pull_request'` and is SKIPPED on PRs, so
-      # the create_admin.py invocation has never actually run/been exercised in CI
-      # — there is no working reference to replicate. Until the dev-user seed is
-      # resolved (committed script, console-script, or sibling-provided), this
-      # step is SHADOW soft-fail: it cannot abort the job. A still-broken backend
-      # boot just yields CAPTURE-UNAVAILABLE (green shadow), never a red check.
-      - name: Create dev user for E2E auth setup
-        # SHADOW soft-fail (see BURN-IN TODO above): failure -> CAPTURE-UNAVAILABLE, not red.
+      # This REPLACES the real-Cognito creds lane: a real-Cognito token's `iss`
+      # is not trusted by the local backend, which is exactly why every authed
+      # route previously bounced to /login (P0). The JWKS server must be up
+      # before the capture step's auth.setup probe; the backend fetches JWKS
+      # lazily on first verification, so ordering this before the capture is
+      # sufficient.
+      #
+      # SHADOW soft-fail: a mint/serve failure flows through to no-snapshots ->
+      # CAPTURE-UNAVAILABLE (green shadow), never a red check.
+      - name: Mint local id token + serve JWKS (hermetic auth)
+        id: mint_token
         continue-on-error: true
         working-directory: ./backend
-        env:
-          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
-          TESTING: "1"
-          ENVIRONMENT: development
-          SECRET_KEY: test-secret-key-for-testing-only-minimum-32-chars-required
-          STORAGE_BACKEND: local
-          REDIS_ENABLED: "false"
         run: |
-          python create_admin.py
+          set -euo pipefail
+          TOKEN=$(python scripts/spec_ci_local_idp.py \
+            --issuer "$COGNITO_ISSUER" \
+            --audience "$COGNITO_ALLOWED_AUDIENCES" \
+            --email style-gate-bot@no-reply.qontinui.io \
+            --out-dir /tmp/style-gate-idp)
+          echo "QONTINUI_TEST_ID_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+          (cd /tmp/style-gate-idp && python -m http.server 8770 --bind 127.0.0.1 > /tmp/idp.log 2>&1 &)
+          for i in $(seq 1 15); do
+            if curl -fsS http://127.0.0.1:8770/.well-known/jwks.json > /dev/null; then
+              echo "local JWKS up after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8770/.well-known/jwks.json > /dev/null
 
       # Run the Phase 1 capture. The config's `webServer` boots `npm run dev` on
-      # :3001 and the `setup` project mints the Cognito token from the env creds
-      # above; the spec renders the 3 authed routes and writes per-route
-      # snapshot JSON + frame PNG under
-      # frontend/tests/e2e/style-gate/.artifacts/.
+      # :3001 and `global-setup.ts` boots the LOCAL uvicorn backend (inheriting
+      # the job-level COGNITO_* env so it trusts the run-local issuer). The
+      # `setup` project (auth.setup.ts) seeds the hermetic QONTINUI_TEST_ID_TOKEN
+      # minted above as the access_token cookie and probes /users/me (which
+      # JIT-provisions the ci-bot user); the spec renders the 3 authed routes,
+      # asserts each is NOT the login surface, and writes per-route snapshot JSON
+      # + frame PNG under frontend/tests/e2e/style-gate/.artifacts/.
       #
       # continue-on-error: a capture hiccup must still let the assert step run +
       # report (the per-route assert step itself flags a missing snapshot/frame
