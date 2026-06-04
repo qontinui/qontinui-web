@@ -367,6 +367,19 @@ async function recordAuthDiagnostics(
         return { status: -1, body: String(e).slice(0, 200) };
       }
     });
+    // Full cookie state — to explain why the middleware soft-gate redirects
+    // even though the XHR above is authed. context.cookies() includes HttpOnly
+    // cookies (what the SERVER/middleware sees on a navigation); document.cookie
+    // is only the client-readable subset.
+    const ctxCookies = (await page.context().cookies()).map((c) => ({
+      name: c.name,
+      domain: c.domain,
+      path: c.path,
+      sameSite: c.sameSite,
+      secure: c.secure,
+      httpOnly: c.httpOnly,
+    }));
+    const documentCookie = await page.evaluate(() => document.cookie);
     const looksLikeLogin =
       /\/(login|sign-?in)\b/i.test(finalUrl) ||
       me.status === 401 ||
@@ -378,6 +391,8 @@ async function recordAuthDiagnostics(
       redirectedAwayFromRoute: !finalUrl.endsWith(route.path),
       looksLikeLogin,
       usersMe: me,
+      contextCookies: ctxCookies,
+      documentCookie,
     };
     mkdirSync(DIAG_DIR, { recursive: true });
     writeFileSync(
