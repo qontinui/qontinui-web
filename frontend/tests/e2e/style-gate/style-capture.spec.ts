@@ -468,7 +468,28 @@ test.beforeAll(async ({ request }) => {
 
 // Gate 3: seed per-session consent so the relay listener mounts on a fresh tab.
 // Runs before any page script on every navigation in this file.
-test.beforeEach(async ({ page }) => {
+//
+// Gate 0 (route guard): the Next middleware (`src/middleware.ts`) soft-gates
+// protected routes — it redirects to `/login?next=…` unless an `access_token`,
+// `refresh_token`, OR the client-readable `qontinui_auth` marker cookie is
+// present on the NAVIGATION request. The diagnostic proved that with only the
+// minted Cognito `access_token` cookie the routes still bounced to `/login`
+// (backend `/users/me` returns 200, but the middleware didn't accept the
+// out-of-band token), so we also seed the `qontinui_auth=1` marker — the
+// mechanism `TokenStorage` itself uses to tell the soft-gate "this client is
+// signed in" (`token-storage.ts:135`). With the marker present the middleware
+// lets the authed route render, and the page's own `useAuth()` (which calls
+// the already-working `/users/me`) hydrates the session.
+const AUTH_MARKER_COOKIE = "qontinui_auth";
+test.beforeEach(async ({ page, baseURL }) => {
+  await page.context().addCookies([
+    {
+      name: AUTH_MARKER_COOKIE,
+      value: "1",
+      url: baseURL ?? "http://localhost:3001",
+      sameSite: "Lax",
+    },
+  ]);
   await page.addInitScript(
     ({ key, value }) => {
       try {
