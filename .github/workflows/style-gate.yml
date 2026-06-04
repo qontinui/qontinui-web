@@ -446,6 +446,12 @@ jobs:
           FRAME_DIR="$SG/.artifacts/frames"
           SPEC_DIR="$SG/specs"
           BASELINE_DIR="$SG/baselines"
+          # Per-route analyzer findings JSON (stdout) — preserved as artifacts so
+          # the SHADOW burn-in can actually triage findings, author element-id
+          # specs, and seed baselines. Lives under .artifacts/ so the single
+          # upload path covers it.
+          FINDINGS_DIR="$SG/.artifacts/findings"
+          mkdir -p "$FINDINGS_DIR"
 
           any_gate2=0           # >=1 pass (analyze or assert) returned exit 2
           any_infra=0           # >=1 pass returned exit 1 on a PRESENT input (broken analyzer)
@@ -505,11 +511,14 @@ jobs:
 
             echo "::group::vision-audit analyze — $id"
             set +e
+            # 2>&1 1>FILE: stderr (human summary) is captured into $an_err for the
+            # table cell; stdout (the machine-readable per-finding JSON) is saved
+            # to the findings artifact for burn-in triage.
             an_err="$("$VISION_AUDIT" analyze \
               --snapshot "$snap" \
               --frame "$frame" \
               --analyzer all \
-              --fail-on critical 2>&1 1>/dev/null)"
+              --fail-on critical 2>&1 1>"$FINDINGS_DIR/$id.analyze.json")"
             an_rc=$?
             set -e
             echo "$an_err"
@@ -537,7 +546,7 @@ jobs:
                 --snapshot "$snap" \
                 --frame "$frame" \
                 --assertions "$spec" \
-                $baseline_args 2>&1 1>/dev/null)"
+                $baseline_args 2>&1 1>"$FINDINGS_DIR/$id.assert.json")"
               as_rc=$?
               set -e
               echo "$as_err"
@@ -621,6 +630,11 @@ jobs:
         uses: actions/upload-artifact@v5
         with:
           name: style-gate-artifacts
+          # `.artifacts/` is a HIDDEN dir; upload-artifact skips hidden files
+          # unless include-hidden-files is set — without this the captured
+          # snapshots/frames/findings never upload (only playwright-report did),
+          # leaving the burn-in unable to triage. Keep this true.
+          include-hidden-files: true
           path: |
             frontend/tests/e2e/style-gate/.artifacts/
             frontend/playwright-report/
