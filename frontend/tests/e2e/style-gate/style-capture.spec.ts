@@ -67,6 +67,7 @@ const STYLE_GATE_DIR = __dirname;
 const ARTIFACTS_DIR = join(STYLE_GATE_DIR, ".artifacts");
 const SNAPSHOTS_DIR = join(ARTIFACTS_DIR, "snapshots");
 const FRAMES_DIR = join(ARTIFACTS_DIR, "frames");
+const DIAG_DIR = join(ARTIFACTS_DIR, "diagnostics");
 
 /**
  * Deterministic viewport. Frames must be byte-reproducible run-to-run for the
@@ -340,6 +341,59 @@ async function navigateAndSettle(page: Page, route: StyleGateRoute) {
   await page.waitForTimeout(route.settleMs);
 }
 
+/**
+ * Auth/routing diagnostic — records, per route, whether the rendered page is
+ * the intended authed surface or a redirect to the login page, plus the page's
+ * own (cookie-bearing) view of `/api/v1/users/me`. Written to an uploaded
+ * artifact so the burn-in can tell "authed app rendered" from "bounced to
+ * login" without eyeballing every frame. Never throws — diagnostics must not
+ * fail the capture.
+ */
+async function recordAuthDiagnostics(
+  page: Page,
+  route: StyleGateRoute
+): Promise<void> {
+  try {
+    const finalUrl = page.url();
+    const me = await page.evaluate(async () => {
+      try {
+        const res = await fetch("/api/v1/users/me", {
+          headers: { Accept: "application/json" },
+          credentials: "include",
+        });
+        const text = await res.text();
+        return { status: res.status, body: text.slice(0, 600) };
+      } catch (e) {
+        return { status: -1, body: String(e).slice(0, 200) };
+      }
+    });
+    const looksLikeLogin =
+      /\/(login|sign-?in)\b/i.test(finalUrl) ||
+      me.status === 401 ||
+      me.status === 403;
+    const diag = {
+      route: route.id,
+      requestedPath: route.path,
+      finalUrl,
+      redirectedAwayFromRoute: !finalUrl.endsWith(route.path),
+      looksLikeLogin,
+      usersMe: me,
+    };
+    mkdirSync(DIAG_DIR, { recursive: true });
+    writeFileSync(
+      join(DIAG_DIR, `${route.id}.json`),
+      JSON.stringify(diag, null, 2),
+      "utf8"
+    );
+    console.warn(
+      `[style-gate diag] ${route.id}: finalUrl=${finalUrl} ` +
+        `usersMe=${me.status} looksLikeLogin=${looksLikeLogin}`
+    );
+  } catch {
+    // Diagnostics are best-effort; never break the capture.
+  }
+}
+
 /** Snapshot relay path (same-origin proxy at app/api/ui-bridge/[...path]). */
 const SNAPSHOT_PATH = "/api/ui-bridge/control/snapshot";
 
@@ -436,6 +490,11 @@ for (const route of AUTHED_ROUTES) {
 
     await page.setViewportSize(VIEWPORT);
     await navigateAndSettle(page, route);
+
+    // Auth/routing diagnostic BEFORE the snapshot — captures whether the page
+    // actually landed on the authed surface or bounced to login, even if the
+    // snapshot step later fails.
+    await recordAuthDiagnostics(page, route);
 
     // Snapshot first (fail loudly if the relay never attached), then frame.
     const { raw, body } = await captureSnapshot(page, route);
