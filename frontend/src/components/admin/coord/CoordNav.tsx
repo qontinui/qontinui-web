@@ -15,6 +15,7 @@ import { usePathname } from "next/navigation";
 import {
   Activity,
   AlertTriangle,
+  Anchor,
   BookOpen,
   Boxes,
   FileText,
@@ -99,6 +100,12 @@ const PRIMARY_TABS: NavItem[] = [
     label: "Git Ops",
     icon: GitBranch,
     testId: "coord-nav-git-ops",
+  },
+  {
+    href: "/admin/coord/lands",
+    label: "Lands",
+    icon: Anchor,
+    testId: "coord-nav-lands",
   },
   {
     href: "/admin/coord/history",

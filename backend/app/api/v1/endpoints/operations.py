@@ -1842,6 +1842,69 @@ async def get_git_ops_branches(
     return await _proxy_coord_get("/coord/git-ops/branches", tenant_id=tenant_id)
 
 
+# ---- Push/Land effect-signatures proxy ----------------------------------
+#
+# Plan `2026-05-31-push-land-action-effect-signatures-plan.md` Phase 4 —
+# the `/admin/coord/lands` operator dashboard backend. Three read-only
+# proxy endpoints that forward to coord's land-signatures surface:
+#
+# - `/operations/lands`           → coord `/coord/lands`           (recent declared lands + verifications)
+# - `/operations/lands/preview`   → coord `/coord/lands/preview`   (pre-land PredictedLandEffect + risk verdict)
+# - `/operations/lands/precision` → coord `/coord/lands/precision` (per-dimension TP/FP/TN/FN + precision/recall)
+#
+# Land signatures are declared/verified entirely server-side by the merge
+# scheduler + cascade observer; these proxies only serve the dashboard
+# read path. The operator bearer is forwarded (via `_proxy_coord_get`'s
+# `tenant_id` → `_tenant_headers`) so coord requires an authenticated
+# operator, mirroring the merge-queue posture above. Coord's own 404
+# (PR not found) and 422 (bad params) status codes pass straight through
+# `_proxy_coord_get` so the dashboard can render them as inline messages.
+
+
+@router.get("/lands")
+async def get_lands(
+    repo: str | None = None,
+    limit: int = Query(default=25, le=200),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """List recent declared lands + their verifications from coord.
+
+    Forwards the optional ``repo`` filter and ``limit`` cap to coord."""
+    params: dict[str, str] = {}
+    if repo:
+        params["repo"] = repo
+    params["limit"] = str(limit)
+    return await _proxy_coord_get(
+        "/coord/lands", tenant_id=tenant_id, params=params
+    )
+
+
+@router.get("/lands/preview")
+async def get_lands_preview(
+    repo: str,
+    pr: int,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return the pre-land PredictedLandEffect + risk verdict for a PR.
+
+    ``repo`` (owner/name) and ``pr`` (PR number) are required. Coord
+    returns 422 on bad params and 404 when the PR is not found; both
+    propagate through ``_proxy_coord_get`` unchanged."""
+    return await _proxy_coord_get(
+        "/coord/lands/preview",
+        tenant_id=tenant_id,
+        params={"repo": repo, "pr": str(pr)},
+    )
+
+
+@router.get("/lands/precision")
+async def get_lands_precision(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return per-dimension land-predictor precision/recall from coord."""
+    return await _proxy_coord_get("/coord/lands/precision", tenant_id=tenant_id)
+
+
 # ---- Symbol-claims surface (Phase 4.4) ----------------------------------
 #
 # Plan: `D:/qontinui-root/plans/2026-05-21-coordination-improvements.md`
