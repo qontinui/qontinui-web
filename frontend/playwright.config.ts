@@ -2,6 +2,16 @@ import { defineConfig, devices } from "@playwright/test";
 import { STORAGE_STATE_PATH } from "./tests/e2e/auth.constants";
 
 /**
+ * Fixed viewport for the style-gate capture projects. Frames must be
+ * byte-reproducible run-to-run for the downstream vision-audit analyzers, so
+ * the viewport is pinned here (and defensively re-applied in the spec).
+ */
+const STYLE_GATE_VIEWPORT = { width: 1280, height: 800 } as const;
+
+/** Matches only the style-gate capture spec. */
+const STYLE_GATE_TEST_MATCH = /style-gate\/style-capture\.spec\.ts/;
+
+/**
  * Playwright configuration for E2E integration testing
  * See https://playwright.dev/docs/test-configuration
  *
@@ -79,8 +89,10 @@ export default defineConfig({
         storageState: STORAGE_STATE_PATH,
       },
       dependencies: ["setup"],
-      // Exclude login tests - they need to test the unauthenticated -> authenticated flow
-      testIgnore: /login\.spec\.ts/,
+      // Exclude login tests - they need to test the unauthenticated -> authenticated flow.
+      // Exclude the style-gate capture spec - it runs under its own dedicated
+      // `style-gate` project (below), not the general cross-browser sweep.
+      testIgnore: [/login\.spec\.ts/, STYLE_GATE_TEST_MATCH],
     },
 
     {
@@ -90,7 +102,7 @@ export default defineConfig({
         storageState: STORAGE_STATE_PATH,
       },
       dependencies: ["setup"],
-      testIgnore: /login\.spec\.ts/,
+      testIgnore: [/login\.spec\.ts/, STYLE_GATE_TEST_MATCH],
     },
 
     {
@@ -100,7 +112,7 @@ export default defineConfig({
         storageState: STORAGE_STATE_PATH,
       },
       dependencies: ["setup"],
-      testIgnore: /login\.spec\.ts/,
+      testIgnore: [/login\.spec\.ts/, STYLE_GATE_TEST_MATCH],
     },
 
     // === UNAUTHENTICATED PROJECTS ===
@@ -132,7 +144,7 @@ export default defineConfig({
         storageState: STORAGE_STATE_PATH,
       },
       dependencies: ["setup"],
-      testIgnore: /login\.spec\.ts/,
+      testIgnore: [/login\.spec\.ts/, STYLE_GATE_TEST_MATCH],
     },
     {
       name: "Mobile Safari",
@@ -141,7 +153,29 @@ export default defineConfig({
         storageState: STORAGE_STATE_PATH,
       },
       dependencies: ["setup"],
-      testIgnore: /login\.spec\.ts/,
+      testIgnore: [/login\.spec\.ts/, STYLE_GATE_TEST_MATCH],
+    },
+
+    // === STYLE-GATE CAPTURE PROJECT (Phase 1 of the CI style-gating plan) ===
+    // Renders gated routes headlessly and emits, per route, a UI-Bridge snapshot
+    // JSON + a deterministic PNG to tests/e2e/style-gate/.artifacts/.
+    //
+    // AUTHED-ONLY: the capture's snapshot path (/control/snapshot via the relay)
+    // requires the in-page CommandRelayListener, which never mounts without a
+    // resolved {userId, sessionId} -- so a public/unauthenticated route can't be
+    // captured via the relay (it would 503). There is therefore a single authed
+    // project (no public companion). Public/unauthenticated routes need a
+    // relay-independent capture path (a Playwright in-page SDK eval) -- deferred
+    // to a later phase. See tests/e2e/style-gate/routes.json + README.md.
+    {
+      name: "style-gate",
+      testMatch: STYLE_GATE_TEST_MATCH,
+      dependencies: ["setup"],
+      use: {
+        ...devices["Desktop Chrome"],
+        storageState: STORAGE_STATE_PATH,
+        viewport: STYLE_GATE_VIEWPORT,
+      },
     },
   ],
 

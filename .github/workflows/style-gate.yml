@@ -1,0 +1,628 @@
+name: Style Gate (shadow)
+
+# ============================================================================
+# CI STYLE GATING — SHADOW STAGE (plan: 2026-06-03-ci-style-gating-web-first)
+# ============================================================================
+#
+# This is the SHADOW (report-only) stage of the style-gate rollout. It captures
+# the authed style snapshots/frames (Phase 1 Playwright `style-gate` project),
+# then runs the version-pinned `vision-audit` analyzer (qontinui-schemas,
+# rust-vision-core crate) per route in BOTH of its gating modes and reports the
+# findings in the job summary:
+#
+#   * `analyze` — runs all 5 page-wide analyzers (layout, elements, typography,
+#     color) with NO element ids and NO specs required. This is the broad,
+#     day-one signal: it works the moment a snapshot+frame exist. Invoked with
+#     `--analyzer all --fail-on critical`, so it exits 2 iff a finding is at/above
+#     CRITICAL (and 0 otherwise — without --fail-on the bin always exits 0, so the
+#     flag is what gives us a gate signal at all).
+#
+#   * `assert` — runs the committed invariant specs (Phase 2). These are precise
+#     but thin on day one: most DSL assertions (no_overlap, contrast_meets_wcag,
+#     text_fits_container) need specific element ids that aren't known until real
+#     snapshots exist, so the seed specs can only assert page-wide no_clipping.
+#     This pass grows as specs + baselines expand.
+#
+# Both passes honor the same shadow/enforce exit logic below.
+#
+# ROLLOUT DISCIPLINE (mirrors the alembic-fork gate: prevent > detect, and a
+# gate becomes blocking ONLY via branch protection, never by a workflow quietly
+# turning red):
+#
+#   * Stage A (NOW): SHADOW. This job EXITS 0 (green) even when routes report
+#     gate findings (analyzer exit 2). It is NOT in the required-checks set, so
+#     it can never block a merge. Reviewers read the job-summary table.
+#
+#   * Stage B (LATER): ENFORCE. After a burn-in (>= ~2 weeks / >= ~30 runs with
+#     ZERO flake-attributable false gate-2s), promotion to a REQUIRED check is
+#     done by (1) adding this job to branch protection AND (2) setting the repo
+#     variable / dispatch input STYLE_GATE_ENFORCE=1. With enforce on, the job
+#     FAILS (non-zero) if ANY route reports a gate finding (analyzer exit 2).
+#     There is NO second workflow — the same file serves both stages.
+#
+# In BOTH stages an analyzer INFRA error (exit 1: usage/IO/parse) on a PRESENT
+# snapshot/frame FAILS the job: a broken gate must always be visible, never
+# silently green.
+#
+# CAPTURE-UNAVAILABLE (distinct from INFRA-ERROR): if a route produced NO
+# snapshot/frame, the gate could not be run at all for that route — an
+# ENVIRONMENT/capture-availability problem, not a gate verdict. This is handled
+# asymmetrically by stage:
+#   * SHADOW (Stage A): report it as `CAPTURE-UNAVAILABLE` in the job summary and
+#     EXIT 0 (green, non-blocking). Stage A must NEVER fail the check on capture
+#     availability — it is report-only.
+#   * ENFORCE (Stage B): FAIL — you cannot enforce a gate you could not run.
+# This is separate from a genuine analyzer INFRA error (exit 1) on a PRESENT
+# input, which keeps failing in BOTH modes (a broken analyzer must always show).
+#
+# The qontinui-schemas commit the analyzer is built from is pinned in
+# `style-gate.lock` at the repo root — bumping it is a deliberate, reviewable
+# PR. This workflow READS that file; the SHA is never hardcoded here.
+#
+# CAPTURE STACK: the capture step reuses the existing e2e harness's
+# `globalSetup` (frontend/tests/e2e/global-setup.ts), which boots a LOCAL Python
+# backend (uvicorn) against an ephemeral postgres, seeds it, then Playwright's
+# webServer boots `npm run dev`. So this job provisions the SAME full stack as
+# the Frontend E2E job in e2e-tests.yml (postgres service + sibling clones +
+# python/pip + migrations + dev user). The pinned analyzer schemas checkout
+# (path: qontinui-schemas, in-workspace) and the backend's schemas sibling clone
+# (../qontinui-schemas, parent dir) use DISTINCT paths and never collide.
+# ============================================================================
+
+on:
+  pull_request:
+    paths:
+      - "frontend/**"
+      - "frontend/tests/e2e/style-gate/**"
+      - "style-gate.lock"
+      - ".github/workflows/style-gate.yml"
+  workflow_dispatch:
+    inputs:
+      enforce:
+        description: "Set to '1' to ENFORCE (fail the check on any gate finding). Default shadow/report-only."
+        required: false
+        default: "0"
+
+# Cancel an in-progress run when a newer commit lands on the same ref.
+concurrency:
+  group: style-gate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  style-gate:
+    name: Style Gate (shadow)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # Ephemeral DB for the captured backend boot. Mirrors the Frontend E2E job
+    # in e2e-tests.yml exactly (image, creds, health-check, port) — the
+    # global-setup.ts the capture reuses hardcodes
+    # postgresql://test_user:test_password@localhost:5432/test_db.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg15
+        env:
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    env:
+      # The capture reuses the e2e harness's global-setup.ts, which boots a
+      # LOCAL uvicorn backend on :8000 against the ephemeral postgres service
+      # above and then Playwright's webServer boots `npm run dev` on :3001.
+      # So the capture renders against the SAME local stack the Frontend E2E job
+      # in e2e-tests.yml uses — not prod.
+      #
+      # empty NEXT_PUBLIC_API_URL => the browser hits the Next /api proxy on
+      # :3001 (also satisfies the isDev relay gate the style-gate spec relies
+      # on); the proxy forwards to the local backend via the server-only
+      # BACKEND_URL. BACKEND_URL points at the LOCAL backend so global-setup.ts
+      # actually boots uvicorn (it would SKIP local boot if BACKEND_URL/docs were
+      # already reachable, e.g. prod) and the dev proxy targets local.
+      NEXT_PUBLIC_API_URL: ""
+      BACKEND_URL: http://localhost:8000
+      QONTINUI_API_BASE_URL: http://localhost:8000
+      # DB the captured backend + migrations + seed all share. Matches the value
+      # hardcoded in global-setup.ts and the e2e-tests.yml Frontend E2E job.
+      DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
+      # Cognito CI test creds — SAME secret names + mapping Spec CI uses
+      # (.github/workflows/spec-ci.yml). The Phase 1 auth `setup` project
+      # (frontend/tests/e2e/auth.setup.ts) reads these to mint a Cognito id
+      # token for the ci-bot account.
+      QONTINUI_TEST_AUTO_LOGIN_EMAIL: ${{ secrets.SPEC_CI_AUTH_EMAIL }}
+      QONTINUI_TEST_AUTO_LOGIN_PASSWORD: ${{ secrets.SPEC_CI_AUTH_PASSWORD }}
+      # The style-gate spec self-enables the per-user co-pilot pref + seeds
+      # consent; the build-time relay surface mirrors Spec CI.
+      NEXT_PUBLIC_UI_BRIDGE_REMOTE_COMMANDS: "1"
+
+    steps:
+      - name: Checkout qontinui-web
+        uses: actions/checkout@v5
+
+      # Read the pinned qontinui-schemas SHA from style-gate.lock. The SHA is
+      # NEVER hardcoded in this YAML — a bump is a reviewable change to the lock
+      # file, surfaced under this workflow's paths filter.
+      - name: Read pinned qontinui-schemas SHA from style-gate.lock
+        id: lock
+        run: |
+          set -euo pipefail
+          if [ ! -f style-gate.lock ]; then
+            echo "::error::style-gate.lock not found at repo root."
+            exit 1
+          fi
+          SHA="$(jq -r '.qontinui_schemas_sha' style-gate.lock)"
+          CRATE="$(jq -r '.crate' style-gate.lock)"
+          BIN="$(jq -r '.bin' style-gate.lock)"
+          if [ -z "$SHA" ] || [ "$SHA" = "null" ]; then
+            echo "::error::qontinui_schemas_sha missing/null in style-gate.lock."
+            exit 1
+          fi
+          echo "schemas_sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "crate=${CRATE}" >> "$GITHUB_OUTPUT"
+          echo "bin=${BIN}" >> "$GITHUB_OUTPUT"
+          echo "Pinned qontinui-schemas: $SHA (crate=$CRATE bin=$BIN)"
+
+      # Resolve the effective enforce flag. Precedence:
+      #   1. workflow_dispatch input `enforce` (manual override), else
+      #   2. repo/org variable STYLE_GATE_ENFORCE.
+      # "1" => ENFORCE (Stage B). Anything else => SHADOW (Stage A, default).
+      - name: Resolve enforce mode
+        id: mode
+        env:
+          DISPATCH_ENFORCE: ${{ github.event.inputs.enforce }}
+          VAR_ENFORCE: ${{ vars.STYLE_GATE_ENFORCE }}
+        run: |
+          set -euo pipefail
+          ENFORCE="0"
+          if [ "${DISPATCH_ENFORCE:-}" = "1" ]; then
+            ENFORCE="1"
+            echo "Enforce source: workflow_dispatch input"
+          elif [ "${VAR_ENFORCE:-}" = "1" ]; then
+            ENFORCE="1"
+            echo "Enforce source: repo variable STYLE_GATE_ENFORCE"
+          fi
+          echo "enforce=$ENFORCE" >> "$GITHUB_OUTPUT"
+          if [ "$ENFORCE" = "1" ]; then
+            echo "Mode: ENFORCE (Stage B) — gate findings FAIL this check."
+          else
+            echo "Mode: SHADOW (Stage A) — report-only, gate findings do NOT fail this check."
+          fi
+
+      # The qontinui-schemas repo is public (AGPL) — mirrors the unauthenticated
+      # clone convention in backend-ci.yml / migrate.yml. Clone into a sibling of
+      # the workspace (../qontinui-schemas) and check out the pinned SHA.
+      - name: Checkout pinned qontinui-schemas (analyzer source)
+        uses: actions/checkout@v5
+        with:
+          repository: qontinui/qontinui-schemas
+          ref: ${{ steps.lock.outputs.schemas_sha }}
+          path: qontinui-schemas
+          fetch-depth: 1
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      # Cache cargo registry + the analyzer's build output, keyed on the pinned
+      # SHA so a schemas bump invalidates cleanly.
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            qontinui-schemas/target
+          key: ${{ runner.os }}-vision-audit-${{ steps.lock.outputs.schemas_sha }}
+          restore-keys: |
+            ${{ runner.os }}-vision-audit-
+
+      # Verified build invocation (rust-vision-core crate, [[bin]] name
+      # `vision-audit`, path src/bin/vision_audit.rs at the pinned SHA). Run from
+      # the schemas checkout root.
+      - name: Build vision-audit
+        working-directory: qontinui-schemas
+        run: |
+          set -euo pipefail
+          cargo build --release \
+            --manifest-path rust-vision-core/Cargo.toml \
+            --bin vision-audit
+          BIN_PATH="$GITHUB_WORKSPACE/qontinui-schemas/target/release/vision-audit"
+          if [ ! -x "$BIN_PATH" ]; then
+            echo "::error::vision-audit binary not found at $BIN_PATH after build."
+            exit 1
+          fi
+          echo "VISION_AUDIT=$BIN_PATH" >> "$GITHUB_ENV"
+          "$BIN_PATH" --help || true
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend deps
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        working-directory: ./frontend
+        run: npx playwright install --with-deps chromium
+
+      # ----------------------------------------------------------------------
+      # BACKEND STACK PROVISIONING (ported from e2e-tests.yml).
+      #
+      # The capture's global-setup.ts boots a LOCAL uvicorn backend; without
+      # this stack it failed with `No module named uvicorn` → "Backend failed to
+      # start" → zero snapshots/frames. The steps below mirror the Frontend E2E
+      # job (services: postgres + sibling clones + python/pip + runner schema +
+      # migrations + dev user) so the capture has a real app/backend to render.
+      #
+      # IMPORTANT: these backend schemas/sibling clones land in the PARENT dir
+      # (../qontinui-schemas, what backend/pyproject.toml's ../../qontinui-schemas
+      # path-dep resolves to) and are DISTINCT from the pinned analyzer schemas
+      # checkout at the in-workspace path `qontinui-schemas/` above — no collision.
+      # ----------------------------------------------------------------------
+
+      # backend/pyproject.toml has path deps on ../../qontinui-schemas and
+      # ../../qontinui; without these clones `pip install -e .` fails ENOENT.
+      # qontinui-cloud-control is needed for the test harness's side-effect
+      # import (backend/tests/conftest.py). Same set + method as e2e-tests.yml's
+      # "Clone backend Python sibling deps" step.
+      - name: Clone backend Python sibling deps
+        # SHADOW soft-fail: a provisioning failure must NOT abort the job — it
+        # must flow through to no-snapshots -> CAPTURE-UNAVAILABLE (green shadow).
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          for spec in \
+            "qontinui/qontinui-schemas" \
+            "qontinui/qontinui" \
+            "qontinui/qontinui-cloud-control" \
+          ; do
+            repo_name="${spec#*/}"
+            target="../${repo_name}"
+            echo "::group::Cloning ${spec} → ${target}"
+            git clone --depth 1 \
+              "https://x-access-token:${GH_TOKEN}@github.com/${spec}.git" \
+              "${target}"
+            echo "::endgroup::"
+          done
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt', '**/pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      # Mirror e2e-tests.yml's backend install: editable schemas first (avoid the
+      # wheel-cache downgrade), then backend itself --no-deps, then cloud-control.
+      - name: Install backend dependencies
+        # SHADOW soft-fail (see Clone step): failure -> CAPTURE-UNAVAILABLE, not red.
+        continue-on-error: true
+        working-directory: ./backend
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install pytest pytest-cov pytest-asyncio
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install --no-cache-dir -e ../../qontinui-schemas
+          if [ -f pyproject.toml ]; then pip install -e . --no-deps; fi
+          pip install -e ../../qontinui-cloud-control
+
+      # Some alembic migrations reference the `runner` schema, created in dev by
+      # init-scripts/01-create-runner-schema.sql. CI service containers don't run
+      # those init scripts, so create it explicitly (same as e2e-tests.yml).
+      - name: Create runner schema
+        # SHADOW soft-fail (see Clone step): failure -> CAPTURE-UNAVAILABLE, not red.
+        continue-on-error: true
+        env:
+          PGPASSWORD: test_password
+        run: |
+          set -euo pipefail
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+          psql -h localhost -U test_user -d test_db -c "CREATE SCHEMA IF NOT EXISTS runner;"
+
+      - name: Run database migrations
+        # SHADOW soft-fail (see Clone step): failure -> CAPTURE-UNAVAILABLE, not red.
+        continue-on-error: true
+        working-directory: ./backend
+        env:
+          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
+          TESTING: "1"
+          ENVIRONMENT: development
+          SECRET_KEY: test-secret-key-for-testing-only-minimum-32-chars-required
+          STORAGE_BACKEND: local
+          REDIS_ENABLED: "false"
+        run: |
+          alembic upgrade heads
+
+      # The auth.setup.ts fixture logs in as the canonical dev user. Migrations
+      # only create empty tables; create_admin.py (idempotent) seeds the user.
+      #
+      # BURN-IN TODO (backend provisioning): `backend/create_admin.py` is NOT
+      # tracked in this repo on ANY ref (origin/main, this branch) and is NOT
+      # provided by any sibling clone or a pip console-script — so this step
+      # fails with "can't open file '.../backend/create_admin.py'". This step was
+      # ported from e2e-tests.yml's "Frontend E2E Tests" job, but that job is
+      # gated `if: github.event_name != 'pull_request'` and is SKIPPED on PRs, so
+      # the create_admin.py invocation has never actually run/been exercised in CI
+      # — there is no working reference to replicate. Until the dev-user seed is
+      # resolved (committed script, console-script, or sibling-provided), this
+      # step is SHADOW soft-fail: it cannot abort the job. A still-broken backend
+      # boot just yields CAPTURE-UNAVAILABLE (green shadow), never a red check.
+      - name: Create dev user for E2E auth setup
+        # SHADOW soft-fail (see BURN-IN TODO above): failure -> CAPTURE-UNAVAILABLE, not red.
+        continue-on-error: true
+        working-directory: ./backend
+        env:
+          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
+          TESTING: "1"
+          ENVIRONMENT: development
+          SECRET_KEY: test-secret-key-for-testing-only-minimum-32-chars-required
+          STORAGE_BACKEND: local
+          REDIS_ENABLED: "false"
+        run: |
+          python create_admin.py
+
+      # Run the Phase 1 capture. The config's `webServer` boots `npm run dev` on
+      # :3001 and the `setup` project mints the Cognito token from the env creds
+      # above; the spec renders the 3 authed routes and writes per-route
+      # snapshot JSON + frame PNG under
+      # frontend/tests/e2e/style-gate/.artifacts/.
+      #
+      # continue-on-error: a capture hiccup must still let the assert step run +
+      # report (the per-route assert step itself flags a missing snapshot/frame
+      # as INFRA-ERROR).
+      - name: Capture style snapshots + frames
+        id: capture
+        continue-on-error: true
+        working-directory: ./frontend
+        env:
+          CI: "true"
+          PLAYWRIGHT_BASE_URL: http://localhost:3001
+        run: |
+          npx playwright test --project=style-gate
+
+      # Per-route audit: run the pinned analyzer in BOTH gating modes against each
+      # route's captured snapshot/frame, then build a job-summary table with one
+      # row per route and a labeled cell for each pass (analyze | assert).
+      #
+      #   * analyze — page-wide, NO element ids / NO spec needed. Invoked with
+      #       analyze --snapshot S --frame F --analyzer all --fail-on critical
+      #     so it exits 2 iff a finding is at/above CRITICAL (without --fail-on
+      #     the bin always exits 0). Needs only snapshot+frame to run; the broad
+      #     day-one signal.
+      #   * assert — the committed invariant spec ($SPEC_DIR/<id>.json). Pass
+      #     --baseline-dir ONLY when a per-route baseline exists (else
+      #     `no_layout_shift_since` isn't seeded and passing the dir is
+      #     meaningless). Needs snapshot+frame+spec; thin on day one, grows with
+      #     baselines.
+      #
+      # Passes fold into THREE accumulators below: any_gate2 (gate verdict),
+      # any_infra (broken analyzer on a present input), and any_capture_missing
+      # (no snapshot/frame produced — a capture-availability problem, NOT a gate
+      # verdict). The three are scored differently against shadow/enforce.
+      #
+      # Analyzer exit-code contract (the gate contract, identical for both modes):
+      #   0 = ok / passed (analyze: ran, or no finding at/above --fail-on)
+      #   2 = GATE FAILED (analyze: finding at/above --fail-on; assert: an
+      #       assertion failed)            -> any_gate2
+      #   1 = usage/IO/parse error (CI INFRA error) on a PRESENT snapshot/frame
+      #                                    -> any_infra
+      # Plus, OUTSIDE the analyzer contract:
+      #   missing snapshot/frame for a route (capture produced nothing)
+      #                                    -> any_capture_missing (CAPTURE-UNAVAILABLE)
+      - name: Run vision-audit (analyze + assert) per route + summarize
+        id: assert
+        # Run ALWAYS — even when an upstream provisioning/capture step hit a
+        # continue-on-error failure. This is the step that converts no-snapshots
+        # into the CAPTURE-UNAVAILABLE (green shadow) verdict; it must never be
+        # skipped by an earlier failure.
+        if: always()
+        env:
+          ENFORCE: ${{ steps.mode.outputs.enforce }}
+        run: |
+          set -uo pipefail
+
+          ROUTES="co-pilot build-workflows library"
+          SG="frontend/tests/e2e/style-gate"
+          SNAP_DIR="$SG/.artifacts/snapshots"
+          FRAME_DIR="$SG/.artifacts/frames"
+          SPEC_DIR="$SG/specs"
+          BASELINE_DIR="$SG/baselines"
+
+          any_gate2=0           # >=1 pass (analyze or assert) returned exit 2
+          any_infra=0           # >=1 pass returned exit 1 on a PRESENT input (broken analyzer)
+          any_capture_missing=0 # >=1 route had no snapshot/frame (CAPTURE-UNAVAILABLE)
+
+          # Run the analyzer in a given mode and set three globals from the result:
+          #   CELL  — a markdown-table cell (status + the bin's human detail)
+          #   plus a fold into any_gate2 / any_infra per the exit code.
+          # Args: <mode-label> <exit-code> <stderr-human-summary>
+          fold_result() {
+            local label="$1" rc="$2" stderr_out="$3"
+            local summary
+            summary="$(printf '%s' "$stderr_out" | tr '\n' ' ' | sed 's/|/\\|/g')"
+            summary="$(printf '%.350s' "$summary")"
+            [ -z "$summary" ] && summary="(no analyzer output)"
+            case "$rc" in
+              0) CELL="PASS — ${summary}" ;;
+              2) any_gate2=1; CELL="GATE-FINDINGS — ${summary}" ;;
+              *) any_infra=1; CELL="INFRA-ERROR (exit $rc) — ${summary}" ;;
+            esac
+          }
+
+          {
+            echo "## Style Gate — ${{ steps.mode.outputs.enforce == '1' && 'ENFORCE (Stage B)' || 'SHADOW (Stage A, report-only)' }}"
+            echo ""
+            echo "> SHADOW never blocks: this check stays GREEN regardless of findings or capture availability. If routes show \`CAPTURE-UNAVAILABLE\`, the capture environment is still being wired (Stage-A burn-in) — that is NOT a code regression."
+            echo ""
+            echo "Pinned qontinui-schemas: \`${{ steps.lock.outputs.schemas_sha }}\` (crate \`${{ steps.lock.outputs.crate }}\`, bin \`${{ steps.lock.outputs.bin }}\`)"
+            echo ""
+            echo "Each route runs two passes: **analyze** (page-wide findings, \`--fail-on critical\`; the primary day-one signal) and **assert** (committed invariant specs; grows with baselines). Both honor shadow/enforce."
+            echo ""
+            echo "| Route | analyze | assert |"
+            echo "| --- | --- | --- |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for id in $ROUTES; do
+            snap="$SNAP_DIR/$id.json"
+            frame="$FRAME_DIR/$id.png"
+            spec="$SPEC_DIR/$id.json"
+
+            # ---- analyze pass (needs snapshot + frame only) -------------------
+            if [ ! -f "$snap" ] || [ ! -f "$frame" ]; then
+              # No snapshot/frame => the gate could not be RUN for this route.
+              # This is a capture-availability problem, NOT a gate verdict and
+              # NOT a broken-analyzer INFRA error: fold into any_capture_missing.
+              # In SHADOW it is reported but does not fail; in ENFORCE it fails
+              # (can't enforce a gate that couldn't run). Applies to BOTH passes.
+              miss=""
+              [ -f "$snap" ]  || miss="$miss snapshot($snap)"
+              [ -f "$frame" ] || miss="$miss frame($frame)"
+              any_capture_missing=1
+              echo "Route $id: CAPTURE-UNAVAILABLE — no capture inputs:$miss"
+              det="no capture inputs:$(printf '%s' "$miss" | sed 's/|/\\|/g')"
+              echo "| \`$id\` | CAPTURE-UNAVAILABLE — ${det} | CAPTURE-UNAVAILABLE — ${det} |" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+
+            echo "::group::vision-audit analyze — $id"
+            set +e
+            an_err="$("$VISION_AUDIT" analyze \
+              --snapshot "$snap" \
+              --frame "$frame" \
+              --analyzer all \
+              --fail-on critical 2>&1 1>/dev/null)"
+            an_rc=$?
+            set -e
+            echo "$an_err"
+            echo "exit code: $an_rc"
+            echo "::endgroup::"
+            fold_result "analyze" "$an_rc" "$an_err"
+            an_cell="$CELL"
+
+            # ---- assert pass (needs snapshot + frame + spec) -----------------
+            if [ ! -f "$spec" ]; then
+              # analyze still ran above; only assert is blocked by a missing spec
+              # (Phase 2 specs may be absent for this route).
+              any_infra=1
+              echo "Route $id: assert INFRA-ERROR — missing spec($spec)"
+              as_cell="INFRA-ERROR — missing spec($(printf '%s' "$spec" | sed 's/|/\\|/g'))"
+            else
+              # Pass --baseline-dir only if a per-route baseline exists.
+              baseline_args=""
+              if [ -f "$BASELINE_DIR/$id.json" ]; then
+                baseline_args="--baseline-dir $BASELINE_DIR"
+              fi
+              echo "::group::vision-audit assert — $id"
+              set +e
+              as_err="$("$VISION_AUDIT" assert \
+                --snapshot "$snap" \
+                --frame "$frame" \
+                --assertions "$spec" \
+                $baseline_args 2>&1 1>/dev/null)"
+              as_rc=$?
+              set -e
+              echo "$as_err"
+              echo "exit code: $as_rc"
+              echo "::endgroup::"
+              fold_result "assert" "$as_rc" "$as_err"
+              as_cell="$CELL"
+            fi
+
+            echo "| \`$id\` | ${an_cell} | ${as_cell} |" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+          # Surface the capture step's own outcome (it is continue-on-error).
+          if [ "${{ steps.capture.outcome }}" != "success" ]; then
+            {
+              echo ""
+              echo "> NOTE: the capture step concluded \`${{ steps.capture.outcome }}\` (continue-on-error). Routes whose snapshot/frame are missing above are a downstream symptom."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          # Legend for the status cells used in the table above.
+          {
+            echo ""
+            echo "**Legend** — \`PASS\`: ran clean. \`GATE-FINDINGS\`: analyzer exit 2 (a real gate verdict; fails only in ENFORCE). \`INFRA-ERROR\`: analyzer exit 1 on a PRESENT snapshot/frame, or a missing spec (a broken/unrunnable gate; fails in BOTH modes). \`CAPTURE-UNAVAILABLE\`: no snapshot/frame was produced for the route — a capture/environment problem, not a gate verdict; in **SHADOW it is report-only and does NOT block** (exit 0), in ENFORCE it fails (a gate that couldn't run can't be enforced)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          {
+            echo ""
+            if [ "$any_infra" = "1" ]; then
+              echo "**Outcome: INFRA-ERROR** — at least one route's analyzer errored on a present input (or a spec was missing): a broken gate. Fails the job in BOTH shadow and enforce modes."
+            elif [ "$any_capture_missing" = "1" ] && [ "$ENFORCE" = "1" ]; then
+              echo "**Outcome: CAPTURE-UNAVAILABLE (ENFORCE)** — at least one route produced no snapshot/frame; the gate could not be run, so it cannot be enforced. Failing this required check."
+            elif [ "$any_gate2" = "1" ] && [ "$ENFORCE" = "1" ]; then
+              echo "**Outcome: GATE FAILED (ENFORCE)** — at least one route's analyze or assert pass reported findings; failing this required check."
+            elif [ "$any_capture_missing" = "1" ] && [ "$any_gate2" = "1" ]; then
+              echo "**Outcome: GATE FINDINGS + CAPTURE-UNAVAILABLE (SHADOW)** — reported only; SHADOW never blocks on gate findings or capture availability. This check stays GREEN."
+            elif [ "$any_capture_missing" = "1" ]; then
+              echo "**Outcome: CAPTURE-UNAVAILABLE (SHADOW)** — at least one route produced no snapshot/frame: the capture pipeline is unavailable, so environment wiring is the Stage-A burn-in task (NOT a code regression). Reported only; SHADOW never blocks on capture availability. This check stays GREEN."
+            elif [ "$any_gate2" = "1" ]; then
+              echo "**Outcome: GATE FINDINGS (SHADOW)** — reported only; this check stays GREEN and does not block merge."
+            else
+              echo "**Outcome: PASS** — no gate findings."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # ---- Exit-code logic (shadow vs enforce) -----------------------------
+          # Three independent accumulators, scored against the mode:
+          #   any_infra           (broken analyzer on a present input / missing
+          #                        spec): ALWAYS fail — a broken gate must be
+          #                        visible in BOTH modes.
+          #   any_gate2           (analyzer exit 2 — a real gate verdict):
+          #                        ENFORCE => fail; SHADOW => exit 0 (report-only).
+          #   any_capture_missing (no snapshot/frame — capture unavailable):
+          #                        ENFORCE => fail (can't enforce an unrun gate);
+          #                        SHADOW  => exit 0 (report-only, never blocks).
+          if [ "$any_infra" = "1" ]; then
+            echo "::error::Style gate hit an INFRA error (broken/uninterpretable gate on a present input) — failing in both modes."
+            exit 1
+          fi
+          if [ "$ENFORCE" = "1" ]; then
+            if [ "$any_capture_missing" = "1" ]; then
+              echo "::error::STYLE_GATE_ENFORCE=1 and >=1 route had no snapshot/frame (CAPTURE-UNAVAILABLE) — cannot enforce a gate that could not run. Failing the required check."
+              exit 1
+            fi
+            if [ "$any_gate2" = "1" ]; then
+              echo "::error::STYLE_GATE_ENFORCE=1 and >=1 route reported gate findings — failing the required check."
+              exit 1
+            fi
+          else
+            if [ "$any_capture_missing" = "1" ]; then
+              echo "::warning::Style gate had CAPTURE-UNAVAILABLE routes, but SHADOW mode is active (report-only) — not failing. See the job summary table."
+            fi
+            if [ "$any_gate2" = "1" ]; then
+              echo "::warning::Style gate found findings, but SHADOW mode is active (report-only) — not failing. See the job summary table."
+            fi
+          fi
+          exit 0
+
+      - name: Upload style-gate artifacts
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: style-gate-artifacts
+          path: |
+            frontend/tests/e2e/style-gate/.artifacts/
+            frontend/playwright-report/
+          retention-days: 14
+          if-no-files-found: ignore
