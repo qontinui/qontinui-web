@@ -3,22 +3,45 @@ name: Spec CI
 # Spec CI replaces Playwright E2E as the on-PR merge gate. Playwright E2E
 # moves to nightly-only via the matching change in e2e-tests.yml.
 #
+# HERMETIC since 2026-06-04: the entire stack — Postgres, Redis, the FastAPI
+# backend, a run-local token issuer — boots inside this job. The previous
+# posture crawled the LIVE prod API (api.qontinui.io), so any prod 502/timeout
+# blip red'd this required check (~1-in-3 during blips; see
+# plans/2026-06-03-unbypassable-autonomous-merge-gates.md Phase 2b: a required
+# check must depend only on inputs the PR author controls). `--include-write`
+# transitions also wrote to prod as ci-bot; hermetically they write to the
+# throwaway CI database. Real-Cognito + real-prod integration stays covered
+# post-deploy by verify-frontend-deploy.yml's public + authed smokes.
+#
 # Pipeline:
-#   1. Install deps + build the frontend.
-#   2. Start the dev server (next dev).
-#   3. Run Playwright-driven Spec-CI executor against every IR spec under
-#      `frontend/specs/pages/`. The executor signs in via the backend auth
-#      API once (cookies attach to the browser context), then for each
-#      spec navigates to its route, injects the IR, drives transitions
-#      via ui-bridge-auto's in-browser executor, and records pass/fail.
-#   4. Gate: fail iff minMatchRate < 0.8 OR transitionPassRate < 1.0
+#   1. Boot Postgres (pgvector) + Redis services; install backend deps;
+#      `alembic upgrade heads` (real schema, byte-identical to prod's chain).
+#   2. Mint a run-local RS256 id token + JWKS (scripts/spec_ci_local_idp.py),
+#      serve the JWKS via `python -m http.server`, and point the backend's
+#      COGNITO_ISSUER at it — the backend verifies the token through its REAL
+#      verifier (signature/iss/aud/exp) and JIT-provisions the ci-bot user
+#      (app/services/cognito_provision.py). No auth code is stubbed.
+#   3. Boot the FastAPI backend (uvicorn) against the CI database.
+#   4. Install deps + build the frontend; `next start` with BACKEND_URL
+#      pointing at the local backend.
+#   5. Run the Playwright-driven Spec-CI executor against every IR spec under
+#      `frontend/specs/pages/`. The executor seeds the injected token as the
+#      auth cookie, then for each spec navigates to its route, injects the
+#      IR, drives transitions via ui-bridge-auto's in-browser executor, and
+#      records pass/fail. Specs are authored against an EMPTY account
+#      (structure + empty states), so the fresh CI database matches their
+#      authored baseline by construction.
+#   6. Gate: fail iff minMatchRate < 0.8 OR transitionPassRate < 1.0
 #      OR any spec errored.
 #
 # Why not run the qontinui-runner in CI? Spec-CI's only dependency on the
 # runner in dev is the multi-tenant Spec API for file storage; in CI the
 # IR specs are in the repo and ui-bridge-auto runs natively in the
-# browser. Skipping the runner removes the Tauri+xvfb burden and keeps
-# CI fast — sub-5-minute runs vs Playwright E2E's hour+.
+# browser. Skipping the runner removes the Tauri+xvfb burden.
+#
+# No `concurrency:` block: the old serialization existed only because runs
+# shared the rate-limited (10/min) ci-bot auth endpoint. Hermetic runs share
+# nothing — they can overlap freely.
 
 on:
   pull_request:
@@ -27,33 +50,67 @@ on:
     branches: [main, develop]
   workflow_dispatch:
 
-# Serialize Spec CI runs per event-type + ref. The ci-bot staging account's
-# auth/token-refresh endpoint is rate-limited (10/min); the prior global lane
-# prevented contention but also let main pushes cancel pending PR runs (GitHub
-# cancels the oldest pending run in a group when a newer one arrives, even with
-# cancel-in-progress: false). Splitting by event_name + ref allows at most two
-# concurrent runs (one PR + one push) — well within the 10/min budget — while
-# preventing push-to-main from reaping a PR's required check.
-concurrency:
-  group: spec-ci-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
   spec-ci:
     name: Spec CI
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # 25 → 35 on hermeticization: the job now also installs backend deps and
+    # boots PG/Redis/uvicorn (~5-8 min). No torch in requirements.txt — the
+    # heavy-ML disk concerns from backend-ci's poetry path don't apply here.
+    timeout-minutes: 35
+
+    services:
+      postgres:
+        # pgvector-bundled PG16 — same image backend-ci uses; alembic
+        # migrations materialize Vector columns and need the extension.
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
 
     env:
       # Path A (same-origin): the browser uses RELATIVE API URLs (empty
       # NEXT_PUBLIC_API_URL) so calls hit the Next.js /api proxy on
       # localhost:3001 — keeping auth cookies same-origin. The proxy forwards
-      # to the real backend via the server-only BACKEND_URL.
+      # to the run-local backend via the server-only BACKEND_URL.
       NEXT_PUBLIC_API_URL: ""
-      BACKEND_URL: https://api.qontinui.io
-      QONTINUI_API_BASE_URL: https://api.qontinui.io
-      QONTINUI_TEST_AUTO_LOGIN_EMAIL: ${{ secrets.SPEC_CI_AUTH_EMAIL }}
-      QONTINUI_TEST_AUTO_LOGIN_PASSWORD: ${{ secrets.SPEC_CI_AUTH_PASSWORD }}
+      BACKEND_URL: http://localhost:8000
+      QONTINUI_API_BASE_URL: http://localhost:8000
+      # Shared by the migrate/boot steps below. Plain-postgres scheme; the
+      # backend + alembic env handle async-driver conversion (same contract
+      # as e2e-tests.yml's frontend-tests job).
+      DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
+      SECRET_KEY: spec-ci-secret-key-for-ci-only-minimum-32-chars-long
+      ENVIRONMENT: development
+      STORAGE_BACKEND: local
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
+      REDIS_ENABLED: "true"
+      # Run-local token issuer (hermetic auth). The backend's Cognito
+      # verifier trusts whatever issuer is configured and fetches
+      # <issuer>/.well-known/jwks.json — both run on this VM. The
+      # spec_ci_local_idp.py step below mints QONTINUI_TEST_ID_TOKEN
+      # against this issuer; run-spec-ci.ts seeds it as the auth cookie.
+      COGNITO_USER_POOL_ID: spec-ci-local-pool
+      COGNITO_ISSUER: http://127.0.0.1:8770
+      COGNITO_ALLOWED_AUDIENCES: spec-ci-local
       # Gates SpecCiInit's window-exposure to Spec-CI runs only. Production
       # builds (no env var set) get nothing on window.__qontinuiSpecCi__.
       NEXT_PUBLIC_ENABLE_SPEC_CI: "1"
@@ -66,6 +123,103 @@ jobs:
     steps:
       - name: Checkout qontinui-web
         uses: actions/checkout@v5
+
+      # ── Backend stack (hermetic) ─────────────────────────────────────────
+
+      # backend/pyproject.toml has path deps on ../../qontinui-schemas and
+      # ../../qontinui; qontinui-cloud-control is installed editable. Same
+      # clone set as e2e-tests.yml's backend-tests job.
+      - name: Clone backend Python sibling deps
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          for spec in \
+            "qontinui/qontinui-schemas" \
+            "qontinui/qontinui" \
+            "qontinui/qontinui-cloud-control" \
+          ; do
+            repo_name="${spec#*/}"
+            git clone --depth 1 \
+              "https://x-access-token:${GH_TOKEN}@github.com/${spec}.git" \
+              "../${repo_name}"
+          done
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      # Mirrors e2e-tests.yml's backend-tests install verbatim — including
+      # the no-cache-dir editable schemas install (pip's wheel cache
+      # otherwise DOWNGRADES schemas to a stale cached version) and
+      # `--no-deps` on the backend itself (prevents re-resolving the
+      # editable schemas we just installed).
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install --no-cache-dir -e ../../qontinui-schemas
+          if [ -f pyproject.toml ]; then pip install -e . --no-deps; fi
+          pip install -e ../../qontinui-cloud-control
+
+      # Some alembic migrations reference the `runner` schema, created in dev
+      # by init-scripts/ which service containers don't run. Same carve-out
+      # as e2e-tests.yml.
+      - name: Create runner schema
+        env:
+          PGPASSWORD: test_password
+        run: |
+          command -v psql >/dev/null || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
+          psql -h localhost -U test_user -d test_db -c "CREATE SCHEMA IF NOT EXISTS runner;"
+
+      - name: Run database migrations
+        working-directory: ./backend
+        run: alembic upgrade heads
+
+      # Run-local token issuer: generate an ephemeral RSA keypair + JWKS,
+      # serve the JWKS at COGNITO_ISSUER, and mint the ci-bot id token the
+      # executor will seed as its auth cookie. The backend JIT-provisions
+      # the ci-bot auth.users row on the token's first authenticated request
+      # — no user seeding step needed.
+      - name: Mint local id token + serve JWKS
+        working-directory: ./backend
+        run: |
+          set -euo pipefail
+          TOKEN=$(python scripts/spec_ci_local_idp.py \
+            --issuer "$COGNITO_ISSUER" \
+            --audience spec-ci-local \
+            --email ci-bot@spec-ci.local \
+            --out-dir /tmp/spec-ci-idp)
+          echo "QONTINUI_TEST_ID_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+          (cd /tmp/spec-ci-idp && python -m http.server 8770 --bind 127.0.0.1 > /tmp/idp.log 2>&1 &)
+          for i in $(seq 1 15); do
+            if curl -fsS http://127.0.0.1:8770/.well-known/jwks.json > /dev/null; then
+              echo "local JWKS up after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8770/.well-known/jwks.json > /dev/null
+
+      - name: Start backend (uvicorn)
+        working-directory: ./backend
+        run: |
+          set -euo pipefail
+          python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 > backend.log 2>&1 &
+          echo "BACKEND_PID=$!" >> "$GITHUB_ENV"
+          for i in $(seq 1 60); do
+            if curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/health | grep -q "^200$"; then
+              echo "backend up after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+          curl -s -o /dev/null -w "backend status: %{http_code}\n" http://127.0.0.1:8000/health
+
+      # ── Frontend ─────────────────────────────────────────────────────────
 
       - name: Setup Node
         uses: actions/setup-node@v5
@@ -123,15 +277,18 @@ jobs:
         run: |
           npx tsx tests/spec-ci/run-spec-ci.ts \
             --base-url http://localhost:3001 \
-            --api-base https://api.qontinui.io \
+            --api-base http://localhost:8000 \
             --include-write \
             --output spec-ci-report.json
 
-      - name: Tear down frontend
+      - name: Tear down frontend + backend
         if: always()
         run: |
           if [ -n "${FRONTEND_PID:-}" ]; then
             kill "$FRONTEND_PID" 2>/dev/null || true
+          fi
+          if [ -n "${BACKEND_PID:-}" ]; then
+            kill "$BACKEND_PID" 2>/dev/null || true
           fi
 
       - name: Upload Spec CI report
@@ -142,12 +299,14 @@ jobs:
           path: frontend/spec-ci-report.json
           retention-days: 30
 
-      - name: Upload frontend log on failure
+      - name: Upload frontend + backend logs on failure
         if: failure()
         uses: actions/upload-artifact@v5
         with:
-          name: frontend-log
-          path: frontend/frontend.log
+          name: stack-logs
+          path: |
+            frontend/frontend.log
+            backend/backend.log
           retention-days: 7
 
       # Summarize for the PR check page.

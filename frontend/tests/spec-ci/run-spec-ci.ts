@@ -21,9 +21,13 @@
  *     [--include-write]        # run reversible effect:"write" transitions
  *     [--include-destructive]  # run irreversible effect:"destructive" (nightly)
  *
- * Env:
- *   QONTINUI_TEST_AUTO_LOGIN_EMAIL    required (auth credentials)
- *   QONTINUI_TEST_AUTO_LOGIN_PASSWORD required
+ * Env (auth — first match wins):
+ *   QONTINUI_TEST_ID_TOKEN            hermetic lane: a pre-minted id token
+ *                                     for the run-local issuer the CI
+ *                                     backend trusts (spec-ci.yml +
+ *                                     backend/scripts/spec_ci_local_idp.py)
+ *   QONTINUI_TEST_AUTO_LOGIN_EMAIL    Cognito lane (non-hermetic runs)
+ *   QONTINUI_TEST_AUTO_LOGIN_PASSWORD Cognito lane
  *   QONTINUI_API_BASE_URL             fallback for --api-base
  */
 
@@ -338,7 +342,26 @@ async function mintCognitoIdToken(): Promise<string | null> {
 async function programmaticLogin(
   context: BrowserContext,
   baseUrl: string,
-): Promise<{ ok: boolean; reason?: string; mode?: "cognito" | "local" }> {
+): Promise<{ ok: boolean; reason?: string; mode?: "injected" | "cognito" | "local" }> {
+  // Hermetic lane (spec-ci.yml): the workflow boots the backend locally,
+  // points its COGNITO_ISSUER at a run-local JWKS, and injects an id token
+  // minted against that issuer (backend/scripts/spec_ci_local_idp.py). No
+  // Cognito, no shared ci-bot account, no network beyond localhost. The
+  // cookie seed + probe mirror the Cognito arm below. A rejected injected
+  // token FAILS — falling through to Cognito here would only mask a
+  // misconfigured hermetic stack.
+  const injected = process.env.QONTINUI_TEST_ID_TOKEN;
+  if (injected) {
+    await context.addCookies([{ name: "access_token", value: injected, url: baseUrl }]);
+    const probe = await context.request.get(
+      `${baseUrl.replace(/\/$/, "")}/api/v1/projects`,
+    );
+    if (probe.ok()) {
+      return { ok: true, mode: "injected" };
+    }
+    return { ok: false, reason: `injected_token_rejected_http_${probe.status()}` };
+  }
+
   const email = process.env.QONTINUI_TEST_AUTO_LOGIN_EMAIL;
   const password = process.env.QONTINUI_TEST_AUTO_LOGIN_PASSWORD;
   if (!email || !password) return { ok: false, reason: "no_credentials" };
