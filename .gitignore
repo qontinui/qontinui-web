@@ -41,6 +41,7 @@ next.config.js
 frontend/scripts/*
 !frontend/scripts/inject-build-id.mjs
 !frontend/scripts/check-browser-safe-imports.mjs
+!frontend/scripts/export-test-coverage.mjs
 
 # Documentation is now committed to the repository
 # (Previously excluded, but now included for project documentation)
