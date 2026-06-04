@@ -39,8 +39,8 @@
       "id": "co-pilot",
       "path": "/co-pilot",
       "public": false,
-      "settleMs": 3000,
-      "description": "Authenticated Home landing (src/app/(app)/co-pilot/page.tsx). An authed visit to / forwards here (use-landing-page.ts) -- this IS the post-login Home surface."
+      "settleMs": 6000,
+      "description": "Authenticated Home landing (src/app/(app)/co-pilot/page.tsx). An authed visit to / forwards here (use-landing-page.ts) -- this IS the post-login Home surface. settleMs bumped 3000->6000 (burn-in): the co-pilot CommandRelayListener was slow to attach on this heavy surface and hit the relay-attach budget (CAPTURE-UNAVAILABLE) while build-workflows + library captured cleanly at 3000ms."
     },
     {
       "id": "build-workflows",
