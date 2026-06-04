@@ -76,40 +76,70 @@ export interface LandRow {
   verification: LandVerification | null;
 }
 
-// PredictedLandEffect — render defensively; fields may grow. Every field is
-// optional so a partial / future-extended payload still renders.
+// PredictedLandEffect — mirrors coord's final serde shapes (snake_case).
+// Every field is optional + rendered defensively (optional chaining) so a
+// partial / future-extended payload still renders, but the PRIMARY field
+// names below are the exact coord wire names — guessed aliases were removed.
+
+// ConfidenceInterval is `{ point, low, high }` (NOT lower/upper).
 export interface ConfidenceInterval {
   point?: number | null;
-  lower?: number | null;
-  upper?: number | null;
+  low?: number | null;
+  high?: number | null;
 }
 
+// A predicted cascade conflict. coord sends `child_ref` (the dependent ref
+// that conflicts) + `hunk_overlaps`; there is NO affected_agents field — the
+// child_ref IS the affected ref/agent chip.
 export interface PredictedConflict {
+  child_ref?: string | null;
   paths?: string[] | null;
+  hunk_overlaps?: number | null;
   auto_resolvable?: boolean | null;
-  affected_agents?: string[] | null;
 }
 
+// A predicted CI workflow. Label = `workflow_name`. Per-workflow confidence
+// = `expected_pass` (a ConfidenceInterval). `trigger_uncertain`,
+// `path_conditioned`, `sample_size` are surfaced as subtle chips/tooltips.
 export interface PredictedWorkflow {
-  name?: string | null;
-  workflow?: string | null;
-  expected_pass?: boolean | null;
-  confidence?: ConfidenceInterval | number | null;
+  workflow_name?: string | null;
+  trigger_uncertain?: boolean | null;
+  expected_pass?: ConfidenceInterval | number | null;
+  path_conditioned?: boolean | null;
+  sample_size?: number | null;
+}
+
+// A predicted deploy: which `surface` (vercel/ecs/npm/…) + `target`.
+export interface PredictedDeployService {
+  surface?: string | null;
+  target?: string | null;
 }
 
 export interface PredictedLandEffect {
   cascade?: {
     dependent_refs_to_restack?: string[] | null;
     cascade_depth?: number | null;
-    will_complete_cleanly?: ConfidenceInterval | number | null;
+    // bool — NOT a confidence interval; rendered as a badge.
+    will_complete_cleanly?: boolean | null;
     expected_conflicts?: PredictedConflict[] | null;
   } | null;
-  git?: Record<string, unknown> | null;
+  git?: {
+    will_advance_to?: string | null;
+    no_force_required?: boolean | null;
+  } | null;
   ci?: {
+    // `pending` = honest non-coverage; render `note` as the explanation.
+    pending?: boolean | null;
     workflows?: PredictedWorkflow[] | null;
+    expected_pass?: boolean | null;
+    changed_paths?: string[] | null;
+    note?: string | null;
   } | null;
   deploy?: {
-    services?: Array<{ service?: string | null; name?: string | null }> | null;
+    pending?: boolean | null;
+    services_will_deploy?: PredictedDeployService[] | null;
+    expected_health_check_pass?: boolean | null;
+    note?: string | null;
   } | null;
   main_merge_overlap?: boolean | null;
   inferred_prior?: {

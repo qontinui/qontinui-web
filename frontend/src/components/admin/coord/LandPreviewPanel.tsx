@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import type {
   ConfidenceInterval,
+  PredictedConflict,
   PredictedLandEffect,
 } from "./LandCard";
 
@@ -53,28 +54,28 @@ export interface LandPreviewResponse {
 // ---- Confidence-interval helpers (testable) -------------------------------
 
 /**
- * Normalize a confidence field — coord may send a bare number (a point
- * estimate) OR a `{ point, lower, upper }` interval. Returns a uniform
- * shape so the renderer doesn't branch on the wire form.
+ * Normalize a confidence field — coord sends a `{ point, low, high }`
+ * interval, but we still accept a bare number (a point estimate) defensively.
+ * Returns a uniform shape so the renderer doesn't branch on the wire form.
  */
 export function normalizeConfidence(
   c?: ConfidenceInterval | number | null
-): { point: number | null; lower: number | null; upper: number | null } {
+): { point: number | null; low: number | null; high: number | null } {
   if (c === null || c === undefined) {
-    return { point: null, lower: null, upper: null };
+    return { point: null, low: null, high: null };
   }
   if (typeof c === "number") {
-    return { point: c, lower: null, upper: null };
+    return { point: c, low: null, high: null };
   }
   return {
     point: c.point ?? null,
-    lower: c.lower ?? null,
-    upper: c.upper ?? null,
+    low: c.low ?? null,
+    high: c.high ?? null,
   };
 }
 
 /**
- * The visual width [0,1] of a confidence interval = upper - lower, clamped.
+ * The visual width [0,1] of a confidence interval = high - low, clamped.
  * Used to render a band whose width is the uncertainty. Returns null when the
  * interval has no bounds (a bare point estimate carries no width).
  *
@@ -83,9 +84,9 @@ export function normalizeConfidence(
 export function confidenceBandWidth(
   c?: ConfidenceInterval | number | null
 ): number | null {
-  const { lower, upper } = normalizeConfidence(c);
-  if (lower === null || upper === null) return null;
-  return Math.max(0, Math.min(1, upper - lower));
+  const { low, high } = normalizeConfidence(c);
+  if (low === null || high === null) return null;
+  return Math.max(0, Math.min(1, high - low));
 }
 
 function pct(n?: number | null): string {
@@ -100,10 +101,10 @@ function ConfidenceBand({
 }: {
   conf?: ConfidenceInterval | number | null;
 }) {
-  const { point, lower, upper } = normalizeConfidence(conf);
+  const { point, low, high } = normalizeConfidence(conf);
   const width = confidenceBandWidth(conf);
 
-  if (point === null && lower === null && upper === null) {
+  if (point === null && low === null && high === null) {
     return (
       <span className="text-xs text-muted-foreground italic">
         no estimate
@@ -120,13 +121,14 @@ function ConfidenceBand({
     );
   }
 
-  const lo = lower ?? 0;
-  const wide = width > 0.4;
+  const lo = low ?? 0;
+  // Wide band (high - low > ~0.3) reads as visibly uncertain.
+  const wide = width > 0.3;
   return (
     <span
       className="inline-flex items-center gap-1.5"
       data-testid="land-confidence-band"
-      title={`${pct(lower)}–${pct(upper)}${
+      title={`${pct(low)}–${pct(high)}${
         point !== null ? ` (point ${pct(point)})` : ""
       }`}
     >
@@ -143,7 +145,7 @@ function ConfidenceBand({
         />
       </span>
       <span className="text-xs tabular-nums text-muted-foreground">
-        {pct(lower)}–{pct(upper)}
+        {pct(low)}–{pct(high)}
       </span>
       {wide && (
         <Badge variant="warning" className="text-[10px] px-1 py-0">
@@ -159,20 +161,27 @@ function ConfidenceBand({
 function ConflictChip({
   conflict,
 }: {
-  conflict: {
-    paths?: string[] | null;
-    auto_resolvable?: boolean | null;
-    affected_agents?: string[] | null;
-  };
+  conflict: PredictedConflict;
 }) {
   const paths = conflict.paths ?? [];
-  const agents = conflict.affected_agents ?? [];
+  const childRef = conflict.child_ref ?? null;
+  const hunkOverlaps = conflict.hunk_overlaps ?? null;
   return (
     <div
       className="rounded border border-border p-2 space-y-1 text-xs"
       data-testid="land-conflict-chip"
     >
       <div className="flex items-center gap-1.5 flex-wrap">
+        {childRef && (
+          <Badge
+            variant="outline"
+            className="font-mono text-[10px] inline-flex items-center gap-1"
+            data-testid="land-conflict-child-ref"
+          >
+            <GitBranch className="h-3 w-3" />
+            {childRef}
+          </Badge>
+        )}
         {conflict.auto_resolvable ? (
           <Badge variant="success" className="text-[10px]">
             auto-resolvable
@@ -182,25 +191,18 @@ function ConflictChip({
             manual resolve
           </Badge>
         )}
-        {paths.length > 0 ? (
-          <span className="font-mono text-muted-foreground truncate">
-            {paths.join(", ")}
-          </span>
-        ) : (
-          <span className="text-muted-foreground italic">
-            unspecified paths
+        {typeof hunkOverlaps === "number" && (
+          <span className="text-muted-foreground">
+            {hunkOverlaps} hunk overlap{hunkOverlaps === 1 ? "" : "s"}
           </span>
         )}
       </div>
-      {agents.length > 0 && (
-        <div className="flex items-center gap-1 flex-wrap">
-          <span className="text-muted-foreground">affects:</span>
-          {agents.map((a) => (
-            <Badge key={a} variant="outline" className="text-[10px]">
-              {a}
-            </Badge>
-          ))}
+      {paths.length > 0 ? (
+        <div className="font-mono text-muted-foreground truncate">
+          {paths.join(", ")}
         </div>
+      ) : (
+        <div className="text-muted-foreground italic">unspecified paths</div>
       )}
     </div>
   );
@@ -217,8 +219,13 @@ export function LandPreviewPanel({
   const cascade = predicted.cascade ?? {};
   const dependentRefs = cascade.dependent_refs_to_restack ?? [];
   const conflicts = cascade.expected_conflicts ?? [];
-  const workflows = predicted.ci?.workflows ?? [];
-  const deploys = predicted.deploy?.services ?? [];
+  const git = predicted.git ?? {};
+  const ci = predicted.ci ?? {};
+  const ciPending = ci.pending === true;
+  const workflows = ci.workflows ?? [];
+  const deploy = predicted.deploy ?? {};
+  const deployPending = deploy.pending === true;
+  const deploys = deploy.services_will_deploy ?? [];
   const prior = predicted.inferred_prior ?? null;
   const risk = preview.risk ?? {};
   const riskReasons = risk.reasons ?? [];
@@ -299,12 +306,51 @@ export function LandPreviewPanel({
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="flex items-center gap-2 text-sm">
-            <span className="text-muted-foreground">
-              completes cleanly:
-            </span>
-            <ConfidenceBand conf={cascade.will_complete_cleanly} />
+          <div className="flex items-center gap-2 text-sm flex-wrap">
+            <span className="text-muted-foreground">completes cleanly:</span>
+            {cascade.will_complete_cleanly === true ? (
+              <Badge variant="success" data-testid="land-cascade-clean-badge">
+                yes
+              </Badge>
+            ) : cascade.will_complete_cleanly === false ? (
+              <Badge variant="warning" data-testid="land-cascade-clean-badge">
+                no
+              </Badge>
+            ) : (
+              <Badge
+                variant="outline"
+                data-testid="land-cascade-clean-badge"
+                className="italic"
+              >
+                unknown
+              </Badge>
+            )}
           </div>
+
+          {(git.will_advance_to || typeof git.no_force_required === "boolean") && (
+            <div
+              className="flex items-center gap-2 text-sm flex-wrap"
+              data-testid="land-git-advance"
+            >
+              <span className="text-muted-foreground">main advances to:</span>
+              {git.will_advance_to ? (
+                <Badge
+                  variant="outline"
+                  className="font-mono text-[11px] inline-flex items-center gap-1"
+                >
+                  <GitBranch className="h-3 w-3" />
+                  {git.will_advance_to}
+                </Badge>
+              ) : (
+                <span className="text-muted-foreground italic">unknown</span>
+              )}
+              {git.no_force_required === false && (
+                <Badge variant="warning" className="text-[10px]">
+                  force-push required
+                </Badge>
+              )}
+            </div>
+          )}
 
           {dependentRefs.length > 0 ? (
             <div
@@ -347,20 +393,40 @@ export function LandPreviewPanel({
           <CardTitle className="flex items-center gap-2 text-base">
             <Workflow className="h-4 w-4" />
             Expected CI workflows
-            <Badge variant="outline" className="text-xs">
-              {workflows.length}
-            </Badge>
+            {!ciPending && (
+              <Badge variant="outline" className="text-xs">
+                {workflows.length}
+              </Badge>
+            )}
+            {!ciPending && typeof ci.expected_pass === "boolean" && (
+              <Badge
+                variant={ci.expected_pass ? "success" : "destructive"}
+                className="text-[10px]"
+                data-testid="land-ci-overall-badge"
+              >
+                {ci.expected_pass ? "expected pass" : "expected fail"}
+              </Badge>
+            )}
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {workflows.length === 0 ? (
+          {ciPending ? (
+            <p
+              className="text-sm text-muted-foreground italic"
+              data-testid="land-ci-pending"
+            >
+              prediction unavailable
+              {ci.note ? `: ${ci.note}` : "."}
+            </p>
+          ) : workflows.length === 0 ? (
             <p className="text-sm text-muted-foreground italic">
               No CI workflows predicted to trigger.
             </p>
           ) : (
             <div className="space-y-2" data-testid="land-ci-workflows">
               {workflows.map((w, i) => {
-                const name = w.name ?? w.workflow ?? `workflow ${i + 1}`;
+                const name = w.workflow_name ?? `workflow ${i + 1}`;
+                const noHistory = w.sample_size === 0;
                 return (
                   <div
                     key={`${name}-${i}`}
@@ -370,21 +436,52 @@ export function LandPreviewPanel({
                     <span className="font-mono text-sm min-w-0 truncate flex-1">
                       {name}
                     </span>
-                    <Badge
-                      variant={
-                        w.expected_pass === false ? "destructive" : "success"
-                      }
-                      className="text-[10px]"
-                    >
-                      {w.expected_pass === false
-                        ? "expected fail"
-                        : "expected pass"}
-                    </Badge>
-                    <ConfidenceBand conf={w.confidence} />
+                    {w.trigger_uncertain && (
+                      <Badge
+                        variant="warning"
+                        className="text-[10px]"
+                        title="coord is unsure this workflow will trigger"
+                      >
+                        trigger uncertain
+                      </Badge>
+                    )}
+                    {w.path_conditioned && (
+                      <Badge
+                        variant="outline"
+                        className="text-[10px]"
+                        title="prediction conditioned on the changed paths"
+                      >
+                        path-conditioned
+                      </Badge>
+                    )}
+                    {noHistory ? (
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] italic"
+                        title="no historical runs to learn from"
+                      >
+                        no history
+                      </Badge>
+                    ) : (
+                      typeof w.sample_size === "number" && (
+                        <span
+                          className="text-[10px] text-muted-foreground tabular-nums"
+                          title="number of historical runs"
+                        >
+                          n={w.sample_size}
+                        </span>
+                      )
+                    )}
+                    <ConfidenceBand conf={w.expected_pass} />
                   </div>
                 );
               })}
             </div>
+          )}
+          {!ciPending && (ci.changed_paths?.length ?? 0) > 0 && (
+            <p className="mt-2 text-[11px] font-mono text-muted-foreground truncate">
+              changed: {(ci.changed_paths ?? []).join(", ")}
+            </p>
           )}
         </CardContent>
       </Card>
@@ -395,13 +492,37 @@ export function LandPreviewPanel({
           <CardTitle className="flex items-center gap-2 text-base">
             <Rocket className="h-4 w-4" />
             Expected deploys
-            <Badge variant="outline" className="text-xs">
-              {deploys.length}
-            </Badge>
+            {!deployPending && (
+              <Badge variant="outline" className="text-xs">
+                {deploys.length}
+              </Badge>
+            )}
+            {!deployPending &&
+              typeof deploy.expected_health_check_pass === "boolean" && (
+                <Badge
+                  variant={
+                    deploy.expected_health_check_pass ? "success" : "destructive"
+                  }
+                  className="text-[10px]"
+                  data-testid="land-deploy-health-badge"
+                >
+                  {deploy.expected_health_check_pass
+                    ? "health check pass"
+                    : "health check fail"}
+                </Badge>
+              )}
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {deploys.length === 0 ? (
+          {deployPending ? (
+            <p
+              className="text-sm text-muted-foreground italic"
+              data-testid="land-deploy-pending"
+            >
+              prediction unavailable
+              {deploy.note ? `: ${deploy.note}` : "."}
+            </p>
+          ) : deploys.length === 0 ? (
             <p className="text-sm text-muted-foreground italic">
               No deploys predicted to fire.
             </p>
@@ -412,9 +533,13 @@ export function LandPreviewPanel({
                   key={i}
                   variant="info"
                   className="inline-flex items-center gap-1"
+                  data-testid="land-deploy-chip"
                 >
                   <Rocket className="h-3 w-3" />
-                  {d.service ?? d.name ?? "service"}
+                  {d.surface ?? "surface"}
+                  {d.target ? (
+                    <span className="font-mono opacity-80">→ {d.target}</span>
+                  ) : null}
                 </Badge>
               ))}
             </div>
