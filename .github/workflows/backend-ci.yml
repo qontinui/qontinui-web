@@ -14,6 +14,17 @@ on:
     paths:
       - 'backend/**'
       - '.github/workflows/backend-ci.yml'
+  # Nightly run with NO path filter. The "Check OpenAPI snapshot is up to date"
+  # step regenerates the snapshot with the sibling repos installed — notably
+  # qontinui-cloud-control, which is git-cloned + `pip install -e`'d in the test
+  # job but lives OUTSIDE backend/**. A cloud-control (or other sibling) route
+  # change therefore never triggers the path-filtered PR/push runs above, so it
+  # would SILENTLY stale the committed openapi-schema.json that coord's
+  # external-surface observer reads as the api's declared-route source. The
+  # nightly run makes that drift loud (the drift-check fails) instead of silent.
+  schedule:
+    - cron: '17 7 * * *' # 07:17 UTC daily
+  workflow_dispatch: {}
 
 env:
   PYTHON_VERSION: '3.12'
