@@ -201,4 +201,26 @@ async def resolve_user_for_cognito_claims(
         cognito_sub=sub,
         is_verified=email_verified,
     )
+
+    # Bootstrap the personal organization. The legacy signup path did this in
+    # UserManager.on_after_register, but that hook only fires for
+    # fastapi-users' programmatic ``create`` — Cognito-first users provisioned
+    # HERE never got one, so their first project create 500'd
+    # (``personal_org_not_found`` in create_project's org resolution; caught
+    # by hermetic Spec CI 2026-06-04). Same tolerate-None posture as
+    # on_after_register: a failed bootstrap logs loudly but never fails the
+    # login (create_personal_organization is idempotent, so any later
+    # programmatic create self-heals the gap).
+    from app.services.organization_service import organization_service
+
+    personal_org = await organization_service.create_personal_organization(
+        db=session,
+        user=user,
+    )
+    if personal_org is None:
+        logger.warning(
+            "cognito_user_provisioned_without_personal_org",
+            user_id=str(user.id),
+        )
+
     return user

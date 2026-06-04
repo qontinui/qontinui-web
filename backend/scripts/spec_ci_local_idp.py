@@ -57,7 +57,11 @@ def main() -> int:
     )
     parser.add_argument(
         "--email",
-        default="ci-bot@spec-ci.local",
+        # MX-less controlled domain, NOT the special-use `.local` TLD —
+        # pydantic's EmailStr rejects `.local`, which 500s every /users/me
+        # read of the provisioned row (see cognito_provision.py's identical
+        # choice for synthesized addresses).
+        default="spec-ci-bot@no-reply.qontinui.io",
         help="ci-bot email; the backend JIT-provisions auth.users from it",
     )
     parser.add_argument(

@@ -191,7 +191,7 @@ jobs:
           TOKEN=$(python scripts/spec_ci_local_idp.py \
             --issuer "$COGNITO_ISSUER" \
             --audience spec-ci-local \
-            --email ci-bot@spec-ci.local \
+            --email spec-ci-bot@no-reply.qontinui.io \
             --out-dir /tmp/spec-ci-idp)
           echo "QONTINUI_TEST_ID_TOKEN=$TOKEN" >> "$GITHUB_ENV"
           (cd /tmp/spec-ci-idp && python -m http.server 8770 --bind 127.0.0.1 > /tmp/idp.log 2>&1 &)

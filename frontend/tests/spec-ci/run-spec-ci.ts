@@ -47,6 +47,7 @@ import {
 } from "./server-error-policy";
 import { reportServerErrorsToCoord } from "./report-server-errors-to-coord";
 import { evaluateApiCheck, type ApiCheckResult } from "./api-contract";
+import { applyHermeticStubs } from "./hermetic-stubs";
 import { discoverAppRoutes } from "./route-manifest";
 import { applyCrawlWaivers } from "./crawl-baseline";
 import {
@@ -1453,6 +1454,13 @@ async function main(): Promise<number> {
     ignoreHTTPSErrors: true,
   });
 
+  // Hermetic lane: stub the coord/strategy/cognito-admin-backed endpoints
+  // with prod-empty-parity bodies so pages render their authored empty
+  // states instead of 5xx-driven error states (see hermetic-stubs.ts).
+  if (process.env.QONTINUI_TEST_ID_TOKEN) {
+    await applyHermeticStubs(context);
+  }
+
   // Force the product mode (default "visual") so Spec CI evaluates every spec
   // against the canonical product surface rather than whatever the test
   // account happens to be set to. Mode resolution in the app is
@@ -1658,6 +1666,11 @@ async function main(): Promise<number> {
     await unauthContext.route("**/users/me/preferences", prefsIntercept);
     await unauthContext.route("**/operations/ci-status", ciStatusStub);
     await unauthContext.route("**/ws-token", wsTokenStub);
+    // Hermetic lane: same prod-empty-parity stubs as the authed context —
+    // unauth pages share the layout-level pollers (see hermetic-stubs.ts).
+    if (process.env.QONTINUI_TEST_ID_TOKEN) {
+      await applyHermeticStubs(unauthContext);
+    }
     // Per-spec route stubs on the unauth context (same pattern as the auth lane).
     const stubs = readRouteStubs(spec.doc);
     const teardownStubs = await applyRouteStubs(unauthContext, stubs);
