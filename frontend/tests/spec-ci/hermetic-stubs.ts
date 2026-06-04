@@ -11,17 +11,18 @@
  * same-origin 5xx (the serverClean gate) and some pages render error states
  * instead of their authored structure.
  *
- * The IR specs were authored against the EMPTY ci-bot account on prod, where
- * these same endpoints returned 2xx with empty payloads (verified from the
- * last green prod-lane report: none of these URLs appear among its notable
- * responses, and all 62 specs full-matched). These stubs reproduce exactly
- * those responses — same status, same wire shape, zero rows — so the page
- * renders its authored empty state deterministically.
+ * The IR specs were authored against the ci-bot account on prod, where these
+ * same endpoints returned 2xx (verified from the last green prod-lane report:
+ * none of these URLs appear among its notable responses, and all 62 specs
+ * full-matched). These stubs reproduce PROD PARITY for that account — empty
+ * payloads for per-account data (ci-bot owned nothing), populated payloads
+ * where prod content is tenant-global (the strategy corpus, the active
+ * tenant row) — so each page renders its authored state deterministically.
  *
  * Scope discipline:
  *   - GET only; any other method falls through to the real backend.
- *   - Patterns are anchored RegExps over the URL path — list endpoints only;
- *     sub-resources (`/devices/{id}/…`, `/strategy/docs/{name}`) fall through.
+ *   - Patterns are anchored RegExps over the URL path — un-stubbed
+ *     sub-resources (`/devices/{id}/…`) fall through to the real backend.
  *   - Applied ONLY when `QONTINUI_TEST_ID_TOKEN` is set (the hermetic-lane
  *     marker) — non-hermetic runs (manual `--api-base <real>`) are untouched.
  *   - Every entry documents the wire-shape source. A wrong shape is loud: it
@@ -39,10 +40,50 @@ import type { BrowserContext } from "@playwright/test";
 export interface HermeticStub {
   /** Anchored against the URL path (query excluded by the trailing group). */
   pattern: RegExp;
-  /** JSON body to fulfill with (status 200). */
-  body: unknown;
+  /**
+   * JSON body to fulfill with (status 200), or a function of the matched URL
+   * for stubs whose body depends on the path (e.g. strategy doc content).
+   */
+  body: unknown | ((url: string) => unknown);
   /** Wire-shape source, for review + drift triage. */
   note: string;
+}
+
+/** Stable synthetic tenant id — referenced by both tenants-stub fields. */
+const SPEC_CI_TENANT_ID = "a0000000-0000-4000-8000-0000005bec01";
+
+/**
+ * Strategy corpus doc summaries — the strategy page's document nav renders
+ * one link per doc (`link-<name>`), and the spec asserts the SPECIFIC corpus
+ * doc links it was authored against (strategy spec document-nav elems). The
+ * corpus is tenant-global content served via the coord strategy bridge, so
+ * prod-parity here is POPULATED, not empty — these are the six docs the spec
+ * names.
+ */
+const STRATEGY_DOCS = [
+  { name: "project-strategy", title: "Project Strategy" },
+  {
+    name: "load-bearing-architectural-decisions",
+    title: "Load-Bearing Architectural Decisions",
+  },
+  { name: "business-goals", title: "Business Goals" },
+  { name: "customer-context", title: "Customer Context" },
+  { name: "human-preferences", title: "Human Preferences" },
+  { name: "strategic-priorities", title: "Strategic Priorities" },
+].map((d) => ({
+  ...d,
+  provenance: {
+    commit_sha: "0000000000000000000000000000000000000000",
+    committed_at: "2026-01-01T00:00:00Z",
+    author: "spec-ci",
+  },
+}));
+
+/** Title-case a doc slug for the synthetic doc-content stub. */
+function docTitle(name: string): string {
+  const known = STRATEGY_DOCS.find((d) => d.name === name);
+  if (known) return known.title;
+  return name.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 export const HERMETIC_STUBS: readonly HermeticStub[] = [
@@ -53,8 +94,16 @@ export const HERMETIC_STUBS: readonly HermeticStub[] = [
   },
   {
     pattern: /\/api\/v1\/operations\/tenants(\?|$)/,
-    body: { tenants: [], active_tenant_id: "" },
-    note: "TenantListResponse (components/sessions/types.ts:135) — coord proxy",
+    // One synthetic tenant, ACTIVE — prod ci-bot resolves exactly one tenant,
+    // and the settings identity section renders its Tenant / Tenant ID label
+    // rows only when the active tenant resolves (settings spec
+    // identity-fields-elem-2/3). One row keeps isMultiTenant=false, matching
+    // the authored single-tenant render.
+    body: {
+      tenants: [{ id: SPEC_CI_TENANT_ID, slug: "spec-ci", name: "Spec CI" }],
+      active_tenant_id: SPEC_CI_TENANT_ID,
+    },
+    note: "TenantListResponse (components/sessions/types.ts:135) — coord proxy; populated to prod-parity (1 active tenant)",
   },
   {
     pattern: /\/api\/v1\/operations\/device-status(\?|$)/,
@@ -83,8 +132,17 @@ export const HERMETIC_STUBS: readonly HermeticStub[] = [
   },
   {
     pattern: /\/api\/v1\/operations\/coord\/next-step-settings(\?|$)/,
-    body: { settings: null },
-    note: "{settings: NextStepSettings|null} (settings/coordination/_hooks/useNextStepSettings.ts) — coord proxy",
+    // Wire is the NextStepSettings object DIRECTLY (httpClient.get
+    // <NextStepSettings> in useNextStepSettings.ts:89), not {settings: ...}
+    // — the wrapped shape threw `settings.domains.some` TypeErrors on
+    // /settings/coordination (iteration-2 crawl finding).
+    body: { domains: [] },
+    note: "NextStepSettings {domains: []} (settings/coordination/_hooks/useNextStepSettings.ts:89) — coord proxy",
+  },
+  {
+    pattern: /\/api\/v1\/operations\/agent-logs\/by-agent\/[^/?]+(\?|$)/,
+    body: { logs: [] },
+    note: "ByAgentResponse {logs} (admin/coord/agents/[agent_id]/page.tsx fetchData; tolerates bare array) — coord proxy",
   },
   {
     pattern: /\/api\/v1\/operations\/pr-merge\/prs(\?|$)/,
@@ -108,8 +166,26 @@ export const HERMETIC_STUBS: readonly HermeticStub[] = [
   },
   {
     pattern: /\/api\/v1\/strategy\/docs(\?|$)/,
-    body: { docs: [] },
-    note: "{docs: StrategyDocSummary[]} (lib/api/strategy.ts:107) — strategy bridge disabled in CI",
+    body: { docs: STRATEGY_DOCS },
+    note: "{docs: StrategyDocSummary[]} (lib/api/strategy.ts:107) — strategy bridge disabled in CI; populated to prod-parity (corpus is tenant-global)",
+  },
+  {
+    pattern: /\/api\/v1\/strategy\/docs\/[^/?]+(\?|$)/,
+    // The strategy page auto-loads the first doc into the viewer; the spec
+    // asserts the doc H1 plus the `## Files` / `## Update Protocol` section
+    // headings every corpus doc carries.
+    body: (url: string) => {
+      const name = decodeURIComponent(
+        url.split("/strategy/docs/")[1]?.split("?")[0] ?? "doc",
+      );
+      return {
+        name,
+        title: docTitle(name),
+        provenance: STRATEGY_DOCS[0].provenance,
+        content: `# ${docTitle(name)}\n\nSpec CI synthetic corpus doc.\n\n## Files\n\n- (none — hermetic stub)\n\n## Update Protocol\n\nStub content for the authored viewer baseline.\n`,
+      };
+    },
+    note: "StrategyDoc {…, content} (lib/api/strategy.ts:33) — doc content for the auto-loaded viewer",
   },
   {
     pattern: /\/api\/v1\/auth\/identities(\?|$)/,
@@ -129,10 +205,14 @@ export async function applyHermeticStubs(ctx: BrowserContext): Promise<void> {
         void route.fallback();
         return;
       }
+      const body =
+        typeof stub.body === "function"
+          ? (stub.body as (url: string) => unknown)(route.request().url())
+          : stub.body;
       void route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(stub.body),
+        body: JSON.stringify(body),
       });
     });
   }

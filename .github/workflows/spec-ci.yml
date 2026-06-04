@@ -219,6 +219,24 @@ jobs:
           done
           curl -s -o /dev/null -w "backend status: %{http_code}\n" http://127.0.0.1:8000/health
 
+      # Mirror prod ci-bot's privileges: the admin-surface specs (/admin,
+      # /admin/region-analysis, /admin/coord/agents/…) are superuser-gated
+      # (admin/architecture/page.tsx + admin/region-analysis/page.tsx redirect
+      # non-superusers) and were authored against the superuser ci-bot. The
+      # curl JIT-provisions the auth.users row (+ personal org) through the
+      # real token path; the UPDATE then elevates it. Deliberately a DB-side
+      # step, NOT a token claim — a token must never be able to grant
+      # superuser (cognito_provision.py hardcodes is_superuser=False).
+      - name: Provision + elevate ci-bot (superuser parity with prod)
+        env:
+          PGPASSWORD: test_password
+        run: |
+          set -euo pipefail
+          curl -fsS -H "Authorization: Bearer $QONTINUI_TEST_ID_TOKEN" \
+            http://127.0.0.1:8000/api/v1/auth/users/me > /dev/null
+          psql -h localhost -U test_user -d test_db -c \
+            "UPDATE auth.users SET is_superuser = true WHERE email = 'spec-ci-bot@no-reply.qontinui.io';"
+
       # ── Frontend ─────────────────────────────────────────────────────────
 
       - name: Setup Node
