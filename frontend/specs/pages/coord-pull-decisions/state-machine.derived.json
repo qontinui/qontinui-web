@@ -1,0 +1,264 @@
+{
+  "version": "1.0",
+  "id": "coord-pull-decisions",
+  "name": "Coord pull decisions (admin)",
+  "description": "Admin `repo_pull` decision activity feed (/admin/coord/pull-decisions) from plan 2026-05-30-coord-pull-decision-ui Phase 2 (Feature A). ci-bot is a superuser so the page renders its real content. The page polls GET /api/v1/operations/coord/pull-decisions (optional ?device_id=/?repo= filters) every 10s and renders one PullDecisionCard per resolution row; an empty feed renders the coord-pull-decisions-empty placeholder (expected in prod, since resolution rows are written only when the executor path runs — see page.tsx:13). metadata.routeStubs fulfills the endpoint with two canned resolution rows so the populated feed renders deterministically without live coord: row 1 (verdict `pull`, timing `now`, autonomy `auto_decide`, with an outcome) and row 2 (verdict `diverged`, timing `defer`, autonomy `guidance_only`, no outcome). The stub is load-bearing: remove it and the prod feed is empty → every coord-pull-decision-* card assertion drops to the empty-state placeholder. Authored from a live authed in-process UI Bridge snapshot (85 instrumented elements, route /admin/coord/pull-decisions) captured 2026-06-04. Read-only; structural only.",
+  "provenance": { "source": "ai-generated", "appId": "qontinui-web" },
+  "metadata": {
+    "tags": ["admin", "coord", "pull-decisions", "activity-feed", "route-stub"],
+    "extraSettleMs": 3500,
+    "routeStubs": [
+      {
+        "urlPattern": "**/api/v1/operations/coord/pull-decisions**",
+        "status": 200,
+        "contentType": "application/json",
+        "body": {
+          "count": 2,
+          "resolutions": [
+            {
+              "resolution_id": "spec-ci-pd-1",
+              "resolved_at": "2026-06-04T00:00:00.000Z",
+              "device_id": "c1c1c1c1-0000-4000-8000-000000000001",
+              "repo": "qontinui/spec-ci-alpha",
+              "kind": "decision",
+              "verdict": "pull",
+              "timing": "now",
+              "autonomy": "auto_decide",
+              "behind": 3,
+              "ahead": 0,
+              "rationale": "ff-only safe: on default branch, clean, no local commits.",
+              "outcome": {
+                "chosen_option": "pulled",
+                "reasoning": "applied ff-only pull",
+                "recorded_at": "2026-06-04T00:01:00.000Z"
+              }
+            },
+            {
+              "resolution_id": "spec-ci-pd-2",
+              "resolved_at": "2026-06-04T00:00:00.000Z",
+              "device_id": "c1c1c1c1-0000-4000-8000-000000000001",
+              "repo": "qontinui/spec-ci-beta",
+              "kind": "decision",
+              "verdict": "diverged",
+              "timing": "defer",
+              "defer_reason": "manual_rebase",
+              "autonomy": "guidance_only",
+              "behind": 2,
+              "ahead": 1,
+              "rationale": "diverged — unpushed local commits, manual rebase required.",
+              "outcome": null
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "states": [
+    {
+      "id": "coord-pull-decisions-shell",
+      "name": "Coord console shell",
+      "description": "The persistent coord operator-console chrome that renders on every /admin/coord/* route once the superuser gate passes: the h1 title and the left coord-nav with its Pull Decisions link active. Identifies the page mounted under the coord layout, independent of feed data.",
+      "isInitial": true,
+      "assertions": [
+        {
+          "id": "coord-pull-decisions-shell-elem-0",
+          "description": "h1 'Coord operator console' — the console title proving the coord layout mounted (superuser gate passed, not redirected).",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "role": "heading", "text": "Coord operator console" },
+            "label": "Coord console title"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-pull-decisions-shell-elem-1",
+          "description": "Left coord navigation container (data-testid coord-nav).",
+          "category": "navigation",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "coord-nav" },
+            "label": "Coord nav"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-pull-decisions-shell-elem-2",
+          "description": "'Pull Decisions' nav link (data-testid coord-nav-pull-decisions) — the active section.",
+          "category": "navigation",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "coord-nav-pull-decisions" },
+            "label": "Pull Decisions nav link"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
+    {
+      "id": "coord-pull-decisions-filters",
+      "name": "Feed filters + header",
+      "description": "The Pull-decisions feed card header and its filter controls, which render regardless of whether the feed returned rows: the page container, the feed card, the device_id and repo filter inputs, and the refresh button. These are the stable structural signal that the feed component mounted (past its initial loading skeleton).",
+      "assertions": [
+        {
+          "id": "coord-pull-decisions-filters-elem-0",
+          "description": "Page container (data-testid coord-pull-decisions-page).",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "coord-pull-decisions-page" },
+            "label": "Pull-decisions page"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-pull-decisions-filters-elem-1",
+          "description": "device_id filter input (data-testid coord-pull-decisions-device-input).",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "coord-pull-decisions-device-input" },
+            "label": "device_id filter"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-pull-decisions-filters-elem-2",
+          "description": "repo filter input (data-testid coord-pull-decisions-repo-input).",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "coord-pull-decisions-repo-input" },
+            "label": "repo filter"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-pull-decisions-filters-elem-3",
+          "description": "Refresh button (data-testid coord-pull-decisions-refresh).",
+          "category": "interaction",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "coord-pull-decisions-refresh" },
+            "label": "Refresh"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
+    {
+      "id": "coord-pull-decisions-feed",
+      "name": "Populated decision feed (route-stubbed)",
+      "description": "The PullDecisionCard rows that render only when the feed returns resolutions, and the per-row decision anatomy they surface. With metadata.routeStubs fulfilling the endpoint with two canned rows, the feed renders: a verdict badge and autonomy chip on every card, a timing chip (Now on row 1, Defer on row 2), an outcome chip on row 1 (which has an outcome), and the muted 'no outcome recorded yet' marker on row 2 (which doesn't) — the Q1 honest-about-uncertainty rendering from the plan. Load-bearing on the stub: without it the prod feed is empty and these assertions drop to the coord-pull-decisions-empty placeholder.",
+      "assertions": [
+        {
+          "id": "coord-pull-decisions-feed-elem-0",
+          "description": "At least one PullDecisionCard (data-testid coord-pull-decision-card) rendered from the stubbed resolutions.",
+          "category": "data-display",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "coord-pull-decision-card" },
+            "label": "Pull-decision card"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-pull-decisions-feed-elem-1",
+          "description": "Verdict badge (data-testid coord-pull-decision-verdict) — the pull-safety class per decision.",
+          "category": "data-display",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "coord-pull-decision-verdict" },
+            "label": "Verdict badge"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-pull-decisions-feed-elem-2",
+          "description": "Autonomy chip (data-testid coord-pull-decision-autonomy) — auto_decide vs guidance_only.",
+          "category": "data-display",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "coord-pull-decision-autonomy" },
+            "label": "Autonomy chip"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-pull-decisions-feed-elem-3",
+          "description": "Timing chip (data-testid coord-pull-decision-timing) — Now / Defer(reason).",
+          "category": "data-display",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "coord-pull-decision-timing" },
+            "label": "Timing chip"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-pull-decisions-feed-elem-4",
+          "description": "'no outcome recorded yet' marker (data-testid coord-pull-decision-no-outcome) — row 2 has no outcome; the honest-about-uncertainty rendering (plan Q1).",
+          "category": "data-display",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": { "id": "coord-pull-decision-no-outcome" },
+            "label": "No-outcome marker"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    }
+  ],
+  "transitions": []
+}
