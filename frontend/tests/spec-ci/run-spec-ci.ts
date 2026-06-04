@@ -963,6 +963,16 @@ function routeForSpec(
     // unknown agent returns zero rows and renders the (success) empty-state.
     // The id shape is a coord agent correlation id (free-form string).
     "coord-agent-detail": "/admin/coord/agents/spec-ci-sentinel-agent",
+    // Coord primary-trees view (slug != route segment). The by-device panel
+    // only fetches when a device_id is present, so we seed a sentinel one in
+    // the query; metadata.routeStubs fulfills GET /trees/by-device/<any> with
+    // canned rows so the populated TreeCard/badge states render. Not gated, so
+    // no ?project= is appended after the existing query string.
+    "coord-trees": "/admin/coord/trees?device_id=c1c1c1c1-0000-4000-8000-000000000001",
+    // Coord pull-decisions feed. Auto-fetches GET /coord/pull-decisions with no
+    // filter; metadata.routeStubs fulfills it with canned resolution rows so the
+    // populated feed renders deterministically (prod's real feed is empty).
+    "coord-pull-decisions": "/admin/coord/pull-decisions",
     // Dynamic detail routes — sentinel ids for stubbed fetch resolution.
     "ai-tasks-detail": "/ai-tasks/spec-ci-sentinel-task",
     "captures-detail": "/captures/spec-ci-sentinel-session",
