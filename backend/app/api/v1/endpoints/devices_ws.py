@@ -41,6 +41,7 @@ from uuid import UUID
 import structlog
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from qontinui_schemas.common import utc_now
+from starlette.websockets import WebSocketState
 
 from app.config.redis_config import get_redis
 from app.crud import device_connection as device_connection_crud
@@ -61,6 +62,34 @@ logger = structlog.get_logger(__name__)
 _TERMINAL_FRAME_LIMIT = 65536
 
 router = APIRouter()
+
+
+async def _safe_close(websocket: WebSocket, code: int) -> None:
+    """Close ``websocket`` at most once, tolerating an already-closed socket.
+
+    Several handshake/registration failure paths below close the socket and
+    ``return``; on some of those paths the socket may already be closed —
+    either because a prior handler in the same request closed it, because the
+    Redis-backed manager's ``register`` aborted the socket, or because the
+    client itself already sent a close frame (it disconnected mid-handshake).
+    Calling ``WebSocket.close()`` again in any of those cases raises
+    ``RuntimeError: Cannot call "send" once a close message has been sent`` —
+    a secondary "double-close" that compounds the original failure handling
+    (observed in prod alongside Redis pool exhaustion).
+
+    Guard the close on ``application_state`` (the server-side close state,
+    flipped to ``DISCONNECTED`` once we've sent our own close frame) and
+    swallow the ``RuntimeError`` as a belt-and-suspenders fallback for the
+    races the state check can't observe. The close ``code`` is passed through
+    unchanged, so each call site still sends its intended close code.
+    """
+    if websocket.application_state == WebSocketState.DISCONNECTED:
+        return
+    try:
+        await websocket.close(code=code)
+    except RuntimeError as exc:
+        # Already closed (close frame already sent) — benign double-close.
+        logger.debug("devices_ws_double_close_suppressed", error=str(exc))
 
 
 @router.websocket("/ws")
@@ -89,7 +118,7 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
         await websocket.send_json(
             {"type": "error", "message": "Missing device-token bearer."}
         )
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        await _safe_close(websocket, code=status.WS_1008_POLICY_VIOLATION)
         return
 
     try:
@@ -105,14 +134,14 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
             }
         )
         # 1011 = internal error / service overload.
-        await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
+        await _safe_close(websocket, code=status.WS_1011_INTERNAL_ERROR)
         return
     except CoordTokenInvalidError as exc:
         logger.warning("devices_ws_token_invalid", error=str(exc))
         await websocket.send_json(
             {"type": "error", "message": "Invalid or expired device token."}
         )
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        await _safe_close(websocket, code=status.WS_1008_POLICY_VIOLATION)
         return
 
     # Coord-issued device-token claims:
@@ -128,7 +157,7 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
         await websocket.send_json(
             {"type": "error", "message": "Device token missing required claims."}
         )
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        await _safe_close(websocket, code=status.WS_1008_POLICY_VIOLATION)
         return
 
     try:
@@ -139,7 +168,7 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
         await websocket.send_json(
             {"type": "error", "message": "Device token claim format invalid."}
         )
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        await _safe_close(websocket, code=status.WS_1008_POLICY_VIOLATION)
         return
 
     # ------------------------------------------------------------------
@@ -151,13 +180,13 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
         info_msg = await asyncio.wait_for(websocket.receive_json(), timeout=15.0)
     except (TimeoutError, WebSocketDisconnect):
         logger.warning("devices_ws_runner_info_timeout", user_id=str(user_id))
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        await _safe_close(websocket, code=status.WS_1008_POLICY_VIOLATION)
         return
     except Exception as e:
         logger.error(
             "devices_ws_runner_info_failed", user_id=str(user_id), error=str(e)
         )
-        await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
+        await _safe_close(websocket, code=status.WS_1011_INTERNAL_ERROR)
         return
 
     if not isinstance(info_msg, dict) or info_msg.get("type") != "runner_info":
@@ -167,7 +196,7 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
                 "message": "First message must be of type 'runner_info'.",
             }
         )
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        await _safe_close(websocket, code=status.WS_1008_POLICY_VIOLATION)
         return
 
     name = info_msg.get("name") or info_msg.get("runner_name") or "Unnamed Device"
@@ -232,7 +261,7 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
         await websocket.send_json(
             {"type": "error", "message": "Internal error during registration."}
         )
-        await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
+        await _safe_close(websocket, code=status.WS_1011_INTERNAL_ERROR)
         return
 
     # ------------------------------------------------------------------
@@ -335,7 +364,7 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
             )
         except Exception:
             pass
-        await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
+        await _safe_close(websocket, code=status.WS_1011_INTERNAL_ERROR)
         return
 
     await websocket.send_json(
