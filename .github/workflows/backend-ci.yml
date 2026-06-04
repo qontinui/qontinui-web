@@ -185,6 +185,45 @@ jobs:
       # the schema lines, create_all fails with:
       #   asyncpg.exceptions.InvalidSchemaNameError: schema "project"
       #   does not exist
+      # Keep the committed OpenAPI snapshot authoritative. The exporter calls
+      # app.openapi() (the FastAPI method — computes the schema from the
+      # registered routes with no running server and no DB connection), writes
+      # frontend/src/lib/api-client/openapi-schema.json deterministically, then
+      # `git diff --exit-code` fails CI if a backend route change wasn't
+      # accompanied by a regenerated, committed snapshot. coord's
+      # external-surface (route-serving) observer reads this file as the
+      # declared-route source of truth, so a stale snapshot silently
+      # mis-declares the web backend's external surface. Runs before the tests
+      # so a drift failure surfaces fast; the env mirrors the test step so the
+      # app imports cleanly offline (no DB is contacted).
+      - name: Check OpenAPI snapshot is up to date
+        env:
+          DATABASE_URL: postgresql://qontinui_user:qontinui_dev_password@localhost:5432/qontinui_test
+          ENVIRONMENT: development
+          SECRET_KEY: test-secret-key-for-testing-only-minimum-32-characters-long
+          TESTING: 1
+          REDIS_ENABLED: false
+        run: |
+          poetry run python scripts/export_openapi.py
+          if ! git -C "$GITHUB_WORKSPACE" diff --exit-code \
+              frontend/src/lib/api-client/openapi-schema.json; then
+            echo "::error::OpenAPI snapshot is stale. A backend route change was not committed to the snapshot."
+            echo "Run 'python backend/scripts/export_openapi.py' from the repo root and commit the updated frontend/src/lib/api-client/openapi-schema.json."
+            exit 1
+          fi
+
+      # On drift, upload the CI-generated snapshot so the canonical bytes (this
+      # job's exact dependency versions) can be committed verbatim — avoids
+      # guessing at fastapi/starlette/pydantic version differences between a
+      # local regen and CI.
+      - name: Upload CI-generated OpenAPI snapshot on drift
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openapi-schema-ci-generated
+          path: frontend/src/lib/api-client/openapi-schema.json
+          if-no-files-found: ignore
+
       - name: Create test schemas and extensions
         env:
           PGPASSWORD: qontinui_dev_password
