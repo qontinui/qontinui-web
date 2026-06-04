@@ -67,6 +67,7 @@ const STYLE_GATE_DIR = __dirname;
 const ARTIFACTS_DIR = join(STYLE_GATE_DIR, ".artifacts");
 const SNAPSHOTS_DIR = join(ARTIFACTS_DIR, "snapshots");
 const FRAMES_DIR = join(ARTIFACTS_DIR, "frames");
+const DIAG_DIR = join(ARTIFACTS_DIR, "diagnostics");
 
 /**
  * Deterministic viewport. Frames must be byte-reproducible run-to-run for the
@@ -340,6 +341,60 @@ async function navigateAndSettle(page: Page, route: StyleGateRoute) {
   await page.waitForTimeout(route.settleMs);
 }
 
+/**
+ * Auth/routing diagnostic — records, per route, whether the rendered page is
+ * the intended authed surface or a redirect to the login page, plus the page's
+ * own (cookie-bearing) view of `/api/v1/users/me`. Written to an uploaded
+ * artifact so the burn-in can tell "authed app rendered" from "bounced to
+ * login" without eyeballing every frame. Never throws — diagnostics must not
+ * fail the capture.
+ */
+async function recordAuthDiagnostics(
+  page: Page,
+  route: StyleGateRoute
+): Promise<void> {
+  try {
+    const finalUrl = page.url();
+    // Status only — never persist the response BODY (user PII) or cookies/token
+    // (the access_token JWT) into a committed artifact.
+    const usersMeStatus = await page.evaluate(async () => {
+      try {
+        const res = await fetch("/api/v1/users/me", {
+          headers: { Accept: "application/json" },
+          credentials: "include",
+        });
+        return res.status;
+      } catch {
+        return -1;
+      }
+    });
+    const looksLikeLogin =
+      /\/(login|sign-?in)\b/i.test(finalUrl) ||
+      usersMeStatus === 401 ||
+      usersMeStatus === 403;
+    const diag = {
+      route: route.id,
+      requestedPath: route.path,
+      finalUrl,
+      redirectedAwayFromRoute: !finalUrl.endsWith(route.path),
+      looksLikeLogin,
+      usersMeStatus,
+    };
+    mkdirSync(DIAG_DIR, { recursive: true });
+    writeFileSync(
+      join(DIAG_DIR, `${route.id}.json`),
+      JSON.stringify(diag, null, 2),
+      "utf8"
+    );
+    console.warn(
+      `[style-gate diag] ${route.id}: finalUrl=${finalUrl} ` +
+        `usersMe=${usersMeStatus} looksLikeLogin=${looksLikeLogin}`
+    );
+  } catch {
+    // Diagnostics are best-effort; never break the capture.
+  }
+}
+
 /** Snapshot relay path (same-origin proxy at app/api/ui-bridge/[...path]). */
 const SNAPSHOT_PATH = "/api/ui-bridge/control/snapshot";
 
@@ -412,18 +467,48 @@ test.beforeAll(async ({ request }) => {
   await enableCoPilotPreference(request);
 });
 
-// Gate 3: seed per-session consent so the relay listener mounts on a fresh tab.
-// Runs before any page script on every navigation in this file.
+// Gate 0 (client-side auth) + Gate 3 (relay consent), both seeded via a single
+// init script that runs before any page script on every navigation.
+//
+// Gate 0 — why this is needed: the diagnostic proved the routes bounce to
+// `/login` CLIENT-SIDE (the `(app)` route guard's `useAuth()` had no user), NOT
+// at the middleware (the `access_token` cookie is present and well-scoped, and
+// `/users/me` is 200 via it). The client-side AuthProvider
+// (`contexts/auth-context.tsx`): when `is_authenticated` is set it checks
+// `isAccessTokenExpired()` and, if expired, tries `refreshAccessToken()` — which
+// fails here (no refresh cookie) → `logout()` → redirect. The fix is the SAME
+// proven recipe Spec CI uses for same-origin authed crawling
+// (`tests/spec-ci/run-spec-ci.ts:1506-1519`): seed `is_authenticated=true` AND a
+// FUTURE `token_expiry`, so `isAccessTokenExpired()` returns false, the refresh
+// branch is skipped, and `getCurrentUser()` (cookie-backed) populates the user.
+// The `access_token` cookie (from `auth.setup`) covers both the middleware gate
+// and `getCurrentUser`; no Bearer or marker cookie is needed.
+const IS_AUTHENTICATED_KEY = "is_authenticated";
+const TOKEN_EXPIRY_KEY = "token_expiry";
+const TOKEN_EXPIRY_WINDOW_MS = 3600 * 1000;
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(
-    ({ key, value }) => {
+    ({ consentKey, consentValue, authedKey, expiryKey, expiryWindowMs }) => {
       try {
-        window.sessionStorage.setItem(key, value);
+        window.localStorage.setItem(authedKey, "true");
+        // Date.now() here runs in the BROWSER at navigation time (page JS), not
+        // in the workflow — a future expiry so isAccessTokenExpired() is false.
+        window.localStorage.setItem(
+          expiryKey,
+          (Date.now() + expiryWindowMs).toString()
+        );
+        window.sessionStorage.setItem(consentKey, consentValue);
       } catch {
-        // sessionStorage can throw in some privacy modes — best effort.
+        // best effort — privacy modes can throw on storage access.
       }
     },
-    { key: CO_PILOT_CONSENT_KEY, value: CO_PILOT_CONSENT_GRANTED }
+    {
+      consentKey: CO_PILOT_CONSENT_KEY,
+      consentValue: CO_PILOT_CONSENT_GRANTED,
+      authedKey: IS_AUTHENTICATED_KEY,
+      expiryKey: TOKEN_EXPIRY_KEY,
+      expiryWindowMs: TOKEN_EXPIRY_WINDOW_MS,
+    }
   );
 });
 
@@ -436,6 +521,11 @@ for (const route of AUTHED_ROUTES) {
 
     await page.setViewportSize(VIEWPORT);
     await navigateAndSettle(page, route);
+
+    // Auth/routing diagnostic BEFORE the snapshot — captures whether the page
+    // actually landed on the authed surface or bounced to login, even if the
+    // snapshot step later fails.
+    await recordAuthDiagnostics(page, route);
 
     // Snapshot first (fail loudly if the relay never attached), then frame.
     const { raw, body } = await captureSnapshot(page, route);

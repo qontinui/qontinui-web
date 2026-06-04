@@ -153,3 +153,26 @@ normally.
 
 Bumping the analyzer is a deliberate, reviewable change to `style-gate.lock`
 (its own PR); the SHA is never hardcoded in the workflow.
+
+## Authenticated capture (how the gate sees the real app, not /login)
+
+The gated routes are authed `(app)` surfaces. CI auth uses the same proven
+same-origin recipe as Spec CI (`tests/spec-ci/run-spec-ci.ts`):
+
+1. `auth.setup.ts` mints a ci-bot Cognito id token and seeds it as the
+   `access_token` cookie (also satisfies the Next `middleware.ts` soft-gate and
+   backs `/users/me`).
+2. `style-capture.spec.ts`'s `beforeEach` seeds, on every navigation,
+   `localStorage.is_authenticated="true"` **and a future `localStorage.token_expiry`**
+   — so the client `AuthProvider` (`contexts/auth-context.tsx`) skips the
+   `refreshAccessToken()` branch (there is no refresh cookie in CI) and goes
+   straight to a cookie-backed `getCurrentUser()`.
+
+Without the future `token_expiry`, the AuthProvider treats the token as expired,
+tries to refresh, fails, and the `(app)` route guard bounces every route to
+`/login` — which is what the gate captured before this was fixed.
+
+Each capture also writes a per-route auth diagnostic to
+`.artifacts/diagnostics/<id>.json` (`finalUrl`, `looksLikeLogin`,
+`usersMeStatus` — no token/PII) so a future login-bounce regression is visible
+in the uploaded artifacts without eyeballing frames.
