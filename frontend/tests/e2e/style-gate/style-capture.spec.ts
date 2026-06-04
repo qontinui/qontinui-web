@@ -355,44 +355,30 @@ async function recordAuthDiagnostics(
 ): Promise<void> {
   try {
     const finalUrl = page.url();
-    const me = await page.evaluate(async () => {
+    // Status only — never persist the response BODY (user PII) or cookies/token
+    // (the access_token JWT) into a committed artifact.
+    const usersMeStatus = await page.evaluate(async () => {
       try {
         const res = await fetch("/api/v1/users/me", {
           headers: { Accept: "application/json" },
           credentials: "include",
         });
-        const text = await res.text();
-        return { status: res.status, body: text.slice(0, 600) };
-      } catch (e) {
-        return { status: -1, body: String(e).slice(0, 200) };
+        return res.status;
+      } catch {
+        return -1;
       }
     });
-    // Full cookie state — to explain why the middleware soft-gate redirects
-    // even though the XHR above is authed. context.cookies() includes HttpOnly
-    // cookies (what the SERVER/middleware sees on a navigation); document.cookie
-    // is only the client-readable subset.
-    const ctxCookies = (await page.context().cookies()).map((c) => ({
-      name: c.name,
-      domain: c.domain,
-      path: c.path,
-      sameSite: c.sameSite,
-      secure: c.secure,
-      httpOnly: c.httpOnly,
-    }));
-    const documentCookie = await page.evaluate(() => document.cookie);
     const looksLikeLogin =
       /\/(login|sign-?in)\b/i.test(finalUrl) ||
-      me.status === 401 ||
-      me.status === 403;
+      usersMeStatus === 401 ||
+      usersMeStatus === 403;
     const diag = {
       route: route.id,
       requestedPath: route.path,
       finalUrl,
       redirectedAwayFromRoute: !finalUrl.endsWith(route.path),
       looksLikeLogin,
-      usersMe: me,
-      contextCookies: ctxCookies,
-      documentCookie,
+      usersMeStatus,
     };
     mkdirSync(DIAG_DIR, { recursive: true });
     writeFileSync(
@@ -402,7 +388,7 @@ async function recordAuthDiagnostics(
     );
     console.warn(
       `[style-gate diag] ${route.id}: finalUrl=${finalUrl} ` +
-        `usersMe=${me.status} looksLikeLogin=${looksLikeLogin}`
+        `usersMe=${usersMeStatus} looksLikeLogin=${looksLikeLogin}`
     );
   } catch {
     // Diagnostics are best-effort; never break the capture.
