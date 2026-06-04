@@ -21,9 +21,13 @@
  *     [--include-write]        # run reversible effect:"write" transitions
  *     [--include-destructive]  # run irreversible effect:"destructive" (nightly)
  *
- * Env:
- *   QONTINUI_TEST_AUTO_LOGIN_EMAIL    required (auth credentials)
- *   QONTINUI_TEST_AUTO_LOGIN_PASSWORD required
+ * Env (auth — first match wins):
+ *   QONTINUI_TEST_ID_TOKEN            hermetic lane: a pre-minted id token
+ *                                     for the run-local issuer the CI
+ *                                     backend trusts (spec-ci.yml +
+ *                                     backend/scripts/spec_ci_local_idp.py)
+ *   QONTINUI_TEST_AUTO_LOGIN_EMAIL    Cognito lane (non-hermetic runs)
+ *   QONTINUI_TEST_AUTO_LOGIN_PASSWORD Cognito lane
  *   QONTINUI_API_BASE_URL             fallback for --api-base
  */
 
@@ -43,8 +47,9 @@ import {
 } from "./server-error-policy";
 import { reportServerErrorsToCoord } from "./report-server-errors-to-coord";
 import { evaluateApiCheck, type ApiCheckResult } from "./api-contract";
+import { applyHermeticStubs } from "./hermetic-stubs";
 import { discoverAppRoutes } from "./route-manifest";
-import { applyCrawlWaivers } from "./crawl-baseline";
+import { applyCrawlWaivers, isGloballyWaivedServerUrl } from "./crawl-baseline";
 import {
   DiagnosticsCollector,
   snapshotConcurrency,
@@ -338,7 +343,26 @@ async function mintCognitoIdToken(): Promise<string | null> {
 async function programmaticLogin(
   context: BrowserContext,
   baseUrl: string,
-): Promise<{ ok: boolean; reason?: string; mode?: "cognito" | "local" }> {
+): Promise<{ ok: boolean; reason?: string; mode?: "injected" | "cognito" | "local" }> {
+  // Hermetic lane (spec-ci.yml): the workflow boots the backend locally,
+  // points its COGNITO_ISSUER at a run-local JWKS, and injects an id token
+  // minted against that issuer (backend/scripts/spec_ci_local_idp.py). No
+  // Cognito, no shared ci-bot account, no network beyond localhost. The
+  // cookie seed + probe mirror the Cognito arm below. A rejected injected
+  // token FAILS — falling through to Cognito here would only mask a
+  // misconfigured hermetic stack.
+  const injected = process.env.QONTINUI_TEST_ID_TOKEN;
+  if (injected) {
+    await context.addCookies([{ name: "access_token", value: injected, url: baseUrl }]);
+    const probe = await context.request.get(
+      `${baseUrl.replace(/\/$/, "")}/api/v1/projects`,
+    );
+    if (probe.ok()) {
+      return { ok: true, mode: "injected" };
+    }
+    return { ok: false, reason: `injected_token_rejected_http_${probe.status()}` };
+  }
+
   const email = process.env.QONTINUI_TEST_AUTO_LOGIN_EMAIL;
   const password = process.env.QONTINUI_TEST_AUTO_LOGIN_PASSWORD;
   if (!email || !password) return { ok: false, reason: "no_credentials" };
@@ -1430,6 +1454,13 @@ async function main(): Promise<number> {
     ignoreHTTPSErrors: true,
   });
 
+  // Hermetic lane: stub the coord/strategy/cognito-admin-backed endpoints
+  // with prod-empty-parity bodies so pages render their authored empty
+  // states instead of 5xx-driven error states (see hermetic-stubs.ts).
+  if (process.env.QONTINUI_TEST_ID_TOKEN) {
+    await applyHermeticStubs(context);
+  }
+
   // Force the product mode (default "visual") so Spec CI evaluates every spec
   // against the canonical product surface rather than whatever the test
   // account happens to be set to. Mode resolution in the app is
@@ -1635,6 +1666,11 @@ async function main(): Promise<number> {
     await unauthContext.route("**/users/me/preferences", prefsIntercept);
     await unauthContext.route("**/operations/ci-status", ciStatusStub);
     await unauthContext.route("**/ws-token", wsTokenStub);
+    // Hermetic lane: same prod-empty-parity stubs as the authed context —
+    // unauth pages share the layout-level pollers (see hermetic-stubs.ts).
+    if (process.env.QONTINUI_TEST_ID_TOKEN) {
+      await applyHermeticStubs(unauthContext);
+    }
     // Per-spec route stubs on the unauth context (same pattern as the auth lane).
     const stubs = readRouteStubs(spec.doc);
     const teardownStubs = await applyRouteStubs(unauthContext, stubs);
@@ -1726,7 +1762,12 @@ async function main(): Promise<number> {
     const expectedServer = readExpectedServerErrors(spec.doc);
     const sliced = serverErrors
       .slice(serverSliceBase)
-      .filter((e) => !expectedServer.some((rx) => rx.test(e.url)));
+      .filter((e) => !expectedServer.some((rx) => rx.test(e.url)))
+      // Global `ci-env` waiver classes apply to the spec lane too: hermetic
+      // CI makes the coord/strategy upstream classes reachable from spec'd
+      // pages (background pollers), not just crawl routes. See
+      // crawl-baseline.ts GLOBAL_SERVER_WAIVERS.
+      .filter((e) => !isGloballyWaivedServerUrl(e.url));
     const { kept: serverKept, dropped: serverDropped } = await confirmGatewayPersistence(page, sliced);
     r.serverErrors = serverKept;
     for (const d of serverDropped) {

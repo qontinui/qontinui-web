@@ -125,6 +125,37 @@ export const GLOBAL_SERVER_WAIVERS: readonly GlobalServerWaiver[] = [
       "waiver. Tracked follow-up: give the VGA surface an api.qontinui.io " +
       "proxy (like task-runs/variables) or a CI-reachable read path.",
   },
+  {
+    pattern: "/api/v1/operations/",
+    class: "ci-env",
+    note:
+      "CI-ENV-UNAVOIDABLE (hermetic lane, 2026-06-04). /api/v1/operations/* " +
+      "are BACKEND proxies to qontinui-coord; the hermetic Spec CI stack " +
+      "runs no coord, so the backend correctly 502s them. Spec'd pages get " +
+      "prod-parity STUBS instead (hermetic-stubs.ts — strictly stronger: no " +
+      "5xx AND the authored render); this waiver covers the long tail of " +
+      "coord-backed admin dashboards with no IR spec (/admin/coord/*, " +
+      "reachable since the ci-bot superuser-parity step). Same class as " +
+      "/coord-api/.",
+  },
+  {
+    pattern: "/api/v1/admin/agent-sessions",
+    class: "ci-env",
+    note:
+      "CI-ENV-UNAVOIDABLE (hermetic lane). Backend proxy to coord agent " +
+      "sessions — no coord in CI; crawl-only route (/admin/agent-sessions). " +
+      "Same class as /api/v1/operations/.",
+  },
+  {
+    pattern: "/api/v1/strategy/",
+    class: "ci-env",
+    note:
+      "CI-ENV-UNAVOIDABLE (hermetic lane). The strategy bridge (coord) is " +
+      "disabled in CI — the backend 503s by design. The strategy SPEC " +
+      "renders via prod-parity stubs (docs list + content); this waiver " +
+      "absorbs the page's un-stubbed background calls (presence/heartbeat " +
+      "POSTs, doc thread reads).",
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -152,6 +183,17 @@ export interface CrawlWaiverResult {
 }
 
 const globalServerMatchers = compilePatterns(GLOBAL_SERVER_WAIVERS.map((w) => w.pattern));
+
+/**
+ * Whether a same-origin 5xx URL falls in a GLOBAL waiver class. Exported for
+ * the SPEC lane: hermetic CI makes the `ci-env` upstream classes reachable
+ * from spec'd pages too (the prod lane only ever hit them in the crawl), so
+ * run-spec-ci.ts applies the same global classes where it applies the
+ * per-spec `expectedServerErrors` waivers. Per-route waivers stay crawl-only.
+ */
+export function isGloballyWaivedServerUrl(url: string): boolean {
+  return globalServerMatchers.some((rx) => rx.test(url));
+}
 
 /**
  * Filter a crawled route's raw findings through the global + per-route waivers.
