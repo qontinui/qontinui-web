@@ -66,8 +66,14 @@ def main() -> int:
     )
     parser.add_argument(
         "--name",
-        default="Spec CI Bot",
-        help="Display name claim for the provisioned user",
+        # Default EMPTY (claim omitted) — prod ci-bot has no name, and the
+        # settings spec's positional element ids (content-label-tenant-
+        # label-4/-6) were authored against the page WITHOUT the conditional
+        # Name row (settings/account/page.tsx renders it only when full_name
+        # is set; a name shifts every later content index by 2).
+        default="",
+        help="Display name claim; empty (default) omits the claim so the "
+        "provisioned user has no full_name — prod ci-bot parity",
     )
     parser.add_argument(
         "--out-dir",
@@ -106,13 +112,14 @@ def main() -> int:
         # email_verified=True is required for the provision path's
         # link-by-email arm to be willing to match an existing row.
         "email_verified": True,
-        "name": args.name,
         "token_use": "id",
         "iss": args.issuer.rstrip("/"),
         "aud": args.audience,
         "iat": now,
         "exp": now + args.ttl_seconds,
     }
+    if args.name:
+        claims["name"] = args.name
     token = pyjwt.encode(claims, private_key, algorithm="RS256", headers={"kid": KID})
     print(
         f"[spec-ci-local-idp] minted id token for {args.email} "

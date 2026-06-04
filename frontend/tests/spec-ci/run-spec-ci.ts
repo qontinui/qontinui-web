@@ -49,7 +49,7 @@ import { reportServerErrorsToCoord } from "./report-server-errors-to-coord";
 import { evaluateApiCheck, type ApiCheckResult } from "./api-contract";
 import { applyHermeticStubs } from "./hermetic-stubs";
 import { discoverAppRoutes } from "./route-manifest";
-import { applyCrawlWaivers } from "./crawl-baseline";
+import { applyCrawlWaivers, isGloballyWaivedServerUrl } from "./crawl-baseline";
 import {
   DiagnosticsCollector,
   snapshotConcurrency,
@@ -1762,7 +1762,12 @@ async function main(): Promise<number> {
     const expectedServer = readExpectedServerErrors(spec.doc);
     const sliced = serverErrors
       .slice(serverSliceBase)
-      .filter((e) => !expectedServer.some((rx) => rx.test(e.url)));
+      .filter((e) => !expectedServer.some((rx) => rx.test(e.url)))
+      // Global `ci-env` waiver classes apply to the spec lane too: hermetic
+      // CI makes the coord/strategy upstream classes reachable from spec'd
+      // pages (background pollers), not just crawl routes. See
+      // crawl-baseline.ts GLOBAL_SERVER_WAIVERS.
+      .filter((e) => !isGloballyWaivedServerUrl(e.url));
     const { kept: serverKept, dropped: serverDropped } = await confirmGatewayPersistence(page, sliced);
     r.serverErrors = serverKept;
     for (const d of serverDropped) {
