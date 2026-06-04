@@ -21,9 +21,28 @@ Determinism: the schema is dumped with ``sort_keys=True`` and ``indent=2`` plus
 a trailing newline, so re-running on an unchanged app is a no-op and the CI
 drift check (`git diff --exit-code`) is stable.
 
+Two snapshots, one exporter:
+
+* default — ``openapi-schema.json``: the app as built in THIS environment.
+  CI installs the qontinui-cloud-control sibling, so CI's run includes the
+  extension routes (admin/billing); this is the spec the frontend api-client
+  generates types from.
+* ``--base`` — ``openapi-schema.base.json``: the app with the cloud-control
+  side-effect import suppressed (``QONTINUI_DISABLE_CLOUD_EXTENSIONS=1``,
+  honored in ``app/main.py``) even where the package is installed. This is the
+  surface **prod api.qontinui.io actually serves** (the prod image does not
+  install cloud-control), so it is the declared-route source coord's
+  Ξ_RouteServing observer reads for that host — using the extended spec there
+  false-positives ``route_missing`` on every extension route.
+
+The two variants need separate *processes* (the app is built at import time;
+one process cannot re-import it with different env), so CI runs the script
+twice.
+
 Usage::
 
-    python backend/scripts/export_openapi.py
+    python backend/scripts/export_openapi.py          # extended (env-dependent)
+    python backend/scripts/export_openapi.py --base   # base (OSS-only, anywhere)
 
 The script self-configures the minimal env it needs (a dummy PostgreSQL
 ``DATABASE_URL``, ``ENVIRONMENT=development``, a >=32-char ``SECRET_KEY``,
@@ -44,6 +63,11 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 BACKEND_DIR = SCRIPT_DIR.parent
 REPO_ROOT = BACKEND_DIR.parent
 OUTPUT_PATH = REPO_ROOT / "frontend" / "src" / "lib" / "api-client" / "openapi-schema.json"
+# The BASE (OSS-only) variant — what prod api.qontinui.io serves (no
+# cloud-control). Declared-route source for coord's Ξ_RouteServing observer.
+BASE_OUTPUT_PATH = (
+    REPO_ROOT / "frontend" / "src" / "lib" / "api-client" / "openapi-schema.base.json"
+)
 
 
 def _ensure_offline_env() -> None:
@@ -104,6 +128,19 @@ def _canonicalize_operation_ids(schema: dict) -> None:
 
 
 def main() -> int:
+    base = "--base" in sys.argv[1:]
+    unknown = [a for a in sys.argv[1:] if a != "--base"]
+    if unknown:
+        print(f"unknown argument(s): {unknown} (only --base is supported)", file=sys.stderr)
+        return 2
+
+    if base:
+        # MUST be set before ``app.main`` is imported — the suppression is
+        # consulted at the cloud-control side-effect import site. Hard-set
+        # (not setdefault): the whole point is overriding an environment
+        # where the package is installed (CI).
+        os.environ["QONTINUI_DISABLE_CLOUD_EXTENSIONS"] = "1"
+
     _ensure_offline_env()
 
     # Import only after env is in place so module-level Settings() succeeds.
@@ -115,18 +152,20 @@ def main() -> int:
     schema = app.openapi()
     _canonicalize_operation_ids(schema)
 
-    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    output_path = BASE_OUTPUT_PATH if base else OUTPUT_PATH
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(schema, indent=2, sort_keys=True) + "\n"
     # Always emit LF (never platform CRLF): the committed snapshot is
     # ``*.json text eol=lf`` (.gitattributes) and the CI drift check
     # (``git diff --exit-code``) must be byte-stable across OSes. ``newline=""``
     # disables newline translation so the literal ``\n`` in ``payload`` is
     # written verbatim, matching what Linux CI and the git blob expect.
-    with open(OUTPUT_PATH, "w", encoding="utf-8", newline="") as fh:
+    with open(output_path, "w", encoding="utf-8", newline="") as fh:
         fh.write(payload)
 
+    variant = "BASE (OSS-only)" if base else "extended"
     path_count = len(schema.get("paths", {}))
-    print(f"Wrote OpenAPI schema ({path_count} paths) to {OUTPUT_PATH}")
+    print(f"Wrote {variant} OpenAPI schema ({path_count} paths) to {output_path}")
     return 0
 
 

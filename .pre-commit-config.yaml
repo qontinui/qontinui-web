@@ -4,7 +4,9 @@ repos:
     hooks:
       - id: check-yaml
       - id: check-added-large-files
-        exclude: 'tests/spec-ci/schemas\.json$'
+        # The OpenAPI snapshots are generated artifacts kept authoritative by
+        # the backend-ci drift check; size is inherent (600+ paths), not waste.
+        exclude: 'tests/spec-ci/schemas\.json$|frontend/src/lib/api-client/openapi-schema(\.base)?\.json$'
       - id: check-merge-conflict
 
   - repo: https://github.com/astral-sh/ruff-pre-commit

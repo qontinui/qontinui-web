@@ -219,11 +219,19 @@ jobs:
           TESTING: 1
           REDIS_ENABLED: false
         run: |
+          # Two snapshots, two processes (the app is built at import time, so
+          # one process cannot re-import with different env): the extended spec
+          # (with the cloud-control sibling CI installs) and the BASE spec
+          # (QONTINUI_DISABLE_CLOUD_EXTENSIONS=1 — the surface prod
+          # api.qontinui.io actually serves; coord's route-serving observer
+          # reads this one).
           poetry run python scripts/export_openapi.py
+          poetry run python scripts/export_openapi.py --base
           if ! git -C "$GITHUB_WORKSPACE" diff --exit-code \
-              frontend/src/lib/api-client/openapi-schema.json; then
-            echo "::error::OpenAPI snapshot is stale. A backend route change was not committed to the snapshot."
-            echo "Run 'python backend/scripts/export_openapi.py' from the repo root and commit the updated frontend/src/lib/api-client/openapi-schema.json."
+              frontend/src/lib/api-client/openapi-schema.json \
+              frontend/src/lib/api-client/openapi-schema.base.json; then
+            echo "::error::OpenAPI snapshot is stale. A backend route change was not committed to the snapshot(s)."
+            echo "Run 'python backend/scripts/export_openapi.py' and 'python backend/scripts/export_openapi.py --base' from the repo root and commit the updated frontend/src/lib/api-client/openapi-schema*.json."
             exit 1
           fi
 
@@ -236,7 +244,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: openapi-schema-ci-generated
-          path: frontend/src/lib/api-client/openapi-schema.json
+          path: |
+            frontend/src/lib/api-client/openapi-schema.json
+            frontend/src/lib/api-client/openapi-schema.base.json
           if-no-files-found: ignore
 
       - name: Create test schemas and extensions
