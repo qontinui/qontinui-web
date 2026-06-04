@@ -5,16 +5,21 @@
  *   1. navigates to the route and waits for it to settle (networkidle +
  *      the route's `settleMs`),
  *   2. captures a UI-Bridge element snapshot via a same-origin request to
- *      the relay proxy (`GET /api/ui-bridge/control/snapshot`) and writes it
- *      verbatim to `.artifacts/snapshots/<id>.json`,
+ *      the relay proxy (`GET /api/ui-bridge/control/snapshot`), normalizes
+ *      each element's bbox to the analyzer's `Region` shape, and writes the
+ *      result to `.artifacts/snapshots/<id>.json`,
  *   3. captures a deterministic PNG screenshot to `.artifacts/frames/<id>.png`.
  *
  * The snapshot + frame pair is the Phase-1 deliverable. A later phase feeds
- * both to the `vision-audit` analyzer bin. The snapshot body is written
- * VERBATIM (no hand-transform): `/control/snapshot` returns the runner-native
- * shape `{ elements: [...] }`, which is exactly one of the shapes the bin's
+ * both to the `vision-audit` analyzer bin. `/control/snapshot` returns the
+ * runner-native envelope `{ elements: [...] }` — one of the shapes the bin's
  * `parse_snapshot` accepts (`{elements:[...]}` / `{data:{elements:[...]}}` /
- * `{data:[...]}`).
+ * `{data:[...]}`) — but the SDK emits each bbox as `{x,y,width,height}` floats
+ * whereas the Rust `Region` requires `{x,y,w,h}` u32. So the snapshot is NOT
+ * byte-identical runner-native: a single bbox-normalization adapter
+ * (`normalizeSnapshotForAnalyzer`) maps that one field before writing; every
+ * other field passes through (the Rust `Element` has no `deny_unknown_fields`
+ * and only `id` is required). See that function for the full rationale.
  *
  * AUTHED-ONLY: every seed route is authenticated (`public: false`). The relay
  * snapshot route requires the in-page `CommandRelayListener`, which never
@@ -152,6 +157,114 @@ function countElements(body: SnapshotResponse): number {
     return body.data.elements.length;
   }
   return 0;
+}
+
+/**
+ * Locate the elements array inside whichever of the three accepted snapshot
+ * envelopes the relay returned. Returns the live array reference (mutating its
+ * elements in place is intentional — see `normalizeBboxes`), or null when no
+ * recognized element-bearing shape is present.
+ *
+ * Accepted shapes (must mirror the downstream bin's `parse_snapshot`):
+ *   - `{ elements: [...] }`        (runner-native, what /control/snapshot emits)
+ *   - `{ data: { elements: [...] } }`
+ *   - `{ data: [...] }`
+ */
+function locateElements(body: SnapshotResponse): unknown[] | null {
+  if (Array.isArray(body.elements)) return body.elements;
+  if (Array.isArray(body.data)) return body.data;
+  if (body.data && Array.isArray((body.data as { elements?: unknown[] }).elements)) {
+    return (body.data as { elements: unknown[] }).elements;
+  }
+  return null;
+}
+
+/**
+ * Bbox-normalization adapter — the ONE shape transform between the web SDK's
+ * snapshot and the Rust analyzer.
+ *
+ * WHY this exists:
+ *   - The web UI-Bridge SDK emits each element's bbox as
+ *     `{ x, y, width, height }` with FLOAT values
+ *     (`ui-bridge/packages/ui-bridge/src/control/types.ts:454`).
+ *   - The Rust analyzer's `Region`
+ *     (`qontinui-schemas/rust-vision-core/src/frame.rs:63-67`) requires exactly
+ *     `{ x, y, w, h }` as `u32` — no serde aliases, no rename. A verbatim bbox
+ *     therefore fails deserialization with `missing field 'w'`.
+ *   - The Rust `Element`
+ *     (`qontinui-schemas/rust-vision-core/src/element_snapshot.rs:38-51`) has NO
+ *     `deny_unknown_fields` and only `id` is required (every other field is
+ *     `#[serde(default)]`/Option, and the SDK always supplies `id`). So the
+ *     SDK's extra fields are harmlessly ignored and `bbox` is the ONLY shape
+ *     that must be transformed — nothing else is touched.
+ *
+ * This corrects the original plan's "write the snapshot verbatim — it's a
+ * byte-identical runner-native shape" assumption, which was wrong about the
+ * bbox field names (`width`/`height` -> `w`/`h`) and value type (float -> u32).
+ *
+ * Transform: for each element that HAS a bbox (bbox is optional — bbox-less
+ * elements are left untouched, matching `Region`'s `Option`), replace
+ * `{ x, y, width, height }` (floats) with `{ x, y, w, h }` (rounded ints).
+ * A malformed/partial bbox (missing any of x/y/width/height, or a non-finite
+ * value) is DROPPED rather than written as NaN — `bbox: Option<Region>` accepts
+ * absence, and a NaN/partial Region would crash the analyzer's deserialize.
+ * Every other field is left exactly as-is.
+ *
+ * Mutates the elements in place (the caller re-serializes the same body).
+ */
+function normalizeBboxes(elements: unknown[]): void {
+  for (const el of elements) {
+    if (!el || typeof el !== "object") continue;
+    const record = el as Record<string, unknown>;
+    if (!("bbox" in record)) continue; // bbox is optional — leave as-is.
+
+    const bbox = record.bbox;
+    if (!bbox || typeof bbox !== "object") {
+      // Present but not an object -> malformed; drop so it can't crash the
+      // analyzer (an Option<Region> tolerates absence).
+      delete record.bbox;
+      continue;
+    }
+
+    const { x, y, width, height } = bbox as {
+      x?: unknown;
+      y?: unknown;
+      width?: unknown;
+      height?: unknown;
+    };
+    const vals = [x, y, width, height];
+    const allFinite = vals.every(
+      (v) => typeof v === "number" && Number.isFinite(v)
+    );
+    if (!allFinite) {
+      // Missing or non-finite component -> drop rather than emit NaN.
+      delete record.bbox;
+      continue;
+    }
+
+    record.bbox = {
+      x: Math.round(x as number),
+      y: Math.round(y as number),
+      w: Math.round(width as number),
+      h: Math.round(height as number),
+    };
+  }
+}
+
+/**
+ * Apply the bbox-normalization adapter to a parsed snapshot body and return the
+ * re-serialized JSON ready to write. When no element array is found (shouldn't
+ * happen — the caller's element-count guard fires first), the original raw text
+ * is returned unchanged so we never silently drop a snapshot we couldn't parse.
+ */
+function normalizeSnapshotForAnalyzer(
+  raw: string,
+  body: SnapshotResponse
+): string {
+  const elements = locateElements(body);
+  if (!elements) return raw;
+  normalizeBboxes(elements);
+  return JSON.stringify(body);
 }
 
 /**
@@ -336,9 +449,12 @@ for (const route of AUTHED_ROUTES) {
         `is empty for this surface.`
     ).toBeGreaterThan(0);
 
-    // Write the snapshot body VERBATIM — no hand-transform. The downstream
-    // bin's parse_snapshot accepts the runner-native shape as-is.
-    writeFileSync(join(SNAPSHOTS_DIR, `${route.id}.json`), raw, "utf8");
+    // Normalize bbox before writing: map the SDK's `{x,y,width,height}` floats
+    // to the Rust analyzer's `{x,y,w,h}` u32 Region (the ONLY shape transform
+    // required — see `normalizeSnapshotForAnalyzer`). All other fields pass
+    // through unchanged (the Rust `Element` has no `deny_unknown_fields`).
+    const snapshotToWrite = normalizeSnapshotForAnalyzer(raw, body);
+    writeFileSync(join(SNAPSHOTS_DIR, `${route.id}.json`), snapshotToWrite, "utf8");
 
     // Deterministic frame: fixed viewport, fullPage:false (viewport-clipped so
     // height is stable run-to-run regardless of scroll content).
