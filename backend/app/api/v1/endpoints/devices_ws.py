@@ -250,6 +250,10 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
     #     ws_connected_at) above — roll that marking back so a failed
     #     registration does not leave the device falsely reported connected.
     # ------------------------------------------------------------------
+    # ``manager`` is pre-bound so the except-path rollback can reference it
+    # safely even when ``get_redis()`` itself raises (Redis unavailable) before
+    # the manager is resolved.
+    manager: Any = None
     try:
         redis = await get_redis()
         manager = await get_runner_websocket_manager(redis)
@@ -278,6 +282,23 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
             error_type=type(e).__name__,
             exc_info=True,
         )
+        # Tear down any manager-side registration. ``register`` rolls back its
+        # OWN partial state, but if it fully succeeded and the subsequent
+        # ``publish_runner_connected`` raised, the relay listeners are already
+        # running and each holds a dedicated Redis pubsub connection. Without
+        # this unregister those listeners (and their connections) would leak —
+        # the same pool-exhaustion class as the register failure itself.
+        # ``unregister`` is idempotent and tolerates an unknown/never-registered
+        # device_id, so it is safe to call regardless of where the failure hit.
+        if manager is not None:
+            try:
+                await manager.unregister(device_id, user_id)
+            except Exception as unregister_err:
+                logger.error(
+                    "devices_ws_register_failed_unregister_failed",
+                    device_id=str(device_id) if device_id else None,
+                    error=str(unregister_err),
+                )
         # Roll back the WS-connected marking committed above so consumers of
         # GET /api/v1/devices don't see a false wsConnected:true for a device
         # whose registration never completed. Only clear if the row still
