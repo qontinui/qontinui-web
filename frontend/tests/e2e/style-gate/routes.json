@@ -40,7 +40,7 @@
       "path": "/co-pilot",
       "public": false,
       "settleMs": 6000,
-      "description": "Authenticated Home landing (src/app/(app)/co-pilot/page.tsx). An authed visit to / forwards here (use-landing-page.ts) -- this IS the post-login Home surface. settleMs bumped 3000->6000 (burn-in): the co-pilot CommandRelayListener was slow to attach on this heavy surface and hit the relay-attach budget (CAPTURE-UNAVAILABLE) while build-workflows + library captured cleanly at 3000ms."
+      "description": "Authenticated Home landing (src/app/(app)/co-pilot/page.tsx). An authed visit to / forwards here (use-landing-page.ts) -- this IS the post-login Home surface. KNOWN STAGE-A BURN-IN ITEM: with auth fixed, build-workflows + library capture the real app cleanly, but THIS route's CommandRelayListener does not attach a browser tab before the relay-attach budget (503 NO_BROWSER_CONNECTED) even at settleMs 6000 -> CAPTURE-UNAVAILABLE (green in shadow). It authenticates fine (co-pilot/activity 200s); the relay-attach itself is route-specific (the co-pilot page is the relay-listener's own surface) and needs a dedicated burn-in fix, NOT just a longer settle. Tracked for the next triage."
     },
     {
       "id": "build-workflows",
