@@ -276,6 +276,9 @@ jobs:
       # import (backend/tests/conftest.py). Same set + method as e2e-tests.yml's
       # "Clone backend Python sibling deps" step.
       - name: Clone backend Python sibling deps
+        # SHADOW soft-fail: a provisioning failure must NOT abort the job — it
+        # must flow through to no-snapshots -> CAPTURE-UNAVAILABLE (green shadow).
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -310,6 +313,8 @@ jobs:
       # Mirror e2e-tests.yml's backend install: editable schemas first (avoid the
       # wheel-cache downgrade), then backend itself --no-deps, then cloud-control.
       - name: Install backend dependencies
+        # SHADOW soft-fail (see Clone step): failure -> CAPTURE-UNAVAILABLE, not red.
+        continue-on-error: true
         working-directory: ./backend
         run: |
           set -euo pipefail
@@ -324,6 +329,8 @@ jobs:
       # init-scripts/01-create-runner-schema.sql. CI service containers don't run
       # those init scripts, so create it explicitly (same as e2e-tests.yml).
       - name: Create runner schema
+        # SHADOW soft-fail (see Clone step): failure -> CAPTURE-UNAVAILABLE, not red.
+        continue-on-error: true
         env:
           PGPASSWORD: test_password
         run: |
@@ -332,6 +339,8 @@ jobs:
           psql -h localhost -U test_user -d test_db -c "CREATE SCHEMA IF NOT EXISTS runner;"
 
       - name: Run database migrations
+        # SHADOW soft-fail (see Clone step): failure -> CAPTURE-UNAVAILABLE, not red.
+        continue-on-error: true
         working-directory: ./backend
         env:
           DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
@@ -345,7 +354,21 @@ jobs:
 
       # The auth.setup.ts fixture logs in as the canonical dev user. Migrations
       # only create empty tables; create_admin.py (idempotent) seeds the user.
+      #
+      # BURN-IN TODO (backend provisioning): `backend/create_admin.py` is NOT
+      # tracked in this repo on ANY ref (origin/main, this branch) and is NOT
+      # provided by any sibling clone or a pip console-script — so this step
+      # fails with "can't open file '.../backend/create_admin.py'". This step was
+      # ported from e2e-tests.yml's "Frontend E2E Tests" job, but that job is
+      # gated `if: github.event_name != 'pull_request'` and is SKIPPED on PRs, so
+      # the create_admin.py invocation has never actually run/been exercised in CI
+      # — there is no working reference to replicate. Until the dev-user seed is
+      # resolved (committed script, console-script, or sibling-provided), this
+      # step is SHADOW soft-fail: it cannot abort the job. A still-broken backend
+      # boot just yields CAPTURE-UNAVAILABLE (green shadow), never a red check.
       - name: Create dev user for E2E auth setup
+        # SHADOW soft-fail (see BURN-IN TODO above): failure -> CAPTURE-UNAVAILABLE, not red.
+        continue-on-error: true
         working-directory: ./backend
         env:
           DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
@@ -407,6 +430,11 @@ jobs:
       #                                    -> any_capture_missing (CAPTURE-UNAVAILABLE)
       - name: Run vision-audit (analyze + assert) per route + summarize
         id: assert
+        # Run ALWAYS — even when an upstream provisioning/capture step hit a
+        # continue-on-error failure. This is the step that converts no-snapshots
+        # into the CAPTURE-UNAVAILABLE (green shadow) verdict; it must never be
+        # skipped by an earlier failure.
+        if: always()
         env:
           ENFORCE: ${{ steps.mode.outputs.enforce }}
         run: |
@@ -442,6 +470,8 @@ jobs:
 
           {
             echo "## Style Gate — ${{ steps.mode.outputs.enforce == '1' && 'ENFORCE (Stage B)' || 'SHADOW (Stage A, report-only)' }}"
+            echo ""
+            echo "> SHADOW never blocks: this check stays GREEN regardless of findings or capture availability. If routes show \`CAPTURE-UNAVAILABLE\`, the capture environment is still being wired (Stage-A burn-in) — that is NOT a code regression."
             echo ""
             echo "Pinned qontinui-schemas: \`${{ steps.lock.outputs.schemas_sha }}\` (crate \`${{ steps.lock.outputs.crate }}\`, bin \`${{ steps.lock.outputs.bin }}\`)"
             echo ""
@@ -545,7 +575,7 @@ jobs:
             elif [ "$any_capture_missing" = "1" ] && [ "$any_gate2" = "1" ]; then
               echo "**Outcome: GATE FINDINGS + CAPTURE-UNAVAILABLE (SHADOW)** — reported only; SHADOW never blocks on gate findings or capture availability. This check stays GREEN."
             elif [ "$any_capture_missing" = "1" ]; then
-              echo "**Outcome: CAPTURE-UNAVAILABLE (SHADOW)** — at least one route produced no snapshot/frame. Reported only; SHADOW never blocks on capture availability. This check stays GREEN."
+              echo "**Outcome: CAPTURE-UNAVAILABLE (SHADOW)** — at least one route produced no snapshot/frame: the capture pipeline is unavailable, so environment wiring is the Stage-A burn-in task (NOT a code regression). Reported only; SHADOW never blocks on capture availability. This check stays GREEN."
             elif [ "$any_gate2" = "1" ]; then
               echo "**Outcome: GATE FINDINGS (SHADOW)** — reported only; this check stays GREEN and does not block merge."
             else
