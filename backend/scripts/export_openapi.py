@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -68,6 +69,40 @@ def _ensure_offline_env() -> None:
         os.environ.setdefault(key, value)
 
 
+_HTTP_METHODS = frozenset(
+    {"get", "put", "post", "delete", "options", "head", "patch", "trace"}
+)
+
+
+def _canonicalize_operation_ids(schema: dict) -> None:
+    """Rewrite every ``operationId`` deterministically as ``<path>_<method>``.
+
+    FastAPI derives ``operationId`` from the endpoint *function* name, which
+    COLLIDES when one function backs several routes (e.g. the ``runner_proxy``
+    catch-all, or routers re-included by slowapi/cloud-control). The
+    collision-resolution order is **not stable across runs** — hence the
+    ``Duplicate Operation ID`` warnings and an ``app.openapi()`` whose
+    operationId values jitter run-to-run, which makes the raw schema NOT
+    byte-reproducible (the CI drift check would flap forever).
+
+    Deriving the id purely from ``(path, method)`` is unique by construction
+    and stable, so the committed snapshot is reproducible AND the
+    duplicate-operation-id ambiguity is removed for downstream codegen. This is
+    a pure function of the path+method already present in the document, so it
+    can be applied identically to a freshly generated schema or to the
+    committed file.
+    """
+    for path, item in schema.get("paths", {}).items():
+        if not isinstance(item, dict):
+            continue
+        for method, operation in item.items():
+            if method.lower() in _HTTP_METHODS and isinstance(operation, dict):
+                slug = re.sub(
+                    r"[^a-z0-9]+", "_", f"{path}_{method}".lower()
+                ).strip("_")
+                operation["operationId"] = slug
+
+
 def main() -> int:
     _ensure_offline_env()
 
@@ -78,6 +113,7 @@ def main() -> int:
     from app.main import app  # noqa: E402 -- deferred until env is configured
 
     schema = app.openapi()
+    _canonicalize_operation_ids(schema)
 
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(schema, indent=2, sort_keys=True) + "\n"
