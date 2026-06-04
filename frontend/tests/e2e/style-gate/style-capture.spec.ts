@@ -481,39 +481,46 @@ test.beforeAll(async ({ request }) => {
   await enableCoPilotPreference(request);
 });
 
-// Gate 3: seed per-session consent so the relay listener mounts on a fresh tab.
-// Runs before any page script on every navigation in this file.
+// Gate 0 (client-side auth) + Gate 3 (relay consent), both seeded via a single
+// init script that runs before any page script on every navigation.
 //
-// Gate 0 (route guard): the Next middleware (`src/middleware.ts`) soft-gates
-// protected routes — it redirects to `/login?next=…` unless an `access_token`,
-// `refresh_token`, OR the client-readable `qontinui_auth` marker cookie is
-// present on the NAVIGATION request. The diagnostic proved that with only the
-// minted Cognito `access_token` cookie the routes still bounced to `/login`
-// (backend `/users/me` returns 200, but the middleware didn't accept the
-// out-of-band token), so we also seed the `qontinui_auth=1` marker — the
-// mechanism `TokenStorage` itself uses to tell the soft-gate "this client is
-// signed in" (`token-storage.ts:135`). With the marker present the middleware
-// lets the authed route render, and the page's own `useAuth()` (which calls
-// the already-working `/users/me`) hydrates the session.
+// Gate 0 — why this is needed: the diagnostic proved the routes bounce to
+// `/login` CLIENT-SIDE, not at the middleware. `auth.setup` seeds only the
+// `access_token` cookie (so backend `/users/me` is 200 via the cookie
+// fallback), but the client's PRIMARY auth signal is a Bearer token in
+// sessionStorage (`auth_bearer_access_token`) plus the `is_authenticated`
+// localStorage flag — see `services/auth/token-storage.ts` `saveAccessToken`.
+// Those are never populated (a real login sets them; `auth.setup` mints the
+// token out-of-band and `storageState` cannot persist sessionStorage), so the
+// page-level auth guard treats the session as signed-out, clears the
+// `qontinui_auth` marker, and redirects. Fix: replicate `saveAccessToken` by
+// bridging the seeded `access_token` cookie (non-HttpOnly) into the Bearer +
+// authed-flag + marker the client expects, on every navigation.
+const SESSION_BEARER_KEY = "auth_bearer_access_token";
+const IS_AUTHENTICATED_KEY = "is_authenticated";
 const AUTH_MARKER_COOKIE = "qontinui_auth";
-test.beforeEach(async ({ page, baseURL }) => {
-  await page.context().addCookies([
-    {
-      name: AUTH_MARKER_COOKIE,
-      value: "1",
-      url: baseURL ?? "http://localhost:3001",
-      sameSite: "Lax",
-    },
-  ]);
+test.beforeEach(async ({ page }) => {
   await page.addInitScript(
-    ({ key, value }) => {
+    ({ consentKey, consentValue, bearerKey, authedKey, markerCookie }) => {
       try {
-        window.sessionStorage.setItem(key, value);
+        const m = document.cookie.match(/(?:^|;\s*)access_token=([^;]+)/);
+        if (m && m[1]) {
+          window.sessionStorage.setItem(bearerKey, m[1]);
+          window.localStorage.setItem(authedKey, "true");
+          document.cookie = `${markerCookie}=1; Path=/; SameSite=Lax`;
+        }
+        window.sessionStorage.setItem(consentKey, consentValue);
       } catch {
-        // sessionStorage can throw in some privacy modes — best effort.
+        // best effort — privacy modes can throw on storage access.
       }
     },
-    { key: CO_PILOT_CONSENT_KEY, value: CO_PILOT_CONSENT_GRANTED }
+    {
+      consentKey: CO_PILOT_CONSENT_KEY,
+      consentValue: CO_PILOT_CONSENT_GRANTED,
+      bearerKey: SESSION_BEARER_KEY,
+      authedKey: IS_AUTHENTICATED_KEY,
+      markerCookie: AUTH_MARKER_COOKIE,
+    }
   );
 });
 
