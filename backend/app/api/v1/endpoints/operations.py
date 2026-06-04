@@ -947,7 +947,7 @@ async def _proxy_coord_post(
 @router.post("/agents/allocate")
 async def post_agents_allocate(
     body: dict[str, Any],
-    current_user: UserModel = Depends(get_current_active_user_async),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Proxy `POST /agents/allocate` to coord.
 
@@ -958,8 +958,11 @@ async def post_agents_allocate(
     — passes through; the operator's browser doesn't consume the
     JWT itself, but the receiving runner picks up the allocation
     via the `events.agent.allocated` event coord fans out.
+
+    fleet-auth P2/D6: forwards the operator bearer (via ``get_tenant_id``
+    → ``tenant_id=``), mirroring the sibling ``/agents/spawn`` proxy.
     """
-    return await _proxy_coord_post("/agents/allocate", body)
+    return await _proxy_coord_post("/agents/allocate", body, tenant_id=tenant_id)
 
 
 # ---- Coord claims-dashboard proxy ---------------------------------------
@@ -984,13 +987,19 @@ async def get_claims_list(
     kind: str,
     prefix: str = "",
     limit: int | None = None,
-    current_user: UserModel = Depends(get_current_active_user_async),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
-    """List active claims by kind + resource_key prefix."""
+    """List active claims by kind + resource_key prefix.
+
+    Forwards the operator bearer (via ``get_tenant_id`` → ``tenant_id=``)
+    so coord can authenticate the operator once it gates this route
+    (fleet-auth P2/D6). Backward-compatible while coord is anonymous."""
     params: dict[str, Any] = {"kind": kind, "prefix": prefix}
     if limit is not None:
         params["limit"] = limit
-    return await _proxy_coord_get("/coord/claims/list", params=params)
+    return await _proxy_coord_get(
+        "/coord/claims/list", params=params, tenant_id=tenant_id
+    )
 
 
 # ---- Coord agent-status proxy (coord-native MCP coordination surface) ----
@@ -1049,9 +1058,11 @@ async def get_gates_list(
     claim_kind: str | None = None,
     resource_key: str | None = None,
     limit: int | None = None,
-    current_user: UserModel = Depends(get_current_active_user_async),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
-    """List gates, optionally filtered by verdict."""
+    """List gates, optionally filtered by verdict.
+
+    Forwards the operator bearer (fleet-auth P2/D6)."""
     params: dict[str, Any] = {}
     if verdict is not None:
         params["verdict"] = verdict
@@ -1061,73 +1072,88 @@ async def get_gates_list(
         params["resource_key"] = resource_key
     if limit is not None:
         params["limit"] = limit
-    return await _proxy_coord_get("/coord/gates", params=params)
+    return await _proxy_coord_get("/coord/gates", params=params, tenant_id=tenant_id)
 
 
 @router.post("/gates/{gate_id}/approve")
 async def approve_gate(
     gate_id: str,
-    current_user: UserModel = Depends(get_current_active_user_async),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
-    """Approve an OperatorApproval gate."""
-    return await _proxy_coord_post(f"/coord/gates/{gate_id}/approve", {})
+    """Approve an OperatorApproval gate (operator bearer forwarded —
+    fleet-auth P2/D6)."""
+    return await _proxy_coord_post(
+        f"/coord/gates/{gate_id}/approve", {}, tenant_id=tenant_id
+    )
 
 
 @router.post("/gates/{gate_id}/reject")
 async def reject_gate(
     gate_id: str,
     reason: str | None = None,
-    current_user: UserModel = Depends(get_current_active_user_async),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
-    """Reject an OperatorApproval gate."""
+    """Reject an OperatorApproval gate (operator bearer forwarded —
+    fleet-auth P2/D6)."""
     body: dict[str, Any] = {}
     if reason:
         body["reason"] = reason
-    return await _proxy_coord_post(f"/coord/gates/{gate_id}/reject", body)
+    return await _proxy_coord_post(
+        f"/coord/gates/{gate_id}/reject", body, tenant_id=tenant_id
+    )
 
 
 @router.get("/claims/recent-conflicts")
 async def get_recent_conflicts(
     limit: int | None = None,
-    current_user: UserModel = Depends(get_current_active_user_async),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
-    """Return the recent-conflicts ring buffer from coord."""
+    """Return the recent-conflicts ring buffer from coord (operator
+    bearer forwarded — fleet-auth P2/D6)."""
     params: dict[str, Any] = {}
     if limit is not None:
         params["limit"] = limit
-    return await _proxy_coord_get("/coord/claims/recent-conflicts", params=params)
+    return await _proxy_coord_get(
+        "/coord/claims/recent-conflicts", params=params, tenant_id=tenant_id
+    )
 
 
 @router.get("/claims/recent-expirations")
 async def get_recent_expirations(
     limit: int | None = None,
-    current_user: UserModel = Depends(get_current_active_user_async),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
-    """Return the recent-expirations ring buffer from coord."""
+    """Return the recent-expirations ring buffer from coord (operator
+    bearer forwarded — fleet-auth P2/D6)."""
     params: dict[str, Any] = {}
     if limit is not None:
         params["limit"] = limit
-    return await _proxy_coord_get("/coord/claims/recent-expirations", params=params)
+    return await _proxy_coord_get(
+        "/coord/claims/recent-expirations", params=params, tenant_id=tenant_id
+    )
 
 
 @router.get("/claims/steals")
 async def get_claims_steals(
     since: str | None = None,
     limit: int | None = None,
-    current_user: UserModel = Depends(get_current_active_user_async),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
-    """Return recent admin_stolen audit rows from coord."""
+    """Return recent admin_stolen audit rows from coord (operator bearer
+    forwarded — fleet-auth P2/D6)."""
     params: dict[str, Any] = {}
     if since is not None:
         params["since"] = since
     if limit is not None:
         params["limit"] = limit
-    return await _proxy_coord_get("/coord/claims/steals", params=params)
+    return await _proxy_coord_get(
+        "/coord/claims/steals", params=params, tenant_id=tenant_id
+    )
 
 
 @router.get("/claims/alerts")
 async def get_claims_alerts(
-    current_user: UserModel = Depends(get_current_active_user_async),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Return active claim-related alerts from coord.
 
@@ -1136,8 +1162,10 @@ async def get_claims_alerts(
     [`claims_alert_watcher`](https://github.com/qontinui/qontinui-coord/blob/main/src/claims_alert_watcher.rs)).
     Other alert kinds (fleet-health, alembic-status, etc.) stay scoped
     to the Operations page's general alerts surface.
+
+    Forwards the operator bearer (fleet-auth P2/D6).
     """
-    payload = await _proxy_coord_get("/coord/alerts")
+    payload = await _proxy_coord_get("/coord/alerts", tenant_id=tenant_id)
     # coord returns either a list or `{"alerts": [...]}` depending on
     # the version; tolerate both.
     if isinstance(payload, dict) and "alerts" in payload:
@@ -1843,7 +1871,7 @@ async def get_symbol_claims(
         description="When set, return only claims held by this machine_id (UUID).",
     ),
     limit: int | None = Query(default=None, ge=1, le=500),
-    current_user: UserModel = Depends(get_current_active_user_async),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Proxy ``GET /coord/claims/list?kind=symbol`` for the dashboard.
 
@@ -1873,7 +1901,10 @@ async def get_symbol_claims(
     params: dict[str, Any] = {"kind": "symbol", "prefix": ""}
     if limit is not None:
         params["limit"] = limit
-    payload = await _proxy_coord_get("/coord/claims/list", params=params)
+    # Operator bearer forwarded (fleet-auth P2/D6).
+    payload = await _proxy_coord_get(
+        "/coord/claims/list", params=params, tenant_id=tenant_id
+    )
 
     if machine_id is not None and isinstance(payload, dict):
         holders = payload.get("holders", [])
@@ -2766,7 +2797,11 @@ async def get_session_claims(
 
     results = await asyncio.gather(
         *(
-            _proxy_coord_get("/coord/claims/list", params={"kind": kind})
+            _proxy_coord_get(
+                "/coord/claims/list",
+                params={"kind": kind},
+                tenant_id=tenant_id,
+            )
             for kind in _CLAIM_KINDS
         ),
         return_exceptions=True,
@@ -3041,16 +3076,27 @@ async def put_next_step_settings(
 
 @router.get("/coord/next-step-settings/fleet")
 async def get_next_step_settings_fleet(
+    request: Request,
     current_user: UserModel = Depends(require_admin),  # is_superuser staff view
 ) -> Any:
     """Fleet/staff read of autonomy settings across all tenants.
 
-    No ``X-Qontinui-Tenant-Id`` header is sent — coord returns the
-    full multi-tenant view (``master_enabled``, ``tenants`` list with
-    ``tenant_id``, ``slug``, ``autonomy_level``, ``effective``,
-    ``updated_at``). Read-only; mutations stay per-tenant.
+    No tenant scope is sent — coord returns the full multi-tenant view
+    (``master_enabled``, ``tenants`` list with ``tenant_id``, ``slug``,
+    ``autonomy_level``, ``effective``, ``updated_at``). Read-only;
+    mutations stay per-tenant.
 
     Requires ``is_superuser`` (``require_admin``).
+
+    fleet-auth P2/D6: the caller's Cognito bearer is forwarded so coord
+    can authenticate the operator once it gates this route. This endpoint
+    uses ``require_admin`` (not ``get_tenant_id``), so the bearer is
+    captured here explicitly. ``_tenant_headers`` forwards only the
+    bearer — never a tenant header — so the view stays tenant-blind. The
+    ``tenant_id`` arg below is just the forwarding trigger; its value is
+    never sent on the wire.
     """
-    # Fleet/staff endpoint — tenant-blind (no X-Qontinui-Tenant-Id).
-    return await _proxy_coord_get("/coord/next-step-settings/fleet")
+    _caller_bearer.set(_extract_caller_token(request))
+    return await _proxy_coord_get(
+        "/coord/next-step-settings/fleet", tenant_id=current_user.id
+    )
