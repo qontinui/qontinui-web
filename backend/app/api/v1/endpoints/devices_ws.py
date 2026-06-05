@@ -41,7 +41,6 @@ from uuid import UUID
 import structlog
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from qontinui_schemas.common import utc_now
-from starlette.websockets import WebSocketState
 
 from app.config.redis_config import get_redis
 from app.crud import device_connection as device_connection_crud
@@ -53,6 +52,7 @@ from app.services.coord_jwks import (
     coord_jwks_client,
 )
 from app.services.runner_websocket_manager import get_runner_websocket_manager
+from app.websockets.safe_send import reject, safe_close
 
 logger = structlog.get_logger(__name__)
 
@@ -62,61 +62,6 @@ logger = structlog.get_logger(__name__)
 _TERMINAL_FRAME_LIMIT = 65536
 
 router = APIRouter()
-
-
-async def _safe_close(websocket: WebSocket, code: int) -> None:
-    """Close ``websocket`` at most once, tolerating an already-closed socket.
-
-    Several handshake/registration failure paths below close the socket and
-    ``return``; on some of those paths the socket may already be closed —
-    either because a prior handler in the same request closed it, because the
-    Redis-backed manager's ``register`` aborted the socket, or because the
-    client itself already sent a close frame (it disconnected mid-handshake).
-    Calling ``WebSocket.close()`` again in any of those cases raises
-    ``RuntimeError: Cannot call "send" once a close message has been sent`` —
-    a secondary "double-close" that compounds the original failure handling
-    (observed in prod alongside Redis pool exhaustion).
-
-    Guard the close on ``application_state`` (the server-side close state,
-    flipped to ``DISCONNECTED`` once we've sent our own close frame) and
-    swallow the ``RuntimeError`` as a belt-and-suspenders fallback for the
-    races the state check can't observe. The close ``code`` is passed through
-    unchanged, so each call site still sends its intended close code.
-    """
-    if websocket.application_state == WebSocketState.DISCONNECTED:
-        return
-    try:
-        await websocket.close(code=code)
-    except RuntimeError as exc:
-        # Already closed (close frame already sent) — benign double-close.
-        logger.debug("devices_ws_double_close_suppressed", error=str(exc))
-
-
-async def _safe_send_json(websocket: WebSocket, payload: dict[str, Any]) -> None:
-    """Send a best-effort JSON message, tolerating an already-closed socket.
-
-    The handshake/auth failure paths below reply with a ``{"type": "error"}``
-    diagnostic and then ``_safe_close`` + ``return``. If the client already
-    closed the socket (it disconnected mid-handshake — common for probes and
-    flaky runners), the ``send_json`` raises ``WebSocketDisconnect`` /
-    ``RuntimeError`` / Starlette ``ClientDisconnected`` *before* ``_safe_close``
-    runs, escaping the handler as an unhandled "Exception in ASGI application".
-    The error reply is purely advisory (we close immediately after), so a
-    failed send is benign — swallow it and let the caller proceed to close.
-
-    Mirrors ``_safe_close`` for the send side. The post-registration
-    ``connected`` ack is deliberately NOT routed through this helper: on the
-    success path a failed send is a real error worth surfacing.
-    """
-    if websocket.application_state == WebSocketState.DISCONNECTED:
-        return
-    try:
-        await websocket.send_json(payload)
-    except Exception as exc:
-        # Client already gone (close frame received / disconnected
-        # mid-handshake). The reply is advisory and a _safe_close follows —
-        # benign, same race _safe_close handles on the close side.
-        logger.debug("devices_ws_send_suppressed", error=str(exc))
 
 
 @router.websocket("/ws")
@@ -142,11 +87,7 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
         token = auth_header.split(" ", 1)[1].strip()
 
     if not token:
-        await _safe_send_json(
-            websocket,
-            {"type": "error", "message": "Missing device-token bearer."},
-        )
-        await _safe_close(websocket, code=status.WS_1008_POLICY_VIOLATION)
+        await reject(websocket, "Missing device-token bearer.")
         return
 
     try:
@@ -155,23 +96,16 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
         # Cold-start failure: coord unreachable. Reject all handshakes
         # rather than silently falling back to "trust the token".
         logger.error("devices_ws_jwks_unavailable", error=str(exc))
-        await _safe_send_json(
-            websocket,
-            {
-                "type": "error",
-                "message": "Device authentication temporarily unavailable.",
-            },
-        )
         # 1011 = internal error / service overload.
-        await _safe_close(websocket, code=status.WS_1011_INTERNAL_ERROR)
+        await reject(
+            websocket,
+            "Device authentication temporarily unavailable.",
+            code=status.WS_1011_INTERNAL_ERROR,
+        )
         return
     except CoordTokenInvalidError as exc:
         logger.warning("devices_ws_token_invalid", error=str(exc))
-        await _safe_send_json(
-            websocket,
-            {"type": "error", "message": "Invalid or expired device token."},
-        )
-        await _safe_close(websocket, code=status.WS_1008_POLICY_VIOLATION)
+        await reject(websocket, "Invalid or expired device token.")
         return
 
     # Coord-issued device-token claims:
@@ -184,11 +118,7 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
             has_device_id=bool(raw_device_id),
             has_user_id=bool(raw_user_id),
         )
-        await _safe_send_json(
-            websocket,
-            {"type": "error", "message": "Device token missing required claims."},
-        )
-        await _safe_close(websocket, code=status.WS_1008_POLICY_VIOLATION)
+        await reject(websocket, "Device token missing required claims.")
         return
 
     try:
@@ -196,11 +126,7 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
         user_id = UUID(str(raw_user_id))
     except (ValueError, TypeError) as exc:
         logger.warning("devices_ws_token_claim_format_invalid", error=str(exc))
-        await _safe_send_json(
-            websocket,
-            {"type": "error", "message": "Device token claim format invalid."},
-        )
-        await _safe_close(websocket, code=status.WS_1008_POLICY_VIOLATION)
+        await reject(websocket, "Device token claim format invalid.")
         return
 
     # ------------------------------------------------------------------
@@ -212,24 +138,17 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
         info_msg = await asyncio.wait_for(websocket.receive_json(), timeout=15.0)
     except (TimeoutError, WebSocketDisconnect):
         logger.warning("devices_ws_runner_info_timeout", user_id=str(user_id))
-        await _safe_close(websocket, code=status.WS_1008_POLICY_VIOLATION)
+        await safe_close(websocket, status.WS_1008_POLICY_VIOLATION)
         return
     except Exception as e:
         logger.error(
             "devices_ws_runner_info_failed", user_id=str(user_id), error=str(e)
         )
-        await _safe_close(websocket, code=status.WS_1011_INTERNAL_ERROR)
+        await safe_close(websocket, status.WS_1011_INTERNAL_ERROR)
         return
 
     if not isinstance(info_msg, dict) or info_msg.get("type") != "runner_info":
-        await _safe_send_json(
-            websocket,
-            {
-                "type": "error",
-                "message": "First message must be of type 'runner_info'.",
-            },
-        )
-        await _safe_close(websocket, code=status.WS_1008_POLICY_VIOLATION)
+        await reject(websocket, "First message must be of type 'runner_info'.")
         return
 
     name = info_msg.get("name") or info_msg.get("runner_name") or "Unnamed Device"
@@ -291,11 +210,11 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
             error=str(e),
             error_type=type(e).__name__,
         )
-        await _safe_send_json(
+        await reject(
             websocket,
-            {"type": "error", "message": "Internal error during registration."},
+            "Internal error during registration.",
+            code=status.WS_1011_INTERNAL_ERROR,
         )
-        await _safe_close(websocket, code=status.WS_1011_INTERNAL_ERROR)
         return
 
     # ------------------------------------------------------------------
@@ -392,33 +311,49 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
                     connection_pk=connection_pk,
                     error=str(close_err),
                 )
-        await _safe_send_json(
+        await reject(
             websocket,
-            {"type": "error", "message": "Internal error during registration."},
+            "Internal error during registration.",
+            code=status.WS_1011_INTERNAL_ERROR,
         )
-        await _safe_close(websocket, code=status.WS_1011_INTERNAL_ERROR)
         return
 
-    await websocket.send_json(
-        {
-            "type": "connected",
-            "device_id": str(device_id),
-            "user_id": str(user_id),
-            "timestamp": utc_now().isoformat(),
-        }
-    )
-
-    logger.info(
-        "devices_ws_connected",
-        device_id=str(device_id),
-        user_id=str(user_id),
-        name=name,
-    )
-
     # ------------------------------------------------------------------
-    # 3. Main message loop.
+    # 3. Send the ``connected`` ack, then run the main message loop.
+    #
+    #    The ack is a raw ``send_json`` (NOT routed through
+    #    ``_safe_send_json``) because a failed handshake ack is a real error
+    #    worth surfacing rather than swallowing — silently proceeding into
+    #    ``receive_json`` on a dead socket would only defer the failure.
+    #    Critically, the ack lives INSIDE this ``try`` so its
+    #    ``finally: _cleanup`` owns it: registration has already committed
+    #    above (``manager.register`` ran, holding relay pubsub connections;
+    #    ``connection_pk`` / ``ws_session_id`` are written). If a runner
+    #    disconnects in the window between that commit and this ack, the send
+    #    raises ``WebSocketDisconnect`` (caught below → ``_cleanup``) or
+    #    ``RuntimeError`` (caught by the generic handler → logged loudly →
+    #    ``_cleanup``). Either way cleanup runs, so the manager registration,
+    #    its three relay listeners (each holding a dedicated pooled Redis
+    #    connection), and the device row's ``ws_session_id`` are reclaimed
+    #    instead of leaking with a false ``wsConnected: true``.
     # ------------------------------------------------------------------
     try:
+        await websocket.send_json(
+            {
+                "type": "connected",
+                "device_id": str(device_id),
+                "user_id": str(user_id),
+                "timestamp": utc_now().isoformat(),
+            }
+        )
+
+        logger.info(
+            "devices_ws_connected",
+            device_id=str(device_id),
+            user_id=str(user_id),
+            name=name,
+        )
+
         while True:
             try:
                 data = await asyncio.wait_for(websocket.receive_json(), timeout=120.0)

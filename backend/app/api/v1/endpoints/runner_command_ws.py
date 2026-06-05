@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import select
 
@@ -21,6 +21,7 @@ from app.db.session import AsyncSessionLocal
 from app.models.device import Device
 from app.models.user import User
 from app.services.runner_websocket_manager import get_runner_websocket_manager
+from app.websockets.safe_send import reject
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -52,26 +53,18 @@ async def websocket_runner_command_endpoint(
     try:
         auth_token: str | None = token or websocket.cookies.get("access_token")
         if not auth_token:
-            await websocket.send_json(
-                {
-                    "type": "error",
-                    "message": (
-                        "Authentication required. Provide token query param or "
-                        "access_token cookie."
-                    ),
-                }
+            await reject(
+                websocket,
+                "Authentication required. Provide token query param or "
+                "access_token cookie.",
             )
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
 
         try:
             user = await get_current_user_from_ws(auth_token)
         except Exception as e:
             logger.error("runner_command_ws_auth_failed", error=str(e))
-            await websocket.send_json(
-                {"type": "error", "message": "Authentication failed"}
-            )
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            await reject(websocket, "Authentication failed")
             return
 
         # Verify the runner row exists and is owned by this user.
@@ -83,13 +76,7 @@ async def websocket_runner_command_endpoint(
             runner = result.scalar_one_or_none()
 
         if not runner:
-            await websocket.send_json(
-                {
-                    "type": "error",
-                    "message": "Runner not found or not owned by you",
-                }
-            )
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            await reject(websocket, "Runner not found or not owned by you")
             return
 
         redis = await get_redis()

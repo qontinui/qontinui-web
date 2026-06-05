@@ -40,6 +40,7 @@ from app.schemas.sync_lock import (
 )
 from app.services.permission_service import permission_service
 from app.services.sync_broadcast import sync_broadcast
+from app.websockets.safe_send import safe_close, safe_send_json
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -85,26 +86,28 @@ async def websocket_sync_endpoint(
             auth_token = websocket.cookies.get("access_token")
 
         if not auth_token:
-            await websocket.send_json(
+            await safe_send_json(
+                websocket,
                 {
                     "type": "ERROR",
                     "message": "Authentication required",
-                }
+                },
             )
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            await safe_close(websocket, status.WS_1008_POLICY_VIOLATION)
             return
 
         try:
             user = await get_current_user_from_ws(auth_token)
         except Exception as e:
             logger.error("ws_sync_auth_failed", project_id=project_id, error=str(e))
-            await websocket.send_json(
+            await safe_send_json(
+                websocket,
                 {
                     "type": "ERROR",
                     "message": "Authentication failed",
-                }
+                },
             )
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            await safe_close(websocket, status.WS_1008_POLICY_VIOLATION)
             return
 
         # Get database session - use AsyncSessionLocal directly to avoid generator lifecycle issues
@@ -115,51 +118,55 @@ async def websocket_sync_endpoint(
             db = None
 
         if not db:
-            await websocket.send_json(
+            await safe_send_json(
+                websocket,
                 {
                     "type": "ERROR",
                     "message": "Database connection failed",
-                }
+                },
             )
-            await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
+            await safe_close(websocket, status.WS_1011_INTERNAL_ERROR)
             return
 
         # Validate project ID
         try:
             project_uuid = UUID(project_id)
         except ValueError:
-            await websocket.send_json(
+            await safe_send_json(
+                websocket,
                 {
                     "type": "ERROR",
                     "message": "Invalid project ID format",
-                }
+                },
             )
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            await safe_close(websocket, status.WS_1008_POLICY_VIOLATION)
             return
 
         # Check project access
         project = await get_project(db, project_uuid)
         if not project:
-            await websocket.send_json(
+            await safe_send_json(
+                websocket,
                 {
                     "type": "ERROR",
                     "message": "Project not found",
-                }
+                },
             )
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            await safe_close(websocket, status.WS_1008_POLICY_VIOLATION)
             return
 
         has_access = await permission_service.can_user_access_project(
             db, user.id, project_uuid, PermissionLevel.VIEW
         )
         if not has_access:
-            await websocket.send_json(
+            await safe_send_json(
+                websocket,
                 {
                     "type": "ERROR",
                     "message": "Access denied",
-                }
+                },
             )
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            await safe_close(websocket, status.WS_1008_POLICY_VIOLATION)
             return
 
         logger.info(
