@@ -15,6 +15,7 @@ import {
   Loader2,
   Lock,
   Plus,
+  Pencil,
   Trash2,
   X,
   ArrowUp,
@@ -29,9 +30,12 @@ import {
   type PrioritySetRow,
   type SetDelivery,
   type CompositionRuleRow,
+  classifySetOrigin,
+  friendlyCoordError,
   orderingNames,
   slugifySetName,
 } from "../_hooks/priority-set-delivery";
+import type { UpdatePrioritySetInput } from "../_hooks/usePrioritySets";
 
 // ---- a minimal add/remove/reorder list editor for bare strings -------------
 
@@ -180,18 +184,274 @@ function DeliveryState({ delivery }: { delivery: SetDelivery | undefined }) {
   );
 }
 
+// ---- shared set form (create + edit) ---------------------------------------
+
+/** The four user-editable fields, normalized to v1 bare-string form. */
+interface SetFormValues {
+  /** Raw name text. For create this is slugified on submit; for edit it is the
+   *  current slug (already valid) and re-slugified on submit defensively. */
+  name: string;
+  repo: string;
+  ordering: string[];
+  nonFactors: string[];
+}
+
+interface SetFormBodyProps {
+  initial: SetFormValues;
+  submitLabel: string;
+  submitBusyLabel: string;
+  busy: boolean;
+  /** Returns true on success (so the form can reset/close). */
+  onSubmit: (values: {
+    set_name: string;
+    repo: string | null;
+    ordering: string[];
+    non_factors: string[];
+  }) => Promise<boolean>;
+  onCancel: () => void;
+  /** Stable id prefix to keep label htmlFor unique across rows + create. */
+  idPrefix: string;
+}
+
+/**
+ * The shared form fields + actions, with no surrounding chrome. Owns its own
+ * field state seeded from `initial`; the parent supplies create- vs edit-
+ * specific behavior via `onSubmit`/`onCancel` and the busy flag. Reused by both
+ * the create flow (inside a Collapsible) and inline editing of a row.
+ *
+ * Predictability gate: the "Will be saved as" hint + the field values are
+ * exactly what the submit payload carries (bare-string ordering, trimmed repo,
+ * slugified name).
+ */
+function SetFormBody({
+  initial,
+  submitLabel,
+  submitBusyLabel,
+  busy,
+  onSubmit,
+  onCancel,
+  idPrefix,
+}: SetFormBodyProps) {
+  const [name, setName] = useState(initial.name);
+  const [repo, setRepo] = useState(initial.repo);
+  const [ordering, setOrdering] = useState<string[]>(initial.ordering);
+  const [nonFactors, setNonFactors] = useState<string[]>(initial.nonFactors);
+  const [error, setError] = useState<string | null>(null);
+
+  const slug = slugifySetName(name);
+  const canSubmit = slug.length > 0 && !busy;
+
+  const submit = async () => {
+    setError(null);
+    try {
+      const ok = await onSubmit({
+        set_name: slug,
+        repo: repo.trim() === "" ? null : repo.trim(),
+        ordering,
+        non_factors: nonFactors,
+      });
+      if (!ok) {
+        // create flow reports via its own error channel; nothing to do here.
+        return;
+      }
+    } catch (err) {
+      setError(friendlyCoordError(err));
+    }
+  };
+
+  return (
+    <div className="rounded-lg border border-border px-4 py-4 space-y-4">
+      <div className="space-y-2">
+        <Label htmlFor={`${idPrefix}-name`} className="text-xs font-medium">
+          Name
+        </Label>
+        <Input
+          id={`${idPrefix}-name`}
+          value={name}
+          placeholder="e.g. infra_first"
+          onChange={(e) => setName(e.target.value)}
+          className="h-8 text-xs"
+        />
+        {slug && slug !== name.trim() && (
+          <p className="text-xs text-muted-foreground">
+            Will be saved as{" "}
+            <span className="font-mono text-foreground">{slug}</span>
+          </p>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor={`${idPrefix}-repo`} className="text-xs font-medium">
+          Repo{" "}
+          <span className="font-normal text-muted-foreground">
+            (blank = tenant-wide)
+          </span>
+        </Label>
+        <Input
+          id={`${idPrefix}-repo`}
+          value={repo}
+          placeholder="leave blank to apply tenant-wide"
+          onChange={(e) => setRepo(e.target.value)}
+          className="h-8 text-xs"
+        />
+      </div>
+
+      <ListEditor
+        label="Ordered priorities"
+        placeholder="add a priority name, then Enter"
+        items={ordering}
+        ordered
+        onChange={setOrdering}
+      />
+
+      <ListEditor
+        label="Non-factors"
+        placeholder="add a non-factor name, then Enter"
+        items={nonFactors}
+        ordered={false}
+        onChange={setNonFactors}
+      />
+
+      {error && (
+        <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2">
+          <AlertTriangle className="w-3.5 h-3.5 mt-0.5 text-destructive shrink-0" />
+          <p className="text-xs text-destructive">{error}</p>
+        </div>
+      )}
+
+      <div className="flex justify-end gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            setError(null);
+            onCancel();
+          }}
+          disabled={busy}
+          className="h-8 text-xs border-border"
+        >
+          Cancel
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          onClick={submit}
+          disabled={!canSubmit}
+          className="h-8 text-xs bg-primary text-primary-foreground"
+        >
+          {busy ? (
+            <>
+              <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+              {submitBusyLabel}
+            </>
+          ) : (
+            submitLabel
+          )}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ---- origin badge ----------------------------------------------------------
+
+function OriginBadge({ set }: { set: PrioritySetRow }) {
+  const origin = classifySetOrigin(set);
+  if (origin === "system") {
+    return (
+      <Badge variant="secondary" className="gap-1">
+        <Lock className="w-3 h-3" />
+        System default
+      </Badge>
+    );
+  }
+  if (origin === "seeded") {
+    return <Badge variant="secondary">Seeded default</Badge>;
+  }
+  return <Badge variant="outline">Custom</Badge>;
+}
+
 // ---- a single existing set row ---------------------------------------------
 
 interface SetRowProps {
   set: PrioritySetRow;
   delivery: SetDelivery | undefined;
   deleting: boolean;
+  updating: boolean;
   onSoftDelete: (id: string) => void;
+  onUpdate: (id: string, partial: UpdatePrioritySetInput) => Promise<boolean>;
 }
 
-function SetRow({ set, delivery, deleting, onSoftDelete }: SetRowProps) {
+function SetRow({
+  set,
+  delivery,
+  deleting,
+  updating,
+  onSoftDelete,
+  onUpdate,
+}: SetRowProps) {
   const [confirming, setConfirming] = useState(false);
+  const [editing, setEditing] = useState(false);
   const order = useMemo(() => orderingNames(set.ordering), [set.ordering]);
+
+  // `is_system` rows are true cross-tenant inherited rows: read-only. Seeded
+  // and custom own-tenant rows are both editable + deletable.
+  const editable = !set.is_system;
+
+  const handleEditSubmit = async (values: {
+    set_name: string;
+    repo: string | null;
+    ordering: string[];
+    non_factors: string[];
+  }): Promise<boolean> => {
+    // Minimal diff — send only the fields that actually changed. `ordering` is
+    // compared by its bare-name projection (v1 writes back bare strings even if
+    // the wire row carried object-shaped {name, weight} entries — same
+    // simplification as create).
+    const partial: UpdatePrioritySetInput = {};
+    if (values.set_name !== set.set_name) partial.set_name = values.set_name;
+    if (values.repo !== (set.repo ?? null)) partial.repo = values.repo;
+    const currentOrder = orderingNames(set.ordering);
+    if (
+      values.ordering.length !== currentOrder.length ||
+      values.ordering.some((v, i) => v !== currentOrder[i])
+    ) {
+      partial.ordering = values.ordering;
+    }
+    if (
+      values.non_factors.length !== set.non_factors.length ||
+      values.non_factors.some((v, i) => v !== set.non_factors[i])
+    ) {
+      partial.non_factors = values.non_factors;
+    }
+    const ok = await onUpdate(set.priority_set_id, partial);
+    if (ok) setEditing(false);
+    return ok;
+  };
+
+  if (editing) {
+    return (
+      <div className="px-4 py-3 space-y-2">
+        <SetFormBody
+          idPrefix={`ps-edit-${set.priority_set_id}`}
+          initial={{
+            name: set.set_name,
+            repo: set.repo ?? "",
+            ordering: orderingNames(set.ordering),
+            nonFactors: set.non_factors,
+          }}
+          submitLabel="Save changes"
+          submitBusyLabel="Saving..."
+          busy={updating}
+          onSubmit={handleEditSubmit}
+          onCancel={() => setEditing(false)}
+        />
+        {/* Honesty gate stays visible while editing. */}
+        <DeliveryState delivery={delivery} />
+      </div>
+    );
+  }
 
   return (
     <div className="px-4 py-3 space-y-2">
@@ -201,14 +461,7 @@ function SetRow({ set, delivery, deleting, onSoftDelete }: SetRowProps) {
             <span className="text-sm font-medium font-mono">
               {set.set_name}
             </span>
-            {set.is_system ? (
-              <Badge variant="secondary" className="gap-1">
-                <Lock className="w-3 h-3" />
-                System default
-              </Badge>
-            ) : (
-              <Badge variant="outline">Custom</Badge>
-            )}
+            <OriginBadge set={set} />
             <Badge variant="outline">
               {set.repo ? `repo: ${set.repo}` : "tenant-wide"}
             </Badge>
@@ -227,7 +480,7 @@ function SetRow({ set, delivery, deleting, onSoftDelete }: SetRowProps) {
           )}
         </div>
 
-        {!set.is_system && (
+        {editable && (
           <div className="shrink-0">
             {confirming ? (
               <div className="flex items-center gap-1.5">
@@ -256,14 +509,24 @@ function SetRow({ set, delivery, deleting, onSoftDelete }: SetRowProps) {
                 </Button>
               </div>
             ) : (
-              <button
-                type="button"
-                title="Disable (soft-delete, restorable)"
-                onClick={() => setConfirming(true)}
-                className="p-1 rounded text-muted-foreground hover:text-destructive transition-colors"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
+              <div className="flex items-center">
+                <button
+                  type="button"
+                  title="Edit"
+                  onClick={() => setEditing(true)}
+                  className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  title="Disable (soft-delete, restorable)"
+                  onClick={() => setConfirming(true)}
+                  className="p-1 rounded text-muted-foreground hover:text-destructive transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
             )}
           </div>
         )}
@@ -301,34 +564,28 @@ function CreateForm({
   onClearError,
 }: CreateFormProps) {
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [repo, setRepo] = useState("");
-  const [ordering, setOrdering] = useState<string[]>([]);
-  const [nonFactors, setNonFactors] = useState<string[]>([]);
+  // Remount the form body on each open so its internal state resets cleanly
+  // (reversibility: Cancel/close always discards).
+  const [formKey, setFormKey] = useState(0);
 
-  const slug = slugifySetName(name);
-  const canSubmit = slug.length > 0 && !creating;
-
-  const reset = () => {
-    setName("");
-    setRepo("");
-    setOrdering([]);
-    setNonFactors([]);
+  const close = () => {
+    setOpen(false);
     onClearError();
   };
 
-  const submit = async () => {
+  const submit = async (values: {
+    set_name: string;
+    repo: string | null;
+    ordering: string[];
+    non_factors: string[];
+  }): Promise<boolean> => {
     onClearError();
-    const ok = await onSubmit({
-      set_name: slug,
-      repo: repo.trim() === "" ? null : repo.trim(),
-      ordering,
-      non_factors: nonFactors,
-    });
+    const ok = await onSubmit(values);
     if (ok) {
-      reset();
+      setFormKey((k) => k + 1);
       setOpen(false);
     }
+    return ok;
   };
 
   return (
@@ -337,6 +594,7 @@ function CreateForm({
       onOpenChange={(o) => {
         setOpen(o);
         if (!o) onClearError();
+        else setFormKey((k) => k + 1);
       }}
     >
       <CollapsibleTrigger asChild>
@@ -349,97 +607,22 @@ function CreateForm({
         </button>
       </CollapsibleTrigger>
       <CollapsibleContent className="pt-3">
-        <div className="rounded-lg border border-border px-4 py-4 space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="ps-name" className="text-xs font-medium">
-              Name
-            </Label>
-            <Input
-              id="ps-name"
-              value={name}
-              placeholder="e.g. infra_first"
-              onChange={(e) => setName(e.target.value)}
-              className="h-8 text-xs"
-            />
-            {slug && slug !== name.trim() && (
-              <p className="text-xs text-muted-foreground">
-                Will be saved as{" "}
-                <span className="font-mono text-foreground">{slug}</span>
-              </p>
-            )}
+        <SetFormBody
+          key={formKey}
+          idPrefix="ps-create"
+          initial={{ name: "", repo: "", ordering: [], nonFactors: [] }}
+          submitLabel="Create set"
+          submitBusyLabel="Creating..."
+          busy={creating}
+          onSubmit={submit}
+          onCancel={close}
+        />
+        {createError && (
+          <div className="mt-2 flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2">
+            <AlertTriangle className="w-3.5 h-3.5 mt-0.5 text-destructive shrink-0" />
+            <p className="text-xs text-destructive">{createError}</p>
           </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="ps-repo" className="text-xs font-medium">
-              Repo{" "}
-              <span className="font-normal text-muted-foreground">
-                (blank = tenant-wide)
-              </span>
-            </Label>
-            <Input
-              id="ps-repo"
-              value={repo}
-              placeholder="leave blank to apply tenant-wide"
-              onChange={(e) => setRepo(e.target.value)}
-              className="h-8 text-xs"
-            />
-          </div>
-
-          <ListEditor
-            label="Ordered priorities"
-            placeholder="add a priority name, then Enter"
-            items={ordering}
-            ordered
-            onChange={setOrdering}
-          />
-
-          <ListEditor
-            label="Non-factors"
-            placeholder="add a non-factor name, then Enter"
-            items={nonFactors}
-            ordered={false}
-            onChange={setNonFactors}
-          />
-
-          {createError && (
-            <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2">
-              <AlertTriangle className="w-3.5 h-3.5 mt-0.5 text-destructive shrink-0" />
-              <p className="text-xs text-destructive">{createError}</p>
-            </div>
-          )}
-
-          <div className="flex justify-end gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                reset();
-                setOpen(false);
-              }}
-              disabled={creating}
-              className="h-8 text-xs border-border"
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={submit}
-              disabled={!canSubmit}
-              className="h-8 text-xs bg-primary text-primary-foreground"
-            >
-              {creating ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-                  Creating...
-                </>
-              ) : (
-                "Create set"
-              )}
-            </Button>
-          </div>
-        </div>
+        )}
       </CollapsibleContent>
     </Collapsible>
   );
@@ -517,7 +700,9 @@ export function PrioritySetsSection({ canEdit }: { canEdit: boolean }) {
     creating,
     createError,
     deletingId,
+    updatingId,
     createSet,
+    updateSet,
     softDeleteSet,
     clearCreateError,
   } = usePrioritySets();
@@ -525,7 +710,11 @@ export function PrioritySetsSection({ canEdit }: { canEdit: boolean }) {
   // Discoverability gate: keep quiet when a tenant has no custom sets and
   // there's nothing to wire — only the create affordance shows.
   const enabledSets = sets.filter((s) => s.enabled);
-  const hasCustom = enabledSets.some((s) => !s.is_system);
+  // "Custom" here means operator-created (not seeded/system) — drives the
+  // "no custom sets yet" hint. Seeded defaults are own-tenant but not custom.
+  const hasCustom = enabledSets.some(
+    (s) => classifySetOrigin(s) === "custom"
+  );
 
   if (loading) {
     return (
@@ -557,7 +746,9 @@ export function PrioritySetsSection({ canEdit }: { canEdit: boolean }) {
               set={set}
               delivery={delivery[set.set_name]}
               deleting={deletingId === set.priority_set_id}
+              updating={updatingId === set.priority_set_id}
               onSoftDelete={softDeleteSet}
+              onUpdate={updateSet}
             />
           ))}
         </div>

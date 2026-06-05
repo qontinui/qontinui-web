@@ -25,6 +25,21 @@ export interface CreatePrioritySetInput {
   non_factors: string[];
 }
 
+/**
+ * Partial payload for a PATCH edit. Only the changed fields are sent (minimal
+ * diff computed by the caller). `ordering` is v1 bare-string only — an edit
+ * writes back bare strings even if the row's wire ordering was object-shaped
+ * (`{name, weight}`), the same simplification as create.
+ */
+export interface UpdatePrioritySetInput {
+  set_name?: string;
+  /** null = tenant-wide. */
+  repo?: string | null;
+  ordering?: string[];
+  non_factors?: string[];
+  enabled?: boolean;
+}
+
 interface UsePrioritySetsReturn {
   sets: PrioritySetRow[];
   rules: CompositionRuleRow[];
@@ -35,7 +50,9 @@ interface UsePrioritySetsReturn {
   creating: boolean;
   createError: string | null;
   deletingId: string | null;
+  updatingId: string | null;
   createSet: (input: CreatePrioritySetInput) => Promise<boolean>;
+  updateSet: (id: string, partial: UpdatePrioritySetInput) => Promise<boolean>;
   softDeleteSet: (id: string) => Promise<void>;
   clearCreateError: () => void;
 }
@@ -56,6 +73,7 @@ export function usePrioritySets(): UsePrioritySetsReturn {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   const reload = useCallback(async (): Promise<void> => {
     // Coord returns {priority_sets, total} / {composition_rules, total}
@@ -117,6 +135,31 @@ export function usePrioritySets(): UsePrioritySetsReturn {
     [reload]
   );
 
+  const updateSet = useCallback(
+    async (
+      id: string,
+      partial: UpdatePrioritySetInput
+    ): Promise<boolean> => {
+      // No-op edit (empty diff) — nothing to PATCH; treat as a clean save.
+      if (Object.keys(partial).length === 0) return true;
+      setUpdatingId(id);
+      try {
+        await httpClient.patch<PrioritySetRow>(`${SETS_URL}/${id}`, partial);
+        await reload();
+        toast.success("Priority set updated");
+        return true;
+      } catch (err) {
+        // Surfaced inline by the editing row (it owns its error state); rethrow
+        // so the row can map the code via friendlyCoordError. Toast stays a
+        // success-only signal, matching createSet/softDeleteSet.
+        throw err;
+      } finally {
+        setUpdatingId(null);
+      }
+    },
+    [reload]
+  );
+
   const softDeleteSet = useCallback(
     async (id: string): Promise<void> => {
       setDeletingId(id);
@@ -149,7 +192,9 @@ export function usePrioritySets(): UsePrioritySetsReturn {
     creating,
     createError,
     deletingId,
+    updatingId,
     createSet,
+    updateSet,
     softDeleteSet,
     clearCreateError,
   };
