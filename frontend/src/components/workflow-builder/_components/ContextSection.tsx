@@ -52,7 +52,7 @@ export function ContextSection({
 }: ContextSectionProps) {
   return (
     <Collapsible open={showContext} onOpenChange={setShowContext}>
-      <CollapsibleTrigger className="flex items-center gap-2 text-sm text-zinc-400 hover:text-zinc-200 transition-colors">
+      <CollapsibleTrigger className="flex min-h-6 items-center gap-2 text-sm text-zinc-400 hover:text-zinc-200 transition-colors">
         {showContext ? (
           <ChevronDown className="w-4 h-4" />
         ) : (

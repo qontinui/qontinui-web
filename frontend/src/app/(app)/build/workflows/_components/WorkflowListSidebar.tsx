@@ -205,7 +205,7 @@ export function WorkflowListSidebar({
                 <>
                   <DestructiveButton
                     size="icon"
-                    className="h-5 w-5 text-red-400 hover:text-red-300"
+                    className="h-6 w-6 text-red-400 hover:text-red-300"
                     disabled={selectedIds.size === 0}
                     onClick={handleBatchDelete}
                     title="Delete selected"
@@ -215,7 +215,7 @@ export function WorkflowListSidebar({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-5 w-5"
+                    className="h-6 w-6"
                     onClick={() => { setSelectionMode(false); setSelectedIds(new Set()); }}
                   >
                     <X className="size-3" />
@@ -225,7 +225,7 @@ export function WorkflowListSidebar({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-5 w-5 text-text-muted"
+                  className="h-6 w-6 text-text-muted"
                   onClick={() => setSelectionMode(true)}
                   disabled={!workflows || workflows.length === 0}
                   title="Select for batch delete"

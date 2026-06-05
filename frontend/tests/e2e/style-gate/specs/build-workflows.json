@@ -1,6 +1,27 @@
 {
+  "$comment": [
+    "Style-gate invariant spec for /build/workflows (the AI workflow builder).",
+    "Element ids are semantic UI-Bridge ids derived from each control's label/role,",
+    "verified against the clean authed capture (run 26985959070). Only POSITIONED,",
+    "always-rendered elements are asserted on: the analyzer HARD-FAILS an assertion",
+    "whose element is missing or has no bbox, so dynamic/collapsed/dev-only ids",
+    "(devtools button, memory-usage chip, radix-generated ids, scrolled-out nav) are",
+    "deliberately excluded.",
+    "",
+    "contrast_meets_wcag is asserted ONLY on elements with DECLARED fg+bg colors",
+    "(button-generate-0, button-search-k); on sampled-color elements it would fail",
+    "spuriously. button-generate-0 is the Stage-A contrast fix (was 3.34:1, now",
+    "white-on-#3573bd = 4.84:1) — this assertion locks that fix in."
+  ],
   "assertions": [
     { "type": "no_clipping" },
+    { "type": "no_overlap", "elements": ["workflow-list-sidebar", "button-generate-0"] },
+    { "type": "no_overlap", "elements": ["button-generate-0", "button-generate-run-1"] },
+    { "type": "no_overlap", "elements": ["input-search", "button-new-workflow"] },
+    { "type": "text_fits_container", "element": "button-generate-0" },
+    { "type": "text_fits_container", "element": "button-new-workflow" },
+    { "type": "contrast_meets_wcag", "element": "button-generate-0", "level": "aa" },
+    { "type": "contrast_meets_wcag", "element": "button-search-k", "level": "aa" },
     { "type": "no_layout_shift_since", "baseline": "build-workflows" }
   ]
 }
