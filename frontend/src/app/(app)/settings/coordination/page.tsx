@@ -23,6 +23,7 @@ import {
   useNextStepSettings,
   type AutonomyLevel,
 } from "./_hooks/useNextStepSettings";
+import { PrioritySetsSection } from "./_components/PrioritySetsSection";
 
 // ---- helpers ----------------------------------------------------------------
 
@@ -333,6 +334,11 @@ export default function CoordinationSettingsPage() {
             </CollapsibleContent>
           </Collapsible>
         </section>
+
+        <div className="border-t border-border" />
+
+        {/* Priority sets (self-contained: own fetch + save controls) */}
+        <PrioritySetsSection canEdit={canEdit} />
 
         <div className="border-t border-border" />
 
