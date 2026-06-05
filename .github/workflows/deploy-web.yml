@@ -59,6 +59,12 @@ env:
   # us-east-1 deploy region, so the get-parameter calls pass this region
   # explicitly rather than ${AWS_REGION}.
   SSM_REGION: eu-central-1
+  # The D3 deploy effect-signature loop (qontinui-coord, plan
+  # 2026-05-31-deploy-action-effect-signatures §3.6): the declare/verify steps
+  # below report this deploy to coord's deploy verifier.
+  COORD_BASE_URL: https://coord.qontinui.io
+  DEPLOY_SERVICE: qontinui-web
+  REPO_SLUG: qontinui/qontinui-web
 
 jobs:
   deploy:
@@ -142,6 +148,107 @@ jobs:
           fi
           echo "prior_td=$PRIOR_TD" >> "$GITHUB_OUTPUT"
           echo "Last-known-good task-def = $PRIOR_TD"
+
+      # ── Deploy effect signature: DECLARE (best-effort, §3.6) ──────────────
+      # Declares this deploy to coord's D3 effect-signature loop
+      # (POST /coord/deploys/declare) immediately before the service
+      # transition, so the signature's startup window opens with the rollover.
+      # The probe set comes from .qontinui/deploy.toml (coord runs in ECS and
+      # cannot read repo files — this CI job is the trust boundary, §3.4); the
+      # correlation_id joins the deploy to the land that triggered it via
+      # GET /coord/lands (to_sha == GITHUB_SHA; absent on schedule/dispatch
+      # runs, which is fine — correlation is best-effort).
+      #
+      # Best-effort BY DESIGN: any failure here warns and the deploy proceeds
+      # — the effect loop observes deploys, it does not gate them. The
+      # predict-and-check policy call is likewise REPORT-ONLY until the deploy
+      # domain has calibration evidence (flipping it to blocking is a
+      # deliberate future decision, not a default).
+      - name: Declare deploy effect signature
+        id: declare
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+
+          # 1. Land correlation (best-effort): the land verifier stamps a
+          #    correlation_id on the land that advanced main to this SHA.
+          CORR=$(curl -s --max-time 10 "$COORD_BASE_URL/coord/lands?repo=$REPO_SLUG&limit=50" \
+            | python3 -c '
+          import json, sys, os
+          sha = os.environ["GITHUB_SHA"]
+          try:
+              lands = json.load(sys.stdin).get("lands") or []
+          except Exception:
+              lands = []
+          for land in lands:
+              if (land.get("to_sha") or "") == sha and land.get("correlation_id"):
+                  print(land["correlation_id"])
+                  break
+          ' || true)
+          echo "land correlation_id: ${CORR:-none}"
+
+          # 2. Probe set from .qontinui/deploy.toml ([[deploy.health_probes]]).
+          #    Tolerates the file being absent (coord then derives its default
+          #    GET /health probe server-side).
+          PROBES=$(python3 - <<'PY' || echo '[]'
+          import json, pathlib, tomllib
+          path = pathlib.Path(".qontinui/deploy.toml")
+          probes = []
+          if path.exists():
+              cfg = tomllib.loads(path.read_text())
+              for p in cfg.get("deploy", {}).get("health_probes") or []:
+                  out = {
+                      "endpoint": p["endpoint"],
+                      "expected_status": int(p.get("expected_status", 200)),
+                  }
+                  if "method" in p:
+                      out["method"] = str(p["method"]).upper()
+                  assertion = p.get("expected_body_assertion") or p.get("body_assertion")
+                  if assertion:
+                      out["expected_body_assertion"] = assertion
+                  if "timeout_ms" in p:
+                      out["timeout_ms"] = int(p["timeout_ms"])
+                  probes.append(out)
+          print(json.dumps(probes))
+          PY
+          )
+          PROBES=${PROBES:-[]}
+          echo "declared probes: $(printf '%s' "$PROBES" | python3 -c 'import json,sys;print(len(json.load(sys.stdin)))' 2>/dev/null || echo '?')"
+
+          BODY=$(jq -n \
+            --arg service "$DEPLOY_SERVICE" \
+            --arg sha "$GITHUB_SHA" \
+            --arg corr "${CORR:-}" \
+            --argjson probes "$PROBES" \
+            '{service: $service,
+              source_image_or_commit: $sha,
+              target_environment: "production",
+              source: "ci",
+              health_probes: $probes}
+             + (if $corr != "" then {correlation_id: $corr} else {} end)')
+
+          # 3. REPORT-ONLY policy check (deploy_safety + infra_apply_safety +
+          #    migrate_safety, worst-across). An escalation annotates the run;
+          #    it does not block.
+          PAC=$(curl -s --max-time 20 -X POST "$COORD_BASE_URL/coord/deploys/predict-and-check" \
+            -H 'Content-Type: application/json' -d "$BODY" || true)
+          RES=$(printf '%s' "$PAC" | jq -r '.composed.resolution // empty' 2>/dev/null || true)
+          echo "predict-and-check: ${RES:-unavailable}"
+          if [ "$RES" = "escalate" ]; then
+            echo "::warning::deploy predict-and-check ESCALATED (report-only): $(printf '%s' "$PAC" | jq -c '[.domains[]? | select(.verdict == "escalate") | {domain, reason}]' 2>/dev/null || true)"
+          fi
+
+          # 4. Declare. The signature_id feeds the post-rollout verify step.
+          RESP=$(curl -s --max-time 20 -X POST "$COORD_BASE_URL/coord/deploys/declare" \
+            -H 'Content-Type: application/json' -d "$BODY" || true)
+          SIG=$(printf '%s' "$RESP" | jq -r '.signature_id // empty' 2>/dev/null || true)
+          if [ -n "$SIG" ]; then
+            echo "Declared deploy signature: $SIG"
+            echo "signature_id=$SIG" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::deploy declare did not persist a signature (best-effort, deploy proceeds): $(printf '%s' "$RESP" | head -c 300)"
+          fi
+          exit 0
 
       # Register a new immutable task-def revision pinned to the commit SHA
       # image (not :staging) so each deploy is a distinct, traceable revision
@@ -376,3 +483,36 @@ jobs:
             --region "${AWS_REGION}"
           echo "::error::post-deploy smoke failed; rolled back to $PRIOR_TD"
           exit 1
+
+      # ── Deploy effect signature: VERIFY (best-effort, report-only) ────────
+      # Fires one verification after the rollout settled (or failed + rolled
+      # back — `always()` so honest Failures land too; failures are what the
+      # calibration flywheel needs most). The call runs the declared
+      # transition probes server-side and persists the composed verdict to
+      # coord.deploy_verifications.
+      #
+      # Report-only: a red verdict annotates, never fails the job — the smoke
+      # + auto-rollback steps above already ENFORCE; this step RECORDS. The
+      # Ci/Config dimensions settle on a ~minutes horizon, so
+      # `settled:false, composed:partial` here is normal — any later
+      # POST /coord/deploys/verify (same signature_id) settles it.
+      - name: Verify deploy effect signature
+        if: ${{ always() && steps.declare.outputs.signature_id != '' }}
+        continue-on-error: true
+        run: |
+          SIG="${{ steps.declare.outputs.signature_id }}"
+          RESP=$(curl -s --max-time 60 -X POST "$COORD_BASE_URL/coord/deploys/verify" \
+            -H 'Content-Type: application/json' \
+            -d "{\"signature_id\":\"$SIG\"}" || true)
+          if ! printf '%s' "$RESP" | jq '{composed_outcome, settled, coverage, rationale,
+                dimensions: [.dimension_verdicts[]? | {dimension, outcome, detail}]}' 2>/dev/null; then
+            echo "::warning::deploy verify response unparseable (best-effort)"
+            printf '%s' "$RESP" | head -c 500; echo
+            exit 0
+          fi
+          OUT=$(printf '%s' "$RESP" | jq -r '.composed_outcome // empty' 2>/dev/null || true)
+          case "$OUT" in
+            failure|contradiction)
+              echo "::warning::deploy verification composed '$OUT' (report-only) — signature $SIG; inspect GET $COORD_BASE_URL/coord/deploys/$SIG" ;;
+          esac
+          exit 0
