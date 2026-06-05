@@ -23,7 +23,9 @@ from app.core.config import settings
 from app.middleware.rate_limit import _get_refresh_token_subject
 
 
-def _mock_request(*, cookie: str | None = None, client_host: str = "203.0.113.7") -> MagicMock:
+def _mock_request(
+    *, cookie: str | None = None, client_host: str = "203.0.113.7"
+) -> MagicMock:
     """A FastAPI Request stand-in: refresh_token cookie + a client IP."""
     request = MagicMock()
     request.cookies = {"refresh_token": cookie} if cookie else {}
