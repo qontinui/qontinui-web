@@ -48,6 +48,12 @@ import { handlers, relay } from "@/lib/ui-bridge/relay";
 import { NextRequest } from "next/server";
 import { passThroughBodyWithPeek } from "./body-passthrough";
 import {
+  isBrowserRequiredRoute,
+  noBrowserResponse,
+  type CompiledRoute,
+  type HttpMethod,
+} from "./_browser-required";
+import {
   isWebRouteRejected,
   forbiddenWebRouteResponse,
 } from "./web-forbidden-routes";
@@ -89,8 +95,6 @@ const routeHandlers = createNextRouteHandlers(handlers, {
 // Wrap handlers to adapt from Next.js 15 async params to the expected sync params
 type NextContext = { params: Promise<{ path: string[] }> };
 
-type HttpMethod = "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
-
 /**
  * Compile a UI_BRIDGE_ROUTES entry (e.g. `/control/element/:id/state`) to an
  * anchored regex matching concrete request paths. Mirrors the SDK's
@@ -104,11 +108,6 @@ function compileRouteRegex(routePath: string): RegExp {
   return new RegExp(`^${source}$`);
 }
 
-interface CompiledRoute {
-  method: HttpMethod;
-  regex: RegExp;
-}
-
 const COMPILED_SDK_ROUTES: readonly CompiledRoute[] = UI_BRIDGE_ROUTES.map(
   (route) => ({
     method: route.method as HttpMethod,
@@ -116,50 +115,6 @@ const COMPILED_SDK_ROUTES: readonly CompiledRoute[] = UI_BRIDGE_ROUTES.map(
   }),
 );
 
-/**
- * Routes that require a live browser SDK client to produce a meaningful
- * response. When no relay client is attached (no WebSocket clients AND
- * no SSE listeners), the SDK's handler can only do one of three things,
- * all of which break the structured-error contract callers expect:
- *
- *   1. Read from a server-side registry populated by browser-side SDK
- *      calls — returns `success:true` with empty payload, indistinguishable
- *      from "browser connected, registry empty".
- *      Examples: `GET /control/components`, `POST /control/discover` (alias
- *      of `find`), `GET /control/snapshot`.
- *   2. Look up by id in an empty registry — returns
- *      `success:false code:UB-ELEM-NOT-FOUND`, indistinguishable from
- *      "browser connected, that specific id absent".
- *      Examples: `GET /control/element/:id`.
- *   3. `relayCommand` to the browser and wait for a response that never
- *      arrives — returns `success:false code:UB-ACTION-TIMEOUT` after the
- *      wait window expires.
- *      Examples: `POST /ai/wait-for-element`, `GET /ai/idle-status`.
- *
- * For these routes the empty registry / not-found / timeout response IS
- * the "no browser" signal. We short-circuit them to a structured
- * `NO_BROWSER_CONNECTED` 503 so callers reading `success`/`code` get the
- * same canonical envelope as the sibling routes gated by `isKnownRoute`
- * / `noBrowserResponse` (and as the SDK-404 fallthrough path).
- *
- * The set is intentionally narrow: only routes whose semantics genuinely
- * need a live browser-side SDK client belong here. Routes whose payload
- * is populated server-side regardless of browser connection (spec
- * discovery, app-info, transport diagnostics, etc.) must NOT be added.
- */
-const BROWSER_REQUIRED_ROUTES: readonly CompiledRoute[] = [
-  // Registry-backed (class 1): server-side reads of browser-populated state.
-  { method: "GET", regex: /^\/control\/components$/ },
-  { method: "GET", regex: /^\/control\/snapshot$/ },
-  { method: "POST", regex: /^\/control\/discover$/ },
-  // ID-lookup-backed (class 2): empty registry == NOT_FOUND for any id.
-  { method: "GET", regex: /^\/control\/element\/([^/]+)$/ },
-  // Relay-backed (class 3): handler awaits a browser response that
-  // never arrives, currently returning UB-ACTION-TIMEOUT after the
-  // wait window.
-  { method: "POST", regex: /^\/ai\/wait-for-element$/ },
-  { method: "GET", regex: /^\/ai\/idle-status$/ },
-];
 
 /**
  * Relay-transport paths the SDK's `handleRelayRoute` claims before the
@@ -210,19 +165,6 @@ function isKnownRoute(path: string, method: HttpMethod): boolean {
 }
 
 /**
- * True when `path` + `method` is a route that requires a live browser
- * SDK client to produce a meaningful response, so the proxy should
- * surface `NO_BROWSER_CONNECTED` when no relay client is currently
- * attached. See `BROWSER_REQUIRED_ROUTES` for rationale.
- */
-function isBrowserRequiredRoute(path: string, method: HttpMethod): boolean {
-  for (const route of BROWSER_REQUIRED_ROUTES) {
-    if (route.method === method && route.regex.test(path)) return true;
-  }
-  return false;
-}
-
-/**
  * True when no browser tab is currently connected to the relay — neither
  * via WebSocket nor via SSE. The relay's own `sendCommand` checks the
  * same predicate (`!sentViaWebSocket && this.tabListeners.size === 0`)
@@ -233,19 +175,6 @@ function noRelayClientsConnected(): boolean {
   return !relay.hasCommandListeners() && relay.getWebSocketClientCount() === 0;
 }
 
-function noBrowserResponse(path: string): Response {
-  return new Response(
-    JSON.stringify({
-      success: false,
-      code: "NO_BROWSER_CONNECTED",
-      message: `${path} requires a browser SDK client`,
-    }),
-    {
-      status: 503,
-      headers: { "Content-Type": "application/json" },
-    }
-  );
-}
 
 function resolvePath(params: { path: string[] }): string {
   return "/" + params.path.join("/");
