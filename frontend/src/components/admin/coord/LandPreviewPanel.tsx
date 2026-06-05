@@ -25,14 +25,17 @@ import {
   GitBranch,
   History,
   Layers,
+  Network,
   Rocket,
   ShieldAlert,
   Workflow,
 } from "lucide-react";
 import type {
+  BadgeVariant,
   ConfidenceInterval,
   PredictedConflict,
   PredictedLandEffect,
+  SiblingCascade,
 } from "./LandCard";
 
 export interface RiskVerdict {
@@ -208,6 +211,76 @@ function ConflictChip({
   );
 }
 
+// ---- Cross-repo sibling cascade sub-card ----------------------------------
+//
+// One correlated sibling-repo cascade. Mirrors the own-repo cascade card's
+// styling: depth + dependent-ref-count badges + per-conflict ConflictChip.
+// Everything is read defensively (the `cascade` itself may be null).
+
+/** `correlated_via` → badge variant. proposal→info, work_plan→secondary. */
+export function correlatedViaVariant(via?: string | null): BadgeVariant {
+  if (via === "proposal") return "info";
+  if (via === "work_plan") return "secondary";
+  return "outline";
+}
+
+function SiblingCascadeCard({ sibling }: { sibling: SiblingCascade }) {
+  const cascade = sibling.cascade ?? null;
+  const dependentRefs = cascade?.dependent_refs_to_restack ?? [];
+  const conflicts = cascade?.expected_conflicts ?? [];
+  const depth = cascade?.cascade_depth ?? null;
+  return (
+    <Card data-testid="land-sibling-cascade-card">
+      <CardContent className="p-3 space-y-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Badge
+            variant="outline"
+            className="font-mono text-[11px] inline-flex items-center gap-1"
+          >
+            <GitBranch className="h-3 w-3" />
+            {sibling.repo}
+          </Badge>
+          {sibling.branch && (
+            <Badge
+              variant="outline"
+              className="font-mono text-[10px] text-muted-foreground"
+            >
+              {sibling.branch}
+            </Badge>
+          )}
+          <Badge
+            variant={correlatedViaVariant(sibling.correlated_via)}
+            className="text-[10px]"
+            data-testid="land-sibling-correlated-via"
+          >
+            {sibling.correlated_via}
+          </Badge>
+          {typeof depth === "number" && (
+            <Badge variant="outline" className="text-[10px]">
+              depth {depth}
+            </Badge>
+          )}
+          <Badge variant="outline" className="text-[10px]">
+            {dependentRefs.length} dependent ref
+            {dependentRefs.length === 1 ? "" : "s"}
+          </Badge>
+        </div>
+
+        {conflicts.length > 0 && (
+          <div className="space-y-1.5">
+            <p className="text-xs font-medium text-muted-foreground">
+              Predicted conflicts
+            </p>
+            {conflicts.map((c, i) => (
+              <ConflictChip key={i} conflict={c} />
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 // ---- Main panel -----------------------------------------------------------
 
 export function LandPreviewPanel({
@@ -229,6 +302,9 @@ export function LandPreviewPanel({
   const prior = predicted.inferred_prior ?? null;
   const risk = preview.risk ?? {};
   const riskReasons = risk.reasons ?? [];
+  const siblingCascades = Array.isArray(predicted.sibling_cascades)
+    ? predicted.sibling_cascades
+    : [];
 
   return (
     <div className="space-y-3" data-testid="coord-land-preview">
@@ -386,6 +462,28 @@ export function LandPreviewPanel({
           )}
         </CardContent>
       </Card>
+
+      {/* Cross-repo cascades — only when correlated siblings exist */}
+      {siblingCascades.length > 0 && (
+        <section
+          className="space-y-2"
+          data-testid="land-sibling-cascades-section"
+        >
+          <div className="flex items-center gap-2 text-base font-semibold">
+            <Network className="h-4 w-4" />
+            Cross-repo cascades
+            <Badge variant="outline" className="text-xs">
+              {siblingCascades.length} repo
+              {siblingCascades.length === 1 ? "" : "s"}
+            </Badge>
+          </div>
+          <div className="space-y-2">
+            {siblingCascades.map((s, i) => (
+              <SiblingCascadeCard key={`${s.repo}-${s.branch}-${i}`} sibling={s} />
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* CI workflows */}
       <Card>

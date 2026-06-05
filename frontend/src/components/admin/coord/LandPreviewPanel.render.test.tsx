@@ -178,3 +178,107 @@ describe("LandPreviewPanel — honest non-coverage (pending → note, not empty)
     );
   });
 });
+
+describe("LandPreviewPanel — cross-repo sibling cascades", () => {
+  it("renders nothing when sibling_cascades is absent (older rows)", () => {
+    const noSiblings: LandPreviewResponse = {
+      repo: "qontinui/qontinui-coord",
+      pr_number: 1,
+      predicted: {
+        cascade: { dependent_refs_to_restack: [], expected_conflicts: [] },
+      },
+      risk: { risky: false, reasons: [] },
+    };
+    render(<LandPreviewPanel preview={noSiblings} />);
+    expect(
+      screen.queryByTestId("land-sibling-cascades-section")
+    ).toBeNull();
+    expect(screen.queryByTestId("land-sibling-cascade-card")).toBeNull();
+  });
+
+  it("renders nothing when sibling_cascades is an empty array (single-repo land)", () => {
+    const empty: LandPreviewResponse = {
+      repo: "qontinui/qontinui-coord",
+      pr_number: 1,
+      predicted: {
+        cascade: { dependent_refs_to_restack: [], expected_conflicts: [] },
+        sibling_cascades: [],
+      },
+      risk: { risky: false, reasons: [] },
+    };
+    render(<LandPreviewPanel preview={empty} />);
+    expect(
+      screen.queryByTestId("land-sibling-cascades-section")
+    ).toBeNull();
+  });
+
+  it("renders a sub-card per sibling with repo/branch/correlated_via + conflict chips", () => {
+    const withSiblings: LandPreviewResponse = {
+      repo: "qontinui/qontinui-coord",
+      pr_number: 7,
+      predicted: {
+        cascade: { dependent_refs_to_restack: [], expected_conflicts: [] },
+        sibling_cascades: [
+          {
+            repo: "qontinui/qontinui-web",
+            branch: "feat/sibling-a",
+            correlated_via: "proposal",
+            cascade: {
+              dependent_refs_to_restack: ["agent/dep-1", "agent/dep-2"],
+              cascade_depth: 1,
+              expected_conflicts: [
+                {
+                  child_ref: "agent/dep-1",
+                  paths: ["src/x.ts"],
+                  hunk_overlaps: 2,
+                  auto_resolvable: true,
+                },
+              ],
+            },
+          },
+        ],
+      },
+      risk: { risky: false, reasons: [] },
+    };
+    render(<LandPreviewPanel preview={withSiblings} />);
+    const cards = screen.getAllByTestId("land-sibling-cascade-card");
+    expect(cards).toHaveLength(1);
+    expect(cards[0].textContent).toContain("qontinui/qontinui-web");
+    expect(cards[0].textContent).toContain("feat/sibling-a");
+    expect(screen.getByTestId("land-sibling-correlated-via").textContent).toBe(
+      "proposal"
+    );
+    expect(cards[0].textContent).toContain("depth 1");
+    expect(cards[0].textContent).toContain("2 dependent refs");
+    // ConflictChip reused as-is renders the child_ref + hunk overlaps.
+    const chip = screen.getByTestId("land-conflict-chip");
+    expect(chip.textContent).toContain("agent/dep-1");
+    expect(chip.textContent).toContain("2 hunk overlaps");
+  });
+
+  it("renders defensively when a sibling's cascade is null", () => {
+    const nullCascade: LandPreviewResponse = {
+      repo: "qontinui/qontinui-coord",
+      pr_number: 8,
+      predicted: {
+        cascade: { dependent_refs_to_restack: [], expected_conflicts: [] },
+        sibling_cascades: [
+          {
+            repo: "qontinui/qontinui-runner",
+            branch: "feat/sibling-b",
+            correlated_via: "work_plan",
+            cascade: null,
+          },
+        ],
+      },
+      risk: { risky: false, reasons: [] },
+    };
+    render(<LandPreviewPanel preview={nullCascade} />);
+    const card = screen.getByTestId("land-sibling-cascade-card");
+    expect(card.textContent).toContain("qontinui/qontinui-runner");
+    expect(card.textContent).toContain("0 dependent refs");
+    expect(screen.getByTestId("land-sibling-correlated-via").textContent).toBe(
+      "work_plan"
+    );
+  });
+});

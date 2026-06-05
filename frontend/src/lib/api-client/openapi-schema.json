@@ -66687,6 +66687,55 @@
         ]
       }
     },
+    "/api/v1/operations/lands/verifications": {
+      "get": {
+        "description": "Return composed cross-repo restack verifications for a correlation.\n\n``correlation_id`` (the cascade correlation UUID) is required. Coord\nreturns 422 on bad params; it propagates through ``_proxy_coord_get``\nunchanged. The empty case is ``{\"composed\":{\"repo_count\":0,...},\n\"repos\":[]}``.",
+        "operationId": "api_v1_operations_lands_verifications_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "correlation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Correlation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Lands Verifications Api V1 Operations Lands Verifications Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Lands Verifications",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/memory/list": {
       "get": {
         "description": "List entries from the canonical memory substrate.",

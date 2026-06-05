@@ -1895,6 +1895,24 @@ async def get_lands_preview(
     )
 
 
+@router.get("/lands/verifications")
+async def get_lands_verifications(
+    correlation_id: UUID,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return composed cross-repo restack verifications for a correlation.
+
+    ``correlation_id`` (the cascade correlation UUID) is required. Coord
+    returns 422 on bad params; it propagates through ``_proxy_coord_get``
+    unchanged. The empty case is ``{"composed":{"repo_count":0,...},
+    "repos":[]}``."""
+    return await _proxy_coord_get(
+        "/coord/restacks/verifications",
+        tenant_id=tenant_id,
+        params={"correlation_id": str(correlation_id)},
+    )
+
+
 @router.get("/lands/precision")
 async def get_lands_precision(
     tenant_id: UUID = Depends(get_tenant_id),
