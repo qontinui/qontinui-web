@@ -3338,9 +3338,7 @@ async def create_priority_set(
 
     Coord's 409 ``duplicate_set_name`` (and any other 4xx) passes through.
     """
-    return await _proxy_coord_post(
-        "/coord/priority-sets", body, tenant_id=tenant_id
-    )
+    return await _proxy_coord_post("/coord/priority-sets", body, tenant_id=tenant_id)
 
 
 @router.patch("/coord/priority-sets/{priority_set_id}")

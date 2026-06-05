@@ -159,9 +159,7 @@ class TestUpdatePrioritySet:
             instance.patch.return_value = mock_resp
             _configure_mock_client(MockClient, instance)
 
-            resp = auth_client.patch(
-                f"{API_PREFIX}/coord/priority-sets/ps1", json=body
-            )
+            resp = auth_client.patch(f"{API_PREFIX}/coord/priority-sets/ps1", json=body)
 
         assert resp.status_code == 200
         assert resp.json() == coord_resp_body
