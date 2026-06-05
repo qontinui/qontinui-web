@@ -65418,6 +65418,186 @@
         ]
       }
     },
+    "/api/v1/operations/coord/composition-rules": {
+      "get": {
+        "description": "List the tenant's composition rules. Tenant-admin only.",
+        "operationId": "api_v1_operations_coord_composition_rules_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response List Composition Rules Api V1 Operations Coord Composition Rules Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Composition Rules",
+        "tags": [
+          "operations"
+        ]
+      },
+      "post": {
+        "description": "Create a composition rule. Body forwarded verbatim. Tenant-admin only.\n\nCoord's 4xx error bodies (e.g. 409 conflicts) pass through.",
+        "operationId": "api_v1_operations_coord_composition_rules_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Create Composition Rule Api V1 Operations Coord Composition Rules Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Create Composition Rule",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/composition-rules/{composition_rule_id}": {
+      "delete": {
+        "description": "Delete a composition rule. Tenant-admin only.",
+        "operationId": "api_v1_operations_coord_composition_rules_composition_rule_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "composition_rule_id",
+            "required": true,
+            "schema": {
+              "title": "Composition Rule Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Delete Composition Rule Api V1 Operations Coord Composition Rules  Composition Rule Id  Delete"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Composition Rule",
+        "tags": [
+          "operations"
+        ]
+      },
+      "patch": {
+        "description": "Update a composition rule. Body forwarded verbatim. Tenant-admin only.",
+        "operationId": "api_v1_operations_coord_composition_rules_composition_rule_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "composition_rule_id",
+            "required": true,
+            "schema": {
+              "title": "Composition Rule Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Update Composition Rule Api V1 Operations Coord Composition Rules  Composition Rule Id  Patch"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update Composition Rule",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/next-step-settings": {
       "get": {
         "description": "Per-tenant read of the decision-engine autonomy settings.\n\nReturns the coord payload (``master_enabled``, ``domains`` list with\n``decision_domain``, ``label``, ``description``, ``autonomy_level``,\n``default_autonomy_level``, ``mode``, ``resolved_from``,\n``requires_master``, ``effective``) plus a synthesised ``can_edit``\nfield so the UI can enable/disable the Save controls without a\nseparate authz round-trip.",
@@ -65514,6 +65694,186 @@
           }
         ],
         "summary": "Get Next Step Settings Fleet",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/priority-sets": {
+      "get": {
+        "description": "List the tenant's priority sets. Tenant-admin only.",
+        "operationId": "api_v1_operations_coord_priority_sets_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response List Priority Sets Api V1 Operations Coord Priority Sets Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Priority Sets",
+        "tags": [
+          "operations"
+        ]
+      },
+      "post": {
+        "description": "Create a priority set. Body forwarded verbatim. Tenant-admin only.\n\nCoord's 409 ``duplicate_set_name`` (and any other 4xx) passes through.",
+        "operationId": "api_v1_operations_coord_priority_sets_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Create Priority Set Api V1 Operations Coord Priority Sets Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Create Priority Set",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/priority-sets/{priority_set_id}": {
+      "delete": {
+        "description": "Delete a priority set. Tenant-admin only.",
+        "operationId": "api_v1_operations_coord_priority_sets_priority_set_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "priority_set_id",
+            "required": true,
+            "schema": {
+              "title": "Priority Set Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Delete Priority Set Api V1 Operations Coord Priority Sets  Priority Set Id  Delete"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Priority Set",
+        "tags": [
+          "operations"
+        ]
+      },
+      "patch": {
+        "description": "Update a priority set. Body forwarded verbatim. Tenant-admin only.",
+        "operationId": "api_v1_operations_coord_priority_sets_priority_set_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "priority_set_id",
+            "required": true,
+            "schema": {
+              "title": "Priority Set Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Update Priority Set Api V1 Operations Coord Priority Sets  Priority Set Id  Patch"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update Priority Set",
         "tags": [
           "operations"
         ]
