@@ -207,13 +207,53 @@ function rewriteJunitClassnames(xml) {
   });
 }
 
+/**
+ * Print the response body (truncated ~300 chars) and warn on partial/unparseable
+ * persists. Visibility is the point: a silently-empty or partially-persisted
+ * batch hid for half a day because we only logged the status code. The observe
+ * route returns `{accepted, persisted, failed?}` and the results ingest returns
+ * a similar JSON body; surface it on EVERY POST and shout when
+ * `persisted < accepted` or the body can't be parsed.
+ */
+function logResponseBody(url, status, body) {
+  const snippet = body.length <= 300 ? body : body.slice(0, 300) + "...(truncated)";
+  info(`POST ${url} -> ${status} body=${snippet}`);
+  let parsed;
+  try {
+    parsed = body.trim() ? JSON.parse(body) : {};
+  } catch {
+    warn(`POST ${url} -> ${status}: response body is not valid JSON (see body above)`);
+    return;
+  }
+  if (parsed && typeof parsed === "object" && "accepted" in parsed && "persisted" in parsed) {
+    const { accepted, persisted, failed } = parsed;
+    if (typeof accepted === "number" && typeof persisted === "number") {
+      if (persisted < accepted) {
+        warn(
+          `POST ${url}: persisted (${persisted}) < accepted (${accepted}) ` +
+            `-- batch partially dropped` +
+            (failed !== undefined ? `, failed=${JSON.stringify(failed)}` : "")
+        );
+      }
+    } else {
+      warn(`POST ${url}: non-numeric accepted/persisted in body (see body above)`);
+    }
+  }
+}
+
 async function postJson(url, payload) {
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  info(`POST ${url} -> ${res.status}`);
+  let body = "";
+  try {
+    body = await res.text();
+  } catch (e) {
+    warn(`POST ${url} -> ${res.status}: failed to read response body: ${e}`);
+  }
+  logResponseBody(url, res.status, body);
   if (!res.ok) {
     throw new Error(`non-2xx ${res.status} from ${url}`);
   }
