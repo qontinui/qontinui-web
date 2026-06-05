@@ -129,20 +129,30 @@ export function humanizePredicate(p: GatePredicate | null | undefined): string {
 
 /**
  * A short anchor label for grouping. Plan-anchored gates group under
- * `plan_id · phase_name`; claim-anchored gates get their own group keyed by
- * `claim_kind · resource_key`. Returns a stable key + a display label.
+ * `<plan_slug | plan_id> · phase_name`; claim-anchored gates get their own
+ * group keyed by `claim_kind · resource_key`. Returns a stable key + a display
+ * label.
+ *
+ * The display prefers the human-readable `plan_slug` when coord supplies it,
+ * falling back to the raw `plan_id` UUID — rendered defensively because prod
+ * coord may briefly lag the new field (a row without a slug still groups and
+ * labels correctly). The grouping KEY stays anchored on `plan_id` so a mix of
+ * slug-bearing and slug-less rows for the same plan still collapses into one
+ * group.
  */
 export function gateAnchor(gate: {
   plan_id: string | null;
   phase_name: string | null;
+  plan_slug?: string | null;
   claim_kind: string | null;
   resource_key: string | null;
 }): { key: string; label: string; kind: "plan" | "claim" } {
   if (gate.plan_id) {
     const phase = gate.phase_name ?? "(no phase)";
+    const planLabel = gate.plan_slug || gate.plan_id;
     return {
       key: `plan:${gate.plan_id}:${phase}`,
-      label: `${gate.plan_id} · ${phase}`,
+      label: `${planLabel} · ${phase}`,
       kind: "plan",
     };
   }

@@ -327,7 +327,15 @@ export function GatesPanel() {
   return (
     <Card className="mb-4">
       <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base">
+        {/* data-content-role + data-content-id anchor this CardTitle <div>
+            (not a semantic <hN>) in the UI-Bridge content registry with a
+            stable, text-independent id (`heading-gates`) — the Spec-CI
+            operations spec asserts it as the panel's empty-state-safe anchor. */}
+        <CardTitle
+          className="flex items-center gap-2 text-base"
+          data-content-role="heading"
+          data-content-id="heading-gates"
+        >
           <ShieldCheck className="h-4 w-4" />
           Gates
           <Badge variant="outline" className="ml-2 font-mono text-xs">
@@ -348,8 +356,13 @@ export function GatesPanel() {
         {loading ? (
           <p className="text-xs text-muted-foreground">Loading gates…</p>
         ) : count === 0 ? (
-          /* Empty state. */
-          <p className="text-xs text-muted-foreground">
+          /* Empty state. data-content-id gives the registry a stable anchor
+             (the text is long + may be reworded); this is what Spec-CI's
+             hermetic EMPTY-database run asserts, since no gate rows exist. */
+          <p
+            className="text-xs text-muted-foreground"
+            data-content-id="gates-empty-state"
+          >
             No gates registered. Defer a plan phase or arm an observation from
             a runner session to see it tracked here.
           </p>
