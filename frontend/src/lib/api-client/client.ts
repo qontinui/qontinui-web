@@ -898,6 +898,16 @@ class ApiClient {
   // ==========================================================================
 
   async getWebSocketToken(): Promise<string | null> {
+    // Prefer the client-held Cognito bearer — hosted-UI sessions (the only
+    // prod login flow) never set the HttpOnly `access_token` cookie, so the
+    // cookie-reading route below 401s for them. The backend WS auth
+    // (`get_current_user_from_ws`) verifies the same bearer the HTTP
+    // `Authorization` header carries. Mirrors HttpClient.getWebSocketToken.
+    const bearer = tokenManager.getAccessToken();
+    if (bearer && !tokenManager.isAccessTokenExpired()) {
+      return bearer;
+    }
+
     try {
       const response = await fetch("/api/v1/ws-token", {
         credentials: "include",

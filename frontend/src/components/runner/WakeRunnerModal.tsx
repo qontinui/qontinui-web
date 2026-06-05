@@ -136,13 +136,11 @@ export function WakeRunnerModal({
 
     const open_ws = async () => {
       try {
-        // Same-origin ONLY — `/api/v1/ws-token` is a Next.js cookie-reading
-        // route, not a backend endpoint. (The /wake call below IS a backend
-        // route, so it correctly keeps the API_BASE_URL prefix.)
-        const resp = await httpClient.fetch("/api/v1/ws-token");
-        if (!resp.ok) return;
-        const data = await resp.json();
-        const token: string | undefined = data?.token;
+        // Client-held Cognito bearer when present (hosted-UI sessions never
+        // set the HttpOnly cookie), else the cookie-reading /api/v1/ws-token
+        // route. (The /wake call below IS a backend route, so it correctly
+        // keeps the API_BASE_URL prefix.)
+        const token = await httpClient.getWebSocketToken();
         if (!token || cancelled) return;
 
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";

@@ -315,4 +315,37 @@ export class HttpClient {
   getAuthToken(): string | null {
     return this.tokenManager.getAccessToken();
   }
+
+  /**
+   * Get a token for authenticating browser WebSocket connections (passed as
+   * the `?token=` query param — the backend's `get_current_user_from_ws`
+   * verifies the SAME bearer the HTTP `Authorization` header carries).
+   *
+   * Source order matters because prod has two session shapes:
+   * 1. Cognito hosted-UI sessions (the only prod login flow) keep the bearer
+   *    in the token-storage layer and NEVER set the HttpOnly `access_token`
+   *    cookie — for them the cookie-reading route 401s, so the client-held
+   *    bearer must be used directly.
+   * 2. Legacy cookie sessions have no client-readable token, so fall back to
+   *    the same-origin `/api/v1/ws-token` Next.js route, which echoes the
+   *    HttpOnly cookie. (Same-origin ONLY — the route has no backend
+   *    counterpart; prefixing it with API_BASE_URL 404s cross-origin.)
+   */
+  async getWebSocketToken(): Promise<string | null> {
+    const bearer = this.tokenManager.getAccessToken();
+    if (bearer && !this.tokenManager.isAccessTokenExpired()) {
+      return bearer;
+    }
+
+    try {
+      const response = await this.fetch("/api/v1/ws-token");
+      if (!response.ok) {
+        return null;
+      }
+      const data = (await response.json()) as { token?: string };
+      return data.token ?? null;
+    } catch {
+      return null;
+    }
+  }
 }
