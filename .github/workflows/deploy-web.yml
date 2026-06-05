@@ -35,6 +35,30 @@ on:
   schedule:
     - cron: '0 3 * * *'  # daily 03:00 UTC — catches schemas-only drift
   workflow_dispatch:
+    inputs:
+      # ── Rollback-mode inputs (deploy effect signatures, plan §4 Phase 4) ──
+      # coord's deploy_rollback.rs dispatches THIS workflow with exactly
+      # {rollback, source_image_or_commit, target_environment, correlation_id}
+      # when an auto-eligible rollback is armed — GitHub 422-rejects a dispatch
+      # carrying undeclared inputs, so these four MUST stay aligned with
+      # maybe_dispatch_rollback's payload. Operators can use the same mode by
+      # hand for a one-click "redeploy the prior artifact without a rebuild".
+      rollback:
+        description: "Set 'true' to SKIP the build and redeploy a prior artifact (rollback mode)"
+        required: false
+        default: "false"
+      source_image_or_commit:
+        description: "Rollback artifact: sha256:<digest> (preferred) or a commit SHA whose image tag exists in ECR"
+        required: false
+        default: ""
+      target_environment:
+        description: "Rollback declare metadata (staging/production)"
+        required: false
+        default: "production"
+      correlation_id:
+        description: "The FAILED deploy's signature id — chains the rollback declare to it"
+        required: false
+        default: ""
 
 # One web deploy at a time; the latest commit's image is the one that
 # should win. Cancel-in-progress is OFF: cancelling a deploy mid-flight
@@ -92,12 +116,52 @@ jobs:
           REGISTRY="$ACCOUNT_ID.dkr.ecr.${AWS_REGION}.amazonaws.com"
           echo "registry=$REGISTRY" >> "$GITHUB_OUTPUT"
 
+      # Rollback mode: resolve the PRIOR artifact to an exact image reference
+      # and assert it still exists in ECR — a rollback to a GC'd image must
+      # fail HERE, loudly, not as an ECS pull crash-loop mid-rollover. The
+      # release observer records deployed images by digest, so `sha256:…` is
+      # the expected form; a commit SHA falls back to the full-SHA tag this
+      # workflow stamps on every build.
+      - name: Resolve rollback artifact
+        id: rollback_artifact
+        if: ${{ inputs.rollback == 'true' }}
+        run: |
+          ART="${{ inputs.source_image_or_commit }}"
+          REGISTRY="${{ steps.ecr.outputs.registry }}"
+          if [ -z "$ART" ]; then
+            echo "::error::rollback=true but source_image_or_commit is empty"
+            exit 1
+          fi
+          case "$ART" in
+            sha256:*)
+              aws ecr describe-images --repository-name "$ECR_REPOSITORY" \
+                --image-ids imageDigest="$ART" --region "$AWS_REGION" >/dev/null \
+                || { echo "::error::rollback artifact $ART not found in ECR ($ECR_REPOSITORY)"; exit 1; }
+              echo "image=$REGISTRY/$ECR_REPOSITORY@$ART" >> "$GITHUB_OUTPUT"
+              ;;
+            taskdef:*)
+              # The dispatcher never sends this form today (rollback_target is
+              # the observer's deployed digest); refuse honestly rather than
+              # guess a family:revision mapping.
+              echo "::error::taskdef:<n> rollback targets are not supported by this workflow"
+              exit 1
+              ;;
+            *)
+              aws ecr describe-images --repository-name "$ECR_REPOSITORY" \
+                --image-ids imageTag="$ART" --region "$AWS_REGION" >/dev/null \
+                || { echo "::error::rollback artifact tag $ART not found in ECR ($ECR_REPOSITORY)"; exit 1; }
+              echo "image=$REGISTRY/$ECR_REPOSITORY:$ART" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+          echo "Rolling back to: $ART"
+
       # The backend Dockerfile clones qontinui-schemas itself inside a build
       # stage (no sibling checkout needed). We resolve schemas' main SHA here
       # and pass it as SCHEMAS_SHA so the clone layer's cache key tracks the
       # real upstream commit — the layer re-clones iff schemas moved.
       - name: Resolve qontinui-schemas main SHA
         id: schemas
+        if: ${{ inputs.rollback != 'true' }}
         run: |
           SHA=$(git ls-remote https://github.com/qontinui/qontinui-schemas.git refs/heads/main | cut -f1)
           if [ -z "$SHA" ]; then echo "::error::could not resolve qontinui-schemas main SHA"; exit 1; fi
@@ -114,6 +178,7 @@ jobs:
       # commit SHA (the task-def will pin this) and :staging (a convenience
       # pointer so :staging never lags the live service again).
       - name: Build backend image
+        if: ${{ inputs.rollback != 'true' }}
         run: |
           docker buildx build \
             --platform linux/amd64 \
@@ -125,6 +190,7 @@ jobs:
             backend
 
       - name: Push backend image
+        if: ${{ inputs.rollback != 'true' }}
         run: |
           docker push "${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:${GITHUB_SHA}"
           docker push "${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:staging"
@@ -170,8 +236,25 @@ jobs:
         run: |
           set -uo pipefail
 
-          # 1. Land correlation (best-effort): the land verifier stamps a
-          #    correlation_id on the land that advanced main to this SHA.
+          # Rollback mode (plan §4 Phase 4): the rollback IS a deploy and gets
+          # its own signature — declared with the PRIOR artifact as the target,
+          # source `orchestrator`, and correlation_id = the FAILED deploy's
+          # signature id (forwarded by the dispatcher), so the two chain.
+          ROLLBACK="${{ inputs.rollback }}"
+          DECLARE_SHA="$GITHUB_SHA"
+          SOURCE="ci"
+          TARGET_ENV="production"
+          CORR="${{ inputs.correlation_id }}"
+          if [ "$ROLLBACK" = "true" ]; then
+            DECLARE_SHA="${{ inputs.source_image_or_commit }}"
+            SOURCE="orchestrator"
+            TARGET_ENV="${{ inputs.target_environment || 'production' }}"
+          fi
+
+          # 1. Land correlation (best-effort, normal mode only): the land
+          #    verifier stamps a correlation_id on the land that advanced main
+          #    to this SHA.
+          if [ -z "$CORR" ] && [ "$ROLLBACK" != "true" ]; then
           CORR=$(curl -s --max-time 10 "$COORD_BASE_URL/coord/lands?repo=$REPO_SLUG&limit=50" \
             | python3 -c '
           import json, sys, os
@@ -185,7 +268,8 @@ jobs:
                   print(land["correlation_id"])
                   break
           ' || true)
-          echo "land correlation_id: ${CORR:-none}"
+          fi
+          echo "correlation_id: ${CORR:-none} (rollback=$ROLLBACK)"
 
           # 2. Probe set from .qontinui/deploy.toml ([[deploy.health_probes]]).
           #    Tolerates the file being absent (coord then derives its default
@@ -217,13 +301,15 @@ jobs:
 
           BODY=$(jq -n \
             --arg service "$DEPLOY_SERVICE" \
-            --arg sha "$GITHUB_SHA" \
+            --arg sha "$DECLARE_SHA" \
+            --arg source "$SOURCE" \
+            --arg env "$TARGET_ENV" \
             --arg corr "${CORR:-}" \
             --argjson probes "$PROBES" \
             '{service: $service,
               source_image_or_commit: $sha,
-              target_environment: "production",
-              source: "ci",
+              target_environment: $env,
+              source: $source,
               health_probes: $probes}
              + (if $corr != "" then {correlation_id: $corr} else {} end)')
 
@@ -256,7 +342,13 @@ jobs:
       - name: Register task-def revision + update service
         id: deploy
         run: |
-          NEW_IMAGE="${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:${GITHUB_SHA}"
+          # Normal mode deploys the image built above; rollback mode deploys
+          # the resolved prior artifact (digest-pinned) without a rebuild.
+          if [ "${{ inputs.rollback }}" = "true" ]; then
+            NEW_IMAGE="${{ steps.rollback_artifact.outputs.image }}"
+          else
+            NEW_IMAGE="${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:${GITHUB_SHA}"
+          fi
           aws ecs describe-task-definition \
             --task-definition "${ECS_TASK_FAMILY}" \
             --region "${AWS_REGION}" \
