@@ -108,6 +108,12 @@ const PRIMARY_TABS: NavItem[] = [
     testId: "coord-nav-lands",
   },
   {
+    href: "/admin/coord/deploys",
+    label: "Deploys",
+    icon: Rocket,
+    testId: "coord-nav-deploys",
+  },
+  {
     href: "/admin/coord/history",
     label: "History",
     icon: HistoryIcon,
