@@ -86,12 +86,22 @@ export const CI_STATUS_POLL_FALLBACK_MS = 5_000;
  *
  * - `GATES_LIST_API`         — GET list of the tenant's gates.
  * - `gateApproveUrl(id)`     — POST clear an `operator_approval` gate.
+ * - `gateReopenUrl(id)`      — POST clone a cleared/failed gate into a new
+ *                              open gate (undo-by-reopen).
+ * - `gateAudienceUrl(id)`    — PATCH a gate's `clearance_audience`
+ *                              (operator re-classification).
  * - `gateMuteUrl(id)` / `gateUnmuteUrl(id)` — POST reversible mute toggle.
  * - `gateSnoozeUrl(id)`      — POST snooze until `{until: <rfc3339>}`.
  */
 export const GATES_LIST_API = `${OPERATIONS_API}/gates/list`;
 export function gateApproveUrl(gateId: string): string {
   return `${OPERATIONS_API}/gates/${encodeURIComponent(gateId)}/approve`;
+}
+export function gateReopenUrl(gateId: string): string {
+  return `${OPERATIONS_API}/gates/${encodeURIComponent(gateId)}/reopen`;
+}
+export function gateAudienceUrl(gateId: string): string {
+  return `${OPERATIONS_API}/gates/${encodeURIComponent(gateId)}/audience`;
 }
 export function gateMuteUrl(gateId: string): string {
   return `${OPERATIONS_API}/gates/${encodeURIComponent(gateId)}/mute`;

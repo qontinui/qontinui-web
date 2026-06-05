@@ -230,6 +230,11 @@ export interface GateRow {
   /** Mute/snooze columns — optional: a pre-deploy coord omits them. */
   muted?: boolean;
   snoozed_until?: string | null;
+  /** Who clears this gate: `operator` (default, surfaces a primary
+   *  `Mark met…` button) vs `agent` (cleared by the completing agent
+   *  session; operator override only, behind the overflow menu). Optional:
+   *  a lagging coord deploy omits it, and the panel defaults to `operator`. */
+  clearance_audience?: "operator" | "agent";
 }
 
 /**

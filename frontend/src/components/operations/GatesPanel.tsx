@@ -6,6 +6,16 @@ import { Button } from "@/components/ui/button";
 import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -18,14 +28,18 @@ import {
   BellOff,
   CheckCircle2,
   Clock,
+  MoreHorizontal,
+  RotateCcw,
   ShieldCheck,
   SignpostBig,
 } from "lucide-react";
+import { toast } from "sonner";
 import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
 import {
   gateApproveUrl,
   gateMuteUrl,
+  gateReopenUrl,
   gateSnoozeUrl,
   gateUnmuteUrl,
   relativeTime,
@@ -86,13 +100,97 @@ interface GateRowProps {
   onActed: () => void;
 }
 
+// ---------------------------------------------------------------------------
+// Mark-met attestation dialog
+// ---------------------------------------------------------------------------
+
+interface MarkMetDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** Full condition text the operator is attesting (verbatim). */
+  conditionText: string;
+  /** True when this is an `agent` gate being cleared via operator override —
+   *  surfaces the extra warning line. */
+  override: boolean;
+  /** Confirm handler — the gate-clearing action. Named `onConfirm` (not a
+   *  destructive verb) so the eslint rule keys off the `DestructiveButton`
+   *  wrapper, which is where the synthetic-click gate must live. */
+  onConfirm: () => void;
+  disabled: boolean;
+}
+
+/**
+ * Attestation confirm dialog for clearing a gate. Quotes the gate's full
+ * condition verbatim so the operator sees exactly what they're asserting is
+ * true. `AlertDialogCancel` is the default-focused action (predictability:
+ * the safe choice is the default); the confirm sits inside a
+ * `DestructiveButton` so UI-Bridge synthetic clicks stay gated and the
+ * `@qontinui-web/no-unwrapped-destructive-handler` rule is satisfied.
+ */
+function MarkMetDialog({
+  open,
+  onOpenChange,
+  conditionText,
+  override,
+  onConfirm,
+  disabled,
+}: MarkMetDialogProps) {
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Mark this condition met?</AlertDialogTitle>
+          <AlertDialogDescription asChild>
+            <div className="space-y-2">
+              <blockquote className="border-l-2 pl-3 text-sm font-mono text-foreground">
+                {conditionText}
+              </blockquote>
+              <p>
+                You are attesting this condition is satisfied. Coord will stop
+                watching this gate.
+              </p>
+              {override && (
+                <p className="text-amber-500">
+                  This gate is normally cleared by an agent when the work
+                  completes. Override only if you&apos;re certain.
+                </p>
+              )}
+            </div>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          {/* Confirm is a real state-change (clears the gate). The custom
+              eslint rule + the synthetic-click gate both require it to sit
+              inside <DestructiveButton>; `asChild` merges Radix's
+              close-on-action behavior onto it. */}
+          <AlertDialogAction asChild>
+            <DestructiveButton onClick={onConfirm} disabled={disabled}>
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              Condition is met
+            </DestructiveButton>
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 function GateRowView({ gate, onActed }: GateRowProps) {
   const [action, setAction] = useState<ActionState>({ kind: "idle" });
+  // Mark-met attestation dialog (operator-confirm). Driven controlled so the
+  // overflow-menu "Operator override" item can open the SAME dialog.
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const predicateText = useMemo(
     () => humanizePredicate(gate.predicate),
     [gate.predicate],
   );
+
+  // The full condition text the operator is attesting. `gate.predicate.prompt`
+  // is the operator_approval gate's verbatim condition (also surfaced by
+  // `humanizePredicate`); fall back to the humanized line for typed gates.
+  const conditionText = gate.predicate?.prompt ?? predicateText;
 
   const isSnoozed = useMemo(() => {
     if (!gate.snoozed_until) return false;
@@ -102,6 +200,16 @@ function GateRowView({ gate, onActed }: GateRowProps) {
 
   const isApprovable =
     gate.predicate?.kind === "operator_approval" && gate.verdict === "open";
+
+  // Audience split (Phase 3.4). `operator` (or absent — defensive default
+  // while the coord deploy lags) → primary `Mark met…` button. `agent` → no
+  // primary clear affordance; the operator override lives behind the ⋯ menu.
+  const isAgentGate = gate.clearance_audience === "agent";
+
+  // Re-open is offered on cleared/failed rows still in the list window
+  // (best-effort recovery; see the honesty caveat on the control). The Undo
+  // toast, which captures the gate_id in closure, is the primary recovery.
+  const isReopenable = gate.verdict === "cleared" || gate.verdict === "failed";
 
   // POST helper — every action surfaces its error inline (honesty: never a
   // silent failure) and refetches the list on success.
@@ -117,23 +225,45 @@ function GateRowView({ gate, onActed }: GateRowProps) {
           const text = await res.text();
           log.warn("gate action failed", url, res.status, text);
           setAction({ kind: "error", message: `HTTP ${res.status}` });
-          return;
+          return false;
         }
         setAction({ kind: "idle" });
         onActed();
+        return true;
       } catch (err) {
         log.warn("gate action threw", url, err);
         setAction({
           kind: "error",
           message: err instanceof Error ? err.message : String(err),
         });
+        return false;
       }
     },
     [onActed],
   );
 
+  // Mark-met: clear the gate via approve, then offer an Undo toast that
+  // reopens it. The gate_id is captured in the closure, so Undo survives the
+  // row scrolling out of the 100-row list window (the row-level Re-open below
+  // is only best-effort for rows still in the window).
   const onApprove = useCallback(() => {
-    void runAction(gateApproveUrl(gate.gate_id), undefined);
+    const id = gate.gate_id;
+    void runAction(gateApproveUrl(id), undefined).then((ok) => {
+      if (ok) {
+        toast("Gate cleared", {
+          action: {
+            label: "Undo",
+            onClick: () => void runAction(gateReopenUrl(id), undefined),
+          },
+        });
+      }
+    });
+  }, [runAction, gate.gate_id]);
+
+  // Re-open a cleared/failed gate (row-level recovery; mirror of the Undo
+  // toast). Server-side clones the gate into a fresh open one.
+  const onReopen = useCallback(() => {
+    void runAction(gateReopenUrl(gate.gate_id), undefined);
   }, [runAction, gate.gate_id]);
 
   const onToggleMute = useCallback(() => {
@@ -206,15 +336,77 @@ function GateRowView({ gate, onActed }: GateRowProps) {
 
       {/* Actions — light + reversible. */}
       <div className="flex items-center gap-2 flex-wrap pt-0.5">
-        {isApprovable && (
-          // Approve is a real state-change (clears the gate). The custom
-          // eslint rule requires destructive-named handlers to sit inside a
-          // <DestructiveButton> so UI-Bridge synthetic clicks are gated; this
-          // also fits the action's weight (it advances the plan).
-          <DestructiveButton size="sm" onClick={onApprove} disabled={busy}>
+        {/* Operator gates (or absent audience → defensive default): primary
+            `Mark met…` opens the attestation dialog. */}
+        {isApprovable && !isAgentGate && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setConfirmOpen(true)}
+            disabled={busy}
+            data-action="mark-met"
+          >
             <CheckCircle2 className="h-3.5 w-3.5" />
-            Approve
-          </DestructiveButton>
+            Mark met…
+          </Button>
+        )}
+
+        {/* Agent gates: NO primary clear affordance. The operator override
+            lives behind the ⋯ menu and opens the SAME attestation dialog plus
+            a warning line. */}
+        {isApprovable && isAgentGate && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                aria-label="More actions"
+                data-action="overflow"
+              >
+                <MoreHorizontal className="h-3.5 w-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuLabel>Operator override</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setConfirmOpen(true)}>
+                Operator override: mark met…
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+
+        {/* Re-open: best-effort recovery for cleared/failed rows still in the
+            list window. NOTE: cleared rows pushed past the 100-row window
+            won't show this — the Undo toast (holding the gate_id in closure)
+            is the primary recovery. A still-true typed gate may re-clear at
+            the next sweep. */}
+        {isReopenable && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onReopen}
+            disabled={busy}
+            data-action="reopen"
+            title="Clone this gate into a fresh open gate. A still-satisfied typed gate may re-clear at the next sweep."
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            Re-open
+          </Button>
+        )}
+
+        {/* Shared attestation dialog — opened by the primary `Mark met…`
+            button or the agent-gate operator-override menu item. */}
+        {isApprovable && (
+          <MarkMetDialog
+            open={confirmOpen}
+            onOpenChange={setConfirmOpen}
+            conditionText={conditionText}
+            override={isAgentGate}
+            onConfirm={onApprove}
+            disabled={busy}
+          />
         )}
 
         <Button
