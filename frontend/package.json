@@ -84,7 +84,7 @@
     "jsdom": "^27.2.0",
     "lucide-react": "^0.562.0",
     "mermaid": "^11.12.1",
-    "next": "^15.5.12",
+    "next": "^15.5.18",
     "next-themes": "^0.4.6",
     "pg": "^8.20.0",
     "qontinui-navigation": "^0.1.0",
