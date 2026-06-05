@@ -64746,6 +64746,54 @@
         ]
       }
     },
+    "/api/v1/operations/gates/{gate_id}/reopen": {
+      "post": {
+        "description": "Reopen a cleared/failed gate by server-side cloning it into a new open\ngate (undo-by-reopen; operator bearer forwarded \u2014 fleet-auth P2/D6).\n\nMirrors the approve proxy exactly: tenant derived server-side by coord's\n``TenantId`` extractor from the forwarded bearer \u2014 never a client-supplied\ntenant. The coord route ``POST /coord/gates/{id}/reopen`` lands in the\nparallel coord PR; proxying to a not-yet-deployed route is fine \u2014 the\nupstream error passes through.",
+        "operationId": "api_v1_operations_gates_gate_id_reopen_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "gate_id",
+            "required": true,
+            "schema": {
+              "title": "Gate Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Reopen Gate Api V1 Operations Gates  Gate Id  Reopen Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Reopen Gate",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/gates/{gate_id}/snooze": {
       "post": {
         "description": "Snooze a gate until ``body[\"until\"]`` (rfc3339) \u2014 the sweep skips it\nwhile ``snoozed_until`` is in the future (reversible; operator bearer\nforwarded, fleet-auth P2/D6).\n\nThe ``until`` field is forwarded verbatim to coord, which owns\nvalidation of the timestamp.",
