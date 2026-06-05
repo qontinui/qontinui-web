@@ -148,6 +148,86 @@ export interface NotifyWhenGreenResponse {
   gate_id: string;
 }
 
+// ---------------------------------------------------------------------------
+// Gates panel (plan 2026-06-05-plan-gate-web-surface-and-productization Ph2)
+//
+// Mirrors coord's `GateResponse` (`gate_routes.rs` — list/approve/reject
+// endpoints) plus the observation/mute/snooze columns this plan adds
+// (`coord_gates_observation_cols` alembic migration; coord PR
+// `feat/gate-observation-predicates`). The web backend proxies
+// `GET /operations/gates/list` (bare JSON array of these rows) and the
+// `POST /operations/gates/{id}/{approve,mute,unmute,snooze}` actions.
+// ---------------------------------------------------------------------------
+
+/** A gate's evaluation verdict (coord `GateVerdict`). */
+export type GateVerdict = "open" | "cleared" | "failed";
+
+/**
+ * The typed predicate JSON coord evaluates. Serde-tagged on `kind`
+ * (snake_case). Variant-specific fields are optional here because a
+ * single union of all variants is rendered defensively by `humanizePredicate`
+ * — a future coord predicate the web hasn't been taught about still renders
+ * as its raw `kind` rather than crashing the row (honesty-about-uncertainty:
+ * never a bare/blank cell). The Phase-1 observation kinds (`metric_threshold`,
+ * `time_elapsed`) land in the parallel coord PR; the web tolerates their
+ * presence or absence.
+ */
+export interface GatePredicate {
+  kind: string;
+  // pr_merged
+  repo?: string;
+  pr_number?: number;
+  // deploy_healthy
+  service?: string;
+  expected_rev?: string;
+  // claim_terminal
+  claim_kind?: string;
+  resource_key?: string;
+  // operator_approval
+  prompt?: string;
+  // ci_green
+  head_sha?: string;
+  // ref_exists
+  ref_name?: string;
+  expected_sha?: string | null;
+  // metric_threshold (Phase 1)
+  metric?: string;
+  labels?: Record<string, string> | null;
+  op?: "gt" | "gte" | "lt" | "lte";
+  value?: number;
+  window_secs?: number | null;
+  // time_elapsed (Phase 1)
+  since?: string;
+  duration_secs?: number;
+}
+
+/**
+ * One gate row returned by `GET /api/v1/operations/gates/list`. Mirrors
+ * coord's `GateResponse` (`gate_routes.rs`), with the observation/mute/snooze
+ * columns rendered defensively (optional) because a lagging coord deploy may
+ * not yet emit them.
+ */
+export interface GateRow {
+  gate_id: string;
+  /** Claim-anchored gates carry `claim_kind` + `resource_key`. */
+  claim_kind: string | null;
+  resource_key: string | null;
+  /** Plan-anchored gates carry `plan_id` + `phase_name`. */
+  plan_id: string | null;
+  phase_name: string | null;
+  predicate: GatePredicate;
+  verdict: GateVerdict;
+  verdict_reason: string | null;
+  registered_by: string | null;
+  tenant_id: string;
+  created_at: string;
+  evaluated_at: string | null;
+  cleared_at: string | null;
+  /** Mute/snooze columns — optional: a pre-deploy coord omits them. */
+  muted?: boolean;
+  snoozed_until?: string | null;
+}
+
 /**
  * Per-machine CI runner info returned by the backend in the `/fleet`
  * response. Keyed by hostname. Phase 4c of the self-hosted CI runners plan.

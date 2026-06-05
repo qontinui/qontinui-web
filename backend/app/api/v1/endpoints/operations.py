@@ -1103,6 +1103,62 @@ async def reject_gate(
     )
 
 
+# Mute / snooze are the gates panel's reversible "quiet this gate" actions
+# (plan 2026-06-05-plan-gate-web-surface-and-productization, Phase 2). They
+# mirror the approve/reject proxies' shape exactly: operator bearer forwarded
+# via ``get_tenant_id`` → ``tenant_id=`` (fleet-auth P2/D6), tenant derived
+# server-side by coord's ``TenantId`` extractor from that bearer — NEVER a
+# client-supplied tenant_id. The coord routes
+# (``POST /coord/gates/{id}/mute``·``/unmute``·``/snooze``) land in the
+# parallel coord PR ``feat/gate-observation-predicates``; proxying to a
+# not-yet-deployed route is fine — the upstream error passes through.
+
+
+@router.post("/gates/{gate_id}/mute")
+async def mute_gate(
+    gate_id: str,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Mute a gate so the sweep skips it (reversible — operator bearer
+    forwarded, fleet-auth P2/D6)."""
+    return await _proxy_coord_post(
+        f"/coord/gates/{gate_id}/mute", {}, tenant_id=tenant_id
+    )
+
+
+@router.post("/gates/{gate_id}/unmute")
+async def unmute_gate(
+    gate_id: str,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Unmute a previously-muted gate (operator bearer forwarded —
+    fleet-auth P2/D6)."""
+    return await _proxy_coord_post(
+        f"/coord/gates/{gate_id}/unmute", {}, tenant_id=tenant_id
+    )
+
+
+@router.post("/gates/{gate_id}/snooze")
+async def snooze_gate(
+    gate_id: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Snooze a gate until ``body["until"]`` (rfc3339) — the sweep skips it
+    while ``snoozed_until`` is in the future (reversible; operator bearer
+    forwarded, fleet-auth P2/D6).
+
+    The ``until`` field is forwarded verbatim to coord, which owns
+    validation of the timestamp."""
+    snooze_body: dict[str, Any] = {}
+    until = body.get("until")
+    if until is not None:
+        snooze_body["until"] = until
+    return await _proxy_coord_post(
+        f"/coord/gates/{gate_id}/snooze", snooze_body, tenant_id=tenant_id
+    )
+
+
 @router.get("/claims/recent-conflicts")
 async def get_recent_conflicts(
     limit: int | None = None,

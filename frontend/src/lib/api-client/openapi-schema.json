@@ -66258,6 +66258,54 @@
         ]
       }
     },
+    "/api/v1/operations/gates/{gate_id}/mute": {
+      "post": {
+        "description": "Mute a gate so the sweep skips it (reversible \u2014 operator bearer\nforwarded, fleet-auth P2/D6).",
+        "operationId": "api_v1_operations_gates_gate_id_mute_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "gate_id",
+            "required": true,
+            "schema": {
+              "title": "Gate Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Mute Gate Api V1 Operations Gates  Gate Id  Mute Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Mute Gate",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/gates/{gate_id}/reject": {
       "post": {
         "description": "Reject an OperatorApproval gate (operator bearer forwarded \u2014\nfleet-auth P2/D6).",
@@ -66317,6 +66365,114 @@
           }
         ],
         "summary": "Reject Gate",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/gates/{gate_id}/snooze": {
+      "post": {
+        "description": "Snooze a gate until ``body[\"until\"]`` (rfc3339) \u2014 the sweep skips it\nwhile ``snoozed_until`` is in the future (reversible; operator bearer\nforwarded, fleet-auth P2/D6).\n\nThe ``until`` field is forwarded verbatim to coord, which owns\nvalidation of the timestamp.",
+        "operationId": "api_v1_operations_gates_gate_id_snooze_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "gate_id",
+            "required": true,
+            "schema": {
+              "title": "Gate Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Snooze Gate Api V1 Operations Gates  Gate Id  Snooze Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Snooze Gate",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/gates/{gate_id}/unmute": {
+      "post": {
+        "description": "Unmute a previously-muted gate (operator bearer forwarded \u2014\nfleet-auth P2/D6).",
+        "operationId": "api_v1_operations_gates_gate_id_unmute_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "gate_id",
+            "required": true,
+            "schema": {
+              "title": "Gate Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Unmute Gate Api V1 Operations Gates  Gate Id  Unmute Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Unmute Gate",
         "tags": [
           "operations"
         ]

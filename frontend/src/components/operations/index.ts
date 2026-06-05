@@ -1,4 +1,5 @@
 export { CiStatusPanel } from "./CiStatusPanel";
+export { GatesPanel } from "./GatesPanel";
 export { FleetOverview } from "./FleetOverview";
 export { LandedFeaturesPanel } from "./LandedFeaturesPanel";
 export { MachineCard } from "./MachineCard";

@@ -4,6 +4,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   CiStatusPanel,
   FleetOverview,
+  GatesPanel,
   LandedFeaturesPanel,
   MergeDependencyGraph,
   MergeTrain,
@@ -52,6 +53,14 @@ export default function OperationsPage() {
            * green" gate action.
            */}
           <CiStatusPanel />
+          {/*
+           * Gates panel (plan
+           * 2026-06-05-plan-gate-web-surface-and-productization Phase 2).
+           * Tenant-scoped list + light reversible management (approve /
+           * mute / snooze) of the user's coord gates — the read/manage
+           * surface for the gate system that already runs in coord.
+           */}
+          <GatesPanel />
           <FleetOverview />
           <LandedFeaturesPanel />
         </div>
