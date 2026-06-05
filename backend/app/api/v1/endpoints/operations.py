@@ -1087,6 +1087,24 @@ async def approve_gate(
     )
 
 
+@router.post("/gates/{gate_id}/reopen")
+async def reopen_gate(
+    gate_id: str,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Reopen a cleared/failed gate by server-side cloning it into a new open
+    gate (undo-by-reopen; operator bearer forwarded — fleet-auth P2/D6).
+
+    Mirrors the approve proxy exactly: tenant derived server-side by coord's
+    ``TenantId`` extractor from the forwarded bearer — never a client-supplied
+    tenant. The coord route ``POST /coord/gates/{id}/reopen`` lands in the
+    parallel coord PR; proxying to a not-yet-deployed route is fine — the
+    upstream error passes through."""
+    return await _proxy_coord_post(
+        f"/coord/gates/{gate_id}/reopen", {}, tenant_id=tenant_id
+    )
+
+
 @router.post("/gates/{gate_id}/reject")
 async def reject_gate(
     gate_id: str,
