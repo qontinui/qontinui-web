@@ -92,6 +92,33 @@ async def _safe_close(websocket: WebSocket, code: int) -> None:
         logger.debug("devices_ws_double_close_suppressed", error=str(exc))
 
 
+async def _safe_send_json(websocket: WebSocket, payload: dict[str, Any]) -> None:
+    """Send a best-effort JSON message, tolerating an already-closed socket.
+
+    The handshake/auth failure paths below reply with a ``{"type": "error"}``
+    diagnostic and then ``_safe_close`` + ``return``. If the client already
+    closed the socket (it disconnected mid-handshake — common for probes and
+    flaky runners), the ``send_json`` raises ``WebSocketDisconnect`` /
+    ``RuntimeError`` / Starlette ``ClientDisconnected`` *before* ``_safe_close``
+    runs, escaping the handler as an unhandled "Exception in ASGI application".
+    The error reply is purely advisory (we close immediately after), so a
+    failed send is benign — swallow it and let the caller proceed to close.
+
+    Mirrors ``_safe_close`` for the send side. The post-registration
+    ``connected`` ack is deliberately NOT routed through this helper: on the
+    success path a failed send is a real error worth surfacing.
+    """
+    if websocket.application_state == WebSocketState.DISCONNECTED:
+        return
+    try:
+        await websocket.send_json(payload)
+    except Exception as exc:
+        # Client already gone (close frame received / disconnected
+        # mid-handshake). The reply is advisory and a _safe_close follows —
+        # benign, same race _safe_close handles on the close side.
+        logger.debug("devices_ws_send_suppressed", error=str(exc))
+
+
 @router.websocket("/ws")
 async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
     """Unified device-side WebSocket endpoint.
@@ -115,8 +142,9 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
         token = auth_header.split(" ", 1)[1].strip()
 
     if not token:
-        await websocket.send_json(
-            {"type": "error", "message": "Missing device-token bearer."}
+        await _safe_send_json(
+            websocket,
+            {"type": "error", "message": "Missing device-token bearer."},
         )
         await _safe_close(websocket, code=status.WS_1008_POLICY_VIOLATION)
         return
@@ -127,19 +155,21 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
         # Cold-start failure: coord unreachable. Reject all handshakes
         # rather than silently falling back to "trust the token".
         logger.error("devices_ws_jwks_unavailable", error=str(exc))
-        await websocket.send_json(
+        await _safe_send_json(
+            websocket,
             {
                 "type": "error",
                 "message": "Device authentication temporarily unavailable.",
-            }
+            },
         )
         # 1011 = internal error / service overload.
         await _safe_close(websocket, code=status.WS_1011_INTERNAL_ERROR)
         return
     except CoordTokenInvalidError as exc:
         logger.warning("devices_ws_token_invalid", error=str(exc))
-        await websocket.send_json(
-            {"type": "error", "message": "Invalid or expired device token."}
+        await _safe_send_json(
+            websocket,
+            {"type": "error", "message": "Invalid or expired device token."},
         )
         await _safe_close(websocket, code=status.WS_1008_POLICY_VIOLATION)
         return
@@ -154,8 +184,9 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
             has_device_id=bool(raw_device_id),
             has_user_id=bool(raw_user_id),
         )
-        await websocket.send_json(
-            {"type": "error", "message": "Device token missing required claims."}
+        await _safe_send_json(
+            websocket,
+            {"type": "error", "message": "Device token missing required claims."},
         )
         await _safe_close(websocket, code=status.WS_1008_POLICY_VIOLATION)
         return
@@ -165,8 +196,9 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
         user_id = UUID(str(raw_user_id))
     except (ValueError, TypeError) as exc:
         logger.warning("devices_ws_token_claim_format_invalid", error=str(exc))
-        await websocket.send_json(
-            {"type": "error", "message": "Device token claim format invalid."}
+        await _safe_send_json(
+            websocket,
+            {"type": "error", "message": "Device token claim format invalid."},
         )
         await _safe_close(websocket, code=status.WS_1008_POLICY_VIOLATION)
         return
@@ -190,11 +222,12 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
         return
 
     if not isinstance(info_msg, dict) or info_msg.get("type") != "runner_info":
-        await websocket.send_json(
+        await _safe_send_json(
+            websocket,
             {
                 "type": "error",
                 "message": "First message must be of type 'runner_info'.",
-            }
+            },
         )
         await _safe_close(websocket, code=status.WS_1008_POLICY_VIOLATION)
         return
@@ -258,8 +291,9 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
             error=str(e),
             error_type=type(e).__name__,
         )
-        await websocket.send_json(
-            {"type": "error", "message": "Internal error during registration."}
+        await _safe_send_json(
+            websocket,
+            {"type": "error", "message": "Internal error during registration."},
         )
         await _safe_close(websocket, code=status.WS_1011_INTERNAL_ERROR)
         return
@@ -358,12 +392,10 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
                     connection_pk=connection_pk,
                     error=str(close_err),
                 )
-        try:
-            await websocket.send_json(
-                {"type": "error", "message": "Internal error during registration."}
-            )
-        except Exception:
-            pass
+        await _safe_send_json(
+            websocket,
+            {"type": "error", "message": "Internal error during registration."},
+        )
         await _safe_close(websocket, code=status.WS_1011_INTERNAL_ERROR)
         return
 
