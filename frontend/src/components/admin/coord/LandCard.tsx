@@ -15,9 +15,18 @@
  * for inspecting field names at runtime rather than assuming them.
  */
 
+import { useEffect, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Anchor, GitBranch, GitPullRequest, ShieldQuestion } from "lucide-react";
+import {
+  Anchor,
+  GitBranch,
+  GitPullRequest,
+  Loader2,
+  Network,
+  ShieldQuestion,
+} from "lucide-react";
+import { httpClient } from "@/services/service-factory";
 
 // ---- Wire types -----------------------------------------------------------
 //
@@ -148,6 +157,20 @@ export interface PredictedLandEffect {
     applied?: boolean | null;
     provenance?: string | null;
   } | null;
+  // Cross-repo cascade siblings — the correlated lands in OTHER repos that
+  // this land's cascade fans out to. Empty array for single-repo lands;
+  // older persisted rows may LACK the field entirely (hence `?`), so render
+  // defensively. Each `cascade` is the same shape as `predicted.cascade`.
+  sibling_cascades?: SiblingCascade[] | null;
+}
+
+// One correlated sibling-repo cascade. `cascade` is defensively nullable
+// (a persisted row may carry the link without a re-computed cascade).
+export interface SiblingCascade {
+  repo: string;
+  branch: string;
+  correlated_via: string;
+  cascade: PredictedLandEffect["cascade"] | null;
 }
 
 // ---- Outcome → badge variant (the testable source of truth) ---------------
@@ -209,6 +232,42 @@ export function dimensionOutcomeVariant(
   return "outline";
 }
 
+// ---- Drift-class → badge variant (cross-repo restack verdicts) ------------
+//
+// Coord's `worst_drift_class` tokens, mapped to the same color ladder used
+// elsewhere on this surface. Exported + unit-tested so the cross-repo
+// verdict colors can't silently drift from coord's taxonomy.
+//   none          → green   (success)   — verified clean
+//   benign_add    → blue    (info)      — additive, non-conflicting
+//   pending       → blue    (info)      — not yet verified
+//   in_place      → amber   (warning)   — restacked in place
+//   active_negation→ red    (destructive)
+//   divergent     → red     (destructive)
+//   unknown       → neutral (outline)
+const DRIFT_VARIANT: Record<string, BadgeVariant> = {
+  none: "success",
+  benign_add: "info",
+  pending: "info",
+  in_place: "warning",
+  active_negation: "destructive",
+  divergent: "destructive",
+  unknown: "outline",
+};
+
+/**
+ * Map a coord `worst_drift_class` token to its badge variant. Null/unknown →
+ * outline (no fabricated color). Exported (and unit-tested) so the cross-repo
+ * verdict color contract can't silently drift.
+ */
+export function driftClassVariant(
+  driftClass?: string | null
+): BadgeVariant {
+  if (!driftClass) return "outline";
+  return DRIFT_VARIANT[driftClass] ?? "outline";
+}
+
+export { DRIFT_VARIANT };
+
 function shortSha(sha?: string | null): string {
   if (!sha) return "—";
   return sha.length > 8 ? sha.slice(0, 8) : sha;
@@ -228,12 +287,158 @@ function formatTime(iso?: string | null): string {
   }
 }
 
+// ---- Cross-repo verdict panel ---------------------------------------------
+//
+// When a recent land carries a `correlation_id`, its cascade may have fanned
+// out to sibling repos. The composed restack-verification verdict lives on
+// coord at `/coord/restacks/verifications`; the web backend proxies it at
+// `${API}/lands/verifications?correlation_id=…`. This panel fetches that ONCE
+// on first expand (LandCard is otherwise presentational), using the same
+// `httpClient.get` pattern the lands page uses.
+
+const API = "/api/v1/operations";
+
+// Wire shapes mirror coord's `/coord/restacks/verifications` response
+// (snake_case). Rendered defensively — `worst_drift_class` / `d3_outcome` /
+// `verified_at` are null until a repo is verified.
+export interface RepoVerification {
+  repo: string;
+  signature_id?: string | null;
+  worst_drift_class?: string | null;
+  d3_outcome?: string | null;
+  verified_at?: string | null;
+  edge_verdicts?: unknown[] | null;
+}
+
+export interface ComposedVerification {
+  worst_drift_class?: string | null;
+  repo_count?: number | null;
+  verified_count?: number | null;
+}
+
+export interface CrossRepoVerifications {
+  correlation_id?: string | null;
+  repos?: RepoVerification[] | null;
+  composed?: ComposedVerification | null;
+}
+
+function CrossRepoVerdictPanel({ correlationId }: { correlationId: string }) {
+  const [data, setData] = useState<CrossRepoVerifications | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Fetch ONCE on mount — the panel only mounts when the operator expands it,
+  // and unmounts/remounts on re-expand (acceptable: a fresh verdict each time).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const qs = new URLSearchParams({ correlation_id: correlationId });
+        const body = await httpClient.get<CrossRepoVerifications>(
+          `${API}/lands/verifications?${qs.toString()}`
+        );
+        if (!cancelled) setData(body);
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [correlationId]);
+
+  const composed = data?.composed ?? null;
+  const repos = data?.repos ?? [];
+
+  return (
+    <div
+      className="rounded border border-border bg-muted/30 p-2.5 space-y-2 text-xs"
+      data-testid="coord-land-crossrepo-panel"
+    >
+      {loading && (
+        <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          Loading cross-repo verdict…
+        </span>
+      )}
+      {error && (
+        <span
+          className="text-muted-foreground italic"
+          data-testid="coord-land-crossrepo-error"
+        >
+          Cross-repo verdict unavailable: {error}
+        </span>
+      )}
+      {!loading && !error && data && (
+        <>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-medium text-muted-foreground">
+              composed drift:
+            </span>
+            <Badge
+              variant={driftClassVariant(composed?.worst_drift_class)}
+              className="text-[10px]"
+              data-testid="coord-land-crossrepo-composed-badge"
+            >
+              {composed?.worst_drift_class ?? "unknown"}
+            </Badge>
+            <span className="text-muted-foreground tabular-nums">
+              {composed?.verified_count ?? 0}/{composed?.repo_count ?? 0} verified
+            </span>
+          </div>
+          {repos.length > 0 ? (
+            <div className="space-y-1">
+              {repos.map((r, i) => (
+                <div
+                  key={`${r.repo}-${i}`}
+                  className="flex items-center gap-2 flex-wrap"
+                  data-testid="coord-land-crossrepo-repo-row"
+                >
+                  <span className="font-mono">{r.repo}</span>
+                  {r.worst_drift_class ? (
+                    <Badge
+                      variant={driftClassVariant(r.worst_drift_class)}
+                      className="text-[10px]"
+                    >
+                      {r.worst_drift_class}
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-[10px] italic">
+                      unverified
+                    </Badge>
+                  )}
+                  {r.d3_outcome && (
+                    <span className="text-muted-foreground">{r.d3_outcome}</span>
+                  )}
+                  {r.verified_at && (
+                    <span className="ml-auto text-muted-foreground">
+                      {formatTime(r.verified_at)}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-muted-foreground italic">
+              No sibling repos in this correlation.
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ---- Card -----------------------------------------------------------------
 
 export function LandCard({ row }: { row: LandRow }) {
   const { signature: sig, verification: ver } = row;
   const action = (sig.action ?? "land") as string;
   const verdicts = ver?.dimension_verdicts ?? [];
+  const correlationId = sig.correlation_id ?? null;
+  const [crossRepoOpen, setCrossRepoOpen] = useState(false);
 
   return (
     <Card data-testid="coord-land-card">
@@ -266,6 +471,26 @@ export function LandCard({ row }: { row: LandRow }) {
             </span>
           )}
           <div className="ml-auto flex items-center gap-1.5">
+            {correlationId && (
+              <Badge
+                variant="outline"
+                className="font-mono text-[10px] inline-flex items-center gap-1 cursor-pointer select-none"
+                role="button"
+                tabIndex={0}
+                aria-expanded={crossRepoOpen}
+                onClick={() => setCrossRepoOpen((v) => !v)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setCrossRepoOpen((v) => !v);
+                  }
+                }}
+                data-testid="coord-land-crossrepo-badge"
+              >
+                <Network className="h-3 w-3" />
+                cross-repo
+              </Badge>
+            )}
             {ver ? (
               <>
                 <Badge
@@ -359,6 +584,11 @@ export function LandCard({ row }: { row: LandRow }) {
               <span className="italic truncate">{ver.rationale}</span>
             )}
           </div>
+        )}
+
+        {/* Cross-repo verdict — lazily fetched on expand */}
+        {correlationId && crossRepoOpen && (
+          <CrossRepoVerdictPanel correlationId={correlationId} />
         )}
       </CardContent>
     </Card>
