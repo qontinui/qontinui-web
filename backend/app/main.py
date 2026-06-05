@@ -1,4 +1,5 @@
 import asyncio
+import os
 import time
 from pathlib import Path
 
@@ -14,10 +15,16 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 # registered before api.py and models/__init__.py fire their hooks.
 # OSS-only deployments have no cloud-control package installed; the
 # ImportError is silently swallowed and the OSS app boots normally.
-try:
-    import qontinui_cloud_control  # noqa: F401  -- side-effect: registers extension hooks
-except ImportError:
-    pass
+# QONTINUI_DISABLE_CLOUD_EXTENSIONS=1 skips the import even where the package
+# IS installed (e.g. CI installs the sibling for tests) — used by
+# scripts/export_openapi.py --base to compute the BASE (OSS-only) declared
+# surface, which is what prod api.qontinui.io actually serves and what coord's
+# route-serving observer reads as its declared-route source.
+if os.environ.get("QONTINUI_DISABLE_CLOUD_EXTENSIONS") != "1":
+    try:
+        import qontinui_cloud_control  # noqa: F401  -- side-effect: registers extension hooks
+    except ImportError:
+        pass
 
 from app.api.v1.api import api_router
 from app.config.logging_config import configure_logging, get_logger
