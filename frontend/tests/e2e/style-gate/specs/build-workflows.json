@@ -1,7 +1,6 @@
 {
   "assertions": [
-    {
-      "type": "no_clipping"
-    }
+    { "type": "no_clipping" },
+    { "type": "no_layout_shift_since", "baseline": "build-workflows" }
   ]
 }
