@@ -356,6 +356,18 @@ async function enableCoPilotPreference(
 const AUTH_LOADING_SHELL_TEXT = "Loading...";
 
 /**
+ * The co-pilot page's own at-a-glance readiness badge (`CoPilotReadyStatus`,
+ * `data-testid="co-pilot-ready-status"`). It is ALWAYS rendered in the page
+ * header once the `(app)` layout has mounted the co-pilot route — across every
+ * gate branch (loading / opt-in / consent / command surface) — so its presence
+ * in the DOM is a deterministic, CO-PILOT-SPECIFIC "the authed route rendered"
+ * signal, distinct from the generic shared `AuthLoadingShell`. It lives inside
+ * the page's `data-bridge-invisible` wrapper, so it is NOT in the relay
+ * snapshot, but it IS in the real DOM — a Playwright DOM locator sees it.
+ */
+const CO_PILOT_READY_BADGE_TESTID = "co-pilot-ready-status";
+
+/**
  * Block until the authed app shell has resolved (the `AuthLoadingShell`
  * "Loading..." is gone), i.e. the `(app)` layout has mounted its children and
  * therefore the UI-Bridge `CommandRelayListener` exists and can attach a tab.
@@ -365,15 +377,36 @@ const AUTH_LOADING_SHELL_TEXT = "Loading...";
  * Best-effort: if the shell text never clears within budget we DON'T throw here
  * (the login guard + relay poll downstream produce the precise, actionable
  * failure). We just stop waiting so the real diagnostics run.
+ *
+ * `timeoutMs` is parameterized so the cold-start warmup (in `beforeAll`, with a
+ * generous hook timeout) can wait longer than a per-route capture (inside the
+ * 60s per-test budget, where over-waiting here starves the relay poll — the
+ * exact failure mode the prior fix's fixed 45s wait caused for the cold-first
+ * route).
  */
-async function waitForAuthedShell(page: Page): Promise<void> {
-  // Generous within the 60s per-test timeout: a COLD Next dev server compiles
-  // the (app) layout + route + provider tree on first hit, and the auth
-  // round-trip (getCurrentUser -> /users/me) only starts after that. 45s
-  // comfortably covers the cold path without risking the per-test deadline.
+async function waitForAuthedShell(
+  page: Page,
+  timeoutMs = 20_000
+): Promise<void> {
   const shell = page.getByText(AUTH_LOADING_SHELL_TEXT, { exact: true });
   await shell
-    .waitFor({ state: "hidden", timeout: 45_000 })
+    .waitFor({ state: "hidden", timeout: timeoutMs })
+    .catch(() => undefined);
+}
+
+/**
+ * Co-pilot-specific readiness: wait for the page's own `CoPilotReadyStatus`
+ * badge to appear (the route rendered past the shared auth shell). Best-effort,
+ * bounded; the relay poll downstream is the authoritative readiness check.
+ */
+async function waitForCoPilotReady(
+  page: Page,
+  timeoutMs = 20_000
+): Promise<void> {
+  await page
+    .getByTestId(CO_PILOT_READY_BADGE_TESTID)
+    .first()
+    .waitFor({ state: "attached", timeout: timeoutMs })
     .catch(() => undefined);
 }
 
@@ -396,8 +429,19 @@ async function navigateAndSettle(page: Page, route: StyleGateRoute) {
     .waitForLoadState("networkidle", { timeout: 10_000 })
     .catch(() => undefined);
   // Deterministic readiness gate: the relay can't attach until the authed shell
-  // resolves and mounts the provider subtree. Wait for it explicitly.
+  // resolves and mounts the provider subtree. Wait for it explicitly. Budget is
+  // modest here (the `beforeAll` warmup already paid the cold compile + auth, so
+  // by the time the per-route test runs the shell clears quickly) — keeping it
+  // small leaves the bulk of the 60s per-test budget for the relay-attach poll,
+  // instead of the prior fixed 45s wait that starved the poll on the cold-first
+  // route.
   await waitForAuthedShell(page);
+  // For /co-pilot, also wait for its OWN readiness badge so readiness is
+  // co-pilot-specific (the route rendered past the shared shell), not just the
+  // generic "Loading..." absence.
+  if (route.id === "co-pilot") {
+    await waitForCoPilotReady(page);
+  }
   await page.waitForTimeout(route.settleMs);
 }
 
@@ -521,23 +565,38 @@ async function assertNotLoginSurface(
   }
 }
 
+/** Outcome of a relay-attach poll: the last response seen + whether attached. */
+interface RelayPollResult {
+  attached: boolean;
+  raw: string;
+  body: SnapshotResponse;
+  status: number;
+}
+
 /**
- * Poll the relay until a browser tab is registered, then fetch the snapshot.
- * Returns the parsed body once a non-503 element-bearing snapshot is obtained.
- * Throws with an actionable message if the relay never attaches within budget.
+ * Poll `/control/snapshot` until the in-page `CommandRelayListener` has
+ * registered a tab (a non-503 2xx, element-bearing response) or the budget
+ * elapses. The ONE relay-readiness mechanism — used by BOTH the cold-start
+ * warmup (`beforeAll`) and the per-route capture. Never throws: the caller
+ * decides whether a non-attach is fatal (capture) or best-effort (warmup).
+ *
+ * `page.waitForTimeout` here is bounded by `budgetMs`, but it still counts
+ * against the enclosing test/hook timeout — callers must size `budgetMs` to
+ * leave room (the warmup runs in `beforeAll` with its own generous hook
+ * timeout; the capture runs inside the 60s per-test budget AFTER the shell has
+ * already cleared, so its handshake-only budget is small).
  */
-async function captureSnapshot(
+async function pollRelayUntilAttached(
   page: Page,
-  route: StyleGateRoute
-): Promise<{ raw: string; body: SnapshotResponse }> {
-  // The authed-shell gate (waitForAuthedShell, in navigateAndSettle) already
-  // guarantees the provider subtree mounted before we get here, so this budget
-  // covers only the listener's own attach handshake (heartbeat -> relay
-  // registration), not the cold auth round-trip. 20s is ample for that
-  // post-mount step.
-  const deadline = Date.now() + 20_000;
-  let last: { status: number; raw: string; body: SnapshotResponse } | null =
-    null;
+  budgetMs: number
+): Promise<RelayPollResult> {
+  const deadline = Date.now() + budgetMs;
+  let last: RelayPollResult = {
+    attached: false,
+    raw: "",
+    body: {},
+    status: -1,
+  };
 
   while (Date.now() < deadline) {
     const result = await page.evaluate(
@@ -559,23 +618,46 @@ async function captureSnapshot(
     } catch {
       // Non-JSON body — leave parsed empty; treated as not-yet-ready below.
     }
-    last = { status: result.status, raw: result.text, body: parsed };
 
     // 503 NO_BROWSER_CONNECTED -> relay client not attached yet; keep polling.
     const notConnected =
       result.status === 503 || parsed.code === "NO_BROWSER_CONNECTED";
-    if (!notConnected && result.status >= 200 && result.status < 300) {
-      return { raw: result.text, body: parsed };
-    }
+    const attached =
+      !notConnected && result.status >= 200 && result.status < 300;
+    last = { attached, raw: result.text, body: parsed, status: result.status };
+    if (attached) return last;
 
     await page.waitForTimeout(500);
   }
 
+  return last;
+}
+
+/**
+ * Poll the relay until a browser tab is registered, then return the snapshot.
+ * Throws with an actionable message if the relay never attaches within budget.
+ *
+ * The authed-shell gate (`waitForCoPilotReady`/`waitForAuthedShell` in
+ * `navigateAndSettle`) already guarantees the provider subtree mounted before we
+ * get here AND the `beforeAll` warmup already drove a full cold relay attach, so
+ * this budget covers only THIS tab's own attach handshake (heartbeat -> relay
+ * registration), not the cold auth round-trip or first-compile. 20s is ample.
+ */
+async function captureSnapshot(
+  page: Page,
+  route: StyleGateRoute
+): Promise<{ raw: string; body: SnapshotResponse }> {
+  const last = await pollRelayUntilAttached(page, 20_000);
+  if (last.attached) {
+    return { raw: last.raw, body: last.body };
+  }
+
   // Budget exhausted — surface a precise, actionable failure. A loud failure
   // beats a captured-but-empty snapshot.
-  const detail = last
-    ? `last status ${last.status}, code=${last.body.code ?? "n/a"}`
-    : "no response captured";
+  const detail =
+    last.status >= 0
+      ? `last status ${last.status}, code=${last.body.code ?? "n/a"}`
+      : "no response captured";
   throw new Error(
     `[style-gate] Route "${route.id}" (${route.path}): UI-Bridge relay never ` +
       `attached, so ${SNAPSHOT_PATH} could not return a snapshot (${detail}).\n` +
@@ -593,39 +675,84 @@ async function captureSnapshot(
 // beforeAll so a single PUT covers every route's test.
 //
 // WARMUP (cold-start de-flake): a fresh Next dev server compiles the `(app)`
-// layout + provider tree + each route ON FIRST HIT. Whichever route renders
-// FIRST therefore pays that one-time dev-compile cost ON TOP OF the cold
-// client-side auth round-trip — and if their sum outran the relay-attach budget,
-// that first route (co-pilot, first in routes.json) flaked to
-// `503 NO_BROWSER_CONNECTED` -> CAPTURE-UNAVAILABLE while the warm routes after
-// it passed. We pre-warm the shell ONCE here (own page/context off the project's
-// storageState, with the same gate-0/gate-3 init seeding) so the cold compile +
-// auth happen before ANY route's per-test budget starts. This makes the three
-// routes symmetric (none is "the cold one") rather than inflating settleMs.
-// Best-effort: a warmup hiccup must not fail the suite — the per-route waits
-// still cover correctness.
+// layout + provider tree + each route + the `/api/ui-bridge/control/snapshot`
+// relay-proxy route ON FIRST HIT. Whichever route renders FIRST pays that
+// one-time dev-compile cost ON TOP OF the cold client-side auth round-trip AND
+// the relay-attach handshake. That sum reliably exceeds the 60s per-test budget,
+// so the first route (co-pilot, first in routes.json) flaked to CAPTURE-
+// UNAVAILABLE — the failure-time snapshot showed the SHARED `AuthLoadingShell`
+// ("Loading...") still up at 60s while the warm routes after it captured in
+// ~20s. The prior warmup only waited for the auth shell to clear (and silently
+// swallowed the cold-start failure when it didn't), so it never actually drove
+// the relay to attach — it left the heavy client-auth + relay-attach work to be
+// re-paid cold inside the first per-test budget.
+//
+// This warmup instead runs the FULL readiness dance — navigate -> auth shell
+// clears -> co-pilot ready badge -> RELAY ATTACHES — and BLOCKS on the relay
+// actually attaching, in `beforeAll` where there is no 60s per-test cap (we give
+// the hook a generous timeout below). That forces the cold compile of every
+// module the capture needs (layout, route, AND the relay proxy) plus the client
+// auth + relay handshake to complete ONCE, before any per-test budget starts —
+// so the first real test runs as warm as the others. One mechanism: the same
+// `pollRelayUntilAttached` the capture uses.
+//
+// Best-effort on the OUTCOME: a warmup miss must not fail the suite (the per-
+// route capture + login guard still produce the precise, actionable failure),
+// but we log loudly whether the warmup attached so a regression is diagnosable
+// from the run log rather than silently swallowed.
 test.beforeAll(async ({ request, browser }) => {
+  // Generous hook budget: the cold dev-server first-compile of the (app)
+  // layout + co-pilot route + relay proxy, the cold auth round-trip, and the
+  // relay-attach handshake must all fit here ONCE. This is the wall-clock the
+  // prior fixed 45s per-test `waitForAuthedShell` could not afford without
+  // starving the relay poll.
+  test.setTimeout(180_000);
+
   await enableCoPilotPreference(request);
 
   const context = await browser.newContext({
     storageState: STORAGE_STATE_PATH,
     viewport: VIEWPORT,
   });
+  let attached = false;
+  let lastStatus = -1;
   try {
     const page = await context.newPage();
     await seedAuthAndConsentInitScript(page);
-    // Warm the authed shell once: compiles the (app) layout/providers and pays
-    // the cold auth round-trip. /co-pilot is the historically-cold route, so
-    // warming it specifically retires the exact path that flaked.
+    // Warm the historically-cold path end to end. /co-pilot is first in
+    // routes.json, so warming IT specifically retires the exact path that flaked.
     await page.goto("/co-pilot", { waitUntil: "domcontentloaded" });
     await page
       .waitForLoadState("networkidle", { timeout: 10_000 })
       .catch(() => undefined);
-    await waitForAuthedShell(page);
-  } catch {
-    // best-effort warmup — never block the suite on it.
+    // Long shell wait here (no per-test cap) — pay the cold auth + compile.
+    await waitForAuthedShell(page, 120_000);
+    await waitForCoPilotReady(page, 30_000);
+    // Block until the relay genuinely attaches (compiles the proxy route + runs
+    // the listener handshake). 60s covers the post-mount handshake on a server
+    // that just compiled the route synchronously above.
+    const result = await pollRelayUntilAttached(page, 60_000);
+    attached = result.attached;
+    lastStatus = result.status;
+  } catch (err) {
+    console.warn(
+      `[style-gate] warmup threw before the relay attached: ${String(err)}`
+    );
   } finally {
     await context.close();
+  }
+
+  if (attached) {
+    console.warn(
+      "[style-gate] warmup: relay attached on /co-pilot — dev server is warm " +
+        "(layout + co-pilot route + relay proxy compiled, auth + handshake done)."
+    );
+  } else {
+    console.warn(
+      `[style-gate] warmup: relay did NOT attach on /co-pilot within budget ` +
+        `(last status ${lastStatus}). The per-route capture will still try and ` +
+        `fail loudly if the cold path can't complete in the per-test budget.`
+    );
   }
 });
 
