@@ -1,7 +1,7 @@
 """deploy-effect 02 durable rollback-dispatch marker on coord.deploy_signatures
 
 Revision ID: deploy_effect_02_rollback_dispatch_marker
-Revises: coord_restack_verif_sig_unique
+Revises: coord_gates_observation_cols
 Create Date: 2026-06-05
 
 Auto-rollback arming prerequisite for the deploy-action effect-signatures plan
@@ -29,9 +29,11 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "deploy_effect_02_rollback_dispatch_marker"
-# Re-chained 2026-06-05: coord_restack_verif_sig_unique (web #455) landed off
-# the same twin_p6_01 head mid-flight; this migration now follows it.
-down_revision: str = "coord_restack_verif_sig_unique"
+# Re-chained twice 2026-06-05: web #455 then web #460 each landed off the
+# head this migration was chained to (both while the coord alembic-head claim
+# was held — the handshake is evidently not being checked by peers); this
+# migration now follows coord_gates_observation_cols.
+down_revision: str = "coord_gates_observation_cols"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
