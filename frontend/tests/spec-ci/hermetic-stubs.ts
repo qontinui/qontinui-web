@@ -149,6 +149,22 @@ export const HERMETIC_STUBS: readonly HermeticStub[] = [
     note: "NextStepSettings {domains: []} (settings/coordination/_hooks/useNextStepSettings.ts:89) — coord proxy",
   },
   {
+    pattern: /\/api\/v1\/operations\/coord\/priority-sets(\?|$)/,
+    // Wire is a BARE array of PrioritySetRow (httpClient.get<PrioritySetRow[]>
+    // in usePrioritySets.ts), not {sets: ...}. Empty = fresh tenant owns no
+    // custom sets, driving the section's "No custom priority sets yet" state.
+    body: [],
+    note: "PrioritySetRow[] (settings/coordination/_hooks/usePrioritySets.ts) — coord proxy; priority-sets section empty state",
+  },
+  {
+    pattern: /\/api\/v1\/operations\/coord\/composition-rules(\?|$)/,
+    // Wire is a BARE array of CompositionRuleRow. Empty = no wiring, so the
+    // honesty-gate computation yields "not delivered" for any set and the
+    // read-only wiring summary renders nothing.
+    body: [],
+    note: "CompositionRuleRow[] (settings/coordination/_hooks/usePrioritySets.ts) — coord proxy; composition wiring empty state",
+  },
+  {
     pattern: /\/api\/v1\/operations\/agent-logs\/by-agent\/[^/?]+(\?|$)/,
     body: { logs: [] },
     note: "ByAgentResponse {logs} (admin/coord/agents/[agent_id]/page.tsx fetchData; tolerates bare array) — coord proxy",
