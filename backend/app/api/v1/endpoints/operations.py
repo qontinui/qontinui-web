@@ -3298,3 +3298,114 @@ async def get_next_step_settings_fleet(
     return await _proxy_coord_get(
         "/coord/next-step-settings/fleet", tenant_id=current_user.id
     )
+
+
+# ---- Priority-sets + composition-rules CRUD proxy -----------------------
+#
+# Plan ``2026-05-15-priority-sets-write-path-and-implementation-set.md``
+# Phase P2 — forward coord's priority-set / composition-rule CRUD through
+# the web backend so the cloud-control tenant-settings UI can manage them
+# without the browser hitting coord cross-origin.
+#
+# Auth posture: this is a tenant-admin settings surface, so EVERY route
+# (reads and writes) is gated by ``require_coord_tenant_admin`` — coord's
+# ``/admin/coord/me`` ``is_admin`` is the source of truth; the web-side
+# gate keeps the surface from being silently opened. ``require_coord_tenant_admin``
+# resolves the caller's home tenant AND captures the caller's bearer in the
+# request-scoped ContextVar, so ``_proxy_coord_*`` forwards only the bearer
+# (never a tenant header — coord derives the tenant from the bearer; Phase
+# T2b semantics).
+#
+# Coord error bodies (403 ``admin_required``, 409 ``duplicate_set_name``,
+# 404, ...) pass through verbatim via the ``_proxy_coord_*`` helpers, which
+# mirror the upstream status + body rather than collapsing to a 500.
+
+
+@router.get("/coord/priority-sets")
+async def list_priority_sets(
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """List the tenant's priority sets. Tenant-admin only."""
+    return await _proxy_coord_get("/coord/priority-sets", tenant_id=tenant_id)
+
+
+@router.post("/coord/priority-sets")
+async def create_priority_set(
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Create a priority set. Body forwarded verbatim. Tenant-admin only.
+
+    Coord's 409 ``duplicate_set_name`` (and any other 4xx) passes through.
+    """
+    return await _proxy_coord_post("/coord/priority-sets", body, tenant_id=tenant_id)
+
+
+@router.patch("/coord/priority-sets/{priority_set_id}")
+async def update_priority_set(
+    priority_set_id: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Update a priority set. Body forwarded verbatim. Tenant-admin only."""
+    return await _proxy_coord_patch(
+        f"/coord/priority-sets/{priority_set_id}", body, tenant_id=tenant_id
+    )
+
+
+@router.delete("/coord/priority-sets/{priority_set_id}")
+async def delete_priority_set(
+    priority_set_id: str,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Delete a priority set. Tenant-admin only."""
+    return await _proxy_coord_delete(
+        f"/coord/priority-sets/{priority_set_id}", tenant_id=tenant_id
+    )
+
+
+@router.get("/coord/composition-rules")
+async def list_composition_rules(
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """List the tenant's composition rules. Tenant-admin only."""
+    return await _proxy_coord_get("/coord/composition-rules", tenant_id=tenant_id)
+
+
+@router.post("/coord/composition-rules")
+async def create_composition_rule(
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Create a composition rule. Body forwarded verbatim. Tenant-admin only.
+
+    Coord's 4xx error bodies (e.g. 409 conflicts) pass through.
+    """
+    return await _proxy_coord_post(
+        "/coord/composition-rules", body, tenant_id=tenant_id
+    )
+
+
+@router.patch("/coord/composition-rules/{composition_rule_id}")
+async def update_composition_rule(
+    composition_rule_id: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Update a composition rule. Body forwarded verbatim. Tenant-admin only."""
+    return await _proxy_coord_patch(
+        f"/coord/composition-rules/{composition_rule_id}",
+        body,
+        tenant_id=tenant_id,
+    )
+
+
+@router.delete("/coord/composition-rules/{composition_rule_id}")
+async def delete_composition_rule(
+    composition_rule_id: str,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Delete a composition rule. Tenant-admin only."""
+    return await _proxy_coord_delete(
+        f"/coord/composition-rules/{composition_rule_id}", tenant_id=tenant_id
+    )
