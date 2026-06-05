@@ -215,6 +215,10 @@ export interface GateRow {
   /** Plan-anchored gates carry `plan_id` + `phase_name`. */
   plan_id: string | null;
   phase_name: string | null;
+  /** Human-readable plan slug (e.g. `2026-06-05-plan-gate-web-surface`),
+   *  added by the parallel coord PR. Optional + nullable: a lagging coord
+   *  deploy omits it, so the group header falls back to `plan_id`. */
+  plan_slug?: string | null;
   predicate: GatePredicate;
   verdict: GateVerdict;
   verdict_reason: string | null;

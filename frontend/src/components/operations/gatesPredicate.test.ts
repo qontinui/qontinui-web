@@ -113,6 +113,44 @@ describe("gateAnchor", () => {
     expect(anchor.label).toBe("plan-uuid · Phase 1");
   });
 
+  it("prefers plan_slug over plan_id in the label when present", () => {
+    const anchor = gateAnchor({
+      plan_id: "plan-uuid",
+      phase_name: "Phase 2",
+      plan_slug: "2026-06-05-plan-gate-web-surface",
+      claim_kind: null,
+      resource_key: null,
+    });
+    expect(anchor.kind).toBe("plan");
+    // Key stays anchored on plan_id so slug-bearing and slug-less rows of the
+    // same plan still collapse into one group.
+    expect(anchor.key).toBe("plan:plan-uuid:Phase 2");
+    expect(anchor.label).toBe(
+      "2026-06-05-plan-gate-web-surface · Phase 2",
+    );
+  });
+
+  it("falls back to plan_id in the label when plan_slug is absent/empty", () => {
+    expect(
+      gateAnchor({
+        plan_id: "plan-uuid",
+        phase_name: "Phase 1",
+        claim_kind: null,
+        resource_key: null,
+      }).label,
+    ).toBe("plan-uuid · Phase 1");
+    // An empty-string slug (lagging coord) also falls back, never a blank cell.
+    expect(
+      gateAnchor({
+        plan_id: "plan-uuid",
+        phase_name: "Phase 1",
+        plan_slug: "",
+        claim_kind: null,
+        resource_key: null,
+      }).label,
+    ).toBe("plan-uuid · Phase 1");
+  });
+
   it("groups claim-anchored gates under claim_kind · resource_key", () => {
     const anchor = gateAnchor({
       plan_id: null,

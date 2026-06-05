@@ -111,6 +111,15 @@ export const HERMETIC_STUBS: readonly HermeticStub[] = [
     note: "DeviceStatusResponse (components/operations/types.ts:54) — coord proxy",
   },
   {
+    pattern: /\/api\/v1\/operations\/gates\/list(\?|$)/,
+    // Bare array — coord's GET /coord/gates serializes Vec<GateResponse>;
+    // useGatesStream.ts:35 tolerates bare array or {gates: []}. Empty list
+    // drives the panel's "No gates registered" empty state, which the
+    // operations spec's operations-gates-panel state asserts.
+    body: [],
+    note: "GateRow[] (components/operations/useGatesStream.ts:23) — coord proxy; gates panel empty state",
+  },
+  {
     pattern: /\/api\/v1\/operations\/merge\/queue(\?|$)/,
     body: { proposals: [] },
     note: "QueueResponse {proposals} (operations/mergeTypes.ts; MergeTrain.tsx:498 tolerates either shape) — coord proxy",
