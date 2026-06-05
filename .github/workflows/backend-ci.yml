@@ -7,10 +7,12 @@ on:
       - 'backend/**'
       - '.github/workflows/backend-ci.yml'
   push:
-    # main is included so the per-test coverage producer step (gated on
-    # push-to-main below) actually fires; the gating jobs still run on
-    # push-to-main too, which is harmless (they already run on PRs into main).
-    branches: [main, develop]
+    # main is intentionally NOT here: the per-test coverage producer that used to
+    # ride this gating workflow on push-to-main now lives in the standalone,
+    # non-gating .github/workflows/backend-coverage-producer.yml. Keeping main off
+    # this trigger avoids re-running the full gating suite (lint, security-scan,
+    # build-test, tests) on every main push — it already ran on the PR.
+    branches: [develop]
     paths:
       - 'backend/**'
       - '.github/workflows/backend-ci.yml'
@@ -283,27 +285,13 @@ jobs:
             --cov-report=term \
             --junitxml=junit-results.xml
 
-      # Per-test -> touched-file coverage producer. Runs ONLY on push-to-main:
-      # the coverage map is cached per (repo, head_sha) in coord, so PR lanes
-      # consume it but never produce — this step's cost never gates a PR. It is
-      # best-effort (the script exits 0 on any failure), so it cannot fail the
-      # gating test job even when coord is unreachable. The `--cov-context=test`
-      # flag above makes coverage.py record which test touched each line; this
-      # step reads that .coverage SQLite db and POSTs the observations + the
-      # JUnit results to coord's existing ingest routes.
-      - name: Export per-test coverage to coord (main only, best-effort)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        env:
-          GITHUB_SHA: ${{ github.sha }}
-          # COORD_HTTP_URL defaults to https://coord.qontinui.io inside the
-          # script; override here only if a non-prod coord is targeted.
-        run: |
-          # Prove the extractor's own correctness on every run before trusting
-          # it against the real db (fast, no network).
-          python scripts/export_test_coverage.py --self-test
-          python scripts/export_test_coverage.py \
-            --coverage-db .coverage \
-            --junit-xml junit-results.xml
+      # The per-test -> touched-file coverage producer that used to run here on
+      # push-to-main now lives in the standalone, non-gating workflow
+      # .github/workflows/backend-coverage-producer.yml (it re-runs the suite with
+      # the same flags + service stack, then exports). It was moved out so a main
+      # push no longer re-runs this entire gating workflow just to feed coord.
+      # The pytest invocation above keeps --cov-context=test / --junitxml: those
+      # flags are harmless on PRs and keep the two suites byte-identical.
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4

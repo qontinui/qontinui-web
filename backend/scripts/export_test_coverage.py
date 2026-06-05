@@ -210,6 +210,37 @@ def extract_observations(coverage_db: str, head_sha: str) -> list[dict]:
     return observations
 
 
+def _log_response_body(url: str, status: int, body: str) -> None:
+    """Print the response body (truncated) and warn on partial/unparseable persists.
+
+    Visibility is the point: a silently-empty or partially-persisted batch hid for
+    half a day because we only logged the status code. The observe route returns
+    ``{"accepted": N, "persisted": M, "failed": ...}`` and the results ingest
+    returns a similar JSON body; surface it on EVERY POST, and shout when
+    ``persisted < accepted`` or the body can't be parsed.
+    """
+    snippet = body if len(body) <= 300 else body[:300] + "...(truncated)"
+    info(f"POST {url} -> {status} body={snippet}")
+    try:
+        parsed = json.loads(body) if body.strip() else {}
+    except (ValueError, TypeError):
+        warn(f"POST {url} -> {status}: response body is not valid JSON (see body above)")
+        return
+    if isinstance(parsed, dict) and "accepted" in parsed and "persisted" in parsed:
+        accepted = parsed.get("accepted")
+        persisted = parsed.get("persisted")
+        failed = parsed.get("failed")
+        try:
+            if persisted < accepted:
+                warn(
+                    f"POST {url}: persisted ({persisted}) < accepted ({accepted}) "
+                    f"-- batch partially dropped"
+                    + (f", failed={failed}" if failed is not None else "")
+                )
+        except TypeError:
+            warn(f"POST {url}: non-numeric accepted/persisted in body (see body above)")
+
+
 def post_json(url: str, payload: dict, *, timeout: float = 30.0) -> None:
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
@@ -217,7 +248,12 @@ def post_json(url: str, payload: dict, *, timeout: float = 30.0) -> None:
     )
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         status = resp.getcode()
-        info(f"POST {url} -> {status}")
+        try:
+            body = resp.read().decode("utf-8", errors="replace")
+        except Exception as exc:  # noqa: BLE001 - body read must not mask the POST
+            body = ""
+            warn(f"POST {url} -> {status}: failed to read response body: {exc!r}")
+        _log_response_body(url, status, body)
         if status >= 300:
             raise urllib.error.HTTPError(url, status, "non-2xx", resp.headers, None)
 
