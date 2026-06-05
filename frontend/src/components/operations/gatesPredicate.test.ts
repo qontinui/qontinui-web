@@ -3,6 +3,7 @@ import {
   gateAnchor,
   humanizeDurationSecs,
   humanizePredicate,
+  summarizeContinuation,
 } from "./gatesPredicate";
 
 /**
@@ -47,6 +48,21 @@ describe("humanizePredicate", () => {
         window_secs: 3_600,
       }),
     ).toBe("metric_threshold: error_rate < 5 for 1h");
+  });
+
+  it("renders plan_ready as 'Plan ready to implement' with the slug", () => {
+    expect(
+      humanizePredicate({
+        kind: "plan_ready",
+        plan_slug: "2026-06-05-visible-gate-continuations",
+      }),
+    ).toBe("Plan ready to implement: 2026-06-05-visible-gate-continuations");
+  });
+
+  it("renders plan_ready without a slug as the bare label", () => {
+    expect(humanizePredicate({ kind: "plan_ready" })).toBe(
+      "Plan ready to implement",
+    );
   });
 
   it("renders time_elapsed with a humanized duration", () => {
@@ -161,5 +177,106 @@ describe("gateAnchor", () => {
     expect(anchor.kind).toBe("claim");
     expect(anchor.key).toBe("claim:ci_notify:ci-notify:org/repo");
     expect(anchor.label).toBe("ci_notify · ci-notify:org/repo");
+  });
+});
+
+/**
+ * Continuation summary — the predictability affordance on a gate row (plan
+ * 2026-06-05-visible-gate-continuations-and-plan-ready-predicate P3). Pins:
+ * absent presentation == terminal (default), headless wording, prompt
+ * first-line + truncation, device shortening, and the graceful-degrade nulls
+ * (no continuation → no summary, never a crash) so the panel stays honest
+ * while coord PR #356 is unmerged.
+ */
+describe("summarizeContinuation", () => {
+  it("treats an ABSENT presentation as a visible terminal session", () => {
+    expect(
+      summarizeContinuation({
+        target_device_id: "abcdef1234567890",
+        initial_prompt: "Implement P3 of the plan",
+      }),
+    ).toBe(
+      'Clearing opens a visible terminal session on abcdef12 · prompt: "Implement P3 of the plan"',
+    );
+  });
+
+  it("treats an explicit terminal presentation the same as absent", () => {
+    expect(
+      summarizeContinuation({
+        target_device_id: "abcdef1234567890",
+        presentation: "terminal",
+        initial_prompt: "go",
+      }),
+    ).toBe(
+      'Clearing opens a visible terminal session on abcdef12 · prompt: "go"',
+    );
+  });
+
+  it("says 'headless agent session' for presentation: headless", () => {
+    expect(
+      summarizeContinuation({
+        target_device_id: "abcdef1234567890",
+        presentation: "headless",
+        initial_prompt: "run the fleet job",
+      }),
+    ).toBe(
+      'Clearing spawns a headless agent session on abcdef12 · prompt: "run the fleet job"',
+    );
+  });
+
+  it("uses only the first line of a multi-line prompt", () => {
+    const out = summarizeContinuation({
+      target_device_id: "abcdef1234567890",
+      initial_prompt: "First line of the prompt\nSecond line\nThird line",
+    });
+    expect(out).toContain('prompt: "First line of the prompt"');
+    expect(out).not.toContain("Second line");
+  });
+
+  it("truncates a long prompt first line to ~80 chars with an ellipsis", () => {
+    const longLine = "x".repeat(200);
+    const out = summarizeContinuation({
+      target_device_id: "abcdef1234567890",
+      initial_prompt: longLine,
+    })!;
+    // 80 chars of prompt + the U+2026 ellipsis inside the quotes.
+    expect(out).toContain(`prompt: "${"x".repeat(80)}…"`);
+  });
+
+  it("prefers a resolved hostname over the short device id", () => {
+    expect(
+      summarizeContinuation(
+        {
+          target_device_id: "abcdef1234567890",
+          initial_prompt: "go",
+        },
+        () => "spaceship",
+      ),
+    ).toBe('Clearing opens a visible terminal session on spaceship · prompt: "go"');
+  });
+
+  it("falls back to the short device id when the resolver returns null", () => {
+    const out = summarizeContinuation(
+      { target_device_id: "abcdef1234567890", initial_prompt: "go" },
+      () => null,
+    );
+    expect(out).toContain("on abcdef12");
+  });
+
+  it("omits the prompt clause when there is no prompt", () => {
+    expect(
+      summarizeContinuation({ target_device_id: "abcdef1234567890" }),
+    ).toBe("Clearing opens a visible terminal session on abcdef12");
+  });
+
+  it("says 'an unknown device' when no device id is present", () => {
+    expect(summarizeContinuation({ initial_prompt: "go" })).toBe(
+      'Clearing opens a visible terminal session on an unknown device · prompt: "go"',
+    );
+  });
+
+  it("returns null for no / empty continuation (degrades to no summary)", () => {
+    expect(summarizeContinuation(null)).toBeNull();
+    expect(summarizeContinuation(undefined)).toBeNull();
   });
 });
