@@ -68,6 +68,70 @@ jobs:
       - name: Check out qontinui-web
         uses: actions/checkout@v5
 
+      # ── Φ_Schema declared-side chain-head attestation ─────────────────────
+      # coord's schema observer can only see the ACTUAL side (the stamped
+      # alembic_version row) from inside ECS — the authored migration DAG is
+      # a designed blind spot it reports as drift_class `unknown` forever.
+      # This step is the producer half: compute the authored head(s) from the
+      # migration files (stdlib scan, no DB, no alembic install) and POST them
+      # to coord (bearer-gated, fail-closed server-side). Runs BEFORE the
+      # apply and best-effort: the attestation reflects the AUTHORED head
+      # as-merged on main regardless of apply outcome, so authored-not-applied
+      # shows up as coord's honest `pending` rather than being masked by
+      # attest-only-on-success. The nightly schedule re-attests (self-healing
+      # if a POST was ever missed). Any failure here warns and the migration
+      # proceeds — attestation observes, it does not gate.
+      - name: Attest declared alembic chain head to coord
+        continue-on-error: true
+        env:
+          COORD_INGEST_TOKEN: ${{ secrets.COORD_INGEST_TOKEN }}
+        run: |
+          set -uo pipefail
+          HEADS_LINE=$(python3 - <<'PY'
+          import os, re
+          revs, parents = set(), set()
+          d = "backend/alembic/versions"
+          for f in os.listdir(d):
+              if not f.endswith(".py"):
+                  continue
+              s = open(os.path.join(d, f), encoding="utf-8").read()
+              m = re.search(r"^revision(?::\s*str)?\s*=\s*[\"']([^\"']+)", s, re.M)
+              if m:
+                  revs.add(m.group(1))
+              for dm in re.finditer(r"^down_revision[^=]*=\s*(.+)", s, re.M):
+                  for tok in re.findall(r"[\"']([^\"']+)[\"']", dm.group(1)):
+                      parents.add(tok)
+          heads = sorted(revs - parents)
+          print(f"{','.join(heads)} {len(heads)}")
+          PY
+          )
+          HEADS="${HEADS_LINE% *}"
+          COUNT="${HEADS_LINE##* }"
+          if [ -z "${HEADS:-}" ] || [ "${COUNT:-0}" = "0" ]; then
+            echo "::warning::could not compute the authored alembic head — skipping attestation"
+            exit 0
+          fi
+          echo "authored chain head(s): $HEADS (count=$COUNT)"
+          BODY=$(python3 -c "
+          import json, os, sys
+          print(json.dumps({
+              'repo': 'qontinui/qontinui-web',
+              'chain_head': sys.argv[1],
+              'head_count': int(sys.argv[2]),
+              'source_sha': os.environ.get('GITHUB_SHA'),
+          }))" "$HEADS" "$COUNT")
+          CODE=$(curl -s -o /tmp/attest_resp -w '%{http_code}' --max-time 20 \
+            -X POST "https://coord.qontinui.io/coord/schema/chain-head" \
+            -H "Authorization: Bearer $COORD_INGEST_TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d "$BODY" || echo 000)
+          if [ "$CODE" = "200" ]; then
+            echo "attested: $(head -c 200 /tmp/attest_resp)"
+          else
+            echo "::warning::chain-head attestation returned $CODE (best-effort, migration proceeds): $(head -c 300 /tmp/attest_resp 2>/dev/null)"
+          fi
+          exit 0
+
       # The migrator Dockerfile uses qontinui-root as build context (one
       # level up from any sibling repo's checkout). Sibling-checkout pattern
       # mirrors backend-deploy-production.yml and the runner CI.
