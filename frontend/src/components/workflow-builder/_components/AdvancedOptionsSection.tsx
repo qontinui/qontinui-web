@@ -94,7 +94,7 @@ export function AdvancedOptionsSection({
   };
   return (
     <Collapsible open={showAdvanced} onOpenChange={setShowAdvanced}>
-      <CollapsibleTrigger className="flex items-center gap-2 text-sm text-zinc-400 hover:text-zinc-200 transition-colors">
+      <CollapsibleTrigger className="flex min-h-6 items-center gap-2 text-sm text-zinc-400 hover:text-zinc-200 transition-colors">
         {showAdvanced ? (
           <ChevronDown className="w-4 h-4" />
         ) : (

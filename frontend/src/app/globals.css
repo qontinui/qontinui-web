@@ -44,6 +44,11 @@
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
+  /* Darker primary used for solid button BACKGROUNDS so white label text
+     clears WCAG AA (>=4.5:1). The base --primary stays the lighter brand blue
+     for text/links (text-primary on the dark app bg, rings) where darkening it
+     would REGRESS link contrast. See --primary-strong below. */
+  --color-primary-strong: var(--primary-strong);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
@@ -118,6 +123,11 @@
   --popover-foreground: #ffffff;
   --primary: #4a90d9;
   --primary-foreground: #ffffff;
+  /* Solid-button background shade of the brand blue. White label text on this
+     yields 4.84:1 (WCAG AA pass); the lighter --primary (#4a90d9) only reaches
+     3.34:1 with white. Used by the default Button variant background; --primary
+     itself is kept for text/links/rings (text-primary on #111115 = 5.6:1). */
+  --primary-strong: #3573bd;
   --secondary: #2c2c32;
   --secondary-foreground: #ffffff;
   --muted: #2c2c32;
