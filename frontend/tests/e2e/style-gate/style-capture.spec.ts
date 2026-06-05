@@ -411,38 +411,27 @@ async function waitForCoPilotReady(
 }
 
 /**
- * Navigate + settle. Mirrors the existing specs: `domcontentloaded` first
- * (Next dev mode keeps HMR/WebSocket alive so `networkidle` can hang), then a
- * best-effort `networkidle` wait, then wait for the authed shell to resolve (the
- * deterministic relay precondition), then the route's explicit `settleMs`.
+ * Navigate to the route. Lean by design: `domcontentloaded` (Next dev mode keeps
+ * HMR/WebSocket alive so `networkidle` can hang), then a short best-effort
+ * `networkidle`. The AUTHORITATIVE readiness check is the relay-attach poll in
+ * `captureSnapshot` — it can only succeed AFTER the auth shell clears + the
+ * provider subtree mounts, so it implicitly waits for auth WITHOUT a separate
+ * budget-burning DOM wait.
  *
- * Ordering matters: `waitForAuthedShell` runs BEFORE `settleMs` so the fixed
- * settle is spent on post-mount content hydration, NOT consumed by an
- * unresolved auth shell (the cold-start race that singled out the first-rendered
- * route — co-pilot — for `503 NO_BROWSER_CONNECTED` -> CAPTURE-UNAVAILABLE).
+ * Why no pre-gate on `waitForAuthedShell`/`waitForCoPilotReady` here:
+ * empirically (run 27001924332) the cold-first /co-pilot test's auth shell could
+ * stall well past 40s in the FIRST per-test page context even on a warm dev
+ * server, so those DOM waits just burned the per-test budget (2×20s) before the
+ * relay poll ran. The relay poll now owns the budget and self-heals a stalled
+ * first load with a one-shot reload (see `captureSnapshot`).
  */
 async function navigateAndSettle(page: Page, route: StyleGateRoute) {
   await page.goto(route.path, { waitUntil: "domcontentloaded" });
-  // Best-effort networkidle — Next dev mode may never reach it, so cap it and
-  // don't fail the test if it times out (the explicit settleMs covers us).
+  // Best-effort networkidle — Next dev mode may never reach it, so cap it short
+  // and don't fail the test if it times out.
   await page
-    .waitForLoadState("networkidle", { timeout: 10_000 })
+    .waitForLoadState("networkidle", { timeout: 5_000 })
     .catch(() => undefined);
-  // Deterministic readiness gate: the relay can't attach until the authed shell
-  // resolves and mounts the provider subtree. Wait for it explicitly. Budget is
-  // modest here (the `beforeAll` warmup already paid the cold compile + auth, so
-  // by the time the per-route test runs the shell clears quickly) — keeping it
-  // small leaves the bulk of the 60s per-test budget for the relay-attach poll,
-  // instead of the prior fixed 45s wait that starved the poll on the cold-first
-  // route.
-  await waitForAuthedShell(page);
-  // For /co-pilot, also wait for its OWN readiness badge so readiness is
-  // co-pilot-specific (the route rendered past the shared shell), not just the
-  // generic "Loading..." absence.
-  if (route.id === "co-pilot") {
-    await waitForCoPilotReady(page);
-  }
-  await page.waitForTimeout(route.settleMs);
 }
 
 /**
@@ -637,17 +626,52 @@ async function pollRelayUntilAttached(
  * Poll the relay until a browser tab is registered, then return the snapshot.
  * Throws with an actionable message if the relay never attaches within budget.
  *
- * The authed-shell gate (`waitForCoPilotReady`/`waitForAuthedShell` in
- * `navigateAndSettle`) already guarantees the provider subtree mounted before we
- * get here AND the `beforeAll` warmup already drove a full cold relay attach, so
- * this budget covers only THIS tab's own attach handshake (heartbeat -> relay
- * registration), not the cold auth round-trip or first-compile. 20s is ample.
+ * This is the AUTHORITATIVE readiness check: the relay can only attach AFTER the
+ * client-side auth context resolves and the `(app)` layout mounts the provider
+ * subtree (CommandRelayListener), so polling it implicitly waits for auth + the
+ * cold first-compile WITHOUT a separate DOM-wait that would burn the budget.
+ *
+ * SELF-HEAL on a stalled FIRST load: empirically (run 27001924332) the cold-
+ * first /co-pilot page context can land in a state where the SHARED
+ * `AuthLoadingShell` never clears within the whole 60s budget — `useAuth()`
+ * never resolves the user on that particular first navigation — even though the
+ * dev server is warm (the `beforeAll` warmup attached the relay in ~12s) and the
+ * SECOND-rendered routes (build-workflows, library) clear in ~20s. A single
+ * `page.reload()` re-runs the client auth bootstrap from scratch, which clears
+ * the stuck shell (the same way the later routes' fresh navigations do). We
+ * therefore split the budget: poll, and if the relay hasn't attached AND the
+ * auth shell is still up partway through, reload ONCE and keep polling. No
+ * timeout inflation (still inside the 60s per-test budget) and no extra
+ * mechanism — it reuses `pollRelayUntilAttached`.
  */
 async function captureSnapshot(
   page: Page,
   route: StyleGateRoute
 ): Promise<{ raw: string; body: SnapshotResponse }> {
-  const last = await pollRelayUntilAttached(page, 20_000);
+  // First attempt: give the relay poll the bulk of the budget.
+  let last = await pollRelayUntilAttached(page, 32_000);
+  if (last.attached) {
+    return { raw: last.raw, body: last.body };
+  }
+
+  // Stalled. If the shared auth shell is still up, the client auth bootstrap got
+  // stuck on this first navigation — reload once to re-run it, then poll the
+  // remaining budget. Cheap probe; never throws.
+  const shellStillUp =
+    (await page
+      .getByText(AUTH_LOADING_SHELL_TEXT, { exact: true })
+      .count()
+      .catch(() => 0)) > 0;
+  console.warn(
+    `[style-gate] Route "${route.id}": relay not attached after first poll ` +
+      `(last status ${last.status}, code=${last.body.code ?? "n/a"}, ` +
+      `authShellStillUp=${shellStillUp}). Reloading once to re-run auth bootstrap.`
+  );
+  await page.reload({ waitUntil: "domcontentloaded" }).catch(() => undefined);
+  await page
+    .waitForLoadState("networkidle", { timeout: 5_000 })
+    .catch(() => undefined);
+  last = await pollRelayUntilAttached(page, 18_000);
   if (last.attached) {
     return { raw: last.raw, body: last.body };
   }
