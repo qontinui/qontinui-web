@@ -1,0 +1,29 @@
+# Deploy-transition business probes for qontinui-web (plan
+# 2026-05-31-deploy-action-effect-signatures §3.4/§3.6).
+#
+# The "Declare deploy effect signature" step in
+# .github/workflows/deploy-web.yml reads this file at deploy time and forwards
+# the probe set in `POST /coord/deploys/declare` (coord runs in ECS and cannot
+# read repo files — the CI pipeline is the trust boundary). The contract —
+# field names, defaults, assertion grammar — is documented in qontinui-coord's
+# src/deploy_health_probes.rs.
+#
+# Endpoints are joined onto the service's mapped Ξ_Health surface base URL
+# (web-prod = https://api.qontinui.io); a probe edit here applies from the
+# NEXT deploy (this file is read by the deploying workflow run, not live).
+
+# DB-backed readiness + liveness — mirrors the workflow's own behavioral
+# smoke, recorded per-deploy in coord.deploy_health_probes.
+[[deploy.health_probes]]
+endpoint = "/api/v1/health/ready"
+expected_status = 200
+
+[[deploy.health_probes]]
+endpoint = "/api/v1/health"
+expected_status = 200
+
+# Auth middleware up: a protected read with no bearer must answer exactly 401
+# — a 5xx here is the middleware-broken class, a 200 would be an auth bypass.
+[[deploy.health_probes]]
+endpoint = "/api/v1/auth/users/me"
+expected_status = 401
