@@ -1884,7 +1884,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/app__schemas__annotation__Screenshot"
+                  "$ref": "#/components/schemas/Screenshot-Input"
                 },
                 "type": "array"
               },
@@ -2064,7 +2064,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/app__schemas__annotation__Screenshot"
+                  "$ref": "#/components/schemas/Screenshot-Input"
                 },
                 "type": "array"
               },
@@ -3516,8 +3516,8 @@
             "title": "Approval Notes"
           },
           "image": {
+            "contentMediaType": "application/octet-stream",
             "description": "Baseline image file (PNG/JPEG)",
-            "format": "binary",
             "title": "Image",
             "type": "string"
           },
@@ -3645,7 +3645,7 @@
             "title": "Description"
           },
           "file": {
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File",
             "type": "string"
           },
@@ -3696,7 +3696,7 @@
       "Body_upload_avatar_api_v1_users_me_avatar_post": {
         "properties": {
           "file": {
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File",
             "type": "string"
           }
@@ -3710,7 +3710,7 @@
       "Body_upload_file_api_v1_files_upload_post": {
         "properties": {
           "file": {
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File",
             "type": "string"
           },
@@ -3724,6 +3724,20 @@
           "source_device_id"
         ],
         "title": "Body_upload_file_api_v1_files_upload_post",
+        "type": "object"
+      },
+      "Body_upload_image_api_v1_projects__project_id__images_upload_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_image_api_v1_projects__project_id__images_upload_post",
         "type": "object"
       },
       "Body_upload_recording_api_v1_recordings_upload_post": {
@@ -3740,7 +3754,7 @@
             "title": "Description"
           },
           "file": {
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File",
             "type": "string"
           },
@@ -3770,7 +3784,7 @@
       "Body_upload_render_image_api_v1_render_logs__render_log_id__images_post": {
         "properties": {
           "file": {
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File",
             "type": "string"
           }
@@ -3784,7 +3798,7 @@
       "Body_upload_screenshot_api_v1_annotations_upload_screenshot_post": {
         "properties": {
           "file": {
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File",
             "type": "string"
           }
@@ -3810,8 +3824,8 @@
             "title": "Extra Metadata"
           },
           "file": {
+            "contentMediaType": "application/octet-stream",
             "description": "Screenshot image file",
-            "format": "binary",
             "title": "File",
             "type": "string"
           },
@@ -3832,8 +3846,8 @@
       "Body_upload_screenshot_api_v1_execution_runs__run_id__screenshots_post": {
         "properties": {
           "file": {
+            "contentMediaType": "application/octet-stream",
             "description": "Screenshot image file",
-            "format": "binary",
             "title": "File",
             "type": "string"
           }
@@ -3847,7 +3861,7 @@
       "Body_upload_screenshot_api_v1_projects__project_id__screenshots_upload_post": {
         "properties": {
           "file": {
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File",
             "type": "string"
           }
@@ -3861,8 +3875,8 @@
       "Body_upload_screenshot_api_v1_testing_runs__run_id__screenshots_post": {
         "properties": {
           "image": {
+            "contentMediaType": "application/octet-stream",
             "description": "Screenshot image file (PNG/JPEG)",
-            "format": "binary",
             "title": "Image",
             "type": "string"
           },
@@ -3893,7 +3907,7 @@
             "title": "Duration Seconds"
           },
           "file": {
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File",
             "type": "string"
           },
@@ -11768,6 +11782,84 @@
           "change_percentage"
         ],
         "title": "DiffRegionResponse",
+        "type": "object"
+      },
+      "DiscoveredState-Input": {
+        "description": "A discovered UI state (collection of co-occurring elements).\n\nStates represent distinct UI screens or views identified by the\nset of images that consistently appear together.",
+        "properties": {
+          "confidence": {
+            "default": 1.0,
+            "description": "Confidence score for state detection",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "type": "number"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Description of what this state represents",
+            "title": "Description"
+          },
+          "elementIds": {
+            "description": "IDs of DOM elements (for web extraction)",
+            "items": {
+              "type": "string"
+            },
+            "title": "Elementids",
+            "type": "array"
+          },
+          "id": {
+            "description": "Unique identifier for the state",
+            "title": "Id",
+            "type": "string"
+          },
+          "imageIds": {
+            "description": "IDs of images in this state",
+            "items": {
+              "type": "string"
+            },
+            "title": "Imageids",
+            "type": "array"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Additional metadata",
+            "title": "Metadata"
+          },
+          "name": {
+            "description": "Human-readable name",
+            "title": "Name",
+            "type": "string"
+          },
+          "renderIds": {
+            "description": "IDs of renders where this state appears",
+            "items": {
+              "type": "string"
+            },
+            "title": "Renderids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "DiscoveredState",
         "type": "object"
       },
       "DiscoveredStateImage": {
@@ -31151,6 +31243,37 @@
         "title": "ScheduledWorkflowRunUpdate",
         "type": "object"
       },
+      "Screenshot-Input": {
+        "description": "Individual screenshot metadata",
+        "properties": {
+          "height": {
+            "exclusiveMinimum": 0.0,
+            "title": "Height",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "width": {
+            "exclusiveMinimum": 0.0,
+            "title": "Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "url",
+          "width",
+          "height"
+        ],
+        "title": "Screenshot",
+        "type": "object"
+      },
       "ScreenshotSettingsSchema": {
         "description": "Screenshot and history settings schema.",
         "properties": {
@@ -33259,7 +33382,7 @@
           },
           "states": {
             "items": {
-              "$ref": "#/components/schemas/qontinui_schemas__discovery__models__DiscoveredState"
+              "$ref": "#/components/schemas/DiscoveredState-Input"
             },
             "title": "States",
             "type": "array"
@@ -33585,7 +33708,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/qontinui_schemas__discovery__models__DiscoveredState"
+                  "$ref": "#/components/schemas/DiscoveredState-Input"
                 },
                 "type": "array"
               },
@@ -33979,7 +34102,7 @@
           "states": {
             "description": "States",
             "items": {
-              "$ref": "#/components/schemas/qontinui_schemas__discovery__models__DiscoveredState"
+              "$ref": "#/components/schemas/DiscoveredState-Input"
             },
             "title": "States",
             "type": "array"
@@ -41821,6 +41944,13 @@
       },
       "ValidationError": {
         "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
           "loc": {
             "items": {
               "anyOf": [
@@ -45331,20 +45461,6 @@
           "has_more"
         ],
         "title": "Pagination",
-        "type": "object"
-      },
-      "fastapi___compat__v2__Body_upload_image_api_v1_projects__project_id__images_upload_post": {
-        "properties": {
-          "file": {
-            "format": "binary",
-            "title": "File",
-            "type": "string"
-          }
-        },
-        "required": [
-          "file"
-        ],
-        "title": "Body_upload_image_api_v1_projects__project_id__images_upload_post",
         "type": "object"
       },
       "qontinui_schemas__api__execution__IssueSource": {
@@ -74923,7 +75039,7 @@
           "content": {
             "multipart/form-data": {
               "schema": {
-                "$ref": "#/components/schemas/fastapi___compat__v2__Body_upload_image_api_v1_projects__project_id__images_upload_post"
+                "$ref": "#/components/schemas/Body_upload_image_api_v1_projects__project_id__images_upload_post"
               }
             }
           },
