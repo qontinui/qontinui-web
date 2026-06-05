@@ -973,6 +973,12 @@ function routeForSpec(
     // filter; metadata.routeStubs fulfills it with canned resolution rows so the
     // populated feed renders deterministically (prod's real feed is empty).
     "coord-pull-decisions": "/admin/coord/pull-decisions",
+    // Coord lands dashboard (slug != route segment). Auto-fetches the recent
+    // lands list; metadata.routeStubs fulfills it with one canned land row
+    // carrying a correlation_id + sibling_cascades (web #457 multi-repo
+    // consumer) so the cross-repo badge + verified LandCard render
+    // deterministically (prod's real list is empty).
+    "coord-lands": "/admin/coord/lands",
     // Dynamic detail routes — sentinel ids for stubbed fetch resolution.
     "ai-tasks-detail": "/ai-tasks/spec-ci-sentinel-task",
     "captures-detail": "/captures/spec-ci-sentinel-session",
