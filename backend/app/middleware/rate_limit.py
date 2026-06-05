@@ -125,9 +125,9 @@ def _get_refresh_token_subject(request: Request) -> str:
     try:
         token = request.cookies.get("refresh_token")
         if token:
-            from jose import jwt as jose_jwt
+            import jwt
 
-            payload = jose_jwt.decode(
+            payload = jwt.decode(
                 token,
                 settings.SECRET_KEY,
                 algorithms=[settings.ALGORITHM],

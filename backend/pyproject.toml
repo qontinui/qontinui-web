@@ -19,15 +19,13 @@ fastapi = "^0.136"
 sqlalchemy = "^2.0.43"
 uvicorn = {extras = ["standard"], version = "^0.38"}
 pydantic = "^2.11.9"
-python-jose = "^3.5.0"
-# PyJWT for the EdDSA path in app/services/coord_jwks.py — python-jose
-# 3.x does not support EdDSA (no entry in ALGORITHMS.SUPPORTED), so
-# coord-issued device-token JWTs need PyJWT (with its cryptography
-# backend) to verify. Kept alongside python-jose because the other
-# callers (app/api/deps.py, app/core/tokens.py, app/services/auth/
-# token_service.py) still sign/verify user-auth JWTs with RS256/HS256
-# via jose. PyJWT's [crypto] extra is shorthand for cryptography,
-# which is already a direct/transitive dep of the auth stack.
+# PyJWT is the sole JWT library for this backend: it signs/verifies the
+# user-auth JWTs (RS256/HS256) and the coord-issued device-token JWTs
+# (EdDSA, see app/services/coord_jwks.py). python-jose was removed because
+# its only transitive dependency, ecdsa, carries an unpatchable HIGH
+# (Minerva timing attack, maintainer-declined) and python-jose 3.x does
+# not support EdDSA anyway. PyJWT's [crypto] extra is shorthand for
+# cryptography, already a direct/transitive dep of the auth stack.
 pyjwt = {extras = ["crypto"], version = "^2.12"}
 passlib = {extras = ["bcrypt"], version = "^1.7.4"}
 bcrypt = "^5"
@@ -75,7 +73,6 @@ flake8 = "^7.1.1"
 flake8-docstrings = "^1.7.0"
 mypy = "^1.14.0"
 ruff = "^0.14"
-types-python-jose = "^3.5.0.20250531"
 types-passlib = "^1.7.7.20250602"
 bandit = "^1.9.2"
 types-requests = "^2.32.4.20260107"
