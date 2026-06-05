@@ -39,8 +39,8 @@
       "id": "co-pilot",
       "path": "/co-pilot",
       "public": false,
-      "settleMs": 6000,
-      "description": "Authenticated Home landing (src/app/(app)/co-pilot/page.tsx). An authed visit to / forwards here (use-landing-page.ts) -- this IS the post-login Home surface. KNOWN STAGE-A BURN-IN ITEM: with auth fixed, build-workflows + library capture the real app cleanly, but THIS route's CommandRelayListener does not attach a browser tab before the relay-attach budget (503 NO_BROWSER_CONNECTED) even at settleMs 6000 -> CAPTURE-UNAVAILABLE (green in shadow). It authenticates fine (co-pilot/activity 200s); the relay-attach itself is route-specific (the co-pilot page is the relay-listener's own surface) and needs a dedicated burn-in fix, NOT just a longer settle. Tracked for the next triage."
+      "settleMs": 3000,
+      "description": "Authenticated Home landing (src/app/(app)/co-pilot/page.tsx). An authed visit to / forwards here (use-landing-page.ts) -- this IS the post-login Home surface. RESOLVED FLAKE (was CAPTURE-UNAVAILABLE): the earlier 503 NO_BROWSER_CONNECTED was NOT co-pilot-page-specific -- it was a COLD-START race on whichever route renders FIRST (co-pilot is first here). A fresh Next dev server compiles the (app) layout/providers on first hit, and the client-side auth context keeps the (app) layout's AuthLoadingShell ('Loading...') up -- WITHHOLDING the UI-Bridge provider subtree incl. CommandRelayListener -- until getCurrentUser() resolves. If that cold compile+auth outran the relay-attach poll, the listener never mounted in time. The spec now (1) pre-warms the shell once in beforeAll (so no route eats the cold compile) and (2) waits deterministically for AuthLoadingShell to clear before polling the relay (waitForAuthedShell). settleMs is back to the standard 3000 -- readiness is signal-driven, not timer-driven."
     },
     {
       "id": "build-workflows",
