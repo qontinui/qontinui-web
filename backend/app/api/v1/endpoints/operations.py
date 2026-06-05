@@ -1977,6 +1977,69 @@ async def get_lands_precision(
     return await _proxy_coord_get("/coord/lands/precision", tenant_id=tenant_id)
 
 
+# ---- Deploy effect-signatures proxy --------------------------------------
+#
+# Plan `2026-05-31-deploy-action-effect-signatures` — the
+# `/admin/coord/deploys` operator dashboard backend. Three read-only proxy
+# endpoints forwarding to coord's deploy-signatures surface:
+#
+# - `/operations/deploys`                          → coord `/coord/deploys`
+# - `/operations/deploys/{id}`                     → coord `/coord/deploys/{id}`
+# - `/operations/deploys/{id}/rollback-proposal`   → coord `/coord/deploys/{id}/rollback-proposal`
+#
+# Deploy signatures are declared/verified by the CI deploy pipelines
+# (deploy-coord.yml / deploy-web.yml §3.6 wiring); these proxies only serve
+# the dashboard read path. Coord's deploy read routes are
+# FleetPrincipal-gated (operator OIDC bearer or device-JWT, fail-closed
+# 403) — the forwarded operator bearer (`_tenant_headers`) IS the
+# credential, exactly the lands posture above. Coord's 404 (signature not
+# found / no rollback-justified verification) passes straight through so
+# the dashboard renders it as an inline message.
+
+
+@router.get("/deploys")
+async def get_deploys(
+    service: str | None = None,
+    environment: str | None = None,
+    limit: int = Query(default=25, le=200),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """List recent declared deploys + their latest verification from coord.
+
+    Forwards the optional ``service`` / ``environment`` filters and the
+    ``limit`` cap to coord."""
+    params: dict[str, str] = {"limit": str(limit)}
+    if service:
+        params["service"] = service
+    if environment:
+        params["environment"] = environment
+    return await _proxy_coord_get("/coord/deploys", tenant_id=tenant_id, params=params)
+
+
+@router.get("/deploys/{deploy_id}")
+async def get_deploy(
+    deploy_id: UUID,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return a single deploy signature + its latest verification."""
+    return await _proxy_coord_get(f"/coord/deploys/{deploy_id}", tenant_id=tenant_id)
+
+
+@router.get("/deploys/{deploy_id}/rollback-proposal")
+async def get_deploy_rollback_proposal(
+    deploy_id: UUID,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return coord's rollback proposal for a failed deploy signature.
+
+    Coord 404s unless the latest verification is a settled hard terminal
+    with a clean, targeted rollback — the dashboard renders the 404 as an
+    honest "no rollback proposed" message."""
+    return await _proxy_coord_get(
+        f"/coord/deploys/{deploy_id}/rollback-proposal", tenant_id=tenant_id
+    )
+
+
 # ---- Symbol-claims surface (Phase 4.4) ----------------------------------
 #
 # Plan: `D:/qontinui-root/plans/2026-05-21-coordination-improvements.md`
