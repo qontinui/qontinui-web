@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   type CompositionRuleRow,
   type PrioritySetRow,
+  classifySetOrigin,
   computeDeliveryMap,
   computeSetDelivery,
   friendlyCoordError,
@@ -40,9 +41,48 @@ function makeSet(overrides: Partial<PrioritySetRow> = {}): PrioritySetRow {
     version: 1,
     enabled: true,
     is_system: false,
+    created_by: "operator@example.com",
+    updated_by: "operator@example.com",
     ...overrides,
   };
 }
+
+describe("classifySetOrigin (badge honesty)", () => {
+  it("classifies a true cross-tenant inherited row as system", () => {
+    expect(classifySetOrigin(makeSet({ is_system: true }))).toBe("system");
+  });
+
+  it("system wins even when created_by is system", () => {
+    expect(
+      classifySetOrigin(makeSet({ is_system: true, created_by: "system" }))
+    ).toBe("system");
+  });
+
+  it("classifies an own-tenant machine-seeded row as seeded", () => {
+    // The operator-deployment case: seeded defaults are is_system=false but
+    // created_by="system".
+    expect(
+      classifySetOrigin(makeSet({ is_system: false, created_by: "system" }))
+    ).toBe("seeded");
+  });
+
+  it("classifies an operator-created own-tenant row as custom", () => {
+    expect(
+      classifySetOrigin(
+        makeSet({ is_system: false, created_by: "jspinak@gmail.com" })
+      )
+    ).toBe("custom");
+  });
+
+  it("treats a missing/null created_by as custom (not seeded)", () => {
+    expect(
+      classifySetOrigin(makeSet({ is_system: false, created_by: null }))
+    ).toBe("custom");
+    expect(
+      classifySetOrigin({ is_system: false } as PrioritySetRow)
+    ).toBe("custom");
+  });
+});
 
 describe("orderingEntryName / orderingNames", () => {
   it("returns bare strings unchanged", () => {

@@ -20,8 +20,44 @@ export interface PrioritySetRow {
   non_factors: string[];
   version: number;
   enabled: boolean;
-  /** true = system default — immutable, no edit/delete affordances. */
+  /**
+   * After coord #358, `is_system` means "NOT owned by your tenant" (a true
+   * cross-tenant inherited row) — immutable, no edit/delete affordances. On the
+   * operator's deployment the system tenant IS the operator tenant, so this is
+   * `false` for ALL own-tenant rows, including the seeded defaults.
+   */
   is_system: boolean;
+  /**
+   * Author of the row. Seeded defaults carry `"system"`; operator-created rows
+   * carry an email. Used to distinguish seeded-default own-tenant rows from
+   * operator-created ones (see {@link classifySetOrigin}).
+   */
+  created_by?: string | null;
+  /** Last editor (email, or `"system"` for untouched seeds). Additive — wire-present. */
+  updated_by?: string | null;
+}
+
+// ---- origin classification (the "Seeded default" honesty badge) -------------
+
+/** How a set originated, for badge treatment + edit affordance gating. */
+export type SetOrigin = "system" | "seeded" | "custom";
+
+/**
+ * Classify a priority set's origin for badge display:
+ *   - "system": a true cross-tenant inherited row (`is_system === true`) —
+ *     read-only, locked treatment.
+ *   - "seeded": an own-tenant row that was machine-seeded (`is_system === false`
+ *     && `created_by === "system"`), e.g. the engineering / ux defaults. These
+ *     ARE the tenant's own rows, so they remain editable/deletable, but are
+ *     shown distinctly from operator-authored sets.
+ *   - "custom": everything else (operator-created own-tenant rows).
+ */
+export function classifySetOrigin(
+  row: Pick<PrioritySetRow, "is_system" | "created_by">
+): SetOrigin {
+  if (row.is_system) return "system";
+  if (row.created_by === "system") return "seeded";
+  return "custom";
 }
 
 export type CompositionLayerRole = "filter" | "lead" | "tiebreaker";
