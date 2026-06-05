@@ -46,8 +46,12 @@ const SPEC_SUBSCRIBE_URL = "http://localhost:9876/apps/qontinui-web/spec/subscri
  * shipped to dev preview deploys and to production aliases; what
  * matters is whether the browser CAN reach the runner, which is a
  * function of the page's own origin.
+ *
+ * Exported for other localhost-runner consumers (e.g. the
+ * RecordingIndicator's SDK-port polling) so the gate stays in one
+ * place.
  */
-function isRunnerReachable(): boolean {
+export function isRunnerReachable(): boolean {
   if (typeof window === "undefined") {
     // SSR / RSC: no browser, no point. The runner is also not
     // reachable from server-side fetch when the server is in a
