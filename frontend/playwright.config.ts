@@ -27,6 +27,16 @@ const STYLE_GATE_TEST_MATCH = /style-gate\/style-capture\.spec\.ts/;
 export default defineConfig({
   testDir: "./tests/e2e",
 
+  // Playwright owns `*.spec.ts`; vitest owns `*.test.ts` (vitest.config.ts
+  // includes `tests/e2e/**/*.test.ts` for pure helpers like the style-gate
+  // snapshot normalizer and excludes `*.spec.ts` — this is the mirror image).
+  // Without this, Playwright's default testMatch also collects `.test.ts`
+  // and dies at collection requiring vitest from a CJS context
+  // ("Vitest cannot be imported in a CommonJS module").
+  // The setup project's own `testMatch: /auth\.setup\.ts/` overrides this
+  // per-project, so auth setup is unaffected.
+  testMatch: "**/*.spec.ts",
+
   // Maximum time one test can run for
   // Increased for development mode where Next.js compiles pages on-demand
   timeout: 60 * 1000,
