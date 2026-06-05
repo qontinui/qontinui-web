@@ -9,6 +9,8 @@ import {
   type SetDelivery,
   computeDeliveryMap,
   friendlyCoordError,
+  unwrapPrioritySets,
+  unwrapCompositionRules,
 } from "./priority-set-delivery";
 
 const SETS_URL = "/api/v1/operations/coord/priority-sets";
@@ -56,12 +58,14 @@ export function usePrioritySets(): UsePrioritySetsReturn {
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const reload = useCallback(async (): Promise<void> => {
+    // Coord returns {priority_sets, total} / {composition_rules, total}
+    // envelopes — unwrap defensively (see priority-set-delivery.ts).
     const [setsData, rulesData] = await Promise.all([
-      httpClient.get<PrioritySetRow[]>(SETS_URL),
-      httpClient.get<CompositionRuleRow[]>(RULES_URL),
+      httpClient.get<unknown>(SETS_URL),
+      httpClient.get<unknown>(RULES_URL),
     ]);
-    setSets(setsData ?? []);
-    setRules(rulesData ?? []);
+    setSets(unwrapPrioritySets(setsData));
+    setRules(unwrapCompositionRules(rulesData));
   }, []);
 
   useEffect(() => {
@@ -71,12 +75,12 @@ export function usePrioritySets(): UsePrioritySetsReturn {
       setError(null);
       try {
         const [setsData, rulesData] = await Promise.all([
-          httpClient.get<PrioritySetRow[]>(SETS_URL),
-          httpClient.get<CompositionRuleRow[]>(RULES_URL),
+          httpClient.get<unknown>(SETS_URL),
+          httpClient.get<unknown>(RULES_URL),
         ]);
         if (!cancelled) {
-          setSets(setsData ?? []);
-          setRules(rulesData ?? []);
+          setSets(unwrapPrioritySets(setsData));
+          setRules(unwrapCompositionRules(rulesData));
         }
       } catch (err) {
         if (!cancelled) {

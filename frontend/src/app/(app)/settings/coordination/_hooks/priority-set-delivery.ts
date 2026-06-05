@@ -43,6 +43,31 @@ export interface CompositionRuleRow {
   is_system: boolean;
 }
 
+// ---- wire envelopes ----------------------------------------------------------
+
+/**
+ * Coord's list endpoints return an ENVELOPE, not a bare array:
+ * `GET /coord/priority-sets` → `{priority_sets: [...], total}` and
+ * `GET /coord/composition-rules` → `{composition_rules: [...], total}`
+ * (coord `src/policies/priority_sets_routes.rs`, passed through verbatim by
+ * the web proxy). These unwrappers tolerate both the envelope and a bare
+ * array (defensive — a non-iterable response must never crash the section;
+ * verified against prod 2026-06-05 where the bare-array assumption threw
+ * `TypeError: e is not iterable` inside the delivery useMemo).
+ */
+export function unwrapPrioritySets(data: unknown): PrioritySetRow[] {
+  if (Array.isArray(data)) return data as PrioritySetRow[];
+  const inner = (data as { priority_sets?: unknown } | null | undefined)?.priority_sets;
+  return Array.isArray(inner) ? (inner as PrioritySetRow[]) : [];
+}
+
+export function unwrapCompositionRules(data: unknown): CompositionRuleRow[] {
+  if (Array.isArray(data)) return data as CompositionRuleRow[];
+  const inner = (data as { composition_rules?: unknown } | null | undefined)
+    ?.composition_rules;
+  return Array.isArray(inner) ? (inner as CompositionRuleRow[]) : [];
+}
+
 // ---- normalization ----------------------------------------------------------
 
 /** Normalize an `ordering` entry to its bare display name. */

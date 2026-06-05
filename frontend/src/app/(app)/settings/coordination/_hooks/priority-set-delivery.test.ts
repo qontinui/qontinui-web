@@ -9,6 +9,8 @@ import {
   orderingEntryName,
   orderingNames,
   slugifySetName,
+  unwrapCompositionRules,
+  unwrapPrioritySets,
 } from "./priority-set-delivery";
 
 function makeRule(
@@ -180,5 +182,26 @@ describe("slugifySetName", () => {
   });
   it("returns empty for non-alnum input", () => {
     expect(slugifySetName("  ---  ")).toBe("");
+  });
+});
+
+describe("unwrapPrioritySets / unwrapCompositionRules", () => {
+  it("unwraps the coord envelope (the real wire shape)", () => {
+    const row = { priority_set_id: "x", set_name: "implementation" };
+    expect(unwrapPrioritySets({ priority_sets: [row], total: 1 })).toEqual([row]);
+    const rule = { composition_rule_id: "r", surface: "infra" };
+    expect(unwrapCompositionRules({ composition_rules: [rule], total: 1 })).toEqual([rule]);
+  });
+
+  it("tolerates a bare array", () => {
+    expect(unwrapPrioritySets([{ set_name: "a" }])).toEqual([{ set_name: "a" }]);
+    expect(unwrapCompositionRules([{ surface: "infra" }])).toEqual([{ surface: "infra" }]);
+  });
+
+  it("never returns a non-array (the prod not-iterable crash guard)", () => {
+    for (const bad of [null, undefined, 42, "x", {}, { priority_sets: "nope" }, { composition_rules: 7 }]) {
+      expect(unwrapPrioritySets(bad)).toEqual([]);
+      expect(unwrapCompositionRules(bad)).toEqual([]);
+    }
   });
 });
