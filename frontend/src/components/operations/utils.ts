@@ -78,6 +78,39 @@ export function ciStatusWsUrl(token: string): string {
 export const CI_STATUS_POLL_FALLBACK_MS = 5_000;
 
 /**
+ * REST + action endpoints for the gates panel (plan
+ * `2026-06-05-plan-gate-web-surface-and-productization` Phase 2). All
+ * tenant-scoped server-side via the operator → tenant_id resolver (coord
+ * derives the tenant from the forwarded bearer); the caller never passes a
+ * tenant_id.
+ *
+ * - `GATES_LIST_API`         — GET list of the tenant's gates.
+ * - `gateApproveUrl(id)`     — POST clear an `operator_approval` gate.
+ * - `gateMuteUrl(id)` / `gateUnmuteUrl(id)` — POST reversible mute toggle.
+ * - `gateSnoozeUrl(id)`      — POST snooze until `{until: <rfc3339>}`.
+ */
+export const GATES_LIST_API = `${OPERATIONS_API}/gates/list`;
+export function gateApproveUrl(gateId: string): string {
+  return `${OPERATIONS_API}/gates/${encodeURIComponent(gateId)}/approve`;
+}
+export function gateMuteUrl(gateId: string): string {
+  return `${OPERATIONS_API}/gates/${encodeURIComponent(gateId)}/mute`;
+}
+export function gateUnmuteUrl(gateId: string): string {
+  return `${OPERATIONS_API}/gates/${encodeURIComponent(gateId)}/unmute`;
+}
+export function gateSnoozeUrl(gateId: string): string {
+  return `${OPERATIONS_API}/gates/${encodeURIComponent(gateId)}/snooze`;
+}
+
+/**
+ * Polling interval for the gates panel (ms). Gates evaluate at coord's
+ * sweep cadence (10s default) and verdicts flip slowly; 15s polling
+ * surfaces a flip within ~2 sweeps without hot-looping the proxy.
+ */
+export const GATES_POLL_MS = 15_000;
+
+/**
  * REST endpoint for the Phase 4.4 symbol-claims surface. Proxies coord's
  * `/coord/claims/list?kind=symbol` so the dashboard can render the
  * per-machine "currently editing" sub-line without the browser hitting
