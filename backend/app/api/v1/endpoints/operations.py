@@ -2022,9 +2022,7 @@ async def get_deploy(
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Return a single deploy signature + its latest verification."""
-    return await _proxy_coord_get(
-        f"/coord/deploys/{deploy_id}", tenant_id=tenant_id
-    )
+    return await _proxy_coord_get(f"/coord/deploys/{deploy_id}", tenant_id=tenant_id)
 
 
 @router.get("/deploys/{deploy_id}/rollback-proposal")

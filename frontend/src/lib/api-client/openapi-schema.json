@@ -65624,6 +65624,186 @@
         ]
       }
     },
+    "/api/v1/operations/deploys": {
+      "get": {
+        "description": "List recent declared deploys + their latest verification from coord.\n\nForwards the optional ``service`` / ``environment`` filters and the\n``limit`` cap to coord.",
+        "operationId": "api_v1_operations_deploys_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "service",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Service"
+            }
+          },
+          {
+            "in": "query",
+            "name": "environment",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Environment"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 200,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Deploys Api V1 Operations Deploys Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Deploys",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/deploys/{deploy_id}": {
+      "get": {
+        "description": "Return a single deploy signature + its latest verification.",
+        "operationId": "api_v1_operations_deploys_deploy_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deploy_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Deploy Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Deploy Api V1 Operations Deploys  Deploy Id  Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Deploy",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/deploys/{deploy_id}/rollback-proposal": {
+      "get": {
+        "description": "Return coord's rollback proposal for a failed deploy signature.\n\nCoord 404s unless the latest verification is a settled hard terminal\nwith a clean, targeted rollback \u2014 the dashboard renders the 404 as an\nhonest \"no rollback proposed\" message.",
+        "operationId": "api_v1_operations_deploys_deploy_id_rollback_proposal_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deploy_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Deploy Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Deploy Rollback Proposal Api V1 Operations Deploys  Deploy Id  Rollback Proposal Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Deploy Rollback Proposal",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/device-status": {
       "get": {
         "description": "Return live ``coord.device_status`` rows scoped to the caller's tenant.\n\nResponse shape::\n\n    { \"devices\": [StatusRow, ...], \"count\": <int> }\n\nThe list is unsorted from coord; clients render in arbitrary order\n(the `MachineCard` consumer keys on hostname). When the caller's\ntenant has no devices reporting, ``devices`` is an empty list and\n``count`` is zero \u2014 never 4xx.",
