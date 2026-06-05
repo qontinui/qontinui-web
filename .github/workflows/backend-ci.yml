@@ -14,17 +14,6 @@ on:
     paths:
       - 'backend/**'
       - '.github/workflows/backend-ci.yml'
-  # Nightly run with NO path filter. The "Check OpenAPI snapshot is up to date"
-  # step regenerates the snapshot with the sibling repos installed — notably
-  # qontinui-cloud-control, which is git-cloned + `pip install -e`'d in the test
-  # job but lives OUTSIDE backend/**. A cloud-control (or other sibling) route
-  # change therefore never triggers the path-filtered PR/push runs above, so it
-  # would SILENTLY stale the committed openapi-schema.json that coord's
-  # external-surface observer reads as the api's declared-route source. The
-  # nightly run makes that drift loud (the drift-check fails) instead of silent.
-  schedule:
-    - cron: '17 7 * * *' # 07:17 UTC daily
-  workflow_dispatch: {}
 
 env:
   PYTHON_VERSION: '3.12'
@@ -181,9 +170,52 @@ jobs:
       - name: Install dependencies
         run: poetry install --no-interaction --no-root
 
+      # Check the committed OpenAPI snapshot — generated HERE, BEFORE
+      # qontinui-cloud-control is installed into the venv, so the exporter sees
+      # ONLY the OSS app. This is deliberate: the snapshot is coord's
+      # external-surface declared-route source for api.qontinui.io, which runs
+      # the OSS backend WITHOUT the proprietary cloud-control extension (it is
+      # not a prod dependency — see backend/pyproject.toml + Dockerfile).
+      # Generating WITH cloud-control installed would declare cloud-only routes
+      # (/api/v1/admin/*, /api/v1/billing/*) that the public api never serves,
+      # giving coord permanent false `route_missing`. The exporter calls
+      # app.openapi() (no server/DB) and writes the snapshot deterministically;
+      # `git diff --exit-code` fails CI if a backend route change wasn't
+      # accompanied by a regenerated, committed snapshot.
+      - name: Check OpenAPI snapshot is up to date (OSS api surface)
+        env:
+          DATABASE_URL: postgresql://qontinui_user:qontinui_dev_password@localhost:5432/qontinui_test
+          ENVIRONMENT: development
+          SECRET_KEY: test-secret-key-for-testing-only-minimum-32-characters-long
+          TESTING: 1
+          REDIS_ENABLED: false
+        run: |
+          poetry run python scripts/export_openapi.py
+          if ! git -C "$GITHUB_WORKSPACE" diff --exit-code \
+              frontend/src/lib/api-client/openapi-schema.json; then
+            echo "::error::OpenAPI snapshot is stale. A backend route change was not committed to the snapshot."
+            echo "Run 'python backend/scripts/export_openapi.py' from the repo root (without cloud-control installed) and commit the updated frontend/src/lib/api-client/openapi-schema.json."
+            exit 1
+          fi
+
+      # On drift, upload the CI-generated snapshot so the canonical bytes (this
+      # job's exact dependency versions) can be committed verbatim — avoids
+      # guessing at fastapi/starlette/pydantic version differences between a
+      # local regen and CI.
+      - name: Upload CI-generated OpenAPI snapshot on drift
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openapi-schema-ci-generated
+          path: frontend/src/lib/api-client/openapi-schema.json
+          if-no-files-found: ignore
+
       - name: Install qontinui-cloud-control into poetry venv
-        # Path is ../../qontinui-cloud-control because working-directory is
-        # ./backend (one level deeper than the repo root the clone sits beside).
+        # Installed AFTER the OSS-only snapshot check above (so that snapshot
+        # stays OSS-only) but BEFORE the tests, which exercise cloud-control
+        # integration. Path is ../../qontinui-cloud-control because
+        # working-directory is ./backend (one level below the repo root the
+        # clone sits beside).
         run: poetry run pip install -e ../../qontinui-cloud-control
 
       # backend/tests/conftest.py uses Base.metadata.create_all (NOT
@@ -200,45 +232,6 @@ jobs:
       # the schema lines, create_all fails with:
       #   asyncpg.exceptions.InvalidSchemaNameError: schema "project"
       #   does not exist
-      # Keep the committed OpenAPI snapshot authoritative. The exporter calls
-      # app.openapi() (the FastAPI method — computes the schema from the
-      # registered routes with no running server and no DB connection), writes
-      # frontend/src/lib/api-client/openapi-schema.json deterministically, then
-      # `git diff --exit-code` fails CI if a backend route change wasn't
-      # accompanied by a regenerated, committed snapshot. coord's
-      # external-surface (route-serving) observer reads this file as the
-      # declared-route source of truth, so a stale snapshot silently
-      # mis-declares the web backend's external surface. Runs before the tests
-      # so a drift failure surfaces fast; the env mirrors the test step so the
-      # app imports cleanly offline (no DB is contacted).
-      - name: Check OpenAPI snapshot is up to date
-        env:
-          DATABASE_URL: postgresql://qontinui_user:qontinui_dev_password@localhost:5432/qontinui_test
-          ENVIRONMENT: development
-          SECRET_KEY: test-secret-key-for-testing-only-minimum-32-characters-long
-          TESTING: 1
-          REDIS_ENABLED: false
-        run: |
-          poetry run python scripts/export_openapi.py
-          if ! git -C "$GITHUB_WORKSPACE" diff --exit-code \
-              frontend/src/lib/api-client/openapi-schema.json; then
-            echo "::error::OpenAPI snapshot is stale. A backend route change was not committed to the snapshot."
-            echo "Run 'python backend/scripts/export_openapi.py' from the repo root and commit the updated frontend/src/lib/api-client/openapi-schema.json."
-            exit 1
-          fi
-
-      # On drift, upload the CI-generated snapshot so the canonical bytes (this
-      # job's exact dependency versions) can be committed verbatim — avoids
-      # guessing at fastapi/starlette/pydantic version differences between a
-      # local regen and CI.
-      - name: Upload CI-generated OpenAPI snapshot on drift
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: openapi-schema-ci-generated
-          path: frontend/src/lib/api-client/openapi-schema.json
-          if-no-files-found: ignore
-
       - name: Create test schemas and extensions
         env:
           PGPASSWORD: qontinui_dev_password
