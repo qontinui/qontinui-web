@@ -150,19 +150,19 @@ export const HERMETIC_STUBS: readonly HermeticStub[] = [
   },
   {
     pattern: /\/api\/v1\/operations\/coord\/priority-sets(\?|$)/,
-    // Wire is a BARE array of PrioritySetRow (httpClient.get<PrioritySetRow[]>
-    // in usePrioritySets.ts), not {sets: ...}. Empty = fresh tenant owns no
+    // Wire is the coord ENVELOPE {priority_sets: [...], total} (coord
+    // priority_sets_routes.rs, proxied verbatim). Empty = fresh tenant owns no
     // custom sets, driving the section's "No custom priority sets yet" state.
-    body: [],
-    note: "PrioritySetRow[] (settings/coordination/_hooks/usePrioritySets.ts) — coord proxy; priority-sets section empty state",
+    body: { priority_sets: [], total: 0 },
+    note: "{priority_sets, total} (settings/coordination/_hooks/usePrioritySets.ts) — coord proxy; priority-sets section empty state",
   },
   {
     pattern: /\/api\/v1\/operations\/coord\/composition-rules(\?|$)/,
-    // Wire is a BARE array of CompositionRuleRow. Empty = no wiring, so the
-    // honesty-gate computation yields "not delivered" for any set and the
-    // read-only wiring summary renders nothing.
-    body: [],
-    note: "CompositionRuleRow[] (settings/coordination/_hooks/usePrioritySets.ts) — coord proxy; composition wiring empty state",
+    // Wire is the coord ENVELOPE {composition_rules: [...], total}. Empty = no
+    // wiring, so the honesty-gate computation yields "not delivered" for any
+    // set and the read-only wiring summary renders nothing.
+    body: { composition_rules: [], total: 0 },
+    note: "{composition_rules, total} (settings/coordination/_hooks/usePrioritySets.ts) — coord proxy; composition wiring empty state",
   },
   {
     pattern: /\/api\/v1\/operations\/agent-logs\/by-agent\/[^/?]+(\?|$)/,
