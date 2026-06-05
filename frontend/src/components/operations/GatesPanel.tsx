@@ -32,6 +32,7 @@ import {
   RotateCcw,
   ShieldCheck,
   SignpostBig,
+  Terminal,
 } from "lucide-react";
 import { toast } from "sonner";
 import { createLogger } from "@/lib/logger";
@@ -44,7 +45,11 @@ import {
   gateUnmuteUrl,
   relativeTime,
 } from "./utils";
-import { gateAnchor, humanizePredicate } from "./gatesPredicate";
+import {
+  gateAnchor,
+  humanizePredicate,
+  summarizeContinuation,
+} from "./gatesPredicate";
 import { useGatesStream } from "./useGatesStream";
 import type { GateRow, GateVerdict } from "./types";
 
@@ -192,6 +197,17 @@ function GateRowView({ gate, onActed }: GateRowProps) {
   // `humanizePredicate`); fall back to the humanized line for typed gates.
   const conditionText = gate.predicate?.prompt ?? predicateText;
 
+  // Predictability: tell the operator what clearing this gate's anchor will
+  // spawn, BEFORE they act. `null` when there is no continuation (e.g. a coord
+  // predating PR #356 omits the field) → no summary line is rendered. We do
+  // NOT assert device liveness here: this panel wires no device-liveness
+  // source (see component note), so an "online/offline" claim would be a
+  // fabricated signal — an honest omission is correct.
+  const continuationSummary = useMemo(
+    () => summarizeContinuation(gate.continuation_spawn),
+    [gate.continuation_spawn],
+  );
+
   const isSnoozed = useMemo(() => {
     if (!gate.snoozed_until) return false;
     const until = new Date(gate.snoozed_until).getTime();
@@ -333,6 +349,21 @@ function GateRowView({ gate, onActed }: GateRowProps) {
           </>
         )}
       </div>
+
+      {/* Continuation summary — predictability: the row says what clearing
+          will spawn (visible terminal vs headless agent + prompt preview).
+          Rendered only when coord supplies `continuation_spawn` (PR #356);
+          absent on a lagging coord, so this degrades to nothing. No liveness
+          claim — the panel has no device-liveness source wired in. */}
+      {continuationSummary && (
+        <div
+          className="flex items-start gap-1.5 text-xs text-muted-foreground"
+          data-continuation-summary="true"
+        >
+          <Terminal className="h-3 w-3 mt-0.5 shrink-0" />
+          <span className="min-w-0">{continuationSummary}</span>
+        </div>
+      )}
 
       {/* Actions — light + reversible. */}
       <div className="flex items-center gap-2 flex-wrap pt-0.5">

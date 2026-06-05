@@ -199,6 +199,35 @@ export interface GatePredicate {
   // time_elapsed (Phase 1)
   since?: string;
   duration_secs?: number;
+  // plan_ready (plan 2026-06-05-visible-gate-continuations-and-plan-ready-predicate)
+  // Clears when the named plan reaches status `vetted` and all its sibling
+  // gates are cleared. The slug lives in the predicate (the coord evaluator
+  // signature is `(state, predicate)` only — it can't read its own gate row).
+  plan_slug?: string;
+}
+
+/**
+ * The spawn that fires when a gate's anchor fully clears. Mirrors coord's
+ * `GateResponse.continuation_spawn` (`gate_routes.rs`), populated on the gates
+ * LIST route by coord PR #356. Optional + every field defensive: a coord that
+ * predates #356 omits the whole object (the panel renders no summary, never
+ * crashes), and a malformed/partial object still renders what it can.
+ *
+ * Plan `2026-06-05-visible-gate-continuations-and-plan-ready-predicate.md` P3.
+ */
+export interface ContinuationSpawn {
+  /** Device UUID the session opens on. */
+  target_device_id?: string;
+  /** Prompt fed to the spawned session. */
+  initial_prompt?: string;
+  /** Repos the spawned session checks out. */
+  repos?: string[];
+  /**
+   * How the spawn surfaces. ABSENT means `"terminal"` (coord's serde default):
+   * a visible terminal session the operator can watch + interrupt. `"headless"`
+   * is a background agent with no interactive surface (fleet/CI continuations).
+   */
+  presentation?: "terminal" | "headless";
 }
 
 /**
@@ -235,6 +264,12 @@ export interface GateRow {
    *  session; operator override only, behind the overflow menu). Optional:
    *  a lagging coord deploy omits it, and the panel defaults to `operator`. */
   clearance_audience?: "operator" | "agent";
+  /**
+   * What clearing this gate's anchor will spawn (coord PR #356, populated on
+   * the list route). Optional + nullable: a coord predating #356 omits it, so
+   * the continuation summary simply isn't rendered (no crash, no fake claim).
+   */
+  continuation_spawn?: ContinuationSpawn | null;
 }
 
 /**
