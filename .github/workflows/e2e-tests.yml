@@ -258,10 +258,20 @@ jobs:
         working-directory: ./backend
         run: |
           set -euo pipefail
+          # Mint as the canonical dev user (dev-credentials.json — single
+          # source of truth; the drift guard forbids hardcoding it). The
+          # global-setup seeder creates this user as a superuser shell row
+          # owning the seeded project/snapshots, and cognito_provision's
+          # link-by-verified-email arm stamps the token's sub onto that row
+          # on first authed probe. Minting any OTHER email (e.g. spec-ci's
+          # empty-account ci-bot) JIT-provisions a second, data-less,
+          # non-superuser user — every data-dependent spec then renders
+          # empty states ("No projects yet") and admin-gated suites 403.
+          EMAIL=$(python -c "import json; print(json.load(open('../dev-credentials.json'))['email'])")
           TOKEN=$(python scripts/spec_ci_local_idp.py \
             --issuer "http://127.0.0.1:8770" \
             --audience spec-ci-local \
-            --email spec-ci-bot@no-reply.qontinui.io \
+            --email "$EMAIL" \
             --out-dir /tmp/e2e-idp)
           echo "QONTINUI_TEST_ID_TOKEN=$TOKEN" >> "$GITHUB_ENV"
           (cd /tmp/e2e-idp && python -m http.server 8770 --bind 127.0.0.1 > /tmp/idp.log 2>&1 &)
