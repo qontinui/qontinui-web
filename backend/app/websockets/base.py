@@ -24,6 +24,7 @@ from app.api.deps import get_current_user_from_ws
 from app.db.session import AsyncSessionLocal
 from app.models.user import User
 from app.websockets.rate_limiter import RateLimiter
+from app.websockets.safe_send import safe_send_json
 
 logger = structlog.get_logger(__name__)
 
@@ -394,16 +395,17 @@ class BaseWebSocketHandler(ABC):
             websocket: The WebSocket connection.
             message: Error message.
         """
-        try:
-            await websocket.send_json(
-                {
-                    "type": "error",
-                    "message": message,
-                    "timestamp": datetime.now(UTC).isoformat() + "Z",
-                }
-            )
-        except Exception:
-            logger.debug("websocket_error_send_failed", message=message)
+        # Delegate the tolerant send to the shared helper so the codebase
+        # converges on ONE implementation of the handshake-race suppression.
+        # The payload shape (incl. the trailing-"Z" timestamp) is preserved.
+        await safe_send_json(
+            websocket,
+            {
+                "type": "error",
+                "message": message,
+                "timestamp": datetime.now(UTC).isoformat() + "Z",
+            },
+        )
 
     def validate_message(
         self,

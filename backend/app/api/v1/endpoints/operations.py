@@ -84,6 +84,7 @@ from app.services.coord_identity import (
     get_coord_identity_for_token,
 )
 from app.services.dev_dashboard_service import get_fleet_registry
+from app.websockets.safe_send import safe_close, safe_send_json
 
 # Timeout for coord proxy reads. The merge queue is a small JSON payload
 # served from PG; if coord takes longer than 5s something is wrong.
@@ -2225,18 +2226,20 @@ async def websocket_device_status(
     # --- Browser-side auth ------------------------------------------------
     token = websocket.query_params.get("token")
     if not token:
-        await websocket.send_json(
-            {"type": "error", "error": "Missing authentication token"}
+        await safe_send_json(
+            websocket, {"type": "error", "error": "Missing authentication token"}
         )
-        await websocket.close(code=1008, reason="Missing authentication token")
+        await safe_close(websocket, 1008)
         return
 
     try:
         user = await get_current_user_from_ws(token)
     except Exception as exc:  # noqa: BLE001 — auth diagnostics live in deps
         logger.warning("device_status_ws_auth_failed", error=str(exc))
-        await websocket.send_json({"type": "error", "error": "Authentication failed"})
-        await websocket.close(code=1008, reason="Authentication failed")
+        await safe_send_json(
+            websocket, {"type": "error", "error": "Authentication failed"}
+        )
+        await safe_close(websocket, 1008)
         return
 
     # --- Tenant resolution + token mint ----------------------------------
@@ -2248,13 +2251,15 @@ async def websocket_device_status(
         if tenant_id is None:
             raise HTTPException(status_code=403, detail="tenant_not_resolved")
     except HTTPException as http_exc:
-        await websocket.send_json({"type": "error", "error": http_exc.detail})
-        await websocket.close(code=1008, reason=str(http_exc.detail))
+        await safe_send_json(websocket, {"type": "error", "error": http_exc.detail})
+        await safe_close(websocket, 1008)
         return
     except Exception as exc:  # noqa: BLE001
         logger.error("device_status_ws_tenant_lookup_failed", error=str(exc))
-        await websocket.send_json({"type": "error", "error": "Tenant lookup failed"})
-        await websocket.close(code=1011, reason="Tenant lookup failed")
+        await safe_send_json(
+            websocket, {"type": "error", "error": "Tenant lookup failed"}
+        )
+        await safe_close(websocket, 1011)
         return
 
     try:
@@ -2265,13 +2270,14 @@ async def websocket_device_status(
             user_id=str(user.id),
             reason=str(exc),
         )
-        await websocket.send_json(
+        await safe_send_json(
+            websocket,
             {
                 "type": "error",
                 "error": "Coord integration disabled — fall back to REST polling.",
-            }
+            },
         )
-        await websocket.close(code=1011, reason="Coord integration disabled")
+        await safe_close(websocket, 1011)
         return
     except CoordDeviceStatusMintFailedError as exc:
         logger.error(
@@ -2279,8 +2285,8 @@ async def websocket_device_status(
             user_id=str(user.id),
             error=str(exc),
         )
-        await websocket.send_json({"type": "error", "error": "Token mint failed"})
-        await websocket.close(code=1011, reason="Token mint failed")
+        await safe_send_json(websocket, {"type": "error", "error": "Token mint failed"})
+        await safe_close(websocket, 1011)
         return
 
     upstream_url = build_device_status_ws_url(coord_token)
@@ -2297,10 +2303,10 @@ async def websocket_device_status(
                 user_id=str(user.id),
                 error=str(exc),
             )
-            await websocket.send_json(
-                {"type": "error", "error": "Upstream coord WS unreachable"}
+            await safe_send_json(
+                websocket, {"type": "error", "error": "Upstream coord WS unreachable"}
             )
-            await websocket.close(code=1011, reason="Upstream WS unreachable")
+            await safe_close(websocket, 1011)
             return
 
         # Send the typed subscribe message (coord won't push diffs
@@ -2544,18 +2550,20 @@ async def websocket_ci_status(
     # --- Browser-side auth ------------------------------------------------
     token = websocket.query_params.get("token")
     if not token:
-        await websocket.send_json(
-            {"type": "error", "error": "Missing authentication token"}
+        await safe_send_json(
+            websocket, {"type": "error", "error": "Missing authentication token"}
         )
-        await websocket.close(code=1008, reason="Missing authentication token")
+        await safe_close(websocket, 1008)
         return
 
     try:
         user = await get_current_user_from_ws(token)
     except Exception as exc:  # noqa: BLE001 — auth diagnostics live in deps
         logger.warning("ci_status_ws_auth_failed", error=str(exc))
-        await websocket.send_json({"type": "error", "error": "Authentication failed"})
-        await websocket.close(code=1008, reason="Authentication failed")
+        await safe_send_json(
+            websocket, {"type": "error", "error": "Authentication failed"}
+        )
+        await safe_close(websocket, 1008)
         return
 
     # --- Tenant resolution + token mint ----------------------------------
@@ -2567,13 +2575,15 @@ async def websocket_ci_status(
         if tenant_id is None:
             raise HTTPException(status_code=403, detail="tenant_not_resolved")
     except HTTPException as http_exc:
-        await websocket.send_json({"type": "error", "error": http_exc.detail})
-        await websocket.close(code=1008, reason=str(http_exc.detail))
+        await safe_send_json(websocket, {"type": "error", "error": http_exc.detail})
+        await safe_close(websocket, 1008)
         return
     except Exception as exc:  # noqa: BLE001
         logger.error("ci_status_ws_tenant_lookup_failed", error=str(exc))
-        await websocket.send_json({"type": "error", "error": "Tenant lookup failed"})
-        await websocket.close(code=1011, reason="Tenant lookup failed")
+        await safe_send_json(
+            websocket, {"type": "error", "error": "Tenant lookup failed"}
+        )
+        await safe_close(websocket, 1011)
         return
 
     try:
@@ -2584,13 +2594,14 @@ async def websocket_ci_status(
             user_id=str(user.id),
             reason=str(exc),
         )
-        await websocket.send_json(
+        await safe_send_json(
+            websocket,
             {
                 "type": "error",
                 "error": "Coord integration disabled — fall back to REST polling.",
-            }
+            },
         )
-        await websocket.close(code=1011, reason="Coord integration disabled")
+        await safe_close(websocket, 1011)
         return
     except CoordDeviceStatusMintFailedError as exc:
         logger.error(
@@ -2598,8 +2609,8 @@ async def websocket_ci_status(
             user_id=str(user.id),
             error=str(exc),
         )
-        await websocket.send_json({"type": "error", "error": "Token mint failed"})
-        await websocket.close(code=1011, reason="Token mint failed")
+        await safe_send_json(websocket, {"type": "error", "error": "Token mint failed"})
+        await safe_close(websocket, 1011)
         return
 
     upstream_url = build_device_status_ws_url(coord_token)
@@ -2616,10 +2627,10 @@ async def websocket_ci_status(
                 user_id=str(user.id),
                 error=str(exc),
             )
-            await websocket.send_json(
-                {"type": "error", "error": "Upstream coord WS unreachable"}
+            await safe_send_json(
+                websocket, {"type": "error", "error": "Upstream coord WS unreachable"}
             )
-            await websocket.close(code=1011, reason="Upstream WS unreachable")
+            await safe_close(websocket, 1011)
             return
 
         # Send the typed subscribe message (coord won't push diffs

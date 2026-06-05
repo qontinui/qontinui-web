@@ -20,6 +20,7 @@ from app.db.session import AsyncSessionLocal
 from app.models.automation_session import AutomationSession
 from app.services.websocket_manager import get_websocket_manager
 from app.websockets.rate_limiter import RateLimiter
+from app.websockets.safe_send import reject, safe_close
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -78,10 +79,7 @@ async def websocket_monitor_endpoint(
     # Check connection rate limit
     client_ip = websocket.client.host if websocket.client else "unknown"
     if not RateLimiter.check_connection_rate_limit(client_ip, limit=5, window=60):
-        await websocket.close(
-            code=status.WS_1008_POLICY_VIOLATION,
-            reason="Connection rate limit exceeded. Maximum 5 connections per minute.",
-        )
+        await safe_close(websocket, status.WS_1008_POLICY_VIOLATION)
         logger.warning(
             "websocket_monitor_connection_rate_limited",
             client_ip=client_ip,
@@ -115,29 +113,23 @@ async def websocket_monitor_endpoint(
                 "automation_monitor_ws_no_token",
                 error="No token in query param or cookies",
             )
-            await websocket.send_json(
-                {
-                    "type": "error",
-                    "message": (
-                        "Authentication required. "
-                        "Provide token query param or access_token cookie."
-                    ),
-                }
+            await reject(
+                websocket,
+                (
+                    "Authentication required. "
+                    "Provide token query param or access_token cookie."
+                ),
+                status.WS_1008_POLICY_VIOLATION,
             )
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
 
         try:
             user = await get_current_user_from_ws(auth_token)
         except Exception as e:
             logger.error("automation_monitor_ws_auth_failed", error=str(e))
-            await websocket.send_json(
-                {
-                    "type": "error",
-                    "message": "Authentication failed",
-                }
+            await reject(
+                websocket, "Authentication failed", status.WS_1008_POLICY_VIOLATION
             )
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
 
         # Get database session - use AsyncSessionLocal directly to avoid generator lifecycle issues
@@ -149,13 +141,9 @@ async def websocket_monitor_endpoint(
 
         if not db:
             logger.error("automation_monitor_ws_db_failed")
-            await websocket.send_json(
-                {
-                    "type": "error",
-                    "message": "Database connection failed",
-                }
+            await reject(
+                websocket, "Database connection failed", status.WS_1011_INTERNAL_ERROR
             )
-            await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
             return
 
         # Verify session exists
@@ -166,13 +154,11 @@ async def websocket_monitor_endpoint(
         session = session_result.scalar_one_or_none()
 
         if not session:
-            await websocket.send_json(
-                {
-                    "type": "error",
-                    "message": f"Automation session '{session_id}' not found",
-                }
+            await reject(
+                websocket,
+                f"Automation session '{session_id}' not found",
+                status.WS_1008_POLICY_VIOLATION,
             )
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
 
         # Get Redis client and WebSocket manager

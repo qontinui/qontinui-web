@@ -42,6 +42,7 @@ from app.core.config import settings
 from app.models.user import User
 from app.services import coord_device
 from app.services.device_bridge_service import DeviceBridgeService
+from app.websockets.safe_send import reject
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -159,23 +160,14 @@ async def device_bridge_device_endpoint(
     try:
         # --- Auth ---
         if not token:
-            await websocket.send_json(
-                {
-                    "type": "error",
-                    "message": "Authentication required (token query param).",
-                }
-            )
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            await reject(websocket, "Authentication required (token query param).")
             return
 
         try:
             user = await get_current_user_from_ws(token)
         except Exception as e:
             logger.error("device_bridge_device_auth_failed", error=str(e))
-            await websocket.send_json(
-                {"type": "error", "message": "Authentication failed."}
-            )
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            await reject(websocket, "Authentication failed.")
             return
 
         user_id = str(user.id)
@@ -190,27 +182,16 @@ async def device_bridge_device_endpoint(
             return
 
         if reg_data.get("type") != "device_register":
-            await websocket.send_json(
-                {
-                    "type": "error",
-                    "message": (
-                        f"Expected device_register as first message, "
-                        f"got: {reg_data.get('type')!r}"
-                    ),
-                }
+            await reject(
+                websocket,
+                f"Expected device_register as first message, "
+                f"got: {reg_data.get('type')!r}",
             )
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
 
         device_id = reg_data.get("device_id")
         if not device_id:
-            await websocket.send_json(
-                {
-                    "type": "error",
-                    "message": "device_id is required in device_register.",
-                }
-            )
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            await reject(websocket, "device_id is required in device_register.")
             return
 
         # --- Register in Redis ---
@@ -411,23 +392,14 @@ async def device_bridge_tunnel_endpoint(
     try:
         # --- Auth ---
         if not token:
-            await websocket.send_json(
-                {
-                    "type": "error",
-                    "message": "Authentication required (token query param).",
-                }
-            )
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            await reject(websocket, "Authentication required (token query param).")
             return
 
         try:
             user = await get_current_user_from_ws(token)
         except Exception as e:
             logger.error("device_bridge_tunnel_auth_failed", error=str(e))
-            await websocket.send_json(
-                {"type": "error", "message": "Authentication failed."}
-            )
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            await reject(websocket, "Authentication failed.")
             return
 
         user_id = str(user.id)
@@ -437,15 +409,11 @@ async def device_bridge_tunnel_endpoint(
         # --- Verify device belongs to this user and is online ---
         device_info = await service.get_device(user_id, device_id)
         if device_info is None:
-            await websocket.send_json(
-                {
-                    "type": "error",
-                    "message": (
-                        f"Device '{device_id}' is not connected or does not belong to your account."
-                    ),
-                }
+            await reject(
+                websocket,
+                f"Device '{device_id}' is not connected or does not belong "
+                f"to your account.",
             )
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
 
         # --- Register tunnel ---

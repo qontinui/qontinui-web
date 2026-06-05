@@ -8,7 +8,7 @@ Allows mobile clients to send terminal I/O to a runner identified by
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field, ValidationError
 from qontinui_schemas.common import utc_now
 from sqlalchemy import select
@@ -19,6 +19,7 @@ from app.db.session import AsyncSessionLocal
 from app.models.device import Device
 from app.models.user import User
 from app.services.runner_websocket_manager import get_runner_websocket_manager
+from app.websockets.safe_send import reject
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -56,20 +57,14 @@ async def websocket_runner_terminal_endpoint(
     try:
         auth_token: str | None = token or websocket.cookies.get("access_token")
         if not auth_token:
-            await websocket.send_json(
-                {"type": "error", "message": "Authentication required."}
-            )
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            await reject(websocket, "Authentication required.")
             return
 
         try:
             user = await get_current_user_from_ws(auth_token)
         except Exception as e:
             logger.error("runner_terminal_ws_auth_failed", error=str(e))
-            await websocket.send_json(
-                {"type": "error", "message": "Authentication failed"}
-            )
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            await reject(websocket, "Authentication failed")
             return
 
         async with AsyncSessionLocal() as db:
@@ -80,13 +75,7 @@ async def websocket_runner_terminal_endpoint(
             runner = result.scalar_one_or_none()
 
         if not runner:
-            await websocket.send_json(
-                {
-                    "type": "error",
-                    "message": "Runner not found or not owned by you",
-                }
-            )
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            await reject(websocket, "Runner not found or not owned by you")
             return
 
         redis = await get_redis()

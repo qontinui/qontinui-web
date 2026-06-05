@@ -30,6 +30,7 @@ from app.api.v1.endpoints.devices import _device_to_wire as _runner_to_wire
 from app.config.redis_config import get_redis
 from app.core.config import settings
 from app.crud import runner_crud
+from app.websockets.safe_send import safe_close, safe_send_json
 
 logger = structlog.get_logger(__name__)
 
@@ -57,18 +58,20 @@ async def websocket_runner_status(
 
     token = websocket.query_params.get("token")
     if not token:
-        await websocket.send_json(
-            {"type": "error", "error": "Missing authentication token"}
+        await safe_send_json(
+            websocket, {"type": "error", "error": "Missing authentication token"}
         )
-        await websocket.close(code=1008, reason="Missing authentication token")
+        await safe_close(websocket, 1008)
         return
 
     try:
         user = await get_current_user_from_ws(token)
     except Exception as e:
         logger.error("runner_status_ws_auth_failed", error=str(e))
-        await websocket.send_json({"type": "error", "error": "Authentication failed"})
-        await websocket.close(code=1008, reason="Authentication failed")
+        await safe_send_json(
+            websocket, {"type": "error", "error": "Authentication failed"}
+        )
+        await safe_close(websocket, 1008)
         return
 
     # Send the initial snapshot using the canonical Runner wire shape.
@@ -91,8 +94,8 @@ async def websocket_runner_status(
             error=str(e),
             user_id=str(user.id),
         )
-        await websocket.send_json(
-            {"type": "error", "error": "Failed to load initial state"}
+        await safe_send_json(
+            websocket, {"type": "error", "error": "Failed to load initial state"}
         )
 
     pubsub = redis.pubsub()
