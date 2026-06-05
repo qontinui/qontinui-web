@@ -38,6 +38,33 @@ const logger = createLogger("AuthContext");
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+/**
+ * Boot-time user-hydration resilience.
+ *
+ * `checkAuth` awaits `getCurrentUser()` to populate the user before it flips
+ * `loading` to false (which is what dismisses the `(app)` layout's full-screen
+ * `AuthLoadingShell` "Loading..." gate). A SINGLE bare `fetch` with no timeout
+ * means that if `/users/me` stalls — e.g. a cold Next dev-server route compile
+ * racing the first authenticated navigation (the style-gate co-pilot CAPTURE-
+ * UNAVAILABLE flake), or a slow/hung backend in production — the whole app is
+ * pinned behind that spinner indefinitely with no recovery.
+ *
+ * So the bootstrap fetch is bounded: each attempt gets `BOOTSTRAP_USER_FETCH_
+ * TIMEOUT_MS`, and a timed-out/transient-failed attempt is RETRIED (the
+ * cookie-backed session is still valid — a timeout is "didn't answer in time",
+ * not "unauthenticated"). A 401/403 is authoritative (not retried). After the
+ * retry budget we give up so `loading` still resolves to false and the caller's
+ * existing not-authenticated path runs, rather than spinning forever.
+ */
+const BOOTSTRAP_USER_FETCH_TIMEOUT_MS = 10_000;
+const BOOTSTRAP_USER_FETCH_MAX_ATTEMPTS = 3;
+
+/** True for an HTTP 401/403 thrown by `getCurrentUser` (authoritative — don't retry). */
+function isUnauthorizedError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /\b(401|403)\b/.test(msg);
+}
+
 // Cross-tab auth event types
 type AuthBroadcastMessage =
   | { type: "LOGIN"; user: User }
@@ -131,6 +158,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /**
+   * Hydrate the user via `getCurrentUser()` with a per-attempt timeout and a
+   * bounded retry, so a stalled `/users/me` can't pin the app behind the
+   * AuthLoadingShell forever (see BOOTSTRAP_USER_FETCH_* above). A 401/403 is
+   * authoritative and re-thrown immediately; a timeout/transient error is
+   * retried. Throws the last error if every attempt fails (caller decides).
+   */
+  const getCurrentUserResilient = async (): Promise<User> => {
+    let lastErr: unknown;
+    for (
+      let attempt = 1;
+      attempt <= BOOTSTRAP_USER_FETCH_MAX_ATTEMPTS;
+      attempt++
+    ) {
+      const controller = new AbortController();
+      const timer = setTimeout(
+        () => controller.abort(),
+        BOOTSTRAP_USER_FETCH_TIMEOUT_MS
+      );
+      try {
+        return await authService.getCurrentUser(controller.signal);
+      } catch (err) {
+        lastErr = err;
+        // 401/403 = authoritatively not-authenticated; retrying won't help.
+        if (isUnauthorizedError(err)) throw err;
+        logger.warn(
+          `getCurrentUser attempt ${attempt}/${BOOTSTRAP_USER_FETCH_MAX_ATTEMPTS} ` +
+            `failed (timeout or transient); ${
+              attempt < BOOTSTRAP_USER_FETCH_MAX_ATTEMPTS
+                ? "retrying"
+                : "giving up"
+            }:`,
+          err
+        );
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+    throw lastErr;
+  };
+
   const checkAuth = async () => {
     logger.debug("Checking authentication...");
     try {
@@ -167,7 +235,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         logger.debug("Fetching current user...");
-        const currentUser = await authService.getCurrentUser();
+        const currentUser = await getCurrentUserResilient();
         logger.debug("Current user:", currentUser);
         setUser(currentUser);
       } else {
@@ -185,7 +253,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             "Attempting cookie-based session restore via getCurrentUser..."
           );
           try {
-            const restoredUser = await authService.getCurrentUser();
+            const restoredUser = await getCurrentUserResilient();
             logger.info(
               "Cookie-based session restore succeeded for user:",
               restoredUser.username

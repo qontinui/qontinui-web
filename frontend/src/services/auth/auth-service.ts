@@ -55,7 +55,7 @@ export class AuthService {
    * backend dual-accepts Cognito JWTs. `credentials: 'include'` keeps the
    * same-origin cookie path working in local dev.
    */
-  async getCurrentUser(): Promise<User> {
+  async getCurrentUser(signal?: AbortSignal): Promise<User> {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
@@ -70,6 +70,12 @@ export class AuthService {
       method: "GET",
       headers,
       credentials: "include",
+      // Optional caller-supplied abort (e.g. the boot-time auth bootstrap wraps
+      // this in a per-attempt timeout so a stalled /users/me — a cold Next dev
+      // route compile, or a slow/hung backend in prod — can't pin the whole app
+      // behind the auth-gate's "Loading..." shell forever). Absent => no abort,
+      // identical to the prior behavior.
+      signal,
     });
 
     if (!response.ok) {

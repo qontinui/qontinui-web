@@ -1,0 +1,150 @@
+/**
+ * Regression tests for the AuthProvider boot-time user-hydration resilience.
+ *
+ * BUG (style-gate co-pilot CAPTURE-UNAVAILABLE flake): `checkAuth` awaited a
+ * SINGLE bare `getCurrentUser()` fetch with no timeout before flipping
+ * `loading` to false. When `/users/me` stalled (a cold Next dev-server route
+ * compile racing the first authenticated navigation, or a slow/hung backend in
+ * prod), the whole app stayed pinned behind the `(app)` layout's full-screen
+ * "Loading..." `AuthLoadingShell` indefinitely — the co-pilot route (first in
+ * the style-gate manifest, so it paid the cold compile) never rendered and its
+ * snapshot capture timed out.
+ *
+ * FIX: the bootstrap user-fetch is bounded — each attempt has a timeout and a
+ * timed-out/transient attempt is RETRIED (a valid cookie session is still
+ * valid; a timeout is "no answer yet", not "unauthenticated"). A 401/403 is
+ * authoritative and NOT retried. After the retry budget we give up so `loading`
+ * still resolves rather than hanging forever.
+ *
+ * These tests should FAIL against the pre-fix single-shot await (a first-call
+ * rejection would have logged the user out / never recovered) and PASS after.
+ */
+
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
+
+import { AuthProvider, useAuth } from "./auth-context";
+
+// --- Mocks: keep the AuthProvider's collaborators inert/controllable. --------
+const getCurrentUser = vi.fn();
+const isAuthenticated = vi.fn();
+const isAccessTokenExpired = vi.fn();
+const refreshAccessToken = vi.fn();
+const logout = vi.fn();
+const setAuthenticated = vi.fn();
+const purgeStaleSession = vi.fn();
+
+vi.mock("@/services/service-factory", () => ({
+  authService: {
+    getCurrentUser: (...a: unknown[]) => getCurrentUser(...a),
+    isAuthenticated: () => isAuthenticated(),
+    isAccessTokenExpired: () => isAccessTokenExpired(),
+    refreshAccessToken: () => refreshAccessToken(),
+    logout: (...a: unknown[]) => logout(...a),
+    setAuthenticated: () => setAuthenticated(),
+    tokenManager: { purgeStaleSession: () => purgeStaleSession() },
+  },
+}));
+
+vi.mock("@/stores/page-state", () => ({
+  pageStateDB: { clearUserData: vi.fn() },
+}));
+
+vi.mock("@/hooks/use-extraction-config", () => ({
+  clearExtractionConfig: vi.fn(),
+}));
+
+function Probe() {
+  const { user, loading } = useAuth();
+  return (
+    <div>
+      <span data-testid="loading">{String(loading)}</span>
+      <span data-testid="user">{user ? user.username : "none"}</span>
+    </div>
+  );
+}
+
+const fakeUser = { id: "u1", username: "ci-bot" };
+
+/** An AbortError-shaped rejection, what `AbortSignal.timeout`/abort produces. */
+function abortError(): Error {
+  const e = new Error("The operation was aborted.");
+  e.name = "AbortError";
+  return e;
+}
+
+describe("AuthProvider boot-time hydration resilience", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    purgeStaleSession.mockReturnValue(false);
+    isAuthenticated.mockReturnValue(true);
+    isAccessTokenExpired.mockReturnValue(false);
+    logout.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("recovers the user when the FIRST /users/me attempt stalls, then succeeds (no infinite Loading)", async () => {
+    // First attempt rejects (timeout/abort); second resolves the real user.
+    getCurrentUser
+      .mockRejectedValueOnce(abortError())
+      .mockResolvedValueOnce(fakeUser);
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    );
+
+    // The gate must resolve: loading clears AND the user is hydrated via retry.
+    await waitFor(() => {
+      expect(screen.getByTestId("loading").textContent).toBe("false");
+    });
+    expect(screen.getByTestId("user").textContent).toBe("ci-bot");
+    // It retried rather than giving up on the first stall.
+    expect(getCurrentUser).toHaveBeenCalledTimes(2);
+    // A stall is NOT a logout — the valid session must be preserved.
+    expect(logout).not.toHaveBeenCalled();
+  });
+
+  it("does NOT retry on an authoritative 401 (unauthenticated is final)", async () => {
+    getCurrentUser.mockRejectedValue(
+      new Error("Failed to get user info: 401 - ")
+    );
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("loading").textContent).toBe("false");
+    });
+    expect(screen.getByTestId("user").textContent).toBe("none");
+    // 401 is authoritative — exactly one attempt, no retry storm.
+    expect(getCurrentUser).toHaveBeenCalledTimes(1);
+  });
+
+  it("resolves loading=false (never hangs) even if every attempt stalls", async () => {
+    getCurrentUser.mockRejectedValue(abortError());
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    );
+
+    await waitFor(
+      () => {
+        expect(screen.getByTestId("loading").textContent).toBe("false");
+      },
+      { timeout: 5_000 }
+    );
+    expect(screen.getByTestId("user").textContent).toBe("none");
+    // Exhausted the retry budget rather than awaiting one stalled call forever.
+    expect(getCurrentUser).toHaveBeenCalledTimes(3);
+  });
+});
