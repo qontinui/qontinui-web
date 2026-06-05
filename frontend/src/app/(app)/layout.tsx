@@ -17,6 +17,7 @@ import { SidebarProvider, useSidebar } from "@/contexts/sidebar-context";
 import { TabStateProvider } from "@/contexts/tab-state-context";
 import { ProductModeProvider } from "@/contexts/product-mode-context";
 import { AppInitializer } from "@/components/offline/AppInitializer";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { BetaBanner } from "@/components/beta-banner";
 import { useAuth } from "@/contexts/auth-context";
 import { MentionRealtimeSubscriber } from "@/app/(app)/strategy/_components/MentionRealtimeSubscriber";
@@ -167,7 +168,17 @@ export default function AppLayout({
                 <AutomationProvider>
                   <TabStateProvider>
                     <AppInitializer>
-                      <AppLayoutContent>{children}</AppLayoutContent>
+                      {/* Radix Tooltip.Root (our `Tooltip`) throws
+                          "must be used within TooltipProvider" at render under
+                          @radix-ui/react-tooltip's Provider invariant. Mount a
+                          single app-shell-level provider so every authenticated
+                          page's tooltips work — without it, any page that
+                          renders a Tooltip without its own local provider (e.g.
+                          /operations via CiStatusPanel/FleetOverview) crashes
+                          into the ErrorBoundary and shows no content. */}
+                      <TooltipProvider>
+                        <AppLayoutContent>{children}</AppLayoutContent>
+                      </TooltipProvider>
                     </AppInitializer>
                   </TabStateProvider>
                 </AutomationProvider>
