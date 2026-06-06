@@ -39,6 +39,17 @@ on:
     # alembic PR to update against main, which re-runs this check and fails on
     # the resulting 2-head chain — converting the sequential-merge fork race
     # from "lands + breaks migrate.yml" into "PR cannot merge until re-pointed".
+  push:
+    # merge-candidate/** refs are pushed by coord's autonomous merge scheduler
+    # (plan 2026-06-06-coord-ci-runner-autonomous-green-merge, Phase 4). This is
+    # a required merge gate, so it must run on candidate refs (which arrive as
+    # pushes, not PRs) or the candidate proposal hangs in awaiting-ci. Same
+    # no-paths-filter rationale as the pull_request trigger: it must always post
+    # the check. Validation-only (offline head-count scan); no deploy.
+    branches:
+      - 'merge-candidate/**'
+      - 'merge-candidate-spec/**'
+      - 'merge-candidate-batch/**'
 
 permissions:
   contents: read

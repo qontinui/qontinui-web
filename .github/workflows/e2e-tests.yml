@@ -4,7 +4,16 @@ on:
   pull_request:
     branches: [main, develop]
   push:
-    branches: [main, develop]
+    # merge-candidate/** refs are pushed by coord's autonomous merge scheduler
+    # (plan 2026-06-06-coord-ci-runner-autonomous-green-merge, Phase 4). The
+    # required E2E gate must run on them so a candidate proposal gets a real
+    # CI verdict instead of hanging in awaiting-ci. Validation-only; no deploy.
+    branches:
+      - main
+      - develop
+      - 'merge-candidate/**'
+      - 'merge-candidate-spec/**'
+      - 'merge-candidate-batch/**'
   # Run the full sharded E2E suite nightly. The on-PR smoke job is the
   # gating signal for merging; this scheduled run catches regressions the
   # smoke set doesn't cover, without ever blocking a PR.
