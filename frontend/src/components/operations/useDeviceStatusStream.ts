@@ -148,21 +148,11 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
     if (cleanedUpRef.current || document.hidden) return;
     closeWs();
 
-    // Fetch the per-session WS token (reads HttpOnly cookie server-side
-    // and returns the bearer string). Same path the
+    // Get the per-session WS token — the client-held Cognito bearer when
+    // present (hosted-UI sessions never set the HttpOnly cookie), else the
+    // cookie-reading /api/v1/ws-token route. Same path the
     // `/api/v1/devices/status` consumer uses.
-    let token: string | null = null;
-    try {
-      // Same-origin ONLY — `/api/v1/ws-token` is a Next.js cookie-reading route,
-      // not a backend endpoint. See realtime-connections-context for why.
-      const tokResp = await httpClient.fetch("/api/v1/ws-token");
-      if (tokResp.ok) {
-        const data = (await tokResp.json()) as { token?: string };
-        token = data.token ?? null;
-      }
-    } catch (err) {
-      log.warn("Failed to fetch ws-token", err);
-    }
+    const token = await httpClient.getWebSocketToken();
 
     if (!token) {
       // No token → can't open WS; fall back to polling. The polling

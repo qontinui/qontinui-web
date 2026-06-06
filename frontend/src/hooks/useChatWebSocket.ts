@@ -68,18 +68,9 @@ export function useChatWebSocket({
   const connectWebSocket = useCallback(async () => {
     if (!runnerId) return;
 
-    let token: string | null = null;
-    try {
-      // Same-origin ONLY — `/api/v1/ws-token` is a Next.js cookie-reading route,
-      // not a backend endpoint. See realtime-connections-context for why.
-      const response = await httpClient.fetch("/api/v1/ws-token");
-      if (response.ok) {
-        const data = await response.json();
-        token = data.token || null;
-      }
-    } catch (error) {
-      console.error("[useChatWebSocket] Failed to get WebSocket token:", error);
-    }
+    // Client-held Cognito bearer when present (hosted-UI sessions never set
+    // the HttpOnly cookie), else the cookie-reading /api/v1/ws-token route.
+    const token = await httpClient.getWebSocketToken();
 
     if (!token) {
       console.warn("[useChatWebSocket] No access token, cannot connect");

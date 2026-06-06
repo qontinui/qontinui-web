@@ -149,25 +149,10 @@ export function RealtimeConnectionsProvider({
     // Don't connect if tab is hidden
     if (document.hidden) return;
 
-    // Get access token from the ws-token API route (reads HttpOnly cookie server-side)
-    let token: string | null = null;
-    try {
-      // Same-origin ONLY. `/api/v1/ws-token` is a Next.js route that reads the
-      // HttpOnly access_token cookie server-side; it does not exist on the
-      // backend. Prefixing it with API_BASE_URL (the cross-origin backend host
-      // in prod, e.g. https://api.qontinui.io) 404s, so the WS never gets a
-      // token and silently falls back to polling. Always fetch it relative.
-      const response = await httpClient.fetch("/api/v1/ws-token");
-      if (response.ok) {
-        const data = await response.json();
-        token = data.token || null;
-      }
-    } catch (error) {
-      console.error(
-        "[RealtimeConnections] Failed to get WebSocket token:",
-        error
-      );
-    }
+    // Get a WS auth token — the client-held Cognito bearer when present
+    // (hosted-UI sessions never set the HttpOnly cookie), falling back to
+    // the cookie-reading /api/v1/ws-token route for legacy sessions.
+    const token = await httpClient.getWebSocketToken();
 
     // Bail if cleaned up during async token fetch
     if (cleanedUpRef.current) return;
