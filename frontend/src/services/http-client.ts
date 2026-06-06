@@ -16,6 +16,11 @@ export class HttpClient {
   private retryStrategy: RetryStrategy;
   private refreshPromise: Promise<boolean> | null = null;
   private onSessionExpired?: () => void;
+  // Set once an auth rejection (401/403 with no usable token) has been
+  // surfaced as a session-expiry, so concurrent polling loops that all
+  // 401/403 within the same tick fire the redirect exactly once instead
+  // of a storm of session-expired events.
+  private sessionExpiryHandled = false;
 
   constructor(tokenManager: TokenManager, retryStrategy?: RetryStrategy) {
     this.tokenManager = tokenManager;
@@ -24,6 +29,53 @@ export class HttpClient {
 
   setSessionExpiredHandler(handler: () => void): void {
     this.onSessionExpired = handler;
+  }
+
+  /**
+   * Decide whether a 401/403 represents a dead session (expired/absent
+   * bearer) rather than a feature/permission denial on a still-valid token.
+   *
+   * The dashboard runs several independent polling loops (device-status,
+   * CI-status, gates, merge-queue, co-pilot activity, …) that each swallow a
+   * non-ok response and keep their `setInterval` running. When the Cognito
+   * bearer expires, every one of those loops would otherwise 401/403 on every
+   * tick forever — the retry-storm that floods Sentry with hundreds of
+   * 401/403 events per session. Treating an auth-failed poll as session
+   * expiry once routes the user to `/login`, which unmounts the dashboard and
+   * stops ALL the loops centrally.
+   *
+   * Guard rails:
+   * - Only fires when the locally-held access token is expired or missing, so
+   *   a feature/permission 403 (or a 401 from a flaky proxied downstream)
+   *   while the token is still valid is NOT mistaken for session expiry —
+   *   that path is returned to the caller untouched, preserving the existing
+   *   `strategy/mentions/unread` carve-out behavior.
+   * - `skipAuth` requests are exempt (public endpoints).
+   * - Fires at most once per HttpClient instance (`sessionExpiryHandled`).
+   */
+  private maybeHandleAuthRejection(
+    status: number,
+    skipAuth: boolean,
+  ): void {
+    if (skipAuth) return;
+    if (status !== 401 && status !== 403) return;
+    if (this.sessionExpiryHandled) return;
+
+    const tokenUnusable =
+      !this.tokenManager.getAccessToken() ||
+      this.tokenManager.isAccessTokenExpired();
+    if (!tokenUnusable) return;
+
+    this.sessionExpiryHandled = true;
+    console.warn(
+      `[HttpClient] ${status} with an expired/absent access token — ` +
+        "treating as session expiry and halting (redirecting to re-auth) " +
+        "rather than letting polling loops retry-storm.",
+    );
+    this.tokenManager.clearTokens();
+    if (this.onSessionExpired) {
+      this.onSessionExpired();
+    }
   }
 
   async fetch(url: string, options: HttpOptions = {}): Promise<Response> {
@@ -74,13 +126,20 @@ export class HttpClient {
         log.debug("Token refresh successful, retrying request");
         return this.executeSingleRequest(url, options, skipAuth);
       }
-      // Token refresh failed. Do NOT auto-logout here — `doRefreshToken`
-      // already fires `session-expired` when the refresh token itself is
-      // invalid; a transient refresh failure should leave the user signed in.
-      console.warn(
-        "[HttpClient] Token refresh failed - returning 401 response without auto-logout"
-      );
+      // Token refresh failed. Under Cognito-only auth there is no silent
+      // re-mint, so a stale-token 401 that can't refresh is a dead session:
+      // halt and route to re-auth once instead of letting the dashboard's
+      // polling loops retry-storm this endpoint on every tick.
+      this.maybeHandleAuthRejection(response.status, skipAuth);
       return response;
+    }
+
+    // A 403 (or a 401 on a non-first attempt) with an expired/absent bearer
+    // is the same dead-session case the polling dashboards hit once the
+    // Cognito token lapses — the upstream proxy rejects the expired token
+    // with 403. Halt + re-auth once rather than 401/403-storming forever.
+    if (response.status === 401 || response.status === 403) {
+      this.maybeHandleAuthRejection(response.status, skipAuth);
     }
 
     // Use RetryStrategy for rate limiting and server errors
@@ -188,6 +247,9 @@ export class HttpClient {
     // UI via /login. Always returns false — there is no refreshed token.
     log.debug("No backend refresh under Cognito-only auth - session expired");
     this.tokenManager.clearTokens();
+    // Mark handled so a concurrent/subsequent poll that also 401/403s does
+    // not re-fire the session-expired path via `maybeHandleAuthRejection`.
+    this.sessionExpiryHandled = true;
     if (this.onSessionExpired) {
       this.onSessionExpired();
     }
