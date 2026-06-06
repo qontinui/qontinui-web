@@ -4,6 +4,7 @@
   "private": true,
   "license": "AGPL-3.0-or-later",
   "scripts": {
+    "preinstall": "npx only-allow npm",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
