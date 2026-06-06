@@ -29,7 +29,7 @@ import {
   type PlanStep,
   type PlanIntentResult,
 } from "./planClient";
-import { dispatchStep, getCurrentTabId } from "./relayExecutor";
+import { dispatchStep, resolveTabTarget } from "./relayExecutor";
 
 /** Lifecycle phase of a single `run`. */
 export type ExecutionPhase =
@@ -229,9 +229,18 @@ export function usePromptExecution(): UsePromptExecutionReturn {
         return;
       }
 
-      // 3. Resolve this tab's relay id. Without it the relay can't route to us.
-      const targetTabId = getCurrentTabId();
-      if (!targetTabId) {
+      // 3. Resolve the tab to drive against the relay's LIVE tab list. A bare
+      //    cached sessionStorage id goes stale once the relay drops the tab on
+      //    its ~30s heartbeat TTL (or it re-registers under a new id), which is
+      //    what made every step fail with "tabId is not in connectedTabs".
+      //    `resolveTabTarget` confirms the cached id is live, else falls back to
+      //    the sole connected tab or omits the id (relay routes to its primary).
+      const { targetTabId, hasConnectedTab } = await resolveTabTarget();
+      if (abortRef.current) {
+        runningRef.current = false;
+        return;
+      }
+      if (!hasConnectedTab) {
         setState({
           phase: "error",
           plan,
@@ -241,7 +250,7 @@ export function usePromptExecution(): UsePromptExecutionReturn {
           error: {
             kind: "not-consented",
             message:
-              "This tab is not registered with the co-pilot relay. Enable and consent to the co-pilot in this tab, then retry.",
+              "This tab is not connected to the co-pilot relay. Enable and consent to the co-pilot in this tab, then retry.",
           },
         });
         runningRef.current = false;

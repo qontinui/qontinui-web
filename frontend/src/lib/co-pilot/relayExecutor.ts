@@ -47,6 +47,95 @@ export function getCurrentTabId(): string | null {
   }
 }
 
+/** The relay's `GET /tabs` envelope — `data.tabs` is a list of tab descriptors. */
+interface RelayTabsEnvelope {
+  data?: { tabs?: unknown };
+}
+
+/**
+ * Fetch the relay's currently-connected tab ids. Returns `null` when the list
+ * can't be retrieved (network / HTTP / parse error) so the caller can fall back
+ * to best-effort behavior rather than mistaking "couldn't check" for "no tabs".
+ * Defensive about the tab descriptor shape (string id, or an object carrying
+ * `tabId` / `id` / `tab_id`).
+ */
+async function fetchLiveTabIds(): Promise<string[] | null> {
+  try {
+    const response = await httpClient.fetch(`${RELAY_BASE}/tabs`, {
+      method: "GET",
+    });
+    if (!response.ok) return null;
+    const env = (await response.json()) as RelayTabsEnvelope;
+    const tabs = env?.data?.tabs;
+    if (!Array.isArray(tabs)) return null;
+    return tabs
+      .map((t): string | null => {
+        if (typeof t === "string") return t;
+        if (t && typeof t === "object") {
+          const o = t as Record<string, unknown>;
+          for (const k of ["tabId", "id", "tab_id"]) {
+            if (typeof o[k] === "string") return o[k] as string;
+          }
+        }
+        return null;
+      })
+      .filter((x): x is string => typeof x === "string" && x.length > 0);
+  } catch {
+    return null;
+  }
+}
+
+/** Outcome of resolving which tab the co-pilot should drive. */
+export interface TabTarget {
+  /**
+   * The tab id to send as `targetTabId`, or `null` to OMIT it (the relay then
+   * routes to its primary tab). Omitting is correct when our own id can't be
+   * confirmed live but the relay still has a connected tab to drive.
+   */
+  targetTabId: string | null;
+  /** Whether the relay currently reports ANY connected tab. */
+  hasConnectedTab: boolean;
+}
+
+/**
+ * Resolve the tab to drive against the relay's LIVE tab list — never a bare
+ * cached id.
+ *
+ * The co-pilot page registers via the SDK's CommandRelayListener and the id
+ * lands in `sessionStorage["__uiBridge_tabId"]`. That cached id goes stale: the
+ * relay drops a tab after its heartbeat TTL (~30s), and a re-registration /
+ * listener remount can land the live tab under a different id. Sending the
+ * stale id yields the relay's `tabId is not in connectedTabs` rejection and the
+ * whole plan fails on step 1 — the exact failure observed in the wild.
+ *
+ * Resolution:
+ *   - cached id is in the live list          → use it (happy path).
+ *   - cached id absent, exactly one live tab → use that one (re-registered
+ *                                              under a new id, or never cached).
+ *   - cached id absent, >1 live tabs         → omit (relay picks its primary).
+ *   - no live tabs                           → `hasConnectedTab=false`; the hook
+ *                                              shows the enable-and-consent CTA.
+ *   - list fetch failed                      → best effort: send the cached id
+ *                                              and assume a tab is connected.
+ */
+export async function resolveTabTarget(): Promise<TabTarget> {
+  const cached = getCurrentTabId();
+  const live = await fetchLiveTabIds();
+  if (live === null) {
+    return { targetTabId: cached, hasConnectedTab: true };
+  }
+  if (live.length === 0) {
+    return { targetTabId: cached, hasConnectedTab: false };
+  }
+  if (cached && live.includes(cached)) {
+    return { targetTabId: cached, hasConnectedTab: true };
+  }
+  if (live.length === 1) {
+    return { targetTabId: live[0]!, hasConnectedTab: true };
+  }
+  return { targetTabId: null, hasConnectedTab: true };
+}
+
 /** Per-step dispatch outcome. `ok:false` always carries a human-readable reason. */
 export type StepResult =
   | { ok: true; detail: string }
@@ -163,7 +252,7 @@ function transportReason(
  */
 async function dispatchNavigate(
   step: PlanStep,
-  targetTabId: string,
+  targetTabId: string | null,
 ): Promise<StepResult> {
   if (!step.target) {
     return { ok: false, reason: "navigate step is missing a target page id" };
@@ -178,11 +267,12 @@ async function dispatchNavigate(
 
   // `mode: "soft"` does a client-side history navigation (pushState +
   // popstate) so the SPA route changes without a full reload that would tear
-  // down the bridge listener and the running plan.
+  // down the bridge listener and the running plan. A null `targetTabId` is
+  // omitted so the relay routes to its primary tab.
   const { status, ok, envelope } = await relayPost("/control/page/navigate", {
     url,
     mode: "soft",
-    targetTabId,
+    ...(targetTabId ? { targetTabId } : {}),
   });
 
   if (!ok || envelope?.success !== true) {
@@ -203,7 +293,7 @@ async function dispatchNavigate(
  */
 async function dispatchAction(
   step: PlanStep,
-  targetTabId: string,
+  targetTabId: string | null,
 ): Promise<StepResult> {
   const instruction = step.instruction;
   if (!instruction) {
@@ -212,6 +302,8 @@ async function dispatchAction(
 
   const direct = parseDirectIdInstruction(instruction);
 
+  // A null `targetTabId` is omitted so the relay routes to its primary tab.
+  const tabField = targetTabId ? { targetTabId } : {};
   const { status, ok, envelope } = direct
     ? await relayPost(
         `/control/element/${encodeURIComponent(direct.targetId)}/action`,
@@ -219,10 +311,10 @@ async function dispatchAction(
           action: direct.action,
           ...(direct.params ? { params: direct.params } : {}),
           waitOptions: { visible: true, enabled: true, timeout: 5000 },
-          targetTabId,
+          ...tabField,
         },
       )
-    : await relayPost("/ai/execute", { instruction, targetTabId });
+    : await relayPost("/ai/execute", { instruction, ...tabField });
 
   // Transport / HTTP-level failure.
   if (!ok || envelope?.success !== true) {
@@ -264,7 +356,7 @@ async function dispatchAction(
  */
 export async function dispatchStep(
   step: PlanStep,
-  targetTabId: string,
+  targetTabId: string | null,
 ): Promise<StepResult> {
   try {
     if (step.type === "navigate") {

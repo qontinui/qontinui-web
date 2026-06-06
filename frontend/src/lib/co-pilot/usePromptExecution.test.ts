@@ -45,7 +45,10 @@ vi.mock("./planClient", async () => {
 
 vi.mock("./relayExecutor", () => ({
   dispatchStep: vi.fn(),
-  getCurrentTabId: vi.fn(() => "tab-1"),
+  resolveTabTarget: vi.fn(async () => ({
+    targetTabId: "tab-1",
+    hasConnectedTab: true,
+  })),
 }));
 
 import { usePromptExecution } from "./usePromptExecution";
