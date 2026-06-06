@@ -115,3 +115,8 @@ backend/reset_aws_password.example.env
 
 .vercel
 .env*
+
+# npm is the canonical package manager for frontend/ (CI npm ci + Vercel use
+# package-lock.json); stray lockfiles from other managers must never be committed.
+frontend/pnpm-lock.yaml
+frontend/yarn.lock
