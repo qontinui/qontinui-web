@@ -155,7 +155,9 @@ export function WakeRunnerModal({
         const apiHost = apiUrl
           ? apiUrl.replace(/^https?:\/\//, "")
           : window.location.host;
-        const wsUrl = `${wsProto}://${apiHost}/api/v1/devices/status?token=${encodeURIComponent(token)}`;
+        // Backend route is `/api/v1/runners/status` (see
+        // realtime-connections-context) — `/devices/status` never existed.
+        const wsUrl = `${wsProto}://${apiHost}/api/v1/runners/status?token=${encodeURIComponent(token)}`;
 
         ws = new WebSocket(wsUrl);
         ws.onmessage = (ev) => {

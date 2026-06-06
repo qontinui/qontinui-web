@@ -179,7 +179,11 @@ export function RealtimeConnectionsProvider({
     const apiHost = apiUrl
       ? apiUrl.replace(/^https?:\/\//, "")
       : window.location.host;
-    const wsUrl = `${wsProtocol}://${apiHost}/api/v1/devices/status?token=${encodeURIComponent(token)}`;
+    // NOTE: the backend route is `/api/v1/runners/status` (runner_status_ws.py,
+    // mounted unprefixed). The unified-devices UI rename (#159) changed this
+    // dialer to `/devices/status`, which has never existed as a WS route —
+    // Starlette rejects the upgrade with a handshake 403.
+    const wsUrl = `${wsProtocol}://${apiHost}/api/v1/runners/status?token=${encodeURIComponent(token)}`;
 
     try {
       const ws = new WebSocket(wsUrl);

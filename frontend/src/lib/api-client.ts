@@ -1082,6 +1082,16 @@ class ApiClient {
   }
 
   async getWebSocketToken(): Promise<string | null> {
+    // Prefer the client-held Cognito bearer — hosted-UI sessions (the only
+    // prod login flow) never set the HttpOnly `access_token` cookie, so the
+    // cookie-reading route below 401s for them. The backend WS auth
+    // (`get_current_user_from_ws`) verifies the same bearer the HTTP
+    // `Authorization` header carries. Mirrors HttpClient.getWebSocketToken.
+    const bearer = tokenManager.getAccessToken();
+    if (bearer && !tokenManager.isAccessTokenExpired()) {
+      return bearer;
+    }
+
     try {
       const response = await fetch("/api/v1/ws-token", {
         credentials: "include",
@@ -1105,7 +1115,9 @@ class ApiClient {
    * Get WebSocket URL for real-time runner status updates (session start, logs, screenshots)
    */
   async getRunnerStatusWebSocketUrl(): Promise<string> {
-    const baseUrl = `${getWebSocketOrigin()}/api/v1/ws/runner/status`;
+    // Backend route is `/api/v1/runners/status` (runner_status_ws.py,
+    // mounted unprefixed) — `/ws/runner/status` never existed.
+    const baseUrl = `${getWebSocketOrigin()}/api/v1/runners/status`;
 
     // Get token for WebSocket authentication
     const token = await this.getWebSocketToken();

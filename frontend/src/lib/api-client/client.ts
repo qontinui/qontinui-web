@@ -925,7 +925,9 @@ class ApiClient {
   }
 
   async getRunnerStatusWebSocketUrl(): Promise<string> {
-    const baseUrl = `${getWebSocketOrigin()}/api/v1/ws/runner/status`;
+    // Backend route is `/api/v1/runners/status` (runner_status_ws.py,
+    // mounted unprefixed) — `/ws/runner/status` never existed.
+    const baseUrl = `${getWebSocketOrigin()}/api/v1/runners/status`;
 
     const token = await this.getWebSocketToken();
     if (token) {
