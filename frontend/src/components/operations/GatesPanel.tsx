@@ -494,6 +494,14 @@ interface GroupedGates {
   gates: GateRow[];
 }
 
+/** ISO-8601 `created_at` → epoch millis; a missing/unparseable stamp sorts
+ *  oldest (0) rather than throwing — coord always emits the column, but the
+ *  panel must not blank on a malformed row. */
+function createdAtMs(gate: GateRow): number {
+  const ms = Date.parse(gate.created_at);
+  return Number.isNaN(ms) ? 0 : ms;
+}
+
 function groupGates(gates: GateRow[]): GroupedGates[] {
   const byKey = new Map<string, GroupedGates>();
   for (const gate of gates) {
@@ -510,10 +518,22 @@ function groupGates(gates: GateRow[]): GroupedGates[] {
       });
     }
   }
-  // Plan anchors first, then claim anchors; alphabetical within each class.
-  return Array.from(byKey.values()).sort((a, b) => {
-    if (a.kind !== b.kind) return a.kind === "plan" ? -1 : 1;
-    return a.label.localeCompare(b.label);
+  // Newest first, so the operator sees the most recent gates at the top:
+  // gates within a group by `created_at` descending, groups by their newest
+  // gate's `created_at` descending (label tiebreak for determinism).
+  const groups = Array.from(byKey.values());
+  for (const group of groups) {
+    group.gates.sort((a, b) => createdAtMs(b) - createdAtMs(a));
+  }
+  // Every group holds ≥1 gate by construction, but index 0 is typed
+  // `GateRow | undefined` (noUncheckedIndexedAccess) — fall back to 0.
+  const newestMs = (g: GroupedGates): number => {
+    const first = g.gates[0];
+    return first ? createdAtMs(first) : 0;
+  };
+  return groups.sort((a, b) => {
+    const delta = newestMs(b) - newestMs(a);
+    return delta !== 0 ? delta : a.label.localeCompare(b.label);
   });
 }
 
