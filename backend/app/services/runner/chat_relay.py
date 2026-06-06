@@ -10,10 +10,11 @@ from collections.abc import Callable, Coroutine
 from typing import Any
 
 import structlog
-from fastapi import WebSocket, WebSocketDisconnect
+from fastapi import WebSocket
 from redis import asyncio as aioredis
 
 from app.services.runner.connection_registry import WebSocketConnectionRegistry
+from app.websockets.safe_send import BENIGN_SEND_EXCEPTIONS
 
 logger = structlog.get_logger(__name__)
 
@@ -197,10 +198,11 @@ class ChatRelayService:
                             runner_id=runner_id,
                             message_type=chat_msg.get("type"),
                         )
-                    except WebSocketDisconnect:
+                    except BENIGN_SEND_EXCEPTIONS as e:
                         logger.info(
                             "runner_ws_disconnected_during_chat_forward",
                             runner_id=runner_id,
+                            error=str(e),
                         )
                         break
                     except Exception as e:
@@ -252,10 +254,11 @@ class ChatRelayService:
                             runner_id=runner_id,
                             response_type=response.get("type"),
                         )
-                    except WebSocketDisconnect:
+                    except BENIGN_SEND_EXCEPTIONS as e:
                         logger.info(
                             "mobile_ws_disconnected_during_response_forward",
                             runner_id=runner_id,
+                            error=str(e),
                         )
                         break
                     except Exception as e:

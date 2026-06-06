@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, WebSocket, status
 from sqlalchemy import select
 
 from app.api.deps import get_current_user_from_ws
@@ -20,7 +20,11 @@ from app.db.session import AsyncSessionLocal
 from app.models.automation_session import AutomationSession
 from app.services.websocket_manager import get_websocket_manager
 from app.websockets.rate_limiter import RateLimiter
-from app.websockets.safe_send import reject, safe_close
+from app.websockets.safe_send import (
+    BENIGN_SEND_EXCEPTIONS,
+    reject,
+    safe_close,
+)
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -260,7 +264,7 @@ async def websocket_monitor_endpoint(
                         }
                     )
 
-            except WebSocketDisconnect:
+            except BENIGN_SEND_EXCEPTIONS:
                 logger.info(
                     "automation_monitor_ws_client_disconnected",
                     user_id=str(user.id) if user else None,

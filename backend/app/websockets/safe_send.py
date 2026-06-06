@@ -21,7 +21,12 @@ Post-handshake *operational* sends are intentionally NOT this module's concern �
 e.g. ``runner_websocket_manager.locked_send`` (relay-driven, retries / drops on
 its own terms) and ``websocket_manager._send_to_local_connections`` (fan-out to
 many sockets, tolerates per-socket failure independently). Those have their own
-error handling and must not be routed through here.
+error handling and must not be routed through here. The module does, however,
+ALSO export :data:`BENIGN_SEND_EXCEPTIONS` — the shared benign-classification
+tuple those operational sites import to recognise the same client-gone /
+close-already-sent races — but each site keeps its own failure CONSEQUENCE
+(break / cleanup / continue); it does NOT route the send through this module's
+swallowing helpers.
 
 Except-tuple rationale (verified against the pinned Starlette 1.2.1 in
 ``backend/poetry.lock`` — its ``WebSocket.send`` is the authority):
@@ -49,6 +54,19 @@ from fastapi import WebSocket, WebSocketDisconnect, status
 from starlette.websockets import WebSocketState
 
 logger = structlog.get_logger(__name__)
+
+
+# Benign send/close exceptions shared with post-handshake *operational* send
+# sites (relay loops, fan-out, endpoint loop bodies). Same tuple the handshake
+# helpers catch (see the Except-tuple rationale above): on a client that is
+# already gone Starlette raises WebSocketDisconnect(1006); a send/close after
+# our own close frame raises RuntimeError. Operational sites import this tuple
+# to classify benign races consistently but keep their own CONSEQUENCE (break /
+# cleanup / continue) — they do NOT route through safe_send_json (which swallows).
+BENIGN_SEND_EXCEPTIONS: tuple[type[BaseException], ...] = (
+    WebSocketDisconnect,
+    RuntimeError,
+)
 
 
 async def safe_send_json(websocket: WebSocket, payload: dict[str, Any]) -> None:

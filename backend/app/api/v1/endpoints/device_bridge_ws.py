@@ -42,7 +42,7 @@ from app.core.config import settings
 from app.models.user import User
 from app.services import coord_device
 from app.services.device_bridge_service import DeviceBridgeService
-from app.websockets.safe_send import reject
+from app.websockets.safe_send import BENIGN_SEND_EXCEPTIONS, reject
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -238,6 +238,16 @@ async def device_bridge_device_endpoint(
                     try:
                         payload = json.loads(msg["data"])
                         await websocket.send_json(payload)
+                    except BENIGN_SEND_EXCEPTIONS as fwd_err:
+                        # Client gone / our close already sent — stop forwarding;
+                        # the main loop's teardown + finally returns the pubsub.
+                        logger.info(
+                            "device_bridge_device_forward_disconnected",
+                            user_id=user_id,
+                            device_id=device_id,
+                            error=str(fwd_err),
+                        )
+                        break
                     except Exception as fwd_err:
                         logger.error(
                             "device_bridge_device_forward_error",
@@ -451,6 +461,17 @@ async def device_bridge_tunnel_endpoint(
                     try:
                         payload = json.loads(msg["data"])
                         await websocket.send_json(payload)
+                    except BENIGN_SEND_EXCEPTIONS as fwd_err:
+                        # Client gone / our close already sent — stop forwarding;
+                        # the main loop's teardown + finally returns the pubsub.
+                        logger.info(
+                            "device_bridge_tunnel_forward_disconnected",
+                            user_id=user_id,
+                            device_id=device_id,
+                            tunnel_id=tunnel_id,
+                            error=str(fwd_err),
+                        )
+                        break
                     except Exception as fwd_err:
                         logger.error(
                             "device_bridge_tunnel_forward_error",
