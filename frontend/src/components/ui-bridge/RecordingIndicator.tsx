@@ -13,6 +13,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { isRunnerReachable } from "@/lib/ui-bridge/discovered-specs";
 
 interface RecordingStatus {
   active: boolean;
@@ -38,8 +39,17 @@ export function RecordingIndicator() {
   const [wsUrl, setWsUrl] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Poll common SDK ports for recording status
+  // Poll common SDK ports for recording status.
+  //
+  // Gated on the page itself being served from localhost (same gate as
+  // discovered-specs.ts): the SDK WS server only exists on the
+  // operator's machine, and on production origins (qontinui.io) these
+  // probes can never succeed — the runner that does occupy :9876
+  // serves a different protocol at /ws, so every attempt was a
+  // handshake 404 spamming the console every 5s on all authed pages
+  // (verified live 2026-06-05).
   useEffect(() => {
+    if (!isRunnerReachable()) return;
     const ports = [9876, 9877, 9878];
 
     const checkPorts = async () => {
