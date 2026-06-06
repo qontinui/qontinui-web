@@ -13,8 +13,10 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from fastapi import WebSocket, WebSocketDisconnect
+from fastapi import WebSocket
 from redis import asyncio as aioredis
+
+from app.websockets.safe_send import BENIGN_SEND_EXCEPTIONS
 
 logger = structlog.get_logger(__name__)
 
@@ -199,11 +201,12 @@ class WebSocketManager:
             try:
                 await websocket.send_json(message)
                 sent_count += 1
-            except WebSocketDisconnect:
+            except BENIGN_SEND_EXCEPTIONS as e:
                 failed_connections.append(websocket)
                 logger.warning(
                     "send_failed_disconnected",
                     session_id=session_id,
+                    error=str(e),
                 )
             except Exception as e:
                 failed_connections.append(websocket)

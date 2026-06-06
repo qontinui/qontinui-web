@@ -11,10 +11,11 @@ from collections.abc import Callable, Coroutine
 from typing import Any
 
 import structlog
-from fastapi import WebSocket, WebSocketDisconnect
+from fastapi import WebSocket
 from redis import asyncio as aioredis
 
 from app.services.runner.connection_registry import WebSocketConnectionRegistry
+from app.websockets.safe_send import BENIGN_SEND_EXCEPTIONS
 
 logger = structlog.get_logger(__name__)
 
@@ -350,10 +351,11 @@ class CommandRelayService:
                             runner_id=runner_id,
                             command_type=command.get("type"),
                         )
-                    except WebSocketDisconnect:
+                    except BENIGN_SEND_EXCEPTIONS as e:
                         logger.info(
                             "runner_ws_disconnected_during_command_forward",
                             runner_id=runner_id,
+                            error=str(e),
                         )
                         break
                     except Exception as e:
@@ -405,13 +407,20 @@ class CommandRelayService:
                             runner_id=runner_id,
                             response_type=response.get("type"),
                         )
+                    except BENIGN_SEND_EXCEPTIONS as e:
+                        logger.info(
+                            "frontend_ws_disconnected_during_response_forward",
+                            runner_id=runner_id,
+                            error=str(e),
+                        )
+                        break
                     except Exception as e:
                         logger.error(
                             "response_forward_failed",
                             runner_id=runner_id,
                             error=str(e),
                         )
-                        break
+                        continue
 
         except asyncio.CancelledError:
             logger.info(

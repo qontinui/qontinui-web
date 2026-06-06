@@ -52,7 +52,11 @@ from app.services.coord_jwks import (
     coord_jwks_client,
 )
 from app.services.runner_websocket_manager import get_runner_websocket_manager
-from app.websockets.safe_send import reject, safe_close
+from app.websockets.safe_send import (
+    BENIGN_SEND_EXCEPTIONS,
+    reject,
+    safe_close,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -363,7 +367,7 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
                     await websocket.send_json(
                         {"type": "ping", "timestamp": utc_now().isoformat()}
                     )
-                except Exception:
+                except BENIGN_SEND_EXCEPTIONS:
                     break
                 continue
 
@@ -372,7 +376,7 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
 
             await _route_device_message(data, device_id, user_id, manager)
 
-    except WebSocketDisconnect:
+    except BENIGN_SEND_EXCEPTIONS:
         logger.info("devices_ws_disconnected", device_id=str(device_id))
     except Exception as e:
         logger.error(
@@ -399,7 +403,7 @@ async def _route_device_message(
         if ws:
             try:
                 await ws.send_json({"type": "pong", "timestamp": utc_now().isoformat()})
-            except Exception:
+            except BENIGN_SEND_EXCEPTIONS:
                 pass
         return
 

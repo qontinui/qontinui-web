@@ -21,7 +21,7 @@ import asyncio
 import json
 
 import structlog
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Depends, WebSocket, status
 from redis import asyncio as aioredis
 from starlette.websockets import WebSocketState
 
@@ -30,7 +30,11 @@ from app.api.v1.endpoints.devices import _device_to_wire as _runner_to_wire
 from app.config.redis_config import get_redis
 from app.core.config import settings
 from app.crud import runner_crud
-from app.websockets.safe_send import safe_close, safe_send_json
+from app.websockets.safe_send import (
+    BENIGN_SEND_EXCEPTIONS,
+    safe_close,
+    safe_send_json,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -119,7 +123,7 @@ async def websocket_runner_status(
                         error=str(e),
                         user_id=str(user.id),
                     )
-                except WebSocketDisconnect:
+                except BENIGN_SEND_EXCEPTIONS:
                     break
                 except Exception as e:
                     logger.error(
@@ -131,7 +135,7 @@ async def websocket_runner_status(
                     if websocket.client_state != WebSocketState.CONNECTED:
                         break
                     await asyncio.sleep(0.1)
-    except WebSocketDisconnect:
+    except BENIGN_SEND_EXCEPTIONS:
         pass
     except Exception as e:
         logger.error(

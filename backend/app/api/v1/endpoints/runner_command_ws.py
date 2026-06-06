@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import select
 
@@ -21,7 +21,7 @@ from app.db.session import AsyncSessionLocal
 from app.models.device import Device
 from app.models.user import User
 from app.services.runner_websocket_manager import get_runner_websocket_manager
-from app.websockets.safe_send import reject
+from app.websockets.safe_send import BENIGN_SEND_EXCEPTIONS, reject
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -162,7 +162,7 @@ async def websocket_runner_command_endpoint(
                     )
                 except Exception:
                     break
-            except WebSocketDisconnect:
+            except BENIGN_SEND_EXCEPTIONS:
                 break
             except Exception as e:
                 logger.error(
