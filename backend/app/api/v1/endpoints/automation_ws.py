@@ -83,7 +83,11 @@ async def websocket_monitor_endpoint(
     # Check connection rate limit
     client_ip = websocket.client.host if websocket.client else "unknown"
     if not RateLimiter.check_connection_rate_limit(client_ip, limit=5, window=60):
-        await safe_close(websocket, status.WS_1008_POLICY_VIOLATION)
+        await safe_close(
+            websocket,
+            status.WS_1008_POLICY_VIOLATION,
+            reason="Connection rate limit exceeded. Maximum 5 connections per minute.",
+        )
         logger.warning(
             "websocket_monitor_connection_rate_limited",
             client_ip=client_ip,
@@ -123,7 +127,6 @@ async def websocket_monitor_endpoint(
                     "Authentication required. "
                     "Provide token query param or access_token cookie."
                 ),
-                status.WS_1008_POLICY_VIOLATION,
             )
             return
 
@@ -131,9 +134,7 @@ async def websocket_monitor_endpoint(
             user = await get_current_user_from_ws(auth_token)
         except Exception as e:
             logger.error("automation_monitor_ws_auth_failed", error=str(e))
-            await reject(
-                websocket, "Authentication failed", status.WS_1008_POLICY_VIOLATION
-            )
+            await reject(websocket, "Authentication failed")
             return
 
         # Get database session - use AsyncSessionLocal directly to avoid generator lifecycle issues
@@ -161,7 +162,6 @@ async def websocket_monitor_endpoint(
             await reject(
                 websocket,
                 f"Automation session '{session_id}' not found",
-                status.WS_1008_POLICY_VIOLATION,
             )
             return
 

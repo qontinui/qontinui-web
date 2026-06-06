@@ -109,7 +109,23 @@ async def test_safe_close_passes_code_through() -> None:
 
     await safe_send.safe_close(ws, status.WS_1011_INTERNAL_ERROR)
 
-    ws.close.assert_awaited_once_with(code=status.WS_1011_INTERNAL_ERROR)
+    ws.close.assert_awaited_once_with(code=status.WS_1011_INTERNAL_ERROR, reason=None)
+
+
+@pytest.mark.asyncio
+async def test_safe_close_passes_reason_through() -> None:
+    """The close-frame reason (CloseEvent.reason) is the on-wire disambiguator
+    for sites that share a close code — it must reach websocket.close."""
+    ws = _ws()
+
+    await safe_send.safe_close(
+        ws, status.WS_1008_POLICY_VIOLATION, reason="Missing authentication token"
+    )
+
+    ws.close.assert_awaited_once_with(
+        code=status.WS_1008_POLICY_VIOLATION,
+        reason="Missing authentication token",
+    )
 
 
 @pytest.mark.asyncio
@@ -141,7 +157,9 @@ async def test_reject_sends_standard_payload_then_closes() -> None:
     await safe_send.reject(ws, "nope", code=status.WS_1008_POLICY_VIOLATION)
 
     ws.send_json.assert_awaited_once_with({"type": "error", "message": "nope"})
-    ws.close.assert_awaited_once_with(code=status.WS_1008_POLICY_VIOLATION)
+    ws.close.assert_awaited_once_with(
+        code=status.WS_1008_POLICY_VIOLATION, reason="nope"
+    )
 
 
 @pytest.mark.asyncio
@@ -150,7 +168,9 @@ async def test_reject_default_code_is_policy_violation() -> None:
 
     await safe_send.reject(ws, "nope")
 
-    ws.close.assert_awaited_once_with(code=status.WS_1008_POLICY_VIOLATION)
+    ws.close.assert_awaited_once_with(
+        code=status.WS_1008_POLICY_VIOLATION, reason="nope"
+    )
 
 
 @pytest.mark.asyncio
@@ -160,7 +180,57 @@ async def test_reject_still_closes_when_send_raises() -> None:
 
     await safe_send.reject(ws, "nope", code=status.WS_1011_INTERNAL_ERROR)
 
-    ws.close.assert_awaited_once_with(code=status.WS_1011_INTERNAL_ERROR)
+    ws.close.assert_awaited_once_with(
+        code=status.WS_1011_INTERNAL_ERROR, reason="nope"
+    )
+
+
+@pytest.mark.asyncio
+async def test_reject_close_reason_defaults_to_message() -> None:
+    """The close frame carries the same diagnostic as the advisory error frame —
+    the error frame races the client's close and can be dropped, so the close
+    reason is the reliably-observed half of the diagnostic."""
+    ws = _ws()
+
+    await safe_send.reject(ws, "Device token missing required claims.")
+
+    ws.close.assert_awaited_once_with(
+        code=status.WS_1008_POLICY_VIOLATION,
+        reason="Device token missing required claims.",
+    )
+
+
+@pytest.mark.asyncio
+async def test_reject_explicit_reason_overrides_message() -> None:
+    ws = _ws()
+
+    await safe_send.reject(ws, "long advisory message", reason="short reason")
+
+    ws.send_json.assert_awaited_once_with(
+        {"type": "error", "message": "long advisory message"}
+    )
+    ws.close.assert_awaited_once_with(
+        code=status.WS_1008_POLICY_VIOLATION, reason="short reason"
+    )
+
+
+@pytest.mark.asyncio
+async def test_reject_truncates_reason_to_close_frame_limit() -> None:
+    """RFC 6455 caps the close-frame reason at 123 UTF-8 bytes; an over-long
+    message must be truncated rather than rejected by the WS stack."""
+    ws = _ws()
+    long_message = "x" * 200
+
+    await safe_send.reject(ws, long_message)
+
+    sent_reason = ws.close.await_args.kwargs["reason"]
+    assert len(sent_reason.encode("utf-8")) <= 123
+    assert sent_reason.endswith("...")
+    # The advisory error frame keeps the FULL message — only the close frame
+    # is capped.
+    ws.send_json.assert_awaited_once_with(
+        {"type": "error", "message": long_message}
+    )
 
 
 @pytest.mark.asyncio
