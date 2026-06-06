@@ -47,7 +47,16 @@ on:
   pull_request:
     branches: [main, develop]
   push:
-    branches: [main, develop]
+    # merge-candidate/** refs are pushed by coord's autonomous merge scheduler
+    # (plan 2026-06-06-coord-ci-runner-autonomous-green-merge, Phase 4). Spec CI
+    # is a required merge gate, so it must run on candidate refs or the proposal
+    # hangs in awaiting-ci. Validation-only (hermetic stack); no deploy.
+    branches:
+      - main
+      - develop
+      - 'merge-candidate/**'
+      - 'merge-candidate-spec/**'
+      - 'merge-candidate-batch/**'
   workflow_dispatch:
 
 jobs:
