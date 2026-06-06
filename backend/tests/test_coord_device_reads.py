@@ -10,11 +10,13 @@ Plan: ``2026-05-30-web-coord-schema-boundary-decoupling.md`` Phase 3.
 
 from __future__ import annotations
 
+from datetime import timedelta
 from types import SimpleNamespace
 from typing import Any
 
 import httpx
 import pytest
+from qontinui_schemas.common import utc_now
 
 from app.api.v1.endpoints import devices as devices_ep
 from app.services import coord_device
@@ -177,6 +179,96 @@ def test_derive_status_from_row_ui_error_errored():
     row = _coord_row(ui_error={"kind": "boom", "message": "x"})
     wire = devices_ep._device_row_to_wire(row)
     assert wire.derivedStatus.value == "errored"
+
+
+# ---- heartbeat staleness gate ----------------------------------------------
+#
+# The stored ``derived_status`` column is write-once-per-event; nothing decays
+# it when a device dies without a clean disconnect. A liveness claim
+# (healthy/degraded/starting) must be backed by a fresh heartbeat — observed
+# live 2026-06-06: a device with a 6-day-stale heartbeat and wsConnected:false
+# still reported derivedStatus:"healthy".
+
+
+def _fresh_iso() -> str:
+    return (utc_now() - timedelta(seconds=10)).isoformat()
+
+
+def test_derive_status_from_row_stale_healthy_reports_offline():
+    # default _coord_row heartbeat is a fixed past date — always stale.
+    wire = devices_ep._device_row_to_wire(_coord_row(derived_status="healthy"))
+    assert wire.derivedStatus.value == "offline"
+
+
+@pytest.mark.parametrize("claim", ["degraded", "starting"])
+def test_derive_status_from_row_stale_liveness_claims_report_offline(claim):
+    wire = devices_ep._device_row_to_wire(_coord_row(derived_status=claim))
+    assert wire.derivedStatus.value == "offline"
+
+
+def test_derive_status_from_row_fresh_healthy_reports_healthy():
+    wire = devices_ep._device_row_to_wire(
+        _coord_row(derived_status="healthy", last_heartbeat=_fresh_iso())
+    )
+    assert wire.derivedStatus.value == "healthy"
+
+
+def test_derive_status_from_row_ws_presence_beats_stale_heartbeat():
+    # A live WS session is definitive; the connection-cleanup sweep owns
+    # clearing stale sessions — the staleness gate must not second-guess it.
+    wire = devices_ep._device_row_to_wire(
+        _coord_row(derived_status="healthy", ws_session_id=7)
+    )
+    assert wire.derivedStatus.value == "healthy"
+
+
+def test_derive_status_from_row_missing_heartbeat_is_stale():
+    wire = devices_ep._device_row_to_wire(
+        _coord_row(derived_status="healthy", last_heartbeat=None)
+    )
+    assert wire.derivedStatus.value == "offline"
+
+
+def test_derive_status_from_row_unparseable_heartbeat_fails_open():
+    # Format drift must degrade to the old optimistic behavior, not flip the
+    # whole fleet offline.
+    wire = devices_ep._device_row_to_wire(
+        _coord_row(derived_status="healthy", last_heartbeat="not-a-date")
+    )
+    assert wire.derivedStatus.value == "healthy"
+
+
+def test_derive_status_from_row_stale_errored_stays_errored():
+    # ``errored`` is sticky diagnostic state, not a liveness claim.
+    wire = devices_ep._device_row_to_wire(_coord_row(derived_status="errored"))
+    assert wire.derivedStatus.value == "errored"
+
+
+def test_derive_status_orm_twin_staleness_gate():
+    stale = SimpleNamespace(
+        ws_session_id=None,
+        ui_error=None,
+        derived_status="healthy",
+        last_heartbeat=utc_now() - timedelta(days=6),
+    )
+    assert devices_ep._derive_status(stale).value == "offline"
+
+    fresh = SimpleNamespace(
+        ws_session_id=None,
+        ui_error=None,
+        derived_status="healthy",
+        last_heartbeat=utc_now() - timedelta(seconds=10),
+    )
+    assert devices_ep._derive_status(fresh).value == "healthy"
+
+    # Naive datetimes (no tzinfo) are interpreted as UTC, not rejected.
+    naive_fresh = SimpleNamespace(
+        ws_session_id=None,
+        ui_error=None,
+        derived_status="healthy",
+        last_heartbeat=(utc_now() - timedelta(seconds=10)).replace(tzinfo=None),
+    )
+    assert devices_ep._derive_status(naive_fresh).value == "healthy"
 
 
 # ---- migrated endpoints ---------------------------------------------------

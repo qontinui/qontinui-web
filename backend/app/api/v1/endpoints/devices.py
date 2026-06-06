@@ -20,6 +20,7 @@ The schemas-crate ``Runner*`` types continue to back the response
 payload until Phase 7 renames them to ``Device*``.
 """
 
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -63,6 +64,7 @@ from app.services import coord_device
 from app.services.coord_identity import get_coord_identity
 from app.services.runner_websocket_manager import get_runner_websocket_manager
 from app.services.strategy import strategy_client
+from app.services.workflow_dispatcher import HEALTHY_HEARTBEAT_WINDOW_SECONDS
 
 logger = structlog.get_logger(__name__)
 
@@ -94,20 +96,49 @@ def _extract_caller_token(request: Request) -> str | None:
 # ---------------------------------------------------------------------------
 
 
+def _heartbeat_is_fresh(last_heartbeat: datetime | None) -> bool:
+    """True when ``last_heartbeat`` is within the dispatch health window.
+
+    Shares ``HEALTHY_HEARTBEAT_WINDOW_SECONDS`` with the workflow
+    dispatcher so "shows healthy" and "is dispatchable" can't disagree.
+    """
+    if last_heartbeat is None:
+        return False
+    if last_heartbeat.tzinfo is None:
+        last_heartbeat = last_heartbeat.replace(tzinfo=UTC)
+    age = utc_now() - last_heartbeat
+    return age <= timedelta(seconds=HEALTHY_HEARTBEAT_WINDOW_SECONDS)
+
+
+#: stored ``derived_status`` values that CLAIM liveness and therefore need a
+#: fresh heartbeat to be believed. ``errored`` is deliberately absent — an
+#: error report is sticky diagnostic state, not a liveness claim.
+_LIVENESS_CLAIMS = ("healthy", "degraded", "starting")
+
+
 def _derive_status(device: Device) -> RunnerStatus:
     """Compute the canonical status for a device row.
 
     Preference order:
-      * ``ws_session_id`` set → ``healthy`` (definitive WS presence wins).
+      * ``ws_session_id`` set → ``healthy`` (definitive WS presence wins; the
+        connection-cleanup sweep owns clearing stale sessions).
       * ``ui_error`` set → ``errored`` (overrides degraded but not healthy).
       * Otherwise → fall back to the stored ``derived_status`` column;
         unknown values map to ``offline``.
+
+    Staleness gate: the stored column is write-once-per-event (registration,
+    heartbeat, runner status messages) and nothing decays it when a device
+    dies without a clean disconnect — a row can claim ``healthy`` days after
+    its last heartbeat. Liveness-claiming values are therefore only believed
+    while the heartbeat is fresh; stale ones report ``offline``.
     """
     if device.ws_session_id is not None:
         return RunnerStatus.healthy
     if device.ui_error is not None:
         return RunnerStatus.errored
     raw = (device.derived_status or "offline").lower()
+    if raw in _LIVENESS_CLAIMS and not _heartbeat_is_fresh(device.last_heartbeat):
+        return RunnerStatus.offline
     if raw == "healthy":
         return RunnerStatus.healthy
     if raw == "degraded":
@@ -191,18 +222,43 @@ def _device_to_wire(device: Device) -> RunnerWire:
 # ---------------------------------------------------------------------------
 
 
+def _heartbeat_is_fresh_iso(value: Any) -> bool:
+    """ISO-string twin of :func:`_heartbeat_is_fresh` for coord JSON rows.
+
+    Missing → stale (registration always stamps ``last_heartbeat``, so an
+    absent value means an ancient/foreign row, not a young one). An
+    unparseable value fails OPEN (treated as fresh) so a coord timestamp
+    format drift degrades back to the old optimistic behavior instead of
+    flipping the whole fleet to offline; the warn log is the tripwire.
+    """
+    if value is None or value == "":
+        return False
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except ValueError:
+        logger.warning("device_last_heartbeat_unparseable", value=str(value)[:64])
+        return True
+    return _heartbeat_is_fresh(parsed)
+
+
 def _derive_status_from_row(row: dict[str, Any]) -> RunnerStatus:
     """Compute the canonical status from a coord ``coord.devices`` JSON row.
 
     Same preference order as :func:`_derive_status` (the ORM twin): WS
     presence (``ws_session_id``) wins, then ``ui_error``, then the stored
-    ``derived_status`` column.
+    ``derived_status`` column — with the same staleness gate: a stored
+    liveness claim (healthy/degraded/starting) is only believed while
+    ``last_heartbeat`` is fresh.
     """
     if row.get("ws_session_id") is not None:
         return RunnerStatus.healthy
     if row.get("ui_error") is not None:
         return RunnerStatus.errored
     raw = str(row.get("derived_status") or "offline").lower()
+    if raw in _LIVENESS_CLAIMS and not _heartbeat_is_fresh_iso(
+        row.get("last_heartbeat")
+    ):
+        return RunnerStatus.offline
     if raw == "healthy":
         return RunnerStatus.healthy
     if raw == "degraded":
