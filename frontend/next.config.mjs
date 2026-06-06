@@ -82,6 +82,20 @@ const nextConfig = {
   skipTrailingSlashRedirect: true,
   async redirects() {
     return [
+      // app.qontinui.io is NOT a separate app surface — qontinui.io is
+      // canonical. 308-redirect the whole host to it. Keeping app.* as a
+      // live login surface would require a parallel Cognito callback /
+      // backend TrustedHost / CORS allow-list that silently drifts out of
+      // sync (it already did: redirect_mismatch + a blank /operations). A
+      // single canonical surface + a redirect is the drift-proof end state.
+      // `has: host` scopes this to app.qontinui.io only; qontinui.io is
+      // untouched (same deployment serves both domains).
+      {
+        source: '/:path*',
+        has: [{ type: 'host', value: 'app.qontinui.io' }],
+        destination: 'https://qontinui.io/:path*',
+        permanent: true,
+      },
       // Phase 4B: /runners/fleet was folded into /runners (single page,
       // tabbed Online + Sessions + Auth Tokens).
       {
