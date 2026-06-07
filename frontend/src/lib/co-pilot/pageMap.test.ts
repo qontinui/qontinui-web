@@ -55,6 +55,32 @@ describe("copilotPages (the planner's `pages` list)", () => {
   });
 });
 
+describe("copilotPages — Workflows/Execute disambiguation (planner routing)", () => {
+  function descFor(id: string): string {
+    const page = copilotPages.find((p) => p.id === id);
+    expect(page, `expected a copilot page with id "${id}"`).toBeDefined();
+    return page!.description;
+  }
+
+  it("describes the workflow-builder page (/build/workflows) as the 'workflows page'", () => {
+    // This is the page users (and the planner) mean by "the workflows page".
+    // Its description must say so unambiguously so "go to the workflows page"
+    // routes here, not to /execute.
+    const desc = descFor("unified-workflow-builder").toLowerCase();
+    expect(desc).toContain("workflows page");
+    expect(pageIdToUrl("unified-workflow-builder")).toBe("/build/workflows");
+  });
+
+  it("describes the execute page (/execute) as Execute / run & schedule — NOT 'the workflows page'", () => {
+    const desc = descFor("gui-automation").toLowerCase();
+    expect(desc).toContain("execute");
+    // It runs workflows but must NOT be advertised as "the workflows page" — that
+    // is exactly the ambiguity that mis-routed "go to the workflows page".
+    expect(desc).not.toContain("workflows page");
+    expect(pageIdToUrl("gui-automation")).toBe("/execute");
+  });
+});
+
 describe("pageIdToUrl — web ids (happy path)", () => {
   it("resolves the workflow-run page id to its route", () => {
     expect(pageIdToUrl("gui-automation")).toBe("/execute");

@@ -226,3 +226,69 @@ describe("usePromptExecution — relay tab not connected is NOT a consent error"
     );
   });
 });
+
+describe("usePromptExecution — navigate landing check (honest success)", () => {
+  // `unified-workflow-builder` -> /build/workflows (a real co-pilot page id, so
+  // pageIdToUrl resolves and the landing check engages).
+  const navPlan = {
+    summary: "Navigate to the workflows page",
+    steps: [
+      {
+        type: "navigate" as const,
+        target: "unified-workflow-builder",
+        explanation: "go to the workflows page",
+      },
+    ],
+  };
+
+  beforeEach(() => {
+    // Start every test on the co-pilot's own route.
+    window.history.replaceState({}, "", "/co-pilot");
+  });
+
+  it("marks the navigate step FAILED when the tab did NOT move (relay accepted but page stayed put)", async () => {
+    requestPlanMock.mockResolvedValue(navPlan);
+    // Relay accepts the navigate (200/ok) but the page never moves — we stay on
+    // /co-pilot. This is the silent-delivery-failure false-success case.
+    dispatchStepMock.mockResolvedValue({ ok: true, detail: "navigated" });
+
+    const { result } = renderHook(() => usePromptExecution());
+    await act(async () => {
+      await result.current.run("go to the workflows page");
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.phase).toBe("error");
+    });
+    // NOT a false "done" — an honest step failure.
+    expect(result.current.state.phase).not.toBe("done");
+    expect(result.current.state.error?.kind).toBe("step-failed");
+    expect(result.current.state.error?.message).toMatch(
+      /navigation didn't take effect/i,
+    );
+    expect(result.current.state.error?.message).toContain("/build/workflows");
+    expect(result.current.state.stepStatuses[0]).toBe("failed");
+  });
+
+  it("marks the navigate step DONE when the tab actually reached the target route", async () => {
+    requestPlanMock.mockResolvedValue(navPlan);
+    // Simulate a successful soft-nav: the relay accepts AND the tab moves to the
+    // target route (in the real app a successful self-nav unmounts the hook; we
+    // can't unmount mid-act, so we model "the page moved" by changing the path).
+    dispatchStepMock.mockImplementation(async () => {
+      window.history.replaceState({}, "", "/build/workflows");
+      return { ok: true, detail: "navigated" };
+    });
+
+    const { result } = renderHook(() => usePromptExecution());
+    await act(async () => {
+      await result.current.run("go to the workflows page");
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.phase).toBe("done");
+    });
+    expect(result.current.state.error).toBeNull();
+    expect(result.current.state.stepStatuses[0]).toBe("done");
+  });
+});
