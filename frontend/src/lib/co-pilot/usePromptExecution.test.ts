@@ -43,18 +43,25 @@ vi.mock("./planClient", async () => {
   };
 });
 
+const dispatchStepMock = vi.fn();
+const resolveTabTargetMock = vi.fn();
 vi.mock("./relayExecutor", () => ({
-  dispatchStep: vi.fn(),
-  resolveTabTarget: vi.fn(async () => ({
-    targetTabId: "tab-1",
-    hasConnectedTab: true,
-  })),
+  dispatchStep: (...args: unknown[]) => dispatchStepMock(...args),
+  resolveTabTarget: (...args: unknown[]) => resolveTabTargetMock(...args),
 }));
 
 import { usePromptExecution } from "./usePromptExecution";
 
 beforeEach(() => {
   requestPlanMock.mockReset();
+  dispatchStepMock.mockReset();
+  resolveTabTargetMock.mockReset();
+  // Default: a tab is connected so tests that reach execution proceed.
+  resolveTabTargetMock.mockResolvedValue({
+    targetTabId: "tab-1",
+    hasConnectedTab: true,
+  });
+  dispatchStepMock.mockResolvedValue({ ok: true, detail: "done" });
 });
 
 afterEach(() => {
@@ -159,5 +166,63 @@ describe("usePromptExecution — plan failure never hangs on 'planning'", () => 
     expect(result.current.state.phase).not.toBe("planning");
     expect(result.current.state.error).not.toBeNull();
     expect(result.current.state.error?.kind).toBe("plan-failed");
+  });
+});
+
+describe("usePromptExecution — relay tab not connected is NOT a consent error", () => {
+  const planWithStep = {
+    summary: "Navigate to the workflows page",
+    steps: [{ type: "navigate", target: "page-gui-automation" }],
+  };
+
+  it(
+    "raises 'relay-not-connected' (not 'not-consented') when no tab ever connects, and does not dispatch",
+    async () => {
+      // Regression for the live bug: consent IS granted (gated upstream), but
+      // the tab never registered with the relay. The error must NOT claim
+      // "consent needed" — that sent the user re-granting consent uselessly.
+      requestPlanMock.mockResolvedValue(planWithStep);
+      resolveTabTargetMock.mockResolvedValue({
+        targetTabId: null,
+        hasConnectedTab: false,
+      });
+
+      const { result } = renderHook(() => usePromptExecution());
+      await act(async () => {
+        await result.current.run("go to the workflows page");
+      });
+
+      await waitFor(() => {
+        expect(result.current.state.phase).toBe("error");
+      });
+      expect(result.current.state.error?.kind).toBe("relay-not-connected");
+      expect(result.current.state.error?.kind).not.toBe("not-consented");
+      expect(result.current.state.error?.message).toMatch(/consent is granted/i);
+      expect(dispatchStepMock).not.toHaveBeenCalled();
+    },
+    15000,
+  );
+
+  it("proceeds once the tab registers after a brief lag (does not error)", async () => {
+    // The registration race: first resolve reports no tab, a later one finds
+    // it. The wait-retry must pick it up and execute rather than failing.
+    requestPlanMock.mockResolvedValue(planWithStep);
+    resolveTabTargetMock
+      .mockResolvedValueOnce({ targetTabId: null, hasConnectedTab: false })
+      .mockResolvedValue({ targetTabId: "tab-late", hasConnectedTab: true });
+
+    const { result } = renderHook(() => usePromptExecution());
+    await act(async () => {
+      await result.current.run("go to the workflows page");
+    });
+
+    await waitFor(() => {
+      expect(["done", "error"]).toContain(result.current.state.phase);
+    });
+    expect(result.current.state.error?.kind).not.toBe("relay-not-connected");
+    expect(dispatchStepMock).toHaveBeenCalledWith(
+      planWithStep.steps[0],
+      "tab-late",
+    );
   });
 });

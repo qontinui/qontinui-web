@@ -46,14 +46,29 @@ export type StepStatus = "pending" | "running" | "done" | "failed" | "skipped";
  * Discriminated error kind. The page maps each onto a distinct affordance:
  *   - auth-required        → "Sign in again" link
  *   - not-consented        → re-open the co-pilot consent modal (Phase 4)
+ *   - relay-not-connected  → reload the tab to re-register with the relay
+ *                            (consent IS granted — this is a tab-registration
+ *                            failure, NOT a consent problem; see below)
  *   - rate-limited         → "wait and retry"
  *   - no-runner-connected  → "Connect a runner" CTA
  *   - plan-failed          → retry the prompt
  *   - step-failed          → retry / edit prompt; the message names the step
+ *
+ * `relay-not-connected` vs `not-consented` — these were CONFLATED and it bit a
+ * user: when no relay tab is connected at execution time the hook used to raise
+ * `not-consented`, which the page renders as "Consent needed → Grant consent".
+ * But the user had ALREADY granted consent (consent is gated upstream before
+ * `run()` is even callable), so re-granting did nothing and the co-pilot looked
+ * broken. The real failure is that this browser tab never registered with the
+ * relay (its `sessionStorage["__uiBridge_tabId"]` is absent / the relay's
+ * `/tabs` list has no entry for it — often a registration that lags a
+ * just-granted consent, or a tab that went stale past the ~30s heartbeat TTL).
+ * The two now map to distinct messages + remedies.
  */
 export type ExecutionErrorKind =
   | "auth-required"
   | "not-consented"
+  | "relay-not-connected"
   | "rate-limited"
   | "no-runner-connected"
   | "plan-failed"
@@ -92,6 +107,16 @@ const INITIAL_STATE: PromptExecutionState = {
   summary: null,
   error: null,
 };
+
+/**
+ * How long to wait for this tab's relay registration before declaring
+ * `relay-not-connected`. The CommandRelayListener registers asynchronously
+ * after consent, so a user who clicks Run immediately can race it. ~3s total
+ * (6 × 500ms) covers the registration round-trip without making a genuinely
+ * disconnected tab hang noticeably.
+ */
+const TAB_REGISTRATION_WAIT_ATTEMPTS = 6;
+const TAB_REGISTRATION_WAIT_MS = 500;
 
 /** Map a thrown {@link PlanError} reason onto the hook's error union. */
 function errorFromPlanFailure(err: PlanError): ExecutionError {
@@ -235,12 +260,33 @@ export function usePromptExecution(): UsePromptExecutionReturn {
       //    what made every step fail with "tabId is not in connectedTabs".
       //    `resolveTabTarget` confirms the cached id is live, else falls back to
       //    the sole connected tab or omits the id (relay routes to its primary).
-      const { targetTabId, hasConnectedTab } = await resolveTabTarget();
+      // The relay tab registration can LAG a just-granted consent (the user
+      // clicks Run the moment the badge turns green, before the
+      // CommandRelayListener has POSTed its registration). Rather than fail
+      // instantly, briefly re-resolve against the live `/tabs` list a few times
+      // before giving up — this turns a registration race into a short wait.
+      let tabTarget = await resolveTabTarget();
+      for (
+        let attempt = 0;
+        attempt < TAB_REGISTRATION_WAIT_ATTEMPTS &&
+        !tabTarget.hasConnectedTab &&
+        !abortRef.current;
+        attempt++
+      ) {
+        await new Promise((r) => setTimeout(r, TAB_REGISTRATION_WAIT_MS));
+        tabTarget = await resolveTabTarget();
+      }
       if (abortRef.current) {
         runningRef.current = false;
         return;
       }
+      const { targetTabId, hasConnectedTab } = tabTarget;
       if (!hasConnectedTab) {
+        // NOT a consent problem — consent is already granted (it's gated
+        // upstream before run() is callable). This browser tab simply never
+        // registered with the relay. Surface that distinctly so the remedy is
+        // "reload the page" (re-mounts the listener → re-registers the tab),
+        // not the useless "grant consent again".
         setState({
           phase: "error",
           plan,
@@ -248,9 +294,9 @@ export function usePromptExecution(): UsePromptExecutionReturn {
           currentStepIndex: -1,
           summary: plan.summary,
           error: {
-            kind: "not-consented",
+            kind: "relay-not-connected",
             message:
-              "This tab is not connected to the co-pilot relay. Enable and consent to the co-pilot in this tab, then retry.",
+              "Your consent is granted, but this browser tab isn't connected to the co-pilot relay. Reload the page, then try again.",
           },
         });
         runningRef.current = false;
