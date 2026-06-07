@@ -1,7 +1,7 @@
 """requeue-count 01 — coord.merge_proposals.requeue_count durable churn counter
 
 Revision ID: requeuecount_01_merge_proposals
-Revises: commitlockfix_01_strip_lock_branches
+Revises: coord_shadow_land_01_status_chk
 Create Date: 2026-06-07
 
 Adds ``requeue_count INTEGER NOT NULL DEFAULT 0`` to ``coord.merge_proposals``.
@@ -31,12 +31,16 @@ coord binary that reads ``requeue_count``.
 A single-statement ``ADD COLUMN ... NOT NULL DEFAULT 0`` on PG >= 11 is a
 metadata-only operation (no table rewrite); the table is small regardless.
 
-## Chains off ``commitlockfix_01_strip_lock_branches``
+## Chains off ``coord_shadow_land_01_status_chk``
 
-The current single head at authoring time:
+Originally authored off ``commitlockfix_01_strip_lock_branches``; a peer
+migration (``coord_shadow_land_01_status_chk``) merged off the same head
+while this PR was in flight, so this revision was re-chained onto the new
+head (head-keyed claim re-acquired before the re-chain):
 
-    commitlockfix_01_strip_lock_branches   ← previous head
-      └─ requeuecount_01_merge_proposals    ← this revision
+    commitlockfix_01_strip_lock_branches
+      └─ coord_shadow_land_01_status_chk    ← peer, merged first
+          └─ requeuecount_01_merge_proposals ← this revision
 """
 
 from collections.abc import Sequence
@@ -46,7 +50,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "requeuecount_01_merge_proposals"
-down_revision: str = "commitlockfix_01_strip_lock_branches"
+down_revision: str = "coord_shadow_land_01_status_chk"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
