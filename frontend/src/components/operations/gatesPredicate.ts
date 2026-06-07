@@ -11,7 +11,7 @@
 // the web hasn't been taught about still shows up legibly.
 // ============================================================================
 
-import type { ContinuationSpawn, GatePredicate } from "./types";
+import type { ContinuationSpawn, GatePredicate, GateRow } from "./types";
 
 /** Max characters of the continuation prompt's first line shown in the summary. */
 const CONTINUATION_PROMPT_MAX = 80;
@@ -252,4 +252,138 @@ export function summarizeContinuation(
       ? `${prompt.slice(0, CONTINUATION_PROMPT_MAX)}…`
       : prompt;
   return `${lead} · prompt: "${shown}"`;
+}
+
+// ---------------------------------------------------------------------------
+// Continuation LIFECYCLE chip (honesty: show what actually happened to a
+// dispatched continuation, never an inferred liveness claim)
+//
+// Plan `2026-06-07-coord-continuation-cancel-and-outcome.md` Phase 5. Distinct
+// from `summarizeContinuation` above (that is the register-time spawn INTENT);
+// this reads the runtime lifecycle stamps coord Phase 2 adds to the gate row.
+// ---------------------------------------------------------------------------
+
+/** A pending continuation older than this (ms) renders with a warning accent —
+ *  the honest "is it stalled?" signal is age, NOT device liveness (the panel
+ *  has no liveness feed). The operator judges; coord never claims "stalled". */
+const CONTINUATION_PENDING_STALE_MS = 15 * 60 * 1_000;
+
+/**
+ * The lifecycle state of a dispatched continuation, in precedence order. A gate
+ * that never dispatched a continuation yields `null` (no chip at all).
+ *
+ * - `cancelled`    — withdrawn before a runner consumed it.
+ * - `spawn_failed` — the runner consumed it but the terminal/headless session
+ *                    failed to open (silently-lost work, surfaced honestly).
+ * - `spawned`      — the runner consumed it and the session opened.
+ * - `pending`      — dispatched, not yet consumed/cancelled. Carries the
+ *                    dispatch age + target device so the operator can judge
+ *                    whether it has stalled.
+ */
+export type ContinuationLifecycleState =
+  | "cancelled"
+  | "spawn_failed"
+  | "spawned"
+  | "pending";
+
+/** Visual accent for the lifecycle chip — maps to the panel's badge idioms.
+ *  `error` for spawn_failed, `warning` for a stale-pending row, `neutral`
+ *  otherwise (cancelled/spawned/fresh-pending). */
+export type ContinuationLifecycleAccent = "error" | "warning" | "neutral";
+
+export interface ContinuationLifecycle {
+  state: ContinuationLifecycleState;
+  /** Short chip label, e.g. `cancelled: taken over`, `spawn_failed: <detail>`,
+   *  `spawned`, `pending — dispatched 3m ago, target abcdef12`. */
+  label: string;
+  accent: ContinuationLifecycleAccent;
+}
+
+/** Compact "Ns/Nm/Nh/Nd ago" — a local copy of `utils.relativeTime`'s shape so
+ *  this module stays pure (no util import) and the test is deterministic via the
+ *  injectable `now`. `null`/unparseable → "an unknown time ago". */
+function relativeAgo(iso: string, now: number): string {
+  const then = new Date(iso).getTime();
+  const diffMs = now - then;
+  if (Number.isNaN(diffMs)) return "an unknown time ago";
+  if (diffMs < 0) return "just now";
+  const seconds = Math.floor(diffMs / 1_000);
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+/** The lifecycle stamps this reads — a structural subset of `GateRow` so the
+ *  function is testable with a minimal object. */
+type ContinuationLifecycleFields = Pick<
+  GateRow,
+  | "continuation_dispatched_at"
+  | "continuation_consumed_at"
+  | "continuation_consumed_outcome"
+  | "continuation_cancelled_at"
+  | "continuation_cancel_reason"
+> & { continuation_spawn?: ContinuationSpawn | null };
+
+/**
+ * Reduce a gate's continuation lifecycle stamps to a single chip descriptor in
+ * strict precedence: cancelled > spawn_failed > spawned > pending. Returns
+ * `null` when the continuation was never dispatched (no chip — a coord that
+ * predates Phase 2 omits these fields entirely, so the row degrades silently).
+ *
+ * Honesty: a pending chip carries the dispatch AGE (warning-accented past ~15m)
+ * and the target device's short id — it never asserts the device is online or
+ * the continuation "stalled". The operator reads the age and judges.
+ *
+ * `now` is injectable for deterministic tests; defaults to `Date.now()`.
+ */
+export function summarizeContinuationLifecycle(
+  gate: ContinuationLifecycleFields,
+  now: number = Date.now(),
+): ContinuationLifecycle | null {
+  // Cancelled wins outright — a withdrawn continuation must never read as
+  // pending/spawned even if a later stamp also landed.
+  if (gate.continuation_cancelled_at) {
+    const reason = gate.continuation_cancel_reason?.trim();
+    return {
+      state: "cancelled",
+      label: reason ? `cancelled: ${reason}` : "cancelled",
+      accent: "neutral",
+    };
+  }
+
+  // No chip at all when the continuation was never dispatched.
+  if (!gate.continuation_dispatched_at) return null;
+
+  const outcome = gate.continuation_consumed_outcome?.trim();
+
+  // spawn_failed — the runner consumed it but the session failed to open. The
+  // outcome is `spawn_failed: <detail>` (coord stores the detail inline); show
+  // it verbatim, error-accented. Match on the prefix so a bare `spawn_failed`
+  // (no detail) still surfaces.
+  if (outcome && outcome.startsWith("spawn_failed")) {
+    return { state: "spawn_failed", label: outcome, accent: "error" };
+  }
+
+  // spawned — consumed and the session opened.
+  if (outcome === "spawned") {
+    return { state: "spawned", label: "spawned", accent: "neutral" };
+  }
+
+  // pending — dispatched, not yet consumed (no outcome) or a pre-outcome ack.
+  // Honest signal = age; warning accent once it's older than the stale window.
+  const ago = relativeAgo(gate.continuation_dispatched_at, now);
+  const target = shortDevice(gate.continuation_spawn?.target_device_id);
+  const dispatchedMs = new Date(gate.continuation_dispatched_at).getTime();
+  const stale =
+    !Number.isNaN(dispatchedMs) &&
+    now - dispatchedMs >= CONTINUATION_PENDING_STALE_MS;
+  return {
+    state: "pending",
+    label: `pending — dispatched ${ago}, target ${target}`,
+    accent: stale ? "warning" : "neutral",
+  };
 }

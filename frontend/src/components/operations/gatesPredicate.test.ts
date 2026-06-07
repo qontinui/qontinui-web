@@ -4,6 +4,7 @@ import {
   humanizeDurationSecs,
   humanizePredicate,
   summarizeContinuation,
+  summarizeContinuationLifecycle,
 } from "./gatesPredicate";
 
 /**
@@ -278,5 +279,169 @@ describe("summarizeContinuation", () => {
   it("returns null for no / empty continuation (degrades to no summary)", () => {
     expect(summarizeContinuation(null)).toBeNull();
     expect(summarizeContinuation(undefined)).toBeNull();
+  });
+});
+
+/**
+ * Continuation LIFECYCLE chip (plan
+ * 2026-06-07-coord-continuation-cancel-and-outcome P5). Pins the precedence
+ * (cancelled > spawn_failed > spawned > pending), the age-only pending signal
+ * with the ~15m warning threshold, the graceful-degrade null (never-dispatched
+ * → no chip, so a coord predating Phase 2 renders nothing), and that NO
+ * device-liveness is ever asserted (honesty gate).
+ */
+describe("summarizeContinuationLifecycle", () => {
+  // Fixed clock so the relative-age strings are deterministic.
+  const NOW = Date.parse("2026-06-07T12:00:00Z");
+  const minsAgo = (m: number) =>
+    new Date(NOW - m * 60_000).toISOString();
+
+  it("returns null when no continuation was ever dispatched (no chip)", () => {
+    expect(summarizeContinuationLifecycle({}, NOW)).toBeNull();
+    expect(
+      summarizeContinuationLifecycle(
+        { continuation_dispatched_at: null },
+        NOW,
+      ),
+    ).toBeNull();
+  });
+
+  it("cancelled wins over every other stamp and shows the reason", () => {
+    const chip = summarizeContinuationLifecycle(
+      {
+        continuation_dispatched_at: minsAgo(30),
+        continuation_consumed_outcome: "spawned",
+        continuation_cancelled_at: minsAgo(1),
+        continuation_cancel_reason: "taken over by session abc",
+      },
+      NOW,
+    );
+    expect(chip).toEqual({
+      state: "cancelled",
+      label: "cancelled: taken over by session abc",
+      accent: "neutral",
+    });
+  });
+
+  it("cancelled with no reason renders the bare label", () => {
+    const chip = summarizeContinuationLifecycle(
+      {
+        continuation_dispatched_at: minsAgo(30),
+        continuation_cancelled_at: minsAgo(1),
+      },
+      NOW,
+    );
+    expect(chip?.state).toBe("cancelled");
+    expect(chip?.label).toBe("cancelled");
+  });
+
+  it("spawn_failed renders the detail verbatim with an error accent", () => {
+    const chip = summarizeContinuationLifecycle(
+      {
+        continuation_dispatched_at: minsAgo(5),
+        continuation_consumed_at: minsAgo(4),
+        continuation_consumed_outcome:
+          "spawn_failed: terminal backend refused",
+      },
+      NOW,
+    );
+    expect(chip).toEqual({
+      state: "spawn_failed",
+      label: "spawn_failed: terminal backend refused",
+      accent: "error",
+    });
+  });
+
+  it("a bare spawn_failed (no detail) still surfaces as spawn_failed", () => {
+    const chip = summarizeContinuationLifecycle(
+      {
+        continuation_dispatched_at: minsAgo(5),
+        continuation_consumed_outcome: "spawn_failed",
+      },
+      NOW,
+    );
+    expect(chip?.state).toBe("spawn_failed");
+    expect(chip?.accent).toBe("error");
+  });
+
+  it("spawned renders a neutral 'spawned' chip", () => {
+    const chip = summarizeContinuationLifecycle(
+      {
+        continuation_dispatched_at: minsAgo(5),
+        continuation_consumed_at: minsAgo(4),
+        continuation_consumed_outcome: "spawned",
+      },
+      NOW,
+    );
+    expect(chip).toEqual({
+      state: "spawned",
+      label: "spawned",
+      accent: "neutral",
+    });
+  });
+
+  it("pending (fresh) shows dispatch age + target device, neutral accent", () => {
+    const chip = summarizeContinuationLifecycle(
+      {
+        continuation_dispatched_at: minsAgo(3),
+        continuation_spawn: { target_device_id: "abcdef1234567890" },
+      },
+      NOW,
+    );
+    expect(chip).toEqual({
+      state: "pending",
+      label: "pending — dispatched 3m ago, target abcdef12",
+      accent: "neutral",
+    });
+  });
+
+  it("pending older than 15m flips to a warning accent (age-only signal)", () => {
+    const chip = summarizeContinuationLifecycle(
+      {
+        continuation_dispatched_at: minsAgo(16),
+        continuation_spawn: { target_device_id: "abcdef1234567890" },
+      },
+      NOW,
+    );
+    expect(chip?.state).toBe("pending");
+    expect(chip?.accent).toBe("warning");
+    expect(chip?.label).toBe(
+      "pending — dispatched 16m ago, target abcdef12",
+    );
+  });
+
+  it("pending at exactly 15m is already stale (>= threshold)", () => {
+    const chip = summarizeContinuationLifecycle(
+      {
+        continuation_dispatched_at: minsAgo(15),
+        continuation_spawn: { target_device_id: "abcdef1234567890" },
+      },
+      NOW,
+    );
+    expect(chip?.accent).toBe("warning");
+  });
+
+  it("pending with no target device says 'an unknown device'", () => {
+    const chip = summarizeContinuationLifecycle(
+      { continuation_dispatched_at: minsAgo(2) },
+      NOW,
+    );
+    expect(chip?.label).toBe(
+      "pending — dispatched 2m ago, target an unknown device",
+    );
+  });
+
+  it("a pre-outcome ack (consumed, no outcome) still reads as pending", () => {
+    // The runner acked the CLAIM but hasn't reported a spawn result yet.
+    const chip = summarizeContinuationLifecycle(
+      {
+        continuation_dispatched_at: minsAgo(1),
+        continuation_consumed_at: minsAgo(1),
+        continuation_consumed_outcome: null,
+        continuation_spawn: { target_device_id: "abcdef1234567890" },
+      },
+      NOW,
+    );
+    expect(chip?.state).toBe("pending");
   });
 });
