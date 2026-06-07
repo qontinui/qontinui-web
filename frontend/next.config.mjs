@@ -31,6 +31,27 @@ const nextConfig = {
   // in-memory state (the relay instance-skew). Externalizing it forces
   // ioredis (+ its transitive deps) into the standalone output.
   serverExternalPackages: ['ioredis'],
+  // Belt-and-suspenders to the static `import "ioredis"` trace-anchor in
+  // lib/ui-bridge/relay.ts: force ioredis + its transitive deps into the
+  // serverless function trace for the relay route, in case nft still can't
+  // follow the reference. `serverExternalPackages` alone was insufficient —
+  // it keeps the package external but still relies on nft tracing to COPY it,
+  // and the SDK's variable-specifier dynamic require leaves no literal for nft
+  // to follow. Without ioredis present at runtime the cross-instance relay bus
+  // dies (`Cannot find module 'ioredis'`) and the co-pilot navigate is accepted
+  // but never delivered to the tab (verified on prod via Vercel logs 2026-06-07).
+  outputFileTracingIncludes: {
+    '/api/ui-bridge/[...path]': [
+      './node_modules/ioredis/**/*',
+      './node_modules/@ioredis/**/*',
+      './node_modules/cluster-key-slot/**/*',
+      './node_modules/denque/**/*',
+      './node_modules/redis-errors/**/*',
+      './node_modules/redis-parser/**/*',
+      './node_modules/standard-as-callback/**/*',
+      './node_modules/debug/**/*',
+    ],
+  },
   // Note: @qontinui/ui-bridge uses file: reference (junction on Windows).
   // Do NOT add to transpilePackages — SWC cannot follow Windows junctions.
   // The package dist is pre-compiled so transpilation is unnecessary.

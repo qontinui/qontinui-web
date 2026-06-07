@@ -47,6 +47,7 @@ import {
 import { handlers, relay } from "@/lib/ui-bridge/relay";
 import { NextRequest } from "next/server";
 import { passThroughBodyWithPeek } from "./body-passthrough";
+import { registrationBodyWithCallerId } from "./_caller-identity";
 import {
   isBrowserRequiredRoute,
   noBrowserResponse,
@@ -429,28 +430,9 @@ function withCallerIdentity(
   });
 }
 
-/**
- * When `parsedBody` carries a `registrationMetadata` object whose `userId`
- * differs from the verified `userId`, return the body re-serialized with
- * `registrationMetadata.userId` forced to `userId`. Returns null when there is
- * nothing to rewrite (no `registrationMetadata`, or it already matches) so the
- * caller keeps streaming the original body untouched.
- */
-export function registrationBodyWithCallerId(
-  parsedBody: unknown,
-  userId: string
-): string | null {
-  if (!parsedBody || typeof parsedBody !== "object") return null;
-  const body = parsedBody as Record<string, unknown>;
-  const rm = body.registrationMetadata;
-  if (!rm || typeof rm !== "object") return null;
-  const meta = rm as Record<string, unknown>;
-  if (meta.userId === userId) return null;
-  return JSON.stringify({
-    ...body,
-    registrationMetadata: { ...meta, userId },
-  });
-}
+// `registrationBodyWithCallerId` lives in `./_caller-identity` — a Next route
+// file may not export non-handler functions (fails the generated route-type
+// check). It's imported at the top of this module.
 
 export async function GET(
   request: NextRequest,
