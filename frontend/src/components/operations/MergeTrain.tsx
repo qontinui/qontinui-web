@@ -10,6 +10,7 @@ import {
   AlertTriangle,
   ExternalLink,
   GitBranch,
+  RotateCcw,
   ShieldAlert,
   ShieldQuestion,
 } from "lucide-react";
@@ -111,7 +112,7 @@ function prCiTint(pr: PrRow): string {
 // Row
 // ----------------------------------------------------------------------------
 
-function MergeTrainRow({ proposal }: { proposal: ProposalDetail }) {
+export function MergeTrainRow({ proposal }: { proposal: ProposalDetail }) {
   const repoSummary = useMemo(() => {
     const first = proposal.repos[0];
     if (!first) return "—";
@@ -150,6 +151,18 @@ function MergeTrainRow({ proposal }: { proposal: ProposalDetail }) {
       <Badge className="font-mono text-[10px] uppercase tracking-wide">
         {proposal.status}
       </Badge>
+      {typeof proposal.requeue_count === "number" &&
+        proposal.requeue_count > 0 && (
+          <Badge
+            variant="outline"
+            className="font-mono text-[10px] tracking-wide bg-orange-500/15 text-orange-200 border-orange-500/30 flex items-center gap-1"
+            title={`Requeued ${proposal.requeue_count}× by leader-takeover recovery — starvation signal`}
+            data-requeue-count={proposal.requeue_count}
+          >
+            <RotateCcw className="h-3 w-3" />
+            requeued &times;{proposal.requeue_count}
+          </Badge>
+        )}
       <span className="text-xs text-muted-foreground tabular-nums">
         {relativeTime(proposal.updated_at)}
       </span>
