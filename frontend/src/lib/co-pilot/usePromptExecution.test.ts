@@ -16,12 +16,15 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 
 import { PlanError, type PlanErrorReason } from "./planClient";
 
-// ---- Mock the active runner context so a runner is always "connected"
-// (so `run()` proceeds to the plan call rather than short-circuiting on
-// no-runner-connected). ----
+// ---- Mock the active runner context. Default: a runner is "connected" (so
+// `run()` proceeds to the plan call rather than short-circuiting on
+// no-runner-connected). `mockActiveRunner` is mutable so the fresh-vs-idle
+// latch suite can toggle the runner present/absent to drive the reconnect
+// effect. ----
+let mockActiveRunner: { id: string } | null = { id: "runner-1" };
 vi.mock("@/contexts/active-runner-context", () => ({
   useActiveRunner: () => ({
-    activeRunner: { id: "runner-1" },
+    activeRunner: mockActiveRunner,
     runners: [],
     selectRunner: vi.fn(),
     isMultiRunner: false,
@@ -53,6 +56,7 @@ vi.mock("./relayExecutor", () => ({
 import { usePromptExecution } from "./usePromptExecution";
 
 beforeEach(() => {
+  mockActiveRunner = { id: "runner-1" };
   requestPlanMock.mockReset();
   dispatchStepMock.mockReset();
   resolveTabTargetMock.mockReset();
@@ -98,11 +102,12 @@ describe("usePromptExecution — plan failure never hangs on 'planning'", () => 
     expect(result.current.state.error?.message).toMatch(/timed out/i);
   });
 
-  it("does not hang on 'planning' for a 503 / runner-not-connected", async () => {
-    // 503 maps to kind `no-runner-connected`. With a live `activeRunner` the
-    // hook's reconnect latch effect immediately clears that specific error back
-    // to idle (intended: the runner is available again). The contract we pin
-    // here is the regression one — it must NOT remain stuck on "planning".
+  it("does not hang on 'planning' for a 503 / runner-not-connected, and surfaces the error", async () => {
+    // 503 maps to kind `no-runner-connected`. This is a FRESH run failure (a
+    // runner-WS flap at submit). The reconnect latch must NOT swallow it the
+    // instant `activeRunner` re-resolves — the user must see the error, never a
+    // silent reset. (The dedicated fresh-vs-idle suite below pins that contract
+    // in detail; here we just confirm: not stuck on planning, error surfaced.)
     requestPlanMock.mockRejectedValue(
       new PlanError(
         "runner-not-connected",
@@ -118,11 +123,10 @@ describe("usePromptExecution — plan failure never hangs on 'planning'", () => 
     });
 
     await waitFor(() => {
-      expect(result.current.state.phase).not.toBe("planning");
+      expect(result.current.state.phase).toBe("error");
     });
-    // Either the error surfaced, or the no-runner latch already cleared it to
-    // idle — but never a silent hang on "planning".
-    expect(["error", "idle"]).toContain(result.current.state.phase);
+    expect(result.current.state.phase).not.toBe("planning");
+    expect(result.current.state.error?.kind).toBe("no-runner-connected");
   });
 
   it.each<[PlanErrorReason, "plan-failed"]>([
@@ -344,6 +348,110 @@ describe("usePromptExecution — navigate landing poll (honest success)", () => 
       expect(result.current.state.phase).toBe("done");
       expect(result.current.state.error).toBeNull();
       expect(result.current.state.stepStatuses[0]).toBe("done");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("usePromptExecution — no-runner latch: fresh run error vs idle latch", () => {
+  it("keeps a FRESH 503 no-runner error visible (does NOT auto-clear) while activeRunner is present", async () => {
+    // The silent-no-op bug: the user clicks Run, the runner's WS flapped at
+    // submit so the plan 503s (`runner-not-connected` → `no-runner-connected`),
+    // but `activeRunner` is STILL present (the device context never lost it). The
+    // reconnect latch used to fire on the next render and reset to idle — the Run
+    // button just reset with NO error card. The fix: a `fromRun` error stays
+    // visible (the user gets the "runner reconnecting — retry" affordance).
+    mockActiveRunner = { id: "runner-1" }; // runner present throughout the flap.
+    requestPlanMock.mockRejectedValue(
+      new PlanError("runner-not-connected", "The runner is not connected.", 503),
+    );
+
+    const { result } = renderHook(() => usePromptExecution());
+
+    await act(async () => {
+      await result.current.run("do a thing");
+    });
+
+    // The fresh error is present...
+    await waitFor(() => {
+      expect(result.current.state.phase).toBe("error");
+    });
+    expect(result.current.state.error?.kind).toBe("no-runner-connected");
+
+    // ...and it is NOT swallowed by the reconnect latch even though a runner is
+    // present and several renders have flushed. (Re-render via a no-op act to
+    // give the latch effect every chance to fire.)
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(result.current.state.phase).toBe("error");
+    expect(result.current.state.error?.kind).toBe("no-runner-connected");
+    expect(result.current.state.error?.fromRun).toBe(true);
+  });
+
+  it("auto-clears an IDLE no-runner latch once a runner reconnects (preserved behavior)", async () => {
+    // The pre-existing, intended behavior we must NOT regress: a user clicks Run
+    // with NO runner connected at all → the `!deviceId` short-circuit sets an
+    // IDLE no-runner latch (NOT fromRun). When a runner later reconnects
+    // (`activeRunner` re-resolves), that stale idle indicator auto-clears.
+    mockActiveRunner = null; // no runner at submit → idle latch.
+
+    const { result, rerender } = renderHook(() => usePromptExecution());
+
+    await act(async () => {
+      await result.current.run("do a thing");
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.phase).toBe("error");
+    });
+    expect(result.current.state.error?.kind).toBe("no-runner-connected");
+    expect(result.current.state.error?.fromRun).toBeFalsy(); // idle, not fromRun.
+
+    // Runner reconnects → re-render with activeRunner present → latch clears.
+    mockActiveRunner = { id: "runner-1" };
+    await act(async () => {
+      rerender();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.phase).toBe("idle");
+    });
+    expect(result.current.state.error).toBeNull();
+  });
+
+  it("eventually auto-clears a fresh no-runner error after the grace window if never retried", async () => {
+    // After the grace window, an unretried fresh error degrades to a stale idle
+    // indicator and auto-clears (so it doesn't stick forever once the runner is
+    // demonstrably back). Fake timers let the ~8s window elapse instantly.
+    mockActiveRunner = { id: "runner-1" };
+    requestPlanMock.mockRejectedValue(
+      new PlanError("runner-not-connected", "The runner is not connected.", 503),
+    );
+
+    // Render (mount) under real timers so the initial effects commit, THEN
+    // switch to fake timers so the latch effect's grace-window setTimeout is
+    // fake-controlled and `advanceTimersByTimeAsync` can drive it.
+    const { result } = renderHook(() => usePromptExecution());
+    vi.useFakeTimers();
+    try {
+      let runPromise!: Promise<void>;
+      await act(async () => {
+        runPromise = result.current.run("do a thing");
+        await vi.runAllTimersAsync();
+        await runPromise;
+      });
+      expect(result.current.state.error?.kind).toBe("no-runner-connected");
+
+      // Advance past FRESH_RUN_ERROR_GRACE_MS: the grace-window timer fires,
+      // re-arms the latch effect, which (runner present, never retried) clears.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(9000);
+      });
+      expect(result.current.state.phase).toBe("idle");
+      expect(result.current.state.error).toBeNull();
     } finally {
       vi.useRealTimers();
     }
