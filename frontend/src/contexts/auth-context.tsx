@@ -137,16 +137,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         setUser(null);
 
-        // Already on /login (e.g. an anonymous visitor whose page fired
-        // an authed call that 401'd — HttpClient treats the absent token
-        // as session expiry since #491): redirecting would hard-reload
-        // /login, and each reload creates a fresh HttpClient whose
-        // fire-once guard resets, re-firing this handler in a loop
-        // (~15 reloads/sec observed live on prod 2026-06-07, making
-        // sign-in unusable). The login form is already in front of the
-        // user — stay put.
-        if (window.location.pathname.startsWith("/login")) {
-          logger.info("Session expired while already on /login — skipping redirect");
+        // On an auth route, an absent token is NORMAL (the user is mid
+        // sign-in), but HttpClient treats a 401 with an absent token as
+        // session expiry since #491 — so this handler fires there too,
+        // and redirecting is actively harmful:
+        //   - /login: redirecting hard-reloads the page we're already
+        //     on; each reload creates a fresh HttpClient whose fire-once
+        //     guard resets, re-firing this handler in a loop (~15
+        //     reloads/sec observed live on prod 2026-06-07, sign-in
+        //     unusable — fixed by #500 + #503).
+        //   - /auth/callback: redirecting ABORTS the in-flight PKCE
+        //     token-exchange fetch ("[AuthCallback] Cognito callback
+        //     failed: TypeError: Failed to fetch", observed live on prod
+        //     2026-06-07 right after a session-expired halt) — every
+        //     login bounced back to /login even after the loop fix.
+        // Drop the local user state and stay put; the auth flow on the
+        // page owns what happens next.
+        const path = window.location.pathname;
+        if (path.startsWith("/login") || path.startsWith("/auth/")) {
+          logger.info(
+            `Session expired on auth route ${path} — skipping redirect`
+          );
           return;
         }
 

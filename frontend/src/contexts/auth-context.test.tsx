@@ -213,6 +213,24 @@ describe("session-expired redirect guard", () => {
     expect(window.location.href).toBe("https://qontinui.io/login");
   });
 
+  it("does NOT redirect when session-expired fires on /auth/callback (would abort the in-flight PKCE token exchange)", async () => {
+    stubLocation("/auth/callback");
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId("loading").textContent).toBe("false");
+    });
+
+    window.dispatchEvent(new Event("session-expired"));
+
+    // No navigation: the Cognito code exchange must be allowed to finish.
+    expect(window.location.href).toBe("https://qontinui.io/auth/callback");
+  });
+
   it("still redirects to /login when session-expired fires elsewhere", async () => {
     stubLocation("/dashboard");
 
