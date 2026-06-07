@@ -14,7 +14,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { registrationBodyWithCallerId } from "./route";
+import { registrationBodyWithCallerId } from "./_caller-identity";
 
 const VERIFIED = "933aeebe-7bea-42c5-b6a0-144a0347a27b"; // backend user id
 const SUB = "c408d428-0000-4000-8000-000000000000"; // a divergent JWT.sub
