@@ -247,4 +247,22 @@ describe("session-expired redirect guard", () => {
 
     expect(window.location.href).toBe("/login");
   });
+
+  it("does NOT redirect when session-expired fires on the public marketing root (/) — an anonymous visitor's bootstrap 401 must not bounce them off the landing page", async () => {
+    stubLocation("/");
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId("loading").textContent).toBe("false");
+    });
+
+    window.dispatchEvent(new Event("session-expired"));
+
+    // No navigation: the public landing page stays put for anonymous visitors.
+    expect(window.location.href).toBe("https://qontinui.io/");
+  });
 });
