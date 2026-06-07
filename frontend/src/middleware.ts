@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isPublic } from "@/lib/public-routes";
 
 /**
  * Auth-gating middleware.
@@ -20,41 +21,9 @@ import { NextRequest, NextResponse } from "next/server";
  * caveat applies. Kept in sync with TokenStorage.AUTH_MARKER_COOKIE.
  *
  * Public routes (marketing, auth flows, API, static) are explicitly
- * allow-listed via the matcher below.
+ * allow-listed via `isPublic` (shared with the client AuthProvider's
+ * session-expiry handler — see `lib/public-routes`).
  */
-
-// Routes that anyone can reach without authentication.
-const PUBLIC_PATHS = [
-  "/",
-  "/login",
-  "/privacy",
-  "/privacy-extension",
-  "/terms",
-  "/acceptable-use",
-  "/responsible-use",
-  // Cognito hosted-UI OAuth landing. It arrives unauthenticated (no token/
-  // marker cookie yet) carrying `?code=&state=`; it MUST run the PKCE token
-  // exchange in-page rather than being bounced to `/login?next=…`. Exempting
-  // it here is the provider-agnostic fix for all three social IdPs.
-  "/auth/callback",
-];
-
-const PUBLIC_PREFIXES = [
-  "/docs",
-  "/runner", // marketing /runner/download landing
-  "/demo",
-  "/api",
-  "/coord-api",
-  "/__ui-bridge__",
-  "/setup-admin",
-];
-
-function isPublic(pathname: string): boolean {
-  if (PUBLIC_PATHS.includes(pathname)) return true;
-  return PUBLIC_PREFIXES.some(
-    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
-  );
-}
 
 export function middleware(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
