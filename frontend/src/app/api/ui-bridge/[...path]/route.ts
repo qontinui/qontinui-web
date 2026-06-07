@@ -298,7 +298,7 @@ async function wrapHandler(
   // verification. Header is omitted when the auth gate is off (admin
   // mode at the SDK relay: returns all tabs).
   const forwardRequest = callerUserId
-    ? withCallerUserId(bodyPreserved, callerUserId)
+    ? withCallerIdentity(bodyPreserved, parsedBody, callerUserId)
     : bodyPreserved;
 
   const response = await handler(forwardRequest, {
@@ -367,21 +367,58 @@ async function wrapHandler(
 }
 
 /**
- * Return a fresh `NextRequest` identical to `request` but with
- * `X-Caller-User-Id` set to the given verified userId. The original
- * request is not mutated (Next request headers are read-only).
+ * Return a fresh `NextRequest` identical to `request` but carrying the
+ * server-verified caller identity in BOTH places the SDK relay keys tabs on:
+ *
+ *  1. `X-Caller-User-Id` header — the relay's per-user FILTER key on list
+ *     (`listOwnedTabs` / `ownerCheck`).
+ *  2. `registrationMetadata.userId` in the body (the SDK's register/heartbeat
+ *     payload) — the relay's per-user OWNERSHIP key on register. When the body
+ *     carries `registrationMetadata`, its `userId` is FORCED to the same
+ *     verified id.
+ *
+ * Why both: the relay keys tab ownership on register by
+ * `registrationMetadata.userId` (browser-supplied — it's `JWT.sub`) but filters
+ * on list by `X-Caller-User-Id` (server-verified via the auth gate → the
+ * backend user id). For a session whose token `sub` differs from the backend
+ * user id — a Cognito operator bearer, or an email-linked account whose
+ * `cognito_sub` is null — those two ids diverge, so the tab registers under one
+ * id and the lookup queries another: the tab is invisible and the co-pilot
+ * reports "no connected tab" forever. Forcing `registrationMetadata.userId` to
+ * the verified id keeps register + list aligned, and (defense in depth) stops a
+ * client from registering a tab under any other user's id.
+ *
+ * The original request is not mutated (Next request headers are read-only).
  */
-function withCallerUserId(request: NextRequest, userId: string): NextRequest {
+function withCallerIdentity(
+  request: NextRequest,
+  parsedBody: unknown,
+  userId: string
+): NextRequest {
   const headers = new Headers(request.headers);
   headers.set("x-caller-user-id", userId);
   const NextRequestCtor = request.constructor as new (
     input: string | URL,
     init?: RequestInit
   ) => NextRequest;
-  // Preserve method + body. `arrayBuffer()` was already consumed by
-  // `passThroughBody` when a body exists, so any body present on
-  // `request` here is the re-wrapped one — its body stream can be
-  // duplicated via `.body` on the underlying Request.
+
+  // If the body carries registrationMetadata, re-serialize it with the
+  // verified userId. `parsedBody` is the best-effort JSON peek from
+  // `passThroughBodyWithPeek` — present for the JSON POSTs that register a tab
+  // (e.g. /heartbeat). A new string body means fetch must recompute the length.
+  const rewrittenBody = registrationBodyWithCallerId(parsedBody, userId);
+  if (rewrittenBody !== null) {
+    headers.delete("content-length");
+    return new NextRequestCtor(request.url, {
+      method: request.method,
+      headers,
+      body: rewrittenBody,
+    });
+  }
+
+  // No registrationMetadata to align → forward the (already re-wrapped) body
+  // stream unchanged. `arrayBuffer()` was consumed by `passThroughBody` when a
+  // body exists, so any body present here is the re-wrapped stream.
   return new NextRequestCtor(request.url, {
     method: request.method,
     headers,
@@ -389,6 +426,29 @@ function withCallerUserId(request: NextRequest, userId: string): NextRequest {
     // Required for Node fetch when body is a stream:
     // @ts-expect-error — duplex is a Node-only field not in the DOM Request type.
     duplex: "half",
+  });
+}
+
+/**
+ * When `parsedBody` carries a `registrationMetadata` object whose `userId`
+ * differs from the verified `userId`, return the body re-serialized with
+ * `registrationMetadata.userId` forced to `userId`. Returns null when there is
+ * nothing to rewrite (no `registrationMetadata`, or it already matches) so the
+ * caller keeps streaming the original body untouched.
+ */
+export function registrationBodyWithCallerId(
+  parsedBody: unknown,
+  userId: string
+): string | null {
+  if (!parsedBody || typeof parsedBody !== "object") return null;
+  const body = parsedBody as Record<string, unknown>;
+  const rm = body.registrationMetadata;
+  if (!rm || typeof rm !== "object") return null;
+  const meta = rm as Record<string, unknown>;
+  if (meta.userId === userId) return null;
+  return JSON.stringify({
+    ...body,
+    registrationMetadata: { ...meta, userId },
   });
 }
 

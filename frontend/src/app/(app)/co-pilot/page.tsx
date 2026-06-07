@@ -288,6 +288,21 @@ function ErrorAffordance({
         </Button>
       );
       break;
+    case "relay-not-connected":
+      title = "This tab isn't connected to the co-pilot";
+      body =
+        "Your consent is granted, but this browser tab isn't connected to the co-pilot relay. Reload the page, then try again.";
+      action = (
+        <Button
+          size="sm"
+          variant="default"
+          onClick={() => window.location.reload()}
+        >
+          <RotateCcw className="size-4" aria-hidden />
+          Reload page
+        </Button>
+      );
+      break;
     case "rate-limited":
       title = "You're going too fast";
       body = "Too many requests in a short window. Wait a moment, then retry.";
