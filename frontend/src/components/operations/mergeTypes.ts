@@ -38,6 +38,14 @@ export interface ProposalDetail {
   cancelled_at?: string | null;
   merged_at?: string | null;
   repos: RepoDetail[];
+  /**
+   * Number of times the leader-takeover recovery sweep blind-requeued this
+   * proposal (coord PR #423, plan
+   * `2026-06-07-merge-scheduler-takeover-requeue-starvation`). The durable
+   * starvation signal: 0 = never churned; a rising value means takeover churn
+   * is starving the proposal. Older coord deploys omit it — treat as 0.
+   */
+  requeue_count?: number;
 }
 
 export interface QueueResponse {
@@ -200,6 +208,65 @@ export interface SuggestionListResponse {
   total: number;
 }
 
+// ============================================================================
+// Coordination-transparency — Gate-decisions / blast-radius-block wire types.
+//
+// Plan 2026-06-07-coordination-transparency-surfaces.md T2. Mirrors coord's
+// `GET /pr-merge/blast-radius-blocks` response (see
+// `qontinui-coord/src/pr_merge/blast_radius_monitor.rs::BlocksResponse` /
+// `BlastRadiusBlock`), proxied by the web backend's
+// `/operations/pr-merge/blast-radius-blocks`. The MergeTrain "Gate decisions"
+// section renders one row per held PR with the reason, the removed-export
+// evidence (`referenced_by [{file,line}]`), and an honesty label.
+//
+// Honesty note (binding cross-cutting gate): coord's current
+// `BlastRadiusBlock` surfaces the per-reason evidence but does NOT yet stamp
+// `coverage`/`graph_available` onto the `pr_events.payload` it reads back, so
+// those two fields are OPTIONAL here. The renderer treats their absence as
+// "coverage not reported" (NOT as authoritative full coverage) — when the T1
+// coord keystone starts persisting them, this surface lights up automatically.
+// ============================================================================
+
+/** One file:line that still imports the removed export. */
+export interface ReferencedBy {
+  file: string;
+  line: number;
+}
+
+/** One blast-radius gate block — a held PR + reason + evidence. */
+export interface BlastRadiusBlock {
+  repo: string;
+  pr_number: number;
+  tenant_id: string;
+  /** The exported symbol the PR removed (null when the reason carries none). */
+  removed_export_name: string | null;
+  /** The file the export was removed from. */
+  file: string | null;
+  /** `[{file, line}, ...]` — untouched files still importing the export. */
+  referenced_by: ReferencedBy[];
+  evaluation_latency_secs: number | null;
+  /** `created_at` of the underlying `pr_events` row, RFC3339. */
+  at: string;
+  // ---- Honesty fields (OPTIONAL — see header note) --------------------
+  /** Graph coverage `[0,1]`; `<1` ⇒ partial mirror. Absent ⇒ not reported. */
+  coverage?: number | null;
+  /** Whether a resolved code graph backed the decision. Absent ⇒ not reported. */
+  graph_available?: boolean | null;
+  /** Present iff the blast-radius tier ran; absent ⇒ "gate did not run". */
+  block_reason_code?: string | null;
+  /** Outer (PR-level) state coord routed this PR to (e.g. SPECIALIST_REVIEW). */
+  outer_state?: string | null;
+}
+
+export interface BlastRadiusBlocksResponse {
+  tenant_id: string;
+  repo: string | null;
+  /** Durable cross-replica total of blocks for this tenant (+repo filter). */
+  total_blocks: number;
+  returned: number;
+  blocks: BlastRadiusBlock[];
+}
+
 // ----------------------------------------------------------------------------
 // Demo-feature catalog
 // ----------------------------------------------------------------------------
@@ -222,8 +289,7 @@ export interface DemoFeature {
 }
 
 const DEMO_FRONTEND_URL =
-  process.env.NEXT_PUBLIC_DEMO_FRONTEND_URL ||
-  "https://qontinui.io";
+  process.env.NEXT_PUBLIC_DEMO_FRONTEND_URL || "https://qontinui.io";
 
 export const DEMO_FEATURES: ReadonlyArray<DemoFeature> = [
   {

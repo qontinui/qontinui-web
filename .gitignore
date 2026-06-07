@@ -42,6 +42,8 @@ frontend/scripts/*
 !frontend/scripts/inject-build-id.mjs
 !frontend/scripts/check-browser-safe-imports.mjs
 !frontend/scripts/export-test-coverage.mjs
+!frontend/scripts/prod-probes/
+!frontend/scripts/prod-probes/**
 
 # Documentation is now committed to the repository
 # (Previously excluded, but now included for project documentation)

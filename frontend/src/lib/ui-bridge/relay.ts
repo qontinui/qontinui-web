@@ -14,6 +14,21 @@ import {
   createRelayHandlers,
   createRedisRelayBus,
 } from "@qontinui/ui-bridge/server";
+// ── @vercel/nft trace anchor (DO NOT REMOVE) ────────────────────────────────
+// `createRedisRelayBus` (below) loads ioredis via a VARIABLE-specifier dynamic
+// import so the SDK stays optional-dep-clean — but @vercel/nft cannot follow a
+// computed-specifier import, so on Vercel ioredis was ABSENT from the serverless
+// function and the bus died at boot with `Cannot find module 'ioredis'`,
+// silently degrading to per-lambda in-memory state. With cross-instance routing
+// off, a `/control/*` command POST that lands on a different lambda than the
+// tab's SSE stream is never delivered — the co-pilot's navigate returns 200 but
+// the page never moves (verified on prod via Vercel logs, 2026-06-07).
+// `serverExternalPackages: ['ioredis']` in next.config.mjs keeps ioredis
+// external/un-bundled; THIS static import is what makes nft actually COPY it
+// (+ its transitive deps) into the function trace so the runtime require
+// resolves. Exported so tree-shaking can never drop the import.
+import IORedis from "ioredis";
+export const __ioredisTraceAnchor: unknown = IORedis;
 import { loadDiscoveredSpecs } from "./discovered-specs";
 
 /** Runner screenshot endpoint — used as fallback when the browser relay is unresponsive */

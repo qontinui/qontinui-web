@@ -30,6 +30,9 @@
     "test:e2e:firefox": "playwright test --project=firefox",
     "test:e2e:webkit": "playwright test --project=webkit",
     "test:e2e:report": "playwright show-report",
+    "probe:login-churn": "node scripts/prod-probes/login-churn-probe.cjs",
+    "probe:expired-session": "node scripts/prod-probes/expired-session-probe.cjs",
+    "probe:ws-spam": "node scripts/prod-probes/ws-spam-check.cjs",
     "prepare": "husky"
   },
   "dependencies": {
@@ -108,6 +111,8 @@
     "@next/bundle-analyzer": "^15.5.12",
     "@playwright/test": "^1.48.0",
     "@qontinui/ui-bridge-eslint-plugin": "^0.1.0",
+    "@qontinui/ui-bridge-headless": "^0.1.0",
+    "@qontinui/ui-bridge-wrapper": "^0.4.2",
     "@tailwindcss/postcss": "^4",
     "@tailwindcss/typography": "^0.5.19",
     "@testing-library/jest-dom": "^6.6.3",
