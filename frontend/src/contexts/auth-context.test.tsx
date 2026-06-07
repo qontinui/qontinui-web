@@ -148,3 +148,85 @@ describe("AuthProvider boot-time hydration resilience", () => {
     expect(getCurrentUser).toHaveBeenCalledTimes(3);
   });
 });
+
+/**
+ * Regression tests for the /login session-expired redirect loop
+ * (prod outage 2026-06-07).
+ *
+ * BUG: `handleSessionExpired` did `window.location.href = "/login"`
+ * unconditionally. An anonymous visitor on /login whose page fired an
+ * authed call got a 401 with an absent token, which HttpClient (#491)
+ * treats as session expiry → redirect to /login → HARD RELOAD → fresh
+ * HttpClient instance whose fire-once guard is reset → fires again.
+ * Observed live at ~15 reloads/sec, making sign-in unusable.
+ *
+ * FIX: when already on /login, drop the local user state but skip the
+ * redirect — the login form is already in front of the user.
+ */
+describe("session-expired redirect guard", () => {
+  const originalLocation = window.location;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    purgeStaleSession.mockReturnValue(false);
+    isAuthenticated.mockReturnValue(false);
+    isAccessTokenExpired.mockReturnValue(true);
+    logout.mockResolvedValue(undefined);
+    getCurrentUser.mockRejectedValue(
+      new Error("Failed to get user info: 401 - ")
+    );
+  });
+
+  afterEach(() => {
+    Object.defineProperty(window, "location", {
+      value: originalLocation,
+      writable: true,
+    });
+  });
+
+  function stubLocation(pathname: string) {
+    Object.defineProperty(window, "location", {
+      value: {
+        ...originalLocation,
+        pathname,
+        href: `https://qontinui.io${pathname}`,
+      },
+      writable: true,
+    });
+  }
+
+  it("does NOT redirect (reload-loop) when session-expired fires on /login", async () => {
+    stubLocation("/login");
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId("loading").textContent).toBe("false");
+    });
+
+    window.dispatchEvent(new Event("session-expired"));
+
+    // No navigation: href untouched → no reload → no loop.
+    expect(window.location.href).toBe("https://qontinui.io/login");
+  });
+
+  it("still redirects to /login when session-expired fires elsewhere", async () => {
+    stubLocation("/dashboard");
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId("loading").textContent).toBe("false");
+    });
+
+    window.dispatchEvent(new Event("session-expired"));
+
+    expect(window.location.href).toBe("/login");
+  });
+});
