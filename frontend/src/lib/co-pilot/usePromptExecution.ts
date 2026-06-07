@@ -30,6 +30,7 @@ import {
   type PlanIntentResult,
 } from "./planClient";
 import { dispatchStep, resolveTabTarget } from "./relayExecutor";
+import { pageIdToUrl } from "./pageMap";
 
 /** Lifecycle phase of a single `run`. */
 export type ExecutionPhase =
@@ -117,6 +118,62 @@ const INITIAL_STATE: PromptExecutionState = {
  */
 const TAB_REGISTRATION_WAIT_ATTEMPTS = 6;
 const TAB_REGISTRATION_WAIT_MS = 500;
+
+/**
+ * How long to wait after a `navigate` step's relay command is ACCEPTED (200)
+ * before confirming the tab actually reached the target route. A relay 200 only
+ * means "command delivered/accepted", NOT "the page moved" — when delivery
+ * silently fails (stale tab, dropped soft-nav) the co-pilot used to show "All
+ * steps completed" while the tab never moved (false success). We give the
+ * soft-navigation a short window to land before declaring it didn't take.
+ *
+ * SELF-NAV NUANCE: the co-pilot drives its OWN tab. A SUCCESSFUL navigate
+ * soft-routes this very page away from /co-pilot, which unmounts the co-pilot
+ * surface and tears down this running hook — so on success the landing check
+ * never even runs. The check therefore only fires in the FAILURE case (still
+ * mounted on /co-pilot after the wait = the nav did not take effect), which is
+ * exactly the false-success we want to catch.
+ */
+const NAVIGATE_LANDING_WAIT_MS = 600;
+
+/**
+ * Normalize a pathname for comparison: drop any query/hash and a single
+ * trailing slash (but keep root "/"). `pageIdToUrl` returns app-relative paths
+ * like "/build/workflows"; `window.location.pathname` is already path-only, but
+ * we normalize both sides defensively.
+ */
+function normalizePath(value: string): string {
+  let p = value;
+  const q = p.search(/[?#]/);
+  if (q >= 0) p = p.slice(0, q);
+  if (p.length > 1 && p.endsWith("/")) p = p.slice(0, -1);
+  return p;
+}
+
+/**
+ * After a `navigate` step's relay command is accepted, confirm the tab actually
+ * landed on `targetUrl`. Returns true when the page moved (or we cannot read the
+ * location, e.g. SSR — fail-open so we never block a real success), false when
+ * the tab is still on the SAME route it started on (the nav did not take
+ * effect).
+ *
+ * Because a successful self-navigation unmounts this hook, in practice this
+ * resolves to `true` only when the tab is NOT the co-pilot's own tab; the common
+ * "didn't move" case is the co-pilot tab still sitting on /co-pilot.
+ */
+async function confirmNavigationLanded(targetUrl: string): Promise<boolean> {
+  if (typeof window === "undefined" || !window.location) return true;
+  const before = normalizePath(window.location.pathname);
+  const target = normalizePath(targetUrl);
+  // Already there before we even dispatched (the planner navigated to the page
+  // we're on): treat as landed — there is nothing to move.
+  if (before === target) return true;
+  await new Promise((r) => setTimeout(r, NAVIGATE_LANDING_WAIT_MS));
+  const after = normalizePath(window.location.pathname);
+  // Landed if we reached the target, or at least left the route we started on
+  // (a soft-nav that moved us SOMEWHERE counts as taking effect).
+  return after === target || after !== before;
+}
 
 /** Map a thrown {@link PlanError} reason onto the hook's error union. */
 function errorFromPlanFailure(err: PlanError): ExecutionError {
@@ -328,11 +385,49 @@ export function usePromptExecution(): UsePromptExecutionReturn {
           stepStatuses: running,
         }));
 
-        const result = await dispatchStep(steps[i]!, targetTabId);
+        const step = steps[i]!;
+        const result = await dispatchStep(step, targetTabId);
 
         if (abortRef.current) {
           runningRef.current = false;
           return;
+        }
+
+        // Honest-success check for navigation: a relay 200 only means the
+        // navigate command was ACCEPTED, not that the page moved. Confirm the
+        // tab actually left its current route before marking the step done.
+        // (A SUCCESSFUL self-navigation unmounts this hook, so this check only
+        // resolves false when the nav did NOT take effect — i.e. we're still
+        // mounted on the same route.) If it didn't move, mark the step FAILED
+        // with an honest message instead of a false "done".
+        if (result.ok && step.type === "navigate" && step.target) {
+          const targetUrl = pageIdToUrl(step.target);
+          if (targetUrl !== undefined) {
+            const landed = await confirmNavigationLanded(targetUrl);
+            if (abortRef.current) {
+              runningRef.current = false;
+              return;
+            }
+            if (!landed) {
+              const failed = statuses.slice();
+              failed[i] = "failed";
+              for (let j = i + 1; j < failed.length; j++) failed[j] = "skipped";
+              statuses.splice(0, statuses.length, ...failed);
+              setState({
+                phase: "error",
+                plan,
+                stepStatuses: failed,
+                currentStepIndex: i,
+                summary: plan.summary,
+                error: {
+                  kind: "step-failed",
+                  message: `Step ${i + 1} failed: navigation didn't take effect — the relay accepted it but the tab didn't move to ${targetUrl}.`,
+                },
+              });
+              runningRef.current = false;
+              return;
+            }
+          }
         }
 
         if (!result.ok) {

@@ -46,11 +46,46 @@ function routeForItem(item: NavigationItem): string {
 const SELF_ROUTE = "/co-pilot";
 
 /**
- * Build a short description for the planner's page list. Prefers the
- * registry's `description`; falls back to the `label` so every page carries
+ * Co-pilot-local description overrides, keyed by nav-item id.
+ *
+ * Why these exist: two pages were effectively both named "Workflows", which is
+ * ambiguous for a user AND for the runner's planner when it grounds "go to the
+ * workflows page". The shared navigation registry (`qontinui-navigation`) is a
+ * published package we don't edit from here, so we disambiguate the
+ * PLANNER-FACING descriptions at the co-pilot's edge:
+ *
+ *   - `unified-workflow-builder` (/build/workflows) IS the workflows page — its
+ *     sidebar label is already "Workflows". We make its planner description an
+ *     unambiguous "Workflows — ..." so the planner routes "the workflows page"
+ *     here (to /build/workflows), not to /execute.
+ *   - `gui-automation` (/execute) is the run/schedule surface — its sidebar
+ *     label is "Execute". We describe it as "Execute / run & schedule
+ *     workflows" so it is NOT mistaken for "the workflows page" even though it
+ *     runs workflows.
+ *
+ * Keep this list tiny — it is purely a disambiguation overlay, not a mirror of
+ * the registry. Any id not present here falls back to the registry description.
+ */
+const COPILOT_DESCRIPTION_OVERRIDES: Readonly<Record<string, string>> = {
+  // The authoring surface labelled "Workflows" — the page users (and the
+  // planner) mean by "the workflows page".
+  "unified-workflow-builder":
+    "Workflows — create and edit automation workflows (this is the workflows page)",
+  // The run/schedule surface labelled "Execute" — runs workflows but is NOT
+  // "the workflows page".
+  "gui-automation": "Execute / run & schedule workflows",
+};
+
+/**
+ * Build a short description for the planner's page list. A co-pilot-local
+ * override (see {@link COPILOT_DESCRIPTION_OVERRIDES}) wins so we can
+ * disambiguate without editing the shared registry; otherwise prefers the
+ * registry's `description` and falls back to the `label` so every page carries
  * at least a human-readable name.
  */
 function descriptionForItem(item: NavigationItem): string {
+  const override = COPILOT_DESCRIPTION_OVERRIDES[item.id];
+  if (override) return override;
   const desc = item.description?.trim();
   if (desc) return desc;
   return item.label.trim();
