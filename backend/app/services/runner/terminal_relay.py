@@ -39,6 +39,17 @@ class TerminalRelayService:
         self._runner_listeners: dict[str, asyncio.Task] = {}
         self._mobile_listeners: dict[str, asyncio.Task] = {}
 
+    @staticmethod
+    def runner_channel(runner_id: str) -> str:
+        """Redis channel carrying mobile -> runner terminal I/O for ``runner_id``.
+
+        Exposed so the manager can multiplex this relay's runner-direction
+        channel onto a single shared pubsub connection (see
+        ``RunnerWebSocketManager.register``) instead of this service opening a
+        dedicated pooled pubsub per runner.
+        """
+        return f"runner:terminal:{runner_id}"
+
     async def send_terminal_to_runner(
         self, runner_id: str, message: dict[str, Any]
     ) -> bool:

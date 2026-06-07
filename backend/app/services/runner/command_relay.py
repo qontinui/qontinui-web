@@ -70,19 +70,48 @@ class CommandRelayService:
         self._runner_listeners: dict[str, asyncio.Task] = {}
         self._frontend_listeners: dict[str, asyncio.Task] = {}
 
+    @staticmethod
+    def runner_channel(runner_id: str) -> str:
+        """Redis channel carrying frontend -> runner commands for ``runner_id``.
+
+        Exposed so the manager can multiplex this relay's runner-direction
+        channel onto a single shared pubsub connection (see
+        ``RunnerWebSocketManager.register``) instead of this service opening a
+        dedicated pooled pubsub per runner.
+        """
+        return f"runner:commands:{runner_id}"
+
     async def send_command_to_runner(
-        self, runner_id: str, command: dict[str, Any]
+        self,
+        runner_id: str,
+        command: dict[str, Any],
+        *,
+        require_local_connection: bool = True,
     ) -> bool:
         """
         Send a command from frontend to runner via Redis pub/sub.
 
+        Args:
+            runner_id: Target runner UUID (string form).
+            command: Command payload (JSON-serialisable).
+            require_local_connection: When ``True`` (default), the runner must
+                be registered as connected to *this* process or the command is
+                dropped (returns ``False``). When ``False``, the in-process gate
+                is skipped and the command is published unconditionally, relying
+                on Redis pub/sub to reach the replica that holds the socket. Set
+                ``False`` for cross-process dispatch where the caller has
+                already confirmed connectivity via Redis.
+
         Returns:
-            True if sent successfully, False if runner not connected
+            True if published, False if runner not connected (local gate) or
+            the publish failed.
         """
-        if not self._registry.is_runner_connected(runner_id):
+        if require_local_connection and not self._registry.is_runner_connected(
+            runner_id
+        ):
             return False
 
-        channel = f"runner:commands:{runner_id}"
+        channel = self.runner_channel(runner_id)
         try:
             await self._redis.publish(channel, json.dumps(command))
             logger.debug(
