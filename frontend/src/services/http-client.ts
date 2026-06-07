@@ -32,6 +32,32 @@ export class HttpClient {
   }
 
   /**
+   * Whether there is evidence a session was ever established. The single
+   * source of truth for "anonymous visitor vs expired session": a 401/403
+   * is only session expiry if there was a session to expire.
+   *
+   * Three clauses, any one suffices:
+   * - an access token is present (it may be expired — checked separately),
+   * - a refresh token is present (it survives access-token expiry),
+   * - the `is_authenticated` localStorage marker is set.
+   *
+   * The marker is load-bearing, not redundant with the token getters: both
+   * the access AND refresh tokens live in tab-scoped `sessionStorage`, so
+   * they are wiped on browser/tab close while the `is_authenticated` marker
+   * (localStorage) survives a restart. Keying on tokens alone would
+   * misclassify a genuinely-expired session as anonymous after a browser
+   * restart on the cookie/non-remote path. The marker is the canonical
+   * "a session existed" signal the rest of the auth stack already keys on.
+   */
+  private hadSession(): boolean {
+    return (
+      !!this.tokenManager.getAccessToken() ||
+      !!this.tokenManager.getRefreshToken() ||
+      this.tokenManager.isAuthenticated()
+    );
+  }
+
+  /**
    * Decide whether a 401/403 represents a dead session (expired/absent
    * bearer) rather than a feature/permission denial on a still-valid token.
    *
@@ -51,6 +77,9 @@ export class HttpClient {
    *   that path is returned to the caller untouched, preserving the existing
    *   `strategy/mentions/unread` carve-out behavior.
    * - `skipAuth` requests are exempt (public endpoints).
+   * - Never fires for anonymous visitors — no access/refresh token AND no
+   *   `is_authenticated` marker = no session to expire. A 401/403 on a public
+   *   page (e.g. `/login`, `/auth/callback`) is returned to the caller plainly.
    * - Fires at most once per HttpClient instance (`sessionExpiryHandled`).
    */
   private maybeHandleAuthRejection(
@@ -60,6 +89,7 @@ export class HttpClient {
     if (skipAuth) return;
     if (status !== 401 && status !== 403) return;
     if (this.sessionExpiryHandled) return;
+    if (!this.hadSession()) return;
 
     const tokenUnusable =
       !this.tokenManager.getAccessToken() ||
@@ -109,6 +139,14 @@ export class HttpClient {
     // tearing the whole session down. (This was the `strategy/mentions/unread`
     // teardown.) So surface a valid-token 401 instead of refreshing.
     if (response.status === 401 && !skipAuth && attempt === 1) {
+      // An anonymous visitor (no session evidence) gets the 401 returned
+      // plainly — entering the refresh branch would print the misleading
+      // "attempting token refresh…" warn and call refreshAccessToken() even
+      // though doRefreshToken() consumes no refresh token under Cognito-only
+      // auth (it early-returns on !isAuthenticated, but only AFTER the warn).
+      if (!this.hadSession()) {
+        return response;
+      }
       const tokenStale =
         this.tokenManager.isAccessTokenExpired() ||
         this.tokenManager.isAccessTokenExpiringSoon();
