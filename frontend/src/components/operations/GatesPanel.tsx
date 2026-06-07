@@ -49,8 +49,10 @@ import {
   gateAnchor,
   humanizePredicate,
   summarizeContinuation,
+  summarizeContinuationLifecycle,
 } from "./gatesPredicate";
 import { useGatesStream } from "./useGatesStream";
+import type { ContinuationLifecycleAccent } from "./gatesPredicate";
 import type { GateRow, GateVerdict } from "./types";
 
 const log = createLogger("GatesPanel");
@@ -68,6 +70,24 @@ function verdictVariant(
     case "failed":
       return "destructive";
     case "open":
+    default:
+      return "outline";
+  }
+}
+
+/** Map a continuation lifecycle accent to a `Badge` variant. `error` →
+ *  `destructive` (a spawn_failed = silently-lost work), `warning` → `warning`
+ *  (a stale-pending continuation the operator should look at), `neutral` →
+ *  `outline` (cancelled / spawned / fresh-pending — informational). */
+function lifecycleBadgeVariant(
+  accent: ContinuationLifecycleAccent,
+): "destructive" | "warning" | "outline" {
+  switch (accent) {
+    case "error":
+      return "destructive";
+    case "warning":
+      return "warning";
+    case "neutral":
     default:
       return "outline";
   }
@@ -206,6 +226,19 @@ function GateRowView({ gate, onActed }: GateRowProps) {
   const continuationSummary = useMemo(
     () => summarizeContinuation(gate.continuation_spawn),
     [gate.continuation_spawn],
+  );
+
+  // The runtime lifecycle of a dispatched continuation (cancelled / spawn_failed
+  // / spawned / pending-with-age), distinct from the register-time summary
+  // above. `null` when never dispatched (or a coord predating Phase 2 omits the
+  // stamps) → no chip. Honesty: a pending chip shows dispatch age only — the
+  // panel wires NO device-liveness source, so it never claims the target is
+  // online/offline or that the continuation "stalled" (the operator judges from
+  // the age). Recomputed against the gate stamps; `Date.now()` is read at render
+  // (the 15m warning threshold flips on the next poll-driven re-render).
+  const continuationLifecycle = useMemo(
+    () => summarizeContinuationLifecycle(gate),
+    [gate],
   );
 
   const isSnoozed = useMemo(() => {
@@ -362,6 +395,26 @@ function GateRowView({ gate, onActed }: GateRowProps) {
         >
           <Terminal className="h-3 w-3 mt-0.5 shrink-0" />
           <span className="min-w-0">{continuationSummary}</span>
+        </div>
+      )}
+
+      {/* Continuation LIFECYCLE chip — what actually happened to a dispatched
+          continuation (cancelled / spawn_failed / spawned / pending-with-age).
+          Distinct from the summary above (register-time intent). Rendered only
+          when coord supplies the lifecycle stamps (Phase 2); absent on a lagging
+          coord, so it degrades to nothing. Honesty: a pending chip shows the
+          dispatch AGE only — no device-liveness claim (none is wired). */}
+      {continuationLifecycle && (
+        <div className="flex items-center gap-1.5">
+          <Badge
+            variant={lifecycleBadgeVariant(continuationLifecycle.accent)}
+            className="font-mono text-[10px] gap-1 max-w-full"
+            data-continuation-lifecycle={continuationLifecycle.state}
+            data-continuation-lifecycle-accent={continuationLifecycle.accent}
+          >
+            <Terminal className="h-3 w-3 shrink-0" />
+            <span className="truncate">{continuationLifecycle.label}</span>
+          </Badge>
         </div>
       )}
 
