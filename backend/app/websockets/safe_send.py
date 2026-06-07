@@ -160,7 +160,7 @@ async def reject(
     # RFC 6455 caps the close-frame reason at 123 UTF-8 bytes; Starlette/uvicorn
     # pass it through unchecked, so truncate defensively.
     if len(close_reason.encode("utf-8")) > 123:
-        close_reason = close_reason.encode("utf-8")[:120].decode(
-            "utf-8", errors="ignore"
-        ) + "..."
+        close_reason = (
+            close_reason.encode("utf-8")[:120].decode("utf-8", errors="ignore") + "..."
+        )
     await safe_close(websocket, code, reason=close_reason)

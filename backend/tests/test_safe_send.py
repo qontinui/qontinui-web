@@ -180,9 +180,7 @@ async def test_reject_still_closes_when_send_raises() -> None:
 
     await safe_send.reject(ws, "nope", code=status.WS_1011_INTERNAL_ERROR)
 
-    ws.close.assert_awaited_once_with(
-        code=status.WS_1011_INTERNAL_ERROR, reason="nope"
-    )
+    ws.close.assert_awaited_once_with(code=status.WS_1011_INTERNAL_ERROR, reason="nope")
 
 
 @pytest.mark.asyncio
@@ -228,9 +226,7 @@ async def test_reject_truncates_reason_to_close_frame_limit() -> None:
     assert sent_reason.endswith("...")
     # The advisory error frame keeps the FULL message — only the close frame
     # is capped.
-    ws.send_json.assert_awaited_once_with(
-        {"type": "error", "message": long_message}
-    )
+    ws.send_json.assert_awaited_once_with({"type": "error", "message": long_message})
 
 
 @pytest.mark.asyncio
