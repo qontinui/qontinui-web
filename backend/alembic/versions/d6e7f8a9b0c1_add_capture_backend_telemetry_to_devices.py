@@ -1,7 +1,7 @@
 """add capture-backend telemetry columns to coord.devices
 
 Revision ID: d6e7f8a9b0c1
-Revises: twin_p7_03_canonical_checkout_state
+Revises: lineage_recorded_at_idx_01
 Create Date: 2026-06-07
 
 Fleet capture-backend telemetry (plan ``2026-06-07-fleet-capture-backend-telemetry``):
@@ -37,7 +37,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "d6e7f8a9b0c1"
-down_revision: Union[str, None] = "twin_07_coord_metrics_2b_tables"
+down_revision: Union[str, None] = "lineage_recorded_at_idx_01"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
