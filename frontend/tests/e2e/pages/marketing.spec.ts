@@ -74,26 +74,33 @@ test.describe("Homepage (/)", () => {
     await page.goto("/");
     await page.waitForLoadState("domcontentloaded");
 
+    // Anchor on the section heading before the cards. The Key Features grid is
+    // static, but it renders below the hero, so under CI contention (4 E2E
+    // shards + backend + frontend on one runner) it can paint a few seconds
+    // after `domcontentloaded`. Waiting for the section heading absorbs that
+    // load latency once; the card headings below are static siblings then
+    // guaranteed present. Previously only the FIRST card got a 10s timeout
+    // while the rest inherited the 5s default, so the last card flaked (~30%
+    // on post-merge `main`) — see reference_web_frontend_e2e_sharded_nongating_and_flaky.
+    await expect(
+      page.getByRole("heading", { name: "Built for AI-Assisted Development" })
+    ).toBeVisible({ timeout: 10000 });
+
     // Verify key feature cards are present. Use heading roles to avoid
     // matching ambient prose ("error monitoring", "running application", etc.)
-    // in adjacent sections — `getByText` runs in strict mode.
-    await expect(
-      page.getByRole("heading", { name: "Orchestrated Workflows" })
-    ).toBeVisible({
-      timeout: 10000,
-    });
-    await expect(
-      page.getByRole("heading", { name: "Self-Correcting AI" })
-    ).toBeVisible();
-    await expect(
-      page.getByRole("heading", { name: "Error Monitoring" })
-    ).toBeVisible();
-    await expect(
-      page.getByRole("heading", { name: "UI Bridge Feedback" })
-    ).toBeVisible();
-    await expect(
-      page.getByRole("heading", { name: "Persistent Knowledge" })
-    ).toBeVisible();
+    // in adjacent sections — `getByRole` runs in strict mode. Each card gets
+    // the file-standard 10s timeout for resilience under contention.
+    for (const name of [
+      "Orchestrated Workflows",
+      "Self-Correcting AI",
+      "Error Monitoring",
+      "UI Bridge Feedback",
+      "Persistent Knowledge",
+    ]) {
+      await expect(page.getByRole("heading", { name })).toBeVisible({
+        timeout: 10000,
+      });
+    }
   });
 
   test("has download button in hero section", async ({ page }) => {
