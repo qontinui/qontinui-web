@@ -136,6 +136,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
 
         setUser(null);
+
+        // Already on /login (e.g. an anonymous visitor whose page fired
+        // an authed call that 401'd — HttpClient treats the absent token
+        // as session expiry since #491): redirecting would hard-reload
+        // /login, and each reload creates a fresh HttpClient whose
+        // fire-once guard resets, re-firing this handler in a loop
+        // (~15 reloads/sec observed live on prod 2026-06-07, making
+        // sign-in unusable). The login form is already in front of the
+        // user — stay put.
+        if (window.location.pathname.startsWith("/login")) {
+          logger.info("Session expired while already on /login — skipping redirect");
+          return;
+        }
+
         logger.info("Redirecting to /login due to session expiry");
         window.location.href = "/login";
       };
