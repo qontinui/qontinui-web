@@ -29,6 +29,7 @@ more.
 
 import asyncio
 import json
+from collections.abc import Callable, Coroutine
 from typing import Any
 from uuid import UUID
 
@@ -42,6 +43,7 @@ from app.services.runner.connection_registry import WebSocketConnectionRegistry
 from app.services.runner.event_publisher import RunnerEventPublisher
 from app.services.runner.state_repository import RunnerStateRepository
 from app.services.runner.terminal_relay import TerminalRelayService
+from app.websockets.safe_send import BENIGN_SEND_EXCEPTIONS
 
 logger = structlog.get_logger(__name__)
 
@@ -78,6 +80,11 @@ class RunnerWebSocketManager:
         self._redis = redis_client
         # Per-runner locks to synchronize WebSocket sends across relay services
         self._ws_send_locks: dict[str, asyncio.Lock] = {}
+        # Per-runner SHARED inbound listener: a single pubsub connection +
+        # listener task that multiplexes the command/chat/terminal
+        # runner-direction channels onto one pooled Redis connection (see
+        # ``register``). runner_id -> (pubsub, task).
+        self._inbound_listeners: dict[str, tuple[Any, asyncio.Task]] = {}
 
         logger.info("runner_websocket_manager_initialized")
 
@@ -105,23 +112,24 @@ class RunnerWebSocketManager:
         # Registration must be ALL-OR-NOTHING. Each step below acquires a
         # resource that holds a Redis connection for the lifetime of the
         # registration: ``save_connection_state`` / ``_save_user_runner_mapping``
-        # issue pooled commands, and — critically — each relay
-        # ``start_runner_listener`` spawns a task that runs ``pubsub.subscribe``
-        # and holds a *dedicated* pooled connection until the task is cancelled
-        # and its ``finally`` runs ``pubsub.close()``.
+        # issue pooled commands, and — critically — the inbound listener runs
+        # ``pubsub.subscribe`` and holds a pooled connection until the task is
+        # cancelled and its ``finally`` runs ``pubsub.close()``.
         #
-        # If a step raises midway (observed on prod: the ``self._redis.set`` in
-        # ``save_connection_state`` raising ``redis.exceptions.ConnectionError:
-        # Too many connections`` under runner-reconnect churn), the caller's
-        # except path closes the socket and returns WITHOUT calling
-        # ``unregister`` — so the in-memory registry entry, send lock, and any
-        # listener tasks + their pubsub connections are orphaned. Each failed
-        # reconnect then drains the pool a little further, a self-reinforcing
-        # leak until the pool is exhausted and every registration fails.
+        # The three runner-direction channels (commands / chat / terminal) are
+        # multiplexed onto a SINGLE shared pubsub connection per runner via
+        # ``_start_inbound_listener`` — previously each relay opened its own
+        # dedicated pubsub, costing 3 pooled connections per registration. Under
+        # runner-reconnect churn that 3x amplification exhausted the pool
+        # (``redis.exceptions.ConnectionError: Too many connections``), aborting
+        # registration; collapsing 3 -> 1 removes the amplification.
         #
-        # Wrap the whole body so that on ANY failure we tear down every
-        # resource acquired so far (cancelling listeners returns their pubsub
-        # connections to the pool) before re-raising. The success path is
+        # If a step raises midway, the caller's except path closes the socket
+        # and returns WITHOUT calling ``unregister`` — so the in-memory registry
+        # entry, send lock, and the listener task + its pubsub connection would
+        # be orphaned. Wrap the whole body so that on ANY failure we tear down
+        # every resource acquired so far (cancelling the listener returns its
+        # pubsub connection to the pool) before re-raising. The success path is
         # unchanged.
         self._registry.register_runner(rid, websocket)
         self._ws_send_locks[rid] = asyncio.Lock()
@@ -142,13 +150,7 @@ class RunnerWebSocketManager:
                 async with send_lock:
                     await websocket.send_json(data)
 
-            await self._relay.start_runner_listener(rid, websocket, send_fn=locked_send)
-            await self._chat_relay.start_runner_listener(
-                rid, websocket, send_fn=locked_send
-            )
-            await self._terminal_relay.start_runner_listener(
-                rid, websocket, send_fn=locked_send
-            )
+            await self._start_inbound_listener(rid, send_fn=locked_send)
         except Exception:
             await self._rollback_partial_registration(rid)
             raise
@@ -160,31 +162,150 @@ class RunnerWebSocketManager:
             runner_name=runner_name,
         )
 
+    # ------------------------------------------------------------------
+    # Shared inbound (runner-direction) listener
+    # ------------------------------------------------------------------
+
+    def _inbound_channels(self, rid: str) -> dict[str, str]:
+        """Map each runner-direction Redis channel to its owning relay name.
+
+        Each relay exposes ``runner_channel`` so the channel strings stay
+        defined in one place per relay; the manager only multiplexes them.
+        """
+        return {
+            self._relay.runner_channel(rid): "command",
+            self._chat_relay.runner_channel(rid): "chat",
+            self._terminal_relay.runner_channel(rid): "terminal",
+        }
+
+    async def _start_inbound_listener(
+        self,
+        rid: str,
+        send_fn: Callable[[dict[str, Any]], Coroutine[Any, Any, None]],
+    ) -> None:
+        """Subscribe ONE shared pubsub to all runner-direction channels.
+
+        Replaces the three dedicated pubsub connections (one per relay) with a
+        single multiplexed pubsub + listener task. Every message on any of the
+        command/chat/terminal channels is forwarded to the runner WS via the
+        shared ``send_fn`` (the per-runner send lock), preserving the prior
+        routing — the runner receives the same frames regardless of which
+        channel carried them.
+        """
+        pubsub = self._redis.pubsub()
+        channels = list(self._inbound_channels(rid).keys())
+        await pubsub.subscribe(*channels)
+        task = asyncio.create_task(self._run_inbound_listener(rid, pubsub, send_fn))
+        self._inbound_listeners[rid] = (pubsub, task)
+        logger.info(
+            "runner_inbound_listener_started",
+            runner_id=rid,
+            channels=channels,
+        )
+
+    async def _run_inbound_listener(
+        self,
+        rid: str,
+        pubsub: Any,
+        send_fn: Callable[[dict[str, Any]], Coroutine[Any, Any, None]],
+    ) -> None:
+        """Forward messages from any multiplexed channel to the runner WS."""
+        try:
+            async for message in pubsub.listen():
+                if message.get("type") != "message":
+                    continue
+                try:
+                    data = message["data"]
+                    if isinstance(data, bytes | bytearray):
+                        data = data.decode("utf-8")
+                    frame = json.loads(data)
+                    await send_fn(frame)
+                except BENIGN_SEND_EXCEPTIONS as e:
+                    logger.info(
+                        "runner_ws_disconnected_during_inbound_forward",
+                        runner_id=rid,
+                        error=str(e),
+                    )
+                    break
+                except Exception as e:
+                    logger.error(
+                        "runner_inbound_forward_failed",
+                        runner_id=rid,
+                        error=str(e),
+                    )
+                    continue
+        except asyncio.CancelledError:
+            logger.info("runner_inbound_listener_cancelled", runner_id=rid)
+        except Exception as e:
+            logger.error(
+                "runner_inbound_listener_error",
+                runner_id=rid,
+                error=str(e),
+            )
+        finally:
+            # The connection is also closed by ``_stop_inbound_listener`` on the
+            # cancel path; closing twice is harmless. Shield so a cancellation
+            # delivered while we are mid-cleanup does not skip the close and leak
+            # the pooled connection.
+            await self._close_pubsub(pubsub)
+
+    @staticmethod
+    async def _close_pubsub(pubsub: Any) -> None:
+        """Unsubscribe + close a pubsub, tolerant of cancellation and errors."""
+        try:
+            await asyncio.shield(pubsub.unsubscribe())
+        except Exception:  # noqa: BLE001 - best effort cleanup
+            pass
+        try:
+            await asyncio.shield(pubsub.close())
+        except Exception:  # noqa: BLE001 - best effort cleanup
+            pass
+
+    async def _stop_inbound_listener(self, rid: str) -> None:
+        """Cancel the shared inbound listener and close its pubsub.
+
+        Cancels the task, awaits it so its ``finally`` runs, then closes the
+        pubsub explicitly (idempotent) so the single pooled connection is
+        returned to the pool deterministically even if the listener's own
+        cleanup was interrupted by the cancellation.
+        """
+        entry = self._inbound_listeners.pop(rid, None)
+        if entry is None:
+            return
+        pubsub, task = entry
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        except Exception as exc:  # noqa: BLE001 - defensive
+            logger.warning(
+                "inbound_listener_await_after_cancel_failed",
+                runner_id=rid,
+                error=str(exc),
+            )
+        await self._close_pubsub(pubsub)
+
     async def _rollback_partial_registration(self, rid: str) -> None:
         """Tear down resources acquired by a ``register`` that failed midway.
 
-        Cancels any relay listener tasks (so their ``finally`` runs
-        ``pubsub.close()`` and the dedicated pubsub connection returns to the
+        Cancels the shared inbound listener task (so its ``finally`` runs
+        ``pubsub.close()`` and the single pubsub connection returns to the
         pool), drops the in-memory registry entry and send lock, and best-effort
         clears the Redis connection state. Each step is independently guarded so
         one failing teardown never masks another — the goal is to leak nothing
-        on the failure path. Safe to call when a step never ran (the relay
-        ``stop_runner_listener`` / registry helpers are no-ops for unknown ids).
+        on the failure path. Safe to call when a step never ran (the listener /
+        registry helpers are no-ops for unknown ids).
         """
-        for name, teardown in (
-            ("command_listener", self._relay.stop_runner_listener),
-            ("chat_listener", self._chat_relay.stop_runner_listener),
-            ("terminal_listener", self._terminal_relay.stop_runner_listener),
-        ):
-            try:
-                await teardown(rid)
-            except Exception as exc:
-                logger.warning(
-                    "register_rollback_step_failed",
-                    runner_id=rid,
-                    step=name,
-                    error=str(exc),
-                )
+        try:
+            await self._stop_inbound_listener(rid)
+        except Exception as exc:
+            logger.warning(
+                "register_rollback_step_failed",
+                runner_id=rid,
+                step="inbound_listener",
+                error=str(exc),
+            )
 
         try:
             self._registry.unregister_runner(rid)
@@ -233,9 +354,11 @@ class RunnerWebSocketManager:
 
         self._registry.unregister_runner(rid)
 
-        await self._relay.stop_runner_listener(rid)
+        # Cancel the shared inbound listener (commands/chat/terminal multiplex);
+        # its ``finally`` unsubscribes and closes the single pubsub connection.
+        await self._stop_inbound_listener(rid)
 
-        # Notify mobile + frontend clients before stopping listeners
+        # Notify mobile + frontend clients of the disconnect.
         from qontinui_schemas.common import utc_now
 
         await self._chat_relay.notify_mobiles(
@@ -246,7 +369,6 @@ class RunnerWebSocketManager:
                 "timestamp": utc_now().isoformat(),
             },
         )
-        await self._chat_relay.stop_runner_listener(rid)
         await self._terminal_relay.notify_mobiles(
             rid,
             {
@@ -255,7 +377,6 @@ class RunnerWebSocketManager:
                 "timestamp": utc_now().isoformat(),
             },
         )
-        await self._terminal_relay.stop_runner_listener(rid)
         self._ws_send_locks.pop(rid, None)
         await self._relay.notify_frontends(
             rid,
@@ -349,12 +470,25 @@ class RunnerWebSocketManager:
     # ========================================================================
 
     async def send_dispatch(
-        self, runner_id: UUID | str, payload: dict[str, Any]
+        self,
+        runner_id: UUID | str,
+        payload: dict[str, Any],
+        *,
+        require_local_connection: bool = True,
     ) -> bool:
-        """Send a typed ``dispatch`` message to the runner over its WS."""
+        """Send a typed ``dispatch`` message to the runner over its WS.
+
+        When ``require_local_connection`` is ``False`` the in-process
+        connectivity gate is skipped and the dispatch is published via Redis
+        pub/sub regardless of whether the socket lives on this replica — for
+        cross-process dispatch where connectivity was already confirmed via
+        Redis (see ``is_connected_redis``).
+        """
         rid = _rid(runner_id)
         msg = {"type": "dispatch", **payload}
-        return await self._relay.send_command_to_runner(rid, msg)
+        return await self._relay.send_command_to_runner(
+            rid, msg, require_local_connection=require_local_connection
+        )
 
     async def send_command(
         self, runner_id: UUID | str, command: dict[str, Any]

@@ -720,7 +720,17 @@ async def dispatch_to_device(
     redis = await get_redis()
     manager = await get_runner_websocket_manager(redis)
 
-    if record.get("ws_session_id") is None or not manager.is_connected(device_id):
+    # Gate on the CROSS-PROCESS Redis connection state, not the in-process
+    # ``manager.is_connected`` (memory-only). On the multi-replica prod
+    # backend the dispatch HTTP request may land on a replica that does not
+    # hold the runner's WS — the in-process check there would falsely 503 even
+    # though the socket is alive on another replica. ``is_connected_redis``
+    # reflects the connection across all replicas; the dispatch itself then
+    # publishes via Redis pub/sub (require_local_connection=False), which
+    # reaches whichever replica owns the socket.
+    if record.get("ws_session_id") is None or not (
+        await manager.is_connected_redis(device_id)
+    ):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={
@@ -737,6 +747,7 @@ async def dispatch_to_device(
             "workflow_id": str(payload.workflow_id),
             "payload": payload.payload or {},
         },
+        require_local_connection=False,
     )
     if not sent:
         raise HTTPException(
