@@ -38,6 +38,14 @@ export interface ProposalDetail {
   cancelled_at?: string | null;
   merged_at?: string | null;
   repos: RepoDetail[];
+  /**
+   * Number of times the leader-takeover recovery sweep blind-requeued this
+   * proposal (coord PR #423, plan
+   * `2026-06-07-merge-scheduler-takeover-requeue-starvation`). The durable
+   * starvation signal: 0 = never churned; a rising value means takeover churn
+   * is starving the proposal. Older coord deploys omit it — treat as 0.
+   */
+  requeue_count?: number;
 }
 
 export interface QueueResponse {
