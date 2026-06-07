@@ -26,7 +26,7 @@ extra steps beyond reserving and pushing.
    to find ADDED revision files in ``backend/alembic/versions/*.py``.
 2. If none were added → pass (exit 0).
 3. Parse each added revision's ``revision`` + ``down_revision``.
-4. ``GET $COORD_URL/coord/migrations/queue?repo=qontinui-web`` and find the
+4. ``GET $COORD_URL/coord/migrations/queue?repo=qontinui/qontinui-web`` and find the
    reservation whose ``revision`` matches the file, in state ``queued`` or
    ``pr_bound``. Then, per the decision table below:
 
@@ -74,7 +74,10 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
-REPO = "qontinui-web"
+# The reservation key is the GitHub full_name `owner/repo` — coord keys the
+# queue on it and `mirror::ensure_mirror` needs owner/repo to derive the chain
+# head server-side. A bare name is rejected (400) by coord.
+REPO = "qontinui/qontinui-web"
 
 # Match `revision: str = "X"`, `revision = "X"`, single quotes too.
 # The optional `: <type>` group accepts any non-`=` chars to handle
