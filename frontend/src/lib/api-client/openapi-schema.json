@@ -66166,7 +66166,7 @@
     },
     "/api/v1/operations/device-status": {
       "get": {
-        "description": "Return live ``coord.device_status`` rows scoped to the caller's tenant.\n\nResponse shape::\n\n    { \"devices\": [StatusRow, ...], \"count\": <int> }\n\nThe list is unsorted from coord; clients render in arbitrary order\n(the `MachineCard` consumer keys on hostname). When the caller's\ntenant has no devices reporting, ``devices`` is an empty list and\n``count`` is zero \u2014 never 4xx.",
+        "description": "Return live ``coord.device_status`` rows scoped to the caller's tenant.\n\nResponse shape::\n\n    { \"devices\": [StatusRow, ...], \"count\": <int> }\n\nThe list is unsorted from coord; clients render in arbitrary order\n(the `MachineCard` consumer keys on hostname). When the caller's\ntenant has no devices reporting, ``devices`` is an empty list and\n``count`` is zero \u2014 never 4xx.\n\nThe operator bearer is forwarded (``_tenant_headers``) \u2014 coord's\n``GET /coord/status`` is operator-auth fail-closed (fleet-auth P4)\nand 403s ``tenant_not_resolved`` on anonymous calls, which is what\nthis proxy used to send.",
         "operationId": "api_v1_operations_device_status_get",
         "parameters": [
           {

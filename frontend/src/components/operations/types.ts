@@ -26,10 +26,10 @@ export interface ClaudeSessionInfo {
  * The frontend joins by hostname; `device_id` is also surfaced for
  * tooltips and fallback identification when hostname is null.
  *
- * The local `DeviceStatusRow` declaration in `coordTypes.ts` is the
- * legacy untyped wire shape used by `DeviceStatusTile` (the
- * pre-tenant-scope broadcast surface). When the tile retires this
- * type can be removed from `coordTypes.ts`.
+ * This is the single device-status row shape — `DeviceStatusTile` and
+ * `useDeviceStatusStream` both consume it (the legacy direct-coord
+ * `coordTypes.ts` shape was retired when the tile moved onto the
+ * authenticated stream).
  */
 export interface DeviceStatus {
   device_id: string;
