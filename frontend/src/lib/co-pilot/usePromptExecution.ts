@@ -78,6 +78,24 @@ export type ExecutionErrorKind =
 export interface ExecutionError {
   kind: ExecutionErrorKind;
   message: string;
+  /**
+   * True when this error was raised by an ACTUAL run attempt that reached the
+   * backend and failed there (e.g. `requestPlan` 503 → the runner's WS flapped
+   * mid-submit). Distinguishes a FRESH run failure from an IDLE "no runner"
+   * latch set before any run reached the backend (the `!deviceId`
+   * short-circuit). Only the latter is safe for the reconnect effect to
+   * auto-clear; a fromRun error must stay visible so the user gets the
+   * "runner reconnecting — retry" affordance instead of a silent reset.
+   */
+  fromRun?: boolean;
+  /**
+   * Epoch ms when a `fromRun` `no-runner-connected` error was set. The
+   * reconnect latch effect keeps such an error visible for
+   * {@link FRESH_RUN_ERROR_GRACE_MS} after this stamp even once `activeRunner`
+   * re-resolves, so a flap that re-resolves the device immediately does not
+   * swallow the just-raised error.
+   */
+  setAt?: number;
 }
 
 export interface PromptExecutionState {
@@ -152,6 +170,19 @@ const NAVIGATE_LANDING_TIMEOUT_MS = 5000;
 const NAVIGATE_LANDING_POLL_MS = 300;
 
 /**
+ * How long a FRESH `no-runner-connected` error (one raised by an actual run's
+ * plan failure — a runner-WS flap at submit) stays visible after being set,
+ * even once `activeRunner` re-resolves. The device context typically re-shows
+ * the flapped runner within a tick (the realtime-connections WS/poll never lost
+ * it), which would otherwise let the reconnect latch effect auto-clear the
+ * error the instant it was raised — a silent no-op the user never sees. This
+ * grace keeps the "runner reconnecting — retry" affordance on screen long
+ * enough to act on. After the window, a still-stale latch may auto-clear as
+ * before.
+ */
+const FRESH_RUN_ERROR_GRACE_MS = 8000;
+
+/**
  * Normalize a pathname for comparison: drop any query/hash and a single
  * trailing slash (but keep root "/"). `pageIdToUrl` returns app-relative paths
  * like "/build/workflows"; `window.location.pathname` is already path-only, but
@@ -218,9 +249,18 @@ function errorFromPlanFailure(err: PlanError): ExecutionError {
       return { kind: "auth-required", message: err.message };
     case "runner-not-connected":
       // 503 — the runner isn't WS-connected. This is the only plan-side reason
-      // that is truly "connect a runner" (and the only one the no-runner latch
-      // effect may auto-clear on reconnect).
-      return { kind: "no-runner-connected", message: err.message };
+      // that is truly "connect a runner". It is a FRESH run failure (the user
+      // clicked Run and the runner's WS flapped mid-submit), so stamp it
+      // `fromRun` with a `setAt`: the reconnect latch must NOT swallow it the
+      // instant `activeRunner` re-resolves (which it does almost immediately —
+      // the device context never lost the runner). The user must see the
+      // "runner reconnecting — retry" affordance, not a silent reset.
+      return {
+        kind: "no-runner-connected",
+        message: err.message,
+        fromRun: true,
+        setAt: Date.now(),
+      };
     case "device-not-owned":
     case "runner-unreachable":
       // 502/504/timeout/abort — the runner is paired but the relay transport
@@ -274,15 +314,54 @@ export function usePromptExecution(): UsePromptExecutionReturn {
   // clear THAT specific idle-error latch — never an in-flight run, and never
   // a different error (plan-failed / rate-limited / not-consented), which the
   // user must see and act on.
+  //
+  // CRITICAL nuance (the silent-no-op bug): the auto-clear used to also swallow
+  // a FRESH no-runner error raised by the just-completed run (a 503 because the
+  // runner's WS flapped at submit). `activeRunner` re-resolves almost instantly
+  // after such a flap (the device context never lost the runner), so the effect
+  // fired on the very next render and reset the state to idle — the user clicked
+  // Run, the plan 503'd, and the button just reset with NO error card: a silent
+  // no-op. We now distinguish:
+  //   - an IDLE/stale latch (`!fromRun` — set by the `!deviceId` short-circuit
+  //     before any run reached the backend) → safe to auto-clear on reconnect;
+  //   - a FRESH run failure (`fromRun`, 503 from `requestPlan`) → must stay
+  //     visible for {@link FRESH_RUN_ERROR_GRACE_MS} so the user sees the
+  //     "runner reconnecting — retry" affordance. After the grace window a still
+  //     -stale latch auto-clears as before (a re-render is scheduled below).
   useEffect(() => {
     if (
-      activeRunner &&
-      !runningRef.current &&
-      state.phase === "error" &&
-      state.error?.kind === "no-runner-connected"
+      !activeRunner ||
+      runningRef.current ||
+      state.phase !== "error" ||
+      state.error?.kind !== "no-runner-connected"
     ) {
-      setState(INITIAL_STATE);
+      return;
     }
+
+    // A fresh run failure within its grace window must stay visible. Schedule a
+    // re-check at the end of the window so a latch that is STILL stale then
+    // (the user never retried, the error is now an idle indicator) clears.
+    if (state.error.fromRun && state.error.setAt) {
+      const elapsed = Date.now() - state.error.setAt;
+      if (elapsed < FRESH_RUN_ERROR_GRACE_MS) {
+        const remaining = FRESH_RUN_ERROR_GRACE_MS - elapsed;
+        const timer = setTimeout(() => {
+          // Re-arm the effect; if still an unretried no-runner error and a
+          // runner is present, the next pass (now past the window) clears it.
+          setState((prev) =>
+            prev.phase === "error" &&
+            prev.error?.kind === "no-runner-connected" &&
+            prev.error.fromRun
+              ? { ...prev, error: { ...prev.error, setAt: 0 } }
+              : prev,
+          );
+        }, remaining);
+        return () => clearTimeout(timer);
+      }
+    }
+
+    setState(INITIAL_STATE);
+    return undefined;
   }, [activeRunner, state.phase, state.error]);
 
   const run = useCallback(
