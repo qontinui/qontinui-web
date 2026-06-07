@@ -128,7 +128,7 @@ from alembic import op
 # session 4bbf3f51) — do not re-derive from a later ``alembic heads``. This is
 # the LAST old-style head-claim ever (see the module docstring).
 revision: str = "resq_01_migration_reservations"
-down_revision: str | Sequence[str] | None = "coord_commit_lineage"
+down_revision: str | Sequence[str] | None = "lineage_recorded_at_idx_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
