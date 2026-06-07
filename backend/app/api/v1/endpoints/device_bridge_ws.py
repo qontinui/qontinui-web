@@ -42,7 +42,7 @@ from app.core.config import settings
 from app.models.user import User
 from app.services import coord_device
 from app.services.device_bridge_service import DeviceBridgeService
-from app.websockets.safe_send import BENIGN_SEND_EXCEPTIONS, reject
+from app.websockets.safe_send import BENIGN_SEND_EXCEPTIONS, reject, safe_close
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -143,8 +143,12 @@ async def device_bridge_device_endpoint(
     tunnel_response messages it receives to the paired runner via Redis pub/sub.
     """
     if not settings.REDIS_ENABLED:
-        await websocket.close(
-            code=status.WS_1008_POLICY_VIOLATION,
+        # safe_close also covers the pre-accept (CONNECTING) state — a client
+        # that vanishes during this rejection close must not raise out of the
+        # handler (same tolerant contract as the post-accept rejects).
+        await safe_close(
+            websocket,
+            status.WS_1008_POLICY_VIOLATION,
             reason="Device bridge requires Redis.",
         )
         return
@@ -385,8 +389,12 @@ async def device_bridge_tunnel_endpoint(
         - 1008 Policy Violation: auth failure or device not connected.
     """
     if not settings.REDIS_ENABLED:
-        await websocket.close(
-            code=status.WS_1008_POLICY_VIOLATION,
+        # safe_close also covers the pre-accept (CONNECTING) state — a client
+        # that vanishes during this rejection close must not raise out of the
+        # handler (same tolerant contract as the post-accept rejects).
+        await safe_close(
+            websocket,
+            status.WS_1008_POLICY_VIOLATION,
             reason="Device bridge requires Redis.",
         )
         return

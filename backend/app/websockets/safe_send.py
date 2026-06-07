@@ -96,7 +96,11 @@ async def safe_send_json(websocket: WebSocket, payload: dict[str, Any]) -> None:
         logger.debug("safe_send_json_suppressed", error=str(exc))
 
 
-async def safe_close(websocket: WebSocket, code: int) -> None:
+async def safe_close(
+    websocket: WebSocket,
+    code: int,
+    reason: str | None = None,
+) -> None:
     """Close ``websocket`` at most once, tolerating an already-closed socket.
 
     Several handshake/registration failure paths close the socket and return; on
@@ -107,11 +111,19 @@ async def safe_close(websocket: WebSocket, code: int) -> None:
     client-gone socket, re-raised by Starlette). Both are benign here — the
     socket is being torn down regardless — so suppress both. The ``code`` is
     passed through unchanged so each call site keeps its intended close code.
+
+    ``reason`` is the human-readable close-frame reason (``CloseEvent.reason``
+    in a browser). Several rejection sites share a close code (e.g. multiple
+    distinct 1008 policy failures), so the reason string is the only on-wire
+    disambiguator — pass it wherever the pre-conversion ``websocket.close``
+    carried one. ``safe_close`` also works pre-``accept()`` (the
+    ``REDIS_ENABLED`` short-circuits close a CONNECTING socket, which uvicorn
+    turns into a handshake rejection) — the same tolerant semantics apply.
     """
     if websocket.application_state == WebSocketState.DISCONNECTED:
         return
     try:
-        await websocket.close(code=code)
+        await websocket.close(code=code, reason=reason)
     except (WebSocketDisconnect, RuntimeError) as exc:
         # Already closed / client gone — benign double-close.
         logger.debug("safe_close_suppressed", error=str(exc))
@@ -121,6 +133,7 @@ async def reject(
     websocket: WebSocket,
     message: str,
     code: int = status.WS_1008_POLICY_VIOLATION,
+    reason: str | None = None,
 ) -> None:
     """Reject a handshake: send a standard error frame, then close.
 
@@ -130,10 +143,24 @@ async def reject(
     tolerant, so a client that vanished mid-handshake is handled cleanly and the
     caller can simply ``return`` afterwards.
 
+    ``reason`` defaults to ``message`` (truncated to the 123-byte close-frame
+    limit) so the close frame carries the same diagnostic as the advisory error
+    frame — the error frame races the client's close and can be dropped, while
+    the close frame is the part the client reliably observes. Pass an explicit
+    ``reason`` only when the close-frame text should differ from the error
+    payload.
+
     Sites whose error payload is NOT the standard ``{"type": "error",
     "message": ...}`` shape (e.g. those that use an ``"error"`` key, or carry
     extra fields) must call :func:`safe_send_json` + :func:`safe_close`
     directly to preserve their exact wire payload.
     """
     await safe_send_json(websocket, {"type": "error", "message": message})
-    await safe_close(websocket, code)
+    close_reason = reason if reason is not None else message
+    # RFC 6455 caps the close-frame reason at 123 UTF-8 bytes; Starlette/uvicorn
+    # pass it through unchecked, so truncate defensively.
+    if len(close_reason.encode("utf-8")) > 123:
+        close_reason = (
+            close_reason.encode("utf-8")[:120].decode("utf-8", errors="ignore") + "..."
+        )
+    await safe_close(websocket, code, reason=close_reason)

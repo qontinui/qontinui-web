@@ -52,8 +52,12 @@ async def websocket_runner_status(
     # a non-existent localhost:6379 and floods logs with ConnectionRefusedError.
     # Mirrors the precedent in device_bridge_ws.py.
     if not settings.REDIS_ENABLED:
-        await websocket.close(
-            code=status.WS_1008_POLICY_VIOLATION,
+        # safe_close also covers the pre-accept (CONNECTING) state — a client
+        # that vanishes during this rejection close must not raise out of the
+        # handler (same tolerant contract as the post-accept rejects below).
+        await safe_close(
+            websocket,
+            status.WS_1008_POLICY_VIOLATION,
             reason="Runner status stream requires Redis.",
         )
         return
@@ -65,7 +69,7 @@ async def websocket_runner_status(
         await safe_send_json(
             websocket, {"type": "error", "error": "Missing authentication token"}
         )
-        await safe_close(websocket, 1008)
+        await safe_close(websocket, 1008, reason="Missing authentication token")
         return
 
     try:
@@ -75,7 +79,7 @@ async def websocket_runner_status(
         await safe_send_json(
             websocket, {"type": "error", "error": "Authentication failed"}
         )
-        await safe_close(websocket, 1008)
+        await safe_close(websocket, 1008, reason="Authentication failed")
         return
 
     # Send the initial snapshot using the canonical Runner wire shape.
