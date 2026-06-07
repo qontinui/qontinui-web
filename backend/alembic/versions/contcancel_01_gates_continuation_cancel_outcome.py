@@ -79,7 +79,7 @@ from alembic import op
 # head-claim (resource_key=blast_radius_gate_cols_01) — do not re-derive from a
 # later ``alembic heads``.
 revision: str = "contcancel_01_gates_continuation_cancel_outcome"
-down_revision: str | Sequence[str] | None = "blast_radius_gate_cols_01"
+down_revision: str | Sequence[str] | None = "twin_p7_03_canonical_checkout_state"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
