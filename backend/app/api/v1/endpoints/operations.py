@@ -690,6 +690,78 @@ async def get_pr_merge_escalations(
     )
 
 
+# ---- Coordination-transparency: gate-decision reads ----------------------
+#
+# Plan 2026-06-07-coordination-transparency-surfaces.md T2 — surface the
+# blast-radius merge gate's *decisions* (held PRs + reason + evidence +
+# coverage) to the affected developer, not just to operators. These two
+# proxies back the "Gate decisions" section of MergeTrain.
+#
+# Auth: ``get_tenant_id`` (ANY authenticated tenant member), deliberately
+# NOT ``require_coord_tenant_admin``. The whole point of the transparency
+# surface is that the developer whose PR was held can see *why* — coverage,
+# the removed export, and who references it — without needing operator
+# rights. The admin gate stays only on the decide/write action
+# (``post_pr_merge_escalation_decide``). Coord resolves the tenant from the
+# forwarded Cognito bearer (``_tenant_headers``) and scopes its SQL via the
+# ``TenantId`` extractor, exactly like the sibling read routes above.
+
+
+@router.get("/pr-merge/blast-radius-blocks")
+async def get_pr_merge_blast_radius_blocks(
+    repo: str | None = None,
+    limit: int = 50,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Tenant-scoped list of recent blast-radius gate blocks.
+
+    Proxies coord's ``GET /pr-merge/blast-radius-blocks``
+    (``pr_merge/blast_radius_monitor.rs::list_blocks``). Each row carries
+    the PR identity, the ``BlockReason`` ``code`` (e.g.
+    ``removes-referenced-export``), the per-reason evidence payload
+    (removed export ``name``/``file`` + the ``referenced_by [{file,line}]``
+    list), the ``coverage``/``graph_available`` honesty fields, and the
+    resulting outer-state. Optional ``repo`` (``owner/name``) + ``limit``
+    filters are forwarded.
+
+    Read-only + ``get_tenant_id``-gated (any tenant member) so the affected
+    developer — not only an operator — can see why their PR was held.
+    """
+    params: dict[str, Any] = {"limit": limit}
+    if repo is not None:
+        params["repo"] = repo
+    return await _proxy_coord_get(
+        "/pr-merge/blast-radius-blocks",
+        params=params,
+        tenant_id=tenant_id,
+    )
+
+
+@router.get("/pr-merge/decisions/{owner}/{name}/{pr}")
+async def get_pr_merge_decisions(
+    owner: str,
+    name: str,
+    pr: int,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Tenant-scoped decision history for a single PR.
+
+    Proxies coord's ``GET /pr-merge/decisions/:owner/:name/:pr``
+    (``specialist_query::get_decisions``) — the per-PR gate-evaluation
+    trail (verdict, block reason, coverage/graph-availability). Backs the
+    deep-link from a PR's check run / the gate-decisions row into the
+    detail view.
+
+    ``get_tenant_id``-gated (any tenant member, read-only): the affected
+    developer sees their own PR's decision trail. Coord scopes the query to
+    the bearer's tenant.
+    """
+    return await _proxy_coord_get(
+        f"/pr-merge/decisions/{owner}/{name}/{pr}",
+        tenant_id=tenant_id,
+    )
+
+
 # ---- PR Merge Orchestrator Phase 8 D8.0 + D8.2 + D8.3 — onboarding --------
 #
 # Four proxies. precondition-status drives the wizard's polling loop on
