@@ -17,6 +17,7 @@ import type { TokenManager } from "./auth/token-manager";
 
 interface FakeTokenManager {
   getAccessToken: ReturnType<typeof vi.fn>;
+  getRefreshToken: ReturnType<typeof vi.fn>;
   isAccessTokenExpired: ReturnType<typeof vi.fn>;
   isAccessTokenExpiringSoon: ReturnType<typeof vi.fn>;
   isAuthenticated: ReturnType<typeof vi.fn>;
@@ -26,6 +27,7 @@ interface FakeTokenManager {
 function makeTokenManager(overrides: Partial<Record<keyof FakeTokenManager, unknown>> = {}): FakeTokenManager {
   return {
     getAccessToken: vi.fn(() => "tok"),
+    getRefreshToken: vi.fn(() => "refresh"),
     isAccessTokenExpired: vi.fn(() => false),
     isAccessTokenExpiringSoon: vi.fn(() => false),
     isAuthenticated: vi.fn(() => true),
@@ -75,11 +77,35 @@ describe("HttpClient auth-rejection halt", () => {
     expect(onExpired).toHaveBeenCalledTimes(1);
   });
 
-  it("fires session-expired on a 403 with no token at all", async () => {
+  it("does NOT fire session-expired for a fully-anonymous visitor (no tokens, no marker)", async () => {
+    // An anonymous visitor on a public page (e.g. /login, /auth/callback)
+    // never had a session: no access token, no refresh token, and no
+    // is_authenticated marker. The 401/403 such public-page calls produce by
+    // design must be returned plainly, not treated as session expiry.
     mockFetchOnce(403);
     const tm = makeTokenManager({
       getAccessToken: vi.fn(() => null),
+      getRefreshToken: vi.fn(() => null),
       isAccessTokenExpired: vi.fn(() => true),
+      isAuthenticated: vi.fn(() => false),
+    });
+    const client = new HttpClient(tm as unknown as TokenManager);
+    const onExpired = vi.fn();
+    client.setSessionExpiredHandler(onExpired);
+
+    const r = await client.fetch("https://api.test/api/v1/operations/fleet");
+    expect(r.status).toBe(403);
+    expect(onExpired).not.toHaveBeenCalled();
+    expect(tm.clearTokens).not.toHaveBeenCalled();
+  });
+
+  it("fires session-expired on a 403 with an expired access token (marker present) — #491 storm fix intact", async () => {
+    mockFetchOnce(403);
+    const tm = makeTokenManager({
+      getAccessToken: vi.fn(() => "expired"),
+      getRefreshToken: vi.fn(() => null),
+      isAccessTokenExpired: vi.fn(() => true),
+      isAuthenticated: vi.fn(() => true),
     });
     const client = new HttpClient(tm as unknown as TokenManager);
     const onExpired = vi.fn();
@@ -87,6 +113,67 @@ describe("HttpClient auth-rejection halt", () => {
 
     await client.fetch("https://api.test/api/v1/operations/fleet");
     expect(onExpired).toHaveBeenCalledTimes(1);
+    expect(tm.clearTokens).toHaveBeenCalled();
+  });
+
+  it("fires session-expired on a 403 with a refresh token only (access wiped)", async () => {
+    mockFetchOnce(403);
+    const tm = makeTokenManager({
+      getAccessToken: vi.fn(() => null),
+      getRefreshToken: vi.fn(() => "refresh"),
+      isAccessTokenExpired: vi.fn(() => true),
+      isAuthenticated: vi.fn(() => false),
+    });
+    const client = new HttpClient(tm as unknown as TokenManager);
+    const onExpired = vi.fn();
+    client.setSessionExpiredHandler(onExpired);
+
+    await client.fetch("https://api.test/api/v1/operations/fleet");
+    expect(onExpired).toHaveBeenCalledTimes(1);
+  });
+
+  it("fires session-expired on a 403 with the is_authenticated marker only (tokens wiped post-restart)", async () => {
+    // Browser-restart on the cookie/non-remote path: both tokens live in
+    // tab-scoped sessionStorage and are wiped on close, but the
+    // is_authenticated marker (localStorage) survives — so this is a real
+    // expired session, not anonymous. The marker is the load-bearing clause.
+    mockFetchOnce(403);
+    const tm = makeTokenManager({
+      getAccessToken: vi.fn(() => null),
+      getRefreshToken: vi.fn(() => null),
+      isAccessTokenExpired: vi.fn(() => true),
+      isAuthenticated: vi.fn(() => true),
+    });
+    const client = new HttpClient(tm as unknown as TokenManager);
+    const onExpired = vi.fn();
+    client.setSessionExpiredHandler(onExpired);
+
+    await client.fetch("https://api.test/api/v1/operations/fleet");
+    expect(onExpired).toHaveBeenCalledTimes(1);
+  });
+
+  it("does NOT enter the 401-refresh branch for an anonymous visitor (no 'attempting token refresh' warn)", async () => {
+    mockFetchOnce(401);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const tm = makeTokenManager({
+      getAccessToken: vi.fn(() => null),
+      getRefreshToken: vi.fn(() => null),
+      isAccessTokenExpired: vi.fn(() => true),
+      isAccessTokenExpiringSoon: vi.fn(() => true),
+      isAuthenticated: vi.fn(() => false),
+    });
+    const client = new HttpClient(tm as unknown as TokenManager);
+    const onExpired = vi.fn();
+    client.setSessionExpiredHandler(onExpired);
+
+    const r = await client.fetch("https://api.test/api/v1/operations/fleet");
+    expect(r.status).toBe(401);
+    expect(onExpired).not.toHaveBeenCalled();
+    expect(
+      warnSpy.mock.calls.some((args) =>
+        String(args[0]).includes("attempting token refresh"),
+      ),
+    ).toBe(false);
   });
 
   it("does NOT fire session-expired on a 403 with a still-valid token (feature/permission denial)", async () => {

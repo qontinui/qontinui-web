@@ -213,6 +213,24 @@ describe("session-expired redirect guard", () => {
     expect(window.location.href).toBe("https://qontinui.io/login");
   });
 
+  it("does NOT redirect when session-expired fires on /auth/callback (would abort the in-flight PKCE token exchange)", async () => {
+    stubLocation("/auth/callback");
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId("loading").textContent).toBe("false");
+    });
+
+    window.dispatchEvent(new Event("session-expired"));
+
+    // No navigation: the Cognito code exchange must be allowed to finish.
+    expect(window.location.href).toBe("https://qontinui.io/auth/callback");
+  });
+
   it("still redirects to /login when session-expired fires elsewhere", async () => {
     stubLocation("/dashboard");
 
@@ -228,5 +246,23 @@ describe("session-expired redirect guard", () => {
     window.dispatchEvent(new Event("session-expired"));
 
     expect(window.location.href).toBe("/login");
+  });
+
+  it("does NOT redirect when session-expired fires on the public marketing root (/) — an anonymous visitor's bootstrap 401 must not bounce them off the landing page", async () => {
+    stubLocation("/");
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId("loading").textContent).toBe("false");
+    });
+
+    window.dispatchEvent(new Event("session-expired"));
+
+    // No navigation: the public landing page stays put for anonymous visitors.
+    expect(window.location.href).toBe("https://qontinui.io/");
   });
 });

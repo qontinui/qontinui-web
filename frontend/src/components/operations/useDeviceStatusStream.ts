@@ -19,7 +19,7 @@ const log = createLogger("DeviceStatusStream");
  */
 const MAX_RECONNECT_ATTEMPTS = 5;
 
-interface UseDeviceStatusStreamResult {
+export interface UseDeviceStatusStreamResult {
   /** hostname → DeviceStatus map. Updates in-place as the WS pushes
    *  diffs; consumers should re-read on every render. */
   byHostname: Map<string, DeviceStatus>;
@@ -29,6 +29,10 @@ interface UseDeviceStatusStreamResult {
   /** Last fetch / WS error message, or null. Informational only —
    *  the hook keeps trying. */
   error: string | null;
+  /** True once the initial REST seed has settled (success OR error).
+   *  Lets consumers (`DeviceStatusTile`) distinguish "still loading"
+   *  from an honest empty fleet. */
+  seeded: boolean;
   /** Force a REST refetch (used by the `Refresh` button on the UI). */
   refetch: () => Promise<void>;
 }
@@ -60,6 +64,7 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
   );
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [seeded, setSeeded] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -94,17 +99,21 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
       }
       const data = (await resp.json()) as DeviceStatusResponse;
       if (cleanedUpRef.current) return;
-      const seeded = new Map<string, DeviceStatus>();
+      const next = new Map<string, DeviceStatus>();
       for (const row of data.devices ?? []) {
-        seeded.set(row.hostname ?? row.device_id, row);
+        next.set(row.hostname ?? row.device_id, row);
       }
-      setByHostname(seeded);
+      setByHostname(next);
       setError(null);
+      setSeeded(true);
     } catch (err) {
       if (cleanedUpRef.current) return;
       const msg = err instanceof Error ? err.message : "fetch failed";
       log.warn("GET /device-status failed:", msg);
       setError(msg);
+      // An error is still an answer — the tile should show its error
+      // state, not an indefinite "Loading…".
+      setSeeded(true);
     }
   }, []);
 
@@ -270,6 +279,7 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
     byHostname,
     connected,
     error,
+    seeded,
     refetch: seedFromRest,
   };
 }

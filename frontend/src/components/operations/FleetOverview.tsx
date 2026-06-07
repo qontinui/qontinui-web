@@ -258,9 +258,10 @@ export function FleetOverview() {
   }
 
   // ---- Error / empty state ----
-  // Fleet API (FastAPI :8000) is unreachable, but DeviceStatusTile reads from
-  // qontinui-coord (:9870) — separate service, separate concern. Render the tile
-  // alongside the fleet-error notice rather than short-circuiting it out.
+  // Fleet API unreachable. The device-status stream is a separate request
+  // path (the coord proxy + WS bridge), so it may still have data — render
+  // the tile alongside the fleet-error notice rather than short-circuiting
+  // it out.
   if (error && !fleet) {
     return (
       <TooltipProvider delayDuration={200}>
@@ -275,7 +276,7 @@ export function FleetOverview() {
               the operations endpoints are deployed.
             </p>
           </div>
-          <DeviceStatusTile />
+          <DeviceStatusTile stream={deviceStatus} />
         </div>
       </TooltipProvider>
     );
@@ -365,7 +366,7 @@ export function FleetOverview() {
         )}
 
         {/* Device status broadcast (qontinui-coord Phase 6 Item 3) */}
-        <DeviceStatusTile />
+        <DeviceStatusTile stream={deviceStatus} />
 
         {/* Active workflows */}
         {runningTasks.length > 0 && (

@@ -1,12 +1,37 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { isRunnerReachable } from "@/lib/ui-bridge/discovered-specs";
 
 // =============================================================================
 // Configuration
 // =============================================================================
 
 export const RUNNER_API_BASE = "http://localhost:9876";
+
+/**
+ * Is this base URL a loopback address? Loopback is only reachable when the
+ * page itself is served from a localhost origin — production pages
+ * (qontinui.io) physically cannot fetch it (Chrome's Local Network Access
+ * blocks public→loopback), so every poll was a guaranteed
+ * `net::ERR_FAILED` console line (~6/min per page from useRunnerHealth
+ * alone, observed live 2026-06-07). Same rationale and origin gate as
+ * `discovered-specs.ts`. A non-loopback base (e.g. a future remote/tunnel
+ * runner) is never gated.
+ */
+function isLoopbackBase(base: string): boolean {
+  try {
+    const host = new URL(base).hostname;
+    return host === "localhost" || host === "127.0.0.1" || host === "[::1]";
+  } catch {
+    return false;
+  }
+}
+
+/** True when fetching the current runner base from this page can never succeed. */
+function isRunnerUnreachableFromOrigin(): boolean {
+  return isLoopbackBase(_runnerApiBase) && !isRunnerReachable();
+}
 export const DEFAULT_POLL_INTERVAL = 5000;
 export const HEALTH_POLL_INTERVAL = 10000;
 
@@ -56,6 +81,16 @@ export async function runnerFetch<T>(
   path: string,
   options?: RequestInit & { timeoutMs?: number }
 ): Promise<T> {
+  // Fast-fail without touching the network when the page origin can't
+  // reach a loopback runner (see isLoopbackBase). Same error shape as a
+  // connection failure, so callers' offline handling is unchanged —
+  // minus the console noise.
+  if (isRunnerUnreachableFromOrigin()) {
+    throw new RunnerApiError(
+      0,
+      `Runner not reachable — loopback (${_runnerApiBase}) is only reachable from localhost dev origins`
+    );
+  }
   const url = `${_runnerApiBase}${path}`;
   const controller = new AbortController();
   const timeoutMs = options?.timeoutMs ?? 5000;
@@ -221,6 +256,14 @@ export function useRunnerQuery<T>(
   const transformRef = useRef(options?.transform);
   transformRef.current = options?.transform;
 
+  // Re-evaluate the loopback gate if the active runner base changes at
+  // runtime (multi-runner switcher) — a future non-loopback base must
+  // lift the gate without a remount.
+  const [apiBase, setApiBase] = useState(getRunnerApiBase);
+  useEffect(() => onRunnerApiBaseChange(setApiBase), []);
+  const unreachableFromOrigin =
+    isLoopbackBase(apiBase) && !isRunnerReachable();
+
   // Build a stable cache key from path + poll interval.
   // Multiple hooks with the same path but different intervals get the fastest interval.
   const cacheKey = path ?? "";
@@ -250,6 +293,16 @@ export function useRunnerQuery<T>(
 
   useEffect(() => {
     if (!enabled || !path) {
+      setIsLoading(false);
+      return;
+    }
+
+    // Loopback runner + non-localhost page origin: the fetch can never
+    // succeed (Chrome blocks public→loopback), so don't start poll timers
+    // at all — report offline immediately, exactly as a failed fetch would.
+    if (unreachableFromOrigin) {
+      setIsOffline(true);
+      setError("Runner not connected");
       setIsLoading(false);
       return;
     }
@@ -313,7 +366,7 @@ export function useRunnerQuery<T>(
         }
       }
     };
-  }, [cacheKey, pollInterval, enabled, applyResult, path]);
+  }, [cacheKey, pollInterval, enabled, applyResult, path, unreachableFromOrigin]);
 
   const refetch = useCallback(async () => {
     if (!path) return;

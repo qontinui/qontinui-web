@@ -9,6 +9,7 @@ import React, {
   useRef,
 } from "react";
 import { createLogger } from "@/lib/logger";
+import { isPublic } from "@/lib/public-routes";
 import { authService } from "@/services/service-factory";
 import { User } from "@/types/auth-types";
 import { pageStateDB } from "@/stores/page-state";
@@ -137,16 +138,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         setUser(null);
 
-        // Already on /login (e.g. an anonymous visitor whose page fired
-        // an authed call that 401'd — HttpClient treats the absent token
-        // as session expiry since #491): redirecting would hard-reload
-        // /login, and each reload creates a fresh HttpClient whose
-        // fire-once guard resets, re-firing this handler in a loop
-        // (~15 reloads/sec observed live on prod 2026-06-07, making
-        // sign-in unusable). The login form is already in front of the
-        // user — stay put.
-        if (window.location.pathname.startsWith("/login")) {
-          logger.info("Session expired while already on /login — skipping redirect");
+        // On a PUBLIC route, an absent/expired token is NORMAL, but
+        // HttpClient treats a 401 with an absent token as session expiry
+        // since #491 — so this handler fires there too, and a global
+        // redirect to /login is actively harmful:
+        //   - / (and other marketing routes): an anonymous visitor's
+        //     bootstrap `/users/me` 401 bounces them off the public
+        //     landing page to /login — intermittently, racing the page
+        //     render (observed flaking the marketing E2E suite, and it
+        //     hits real visitors too).
+        //   - /login: redirecting hard-reloads the page we're already
+        //     on; each reload creates a fresh HttpClient whose fire-once
+        //     guard resets, re-firing this handler in a loop (~15
+        //     reloads/sec observed live on prod 2026-06-07, sign-in
+        //     unusable — fixed by #500 + #503).
+        //   - /auth/callback: redirecting ABORTS the in-flight PKCE
+        //     token-exchange fetch ("[AuthCallback] Cognito callback
+        //     failed: TypeError: Failed to fetch", observed live on prod
+        //     2026-06-07 right after a session-expired halt) — every
+        //     login bounced back to /login even after the loop fix.
+        // Drop the local user state and stay put; the page's own auth flow
+        // owns what happens next. Protected routes are still redirected —
+        // by the middleware + AppAuthGate (which add `?next=`) when they
+        // see the now-null user — so this global redirect is only needed
+        // as a backstop there. Uses the SAME public-route classifier as
+        // the middleware (see lib/public-routes) so the two never drift.
+        const path = window.location.pathname;
+        if (isPublic(path)) {
+          logger.info(
+            `Session expired on public route ${path} — skipping redirect`
+          );
           return;
         }
 

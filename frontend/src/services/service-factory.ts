@@ -168,9 +168,20 @@ export class ServiceFactory {
     // Initialize skill sharing service
     this.skillSharingService = new SkillSharingService(this.httpClient);
 
-    // Wire up session expiry handling for 401 responses
+    // Wire up session expiry handling for 401 responses.
+    //
+    // logout(false): session expiry is a non-user-initiated teardown — per
+    // logout()'s own contract it must clear local state WITHOUT the
+    // full-page redirect to the Cognito hosted-UI /logout. The bare
+    // logout() call here defaulted redirectToCognito to true, so every
+    // session-expiry fired a navigation to auth.qontinui.io/logout which
+    // bounced straight back to /login — on /login itself (an anonymous
+    // visitor whose page fired an authed call, #491) that was a hard
+    // reload loop (~6 reloads/sec measured live 2026-06-07, sign-in
+    // unusable). The auth context's session-expired listener owns any
+    // needed navigation (and skips it when already on /login).
     this.httpClient.setSessionExpiredHandler(() => {
-      this.authService.logout();
+      void this.authService.logout(false);
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("session-expired"));
       }

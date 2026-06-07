@@ -69,6 +69,7 @@ async def fetch_device_status(
     *,
     tenant_id: UUID,
     since: str | None = None,
+    headers: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Proxy ``GET /coord/status?tenant_id=<uuid>&since=<rfc3339>``.
 
@@ -76,13 +77,22 @@ async def fetch_device_status(
     ``{"devices": [StatusRow, ...], "count": <int>}`` (Phase 6 of the
     unified-devices plan renamed the wrapper key from `machines` →
     `devices`).
+
+    ``headers`` — the forwarded operator bearer
+    (``Authorization: Bearer <cognito-token>``), built by the calling
+    endpoint via ``operations._tenant_headers``. Coord's
+    ``GET /coord/status`` is operator-auth fail-closed (fleet-auth P4:
+    the required ``TenantId`` extractor rejects anonymous calls 403
+    ``tenant_not_resolved``), so the bearer is required in practice.
+    The explicit ``?tenant_id=`` param is kept as defense-in-depth —
+    coord asserts it matches the bearer's home tenant.
     """
     url = f"{settings.COORD_URL.rstrip('/')}/coord/status"
     params: dict[str, str] = {"tenant_id": str(tenant_id)}
     if since is not None:
         params["since"] = since
     async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
-        resp = await client.get(url, params=params)
+        resp = await client.get(url, params=params, headers=headers)
     resp.raise_for_status()
     body: Any = resp.json()
     if not isinstance(body, dict):
