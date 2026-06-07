@@ -2,7 +2,7 @@
   "version": "1.0",
   "id": "execute",
   "name": "Execute",
-  "description": "Execute / Workflows page (/execute). Re-authored for PR #288 ('Dashboard workflow authoring without a co-located runner'): unified-workflows now reads the web canonical store (GET /api/v1/unified-workflows) instead of the local runner, and the old runner-offline hard gate (RunnerOfflineState 'Runner Not Connected') was deliberately removed so the workflow-authoring UI ALWAYS renders even with no co-located runner. The SPEC_CI (ci-bot) account has no runner AND an empty workflow store, so this page renders the functional authoring surface in its empty state: a 'Workflows' header, a 'Workflow Library' panel (search + 'No workflows available' empty-state) and a 'Sequence Builder' panel (empty drop-zone hint + the always-visible Clear / Save as Workflow / Run action bar). Run/dispatch are present-but-disabled (gated on a connected runner); save/import/editors stay enabled. Asserts the always-present authoring structure, never workflow data.",
+  "description": "Execute page (/execute). Re-authored for PR #288 ('Dashboard workflow authoring without a co-located runner'): unified-workflows now reads the web canonical store (GET /api/v1/unified-workflows) instead of the local runner, and the old runner-offline hard gate (RunnerOfflineState 'Runner Not Connected') was deliberately removed so the workflow-authoring UI ALWAYS renders even with no co-located runner. Heading disambiguation (PR #524): the /execute page heading is now 'Execute' (the prior 'Workflows' heading moved to /build/workflows) so the run-builder surface is distinct from the workflow-authoring surface in the co-pilot page map. The SPEC_CI (ci-bot) account has no runner AND an empty workflow store, so this page renders the functional authoring surface in its empty state: an 'Execute' header, a 'Workflow Library' panel (search + 'No workflows available' empty-state) and a 'Sequence Builder' panel (empty drop-zone hint + the always-visible Clear / Save as Workflow / Run action bar). Run/dispatch are present-but-disabled (gated on a connected runner); save/import/editors stay enabled. Asserts the always-present authoring structure, never workflow data.",
   "provenance": {
     "source": "ai-generated",
     "appId": "qontinui-web"
@@ -14,18 +14,18 @@
     {
       "id": "execute-workflow-authoring",
       "name": "Workflow authoring surface",
-      "description": "The no-runner workflow-authoring UI that #288 made always-render. Anchored by the 'Workflows' page heading, the Workflow Library search input, and the library empty-state hint ('No workflows available') that ci-bot's empty store reliably produces.",
+      "description": "The no-runner workflow-authoring UI that #288 made always-render. Anchored by the 'Execute' page heading (renamed from 'Workflows' in PR #524), the Workflow Library search input, and the library empty-state hint ('No workflows available') that ci-bot's empty store reliably produces.",
       "assertions": [
         {
           "id": "execute-workflow-authoring-elem-0",
-          "description": "h1 'Workflows' headlines the authoring page (replaces the removed 'Runner Not Connected' gate).",
+          "description": "h1 'Execute' headlines the run-builder page (renamed from 'Workflows' in PR #524; replaces the removed 'Runner Not Connected' gate).",
           "category": "element-presence",
           "severity": "critical",
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "heading-1-workflows" },
-            "label": "Workflows page heading"
+            "criteria": { "id": "heading-1-execute" },
+            "label": "Execute page heading"
           },
           "source": "ai-generated",
           "reviewed": false,
@@ -33,14 +33,14 @@
         },
         {
           "id": "execute-workflow-authoring-elem-1",
-          "description": "Page heading text reads 'Workflows' (role+text cross-check on the same h1).",
+          "description": "Page heading text reads 'Execute' (role+text cross-check on the same h1; renamed from 'Workflows' in PR #524).",
           "category": "text-content",
           "severity": "critical",
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "role": "heading", "text": "Workflows" },
-            "label": "Workflows heading by role+text"
+            "criteria": { "role": "heading", "text": "Execute" },
+            "label": "Execute heading by role+text"
           },
           "source": "ai-generated",
           "reviewed": false,
