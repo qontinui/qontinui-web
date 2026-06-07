@@ -210,6 +210,13 @@ describe("usePromptExecution — relay tab not connected is NOT a consent error"
     resolveTabTargetMock
       .mockResolvedValueOnce({ targetTabId: null, hasConnectedTab: false })
       .mockResolvedValue({ targetTabId: "tab-late", hasConnectedTab: true });
+    // This test is about the registration race, not the landing poll: have the
+    // navigate actually move the page so the landing poll resolves immediately
+    // (otherwise the 5s landing window would outlast the test timeout).
+    dispatchStepMock.mockImplementation(async () => {
+      window.history.replaceState({}, "", "/execute");
+      return { ok: true, detail: "navigated" };
+    });
 
     const { result } = renderHook(() => usePromptExecution());
     await act(async () => {
@@ -227,9 +234,9 @@ describe("usePromptExecution — relay tab not connected is NOT a consent error"
   });
 });
 
-describe("usePromptExecution — navigate landing check (honest success)", () => {
+describe("usePromptExecution — navigate landing poll (honest success)", () => {
   // `unified-workflow-builder` -> /build/workflows (a real co-pilot page id, so
-  // pageIdToUrl resolves and the landing check engages).
+  // pageIdToUrl resolves and the landing poll engages).
   const navPlan = {
     summary: "Navigate to the workflows page",
     steps: [
@@ -246,35 +253,49 @@ describe("usePromptExecution — navigate landing check (honest success)", () =>
     window.history.replaceState({}, "", "/co-pilot");
   });
 
-  it("marks the navigate step FAILED when the tab did NOT move (relay accepted but page stayed put)", async () => {
+  it("marks the navigate step FAILED only when the tab NEVER moves within the full poll window", async () => {
+    // Genuine non-delivery: the relay accepted the command (200) but the page
+    // never moves — we stay on /co-pilot for the entire window. The poll must run
+    // to the deadline and THEN fail honestly (not prematurely). Fake timers let
+    // the full ~5s landing window elapse instantly; render FIRST (under real
+    // timers) so the hook's initial mount commits before we freeze the clock.
     requestPlanMock.mockResolvedValue(navPlan);
-    // Relay accepts the navigate (200/ok) but the page never moves — we stay on
-    // /co-pilot. This is the silent-delivery-failure false-success case.
     dispatchStepMock.mockResolvedValue({ ok: true, detail: "navigated" });
 
     const { result } = renderHook(() => usePromptExecution());
-    await act(async () => {
-      await result.current.run("go to the workflows page");
-    });
+    vi.useFakeTimers();
+    try {
+      let runPromise!: Promise<void>;
+      await act(async () => {
+        runPromise = result.current.run("go to the workflows page");
+      });
+      // Drain the poll's timers (and the inter-step settle) so the full window
+      // elapses without real wall-clock time.
+      await act(async () => {
+        await vi.runAllTimersAsync();
+        await runPromise;
+      });
 
-    await waitFor(() => {
+      // NOT a false "done" — an honest step failure after the FULL window.
       expect(result.current.state.phase).toBe("error");
-    });
-    // NOT a false "done" — an honest step failure.
-    expect(result.current.state.phase).not.toBe("done");
-    expect(result.current.state.error?.kind).toBe("step-failed");
-    expect(result.current.state.error?.message).toMatch(
-      /navigation didn't take effect/i,
-    );
-    expect(result.current.state.error?.message).toContain("/build/workflows");
-    expect(result.current.state.stepStatuses[0]).toBe("failed");
+      expect(result.current.state.phase).not.toBe("done");
+      expect(result.current.state.error?.kind).toBe("step-failed");
+      expect(result.current.state.error?.message).toMatch(
+        /navigation didn't take effect/i,
+      );
+      expect(result.current.state.error?.message).toContain("/build/workflows");
+      expect(result.current.state.stepStatuses[0]).toBe("failed");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
-  it("marks the navigate step DONE when the tab actually reached the target route", async () => {
+  it("marks the navigate step DONE when the tab reaches the target route immediately (fast / same-lambda)", async () => {
     requestPlanMock.mockResolvedValue(navPlan);
-    // Simulate a successful soft-nav: the relay accepts AND the tab moves to the
-    // target route (in the real app a successful self-nav unmounts the hook; we
-    // can't unmount mid-act, so we model "the page moved" by changing the path).
+    // Simulate a fast successful soft-nav: the relay accepts AND the tab has
+    // already moved to the target route by the time dispatch resolves (in the
+    // real app a successful self-nav unmounts the hook; we can't unmount mid-act,
+    // so we model "the page moved" by changing the path).
     dispatchStepMock.mockImplementation(async () => {
       window.history.replaceState({}, "", "/build/workflows");
       return { ok: true, detail: "navigated" };
@@ -290,5 +311,41 @@ describe("usePromptExecution — navigate landing check (honest success)", () =>
     });
     expect(result.current.state.error).toBeNull();
     expect(result.current.state.stepStatuses[0]).toBe("done");
+  });
+
+  it("marks the navigate step DONE when the page moves LATE (~1.2s, cross-lambda) — the poll waits for it instead of failing early", async () => {
+    // The bug this PR fixes: cross-lambda relay delivery lands AFTER a single
+    // ~600ms one-shot check, which used to report a FALSE failure. The poll must
+    // keep checking and succeed once the page actually moves at ~1.2s.
+    requestPlanMock.mockResolvedValue(navPlan);
+    // Relay accepts immediately; the page move arrives ~1.2s later (simulating
+    // the cross-lambda Redis-bus delivery latency).
+    dispatchStepMock.mockImplementation(async () => {
+      setTimeout(() => {
+        window.history.replaceState({}, "", "/build/workflows");
+      }, 1200);
+      return { ok: true, detail: "navigated" };
+    });
+
+    const { result } = renderHook(() => usePromptExecution());
+    vi.useFakeTimers();
+    try {
+      let runPromise!: Promise<void>;
+      await act(async () => {
+        runPromise = result.current.run("go to the workflows page");
+      });
+      await act(async () => {
+        await vi.runAllTimersAsync();
+        await runPromise;
+      });
+
+      // The late move (1.2s < 5s window) is caught by the poll → honest SUCCESS,
+      // NOT the old premature 600ms false-failure.
+      expect(result.current.state.phase).toBe("done");
+      expect(result.current.state.error).toBeNull();
+      expect(result.current.state.stepStatuses[0]).toBe("done");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
