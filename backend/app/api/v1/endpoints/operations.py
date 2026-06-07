@@ -2177,9 +2177,16 @@ async def get_device_status(
     (the `MachineCard` consumer keys on hostname). When the caller's
     tenant has no devices reporting, ``devices`` is an empty list and
     ``count`` is zero — never 4xx.
+
+    The operator bearer is forwarded (``_tenant_headers``) — coord's
+    ``GET /coord/status`` is operator-auth fail-closed (fleet-auth P4)
+    and 403s ``tenant_not_resolved`` on anonymous calls, which is what
+    this proxy used to send.
     """
     try:
-        return await fetch_device_status(tenant_id=tenant_id, since=since)
+        return await fetch_device_status(
+            tenant_id=tenant_id, since=since, headers=_tenant_headers(tenant_id)
+        )
     except httpx.ConnectError as exc:
         raise HTTPException(status_code=502, detail="coord is not reachable") from exc
     except httpx.TimeoutException as exc:

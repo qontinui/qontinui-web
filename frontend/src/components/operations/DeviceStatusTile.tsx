@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Tooltip,
   TooltipContent,
@@ -8,19 +8,9 @@ import {
 } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
 import { Activity, RefreshCw, WifiOff } from "lucide-react";
-import { createLogger } from "@/lib/logger";
 import { relativeTime } from "./utils";
-import type { DeviceStatusResponse, DeviceStatusRow } from "./coordTypes";
-
-const log = createLogger("DeviceStatusTile");
-
-const COORD_REST_PATH = "/coord-api/status";
-const COORD_WS_URL =
-  process.env.NEXT_PUBLIC_COORD_WS_URL || "ws://localhost:9870/ws";
-const WS_PATTERN = "events.coord.device_status_updated";
-const POLL_INTERVAL_MS = 30_000;
-const REFETCH_DEBOUNCE_MS = 1_000;
-const MAX_RECONNECT_ATTEMPTS = 5;
+import type { DeviceStatus } from "./types";
+import type { UseDeviceStatusStreamResult } from "./useDeviceStatusStream";
 
 type Staleness = "fresh" | "warn" | "stale";
 
@@ -52,12 +42,12 @@ function rowTextClass(staleness: Staleness): string {
   return "text-foreground";
 }
 
-function identityLabel(row: DeviceStatusRow): string {
+function identityLabel(row: DeviceStatus): string {
   if (row.hostname && row.hostname.length > 0) return row.hostname;
   return row.device_id.slice(0, 8) + "…";
 }
 
-function repoBranchLabel(row: DeviceStatusRow): string | null {
+function repoBranchLabel(row: DeviceStatus): string | null {
   if (row.current_repo && row.current_branch) {
     return `${row.current_repo}:${row.current_branch}`;
   }
@@ -82,175 +72,30 @@ function focusMachineCard(hostname: string | null) {
   }, 1500);
 }
 
-export function DeviceStatusTile() {
-  const [rows, setRows] = useState<DeviceStatusRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [wsConnected, setWsConnected] = useState(false);
+/**
+ * Bottom-of-page device-status list. Renders the SAME tenant-scoped
+ * stream `FleetOverview` already holds (`useDeviceStatusStream` —
+ * authenticated REST seed via `/api/v1/operations/device-status` +
+ * the coord WS bridge), passed down as a prop so the page keeps one
+ * stream/WS instance.
+ *
+ * History: this tile used to fetch coord's `GET /coord/status` directly
+ * through the `/coord-api/*` Next rewrite with `credentials: "omit"`,
+ * and opened its own anonymous coord WS
+ * (`NEXT_PUBLIC_COORD_WS_URL`, default `ws://localhost:9870/ws`).
+ * Coord's `GET /coord/status` became operator-auth fail-closed
+ * (fleet-auth P4), so the direct call 403'd (`tenant_not_resolved`)
+ * and the tile silently emptied. Routing through the web-backend
+ * proxy forwards the operator bearer and keeps the tenant scoping
+ * server-side.
+ */
+export function DeviceStatusTile({
+  stream,
+}: {
+  stream: UseDeviceStatusStreamResult;
+}) {
+  const { byHostname, connected, error, seeded, refetch } = stream;
   const [, setNowTick] = useState(0);
-
-  const wsRef = useRef<WebSocket | null>(null);
-  const pollingRef = useRef<NodeJS.Timeout | null>(null);
-  const reconnectRef = useRef<NodeJS.Timeout | null>(null);
-  const reconnectAttemptsRef = useRef(0);
-  const debounceRef = useRef<NodeJS.Timeout | null>(null);
-  const inFlightRef = useRef(false);
-  const cleanedUpRef = useRef(false);
-
-  const fetchStatus = useCallback(async () => {
-    if (inFlightRef.current) return;
-    inFlightRef.current = true;
-    try {
-      const res = await fetch(COORD_REST_PATH, { credentials: "omit" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data: DeviceStatusResponse = await res.json();
-      setRows(data.devices ?? []);
-      setError(null);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "fetch failed";
-      log.warn("GET /coord/status failed:", msg);
-      setError(msg);
-    } finally {
-      inFlightRef.current = false;
-      setLoading(false);
-    }
-  }, []);
-
-  const debouncedRefetch = useCallback(() => {
-    if (debounceRef.current) return;
-    debounceRef.current = setTimeout(() => {
-      debounceRef.current = null;
-      void fetchStatus();
-    }, REFETCH_DEBOUNCE_MS);
-  }, [fetchStatus]);
-
-  const stopPolling = useCallback(() => {
-    if (pollingRef.current) {
-      clearInterval(pollingRef.current);
-      pollingRef.current = null;
-    }
-  }, []);
-
-  const startPolling = useCallback(() => {
-    stopPolling();
-    pollingRef.current = setInterval(() => {
-      if (!document.hidden) void fetchStatus();
-    }, POLL_INTERVAL_MS);
-  }, [fetchStatus, stopPolling]);
-
-  const closeWs = useCallback(() => {
-    if (wsRef.current) {
-      wsRef.current.onopen = null;
-      wsRef.current.onmessage = null;
-      wsRef.current.onerror = null;
-      wsRef.current.onclose = null;
-      wsRef.current.close();
-      wsRef.current = null;
-    }
-  }, []);
-
-  const clearReconnect = useCallback(() => {
-    if (reconnectRef.current) {
-      clearTimeout(reconnectRef.current);
-      reconnectRef.current = null;
-    }
-  }, []);
-
-  const connectWs = useCallback(() => {
-    if (cleanedUpRef.current || document.hidden) return;
-    closeWs();
-
-    const url = `${COORD_WS_URL}?pattern=${encodeURIComponent(WS_PATTERN)}`;
-    let ws: WebSocket;
-    try {
-      ws = new WebSocket(url);
-    } catch (err) {
-      log.warn("WebSocket constructor failed:", err);
-      startPolling();
-      return;
-    }
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      if (cleanedUpRef.current) {
-        ws.close();
-        return;
-      }
-      setWsConnected(true);
-      reconnectAttemptsRef.current = 0;
-      stopPolling();
-      // Resync after (re)connect to catch any updates that landed while
-      // we were disconnected — the publish payload only carries
-      // `{device_id, updated_at}`, never the full row, so a refetch is
-      // the simplest path to consistency.
-      void fetchStatus();
-    };
-
-    ws.onmessage = () => {
-      // Coord publishes one event per upsert. Payload shape isn't
-      // load-bearing here — debounce a refetch to absorb bursts.
-      debouncedRefetch();
-    };
-
-    ws.onerror = () => {
-      setWsConnected(false);
-    };
-
-    ws.onclose = () => {
-      setWsConnected(false);
-      if (wsRef.current === ws) wsRef.current = null;
-      if (cleanedUpRef.current || document.hidden) return;
-
-      if (reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
-        const delay = Math.min(
-          1000 * Math.pow(2, reconnectAttemptsRef.current),
-          30_000,
-        );
-        reconnectRef.current = setTimeout(() => {
-          reconnectAttemptsRef.current += 1;
-          connectWs();
-        }, delay);
-      }
-      // Whether reconnect succeeds or not, fall back to polling so the
-      // operator keeps seeing fresh data.
-      startPolling();
-    };
-  }, [closeWs, debouncedRefetch, fetchStatus, startPolling, stopPolling]);
-
-  // Tab visibility — drop the WS when hidden, reconnect on return.
-  useEffect(() => {
-    const onVisibility = () => {
-      if (document.hidden) {
-        clearReconnect();
-        closeWs();
-        stopPolling();
-        setWsConnected(false);
-      } else {
-        reconnectAttemptsRef.current = 0;
-        void fetchStatus();
-        connectWs();
-      }
-    };
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, [clearReconnect, closeWs, stopPolling, fetchStatus, connectWs]);
-
-  // Mount: seed + connect.
-  useEffect(() => {
-    cleanedUpRef.current = false;
-    void fetchStatus();
-    connectWs();
-    return () => {
-      cleanedUpRef.current = true;
-      closeWs();
-      stopPolling();
-      clearReconnect();
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current);
-        debounceRef.current = null;
-      }
-    };
-  }, [fetchStatus, connectWs, closeWs, stopPolling, clearReconnect]);
 
   // Tick every 15s so the relative-time labels and staleness tints
   // refresh without waiting on a server event.
@@ -261,11 +106,11 @@ export function DeviceStatusTile() {
 
   const sortedRows = useMemo(
     () =>
-      [...rows].sort(
+      [...byHostname.values()].sort(
         (a, b) =>
           new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
       ),
-    [rows],
+    [byHostname],
   );
 
   return (
@@ -284,7 +129,7 @@ export function DeviceStatusTile() {
           </Badge>
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          {wsConnected ? (
+          {connected ? (
             <>
               <span
                 className="h-2 w-2 rounded-full bg-green-500"
@@ -312,7 +157,7 @@ export function DeviceStatusTile() {
           )}
           <button
             type="button"
-            onClick={() => void fetchStatus()}
+            onClick={() => void refetch()}
             className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/30"
             data-ui-bridge-id="operations.device-status-refresh"
             aria-label="Refresh device status"
@@ -322,7 +167,7 @@ export function DeviceStatusTile() {
         </div>
       </header>
 
-      {loading && sortedRows.length === 0 ? (
+      {!seeded && sortedRows.length === 0 ? (
         <p className="text-xs text-muted-foreground italic px-2 py-3">
           Loading device status&hellip;
         </p>

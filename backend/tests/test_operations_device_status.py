@@ -24,7 +24,7 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.testclient import TestClient
 
 # Stable tenant_id the in-test resolver returns; tests assert the
@@ -83,8 +83,18 @@ def _build_test_app(*, resolves_tenant: bool = True) -> FastAPI:
     test_app.dependency_overrides[get_async_db] = lambda: None
 
     if resolves_tenant:
+        # Mirror the real ``get_tenant_id``: capture the caller's bearer
+        # into the request-scoped ContextVar BEFORE resolving, so
+        # ``_tenant_headers`` can forward it to coord (the device-status
+        # proxy relies on this — coord's GET /coord/status is
+        # operator-auth fail-closed since fleet-auth P4).
+        from app.api.v1.endpoints.operations import (
+            _caller_bearer,
+            _extract_caller_token,
+        )
 
-        async def _resolver() -> UUID:
+        async def _resolver(request: Request) -> UUID:
+            _caller_bearer.set(_extract_caller_token(request))
             return _FIXTURE_TENANT_ID
     else:
 
@@ -185,6 +195,24 @@ class TestGetDeviceStatus:
         assert called_params.get("tenant_id") == str(_FIXTURE_TENANT_ID)
         # No `since=` means the param is absent.
         assert "since" not in called_params
+
+    def test_forwards_operator_bearer_to_coord(self, client: TestClient) -> None:
+        # Regression: coord's GET /coord/status 403s `tenant_not_resolved`
+        # on anonymous calls (fleet-auth P4). The proxy MUST forward the
+        # caller's bearer — it used to send no Authorization header at
+        # all, which broke the Device Status surface on /operations.
+        mock_resp = _mock_response(json_data={"devices": [], "count": 0})
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = mock_resp
+            _configure_mock_client(MockClient, instance)
+            resp = client.get(
+                f"{API_PREFIX}/device-status",
+                headers={"Authorization": "Bearer operator.cognito.jwt"},
+            )
+        assert resp.status_code == 200
+        called_headers = instance.get.call_args.kwargs.get("headers") or {}
+        assert called_headers.get("Authorization") == "Bearer operator.cognito.jwt"
 
     def test_forwards_since_filter(self, client: TestClient) -> None:
         mock_resp = _mock_response(json_data={"devices": [], "count": 0})
