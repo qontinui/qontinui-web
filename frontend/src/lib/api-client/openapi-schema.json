@@ -68069,6 +68069,137 @@
         ]
       }
     },
+    "/api/v1/operations/pr-merge/blast-radius-blocks": {
+      "get": {
+        "description": "Tenant-scoped list of recent blast-radius gate blocks.\n\nProxies coord's ``GET /pr-merge/blast-radius-blocks``\n(``pr_merge/blast_radius_monitor.rs::list_blocks``). Each row carries\nthe PR identity, the ``BlockReason`` ``code`` (e.g.\n``removes-referenced-export``), the per-reason evidence payload\n(removed export ``name``/``file`` + the ``referenced_by [{file,line}]``\nlist), the ``coverage``/``graph_available`` honesty fields, and the\nresulting outer-state. Optional ``repo`` (``owner/name``) + ``limit``\nfilters are forwarded.\n\nRead-only + ``get_tenant_id``-gated (any tenant member) so the affected\ndeveloper \u2014 not only an operator \u2014 can see why their PR was held.",
+        "operationId": "api_v1_operations_pr_merge_blast_radius_blocks_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "repo",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Repo"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Pr Merge Blast Radius Blocks Api V1 Operations Pr Merge Blast Radius Blocks Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Pr Merge Blast Radius Blocks",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/pr-merge/decisions/{owner}/{name}/{pr}": {
+      "get": {
+        "description": "Tenant-scoped decision history for a single PR.\n\nProxies coord's ``GET /pr-merge/decisions/:owner/:name/:pr``\n(``specialist_query::get_decisions``) \u2014 the per-PR gate-evaluation\ntrail (verdict, block reason, coverage/graph-availability). Backs the\ndeep-link from a PR's check run / the gate-decisions row into the\ndetail view.\n\n``get_tenant_id``-gated (any tenant member, read-only): the affected\ndeveloper sees their own PR's decision trail. Coord scopes the query to\nthe bearer's tenant.",
+        "operationId": "api_v1_operations_pr_merge_decisions_owner_name_pr_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "title": "Owner",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "pr",
+            "required": true,
+            "schema": {
+              "title": "Pr",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Pr Merge Decisions Api V1 Operations Pr Merge Decisions  Owner   Name   Pr  Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Pr Merge Decisions",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/pr-merge/escalations": {
       "get": {
         "description": "Tenant-scoped list of pending (and optionally resolved) merge\nescalations. Drives the MergeTrain \"Escalations\" dashboard section.\n\nEach row is a joined view across ``coord.alerts``\n(kind='merge_escalation'), ``coord.merge_escalations_meta``, and\n``coord.merge_decisions``. The payload carries PR link, reason,\nspecialist rationale, rule citations, suggested action, and the\nstructured alternatives the operator picks from.",
