@@ -120,21 +120,36 @@ const TAB_REGISTRATION_WAIT_ATTEMPTS = 6;
 const TAB_REGISTRATION_WAIT_MS = 500;
 
 /**
- * How long to wait after a `navigate` step's relay command is ACCEPTED (200)
- * before confirming the tab actually reached the target route. A relay 200 only
- * means "command delivered/accepted", NOT "the page moved" — when delivery
- * silently fails (stale tab, dropped soft-nav) the co-pilot used to show "All
- * steps completed" while the tab never moved (false success). We give the
- * soft-navigation a short window to land before declaring it didn't take.
+ * How long to wait, total, after a `navigate` step's relay command is ACCEPTED
+ * (200) for the tab to actually reach the target route, and how often to re-check
+ * the location within that window.
+ *
+ * A relay 200 only means "command delivered/accepted", NOT "the page moved": the
+ * relay navigate is FIRE-AND-FORGET (the 200 is a publish-ack, not an
+ * execution-ack). When delivery silently fails (stale tab, dropped soft-nav) the
+ * co-pilot would show "All steps completed" while the tab never moved (false
+ * success), so we confirm the page actually landed.
+ *
+ * Why a POLL, not a single sleep: in production the relay command is delivered
+ * CROSS-LAMBDA via the Redis bus, and that round-trip routinely takes LONGER than
+ * a single ~600ms check. A one-shot 600ms wait fired BEFORE the page had moved
+ * and reported a FALSE failure ("navigation didn't take effect") even though
+ * delivery worked. Same-lambda delivery (the in-process injection harness) is
+ * <600ms, which masked the bug. We instead poll the location every
+ * {@link NAVIGATE_LANDING_POLL_MS} for up to {@link NAVIGATE_LANDING_TIMEOUT_MS}
+ * and succeed the instant it moves — only declaring failure if it NEVER moves
+ * within the full window.
  *
  * SELF-NAV NUANCE: the co-pilot drives its OWN tab. A SUCCESSFUL navigate
  * soft-routes this very page away from /co-pilot, which unmounts the co-pilot
- * surface and tears down this running hook — so on success the landing check
- * never even runs. The check therefore only fires in the FAILURE case (still
- * mounted on /co-pilot after the wait = the nav did not take effect), which is
- * exactly the false-success we want to catch.
+ * surface and tears down this running hook — so on success the poll naturally
+ * stops (and the caller's abort/mounted guards prevent acting on an unmounted
+ * component). The poll therefore typically resolves true mid-window on success,
+ * or runs the full window and resolves false only when the nav did NOT take
+ * effect — exactly the false-success we want to catch.
  */
-const NAVIGATE_LANDING_WAIT_MS = 600;
+const NAVIGATE_LANDING_TIMEOUT_MS = 5000;
+const NAVIGATE_LANDING_POLL_MS = 300;
 
 /**
  * Normalize a pathname for comparison: drop any query/hash and a single
@@ -152,27 +167,45 @@ function normalizePath(value: string): string {
 
 /**
  * After a `navigate` step's relay command is accepted, confirm the tab actually
- * landed on `targetUrl`. Returns true when the page moved (or we cannot read the
- * location, e.g. SSR — fail-open so we never block a real success), false when
- * the tab is still on the SAME route it started on (the nav did not take
- * effect).
+ * landed on `targetUrl`. POLLS `window.location.pathname` every
+ * {@link NAVIGATE_LANDING_POLL_MS} for up to {@link NAVIGATE_LANDING_TIMEOUT_MS}
+ * and resolves:
+ *   - true the instant the page reaches the target route, OR at least leaves the
+ *     route it started on (a soft-nav that moved us SOMEWHERE counts as taking
+ *     effect) — so cross-lambda delivery that lands at, say, 1.2s succeeds rather
+ *     than tripping a premature one-shot check;
+ *   - true if we cannot read the location (e.g. SSR — fail-open so we never block
+ *     a real success);
+ *   - true if `isAborted()` reports the run was reset/unmounted mid-poll (a
+ *     successful self-nav unmounts this hook; we must not act on it as a failure);
+ *   - false ONLY when the page NEVER moves within the full window — the genuine
+ *     non-delivery case we want to surface honestly.
  *
- * Because a successful self-navigation unmounts this hook, in practice this
- * resolves to `true` only when the tab is NOT the co-pilot's own tab; the common
- * "didn't move" case is the co-pilot tab still sitting on /co-pilot.
+ * `isAborted` lets the poll stop early and bail out without reporting failure
+ * when the surrounding run has been aborted (reset) or the component unmounted.
  */
-async function confirmNavigationLanded(targetUrl: string): Promise<boolean> {
+async function confirmNavigationLanded(
+  targetUrl: string,
+  isAborted: () => boolean,
+): Promise<boolean> {
   if (typeof window === "undefined" || !window.location) return true;
-  const before = normalizePath(window.location.pathname);
   const target = normalizePath(targetUrl);
+  const before = normalizePath(window.location.pathname);
   // Already there before we even dispatched (the planner navigated to the page
   // we're on): treat as landed — there is nothing to move.
   if (before === target) return true;
-  await new Promise((r) => setTimeout(r, NAVIGATE_LANDING_WAIT_MS));
-  const after = normalizePath(window.location.pathname);
-  // Landed if we reached the target, or at least left the route we started on
-  // (a soft-nav that moved us SOMEWHERE counts as taking effect).
-  return after === target || after !== before;
+
+  const deadline = Date.now() + NAVIGATE_LANDING_TIMEOUT_MS;
+  // Poll until the page moves, the window elapses, or the run aborts. Check the
+  // location immediately on each tick so a fast (same-lambda) nav still resolves
+  // quickly, while a slow (cross-lambda Redis-bus) nav gets the full window.
+  for (;;) {
+    if (isAborted()) return true; // self-nav teardown / reset — not a failure.
+    const now = normalizePath(window.location.pathname);
+    if (now === target || now !== before) return true;
+    if (Date.now() >= deadline) return false; // never moved within the window.
+    await new Promise((r) => setTimeout(r, NAVIGATE_LANDING_POLL_MS));
+  }
 }
 
 /** Map a thrown {@link PlanError} reason onto the hook's error union. */
@@ -210,6 +243,17 @@ export function usePromptExecution(): UsePromptExecutionReturn {
   // Guards: prevent overlapping runs and allow `reset` to abort an in-flight one.
   const runningRef = useRef(false);
   const abortRef = useRef(false);
+  // Tracks whether the hook is still mounted. A SUCCESSFUL self-navigation
+  // soft-routes the co-pilot page away and unmounts this hook mid-run; the
+  // navigate landing poll uses this to stop and bail WITHOUT reporting a false
+  // failure (an unmount during the poll means the nav took effect).
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const reset = useCallback(() => {
     abortRef.current = true;
@@ -403,8 +447,15 @@ export function usePromptExecution(): UsePromptExecutionReturn {
         if (result.ok && step.type === "navigate" && step.target) {
           const targetUrl = pageIdToUrl(step.target);
           if (targetUrl !== undefined) {
-            const landed = await confirmNavigationLanded(targetUrl);
-            if (abortRef.current) {
+            // Poll for landing; bail out (without reporting failure) if the run
+            // is reset or the component unmounts mid-poll — a SUCCESSFUL self-nav
+            // unmounts the co-pilot page, so an unmount here is success, not a
+            // "didn't take effect" failure.
+            const landed = await confirmNavigationLanded(
+              targetUrl,
+              () => abortRef.current || !mountedRef.current,
+            );
+            if (abortRef.current || !mountedRef.current) {
               runningRef.current = false;
               return;
             }
