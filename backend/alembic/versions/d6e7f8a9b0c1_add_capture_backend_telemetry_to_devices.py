@@ -37,7 +37,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "d6e7f8a9b0c1"
-down_revision: Union[str, None] = "twin_p7_03_canonical_checkout_state"
+down_revision: Union[str, None] = "coord_commit_lineage"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
