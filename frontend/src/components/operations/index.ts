@@ -4,6 +4,7 @@ export { FleetOverview } from "./FleetOverview";
 export { LandedFeaturesPanel } from "./LandedFeaturesPanel";
 export { MachineCard } from "./MachineCard";
 export { DeviceStatusTile } from "./DeviceStatusTile";
+export { DevActionsTile } from "./DevActionsTile";
 export { MergeDependencyGraph } from "./MergeDependencyGraph";
 export { MergeOrchestrationOnboarding } from "./MergeOrchestrationOnboarding";
 export { MergeTrain } from "./MergeTrain";

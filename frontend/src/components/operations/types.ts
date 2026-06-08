@@ -310,6 +310,90 @@ export interface GateRow {
   continuation_cancel_reason?: string | null;
 }
 
+// ---------------------------------------------------------------------------
+// Dev-action ledger (plan 2026-06-07-twin-dev-event-cause-effect-ledger)
+//
+// Mirrors coord's `dev_action_snapshots` row exposed on
+// `GET /coord/dev-actions/recent` (proxied via
+// `GET /api/v1/operations/dev-actions/recent`) and the WS event
+// `events.dev_actions.recorded`. Each action records the active dev-state
+// set at execution time plus a D3 `category` outcome classification.
+// ---------------------------------------------------------------------------
+
+/**
+ * The D3 cause→effect classification coord assigns to a recorded dev action.
+ * Kept as a string union for color-coding, with `category` typed loosely on
+ * the row (a future coord category the web hasn't been taught about still
+ * renders as a neutral chip rather than crashing).
+ */
+export type DevActionCategory =
+  | "confirmed"
+  | "surprise"
+  | "failure"
+  | "contradiction"
+  | "partial";
+
+/**
+ * One row of `coord.dev_action_snapshots`, mirroring the wire shape coord
+ * exposes on `GET /coord/dev-actions/recent` and pushes on the coord `/ws`
+ * channel as `events.dev_actions.recorded`.
+ */
+export interface DevAction {
+  action_id: string;
+  /** The dev action kind (e.g. a tool/command name). */
+  kind: string;
+  /** Device UUID the action ran on. May be null for pre-device rows. */
+  device_id: string | null;
+  /** Who requested the action (agent/operator subject). */
+  requester_id: string | null;
+  /** Digest of the action's params (opaque audit fingerprint). */
+  params_digest: string | null;
+  /** Active dev-state ids at execution time, rendered as chips. */
+  state_ids: string[];
+  /** State signatures that were active but not resolvable to a known id. */
+  states_unknown: string[];
+  /** RFC 3339 start time. Drives the relative-time label. */
+  started_at: string | null;
+  /** RFC 3339 end time. Null while the action is still in flight. */
+  ended_at: string | null;
+  /** D3 cause→effect classification — drives the color-coded badge. */
+  category: DevActionCategory | string | null;
+  /** Wall-clock duration in milliseconds, when coord computed it. */
+  duration_ms: number | null;
+  /** Opaque pointer to captured evidence (screenshot/log ref), if any. */
+  evidence_ref: string | null;
+  /** Optional tenant scope (informational). */
+  tenant_id: string | null;
+  /** Open JSON bag for caller-defined extras. */
+  metadata: Record<string, unknown> | null;
+}
+
+/** Wire shape returned by `GET /api/v1/operations/dev-actions/recent`. */
+export interface DevActionsResponse {
+  actions: DevAction[];
+  count: number;
+}
+
+/**
+ * One outcome signature observed for a dev action, returned by the
+ * per-action detail endpoint (`GET /coord/dev-actions/:action_id` →
+ * `GET /api/v1/operations/dev-actions/:action_id`).
+ */
+export interface DevActionOutcome {
+  /** The observed effect signature. */
+  signature: string;
+  /** RFC 3339 time the outcome was observed. */
+  observed_at: string | null;
+  /** True when the outcome arrived after the action's expected window. */
+  late: boolean;
+}
+
+/** Wire shape returned by `GET /api/v1/operations/dev-actions/:action_id`. */
+export interface DevActionDetail {
+  action: DevAction;
+  outcomes: DevActionOutcome[];
+}
+
 /**
  * Per-machine CI runner info returned by the backend in the `/fleet`
  * response. Keyed by hostname. Phase 4c of the self-hosted CI runners plan.
