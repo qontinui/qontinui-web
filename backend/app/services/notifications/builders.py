@@ -4,7 +4,9 @@ Notification builders for test-related notifications.
 Provides utilities for building notification data objects.
 """
 
+from dataclasses import dataclass
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
@@ -17,6 +19,107 @@ from app.schemas.test_notifications import (
     DeficiencyNotification,
     TestRunNotification,
 )
+
+# Human-readable labels for coord's ``block_reason_code`` enum. Unknown
+# codes fall back to a humanised form of the raw code so a new coord reason
+# never produces an empty/ugly title.
+_GATE_REASON_LABELS: dict[str, str] = {
+    "blast_radius": "large blast radius",
+    "removes_referenced_export": "removes a referenced export",
+    "coverage_drop": "a coverage drop",
+    "breaking_change": "a potential breaking change",
+    "cross_repo_impact": "cross-repo impact",
+}
+
+
+def _gate_reason_label(block_reason_code: str | None) -> str:
+    if not block_reason_code:
+        return "review required"
+    return _GATE_REASON_LABELS.get(
+        block_reason_code, block_reason_code.replace("_", " ")
+    )
+
+
+@dataclass(frozen=True)
+class GateActionNotification:
+    """Built title + message + deep-link metadata for a GATE_ACTION.
+
+    ``metadata`` is the dedupe key carrier (repo / pr_number / head_sha /
+    block_reason_code) plus deep-link info; the message is honesty-scoped
+    (graph availability + partial coverage) — see
+    :func:`build_gate_action_notification`.
+    """
+
+    title: str
+    message: str
+    metadata: dict[str, Any]
+
+
+def build_gate_action_notification(
+    *,
+    repo: str,
+    pr_number: int,
+    block_reason_code: str | None,
+    head_sha: str | None,
+    coverage: float | None,
+    graph_available: bool,
+    evidence: dict[str, Any] | None = None,
+) -> GateActionNotification:
+    """Build a merge-gate-escalation (GATE_ACTION) notification.
+
+    Honesty rules (T3 N3):
+
+    * When ``graph_available`` is false, the message states the decision
+      was made *without a code graph* and is therefore non-authoritative.
+    * When ``coverage`` is present and < 1.0, the message states the
+      analysis ran under *partial coverage (NN%)*.
+    * Never implies authoritative certainty the gate does not have.
+
+    Metadata carries the dedupe key (``repo``/``pr_number``/``head_sha``/
+    ``block_reason_code``) and deep-link info (PR URL + the ``/operations``
+    panel pointer) for the in-app + email surfaces.
+    """
+    reason_label = _gate_reason_label(block_reason_code)
+    pr_url = f"https://github.com/{repo}/pull/{pr_number}"
+
+    title = f"Review required: {repo}#{pr_number} ({reason_label})"
+
+    parts: list[str] = [
+        f"The merge gate escalated pull request {repo}#{pr_number} to "
+        f"specialist review because of {reason_label}.",
+    ]
+
+    # Honesty: confidence qualifiers. Order matters — graph availability is
+    # the strongest caveat, coverage refines it.
+    if not graph_available:
+        parts.append(
+            "This decision was made without a code graph, so it is "
+            "non-authoritative and may be over- or under-inclusive."
+        )
+    if coverage is not None and coverage < 1.0:
+        pct = round(coverage * 100)
+        parts.append(f"Analysis ran under partial coverage ({pct}%).")
+
+    parts.append(f"Review the pull request: {pr_url}")
+
+    message = " ".join(parts)
+
+    metadata: dict[str, Any] = {
+        "repo": repo,
+        "pr_number": pr_number,
+        "head_sha": head_sha,
+        "block_reason_code": block_reason_code,
+        "pr_url": pr_url,
+        # Deep-link pointer to the operations console where gate activity
+        # is surfaced (the frontend resolves the panel from this hint).
+        "operations_panel": "/operations",
+        "graph_available": graph_available,
+        "coverage": coverage,
+    }
+    if evidence is not None:
+        metadata["evidence"] = evidence
+
+    return GateActionNotification(title=title, message=message, metadata=metadata)
 
 
 class TestNotificationBuilder:

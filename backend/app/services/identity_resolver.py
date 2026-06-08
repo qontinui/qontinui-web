@@ -214,30 +214,68 @@ async def _fetch_responsible_context(
     )
 
 
-async def resolve_responsible_users(
-    db: AsyncSession,
-    repo: str,
-    pr_number: int,
+def coord_context_from_responsible_context(
     *,
-    bearer: str | None,
-    acting_user_id: str,
-) -> list[ResponsibleUser]:
-    """Resolve the responsible qontinui user(s) for ``(repo, pr_number)``.
+    tenant_id: Any = None,
+    github_author_id: Any = None,
+    device_owner_user_id: Any = None,
+    tenant_fallback_user_ids: list[Any] | None = None,
+    agent_id: Any = None,
+) -> _CoordContext:
+    """Build a :class:`_CoordContext` from a coord ``responsible_context``.
 
-    Returns a **non-empty** list of :class:`ResponsibleUser`, deduped by
-    ``user_id`` with source-priority order preserved
-    (github-author > device-owner > tenant-fallback). Every hop is
-    tenant-scoped via the forwarded bearer + ``x-qontinui-user-id``; no
-    cross-tenant user is ever resolved.
-
-    The reusable service entrypoint — future consumers (T3 notifications,
-    per-user dashboards) call this directly; the thin authed endpoint is a
-    presentation wrapper.
+    Used by the T3 webhook path, where coord *embeds* the responsible
+    context in the request body instead of the web backend fetching it.
+    Applies the *identical* normalisation as
+    :func:`_fetch_responsible_context` so the embedded-context path is
+    indistinguishable from the fetched-context path: ``github_author_id``
+    is coerced int|str -> ``str`` (the github-user-id join key), all UUID
+    fields tolerate str/None, and bad fallback entries are dropped.
     """
-    ctx = await _fetch_responsible_context(
-        repo, pr_number, bearer=bearer, acting_user_id=acting_user_id
+    raw_fallback = tenant_fallback_user_ids or []
+    fallback: list[UUID] = []
+    if isinstance(raw_fallback, list):
+        for entry in raw_fallback:
+            uid = _as_uuid(entry)
+            if uid is not None:
+                fallback.append(uid)
+
+    return _CoordContext(
+        tenant_id=_as_uuid(tenant_id),
+        github_author_id=(
+            str(github_author_id) if github_author_id is not None else None
+        ),
+        agent_id=(str(agent_id) if agent_id is not None else None),
+        device_owner_user_id=_as_uuid(device_owner_user_id),
+        tenant_fallback_user_ids=tuple(fallback),
     )
 
+
+async def resolve_responsible_users_from_context(
+    db: AsyncSession,
+    ctx: _CoordContext,
+) -> list[ResponsibleUser]:
+    """Compose responsible users from an already-fetched coord context.
+
+    This is the pure composition half of the resolver — given a parsed
+    :class:`_CoordContext` (however it was obtained), it resolves the
+    responsible qontinui user(s), deduped by ``user_id`` with source
+    priority preserved (github-author > device-owner > tenant-fallback),
+    and never returns empty (raises 404 on a total miss, the honesty
+    contract).
+
+    Two callers share this composition:
+
+    * :func:`resolve_responsible_users` — the authed entrypoint, which
+      first fetches the context from coord (forwarding the caller's
+      bearer) and then composes here.
+    * the T3 ``coord-notifications`` webhook — coord *embeds* the context
+      in the webhook body (no user bearer, no coord round-trip), builds a
+      :class:`_CoordContext` from it, and composes here directly.
+
+    Keeping the composition in one place guarantees both paths apply the
+    identical source-priority / dedupe / never-empty semantics.
+    """
     ordered: list[ResponsibleUser] = []
     seen: set[UUID] = set()
 
@@ -275,8 +313,6 @@ async def resolve_responsible_users(
         # a silent empty set.
         logger.warning(
             "responsible_users_empty",
-            repo=repo,
-            pr_number=pr_number,
             tenant_id=str(ctx.tenant_id) if ctx.tenant_id else None,
         )
         raise HTTPException(
@@ -285,3 +321,31 @@ async def resolve_responsible_users(
         )
 
     return ordered
+
+
+async def resolve_responsible_users(
+    db: AsyncSession,
+    repo: str,
+    pr_number: int,
+    *,
+    bearer: str | None,
+    acting_user_id: str,
+) -> list[ResponsibleUser]:
+    """Resolve the responsible qontinui user(s) for ``(repo, pr_number)``.
+
+    Returns a **non-empty** list of :class:`ResponsibleUser`, deduped by
+    ``user_id`` with source-priority order preserved
+    (github-author > device-owner > tenant-fallback). Every hop is
+    tenant-scoped via the forwarded bearer + ``x-qontinui-user-id``; no
+    cross-tenant user is ever resolved.
+
+    The reusable service entrypoint — future consumers (per-user
+    dashboards) call this directly; the thin authed endpoint is a
+    presentation wrapper. Fetches the coord ``responsible-context`` then
+    delegates composition to
+    :func:`resolve_responsible_users_from_context`.
+    """
+    ctx = await _fetch_responsible_context(
+        repo, pr_number, bearer=bearer, acting_user_id=acting_user_id
+    )
+    return await resolve_responsible_users_from_context(db, ctx)
