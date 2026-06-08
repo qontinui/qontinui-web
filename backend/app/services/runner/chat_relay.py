@@ -39,6 +39,17 @@ class ChatRelayService:
         self._runner_listeners: dict[str, asyncio.Task] = {}
         self._mobile_listeners: dict[str, asyncio.Task] = {}
 
+    @staticmethod
+    def runner_channel(runner_id: str) -> str:
+        """Redis channel carrying mobile -> runner chat messages for ``runner_id``.
+
+        Exposed so the manager can multiplex this relay's runner-direction
+        channel onto a single shared pubsub connection (see
+        ``RunnerWebSocketManager.register``) instead of this service opening a
+        dedicated pooled pubsub per runner.
+        """
+        return f"runner:chat:{runner_id}"
+
     async def send_chat_to_runner(
         self, runner_id: str, message: dict[str, Any]
     ) -> bool:

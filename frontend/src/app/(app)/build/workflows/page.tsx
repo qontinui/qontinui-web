@@ -59,7 +59,7 @@ function BuildWorkflowsPageContent() {
           <div className="flex items-center gap-3">
             <Workflow className="size-5 text-brand-secondary" />
             <h1 className="text-lg font-bold text-text-primary">
-              Workflow Builder
+              Workflows
             </h1>
           </div>
         </div>

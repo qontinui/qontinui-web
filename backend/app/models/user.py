@@ -54,6 +54,18 @@ class User(Base):
     cognito_sub: Mapped[str | None] = mapped_column(
         String, unique=True, index=True, nullable=True
     )
+    # GitHub identity (identity-contract I1). The canonical, stable key is
+    # ``github_user_id`` — the GitHub OIDC ``sub`` = GitHub's numeric user id
+    # surfaced as a string (the federated ``userId`` from Cognito's
+    # ``identities`` claim). Indexed (NOT unique-constrained at the column
+    # level) for fast ``github_user_id -> user`` resolution; nullable because
+    # only users who have opted into linking GitHub carry it. ``github_login``
+    # is a mutable display alias (GitHub logins can be renamed/transferred),
+    # populated best-effort and never used as a join key — resolve by id.
+    github_user_id: Mapped[str | None] = mapped_column(
+        String, index=True, nullable=True
+    )
+    github_login: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )

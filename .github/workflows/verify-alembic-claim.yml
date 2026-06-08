@@ -1,39 +1,38 @@
 name: verify-alembic-claim
 
-# Phase 5C of the multi-machine coordinator plan
-# (D:/qontinui-root/tmp_multimachine_coordinator_plan.md §9).
+# Migration reservation gate (auto-binds the PR).
 #
-# Pre-claim gate: every PR adding an alembic revision must show that the
-# contributor pre-claimed the HEAD it chains off (the `down_revision`)
-# via the coord service. Pairs with the post-merge informational
-# alembic-graph-check workflow and the pre-merge alembic-graph-pr gate:
+# Part of the coord-authoritative migration reservation queue
+# (plans/2026-06-08-coord-migration-reservation-queue.md, Phase P3) — the
+# successor to the old alembic head-claim mutex.
+#
+# Every PR that ADDS an alembic revision must have a coord reservation that
+# already assigned its `down_revision`. This gate finds that reservation and
+# BINDS this PR to it — the gate run is the binding event, so authors need no
+# extra step beyond reserving + pushing. It pairs with:
 #
 #   alembic-graph-check.yml      — runs after merge; comments on the
 #                                  merging PR if the chain forked.
 #   alembic-graph-pr.yml         — runs on every PR; fails if the chain
 #                                  would have >1 head after merge.
-#   verify-alembic-claim.yml     — runs on every PR; checks that the new
-#                                  revisions' heads were pre-claimed.
+#   verify-alembic-claim.yml     — this one; auto-binds the PR to its
+#                                  coord migration reservation.
 #
-# The coord service exposes a generic POST /coord/claims/check that
-# answers "was this (kind, resource_key) claimed?". The claim is a mutex
-# on the HEAD (`down_revision`) being chained off, NOT the child revision
-# id, so the script POSTs:
+# The script GETs /coord/migrations/queue?repo=qontinui-web, matches the
+# added revision against a queued/pr_bound reservation, then POSTs
+# /coord/migrations/<id>/bind-pr {"pr_url": <this PR url>}.
 #
-#   {"kind": "alembic_revision", "resource_key": "<down_revision>"}
-#
-# and expects {matched: bool, reason: str}.
-#
-# NOT required / does not touch branch protection: this lands as a
-# non-required check. It gets promoted to required later, once the claim
-# flow is wired into /implement-plan.
+# UNAUTHENTICATED BY DESIGN: permissions stay `contents: read`, no secret is
+# passed. coord's bind-pr server-side verifies the PR's actual migration file
+# against the reservation's assignment via the GitHub App, so the gate cannot
+# bind a reservation to a PR that doesn't genuinely chain off its head — the
+# server-side content-match is the guard, not a CI credential.
 #
 # Configuration:
 #
 #   The coord URL defaults to the public prod coord service
-#   (https://coord.qontinui.io) since no COORD_URL secret is established
-#   in this repo. A repo variable `vars.COORD_URL` overrides it if set
-#   (e.g. to point a fork at a different coord instance); leave it unset
+#   (https://coord.qontinui.io). A repo variable `vars.COORD_URL` overrides it
+#   if set (e.g. to point a fork at a different coord instance); leave it unset
 #   to use the default.
 
 on:
@@ -60,11 +59,15 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Run verify_alembic_claim.py
+      - name: verify migration reservation (auto-binds the PR)
         env:
           # Default to prod coord; override via repo variable COORD_URL.
           COORD_URL: ${{ vars.COORD_URL || 'https://coord.qontinui.io' }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
+          # This PR's identity, passed to coord's bind-pr. No secret — the
+          # server-side content-match is the guard (see header).
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           # base-ref is the branch the PR targets, prefixed with
           # origin/ for the local diff. We fetched depth=0 so the
@@ -73,4 +76,6 @@ jobs:
           git fetch origin "${BASE_REF}" --depth=200 || true
           python scripts/verify_alembic_claim.py \
             --base-ref "origin/${BASE_REF}" \
-            --coord-url "${COORD_URL}"
+            --coord-url "${COORD_URL}" \
+            --pr-url "${PR_URL}" \
+            --pr-number "${PR_NUMBER}"
