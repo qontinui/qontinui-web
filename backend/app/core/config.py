@@ -173,6 +173,21 @@ class Settings(BaseSettings):
         description="sub=service:<name> the web backend mints at coord",
     )
 
+    # Gate-action notifications (T3) — coord -> web best-effort webhook.
+    # Shared service-to-service secret for
+    # ``POST /api/v1/internal/coord-notifications``. Coord presents it in
+    # the ``X-Coord-Service-Secret`` header; the web backend constant-time
+    # compares. Empty (the default) = the feature is UNCONFIGURED and the
+    # endpoint rejects ALL calls (never accept an unauthenticated call).
+    COORD_WEB_SERVICE_SECRET: str = Field(
+        default="",
+        description=(
+            "Shared secret for coord's best-effort gate-action notification "
+            "webhook (X-Coord-Service-Secret). Empty disables the endpoint "
+            "(all calls rejected)."
+        ),
+    )
+
     # AWS Cognito user-pool identity (unified-Cognito-identity Phase 1).
     # The web backend dual-accepts Cognito user-pool JWTs alongside the
     # local FastAPI-Users HS256 JWT. Defaults target the production web

@@ -38,6 +38,12 @@ class NotificationType(StrEnum):
     TEAM_INVITE = "team_invite"
     ACCESS_GRANTED = "access_granted"
     ACCESS_REVOKED = "access_revoked"
+    # Merge-gate escalation: a PR the user is responsible for was escalated
+    # to specialist review by coord's merge gate (gate-action-notifications
+    # T3). Defaults ON for both in-app and email — the author should hear
+    # about their own gated PR by default — while still honouring an
+    # explicit opt-out (see NotificationPreferences mappings below).
+    GATE_ACTION = "gate_action"
 
 
 class Notification(Base):
@@ -173,7 +179,14 @@ class NotificationPreferences(Base):
             NotificationType.SHARE: self.email_shares,
             NotificationType.REPLY: self.email_replies,
             NotificationType.TEAM_INVITE: self.email_team_invites,
+            # GATE_ACTION has no dedicated preference column (a column would
+            # require a migration; the T3 design is metadata-only). It
+            # therefore defaults ON for email — coord escalating the
+            # author's own PR is high-signal and worth an email by default.
+            NotificationType.GATE_ACTION: True,
         }
+        # Email defaults OFF for unmapped types (conservative), but the
+        # explicitly mapped GATE_ACTION above defaults ON.
         result = mapping.get(notification_type, False)
         return bool(result)
 
@@ -186,6 +199,10 @@ class NotificationPreferences(Base):
             NotificationType.REPLY: self.in_app_replies,
             NotificationType.TEAM_INVITE: self.in_app_team_invites,
             NotificationType.PROJECT_UPDATE: self.in_app_project_updates,
+            # GATE_ACTION: no dedicated column (metadata-only T3 design, no
+            # migration) — defaults ON, matching the unmapped-type default.
+            NotificationType.GATE_ACTION: True,
         }
+        # In-app defaults ON for unmapped types.
         result = mapping.get(notification_type, True)
         return bool(result)
