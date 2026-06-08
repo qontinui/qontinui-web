@@ -48,9 +48,7 @@ def client() -> TestClient:
     return TestClient(_build_test_app())
 
 
-def _mock_response(
-    status_code: int = 200, json_data=None, text: str = ""
-) -> MagicMock:
+def _mock_response(status_code: int = 200, json_data=None, text: str = "") -> MagicMock:
     resp = MagicMock(spec=httpx.Response)
     resp.status_code = status_code
     resp.json.return_value = json_data
@@ -234,9 +232,7 @@ class TestGetPrMergeDecisions:
             instance.get.return_value = mock_resp
             _configure_mock_client(MockClient, instance)
 
-            resp = client.get(
-                f"{API_PREFIX}/pr-merge/decisions/acme-org/myrepo/99"
-            )
+            resp = client.get(f"{API_PREFIX}/pr-merge/decisions/acme-org/myrepo/99")
 
         assert resp.status_code == 200
         assert resp.json() == self._COORD_DECISIONS_PAYLOAD
@@ -269,9 +265,7 @@ class TestGetPrMergeDecisions:
             instance.get.return_value = mock_resp
             _configure_mock_client(MockClient, instance)
 
-            resp = client.get(
-                f"{API_PREFIX}/pr-merge/decisions/owner/repo/9999"
-            )
+            resp = client.get(f"{API_PREFIX}/pr-merge/decisions/owner/repo/9999")
 
         assert resp.status_code == 404
 
@@ -281,9 +275,7 @@ class TestGetPrMergeDecisions:
             instance.get.side_effect = httpx.ConnectError("refused")
             _configure_mock_client(MockClient, instance)
 
-            resp = client.get(
-                f"{API_PREFIX}/pr-merge/decisions/owner/repo/1"
-            )
+            resp = client.get(f"{API_PREFIX}/pr-merge/decisions/owner/repo/1")
 
         assert resp.status_code == 502
         assert "coord is not reachable" in resp.json()["detail"]
@@ -294,8 +286,6 @@ class TestGetPrMergeDecisions:
             instance.get.side_effect = httpx.TimeoutException("timeout")
             _configure_mock_client(MockClient, instance)
 
-            resp = client.get(
-                f"{API_PREFIX}/pr-merge/decisions/owner/repo/1"
-            )
+            resp = client.get(f"{API_PREFIX}/pr-merge/decisions/owner/repo/1")
 
         assert resp.status_code == 504
