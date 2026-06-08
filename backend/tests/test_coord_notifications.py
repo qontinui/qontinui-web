@@ -79,31 +79,49 @@ def _body_rc(**rc_overrides: Any) -> dict[str, Any]:
 # ============================================================
 
 
-def test_missing_secret_returns_401() -> None:
-    """No X-Coord-Service-Secret header (None) -> 401."""
+def test_missing_secret_returns_401(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No X-Coord-Service-Secret header (None) -> 401, even when configured."""
     from fastapi import HTTPException
 
     from app.api.v1.endpoints.internal import _require_coord_secret
+    from app.core.config import settings
+
+    # Configure a secret explicitly — the settings singleton may have been
+    # built (with the default empty value) before this module set the env
+    # var, so we never rely on import ordering for the secret's value.
+    monkeypatch.setattr(settings, "COORD_WEB_SERVICE_SECRET", VALID_SECRET)
 
     with pytest.raises(HTTPException) as exc_info:
         _require_coord_secret(x_coord_service_secret=None)
     assert exc_info.value.status_code == 401
 
 
-def test_wrong_secret_returns_401() -> None:
-    """Wrong X-Coord-Service-Secret value -> 401."""
+def test_wrong_secret_returns_401(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A wrong value against a CONFIGURED secret -> 401."""
     from fastapi import HTTPException
 
     from app.api.v1.endpoints.internal import _require_coord_secret
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "COORD_WEB_SERVICE_SECRET", VALID_SECRET)
 
     with pytest.raises(HTTPException) as exc_info:
         _require_coord_secret(x_coord_service_secret=WRONG_SECRET)
     assert exc_info.value.status_code == 401
 
 
-def test_correct_secret_does_not_raise() -> None:
-    """The correct secret passes without raising."""
+def test_correct_secret_does_not_raise(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The correct secret passes without raising.
+
+    Monkeypatches the settings singleton directly: relying on the module-top
+    ``os.environ.setdefault`` is order-fragile — when another test module has
+    already imported ``settings``, the env var is read too late and the
+    secret is cached empty (CI collection order surfaced this; the local
+    order happened to import this module first)."""
     from app.api.v1.endpoints.internal import _require_coord_secret
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "COORD_WEB_SERVICE_SECRET", VALID_SECRET)
 
     # Should not raise.
     result = _require_coord_secret(x_coord_service_secret=VALID_SECRET)
