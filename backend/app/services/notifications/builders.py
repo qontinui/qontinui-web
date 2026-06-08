@@ -162,3 +162,61 @@ class TestNotificationBuilder:
 
 # Global instance
 test_notification_builder = TestNotificationBuilder()
+
+
+def gate_action_dedup_key(
+    repo: str, pr_number: int, head_sha: str, block_reason_code: str
+) -> str:
+    """The N3 dedup key — one gate-action notification per distinct verdict.
+
+    A re-evaluation at the same ``head_sha``/reason (or a re-delivered webhook)
+    yields the same key, so the receiver skips the duplicate.
+    """
+    return f"{repo}#{pr_number}@{head_sha}:{block_reason_code}"
+
+
+def build_gate_action_notification(
+    *,
+    repo: str,
+    pr_number: int,
+    block_reason_code: str,
+    head_sha: str,
+    coverage: float | None,
+    graph_available: bool,
+    frontend_url: str,
+) -> tuple[str, str, dict]:
+    """Build the (title, message, metadata) for a T3 gate-action notification.
+
+    **Honesty (N3):** the message never implies authority the analysis lacks —
+    a decision made without a resolved code graph is labelled
+    "non-authoritative", and partial coverage is stated as a percentage. The
+    metadata carries the dedup key + deep-link fields.
+    """
+    reason = block_reason_code.replace("_", " ")
+    title = f"Merge gate flagged {repo}#{pr_number}"
+
+    if not graph_available:
+        honesty = " (non-authoritative — no code graph was available)"
+    elif coverage is not None and coverage < 1.0:
+        honesty = f" (partial coverage — {coverage:.0%})"
+    else:
+        honesty = ""
+
+    pr_url = f"https://github.com/{repo}/pull/{pr_number}"
+    message = (
+        f"The merge gate escalated this PR to specialist review: {reason}.{honesty} "
+        f"Review it on GitHub or the operations panel."
+    )
+
+    metadata = {
+        "dedup_key": gate_action_dedup_key(repo, pr_number, head_sha, block_reason_code),
+        "repo": repo,
+        "pr_number": pr_number,
+        "head_sha": head_sha,
+        "block_reason_code": block_reason_code,
+        "coverage": coverage,
+        "graph_available": graph_available,
+        "pr_url": pr_url,
+        "operations_url": f"{frontend_url.rstrip('/')}/operations",
+    }
+    return title, message, metadata

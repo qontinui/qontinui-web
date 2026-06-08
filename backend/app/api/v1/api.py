@@ -118,6 +118,7 @@ from app.api.v1.endpoints import (
     workflow_step_types,
 )
 from app.api.v1.endpoints import auth as auth_pkg
+from app.api.v1.endpoints import internal_coord
 from app.api.v1.endpoints import testing as testing_pkg
 from app.extensions import register_cloud_extensions
 
@@ -373,6 +374,10 @@ api_router.include_router(
 )
 # Strategy Collaboration (Phase 1, read-only doc proxy → coord)
 api_router.include_router(strategy.router, prefix="/strategy", tags=["strategy"])
+# Internal service-to-service receiver (T3 gate-action notifications from coord)
+api_router.include_router(
+    internal_coord.router, prefix="/internal", tags=["internal"]
+)
 # Agent sessions observability — Side D / Phase 4 of plan
 # coord-agent-session-id-tracking.md. Lists sessions from
 # coord.agent_sessions + per-session lineage timeline.
