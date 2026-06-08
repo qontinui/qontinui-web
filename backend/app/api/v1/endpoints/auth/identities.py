@@ -24,6 +24,7 @@ import asyncio
 import json
 from typing import Any
 
+import httpx
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import text
@@ -48,6 +49,94 @@ logger = structlog.get_logger(__name__)
 router = APIRouter()
 
 _NATIVE_PROVIDER = "Cognito"
+
+# The GitHub federated provider name as it appears in Cognito's
+# ``identities`` claim. Guards the I1 link-hook (denormalize GitHub identity
+# onto auth.users).
+_GITHUB_PROVIDER = "GitHub"
+
+# Token claims that may carry the GitHub login (display alias), in priority
+# order. The GitHub OIDC IdP / Cognito attribute mapping may surface the
+# login under any of these depending on the pool's attribute-mapping config;
+# we try each before falling back to a one-shot GitHub API lookup.
+_GITHUB_LOGIN_CLAIMS = (
+    "custom:github_login",
+    "nickname",
+    "preferred_username",
+)
+
+
+def _github_login_from_claims(claims: dict[str, Any]) -> str | None:
+    """Best-effort GitHub login from a verified token's claims.
+
+    Returns the first non-empty value among :data:`_GITHUB_LOGIN_CLAIMS`,
+    or ``None`` if none are present.
+    """
+    for key in _GITHUB_LOGIN_CLAIMS:
+        value = claims.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _github_login_via_api(github_user_id: str) -> str | None:
+    """One-shot best-effort GitHub login lookup by numeric id.
+
+    Calls the public ``GET https://api.github.com/user/{id}`` endpoint
+    (unauthenticated; subject to GitHub's low anonymous rate limit). Fully
+    fail-open: any error returns ``None`` — the login is a display alias, so
+    a miss never blocks the link. Run via ``asyncio.to_thread`` by the
+    caller (httpx sync client) to avoid coupling to an async client.
+    """
+    try:
+        resp = httpx.get(
+            f"https://api.github.com/user/{github_user_id}",
+            timeout=httpx.Timeout(5.0),
+            headers={"Accept": "application/vnd.github+json"},
+        )
+        if resp.status_code != 200:
+            return None
+        login = resp.json().get("login")
+        return login if isinstance(login, str) and login.strip() else None
+    except Exception as exc:  # noqa: BLE001 - best-effort, never block link
+        logger.warning(
+            "github_login_api_lookup_failed",
+            github_user_id=github_user_id,
+            error=str(exc),
+        )
+        return None
+
+
+async def _stamp_github_identity(
+    db: AsyncSession,
+    *,
+    user_id: Any,
+    github_user_id: str,
+    github_login: str | None,
+) -> None:
+    """Denormalize the GitHub identity onto the caller's ``auth.users`` row.
+
+    Written via core SQL on the caller's ``db`` session (same posture as
+    :func:`_write_audit`) so it persists in the same transaction as the
+    audit row, independent of which session the ORM ``User`` is attached to.
+    ``github_user_id`` is the stable canonical key; ``github_login`` is a
+    best-effort display alias (may be NULL).
+    """
+    await db.execute(
+        text(
+            """
+            UPDATE auth.users
+               SET github_user_id = :github_user_id,
+                   github_login   = :github_login
+             WHERE id = :user_id
+            """
+        ),
+        {
+            "github_user_id": github_user_id,
+            "github_login": github_login,
+            "user_id": str(user_id),
+        },
+    )
 
 
 async def _resolve_username(current_user: User) -> str:
@@ -260,7 +349,8 @@ async def link_identity(
             detail="Could not link the identity.",
         ) from exc
 
-    # 6. Audit + structlog + return refreshed list.
+    # 6. Audit + (for GitHub) denormalize the GitHub identity onto
+    #    auth.users + structlog + return refreshed list.
     await _write_audit(
         db,
         user_id=current_user.id,
@@ -269,6 +359,25 @@ async def link_identity(
         provider_user_id=source_user_id,
         actor_user_id=current_user.id,
     )
+
+    # I1 link-hook: when linking GitHub, stamp the stable canonical key
+    # (github_user_id == the federated userId == the GitHub OIDC sub) onto
+    # the caller's row, plus a best-effort github_login display alias. The
+    # id is always stored; the login is best-effort (token claim, else a
+    # one-shot GitHub API lookup, else NULL).
+    if provider.lower() == _GITHUB_PROVIDER.lower():
+        github_login = _github_login_from_claims(claims)
+        if github_login is None:
+            github_login = await asyncio.to_thread(
+                _github_login_via_api, source_user_id
+            )
+        await _stamp_github_identity(
+            db,
+            user_id=current_user.id,
+            github_user_id=source_user_id,
+            github_login=github_login,
+        )
+
     await db.commit()
     logger.info(
         "identity_linked",

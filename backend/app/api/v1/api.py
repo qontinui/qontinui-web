@@ -59,6 +59,7 @@ from app.api.v1.endpoints import (
     finding_categories,
     health,
     historical,
+    identity_resolution,
     images,
     integration_testing,
     issues,
@@ -202,6 +203,10 @@ api_router.include_router(
 api_router.include_router(runner_wake.router, prefix="/device", tags=["device-wake"])
 # Operations — fleet aggregation + cross-machine Claude session monitoring.
 api_router.include_router(operations.router, prefix="/operations", tags=["operations"])
+# Identity-contract I3-web — PR -> responsible qontinui user(s) resolver.
+api_router.include_router(
+    identity_resolution.router, prefix="/identity", tags=["identity-resolution"]
+)
 # Device process logs proxy — read persisted process logs from the device's PG DB
 api_router.include_router(
     runner_logs.router, prefix="/device-logs", tags=["device-logs"]

@@ -28829,6 +28829,41 @@
         "title": "ResolveRequest",
         "type": "object"
       },
+      "ResponsibleUserOut": {
+        "description": "One responsible user + the resolution source.",
+        "properties": {
+          "source": {
+            "description": "Resolution source: \"github-author\" | \"device-owner\" | \"tenant-fallback\".",
+            "title": "Source",
+            "type": "string"
+          },
+          "user_id": {
+            "description": "The qontinui user id (UUID).",
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "source"
+        ],
+        "title": "ResponsibleUserOut",
+        "type": "object"
+      },
+      "ResponsibleUsersResponse": {
+        "description": "Response for the responsible-users resolver. Never empty.",
+        "properties": {
+          "responsible_users": {
+            "items": {
+              "$ref": "#/components/schemas/ResponsibleUserOut"
+            },
+            "title": "Responsible Users",
+            "type": "array"
+          }
+        },
+        "title": "ResponsibleUsersResponse",
+        "type": "object"
+      },
       "ReviewCreate": {
         "description": "Request schema for reviewing a comparison.",
         "properties": {
@@ -58520,6 +58555,68 @@
         "summary": "Readiness Probe",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/api/v1/identity/responsible-users/{repo}/{pr_number}": {
+      "get": {
+        "description": "Resolve the responsible qontinui user(s) for ``(repo, pr_number)``.\n\nComposes (in priority order) the PR's GitHub author -> linked user, the\nresolving agent's device-owner user, and a tenant-member fallback \u2014 so\nthe result is always non-empty.",
+        "operationId": "api_v1_identity_responsible_users_repo_pr_number_get",
+        "parameters": [
+          {
+            "description": "The GitHub repo (owner/name or short name).",
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "description": "The GitHub repo (owner/name or short name).",
+              "title": "Repo",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The pull-request number.",
+            "in": "path",
+            "name": "pr_number",
+            "required": true,
+            "schema": {
+              "description": "The pull-request number.",
+              "minimum": 1,
+              "title": "Pr Number",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponsibleUsersResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Responsible Users",
+        "tags": [
+          "identity-resolution"
         ]
       }
     },
