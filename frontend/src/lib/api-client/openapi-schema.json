@@ -8234,6 +8234,87 @@
         "title": "ContextUpdate",
         "type": "object"
       },
+      "CoordNotificationRequest": {
+        "description": "Body of the coord -> web gate-action webhook (the T3 contract).",
+        "properties": {
+          "block_reason_code": {
+            "description": "Coord's gate block-reason code (e.g. 'blast_radius').",
+            "title": "Block Reason Code",
+            "type": "string"
+          },
+          "coverage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Analysis coverage fraction in [0,1], or null if unknown.",
+            "title": "Coverage"
+          },
+          "evidence": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Arbitrary gate evidence payload (opaque) \u2014 coord emits a list of removed-export records for blast-radius blocks, null otherwise. Accepted as-is and passed through to notification metadata.",
+            "title": "Evidence"
+          },
+          "graph_available": {
+            "description": "Whether a code graph backed the decision (authority signal).",
+            "title": "Graph Available",
+            "type": "boolean"
+          },
+          "head_sha": {
+            "description": "Head commit SHA of the PR at escalation.",
+            "title": "Head Sha",
+            "type": "string"
+          },
+          "pr_number": {
+            "description": "The pull-request number.",
+            "minimum": 1.0,
+            "title": "Pr Number",
+            "type": "integer"
+          },
+          "repo": {
+            "description": "owner/name of the GitHub repository.",
+            "title": "Repo",
+            "type": "string"
+          },
+          "responsible_context": {
+            "$ref": "#/components/schemas/ResponsibleContext",
+            "description": "Embedded responsible-user context (no coord callback needed)."
+          }
+        },
+        "required": [
+          "repo",
+          "pr_number",
+          "block_reason_code",
+          "head_sha",
+          "graph_available",
+          "responsible_context"
+        ],
+        "title": "CoordNotificationRequest",
+        "type": "object"
+      },
+      "CoordNotificationResponse": {
+        "description": "Honest count of users actually notified (may be 0).",
+        "properties": {
+          "notified_user_count": {
+            "title": "Notified User Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "notified_user_count"
+        ],
+        "title": "CoordNotificationResponse",
+        "type": "object"
+      },
       "CoreSettingsSchema": {
         "description": "Core framework settings schema.",
         "properties": {
@@ -29596,6 +29677,53 @@
           }
         },
         "title": "ResolveRequest",
+        "type": "object"
+      },
+      "ResponsibleContext": {
+        "description": "The responsible-user context coord embeds so web needs no callback.\n\nField names/types mirror coord's emitted payload EXACTLY (the cross-\nrepo contract). ``github_author_id`` is GitHub's numeric id (int);\nthe resolver coerces it to the string join key.",
+        "properties": {
+          "device_owner_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Owner User Id"
+          },
+          "github_author_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Github Author Id"
+          },
+          "tenant_fallback_user_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tenant Fallback User Ids",
+            "type": "array"
+          },
+          "tenant_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Id"
+          }
+        },
+        "title": "ResponsibleContext",
         "type": "object"
       },
       "ResponsibleUserOut": {
@@ -61043,6 +61171,66 @@
         "summary": "Get State Screenshots",
         "tags": [
           "integration-testing"
+        ]
+      }
+    },
+    "/api/v1/internal/coord-notifications": {
+      "post": {
+        "description": "Receive coord's gate-action webhook and notify responsible users.\n\nResolves the responsible user(s) from the embedded context (no coord\ncallback), then for each \u2014 after privacy narrowing of the tenant-\nfallback source and a dedupe check \u2014 creates a prefs-gated in-app +\nemail GATE_ACTION notification. Returns the honest count actually\ncreated (0 is a valid, expected outcome: everyone opted out, every\ncandidate was a non-admin fallback, or all were already notified).",
+        "operationId": "api_v1_internal_coord_notifications_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Coord-Service-Secret",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coord-Service-Secret"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CoordNotificationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoordNotificationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Receive Coord Notification",
+        "tags": [
+          "internal"
         ]
       }
     },
