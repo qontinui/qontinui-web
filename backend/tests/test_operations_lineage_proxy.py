@@ -310,9 +310,7 @@ class TestGetSessionCommits:
                 json_data=_session_commits_envelope()
             )
             _configure_mock_client(MockClient, instance)
-            resp = auth_client.get(
-                f"{API_PREFIX}/lineage/sessions/not-a-uuid/commits"
-            )
+            resp = auth_client.get(f"{API_PREFIX}/lineage/sessions/not-a-uuid/commits")
         assert resp.status_code == 422
         instance.get.assert_not_called()
 

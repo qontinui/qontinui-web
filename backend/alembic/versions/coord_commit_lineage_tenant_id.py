@@ -58,7 +58,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_commit_lineage_tenant_id"
-down_revision: str | Sequence[str] | None = "lineage_recorded_at_idx_01"
+down_revision: str | Sequence[str] | None = "d6e7f8a9b0c1"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
