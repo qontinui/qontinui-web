@@ -16,7 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { ExternalLink, HeartPulse, RefreshCw } from "lucide-react";
-import { FleetOverview } from "@/components/operations";
+import { DevActionsTile, FleetOverview } from "@/components/operations";
 import { httpClient } from "@/services/service-factory";
 
 const API = "/api/v1/operations";
@@ -151,6 +151,7 @@ export default function CoordFleetPage() {
   return (
     <div className="p-3 sm:p-6 space-y-4" data-testid="coord-fleet-page">
       <HealthSummaryCard />
+      <DevActionsTile />
       <FleetOverview />
     </div>
   );
