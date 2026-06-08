@@ -53,7 +53,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "github_id_01_add_github_identity"
-down_revision: str | Sequence[str] | None = "coord_maintenance_2026_06_08"
+down_revision: str | Sequence[str] | None = "layering_gate_cols_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
