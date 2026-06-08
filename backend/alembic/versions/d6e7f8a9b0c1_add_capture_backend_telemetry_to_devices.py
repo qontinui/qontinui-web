@@ -1,7 +1,7 @@
 """add capture-backend telemetry columns to coord.devices
 
 Revision ID: d6e7f8a9b0c1
-Revises: resq_01_migration_reservations
+Revises: github_id_01_add_github_identity
 Create Date: 2026-06-07
 
 Fleet capture-backend telemetry (plan ``2026-06-07-fleet-capture-backend-telemetry``):
@@ -37,7 +37,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "d6e7f8a9b0c1"
-down_revision: Union[str, None] = "seed_pnpm_lock_grammar"
+down_revision: Union[str, None] = "github_id_01_add_github_identity"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
