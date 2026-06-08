@@ -168,6 +168,19 @@ class Settings(BaseSettings):
             "strategy feature disabled. Set-but-wrong = fail-fast at startup."
         ),
     )
+    # T3 gate-action notifications (coord -> web webhook). The shared secret
+    # coord presents in the `X-Coord-Service-Token` header on
+    # POST /api/v1/internal/coord-notifications. Unset = the receiver rejects
+    # every call 503 (feature dark until provisioned on BOTH sides; mirrors
+    # coord's QONTINUI_COORD_WEB_SERVICE_TOKEN default-off discipline).
+    COORD_WEB_SERVICE_TOKEN: str | None = Field(
+        default=None,
+        description=(
+            "Shared service secret coord presents to "
+            "POST /api/v1/internal/coord-notifications (X-Coord-Service-Token). "
+            "Unset = gate-action notification receiver disabled (503)."
+        ),
+    )
     STRATEGY_SERVICE_NAME: str = Field(
         default="qontinui-web-strategy",
         description="sub=service:<name> the web backend mints at coord",

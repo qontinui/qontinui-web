@@ -38,7 +38,7 @@ Resolution sources, in priority order.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Iterable
 from uuid import UUID
 
 import httpx
@@ -214,6 +214,59 @@ async def _fetch_responsible_context(
     )
 
 
+async def map_context_to_users(
+    db: AsyncSession,
+    *,
+    github_author_id: str | None,
+    device_owner_user_id: UUID | None,
+    tenant_fallback_user_ids: Iterable[UUID],
+) -> list[ResponsibleUser]:
+    """Map an already-resolved responsible-context to qontinui user(s).
+
+    Pure local DB mapping — NO coord call, NO bearer. Shared by:
+
+    * :func:`resolve_responsible_users`, which fetches the context from coord
+      over the web->coord seam, and
+    * the T3 gate-action webhook receiver, which receives the context
+      **embedded in the webhook** (coord resolves it on its side, so a service
+      call with no user bearer can still notify the right users).
+
+    Returns users deduped by id, source-priority ordered
+    (github-author > device-owner > tenant-fallback). MAY be empty — the
+    caller decides whether empty is an error (the HTTP resolver raises 404) or
+    a soft no-op (the webhook logs + notifies nobody).
+    """
+    ordered: list[ResponsibleUser] = []
+    seen: set[UUID] = set()
+
+    def _add(user_id: UUID | None, source: str) -> None:
+        if user_id is None or user_id in seen:
+            return
+        seen.add(user_id)
+        ordered.append(ResponsibleUser(user_id=user_id, source=source))
+
+    # (a) PR GitHub author id -> linked user.
+    if github_author_id:
+        author = await user_for_github_user_id(db, github_author_id)
+        if author is not None:
+            _add(author.id, SOURCE_GITHUB_AUTHOR)
+
+    # (b) Agent's device owner user.
+    if device_owner_user_id is not None:
+        owner = await db.get(User, device_owner_user_id)
+        if owner is not None:
+            _add(owner.id, SOURCE_DEVICE_OWNER)
+
+    # (c) Tenant fallback — only consulted when arms (a)+(b) produced no user.
+    if not ordered:
+        for uid in tenant_fallback_user_ids:
+            member = await db.get(User, uid)
+            if member is not None:
+                _add(member.id, SOURCE_TENANT_FALLBACK)
+
+    return ordered
+
+
 async def resolve_responsible_users(
     db: AsyncSession,
     repo: str,
@@ -238,34 +291,12 @@ async def resolve_responsible_users(
         repo, pr_number, bearer=bearer, acting_user_id=acting_user_id
     )
 
-    ordered: list[ResponsibleUser] = []
-    seen: set[UUID] = set()
-
-    def _add(user_id: UUID | None, source: str) -> None:
-        if user_id is None or user_id in seen:
-            return
-        seen.add(user_id)
-        ordered.append(ResponsibleUser(user_id=user_id, source=source))
-
-    # (a) PR GitHub author id -> linked user.
-    if ctx.github_author_id:
-        author = await user_for_github_user_id(db, ctx.github_author_id)
-        if author is not None:
-            _add(author.id, SOURCE_GITHUB_AUTHOR)
-
-    # (b) Agent's device owner user.
-    if ctx.device_owner_user_id is not None:
-        owner = await db.get(User, ctx.device_owner_user_id)
-        if owner is not None:
-            _add(owner.id, SOURCE_DEVICE_OWNER)
-
-    # (c) Tenant fallback — never resolve to nobody. Only consulted when
-    # arms (a)+(b) produced no user.
-    if not ordered:
-        for uid in ctx.tenant_fallback_user_ids:
-            member = await db.get(User, uid)
-            if member is not None:
-                _add(member.id, SOURCE_TENANT_FALLBACK)
+    ordered = await map_context_to_users(
+        db,
+        github_author_id=ctx.github_author_id,
+        device_owner_user_id=ctx.device_owner_user_id,
+        tenant_fallback_user_ids=ctx.tenant_fallback_user_ids,
+    )
 
     if not ordered:
         # Honesty contract: the resolver must always return >=1 user. If we

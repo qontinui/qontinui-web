@@ -38,6 +38,9 @@ class NotificationType(StrEnum):
     TEAM_INVITE = "team_invite"
     ACCESS_GRANTED = "access_granted"
     ACCESS_REVOKED = "access_revoked"
+    # T3 — coord merge-gate escalated a PR into specialist review; the
+    # responsible user(s) are notified so the gate action is visible.
+    GATE_ACTION = "gate_action"
 
 
 class Notification(Base):
