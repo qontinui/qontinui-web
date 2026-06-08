@@ -112,8 +112,7 @@ class TestGetDevActionsRecent:
             instance.get.return_value = mock_resp
             _configure_mock_client(MockClient, instance)
             resp = auth_client.get(
-                f"{API_PREFIX}/dev-actions/recent"
-                "?limit=25&kind=click&device_id=dev-1"
+                f"{API_PREFIX}/dev-actions/recent?limit=25&kind=click&device_id=dev-1"
             )
         assert resp.status_code == 200
         called_params = instance.get.call_args.kwargs.get("params", {})
