@@ -101,15 +101,20 @@ def _backfill_github_ids() -> None:
     import-time error) is swallowed so the schema migration always completes.
     Idempotent: only updates rows whose ``github_user_id`` is still NULL.
     """
-    import structlog
+    try:
+        import structlog
+
+        from app.services import cognito_admin
+    except Exception:  # pragma: no cover - import guard
+        # The migrator container ships only alembic + sqlalchemy, NOT the app
+        # (no structlog / app.services). The backfill needs both, so a missing
+        # import means there is nothing to back-fill here — skip cleanly and
+        # let the schema change commit. Backfill runs when the full app applies
+        # migrations. (Previously `import structlog` ran unguarded and aborted
+        # the whole migration in the migrator container.)
+        return
 
     logger = structlog.get_logger(__name__)
-
-    try:
-        from app.services import cognito_admin
-    except Exception as exc:  # pragma: no cover - import guard
-        logger.warning("github_backfill_skipped_import", error=str(exc))
-        return
 
     bind = op.get_bind()
     rows = bind.execute(
