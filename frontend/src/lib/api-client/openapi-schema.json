@@ -1148,280 +1148,6 @@
         "title": "ActiveLockInfo",
         "type": "object"
       },
-      "AdminNotificationSettingsResponse": {
-        "description": "Schema for admin notification settings response.",
-        "properties": {
-          "created_at": {
-            "title": "Created At",
-            "type": "string"
-          },
-          "id": {
-            "description": "Settings UUID",
-            "title": "Id",
-            "type": "string"
-          },
-          "notification_email": {
-            "description": "Email address to send admin notifications to",
-            "format": "email",
-            "title": "Notification Email",
-            "type": "string"
-          },
-          "notifications_enabled": {
-            "default": true,
-            "description": "Master toggle for all admin notifications",
-            "title": "Notifications Enabled",
-            "type": "boolean"
-          },
-          "notify_on_project_created": {
-            "default": true,
-            "description": "Send notification when a new project is created",
-            "title": "Notify On Project Created",
-            "type": "boolean"
-          },
-          "notify_on_user_signup": {
-            "default": true,
-            "description": "Send notification when a new user signs up",
-            "title": "Notify On User Signup",
-            "type": "boolean"
-          },
-          "updated_at": {
-            "title": "Updated At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "notification_email",
-          "id",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "AdminNotificationSettingsResponse",
-        "type": "object"
-      },
-      "AdminNotificationSettingsUpdate": {
-        "description": "Schema for updating admin notification settings.",
-        "properties": {
-          "notification_email": {
-            "anyOf": [
-              {
-                "format": "email",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Email address to send admin notifications to",
-            "title": "Notification Email"
-          },
-          "notifications_enabled": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Master toggle for all admin notifications",
-            "title": "Notifications Enabled"
-          },
-          "notify_on_project_created": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Send notification when a new project is created",
-            "title": "Notify On Project Created"
-          },
-          "notify_on_user_signup": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Send notification when a new user signs up",
-            "title": "Notify On User Signup"
-          }
-        },
-        "title": "AdminNotificationSettingsUpdate",
-        "type": "object"
-      },
-      "AdminProjectData": {
-        "description": "Schema for admin project data response.",
-        "properties": {
-          "created_at": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "ISO 8601 datetime string",
-            "title": "Created At"
-          },
-          "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
-          "id": {
-            "description": "Project ID or UUID",
-            "title": "Id",
-            "type": "string"
-          },
-          "name": {
-            "minLength": 1,
-            "title": "Name",
-            "type": "string"
-          },
-          "owner_email": {
-            "format": "email",
-            "title": "Owner Email",
-            "type": "string"
-          },
-          "owner_id": {
-            "description": "Owner UUID",
-            "title": "Owner Id",
-            "type": "string"
-          },
-          "owner_username": {
-            "title": "Owner Username",
-            "type": "string"
-          },
-          "state_count": {
-            "minimum": 0.0,
-            "title": "State Count",
-            "type": "integer"
-          },
-          "transition_count": {
-            "minimum": 0.0,
-            "title": "Transition Count",
-            "type": "integer"
-          },
-          "updated_at": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "ISO 8601 datetime string",
-            "title": "Updated At"
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "owner_id",
-          "owner_username",
-          "owner_email",
-          "state_count",
-          "transition_count"
-        ],
-        "title": "AdminProjectData",
-        "type": "object"
-      },
-      "AdminUserData": {
-        "description": "Schema for admin user data response.",
-        "properties": {
-          "created_at": {
-            "description": "ISO 8601 datetime string",
-            "title": "Created At",
-            "type": "string"
-          },
-          "email": {
-            "format": "email",
-            "title": "Email",
-            "type": "string"
-          },
-          "email_verified": {
-            "default": false,
-            "description": "Email verification status (alias for is_verified)",
-            "title": "Email Verified",
-            "type": "boolean"
-          },
-          "full_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Full Name"
-          },
-          "id": {
-            "description": "User UUID",
-            "title": "Id",
-            "type": "string"
-          },
-          "is_active": {
-            "title": "Is Active",
-            "type": "boolean"
-          },
-          "is_verified": {
-            "title": "Is Verified",
-            "type": "boolean"
-          },
-          "last_login": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "ISO 8601 datetime string",
-            "title": "Last Login"
-          },
-          "project_count": {
-            "minimum": 0.0,
-            "title": "Project Count",
-            "type": "integer"
-          },
-          "subscription_tier": {
-            "description": "Subscription tier: free, hobby, or pro",
-            "title": "Subscription Tier",
-            "type": "string"
-          },
-          "username": {
-            "title": "Username",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "email",
-          "username",
-          "is_active",
-          "is_verified",
-          "created_at",
-          "project_count",
-          "subscription_tier"
-        ],
-        "title": "AdminUserData",
-        "type": "object"
-      },
       "AggregatedTaskRuns": {
         "description": "All running tasks across fleet.",
         "properties": {
@@ -3478,21 +3204,6 @@
           "screenshot_ids"
         ],
         "title": "BatchProjectScreenshotDelete",
-        "type": "object"
-      },
-      "BillingPortalResponse": {
-        "description": "Response schema for billing portal session",
-        "properties": {
-          "url": {
-            "description": "Stripe billing portal URL",
-            "title": "Url",
-            "type": "string"
-          }
-        },
-        "required": [
-          "url"
-        ],
-        "title": "BillingPortalResponse",
         "type": "object"
       },
       "Body_create_baseline_from_upload_api_v1_testing_baselines_post": {
@@ -5825,42 +5536,6 @@
           }
         },
         "title": "CheckUpdate",
-        "type": "object"
-      },
-      "CheckoutSessionRequest": {
-        "description": "Request schema for creating checkout session",
-        "properties": {
-          "tier": {
-            "description": "Subscription tier to purchase (hobby or pro)",
-            "title": "Tier",
-            "type": "string"
-          }
-        },
-        "required": [
-          "tier"
-        ],
-        "title": "CheckoutSessionRequest",
-        "type": "object"
-      },
-      "CheckoutSessionResponse": {
-        "description": "Response schema for checkout session",
-        "properties": {
-          "session_id": {
-            "description": "Stripe checkout session ID",
-            "title": "Session Id",
-            "type": "string"
-          },
-          "url": {
-            "description": "Stripe checkout URL",
-            "title": "Url",
-            "type": "string"
-          }
-        },
-        "required": [
-          "session_id",
-          "url"
-        ],
-        "title": "CheckoutSessionResponse",
         "type": "object"
       },
       "CiStatusResponse": {
@@ -9052,79 +8727,6 @@
           }
         },
         "title": "CustomFunctionUpdate",
-        "type": "object"
-      },
-      "DatabaseHealth": {
-        "description": "Database health status and metrics.",
-        "properties": {
-          "active_connections": {
-            "description": "Active connections",
-            "title": "Active Connections",
-            "type": "integer"
-          },
-          "alert_level": {
-            "description": "Alert level",
-            "enum": [
-              "healthy",
-              "warning",
-              "critical"
-            ],
-            "title": "Alert Level",
-            "type": "string"
-          },
-          "connection_status": {
-            "description": "Connection status",
-            "title": "Connection Status",
-            "type": "string"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Error message if failed",
-            "title": "Error"
-          },
-          "idle_connections": {
-            "description": "Idle connections",
-            "title": "Idle Connections",
-            "type": "integer"
-          },
-          "pool_size": {
-            "description": "Total connection pool size",
-            "title": "Pool Size",
-            "type": "integer"
-          },
-          "pool_usage_percent": {
-            "description": "Connection pool usage percentage",
-            "title": "Pool Usage Percent",
-            "type": "number"
-          },
-          "status": {
-            "description": "Database status",
-            "enum": [
-              "healthy",
-              "degraded",
-              "down"
-            ],
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "status",
-          "connection_status",
-          "pool_size",
-          "active_connections",
-          "idle_connections",
-          "pool_usage_percent",
-          "alert_level"
-        ],
-        "title": "DatabaseHealth",
         "type": "object"
       },
       "DatasetAnnotationResponse": {
@@ -18938,166 +18540,6 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
-      "HealthOverview": {
-        "description": "Comprehensive health overview.",
-        "properties": {
-          "database": {
-            "$ref": "#/components/schemas/DatabaseHealth",
-            "description": "Database health metrics"
-          },
-          "overall_status": {
-            "description": "Overall system health status",
-            "enum": [
-              "healthy",
-              "warning",
-              "degraded",
-              "critical"
-            ],
-            "title": "Overall Status",
-            "type": "string"
-          },
-          "redis": {
-            "$ref": "#/components/schemas/RedisHealth",
-            "description": "Redis health metrics"
-          },
-          "security": {
-            "$ref": "#/components/schemas/SecurityWarnings",
-            "description": "Security warnings and alerts"
-          },
-          "sessions": {
-            "$ref": "#/components/schemas/SessionStats",
-            "description": "Session statistics"
-          },
-          "system": {
-            "$ref": "#/components/schemas/SystemMetrics",
-            "description": "System resource metrics"
-          },
-          "timestamp": {
-            "description": "Timestamp of health check (ISO format)",
-            "title": "Timestamp",
-            "type": "string"
-          },
-          "token_blacklist": {
-            "$ref": "#/components/schemas/TokenBlacklistStats",
-            "description": "Token blacklist statistics"
-          }
-        },
-        "required": [
-          "overall_status",
-          "timestamp",
-          "redis",
-          "database",
-          "token_blacklist",
-          "security",
-          "sessions",
-          "system"
-        ],
-        "title": "HealthOverview",
-        "type": "object"
-      },
-      "HealthThresholds": {
-        "description": "Health monitoring thresholds configuration.",
-        "properties": {
-          "cpu_critical": {
-            "default": 90.0,
-            "description": "CPU critical threshold (%)",
-            "title": "Cpu Critical",
-            "type": "number"
-          },
-          "cpu_warning": {
-            "default": 70.0,
-            "description": "CPU warning threshold (%)",
-            "title": "Cpu Warning",
-            "type": "number"
-          },
-          "db_connections_critical": {
-            "default": 95.0,
-            "description": "Database connections critical threshold (%)",
-            "title": "Db Connections Critical",
-            "type": "number"
-          },
-          "db_connections_warning": {
-            "default": 80.0,
-            "description": "Database connections warning threshold (%)",
-            "title": "Db Connections Warning",
-            "type": "number"
-          },
-          "device_mismatches_critical": {
-            "default": 100,
-            "description": "Device mismatches critical threshold (per 24h)",
-            "title": "Device Mismatches Critical",
-            "type": "integer"
-          },
-          "device_mismatches_warning": {
-            "default": 50,
-            "description": "Device mismatches warning threshold (per 24h)",
-            "title": "Device Mismatches Warning",
-            "type": "integer"
-          },
-          "disk_critical": {
-            "default": 95.0,
-            "description": "Disk critical threshold (%)",
-            "title": "Disk Critical",
-            "type": "number"
-          },
-          "disk_warning": {
-            "default": 80.0,
-            "description": "Disk warning threshold (%)",
-            "title": "Disk Warning",
-            "type": "number"
-          },
-          "failed_logins_critical": {
-            "default": 100,
-            "description": "Failed logins critical threshold (per 24h)",
-            "title": "Failed Logins Critical",
-            "type": "integer"
-          },
-          "failed_logins_warning": {
-            "default": 30,
-            "description": "Failed logins warning threshold (per 24h)",
-            "title": "Failed Logins Warning",
-            "type": "integer"
-          },
-          "memory_critical": {
-            "default": 95.0,
-            "description": "Memory critical threshold (%)",
-            "title": "Memory Critical",
-            "type": "number"
-          },
-          "memory_warning": {
-            "default": 80.0,
-            "description": "Memory warning threshold (%)",
-            "title": "Memory Warning",
-            "type": "number"
-          },
-          "new_devices_critical": {
-            "default": 50,
-            "description": "New devices critical threshold (per 24h)",
-            "title": "New Devices Critical",
-            "type": "integer"
-          },
-          "new_devices_warning": {
-            "default": 20,
-            "description": "New devices warning threshold (per 24h)",
-            "title": "New Devices Warning",
-            "type": "integer"
-          },
-          "redis_memory_critical": {
-            "default": 95.0,
-            "description": "Redis memory critical threshold (%)",
-            "title": "Redis Memory Critical",
-            "type": "number"
-          },
-          "redis_memory_warning": {
-            "default": 80.0,
-            "description": "Redis memory warning threshold (%)",
-            "title": "Redis Memory Warning",
-            "type": "number"
-          }
-        },
-        "title": "HealthThresholds",
-        "type": "object"
-      },
       "HeartbeatBody": {
         "description": "Accepts EITHER doc_id (already-resolved UUID) OR doc_name (the\nsubstrate-relative path). The frontend sends doc_name; coord\nresolves and echoes the canonical doc_id in the response body.",
         "properties": {
@@ -23789,35 +23231,6 @@
         "title": "OrganizationStatistics",
         "type": "object"
       },
-      "OrganizationSwitchResponse": {
-        "description": "Schema for organization switch response.",
-        "properties": {
-          "current_organization_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Current Organization Id"
-          },
-          "message": {
-            "default": "Organization context switched successfully",
-            "title": "Message",
-            "type": "string"
-          },
-          "success": {
-            "default": true,
-            "title": "Success",
-            "type": "boolean"
-          }
-        },
-        "title": "OrganizationSwitchResponse",
-        "type": "object"
-      },
       "OrganizationUpdate": {
         "description": "Schema for updating an organization.",
         "properties": {
@@ -28354,188 +27767,6 @@
         "title": "RecordingStatusEnum",
         "type": "string"
       },
-      "RedisHealth": {
-        "description": "Redis health status and metrics.",
-        "properties": {
-          "alert_level": {
-            "description": "Alert level",
-            "enum": [
-              "healthy",
-              "warning",
-              "critical"
-            ],
-            "title": "Alert Level",
-            "type": "string"
-          },
-          "available": {
-            "description": "Whether Redis is available",
-            "title": "Available",
-            "type": "boolean"
-          },
-          "connected_clients": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Number of connected clients",
-            "title": "Connected Clients"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Error message if failed",
-            "title": "Error"
-          },
-          "memory_percent": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Memory usage percentage",
-            "title": "Memory Percent"
-          },
-          "memory_total_mb": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Total memory available to Redis in MB",
-            "title": "Memory Total Mb"
-          },
-          "memory_used_mb": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Memory used by Redis in MB",
-            "title": "Memory Used Mb"
-          },
-          "message": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Status message",
-            "title": "Message"
-          },
-          "mode": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Redis mode (standalone/cluster)",
-            "title": "Mode"
-          },
-          "ops_per_second": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Operations per second",
-            "title": "Ops Per Second"
-          },
-          "ping_time_ms": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Ping response time in milliseconds",
-            "title": "Ping Time Ms"
-          },
-          "redis_version": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Redis version",
-            "title": "Redis Version"
-          },
-          "status": {
-            "description": "Redis status",
-            "enum": [
-              "healthy",
-              "degraded",
-              "down",
-              "disabled"
-            ],
-            "title": "Status",
-            "type": "string"
-          },
-          "uptime_hours": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Redis uptime in hours",
-            "title": "Uptime Hours"
-          },
-          "uptime_seconds": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Redis uptime in seconds",
-            "title": "Uptime Seconds"
-          }
-        },
-        "required": [
-          "status",
-          "available",
-          "alert_level"
-        ],
-        "title": "RedisHealth",
-        "type": "object"
-      },
       "RegisteredRunner": {
         "description": "A runner in the fleet.",
         "properties": {
@@ -29596,6 +28827,41 @@
           }
         },
         "title": "ResolveRequest",
+        "type": "object"
+      },
+      "ResponsibleUserOut": {
+        "description": "One responsible user + the resolution source.",
+        "properties": {
+          "source": {
+            "description": "Resolution source: \"github-author\" | \"device-owner\" | \"tenant-fallback\".",
+            "title": "Source",
+            "type": "string"
+          },
+          "user_id": {
+            "description": "The qontinui user id (UUID).",
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "source"
+        ],
+        "title": "ResponsibleUserOut",
+        "type": "object"
+      },
+      "ResponsibleUsersResponse": {
+        "description": "Response for the responsible-users resolver. Never empty.",
+        "properties": {
+          "responsible_users": {
+            "items": {
+              "$ref": "#/components/schemas/ResponsibleUserOut"
+            },
+            "title": "Responsible Users",
+            "type": "array"
+          }
+        },
+        "title": "ResponsibleUsersResponse",
         "type": "object"
       },
       "ReviewCreate": {
@@ -31583,109 +30849,6 @@
         "title": "SearchResultItem",
         "type": "object"
       },
-      "SecurityRecommendation": {
-        "description": "Security recommendation for alerts.",
-        "properties": {
-          "message": {
-            "description": "Recommendation message",
-            "title": "Message",
-            "type": "string"
-          },
-          "severity": {
-            "description": "Severity level",
-            "enum": [
-              "info",
-              "warning",
-              "critical"
-            ],
-            "title": "Severity",
-            "type": "string"
-          },
-          "type": {
-            "description": "Type of recommendation",
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "type",
-          "severity",
-          "message"
-        ],
-        "title": "SecurityRecommendation",
-        "type": "object"
-      },
-      "SecurityWarnings": {
-        "description": "Security warnings and alerts.",
-        "properties": {
-          "alert_level": {
-            "description": "Overall security alert level",
-            "enum": [
-              "healthy",
-              "warning",
-              "critical",
-              "unknown"
-            ],
-            "title": "Alert Level",
-            "type": "string"
-          },
-          "device_mismatches_24h": {
-            "description": "Device fingerprint mismatches in last 24 hours",
-            "title": "Device Mismatches 24H",
-            "type": "integer"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Error message if failed",
-            "title": "Error"
-          },
-          "failed_logins_24h": {
-            "description": "Failed login attempts in last 24 hours",
-            "title": "Failed Logins 24H",
-            "type": "integer"
-          },
-          "new_devices_24h": {
-            "description": "New devices registered in last 24 hours",
-            "title": "New Devices 24H",
-            "type": "integer"
-          },
-          "recommendations": {
-            "description": "Security recommendations",
-            "items": {
-              "$ref": "#/components/schemas/SecurityRecommendation"
-            },
-            "title": "Recommendations",
-            "type": "array"
-          },
-          "untrusted_devices_total": {
-            "description": "Total number of untrusted devices",
-            "title": "Untrusted Devices Total",
-            "type": "integer"
-          },
-          "users_with_multiple_devices": {
-            "description": "Users with more than 3 devices",
-            "title": "Users With Multiple Devices",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "device_mismatches_24h",
-          "new_devices_24h",
-          "failed_logins_24h",
-          "untrusted_devices_total",
-          "users_with_multiple_devices",
-          "alert_level"
-        ],
-        "title": "SecurityWarnings",
-        "type": "object"
-      },
       "SemanticSearchResultItem": {
         "description": "A single semantic search result.",
         "properties": {
@@ -31737,75 +30900,6 @@
           "similarity"
         ],
         "title": "SemanticSearchResultItem",
-        "type": "object"
-      },
-      "SessionStats": {
-        "description": "Session statistics and metrics.",
-        "properties": {
-          "activity_rate": {
-            "description": "Percentage of sessions active in last hour",
-            "title": "Activity Rate",
-            "type": "number"
-          },
-          "avg_session_age_hours": {
-            "description": "Average age of active sessions in hours",
-            "title": "Avg Session Age Hours",
-            "type": "number"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Error message if failed",
-            "title": "Error"
-          },
-          "remember_me_adoption_rate": {
-            "description": "Percentage of sessions using remember_me",
-            "title": "Remember Me Adoption Rate",
-            "type": "number"
-          },
-          "remember_me_sessions": {
-            "description": "Sessions with remember_me enabled",
-            "title": "Remember Me Sessions",
-            "type": "integer"
-          },
-          "sessions_active_last_hour": {
-            "description": "Sessions active in last hour",
-            "title": "Sessions Active Last Hour",
-            "type": "integer"
-          },
-          "sessions_expiring_soon": {
-            "description": "Sessions expiring in next hour",
-            "title": "Sessions Expiring Soon",
-            "type": "integer"
-          },
-          "standard_sessions": {
-            "description": "Standard sessions",
-            "title": "Standard Sessions",
-            "type": "integer"
-          },
-          "total_active_sessions": {
-            "description": "Total active sessions",
-            "title": "Total Active Sessions",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "total_active_sessions",
-          "remember_me_sessions",
-          "standard_sessions",
-          "remember_me_adoption_rate",
-          "avg_session_age_hours",
-          "sessions_expiring_soon",
-          "sessions_active_last_hour",
-          "activity_rate"
-        ],
-        "title": "SessionStats",
         "type": "object"
       },
       "SessionTimeline": {
@@ -34955,57 +34049,6 @@
         "title": "StorageQuotaResponse",
         "type": "object"
       },
-      "SubscriptionResponse": {
-        "description": "Response schema for subscription details",
-        "properties": {
-          "cancel_at_period_end": {
-            "default": false,
-            "description": "Whether subscription will cancel at period end",
-            "title": "Cancel At Period End",
-            "type": "boolean"
-          },
-          "current_period_end": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "ISO timestamp of when current period ends",
-            "title": "Current Period End"
-          },
-          "status": {
-            "description": "Subscription status",
-            "title": "Status",
-            "type": "string"
-          },
-          "stripe_status": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Live Stripe subscription status",
-            "title": "Stripe Status"
-          },
-          "tier": {
-            "description": "Subscription tier (free, hobby, pro)",
-            "title": "Tier",
-            "type": "string"
-          }
-        },
-        "required": [
-          "tier",
-          "status"
-        ],
-        "title": "SubscriptionResponse",
-        "type": "object"
-      },
       "SyncLockReleaseRequest": {
         "description": "Request to release a sync lock.",
         "properties": {
@@ -35110,99 +34153,6 @@
           "expires_at"
         ],
         "title": "SyncLockResponse",
-        "type": "object"
-      },
-      "SystemMetrics": {
-        "description": "System resource metrics.",
-        "properties": {
-          "alert_level": {
-            "description": "System health alert level",
-            "enum": [
-              "healthy",
-              "warning",
-              "critical",
-              "unknown"
-            ],
-            "title": "Alert Level",
-            "type": "string"
-          },
-          "cpu_count": {
-            "description": "Number of CPU cores",
-            "title": "Cpu Count",
-            "type": "integer"
-          },
-          "cpu_percent": {
-            "description": "CPU usage percentage",
-            "title": "Cpu Percent",
-            "type": "number"
-          },
-          "disk_available_gb": {
-            "description": "Available disk space in GB",
-            "title": "Disk Available Gb",
-            "type": "number"
-          },
-          "disk_percent": {
-            "description": "Disk usage percentage",
-            "title": "Disk Percent",
-            "type": "number"
-          },
-          "disk_total_gb": {
-            "description": "Total disk space in GB",
-            "title": "Disk Total Gb",
-            "type": "number"
-          },
-          "disk_used_gb": {
-            "description": "Used disk space in GB",
-            "title": "Disk Used Gb",
-            "type": "number"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Error message if failed",
-            "title": "Error"
-          },
-          "memory_available_mb": {
-            "description": "Available memory in MB",
-            "title": "Memory Available Mb",
-            "type": "number"
-          },
-          "memory_percent": {
-            "description": "Memory usage percentage",
-            "title": "Memory Percent",
-            "type": "number"
-          },
-          "memory_total_mb": {
-            "description": "Total system memory in MB",
-            "title": "Memory Total Mb",
-            "type": "number"
-          },
-          "memory_used_mb": {
-            "description": "Used memory in MB",
-            "title": "Memory Used Mb",
-            "type": "number"
-          }
-        },
-        "required": [
-          "cpu_percent",
-          "cpu_count",
-          "memory_total_mb",
-          "memory_used_mb",
-          "memory_available_mb",
-          "memory_percent",
-          "disk_total_gb",
-          "disk_used_gb",
-          "disk_available_gb",
-          "disk_percent",
-          "alert_level"
-        ],
-        "title": "SystemMetrics",
         "type": "object"
       },
       "TaskRunAutomationCreate": {
@@ -38579,39 +37529,6 @@
         "title": "ThreadCreate",
         "type": "object"
       },
-      "TierLimitsResponse": {
-        "description": "Response schema for tier limits",
-        "properties": {
-          "max_configs": {
-            "description": "Maximum number of configs (-1 = unlimited)",
-            "title": "Max Configs",
-            "type": "integer"
-          },
-          "max_images": {
-            "description": "Maximum number of images",
-            "title": "Max Images",
-            "type": "integer"
-          },
-          "max_storage_mb": {
-            "description": "Maximum storage in MB",
-            "title": "Max Storage Mb",
-            "type": "integer"
-          },
-          "tier": {
-            "description": "Subscription tier",
-            "title": "Tier",
-            "type": "string"
-          }
-        },
-        "required": [
-          "tier",
-          "max_configs",
-          "max_images",
-          "max_storage_mb"
-        ],
-        "title": "TierLimitsResponse",
-        "type": "object"
-      },
       "TimelineEvent": {
         "description": "A timeline event that can be either a log or a screenshot",
         "properties": {
@@ -38679,80 +37596,6 @@
           "start_time"
         ],
         "title": "TimingInfo",
-        "type": "object"
-      },
-      "TokenBlacklistStats": {
-        "description": "Token blacklist statistics.",
-        "properties": {
-          "available": {
-            "description": "Whether blacklist service is available",
-            "title": "Available",
-            "type": "boolean"
-          },
-          "count": {
-            "description": "Number of blacklisted tokens",
-            "title": "Count",
-            "type": "integer"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Error message if failed",
-            "title": "Error"
-          },
-          "mode": {
-            "description": "Blacklist storage mode",
-            "enum": [
-              "redis",
-              "memory",
-              "disabled"
-            ],
-            "title": "Mode",
-            "type": "string"
-          },
-          "note": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Additional notes",
-            "title": "Note"
-          },
-          "redis_keys": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Number of Redis keys (if Redis mode)",
-            "title": "Redis Keys"
-          },
-          "size_mb": {
-            "description": "Estimated size in megabytes",
-            "title": "Size Mb",
-            "type": "number"
-          }
-        },
-        "required": [
-          "mode",
-          "count",
-          "size_mb",
-          "available"
-        ],
-        "title": "TokenBlacklistStats",
         "type": "object"
       },
       "TopMatch": {
@@ -46007,744 +44850,6 @@
         ]
       }
     },
-    "/api/v1/admin/analytics": {
-      "get": {
-        "description": "Get analytics metrics including DAU, WAU, MAU, and retention.",
-        "operationId": "api_v1_admin_analytics_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Get Analytics Api V1 Admin Analytics Get"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Analytics",
-        "tags": [
-          "admin",
-          "admin-analytics"
-        ]
-      }
-    },
-    "/api/v1/admin/analytics/summary": {
-      "get": {
-        "description": "Get comprehensive analytics summary for remember_me usage and user behavior.\n\nThis endpoint provides detailed insights into:\n- Login statistics (last 7/30 days)\n- Remember me adoption rate\n- Active sessions count\n- Device mismatch count\n- Top users by activity\n- Session and security metrics\n\nArgs:\n    days: Number of days to look back for trends (default: 30)\n\nReturns:\n    Comprehensive analytics summary with login stats, remember_me adoption,\n    active sessions, security events, and top user activity",
-        "operationId": "api_v1_admin_analytics_summary_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "days",
-            "required": false,
-            "schema": {
-              "default": 30,
-              "title": "Days",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Get Analytics Summary Api V1 Admin Analytics Summary Get"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Analytics Summary",
-        "tags": [
-          "admin",
-          "admin-analytics"
-        ]
-      }
-    },
-    "/api/v1/admin/cleanup/run": {
-      "post": {
-        "description": "Manually trigger cleanup of expired sessions and old data.\n\nThis endpoint allows admins to run cleanup tasks on-demand without\nwaiting for the scheduled cron job. Useful for testing or immediate cleanup needs.",
-        "operationId": "api_v1_admin_cleanup_run_post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Run Cleanup Manually Api V1 Admin Cleanup Run Post"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Run Cleanup Manually",
-        "tags": [
-          "admin",
-          "admin-cleanup"
-        ]
-      }
-    },
-    "/api/v1/admin/download-analytics": {
-      "get": {
-        "description": "Get runner download analytics.\n\nReturns aggregated download statistics including:\n- Total downloads and unique downloaders\n- Downloads by country, platform, browser\n- Daily download trends\n- UTM campaign attribution\n\nQuery params:\n    - days: Number of days to look back (default 30)",
-        "operationId": "api_v1_admin_download_analytics_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "days",
-            "required": false,
-            "schema": {
-              "default": 30,
-              "title": "Days",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Get Download Analytics Api V1 Admin Download Analytics Get"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Download Analytics",
-        "tags": [
-          "admin",
-          "admin-downloads"
-        ]
-      }
-    },
-    "/api/v1/admin/health/blacklist": {
-      "get": {
-        "description": "Get token blacklist statistics.\n\nReturns:\n- Storage mode (redis/memory/disabled)\n- Number of blacklisted tokens\n- Estimated size in MB\n- Redis keys count (if Redis mode)\n- Availability status",
-        "operationId": "api_v1_admin_health_blacklist_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TokenBlacklistStats"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Health Blacklist",
-        "tags": [
-          "admin",
-          "admin-health"
-        ]
-      }
-    },
-    "/api/v1/admin/health/database": {
-      "get": {
-        "description": "Get database health status and connection pool metrics.\n\nReturns:\n- Connection status\n- Pool size and usage\n- Active vs idle connections\n- Pool usage percentage\n- Alert level based on thresholds",
-        "operationId": "api_v1_admin_health_database_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DatabaseHealth"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Health Database",
-        "tags": [
-          "admin",
-          "admin-health"
-        ]
-      }
-    },
-    "/api/v1/admin/health/overview": {
-      "get": {
-        "description": "Get comprehensive health overview with all system metrics.\n\nReturns detailed status for:\n- Redis availability and performance\n- Database connection pool and status\n- Token blacklist statistics\n- Security warnings and suspicious activity\n- Session statistics and adoption rates\n- System resources (CPU, memory, disk)\n\nCached for 30 seconds to avoid overwhelming system with health checks.",
-        "operationId": "api_v1_admin_health_overview_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HealthOverview"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Health Overview",
-        "tags": [
-          "admin",
-          "admin-health"
-        ]
-      }
-    },
-    "/api/v1/admin/health/redis": {
-      "get": {
-        "description": "Get detailed Redis health status and metrics.\n\nReturns:\n- Connection status (healthy/degraded/down/disabled)\n- Uptime and performance metrics\n- Memory usage and availability\n- Connected clients count\n- Operations per second\n- Alert level based on thresholds",
-        "operationId": "api_v1_admin_health_redis_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RedisHealth"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Health Redis",
-        "tags": [
-          "admin",
-          "admin-health"
-        ]
-      }
-    },
-    "/api/v1/admin/health/security": {
-      "get": {
-        "description": "Get security warnings and suspicious activity alerts.\n\nReturns (last 24 hours):\n- Device fingerprint mismatches\n- New device registrations\n- Failed login attempts\n- Untrusted devices count\n- Users with multiple devices\n- Alert level and recommendations",
-        "operationId": "api_v1_admin_health_security_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SecurityWarnings"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Health Security",
-        "tags": [
-          "admin",
-          "admin-health"
-        ]
-      }
-    },
-    "/api/v1/admin/health/sessions": {
-      "get": {
-        "description": "Get session statistics and adoption metrics.\n\nReturns:\n- Total active sessions\n- Remember me vs standard session counts\n- Remember me adoption rate (%)\n- Average session age\n- Sessions expiring soon (within 1 hour)\n- Recent activity metrics",
-        "operationId": "api_v1_admin_health_sessions_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SessionStats"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Health Sessions",
-        "tags": [
-          "admin",
-          "admin-health"
-        ]
-      }
-    },
-    "/api/v1/admin/health/thresholds": {
-      "get": {
-        "description": "Get current health monitoring thresholds configuration.\n\nReturns all alert thresholds for:\n- System resources (CPU, memory, disk)\n- Redis memory usage\n- Security events (device mismatches, failed logins, new devices)\n- Database connection pool",
-        "operationId": "api_v1_admin_health_thresholds_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HealthThresholds"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Health Thresholds",
-        "tags": [
-          "admin",
-          "admin-health"
-        ]
-      }
-    },
-    "/api/v1/admin/notifications/settings": {
-      "get": {
-        "description": "Get admin notification settings.\n\nReturns the current configuration for admin email notifications including:\n- Email address for notifications\n- Which events trigger notifications (user signup, project creation)\n- Whether notifications are enabled\n\nIf no settings exist, creates default settings using the current user's email.",
-        "operationId": "api_v1_admin_notifications_settings_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AdminNotificationSettingsResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Notification Settings",
-        "tags": [
-          "admin",
-          "admin-notifications"
-        ]
-      },
-      "put": {
-        "description": "Update admin notification settings.\n\nAllows updating:\n- notification_email: Email address to receive notifications\n- notify_on_user_signup: Enable/disable user signup notifications\n- notify_on_project_created: Enable/disable project creation notifications\n- notifications_enabled: Master toggle for all notifications\n\nOnly provided fields will be updated.",
-        "operationId": "api_v1_admin_notifications_settings_put",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AdminNotificationSettingsUpdate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AdminNotificationSettingsResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Update Notification Settings",
-        "tags": [
-          "admin",
-          "admin-notifications"
-        ]
-      }
-    },
-    "/api/v1/admin/notifications/test": {
-      "post": {
-        "description": "Send a test notification email to verify settings are working.\n\nSends a test email to the configured notification email address.\nReturns success or failure status.",
-        "operationId": "api_v1_admin_notifications_test_post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Send Test Notification Api V1 Admin Notifications Test Post"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Send Test Notification",
-        "tags": [
-          "admin",
-          "admin-notifications"
-        ]
-      }
-    },
-    "/api/v1/admin/projects": {
-      "get": {
-        "description": "Get all projects across all users.",
-        "operationId": "api_v1_admin_projects_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "skip",
-            "required": false,
-            "schema": {
-              "default": 0,
-              "title": "Skip",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 1000,
-              "title": "Limit",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/AdminProjectData"
-                  },
-                  "title": "Response Get All Projects Api V1 Admin Projects Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get All Projects",
-        "tags": [
-          "admin",
-          "admin-projects"
-        ]
-      }
-    },
-    "/api/v1/admin/projects/{project_id}": {
-      "get": {
-        "description": "Get detailed information about a specific project including full configuration.",
-        "operationId": "api_v1_admin_projects_project_id_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Project Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Get Project Details Api V1 Admin Projects  Project Id  Get"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Project Details",
-        "tags": [
-          "admin",
-          "admin-projects"
-        ]
-      }
-    },
-    "/api/v1/admin/stats": {
-      "get": {
-        "description": "Get overall platform statistics.",
-        "operationId": "api_v1_admin_stats_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Get Admin Stats Api V1 Admin Stats Get"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Admin Stats",
-        "tags": [
-          "admin",
-          "admin-users"
-        ]
-      }
-    },
-    "/api/v1/admin/system/health": {
-      "get": {
-        "description": "Get system health metrics.",
-        "operationId": "api_v1_admin_system_health_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Get System Health Api V1 Admin System Health Get"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get System Health",
-        "tags": [
-          "admin",
-          "admin-health"
-        ]
-      }
-    },
-    "/api/v1/admin/users": {
-      "get": {
-        "description": "Get list of users with basic info.",
-        "operationId": "api_v1_admin_users_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "skip",
-            "required": false,
-            "schema": {
-              "default": 0,
-              "title": "Skip",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 50,
-              "title": "Limit",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/AdminUserData"
-                  },
-                  "title": "Response Get Users List Api V1 Admin Users Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Users List",
-        "tags": [
-          "admin",
-          "admin-users"
-        ]
-      }
-    },
-    "/api/v1/admin/users/{user_id}": {
-      "get": {
-        "description": "Get detailed info about a specific user.",
-        "operationId": "api_v1_admin_users_user_id_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "user_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "User Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Get User Details Api V1 Admin Users  User Id  Get"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get User Details",
-        "tags": [
-          "admin",
-          "admin-users"
-        ]
-      }
-    },
     "/api/v1/ai-prompt-templates/{template_id}/versions": {
       "get": {
         "description": "List all versions for a prompt template with pagination.",
@@ -49317,240 +47422,6 @@
         "summary": "Get Presets",
         "tags": [
           "background-removal"
-        ]
-      }
-    },
-    "/api/v1/billing/checkout": {
-      "post": {
-        "description": "Create a Stripe checkout session for subscription purchase",
-        "operationId": "api_v1_billing_checkout_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CheckoutSessionRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CheckoutSessionResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Create Checkout Session",
-        "tags": [
-          "billing"
-        ]
-      }
-    },
-    "/api/v1/billing/limits": {
-      "get": {
-        "description": "Get storage and resource limits for current user's tier",
-        "operationId": "api_v1_billing_limits_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TierLimitsResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Tier Limits",
-        "tags": [
-          "billing"
-        ]
-      }
-    },
-    "/api/v1/billing/portal": {
-      "post": {
-        "description": "Create a Stripe billing portal session for subscription management",
-        "operationId": "api_v1_billing_portal_post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BillingPortalResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Create Billing Portal Session",
-        "tags": [
-          "billing"
-        ]
-      }
-    },
-    "/api/v1/billing/read-only-status": {
-      "get": {
-        "description": "Check if user is in read-only mode",
-        "operationId": "api_v1_billing_read_only_status_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Get Read Only Status Api V1 Billing Read Only Status Get",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Read Only Status",
-        "tags": [
-          "billing"
-        ]
-      }
-    },
-    "/api/v1/billing/subscription": {
-      "get": {
-        "description": "Get current user's subscription details",
-        "operationId": "api_v1_billing_subscription_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SubscriptionResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Subscription",
-        "tags": [
-          "billing"
-        ]
-      }
-    },
-    "/api/v1/billing/usage": {
-      "get": {
-        "description": "Get detailed usage summary with limits and percentages",
-        "operationId": "api_v1_billing_usage_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Get Usage Summary Api V1 Billing Usage Get",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Usage Summary",
-        "tags": [
-          "billing"
-        ]
-      }
-    },
-    "/api/v1/billing/webhook": {
-      "post": {
-        "description": "Handle Stripe webhook events",
-        "operationId": "api_v1_billing_webhook_post",
-        "parameters": [
-          {
-            "in": "header",
-            "name": "stripe-signature",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Stripe-Signature"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Stripe Webhook",
-        "tags": [
-          "billing"
         ]
       }
     },
@@ -60687,6 +58558,68 @@
         ]
       }
     },
+    "/api/v1/identity/responsible-users/{repo}/{pr_number}": {
+      "get": {
+        "description": "Resolve the responsible qontinui user(s) for ``(repo, pr_number)``.\n\nComposes (in priority order) the PR's GitHub author -> linked user, the\nresolving agent's device-owner user, and a tenant-member fallback \u2014 so\nthe result is always non-empty.",
+        "operationId": "api_v1_identity_responsible_users_repo_pr_number_get",
+        "parameters": [
+          {
+            "description": "The GitHub repo (owner/name or short name).",
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "description": "The GitHub repo (owner/name or short name).",
+              "title": "Repo",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The pull-request number.",
+            "in": "path",
+            "name": "pr_number",
+            "required": true,
+            "schema": {
+              "description": "The pull-request number.",
+              "minimum": 1,
+              "title": "Pr Number",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponsibleUsersResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Responsible Users",
+        "tags": [
+          "identity-resolution"
+        ]
+      }
+    },
     "/api/v1/integration-testing/execute": {
       "post": {
         "description": "Execute a mock workflow using historical data (placeholder endpoint).\n\n**Authentication:** JWT token required\n\nThis endpoint returns mock execution data for UI visualization.\nActual config testing execution happens in qontinui-runner using\nthe HistoricalDataClient to fetch historical results.\n\nNote: This is a placeholder that returns simulated data.",
@@ -69921,7 +67854,7 @@
     },
     "/api/v1/organizations": {
       "get": {
-        "description": "List all organizations the user is a member of.",
+        "description": "List all organizations the current user belongs to.",
         "operationId": "api_v1_organizations_get",
         "parameters": [
           {
@@ -70032,7 +67965,7 @@
     },
     "/api/v1/organizations/invitations/accept": {
       "post": {
-        "description": "Accept an organization invitation.",
+        "description": "Accept an invitation by token.",
         "operationId": "api_v1_organizations_invitations_accept_post",
         "requestBody": {
           "content": {
@@ -70079,7 +68012,7 @@
     },
     "/api/v1/organizations/{organization_id}": {
       "delete": {
-        "description": "Delete organization (owner only).",
+        "description": "Delete organization. Owner only. Cannot delete personal organizations.",
         "operationId": "api_v1_organizations_organization_id_delete",
         "parameters": [
           {
@@ -70119,7 +68052,7 @@
         ]
       },
       "get": {
-        "description": "Get organization details.",
+        "description": "Get organization details. User must be a member.",
         "operationId": "api_v1_organizations_organization_id_get",
         "parameters": [
           {
@@ -70166,7 +68099,7 @@
         ]
       },
       "put": {
-        "description": "Update organization (admin only).",
+        "description": "Update organization settings. Requires admin role.",
         "operationId": "api_v1_organizations_organization_id_put",
         "parameters": [
           {
@@ -70225,7 +68158,7 @@
     },
     "/api/v1/organizations/{organization_id}/invitations": {
       "get": {
-        "description": "List organization invitations (admin only).",
+        "description": "List invitations. Requires admin role.",
         "operationId": "api_v1_organizations_organization_id_invitations_get",
         "parameters": [
           {
@@ -70299,7 +68232,7 @@
         ]
       },
       "post": {
-        "description": "Create and send an organization invitation (admin only).",
+        "description": "Create an invitation. Requires admin role.",
         "operationId": "api_v1_organizations_organization_id_invitations_post",
         "parameters": [
           {
@@ -70358,7 +68291,7 @@
     },
     "/api/v1/organizations/{organization_id}/members": {
       "get": {
-        "description": "List organization members.",
+        "description": "List organization members. User must be a member.",
         "operationId": "api_v1_organizations_organization_id_members_get",
         "parameters": [
           {
@@ -70432,7 +68365,7 @@
         ]
       },
       "post": {
-        "description": "Add a team member (admin only).",
+        "description": "Add a team member. Requires admin role.",
         "operationId": "api_v1_organizations_organization_id_members_post",
         "parameters": [
           {
@@ -70491,7 +68424,7 @@
     },
     "/api/v1/organizations/{organization_id}/members/{user_id}": {
       "delete": {
-        "description": "Remove team member (admin only, or self).",
+        "description": "Remove team member. Admin can remove others; any member can remove themselves.",
         "operationId": "api_v1_organizations_organization_id_members_user_id_delete",
         "parameters": [
           {
@@ -70541,7 +68474,7 @@
         ]
       },
       "put": {
-        "description": "Update team member role (admin only).",
+        "description": "Update team member role. Requires admin role.",
         "operationId": "api_v1_organizations_organization_id_members_user_id_put",
         "parameters": [
           {
@@ -70608,85 +68541,9 @@
         ]
       }
     },
-    "/api/v1/organizations/{organization_id}/projects": {
-      "get": {
-        "description": "List all projects in an organization.\n\nUser must be a member of the organization to view its projects.\nReturns all projects where organization_id matches, regardless of\nindividual project access permissions.",
-        "operationId": "api_v1_organizations_organization_id_projects_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "organization_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Organization Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "skip",
-            "required": false,
-            "schema": {
-              "default": 0,
-              "minimum": 0,
-              "title": "Skip",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 100,
-              "maximum": 100,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/Project"
-                  },
-                  "title": "Response List Organization Projects Api V1 Organizations  Organization Id  Projects Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "List Organization Projects",
-        "tags": [
-          "organizations"
-        ]
-      }
-    },
     "/api/v1/organizations/{organization_id}/statistics": {
       "get": {
-        "description": "Get statistics for an organization.\n\nReturns member count, project count, active users today, and total workflows.\nUser must be a member of the organization to view statistics.",
+        "description": "Get organization statistics. User must be a member.",
         "operationId": "api_v1_organizations_organization_id_statistics_get",
         "parameters": [
           {
@@ -70728,55 +68585,6 @@
           }
         ],
         "summary": "Get Organization Statistics",
-        "tags": [
-          "organizations"
-        ]
-      }
-    },
-    "/api/v1/organizations/{organization_id}/switch": {
-      "post": {
-        "description": "Switch current organization context.",
-        "operationId": "api_v1_organizations_organization_id_switch_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "organization_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Organization Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OrganizationSwitchResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Switch Organization",
         "tags": [
           "organizations"
         ]
