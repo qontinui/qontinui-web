@@ -1,0 +1,50 @@
+# Ξ_Layering declared architecture — qontinui-web (FastAPI backend + React frontend).
+#
+# SOAK DRAFT (2026-06-08): authored from the backend/app/* package structure for the
+# coord layering merge gate (plan 2026-06-07-coord-layering-enforcement.md, R4b).
+# Refine via SHADOW observations before enforcing — watch
+# coord_merge_layering_shadow_blocks_total (real breaches) +
+# coord_merge_layering_shadow_escalates_total (coverage gaps) and the `layering_gate`
+# WARN logs, then tune the globs / carve_outs below. The gate is DARK by default
+# (arm with QONTINUI_LAYERING_GATE_ENABLED, or soak with QONTINUI_LAYERING_GATE_SHADOW).
+#
+# Layer model: ui → api → service → data, with `utility` for import-by-anyone
+# cross-cutting code (DTOs, config, helpers). Modules are resolved-import directories.
+
+[order]
+# api may read data directly: FastAPI routers commonly import models/crud for
+# response typing + simple reads. api→data is SANCTIONED here so the soak surfaces
+# the serious issues (upward deps: data→service, service→api; cross-layer cycles)
+# rather than drowning in this common, often-acceptable pattern. Tighten to strict
+# service→data later if the codebase warrants it.
+allowed = [["ui", "api"], ["ui", "service"], ["api", "service"], ["service", "data"], ["api", "data"]]
+forbid_skip = true
+
+[layers]
+"frontend/**"                 = "ui"        # the React frontend = the ui layer
+"backend/app/api/**"          = "api"       # FastAPI routers / endpoints
+"backend/app/middleware/**"   = "api"       # request/response middleware at the api edge
+"backend/app/websockets/**"   = "api"       # websocket endpoints = api surface
+"backend/app/services/**"     = "service"   # business logic
+"backend/app/auth/**"         = "service"   # auth logic
+"backend/app/integrations/**" = "service"   # external-system clients
+"backend/app/tasks/**"        = "service"   # celery / background tasks
+"backend/app/worker/**"       = "service"
+"backend/app/repositories/**" = "data"      # persistence access
+"backend/app/crud/**"         = "data"
+"backend/app/db/**"           = "data"       # engine / session / migrations glue
+"backend/app/models/**"       = "data"       # ORM models = persistence
+"backend/app/schemas/**"      = "utility"    # pydantic DTOs — imported by api + service
+"backend/app/core/**"         = "utility"    # cross-cutting (settings, errors, shared deps)
+"backend/app/config/**"       = "utility"
+"backend/app/utils/**"        = "utility"
+"backend/app/**"              = "service"    # catch-all for anything else under app
+"backend/**"                  = "utility"    # scripts / alembic / tests outside app (low-signal)
+
+[exempt]
+# The app composition root (main.py, extensions.py, celery_app.py) wires every layer
+# together — never judged by Φ, excluded from cycle detection.
+modules = ["backend/app"]
+
+# [carve_out] — add accepted cross-layer exceptions here as the soak surfaces them,
+# e.g. { from_glob = "backend/app/services/**", to_layer = "api", reason = "..." }.
