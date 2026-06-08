@@ -66261,6 +66261,141 @@
         ]
       }
     },
+    "/api/v1/operations/dev-actions/recent": {
+      "get": {
+        "description": "List recent dev actions from coord's ledger.\n\nForwards ``limit`` / ``kind`` / ``device_id`` filters verbatim. The\nresponse envelope mirrors coord: ``{\"actions\": [...], \"count\": N}``.\nOperator bearer forwarded (consistent with the other dashboard\nproxies); coord owns the actual scoping.",
+        "operationId": "api_v1_operations_dev_actions_recent_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "device_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Dev Actions Recent Api V1 Operations Dev Actions Recent Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Dev Actions Recent",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/dev-actions/{action_id}": {
+      "get": {
+        "description": "Return a single dev action + its outcome signatures from coord.\n\nResponse shape mirrors coord:\n``{\"action\": {...}, \"outcomes\": [{\"signature\", \"observed_at\", \"late\"}]}``.\nOperator bearer forwarded (consistent with the recent-list proxy).",
+        "operationId": "api_v1_operations_dev_actions_action_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "action_id",
+            "required": true,
+            "schema": {
+              "title": "Action Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Dev Action Detail Api V1 Operations Dev Actions  Action Id  Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Dev Action Detail",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/device-status": {
       "get": {
         "description": "Return live ``coord.device_status`` rows scoped to the caller's tenant.\n\nResponse shape::\n\n    { \"devices\": [StatusRow, ...], \"count\": <int> }\n\nThe list is unsorted from coord; clients render in arbitrary order\n(the `MachineCard` consumer keys on hostname). When the caller's\ntenant has no devices reporting, ``devices`` is an empty list and\n``count`` is zero \u2014 never 4xx.\n\nThe operator bearer is forwarded (``_tenant_headers``) \u2014 coord's\n``GET /coord/status`` is operator-auth fail-closed (fleet-auth P4)\nand 403s ``tenant_not_resolved`` on anonymous calls, which is what\nthis proxy used to send.",

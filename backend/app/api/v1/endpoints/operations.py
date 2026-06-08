@@ -1333,6 +1333,64 @@ async def get_claims_alerts(
     return filtered
 
 
+# ---- Coord dev-action ledger proxy ----------------------------------------
+#
+# Plan ``2026-06-07-twin-dev-event-cause-effect-ledger.md``. Surfaces the
+# dev-action ledger (`coord.dev_action_snapshots`) on the operator/fleet
+# dashboard. Two read-only proxies mirroring the claims-proxy posture:
+#
+# - GET /operations/dev-actions/recent       → coord `/coord/dev-actions/recent`
+# - GET /operations/dev-actions/{action_id}  → coord `/coord/dev-actions/{id}`
+#
+# The coord routes are public (no auth) in the pilot, but we still depend on
+# ``get_tenant_id`` to forward the operator bearer — same posture as the
+# symbol-claims / gates proxies. This keeps the dashboard surface
+# consistently authenticated web-side and lets coord scope by the bearer's
+# tenant once it gates these routes, without a wire-shape change here.
+
+
+@router.get("/dev-actions/recent")
+async def get_dev_actions_recent(
+    limit: int | None = None,
+    kind: str | None = None,
+    device_id: str | None = None,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """List recent dev actions from coord's ledger.
+
+    Forwards ``limit`` / ``kind`` / ``device_id`` filters verbatim. The
+    response envelope mirrors coord: ``{"actions": [...], "count": N}``.
+    Operator bearer forwarded (consistent with the other dashboard
+    proxies); coord owns the actual scoping.
+    """
+    params: dict[str, Any] = {}
+    if limit is not None:
+        params["limit"] = limit
+    if kind is not None:
+        params["kind"] = kind
+    if device_id is not None:
+        params["device_id"] = device_id
+    return await _proxy_coord_get(
+        "/coord/dev-actions/recent", params=params or None, tenant_id=tenant_id
+    )
+
+
+@router.get("/dev-actions/{action_id}")
+async def get_dev_action_detail(
+    action_id: str,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return a single dev action + its outcome signatures from coord.
+
+    Response shape mirrors coord:
+    ``{"action": {...}, "outcomes": [{"signature", "observed_at", "late"}]}``.
+    Operator bearer forwarded (consistent with the recent-list proxy).
+    """
+    return await _proxy_coord_get(
+        f"/coord/dev-actions/{action_id}", tenant_id=tenant_id
+    )
+
+
 # ---- Coord readiness dashboard proxy (Wave 2 — tenant-scoped) ------------
 #
 # Plan ``2026-05-19-coordinator-production-readiness.md`` Phase 2. Adds

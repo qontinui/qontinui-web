@@ -167,6 +167,31 @@ export function extractSymbol(resourceKey: string): string {
   return name.slice(0, SYMBOL_NAME_MAX_LEN - 1) + "…";
 }
 
+/**
+ * REST endpoints for the dev-action ledger surface (plan
+ * `2026-06-07-twin-dev-event-cause-effect-ledger.md`). Both proxy coord's
+ * public `/coord/dev-actions/*` routes through the web backend so the
+ * browser doesn't hit coord cross-origin and the operator bearer is
+ * forwarded consistently with the other dashboard proxies.
+ *
+ * - `DEV_ACTIONS_API`         — GET recent dev actions.
+ * - `devActionDetailUrl(id)`  — GET one action + its outcome signatures.
+ */
+export const DEV_ACTIONS_API = `${OPERATIONS_API}/dev-actions/recent`;
+export function devActionDetailUrl(actionId: string): string {
+  return `${OPERATIONS_API}/dev-actions/${encodeURIComponent(actionId)}`;
+}
+
+/** Default number of recent dev actions to request. */
+export const DEV_ACTIONS_LIMIT = 50;
+
+/**
+ * Polling interval for `useDevActionsStream` (ms). Dev actions land at
+ * agent-execution cadence; 10s matches the fleet-health poll and is fresh
+ * enough for an operator watching the ledger without hot-looping coord.
+ */
+export const DEV_ACTIONS_POLL_MS = 10_000;
+
 /** Polling interval in milliseconds. */
 export const POLL_INTERVAL_MS = 5_000;
 
