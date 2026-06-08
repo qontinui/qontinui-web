@@ -67712,6 +67712,131 @@
         ]
       }
     },
+    "/api/v1/operations/lineage/recent": {
+      "get": {
+        "description": "Newest commit-lineage rows (default 100, coord caps at 500).\n\nProxies coord ``GET /coord/lineage/recent?limit=N`` and returns its\n``{rows, count, limit}`` envelope verbatim.",
+        "operationId": "api_v1_operations_lineage_recent_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Lineage Recent Api V1 Operations Lineage Recent Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Lineage Recent",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/lineage/sessions/{session_id}/commits": {
+      "get": {
+        "description": "Every commit attributed to a single session.\n\nProxies coord ``GET /coord/sessions/{session_id}/commits`` and returns\nits ``{session_id, commits, count}`` envelope verbatim \u2014 backs the\n/commits page's per-session drill-down drawer.",
+        "operationId": "api_v1_operations_lineage_sessions_session_id_commits_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Lineage Session Commits Api V1 Operations Lineage Sessions  Session Id  Commits Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Lineage Session Commits",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/lineage/stats": {
+      "get": {
+        "description": "Aggregate commit-lineage census (totals + by_source + top_sessions).\n\nProxies coord ``GET /coord/lineage/stats`` verbatim.",
+        "operationId": "api_v1_operations_lineage_stats_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Lineage Stats Api V1 Operations Lineage Stats Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Lineage Stats",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/memory/list": {
       "get": {
         "description": "List entries from the canonical memory substrate.",
