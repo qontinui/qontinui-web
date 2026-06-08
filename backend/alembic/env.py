@@ -19,7 +19,12 @@ if os.getenv("DATABASE_URL"):
     # Replace asyncpg driver with psycopg2 for synchronous Alembic operations
     if "postgresql+asyncpg://" in database_url:
         database_url = database_url.replace("postgresql+asyncpg://", "postgresql://")
-    config.set_main_option("sqlalchemy.url", database_url)
+    # Escape '%' so ConfigParser (which backs alembic's Config) doesn't treat it
+    # as interpolation syntax. A DATABASE_URL whose password contains a literal
+    # '%' otherwise raises "ValueError: invalid interpolation syntax" here,
+    # breaking every migration. get_main_option / get_section read the value
+    # back with interpolation enabled, so '%%' round-trips to a single '%'.
+    config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
