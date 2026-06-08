@@ -115,6 +115,9 @@ class NotificationPreferencesBase(BaseSchema):
     email_shares: bool = Field(True, description="Email for shares")
     email_replies: bool = Field(True, description="Email for replies")
     email_team_invites: bool = Field(True, description="Email for team invites")
+    email_gate_action: bool = Field(
+        True, description="Email for merge-gate actions on your PRs"
+    )
 
     # In-app preferences
     in_app_mentions: bool = Field(True, description="In-app for mentions")
@@ -123,6 +126,9 @@ class NotificationPreferencesBase(BaseSchema):
     in_app_replies: bool = Field(True, description="In-app for replies")
     in_app_team_invites: bool = Field(True, description="In-app for team invites")
     in_app_project_updates: bool = Field(True, description="In-app for project updates")
+    in_app_gate_action: bool = Field(
+        True, description="In-app for merge-gate actions on your PRs"
+    )
 
 
 class NotificationPreferencesUpdate(BaseSchema):
@@ -134,6 +140,7 @@ class NotificationPreferencesUpdate(BaseSchema):
     email_shares: bool | None = None
     email_replies: bool | None = None
     email_team_invites: bool | None = None
+    email_gate_action: bool | None = None
 
     # In-app preferences
     in_app_mentions: bool | None = None
@@ -142,6 +149,7 @@ class NotificationPreferencesUpdate(BaseSchema):
     in_app_replies: bool | None = None
     in_app_team_invites: bool | None = None
     in_app_project_updates: bool | None = None
+    in_app_gate_action: bool | None = None
 
 
 class NotificationPreferencesResponse(NotificationPreferencesBase, BaseORMSchema):
