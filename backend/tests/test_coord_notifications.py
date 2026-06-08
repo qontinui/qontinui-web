@@ -617,7 +617,7 @@ async def test_github_author_not_filtered_by_admin_check() -> None:
 
 
 # ============================================================
-# (g) GATE_ACTION preferences default ON
+# (g) GATE_ACTION preferences — default ON and per-column opt-out
 # ============================================================
 
 
@@ -628,6 +628,139 @@ def test_gate_action_prefs_default_on_email_and_in_app() -> None:
     prefs = NotificationPreferences(user_id=USER_A)
     assert prefs.should_send_in_app(NotificationType.GATE_ACTION) is True
     assert prefs.should_send_email(NotificationType.GATE_ACTION) is True
+
+
+def test_gate_action_in_app_opt_out_suppresses_in_app() -> None:
+    """in_app_gate_action=False -> should_send_in_app(GATE_ACTION) is False."""
+    from app.models.notification import NotificationPreferences, NotificationType
+
+    prefs = NotificationPreferences(user_id=USER_A, in_app_gate_action=False)
+    assert prefs.should_send_in_app(NotificationType.GATE_ACTION) is False
+    # Email should remain unaffected (still on by default).
+    assert prefs.should_send_email(NotificationType.GATE_ACTION) is True
+
+
+def test_gate_action_email_opt_out_suppresses_email() -> None:
+    """email_gate_action=False -> should_send_email(GATE_ACTION) is False."""
+    from app.models.notification import NotificationPreferences, NotificationType
+
+    prefs = NotificationPreferences(user_id=USER_A, email_gate_action=False)
+    assert prefs.should_send_email(NotificationType.GATE_ACTION) is False
+    # In-app should remain unaffected (still on by default).
+    assert prefs.should_send_in_app(NotificationType.GATE_ACTION) is True
+
+
+def test_gate_action_both_opt_out_suppresses_both() -> None:
+    """Setting both columns False -> both delivery channels suppressed."""
+    from app.models.notification import NotificationPreferences, NotificationType
+
+    prefs = NotificationPreferences(
+        user_id=USER_A, in_app_gate_action=False, email_gate_action=False
+    )
+    assert prefs.should_send_in_app(NotificationType.GATE_ACTION) is False
+    assert prefs.should_send_email(NotificationType.GATE_ACTION) is False
+
+
+def test_gate_action_explicit_true_sends() -> None:
+    """Explicitly setting both True (re-opt-in) -> both channels send."""
+    from app.models.notification import NotificationPreferences, NotificationType
+
+    prefs = NotificationPreferences(
+        user_id=USER_A, in_app_gate_action=True, email_gate_action=True
+    )
+    assert prefs.should_send_in_app(NotificationType.GATE_ACTION) is True
+    assert prefs.should_send_email(NotificationType.GATE_ACTION) is True
+
+
+def test_gate_action_opt_out_does_not_affect_other_types() -> None:
+    """Opting out of GATE_ACTION does not affect other notification types.
+
+    Note: legacy Column-based fields (email_mentions etc.) return None for
+    in-memory instances (server_default only fires on DB INSERT). This test
+    therefore uses explicit True values for the unrelated columns, asserting
+    only that gate-action opt-out does not corrupt them.
+    """
+    from app.models.notification import NotificationPreferences, NotificationType
+
+    # Explicitly set all fields to isolate the gate_action opt-out columns.
+    prefs = NotificationPreferences(
+        user_id=USER_A,
+        in_app_gate_action=False,
+        email_gate_action=False,
+        in_app_mentions=True,
+        email_mentions=True,
+        in_app_comments=True,
+        email_comments=True,
+    )
+    # GATE_ACTION opted out.
+    assert prefs.should_send_in_app(NotificationType.GATE_ACTION) is False
+    assert prefs.should_send_email(NotificationType.GATE_ACTION) is False
+    # Other types are unaffected — their columns remain True.
+    assert prefs.should_send_in_app(NotificationType.MENTION) is True
+    assert prefs.should_send_email(NotificationType.MENTION) is True
+    assert prefs.should_send_in_app(NotificationType.COMMENT) is True
+
+
+def test_gate_action_prefs_schema_round_trips_opt_out() -> None:
+    """NotificationPreferencesUpdate accepts and exposes gate_action fields."""
+    from app.schemas.notification import (
+        NotificationPreferencesUpdate,
+    )
+
+    # Partial update: only opt out of gate_action email.
+    update = NotificationPreferencesUpdate(email_gate_action=False)
+    dumped = update.model_dump(exclude_none=True)
+    assert dumped == {"email_gate_action": False}
+
+    # Partial update: opt out of gate_action in-app only.
+    update2 = NotificationPreferencesUpdate(in_app_gate_action=False)
+    dumped2 = update2.model_dump(exclude_none=True)
+    assert dumped2 == {"in_app_gate_action": False}
+
+    # Full opt-out: both channels.
+    update3 = NotificationPreferencesUpdate(
+        in_app_gate_action=False, email_gate_action=False
+    )
+    dumped3 = update3.model_dump(exclude_none=True)
+    assert "in_app_gate_action" in dumped3
+    assert "email_gate_action" in dumped3
+    assert dumped3["in_app_gate_action"] is False
+    assert dumped3["email_gate_action"] is False
+
+
+def test_gate_action_prefs_response_schema_includes_gate_action_fields() -> None:
+    """NotificationPreferencesResponse includes in_app_gate_action + email_gate_action."""
+    from datetime import UTC, datetime
+    from uuid import uuid4
+
+    from app.schemas.notification import NotificationPreferencesResponse
+
+    # Simulate a full ORM object response with gate_action fields.
+
+    now = datetime.now(UTC)
+    uid = uuid4()
+    resp = NotificationPreferencesResponse(
+        id=uid,
+        user_id=USER_A,
+        created_at=now.isoformat(),
+        updated_at=now.isoformat(),
+        email_mentions=True,
+        email_comments=True,
+        email_shares=True,
+        email_replies=True,
+        email_team_invites=True,
+        email_gate_action=False,  # opted out
+        in_app_mentions=True,
+        in_app_comments=True,
+        in_app_shares=True,
+        in_app_replies=True,
+        in_app_team_invites=True,
+        in_app_project_updates=True,
+        in_app_gate_action=False,  # opted out
+    )
+    assert resp.email_gate_action is False
+    assert resp.in_app_gate_action is False
+    assert resp.email_mentions is True  # unrelated field unaffected
 
 
 # ============================================================
