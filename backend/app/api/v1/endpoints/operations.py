@@ -3207,6 +3207,68 @@ async def get_session_lineage(
     )
 
 
+# ---------------------------------------------------------------------------
+# Commit lineage — "which Claude Code session produced which commit"
+#
+# Proxies coord's `coord.commit_lineage`-backed read endpoints so the web
+# dashboard's /commits page renders the same feed the dev-only supervisor
+# Lineage tab showed. Coord's lineage reads are FleetPrincipal-gated; the
+# operator's Cognito bearer is forwarded via ``tenant_id=`` (same pattern as
+# ``get_session_lineage`` above) so coord authenticates the operator and
+# scopes the query. The coord routes return enveloped bodies
+# (``{rows,count,limit}`` / ``{commits,count,...}``); we forward them verbatim
+# and let the frontend unwrap.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/lineage/recent")
+async def get_lineage_recent(
+    limit: int = 100,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Newest commit-lineage rows (default 100, coord caps at 500).
+
+    Proxies coord ``GET /coord/lineage/recent?limit=N`` and returns its
+    ``{rows, count, limit}`` envelope verbatim.
+    """
+    return await _proxy_coord_get(
+        "/coord/lineage/recent",
+        params={"limit": limit},
+        tenant_id=tenant_id,
+    )
+
+
+@router.get("/lineage/stats")
+async def get_lineage_stats(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Aggregate commit-lineage census (totals + by_source + top_sessions).
+
+    Proxies coord ``GET /coord/lineage/stats`` verbatim.
+    """
+    return await _proxy_coord_get(
+        "/coord/lineage/stats",
+        tenant_id=tenant_id,
+    )
+
+
+@router.get("/lineage/sessions/{session_id}/commits")
+async def get_lineage_session_commits(
+    session_id: UUID,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Every commit attributed to a single session.
+
+    Proxies coord ``GET /coord/sessions/{session_id}/commits`` and returns
+    its ``{session_id, commits, count}`` envelope verbatim — backs the
+    /commits page's per-session drill-down drawer.
+    """
+    return await _proxy_coord_get(
+        f"/coord/sessions/{session_id}/commits",
+        tenant_id=tenant_id,
+    )
+
+
 async def _resolve_session_row(session_id: UUID, tenant_id: UUID) -> dict[str, Any]:
     """Look up a single session row from coord's session list.
 

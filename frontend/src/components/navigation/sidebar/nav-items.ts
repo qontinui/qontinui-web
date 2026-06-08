@@ -31,6 +31,7 @@ import {
   CalendarClock,
   Activity,
   Bot,
+  GitCommitHorizontal,
 } from "lucide-react";
 import type { NavItem } from "./types";
 
@@ -94,6 +95,15 @@ export const devNavItems: NavItem[] = [
     description: "Cross-machine fleet view",
     icon: React.createElement(Activity, { className: "size-5" }),
     route: "/operations",
+    color: "#10B981",
+    group: "Runners",
+  },
+  {
+    id: "commits",
+    label: "Commits",
+    description: "Which session produced which commit",
+    icon: React.createElement(GitCommitHorizontal, { className: "size-5" }),
+    route: "/commits",
     color: "#10B981",
     group: "Runners",
   },
