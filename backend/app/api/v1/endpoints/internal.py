@@ -24,6 +24,7 @@ routes, just the single ingest endpoint.
 from __future__ import annotations
 
 import hmac
+from typing import Any
 
 import structlog
 from fastapi import APIRouter, Depends, Header, HTTPException, status
@@ -77,8 +78,13 @@ class CoordNotificationRequest(BaseModel):
         description="Coord's gate block-reason code (e.g. 'blast_radius')."
     )
     head_sha: str = Field(description="Head commit SHA of the PR at escalation.")
-    evidence: dict | None = Field(
-        default=None, description="Arbitrary gate evidence payload (opaque)."
+    evidence: Any | None = Field(
+        default=None,
+        description=(
+            "Arbitrary gate evidence payload (opaque) — coord emits a list of "
+            "removed-export records for blast-radius blocks, null otherwise. "
+            "Accepted as-is and passed through to notification metadata."
+        ),
     )
     coverage: float | None = Field(
         default=None,

@@ -63,7 +63,7 @@ def build_gate_action_notification(
     head_sha: str | None,
     coverage: float | None,
     graph_available: bool,
-    evidence: dict[str, Any] | None = None,
+    evidence: Any | None = None,
 ) -> GateActionNotification:
     """Build a merge-gate-escalation (GATE_ACTION) notification.
 

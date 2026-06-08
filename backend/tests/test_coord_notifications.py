@@ -655,3 +655,52 @@ def test_coord_context_bad_uuid_dropped_from_fallback() -> None:
     )
     assert len(ctx.tenant_fallback_user_ids) == 1
     assert ctx.tenant_fallback_user_ids[0] == USER_A
+
+
+# ============================================================
+# (i) Contract boundary: coord emits `evidence` as a LIST of
+#     removed-export records for blast-radius blocks. The request
+#     model MUST accept it (a `dict | None` typing 422-rejected it,
+#     silently dropping the most important escalations). Regression.
+# ============================================================
+
+
+def test_request_accepts_list_evidence_from_coord() -> None:
+    """coord's array-shaped evidence validates and round-trips opaquely."""
+    from app.api.v1.endpoints.internal import CoordNotificationRequest
+
+    coord_evidence = [
+        {
+            "name": "do_thing",
+            "file": "src/lib.rs",
+            "referenced_by": [{"file": "src/other.rs", "line": 12}],
+        }
+    ]
+    req = CoordNotificationRequest(**_body(evidence=coord_evidence))
+    assert req.evidence == coord_evidence
+
+
+def test_request_accepts_dict_and_null_evidence() -> None:
+    """Both a dict evidence and null still validate (back-compat with the
+    documented opaque contract)."""
+    from app.api.v1.endpoints.internal import CoordNotificationRequest
+
+    assert CoordNotificationRequest(**_body(evidence={"k": "v"})).evidence == {"k": "v"}
+    assert CoordNotificationRequest(**_body(evidence=None)).evidence is None
+
+
+def test_builder_passes_list_evidence_through_to_metadata() -> None:
+    """A list evidence is stored opaquely in metadata (no .get() assumed)."""
+    from app.services.notifications.builders import build_gate_action_notification
+
+    ev = [{"name": "x", "file": "a.rs", "referenced_by": []}]
+    result = build_gate_action_notification(
+        repo="o/r",
+        pr_number=1,
+        block_reason_code="blast_radius",
+        head_sha="s",
+        coverage=None,
+        graph_available=True,
+        evidence=ev,
+    )
+    assert result.metadata["evidence"] == ev
