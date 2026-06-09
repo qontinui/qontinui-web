@@ -24,6 +24,15 @@ const LOCAL_EXTRA_SETTINGS: NavigationItem[] = [
     route: "/settings/co-pilot",
     color: "#FFD700",
   },
+  {
+    id: "settings-notifications",
+    label: "Notifications",
+    icon: "Bell",
+    description: "Per-type notification delivery preferences (in-app and email)",
+    route: "/settings/notifications",
+    color: "#FFD700",
+    platforms: ["web"],
+  },
 ];
 
 function getSettingsNavItems(): {
