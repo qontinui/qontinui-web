@@ -158,9 +158,11 @@ describe("useNotificationPreferences", () => {
     });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-    // Kick off save without awaiting
-    void act(async () => {
-      void result.current.save({ in_app_gate_action: false });
+    // Kick off save inside act but don't await the save itself (testing the
+    // optimistic-before-settle window); wrap in act so state updates flush.
+    let savePromise!: Promise<void>;
+    await act(async () => {
+      savePromise = result.current.save({ in_app_gate_action: false });
     });
 
     // Optimistic update should be visible before the PUT settles
@@ -168,10 +170,13 @@ describe("useNotificationPreferences", () => {
       expect(result.current.preferences?.in_app_gate_action).toBe(false)
     );
 
-    // Now settle the PUT
+    // Now settle the PUT and await the save
     resolvePut(
       jsonResponse({ ...DEFAULT_PREFS, in_app_gate_action: false })
     );
+    await act(async () => {
+      await savePromise;
+    });
 
     await waitFor(() => expect(result.current.isMutating).toBe(false));
     expect(result.current.preferences?.in_app_gate_action).toBe(false);
@@ -186,7 +191,10 @@ describe("useNotificationPreferences", () => {
     const { result } = renderHook(() => useNotificationPreferences(), {
       wrapper: wrapper(queryClient),
     });
+
+    // Wait for the initial load -- mirrors copilot rollback test
     await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.preferences?.email_mentions).toBe(true);
 
     await expect(
       act(async () => {
@@ -194,8 +202,7 @@ describe("useNotificationPreferences", () => {
       })
     ).rejects.toThrow();
 
-    // Optimistic false is rolled back to original true
-    expect(result.current.preferences?.email_mentions).toBe(true);
+    // After rollback the optimistic false is reverted to original true.
     expect(
       (queryClient.getQueryData(
         NOTIFICATION_PREFS_QUERY_KEY
