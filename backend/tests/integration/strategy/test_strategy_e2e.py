@@ -7,8 +7,10 @@ threads are Phase 2 and have no substrate). All gated by
   1. Auth round-trip — StrategyClient mints a service JWT at coord,
      coord verifies + enforces strategy_admin + forwarded-user, docs
      return. Proves the whole Option-3 bridge end to end.
-  2. Git-read cache hit — two reads of one doc in quick succession:
-     the second carries `X-Strategy-Cache: hit` (zero git subprocess).
+  2. Git-read cache hit — repeated reads of one doc must yield a
+     `X-Strategy-Cache: hit` (zero git subprocess). Robust to coord HA
+     (≥2 ALB-balanced replicas, per-process cache): asserts a hit is
+     observable within a small read bound, not a fixed read index.
      TTL-expiry + per-key isolation are proven deterministically by
      the coord-side unit test (no 60s sleep in CI).
   3. Doc read — a known doc renders with correct content + git
@@ -52,27 +54,52 @@ async def test_auth_round_trip(client: StrategyClient) -> None:
     assert any(d["name"] == "README.md" for d in body["docs"])
 
 
+# Cap on warm-up reads before a hit must appear. coord's doc cache is
+# per-process and prod runs coord HA (≥2 ALB-balanced replicas); the ALB
+# load-balances each *request* independently across tasks (a keepalive
+# connection is NOT pinned to one target), so "the 2nd read hits" is only
+# true single-instance. On a multi-replica deployment the cache still
+# serves hits — once a read lands on a replica that already cached the
+# doc. P(no hit observed) shrinks geometrically per read, so a small
+# bound is robust. The deterministic per-process semantics (TTL expiry +
+# per-key isolation) are proven coord-side by the Rust unit test
+# `strategy::tests::cache_hit_within_ttl_then_miss_after_expiry`.
+_MAX_CACHE_READS = 10
+
+
 @pytest.mark.asyncio
 async def test_git_read_cache_hit(client: StrategyClient) -> None:
-    """Two consecutive reads of the same doc: the second is served
-    from cache (`X-Strategy-Cache: hit`) — zero git subprocess."""
+    """Repeated reads of one doc must yield a cache hit
+    (`X-Strategy-Cache: hit`) — proving the read-through cache serves
+    docs with zero git subprocess. Robust to coord HA: asserts a hit is
+    *observable*, not that a specific read index hits (see
+    `_MAX_CACHE_READS`)."""
     token = await client._ensure_token()  # noqa: SLF001 — e2e needs raw hdr
     headers = {
         "Authorization": f"Bearer {token}",
         "X-Qontinui-User-Id": str(uuid.uuid4()),
     }
+    seen: list[str | None] = []
+    hit = False
     async with httpx.AsyncClient(timeout=10.0) as h:
-        r1 = await h.get(f"{COORD_URL}/strategy/docs/README.md", headers=headers)
-        r2 = await h.get(f"{COORD_URL}/strategy/docs/README.md", headers=headers)
+        for _ in range(_MAX_CACHE_READS):
+            r = await h.get(f"{COORD_URL}/strategy/docs/README.md", headers=headers)
+            assert r.status_code == 200, r.text
+            cache = r.headers.get("x-strategy-cache")
+            seen.append(cache)
+            if cache == "hit":
+                hit = True
+                break
         # Different doc = different cache key (independent state).
         r3 = await h.get(
             f"{COORD_URL}/strategy/docs/business-goals.md",
             headers=headers,
         )
-    assert r1.status_code == 200 and r2.status_code == 200
-    assert r2.headers.get("x-strategy-cache") == "hit", (
-        "second read of same doc must be a cache hit"
+    assert hit, (
+        f"no cache hit observed within {_MAX_CACHE_READS} reads of one doc "
+        f"(cache headers seen: {seen})"
     )
+    assert r3.status_code == 200, r3.text
     assert r3.headers.get("x-strategy-cache") in {"hit", "miss"}
     # Cross-key isolation: r3 is a different doc; its body name differs.
     assert r3.json()["name"] == "business-goals.md"
