@@ -58,7 +58,8 @@ import {
  * blank/error shell). Landmarks verified against the prod source:
  *   - /sessions        -> <h1>Live Sessions</h1> (sessions/page.tsx) /
  *                         [data-ui-bridge-id="sessions.page"]
- *   - /build/workflows -> <h1>Workflow Builder</h1> (build/workflows/page.tsx)
+ *   - /build/workflows -> <h1>Workflows</h1> (build/workflows/page.tsx —
+ *                         renamed from "Workflow Builder" in #524)
  *   - /runs/active     -> <h1>Active Dashboard</h1> (always rendered in the
  *                         header regardless of loading/idle/data state —
  *                         ActiveRunsContent.tsx) + no-bounce
@@ -93,10 +94,10 @@ const AUTHED_ROUTES: AuthedRoute[] = [
   },
   {
     route: "/build/workflows",
-    landmarkDesc: 'h1 "Workflow Builder"',
+    landmarkDesc: 'h1 "Workflows"',
     landmark: async (page) =>
       page
-        .getByRole("heading", { name: /Workflow Builder/i })
+        .getByRole("heading", { name: /^Workflows$/i, level: 1 })
         .first()
         .isVisible()
         .catch(() => false),
