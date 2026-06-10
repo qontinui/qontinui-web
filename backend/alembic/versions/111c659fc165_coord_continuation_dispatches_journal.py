@@ -1,7 +1,7 @@
 """coord.continuation_dispatches — gate-executor dispatch journal
 
 Revision ID: 111c659fc165
-Revises: coord_singleauthored_11_git_frontier_manifest
+Revises: twin_auth_02_coverage_float8
 Create Date: 2026-06-10
 
 Phase 4a substrate of the coord deploy/migrate gate-executor plan
@@ -56,7 +56,8 @@ position=1 (down_revision coord assigned: d6e7f8a9b0c1 — reflects coord's
 stale view of the chain head; ``d6e7f8a9b0c1`` already has the local child
 ``coord_commit_lineage_tenant_id``, so chaining off it would fork the
 chain. The actual local single head is
-``coord_singleauthored_11_git_frontier_manifest``, which is what this
+``coord_singleauthored_11_git_frontier_manifest`` (since superseded by
+``twin_auth_02_coverage_float8``, #557), which is what this
 migration chains off — same resolution as
 ``gate_action_prefs_01_notification_preferences``; the alembic-heads-pr CI
 gate is the authoritative single-head guard.)
@@ -68,7 +69,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "111c659fc165"
-down_revision: str = "coord_singleauthored_11_git_frontier_manifest"
+down_revision: str = "twin_auth_02_coverage_float8"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
