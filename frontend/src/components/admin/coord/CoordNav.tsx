@@ -131,6 +131,12 @@ const PRIMARY_TABS: NavItem[] = [
     icon: GitPullRequest,
     testId: "coord-nav-pull-decisions",
   },
+  {
+    href: "/admin/coord/merge-settings",
+    label: "Merge Settings",
+    icon: GitMerge,
+    testId: "coord-nav-merge-settings",
+  },
 ];
 
 const CROSS_LINKS: NavItem[] = [

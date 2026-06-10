@@ -131,6 +131,12 @@ interface KillSwitchResponse {
   affected_repos: string[];
 }
 
+interface RolloutResponse {
+  scope: string;
+  state: string;
+  affected_repos: string[];
+}
+
 // ----------------------------------------------------------------------------
 // Tenant defaults card
 // ----------------------------------------------------------------------------
@@ -800,7 +806,114 @@ function RolloutStateBadge({ state }: { state: string }) {
   );
 }
 
-function SloRepoCard({ slo }: { slo: RepoSlo }) {
+/// Per-repo rollout promote/demote control (Phase 9 D9.4 counterpart to
+/// the kill-switch). One button per non-current target state, POSTing
+/// /pr-merge/rollout with scope=repo:<repo>. Reason is collected via
+/// window.prompt + the flip is guarded by window.confirm — the same
+/// minimal-dependency confirmation discipline as KillSwitchCard.
+/// Promoting to `live` relies on coord's shadow→live guard (a dry_run
+/// repo must pass through shadow first; coord 409s otherwise).
+function RolloutStateControl({
+  repo,
+  current,
+  onChanged,
+}: {
+  repo: string;
+  current: RepoSlo["current_rollout_state"];
+  onChanged: () => void;
+}) {
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const setState = useCallback(
+    async (target: RepoSlo["current_rollout_state"]) => {
+      setError(null);
+      const reason = window.prompt(
+        `Set ${repo} rollout_state ${current} → ${target}. Reason (required):`
+      );
+      if (reason === null) return;
+      if (reason.trim().length === 0) {
+        setError("Reason is required.");
+        return;
+      }
+      if (
+        target === "live" &&
+        !window.confirm(
+          `${repo}: the orchestrator will start pushing REAL merges to main ` +
+            "for green, unblocked PRs in this repo. Proceed?"
+        )
+      ) {
+        return;
+      }
+      setSubmitting(true);
+      try {
+        const res = await httpClient.fetch(
+          `${OPERATIONS_API}/pr-merge/rollout`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              scope: `repo:${repo}`,
+              state: target,
+              reason: reason.trim(),
+            }),
+          }
+        );
+        if (!res.ok) {
+          const body = await res.text().catch(() => "");
+          throw new Error(`HTTP ${res.status}${body ? `: ${body}` : ""}`);
+        }
+        (await res.json()) as RolloutResponse;
+        onChanged();
+      } catch (err) {
+        log.warn("rollout promote failed", err);
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [repo, current, onChanged]
+  );
+
+  const targets: RepoSlo["current_rollout_state"][] = [
+    "dry_run",
+    "shadow",
+    "live",
+  ];
+  return (
+    <div className="pt-1 border-t border-border/40 space-y-1">
+      <div className="flex items-center gap-1.5">
+        <span className="text-muted-foreground">Set state:</span>
+        {targets.map((t) => (
+          <Button
+            key={t}
+            size="sm"
+            variant={t === "live" ? "default" : "outline"}
+            className="h-6 px-2 text-xs"
+            disabled={submitting || t === current}
+            onClick={() => setState(t)}
+            data-testid={`rollout-set-${t}-${repo}`}
+          >
+            {t.replace("_", "-")}
+          </Button>
+        ))}
+      </div>
+      {error && (
+        <p className="text-red-300 flex items-center gap-1">
+          <AlertTriangle className="h-3 w-3" />
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function SloRepoCard({
+  slo,
+  onChanged,
+}: {
+  slo: RepoSlo;
+  onChanged: () => void;
+}) {
   const w = slo.windows.last_7d;
   const w30 = slo.windows.last_30d;
   return (
@@ -872,12 +985,23 @@ function SloRepoCard({ slo }: { slo: RepoSlo }) {
           {w.total_decisions} decision(s) in 7d ({w.shadow_decisions} shadow) /{" "}
           {w30.total_decisions} in 30d ({w30.shadow_decisions} shadow).
         </p>
+        <RolloutStateControl
+          repo={slo.repo}
+          current={slo.current_rollout_state}
+          onChanged={onChanged}
+        />
       </CardContent>
     </Card>
   );
 }
 
-function SloDashboardCard({ data }: { data: SloResponse | null }) {
+function SloDashboardCard({
+  data,
+  onChanged,
+}: {
+  data: SloResponse | null;
+  onChanged: () => void;
+}) {
   if (data === null) {
     return (
       <Card>
@@ -919,7 +1043,7 @@ function SloDashboardCard({ data }: { data: SloResponse | null }) {
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             {data.repos.map((r) => (
-              <SloRepoCard key={r.repo} slo={r} />
+              <SloRepoCard key={r.repo} slo={r} onChanged={onChanged} />
             ))}
           </div>
         )}
@@ -1027,7 +1151,7 @@ export function MergeOrchestrationSettings() {
       {/* Phase 9 D9.4 — Emergency kill switch (red border, prominent). */}
       <KillSwitchCard onKilled={triggerReload} />
       {/* Phase 9 D9.6 — SLO Dashboard. */}
-      <SloDashboardCard data={slo} />
+      <SloDashboardCard data={slo} onChanged={triggerReload} />
       {profile === null ? (
         <Card>
           <CardContent className="pt-4">
