@@ -80,6 +80,9 @@ jobs:
     permissions:
       contents: read
       deployments: read
+      # For the "Page on frontend rollback" step (auto-filed de-duped issue —
+      # the one channel that emails repo watchers; see migrate.yml's sibling).
+      issues: write
 
     env:
       # The deployment Vercel just promoted, used ONLY for logging + the
@@ -408,3 +411,80 @@ jobs:
         run: |
           echo "::error::frontend post-deploy smoke FAILED but auto-rollback was not possible (token_missing=${{ steps.token.outputs.token_missing }}, prior_found=${{ steps.prior.outputs.prior_found }}). The bad deploy is STILL LIVE — roll back manually with: vercel promote <prior-deployment> --token=<token> --yes"
           exit 1
+
+      # ── Page on frontend rollback / un-rollable failure (best-effort) ─────
+      # A behavioral smoke failure here either auto-rolls-back the Production
+      # alias or leaves a bad deploy live — both page-worthy, yet historically
+      # only turned the run red. That is exactly how the stale /build/workflows
+      # landmark silently reverted EVERY prod frontend deploy from 2026-06-09
+      # (#551) until #553 fixed it — main kept "deploying" while prod stayed
+      # pinned to an old build. Mirrors migrate.yml's "Page on migration
+      # failure": loud annotation + a de-duped auto-filed GitHub issue (the one
+      # channel that emails repo watchers). Fires on any GENUINE behavioral
+      # finding (same predicate as the rollback gate, minus rollability — the
+      # un-rollable case is MORE urgent, not less). Best-effort:
+      # `continue-on-error` + trailing `exit 0` so a paging hiccup never masks
+      # the underlying red run.
+      - name: Page on frontend rollback / un-rollable failure
+        if: >-
+          failure() &&
+          ((steps.smoke.conclusion == 'failure' &&
+            steps.smoke.outputs.harness_error != '1') ||
+           (steps.authed_smoke.conclusion == 'failure' &&
+            steps.authed_smoke.outputs.authed_harness != '1' &&
+            steps.authed_smoke.outputs.authed_skipped != '1'))
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          SHORT_SHA="$(printf '%s' "${GITHUB_SHA}" | cut -c1-9)"
+
+          if [ "${{ steps.token.outputs.token_missing }}" = "0" ] && \
+             [ "${{ steps.prior.outputs.prior_found }}" = "1" ]; then
+            STATE="Production alias was AUTO-ROLLED-BACK to the prior deployment — main is ahead of what prod serves until a smoke-green deploy lands."
+          else
+            STATE="Auto-rollback was NOT possible — the failing deploy is STILL LIVE on prod."
+          fi
+
+          echo "::error::FRONTEND DEPLOY SMOKE FAILED on ${GITHUB_REPOSITORY}@${SHORT_SHA}. ${STATE} MANUAL ATTENTION REQUIRED: ${RUN_URL}"
+
+          TITLE="verify-frontend-deploy FAILED: prod frontend rolled back or bad deploy live"
+          BODY="Frontend post-deploy behavioral smoke failed.
+
+          - **Repo:** ${GITHUB_REPOSITORY}
+          - **Run:** ${RUN_URL}
+          - **Head SHA:** ${GITHUB_SHA}
+          - **State:** ${STATE}
+
+          Until a smoke-green deploy lands, every subsequent main push will repeat this outcome (cf. the 2026-06-09/10 stale-landmark incident, fixed in #553 — check whether the failing assertion is a real regression or a stale landmark in \`frontend/tests/spec-ci/verify-deploy-authed-smoke.ts\`).
+
+          _Auto-filed by .github/workflows/verify-frontend-deploy.yml; closes manually once a verify run is green._"
+
+          gh label create frontend-deploy-rollback \
+            --repo "${GITHUB_REPOSITORY}" \
+            --description "Auto-filed: verify-frontend-deploy smoke failed (rollback or bad deploy live)" \
+            --color B60205 --force || true
+
+          EXISTING=$(gh issue list \
+            --repo "${GITHUB_REPOSITORY}" \
+            --label frontend-deploy-rollback \
+            --state open \
+            --json number \
+            --jq '.[0].number // empty' || true)
+
+          if [ -n "${EXISTING}" ]; then
+            echo "Open frontend-deploy-rollback issue #${EXISTING} exists — commenting."
+            gh issue comment "${EXISTING}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --body "Still failing: ${RUN_URL} (head ${GITHUB_SHA}). ${STATE}" \
+              || echo "::warning::could not comment on issue #${EXISTING} (best-effort)"
+          else
+            gh issue create \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "${TITLE}" \
+              --label frontend-deploy-rollback \
+              --body "${BODY}" \
+              || echo "::warning::could not create the frontend-deploy-rollback issue (best-effort)"
+          fi
+          exit 0
