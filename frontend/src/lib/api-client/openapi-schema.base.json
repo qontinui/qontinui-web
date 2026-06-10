@@ -46447,7 +46447,7 @@
     },
     "/api/v1/auth/identities/{provider}": {
       "delete": {
-        "description": "Unlink ``provider`` from the caller.\n\nLockout guard: refuses (409) to remove the caller's last/only identity.",
+        "description": "Unlink a linked identity from the caller.\n\nTargets the identity matching ``provider`` (and ``user_id`` when given).\nLockout guard: refuses (409) to remove the caller's last/only identity.",
         "operationId": "api_v1_auth_identities_provider_delete",
         "parameters": [
           {
@@ -46457,6 +46457,24 @@
             "schema": {
               "title": "Provider",
               "type": "string"
+            }
+          },
+          {
+            "description": "Target a SPECIFIC linked identity by its provider user id. Required to disambiguate when an account has multiple identities of the same provider (e.g. two Google accounts, or one account double-linked by oid + sub); omitting it falls back to the first provider match.",
+            "in": "query",
+            "name": "user_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Target a SPECIFIC linked identity by its provider user id. Required to disambiguate when an account has multiple identities of the same provider (e.g. two Google accounts, or one account double-linked by oid + sub); omitting it falls back to the first provider match.",
+              "title": "User Id"
             }
           }
         ],

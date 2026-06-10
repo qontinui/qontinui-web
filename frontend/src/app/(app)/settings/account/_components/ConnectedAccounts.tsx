@@ -47,7 +47,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { useIdentities } from "@/hooks/useIdentities";
+import { useIdentities, unlinkKey } from "@/hooks/useIdentities";
 import {
   NATIVE_PROVIDER,
   UnlinkIdentityError,
@@ -103,7 +103,7 @@ function isNative(identity: LinkedIdentity): boolean {
 export function ConnectedAccounts() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { data, isLoading, error, refetch, unlink, unlinkingProvider } =
+  const { data, isLoading, error, refetch, unlink, unlinkingKey } =
     useIdentities();
 
   // Provider whose link-mode OAuth redirect is being kicked off (the page is
@@ -140,6 +140,15 @@ export function ConnectedAccounts() {
   const linkedProviderNames = new Set(
     identities.map((i) => i.provider.toLowerCase())
   );
+  // How many identities each provider has. >1 means a disambiguating per-row
+  // hint is shown (two real Google accounts, or one account double-linked by
+  // oid+sub) so the rows aren't indistinguishable — and unlink targets the
+  // exact identity rather than the first provider match.
+  const providerCounts = identities.reduce<Record<string, number>>((acc, i) => {
+    const p = i.provider.toLowerCase();
+    acc[p] = (acc[p] ?? 0) + 1;
+    return acc;
+  }, {});
   // Providers offered for connect = connectable set minus any already linked.
   const availableToConnect = CONNECTABLE_PROVIDERS.filter(
     (c) => !c.aliases.some((alias) => linkedProviderNames.has(alias))
@@ -164,7 +173,7 @@ export function ConnectedAccounts() {
     setPendingUnlink(null);
     if (!target) return;
     try {
-      await unlink(target.provider);
+      await unlink(target.provider, target.user_id ?? undefined);
       toast.success("Account disconnected", {
         description: `${providerDisplayName(
           target.provider
@@ -257,6 +266,19 @@ export function ConnectedAccounts() {
                           {identity.email}
                         </p>
                       )}
+                      {/* Disambiguate when a provider has multiple identities
+                          (the canonical email above is identical across them, so
+                          it can't tell them apart). The id tail makes the rows
+                          distinct and matches what the unlink confirmation
+                          references. */}
+                      {!isNative(identity) &&
+                        (providerCounts[identity.provider.toLowerCase()] ?? 0) >
+                          1 &&
+                        identity.user_id && (
+                          <p className="text-[10px] font-mono text-muted-foreground/70 truncate">
+                            id ····{identity.user_id.slice(-8)}
+                          </p>
+                        )}
                     </div>
                   </div>
 
@@ -265,11 +287,15 @@ export function ConnectedAccounts() {
                     <Button
                       variant="outline"
                       size="sm"
-                      disabled={unlinkingProvider === identity.provider}
+                      disabled={
+                        unlinkingKey ===
+                        unlinkKey(identity.provider, identity.user_id)
+                      }
                       onClick={() => setPendingUnlink(identity)}
                       data-content-label={`unlink ${identity.provider}`}
                     >
-                      {unlinkingProvider === identity.provider ? (
+                      {unlinkingKey ===
+                      unlinkKey(identity.provider, identity.user_id) ? (
                         <>
                           <Loader2 className="size-3.5 animate-spin" />
                           Disconnecting...
@@ -336,6 +362,20 @@ export function ConnectedAccounts() {
               {pendingUnlink
                 ? providerDisplayName(pendingUnlink.provider)
                 : "this provider"}
+              {pendingUnlink?.user_id &&
+              (providerCounts[pendingUnlink.provider.toLowerCase()] ?? 0) >
+                1 ? (
+                <>
+                  {" "}
+                  identity{" "}
+                  <span className="font-mono">
+                    ····{pendingUnlink.user_id.slice(-8)}
+                  </span>{" "}
+                  (only this one — your other {" "}
+                  {providerDisplayName(pendingUnlink.provider)} sign-in stays
+                  linked)
+                </>
+              ) : null}
               . You can reconnect it again at any time. Your other sign-in
               methods are unaffected.
             </AlertDialogDescription>
