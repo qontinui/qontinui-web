@@ -79,6 +79,9 @@ export function CommitLineage() {
   // migration. Transient + self-healing (the poll keeps retrying), so it gets
   // a friendly "feature updating" panel instead of the destructive error card.
   const [migrationPending, setMigrationPending] = useState(false);
+  // The `coord.<table>.<column>` coord reported missing — surfaced as a
+  // subdued operator breadcrumb under the friendly panel.
+  const [migrationMissing, setMigrationMissing] = useState<string | null>(null);
   const [lastFetchedAt, setLastFetchedAt] = useState<string | null>(null);
   const hasFetched = useRef(false);
 
@@ -94,14 +97,17 @@ export function CommitLineage() {
       setStats(s);
       setRows(r.length > 0 ? r : EMPTY_ROWS);
       setMigrationPending(false);
+      setMigrationMissing(null);
       setLastFetchedAt(new Date().toISOString());
       hasFetched.current = true;
     } catch (e) {
       if (signal?.aborted) return;
       if (isSchemaMigrationPending(e)) {
         setMigrationPending(true);
+        setMigrationMissing(e.missing ?? null);
       } else {
         setMigrationPending(false);
+        setMigrationMissing(null);
         setError(e instanceof Error ? e.message : String(e));
       }
       hasFetched.current = true;
@@ -166,6 +172,11 @@ export function CommitLineage() {
                 A database migration is in progress. Check back in a few minutes
                 — this page refreshes automatically.
               </div>
+              {migrationMissing && (
+                <div className="mt-1 font-mono text-[11px] text-muted-foreground/70">
+                  waiting on: {migrationMissing}
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
