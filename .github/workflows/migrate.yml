@@ -1,5 +1,11 @@
 name: Apply Migrations to RDS
 
+# Echo the coord gate-executor dispatch_id (when present) so the dispatcher
+# can find this run by name — the dispatches API returns 204 with no run id.
+# On push/schedule the `inputs` context is empty (missing inputs evaluate to
+# '' in expressions), so this degrades to the plain base name.
+run-name: "Apply Migrations to RDS${{ inputs.dispatch_id != '' && format(' [dispatch:{0}]', inputs.dispatch_id) || '' }}"
+
 # Auto-runs `alembic upgrade head` against the staging canonical DB by building
 # the migrator image and dispatching the ECS task. The migrator image is the
 # one defined in qontinui-stack/migrator/ — it embeds the full alembic chain
@@ -37,6 +43,16 @@ on:
   schedule:
     - cron: '0 3 * * *'  # daily 03:00 UTC catches schemas-only drifts
   workflow_dispatch:
+    inputs:
+      # Coord's deploy/migrate gate executor (plan
+      # 2026-06-10-coord-deploy-migrate-executor) dispatches this workflow with
+      # dispatch_id and correlates the spawned run via the run-name echo above.
+      # Must stay DECLARED: GitHub 422-rejects a dispatch carrying undeclared
+      # inputs. Optional with a default, so manual/empty dispatches still work.
+      dispatch_id:
+        description: "Coord gate-executor correlation id — echoed in run-name so the dispatcher can find this run (leave empty for manual runs)"
+        required: false
+        default: ""
 
 # Migrator runs as a one-shot ECS task; concurrent runs are safe (alembic
 # acquires its own advisory lock on the DB) but pointless. Cancel-in-progress
