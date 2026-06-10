@@ -1,5 +1,11 @@
 name: Deploy Web Backend
 
+# Echo the coord gate-executor dispatch_id (when present) so the dispatcher
+# can find this run by name — the dispatches API returns 204 with no run id.
+# On push/schedule the `inputs` context is empty (missing inputs evaluate to
+# '' in expressions), so this degrades to the plain base name.
+run-name: "Deploy web${{ inputs.dispatch_id != '' && format(' [dispatch:{0}]', inputs.dispatch_id) || '' }}"
+
 # Builds the qontinui-web backend image and rolls it onto the staging ECS
 # service (cluster qontinui-staging, service "web", region us-east-1). Mirrors
 # the trigger model + AWS plumbing of staging-migrate.yml so staging's two
@@ -57,6 +63,15 @@ on:
         default: "production"
       correlation_id:
         description: "The FAILED deploy's signature id — chains the rollback declare to it"
+        required: false
+        default: ""
+      # Coord's deploy/migrate gate executor (plan
+      # 2026-06-10-coord-deploy-migrate-executor) dispatches this workflow with
+      # dispatch_id and correlates the spawned run via the run-name echo above.
+      # Must stay DECLARED: GitHub 422-rejects a dispatch carrying undeclared
+      # inputs (same constraint as the rollback quartet).
+      dispatch_id:
+        description: "Coord gate-executor correlation id — echoed in run-name so the dispatcher can find this run (leave empty for manual runs)"
         required: false
         default: ""
 
