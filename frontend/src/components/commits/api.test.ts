@@ -27,6 +27,7 @@ import {
   getLineageStats,
   getRecentCommits,
   getSessionCommits,
+  isSchemaMigrationPending,
 } from "./api";
 import type { LineageRow, LineageStats } from "./types";
 
@@ -70,7 +71,9 @@ describe("getRecentCommits", () => {
   });
 
   it("forwards a custom limit in the query string", async () => {
-    fetchMock.mockResolvedValue(jsonResponse({ rows: [], count: 0, limit: 25 }));
+    fetchMock.mockResolvedValue(
+      jsonResponse({ rows: [], count: 0, limit: 25 })
+    );
 
     await getRecentCommits(25);
 
@@ -102,7 +105,9 @@ describe("getRecentCommits", () => {
   });
 
   it("forwards an AbortSignal to httpClient.fetch", async () => {
-    fetchMock.mockResolvedValue(jsonResponse({ rows: [], count: 0, limit: 100 }));
+    fetchMock.mockResolvedValue(
+      jsonResponse({ rows: [], count: 0, limit: 100 })
+    );
     const controller = new AbortController();
 
     await getRecentCommits(50, controller.signal);
@@ -216,5 +221,89 @@ describe("getLineageStats", () => {
       name: "CommitsApiError",
       status: 500,
     });
+  });
+});
+
+describe("schema_migration_pending detection", () => {
+  beforeEach(() => fetchMock.mockReset());
+
+  it("flags coord's direct 503 body shape", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(
+        {
+          error: "schema_migration_pending",
+          missing: "coord.commit_lineage.tenant_id",
+        },
+        503
+      )
+    );
+
+    const err = await getLineageStats().catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(CommitsApiError);
+    expect(isSchemaMigrationPending(err)).toBe(true);
+    expect((err as CommitsApiError).status).toBe(503);
+    expect((err as CommitsApiError).code).toBe("schema_migration_pending");
+    expect((err as CommitsApiError).missing).toBe(
+      "coord.commit_lineage.tenant_id"
+    );
+  });
+
+  it("flags the proxy-wrapped shape (coord body as a JSON string under detail)", async () => {
+    // The web backend's `_proxy_coord_get` re-raises coord errors as FastAPI
+    // HTTPException(detail=resp.text) — coord's JSON arrives as a STRING.
+    fetchMock.mockResolvedValue(
+      jsonResponse(
+        {
+          detail: JSON.stringify({
+            error: "schema_migration_pending",
+            missing: "coord.commit_lineage.tenant_id",
+          }),
+        },
+        503
+      )
+    );
+
+    const err = await getRecentCommits().catch((e: unknown) => e);
+
+    expect(isSchemaMigrationPending(err)).toBe(true);
+    expect((err as CommitsApiError).missing).toBe(
+      "coord.commit_lineage.tenant_id"
+    );
+  });
+
+  it("treats a 503 WITHOUT the marker body as an ordinary error", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ detail: "Service Unavailable" }, 503)
+    );
+
+    const err = await getLineageStats().catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(CommitsApiError);
+    expect((err as CommitsApiError).status).toBe(503);
+    expect(isSchemaMigrationPending(err)).toBe(false);
+    expect((err as CommitsApiError).code).toBeUndefined();
+  });
+
+  it("treats an unparseable 503 body as an ordinary error", async () => {
+    fetchMock.mockResolvedValue(
+      new Response("upstream timed out", { status: 503 })
+    );
+
+    const err = await getSessionCommits("abc").catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(CommitsApiError);
+    expect(isSchemaMigrationPending(err)).toBe(false);
+  });
+
+  it("does NOT flag the marker body on a non-503 status", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ error: "schema_migration_pending" }, 500)
+    );
+
+    const err = await getLineageStats().catch((e: unknown) => e);
+
+    expect(isSchemaMigrationPending(err)).toBe(false);
+    expect((err as CommitsApiError).status).toBe(500);
   });
 });
