@@ -1,7 +1,7 @@
 """widen coord.auth_observations.coverage REAL -> double precision
 
 Revision ID: twin_auth_02_coverage_float8
-Revises: d6e7f8a9b0c1
+Revises: coord_singleauthored_11_git_frontier_manifest
 Create Date: 2026-06-10
 
 ``twin_auth_01_coord_auth_observations`` created ``coverage`` as
@@ -26,7 +26,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "twin_auth_02_coverage_float8"
-down_revision: Union[str, None] = "d6e7f8a9b0c1"
+down_revision: Union[str, None] = "coord_singleauthored_11_git_frontier_manifest"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
