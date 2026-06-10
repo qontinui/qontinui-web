@@ -63,6 +63,9 @@ jobs:
     environment: production
     permissions:
       contents: read
+      # issues: write powers the page-on-failure step below (create/comment a
+      # tracking issue when the migration apply fails).
+      issues: write
 
     steps:
       - name: Check out qontinui-web
@@ -285,3 +288,69 @@ jobs:
             echo "::error::Migrator exited with code ${EXIT_CODE} (reason: ${STOP_REASON})"
             exit 1
           fi
+
+      # ── Page on migration failure (best-effort) ───────────────────────────
+      # A failed migrate run used to just turn red — nobody was paged, which is
+      # exactly how web #538's silent migration failure went unnoticed on
+      # 2026-06-08 (the /commits page then 500'd against the missing column for
+      # hours). The org has no SNS/PagerDuty channel in any workflow, so this
+      # mirrors the two patterns that DO exist:
+      #   1. deploy-coord.yml's loud, page-worthy `::error::` annotation
+      #      demanding manual intervention (its auto-rollback step), and
+      #   2. automated GitHub-issue creation (qontinui/comprehensive-analysis.yml)
+      #      — the one channel that actually emails repo watchers.
+      # Best-effort: `continue-on-error` + trailing `exit 0` so a paging hiccup
+      # can never mask (or alter) the underlying red run. De-dupes into one
+      # open `migration-failure` issue (the nightly cron would otherwise file a
+      # new issue every 24h while broken).
+      - name: Page on migration failure
+        if: failure()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          SHORT_SHA="$(printf '%s' "${GITHUB_SHA}" | cut -c1-9)"
+
+          echo "::error::MIGRATION APPLY FAILED on ${GITHUB_REPOSITORY}@${SHORT_SHA} — the staging RDS schema may be BEHIND the authored alembic head. Coord-proxied pages (e.g. /commits) degrade to 503 schema_migration_pending until this is fixed forward. MANUAL INTERVENTION REQUIRED: ${RUN_URL}"
+
+          TITLE="migrate.yml FAILED: alembic apply did not complete"
+          BODY="Migration apply failed.
+
+          - **Repo:** ${GITHUB_REPOSITORY}
+          - **Run:** ${RUN_URL}
+          - **Head SHA:** ${GITHUB_SHA}
+          - **Trigger:** ${GITHUB_EVENT_NAME}
+
+          The staging RDS schema may be behind the authored alembic head; coord routes that need the new columns degrade to 503 \`schema_migration_pending\`. Migrations are FORWARD-ONLY — fix forward (see the workflow header comment), never downgrade.
+
+          _Auto-filed by .github/workflows/migrate.yml; closes manually once a migrate run is green._"
+
+          # Ensure the label exists (idempotent), then de-dupe into one issue.
+          gh label create migration-failure \
+            --repo "${GITHUB_REPOSITORY}" \
+            --description "Auto-filed: migrate.yml apply failed" \
+            --color B60205 --force || true
+
+          EXISTING=$(gh issue list \
+            --repo "${GITHUB_REPOSITORY}" \
+            --label migration-failure \
+            --state open \
+            --json number \
+            --jq '.[0].number // empty' || true)
+
+          if [ -n "${EXISTING}" ]; then
+            echo "Open migration-failure issue #${EXISTING} exists — commenting."
+            gh issue comment "${EXISTING}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --body "Still failing: ${RUN_URL} (head ${GITHUB_SHA}, trigger ${GITHUB_EVENT_NAME})" \
+              || echo "::warning::could not comment on issue #${EXISTING} (best-effort)"
+          else
+            gh issue create \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "${TITLE}" \
+              --label migration-failure \
+              --body "${BODY}" \
+              || echo "::warning::could not create the migration-failure issue (best-effort)"
+          fi
+          exit 0
