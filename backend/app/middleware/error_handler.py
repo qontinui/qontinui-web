@@ -104,9 +104,12 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     if metadata:
         content.update(metadata)
 
+    # Propagate HTTPException headers (e.g. Retry-After on 503,
+    # WWW-Authenticate on 401) — JSONResponse drops them otherwise.
     return JSONResponse(
         status_code=exc.status_code,
         content=content,
+        headers=exc.headers,
     )
 
 

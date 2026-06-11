@@ -324,20 +324,25 @@ class TestRedeemEndpoint:
                 captured["headers"] = headers
                 return _mock_resp(status_code=201, json_data=coord_response)
 
-        from app.api.v1.endpoints import pair_codes as endpoint_mod
+        # The outbound POST now lives in the shared coord_proxy helper —
+        # swap ITS bound ``httpx`` reference (NOT via
+        # ``patch("httpx.AsyncClient")`` which would also intercept the
+        # outer ASGI test client). The fake carries the real exception
+        # classes so the helper's except clauses stay valid.
+        from app.services import coord_proxy as proxy_mod
 
-        # Swap the endpoint's bound ``httpx`` reference with a fake that
-        # exposes only an ``AsyncClient`` attribute → our fake. The
-        # outer test client still uses the real httpx.
         fake_httpx = MagicMock()
         fake_httpx.AsyncClient = _FakeClient
         fake_httpx.HTTPError = httpx.HTTPError
+        fake_httpx.ConnectError = httpx.ConnectError
+        fake_httpx.ConnectTimeout = httpx.ConnectTimeout
+        fake_httpx.TimeoutException = httpx.TimeoutException
 
         with patch("app.api.v1.endpoints.pair_codes.strategy_client") as mock_strategy:
             mock_strategy.enabled = True
             mock_strategy._headers = AsyncMock(return_value={"X-Test": "1"})
-            original_httpx = endpoint_mod.httpx
-            endpoint_mod.httpx = fake_httpx
+            original_httpx = proxy_mod.httpx
+            proxy_mod.httpx = fake_httpx
             try:
                 async with httpx.AsyncClient(
                     transport=transport, base_url="http://test"
@@ -350,7 +355,7 @@ class TestRedeemEndpoint:
                         },
                     )
             finally:
-                endpoint_mod.httpx = original_httpx
+                proxy_mod.httpx = original_httpx
 
         assert resp.status_code == 200, resp.text
         body = resp.json()

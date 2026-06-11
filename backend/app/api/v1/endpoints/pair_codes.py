@@ -25,13 +25,11 @@ from datetime import UTC
 from typing import Any
 from uuid import UUID
 
-import httpx
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_active_user_async
-from app.core.config import settings
 from app.crud import pair_code_crud
 from app.models.user import User as UserModel
 from app.schemas.pair_code import (
@@ -41,6 +39,7 @@ from app.schemas.pair_code import (
     PairCodeRedeemOut,
 )
 from app.services.coord_identity import get_coord_identity
+from app.services.coord_proxy import post_to_coord
 from app.services.strategy import strategy_client
 
 logger = structlog.get_logger(__name__)
@@ -125,6 +124,10 @@ async def redeem_pair_code_endpoint(
     * **409** if the code has already been redeemed (single-use).
     * **410** if the code has expired.
     * **502** if the downstream coord ``pair-cli`` call fails.
+    * **503** + ``Retry-After`` if coord is temporarily unavailable
+      (e.g. mid-deploy) after the proxy's connect-failure retries.
+    * **504** if coord did not respond in time (no retry — the request
+      may have been processed).
     """
     code_upper = code.upper()
     row = await pair_code_crud.get_redeemable(db, code_upper)
@@ -170,7 +173,6 @@ async def redeem_pair_code_endpoint(
             ),
         )
 
-    coord_url = settings.COORD_URL.rstrip("/")
     headers = await strategy_client._headers(str(row.issued_by_user_id))  # noqa: SLF001
     body: dict[str, Any] = {
         "device_id": str(payload.device_id),
@@ -180,23 +182,18 @@ async def redeem_pair_code_endpoint(
         "tenant_id": str(row.tenant_id),
     }
 
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(
-                f"{coord_url}/coord/devices/pair-cli",
-                headers=headers,
-                json=body,
-            )
-    except httpx.HTTPError as exc:
-        logger.error(
-            "pair_code_redeem_coord_transport_failed",
-            code_prefix=code_upper[:2],
-            error=str(exc),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Coord unreachable.",
-        ) from exc
+    # post_to_coord retries never-reached-coord failures (connect errors,
+    # gateway 502/503/504 — the rolling-deploy window) and raises an
+    # honest 503 + Retry-After when coord stays unavailable. Safe here:
+    # the code is only marked redeemed after coord succeeds, and the
+    # row lock from get_redeemable() serializes concurrent attempts.
+    resp = await post_to_coord(
+        "/coord/devices/pair-cli",
+        headers=headers,
+        json_body=body,
+        log_event="pair_code_redeem",
+        code_prefix=code_upper[:2],
+    )
 
     if resp.status_code not in (200, 201):
         logger.warning(

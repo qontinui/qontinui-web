@@ -66,7 +66,9 @@ def _mock_response(status_code: int = 201, json_data=None, text: str = "") -> Ma
 
 
 def _patch_httpx():
-    return patch("app.api.v1.endpoints.devices.httpx.AsyncClient")
+    # The outbound POST now lives in the shared coord_proxy helper
+    # (retry + honest-503 wrapper) — patch the client there.
+    return patch("app.services.coord_proxy.httpx.AsyncClient")
 
 
 def _patch_enabled(*, enabled: bool = True):
