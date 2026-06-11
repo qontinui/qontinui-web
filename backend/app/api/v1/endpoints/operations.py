@@ -434,8 +434,14 @@ async def _proxy_coord_get(
     resolved tenant. Fleet-wide endpoints (``/merge/queue``,
     ``/pr-merge/prs``) ALSO pass it now — not to scope (they stay
     fleet-wide) but to forward the bearer so coord requires an
-    authenticated operator. Only truly anonymous callers (``/claims/*``)
-    leave it ``None``.
+    authenticated operator.
+
+    NOTE: this kwarg puts NOTHING on the wire itself (the legacy
+    ``X-Qontinui-Tenant-Id`` header was retired in fleet-auth T2b) — it
+    only triggers bearer-forwarding. An endpoint that needs coord to
+    *assert* the tenant (the claims read paths,
+    plan 2026-05-24-symbol-claim-tenant-scoping) must ALSO put
+    ``tenant_id`` in ``params`` so it rides the query string.
     """
     url = f"{settings.COORD_URL}{path}"
     headers = _tenant_headers(tenant_id) if tenant_id is not None else None
@@ -1062,12 +1068,21 @@ async def get_claims_list(
     limit: int | None = None,
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
-    """List active claims by kind + resource_key prefix.
+    """List active claims by kind + resource_key prefix, tenant-scoped.
 
-    Forwards the operator bearer (via ``get_tenant_id`` → ``tenant_id=``)
-    so coord can authenticate the operator once it gates this route
-    (fleet-auth P2/D6). Backward-compatible while coord is anonymous."""
-    params: dict[str, Any] = {"kind": kind, "prefix": prefix}
+    Coord's ``/coord/claims/list`` tenant-scopes optionally (plan
+    2026-05-24-symbol-claim-tenant-scoping, qontinui-coord#528): the
+    forwarded operator bearer (``tenant_id=`` kwarg → fleet-auth P2/D6)
+    already derives the scope server-side; the explicit ``tenant_id``
+    QUERY param on top makes coord assert param == bearer home tenant,
+    so a web bug forwarding the wrong tenant is rejected 403 instead of
+    silently widening the view. Mirrors the symbol-claims proxy (#559).
+    """
+    params: dict[str, Any] = {
+        "kind": kind,
+        "prefix": prefix,
+        "tenant_id": str(tenant_id),
+    }
     if limit is not None:
         params["limit"] = limit
     return await _proxy_coord_get(
