@@ -105,8 +105,11 @@ class CoordNotificationResponse(BaseModel):
 
 
 def _require_coord_secret(
-    request: Request,
     x_coord_service_secret: str | None = Header(default=None, alias=_SECRET_HEADER),
+    # Plain `Request` annotation so FastAPI injects it (a `Request | None`
+    # union is rejected as a response-field type); None default keeps the
+    # dependency directly callable in unit tests.
+    request: Request = None,  # type: ignore[assignment]
 ) -> None:
     """Authenticate the coord service call via the shared secret.
 
@@ -126,7 +129,9 @@ def _require_coord_secret(
             "coord_notification_rejected",
             configured_empty=not configured,
             presented_len=len(presented),
-            user_agent=request.headers.get("user-agent"),
+            user_agent=request.headers.get("user-agent")
+            if request is not None
+            else None,
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
