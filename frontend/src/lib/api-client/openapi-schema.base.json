@@ -67133,6 +67133,55 @@
         ]
       }
     },
+    "/api/v1/operations/pr-merge/rollout": {
+      "post": {
+        "description": "Rollout promote \u2014 set the tenant's (or a specific repo's)\nrollout_state to an arbitrary target. Body shape::\n\n    {\n        \"scope\": \"tenant\" | \"repo:<owner/name>\",\n        \"state\": \"dry_run\" | \"shadow\" | \"live\",\n        \"reason\": \"<operator's stated reason>\",\n        \"force\": false\n    }\n\nThe promote counterpart to the kill-switch's downward-only flip.\nCoord:\n1. Verifies the tenant owns the repo (when scope=repo).\n2. UPSERTs the per-tenant or per-repo ``rollout_state`` (a\n   never-configured repo is created rather than no-op'd).\n3. Requires the current resolved state to be ``shadow`` when\n   promoting to ``live`` unless ``force=true``.\n4. Invalidates the settings cache + writes a\n   ``coord.user_overrides(override_kind='rollout_promote')`` audit\n   row.\n\nCoord additionally rejects non-interactive bearers on this mutation\n(``403 non_interactive_write_forbidden``) \u2014 the promote is reserved\nfor a logged-in dashboard session, which is exactly what this proxy\nforwards.\n\nReturns ``{ \"scope\", \"state\", \"affected_repos\" }``.",
+        "operationId": "api_v1_operations_pr_merge_rollout_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Pr Merge Rollout Api V1 Operations Pr Merge Rollout Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Pr Merge Rollout",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/pr-merge/settings": {
       "get": {
         "description": "Tenant-scoped read of the per-tenant merge settings. Returns the\nresolved EffectiveProfile (global \u2192 tenant tier, no per-repo\noverrides applied).",

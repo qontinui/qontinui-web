@@ -932,6 +932,46 @@ async def post_pr_merge_kill_switch(
     )
 
 
+@router.post("/pr-merge/rollout")
+async def post_pr_merge_rollout(
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Rollout promote — set the tenant's (or a specific repo's)
+    rollout_state to an arbitrary target. Body shape::
+
+        {
+            "scope": "tenant" | "repo:<owner/name>",
+            "state": "dry_run" | "shadow" | "live",
+            "reason": "<operator's stated reason>",
+            "force": false
+        }
+
+    The promote counterpart to the kill-switch's downward-only flip.
+    Coord:
+    1. Verifies the tenant owns the repo (when scope=repo).
+    2. UPSERTs the per-tenant or per-repo ``rollout_state`` (a
+       never-configured repo is created rather than no-op'd).
+    3. Requires the current resolved state to be ``shadow`` when
+       promoting to ``live`` unless ``force=true``.
+    4. Invalidates the settings cache + writes a
+       ``coord.user_overrides(override_kind='rollout_promote')`` audit
+       row.
+
+    Coord additionally rejects non-interactive bearers on this mutation
+    (``403 non_interactive_write_forbidden``) — the promote is reserved
+    for a logged-in dashboard session, which is exactly what this proxy
+    forwards.
+
+    Returns ``{ "scope", "state", "affected_repos" }``.
+    """
+    return await _proxy_coord_post(
+        "/pr-merge/rollout",
+        body,
+        tenant_id=tenant_id,
+    )
+
+
 @router.get("/pr-merge/slo")
 async def get_pr_merge_slo(
     tenant_id: UUID = Depends(get_tenant_id),
