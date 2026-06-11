@@ -65458,7 +65458,7 @@
     },
     "/api/v1/operations/claims/list": {
       "get": {
-        "description": "List active claims by kind + resource_key prefix.\n\nForwards the operator bearer (via ``get_tenant_id`` \u2192 ``tenant_id=``)\nso coord can authenticate the operator once it gates this route\n(fleet-auth P2/D6). Backward-compatible while coord is anonymous.",
+        "description": "List active claims by kind + resource_key prefix, tenant-scoped.\n\nCoord's ``/coord/claims/list`` tenant-scopes optionally (plan\n2026-05-24-symbol-claim-tenant-scoping, qontinui-coord#528): the\nforwarded operator bearer (``tenant_id=`` kwarg \u2192 fleet-auth P2/D6)\nalready derives the scope server-side; the explicit ``tenant_id``\nQUERY param on top makes coord assert param == bearer home tenant,\nso a web bug forwarding the wrong tenant is rejected 403 instead of\nsilently widening the view. Mirrors the symbol-claims proxy (#559).",
         "operationId": "api_v1_operations_claims_list_get",
         "parameters": [
           {
