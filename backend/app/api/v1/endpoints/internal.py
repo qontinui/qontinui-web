@@ -27,7 +27,7 @@ import hmac
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -105,8 +105,8 @@ class CoordNotificationResponse(BaseModel):
 
 
 def _require_coord_secret(
+    request: Request,
     x_coord_service_secret: str | None = Header(default=None, alias=_SECRET_HEADER),
-    user_agent: str | None = Header(default=None),
 ) -> None:
     """Authenticate the coord service call via the shared secret.
 
@@ -126,7 +126,7 @@ def _require_coord_secret(
             "coord_notification_rejected",
             configured_empty=not configured,
             presented_len=len(presented),
-            user_agent=user_agent,
+            user_agent=request.headers.get("user-agent"),
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
