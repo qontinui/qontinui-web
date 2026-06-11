@@ -91,6 +91,10 @@ env:
   ECS_SERVICE: web
   ECS_CONTAINER: web
   ECS_TASK_FAMILY: qontinui-staging-web
+  # Networking for the post-deploy one-off backfill run-task (same private
+  # subnets + client SG the migrator uses).
+  ECS_SUBNETS: ${{ secrets.STAGING_PRIVATE_SUBNET_IDS }}
+  ECS_SECURITY_GROUP: ${{ secrets.STAGING_CLIENT_SG_ID }}
   API_BASE: https://api.qontinui.io/api/v1
   HEALTH_URL: https://api.qontinui.io/api/v1/health
   # The behavioral smoke reads CI-bot creds from SSM SecureString. Those
@@ -590,6 +594,61 @@ jobs:
             --region "${AWS_REGION}"
           echo "::error::post-deploy smoke failed; rolled back to $PRIOR_TD"
           exit 1
+
+      # ── Post-deploy: backfill GitHub identities (idempotent) ──────────────
+      # The github_id_01 migration's inline backfill FAIL-OPENS in the migrator
+      # container (which ships only alembic + sqlalchemy — no app.services, no
+      # Cognito-admin task role) and the app never re-runs an already-applied
+      # migration. Net effect observed 2026-06-10: github_user_id stayed NULL
+      # for every user for two days despite live Cognito GitHub links, and the
+      # identity resolver had zero data. This runs the DURABLE backfill from the
+      # WEB image (which HAS cognito_admin + the Cognito-admin role) as a one-off
+      # Fargate task on the freshly-deployed task-def. Idempotent (only NULL
+      # rows) and fail-open: `continue-on-error` + `success()` so it only runs
+      # on a healthy, fully-rolled deploy and a Cognito blip can never red it.
+      - name: Backfill GitHub identities
+        if: success()
+        continue-on-error: true
+        run: |
+          SUBNETS_JSON=$(echo "${ECS_SUBNETS}" | python3 -c 'import sys,json; print(json.dumps([s.strip() for s in sys.stdin.read().split(",") if s.strip()]))')
+          OVERRIDES=$(python3 -c 'import json,os; print(json.dumps({"containerOverrides":[{"name":os.environ["ECS_CONTAINER"],"command":["python","-m","scripts.backfill_github_identities"]}]}))')
+
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "${ECS_CLUSTER}" \
+            --task-definition "${{ steps.deploy.outputs.new_td }}" \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=${SUBNETS_JSON},securityGroups=[${ECS_SECURITY_GROUP}],assignPublicIp=DISABLED}" \
+            --overrides "$OVERRIDES" \
+            --started-by "gha-backfill-${GITHUB_RUN_ID}" \
+            --region "${AWS_REGION}" \
+            --query 'tasks[0].taskArn' --output text)
+
+          if [ -z "$TASK_ARN" ] || [ "$TASK_ARN" = "None" ]; then
+            echo "::warning::backfill run-task returned no taskArn (non-fatal; deploy already healthy)"
+            exit 0
+          fi
+          echo "Started backfill $TASK_ARN"
+
+          aws ecs wait tasks-stopped \
+            --cluster "${ECS_CLUSTER}" --tasks "$TASK_ARN" --region "${AWS_REGION}"
+
+          TASK_ID=$(echo "$TASK_ARN" | awk -F/ '{print $NF}')
+          EXIT_CODE=$(aws ecs describe-tasks \
+            --cluster "${ECS_CLUSTER}" --tasks "$TASK_ARN" --region "${AWS_REGION}" \
+            --query 'tasks[0].containers[0].exitCode' --output text)
+          echo "backfill exitCode=${EXIT_CODE}"
+
+          # Web one-off tasks log to /ecs/qontinui-staging/web stream web/web/<id>.
+          aws logs get-log-events \
+            --log-group-name "/ecs/qontinui-staging/web" \
+            --log-stream-name "web/web/${TASK_ID}" \
+            --region "${AWS_REGION}" --limit 40 \
+            --query 'events[].message' --output text 2>/dev/null | tail -40 \
+            || echo "(backfill log stream not yet flushed)"
+
+          if [ "${EXIT_CODE}" != "0" ]; then
+            echo "::warning::GitHub-identity backfill exited ${EXIT_CODE} (non-fatal; deploy already healthy). Inspect /ecs/qontinui-staging/web web/web/${TASK_ID}"
+          fi
 
       # ── Deploy effect signature: VERIFY (best-effort, report-only) ────────
       # Fires one verification after the rollout settled (or failed + rolled
