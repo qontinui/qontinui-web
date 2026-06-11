@@ -24,7 +24,6 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
-import httpx
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from qontinui_schemas.common import utc_now
@@ -45,7 +44,6 @@ from app.api.deps import (
     get_current_active_user_async,
 )
 from app.config.redis_config import get_redis
-from app.core.config import settings
 from app.crud import device_connection as device_connection_crud
 from app.crud import device_crud
 from app.models.device import Device
@@ -62,6 +60,7 @@ from app.schemas.device import (
 )
 from app.services import coord_device
 from app.services.coord_identity import get_coord_identity
+from app.services.coord_proxy import post_to_coord
 from app.services.runner_websocket_manager import get_runner_websocket_manager
 from app.services.strategy import strategy_client
 from app.services.workflow_dispatcher import HEALTHY_HEARTBEAT_WINDOW_SECONDS
@@ -437,7 +436,6 @@ async def pair_confirm(
     # is kept purely as the linked-operator gate.
     await get_coord_identity(request)
 
-    coord_url = settings.COORD_URL.rstrip("/")
     headers = await strategy_client._headers(str(current_user.id))  # noqa: SLF001
     # coord's PairCompleteRequest requires exactly:
     #   state: String, web_session_token: String (non-empty),
@@ -452,23 +450,16 @@ async def pair_confirm(
         "device_id": payload.device_id,
     }
 
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(
-                f"{coord_url}/coord/devices/pair-complete",
-                headers=headers,
-                json=body,
-            )
-    except httpx.HTTPError as exc:
-        logger.error(
-            "pair_confirm_coord_transport_failed",
-            user_id=str(current_user.id),
-            error=str(exc),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Coord unreachable.",
-        ) from exc
+    # post_to_coord retries never-reached-coord failures (connect errors,
+    # gateway 502/503/504 — the rolling-deploy window) and raises an
+    # honest 503 + Retry-After when coord stays unavailable.
+    resp = await post_to_coord(
+        "/coord/devices/pair-complete",
+        headers=headers,
+        json_body=body,
+        log_event="pair_confirm",
+        user_id=str(current_user.id),
+    )
 
     if resp.status_code not in (200, 201):
         logger.warning(
@@ -572,7 +563,6 @@ async def pair_cli(
             ),
         )
 
-    coord_url = settings.COORD_URL.rstrip("/")
     headers: dict[str, str] = {
         "Authorization": f"Bearer {caller_token}",
         "X-Qontinui-User-Id": str(current_user.id),
@@ -584,23 +574,15 @@ async def pair_cli(
         "user_id": str(current_user.id),
     }
 
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(
-                f"{coord_url}/coord/devices/pair-cli",
-                headers=headers,
-                json=body,
-            )
-    except httpx.HTTPError as exc:
-        logger.error(
-            "pair_cli_coord_transport_failed",
-            user_id=str(current_user.id),
-            error=str(exc),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Coord unreachable.",
-        ) from exc
+    # See pair_confirm: retries deploy-window transport failures, 503 +
+    # Retry-After when coord stays unavailable.
+    resp = await post_to_coord(
+        "/coord/devices/pair-cli",
+        headers=headers,
+        json_body=body,
+        log_event="pair_cli",
+        user_id=str(current_user.id),
+    )
 
     if resp.status_code not in (200, 201):
         logger.warning(
