@@ -83,6 +83,11 @@ export interface SymbolClaim {
   resource_key: string;
   machine_id: string;
   ttl_seconds: number;
+  /** Owning tenant of the holder's device, live-resolved by coord
+   *  (plan 2026-05-24-symbol-claim-tenant-scoping). Informational —
+   *  scoping is enforced upstream; absent on holders whose device
+   *  couldn't be resolved and on pre-rollout coord responses. */
+  tenant_id?: string | null;
 }
 
 /** Wire shape returned by `GET /api/v1/operations/symbol-claims` (which

@@ -2201,14 +2201,21 @@ async def get_deploy_rollback_proposal(
 # `kind=symbol` pinned. Optional `?machine_id` filter is forwarded so a
 # future per-machine view can fan out without changing the proxy.
 #
-# Tenant scoping is intentionally absent here, mirroring the existing
-# `/operations/claims/list` posture (Phase 5 of plan
-# `2026-05-18-agent-spawn-coordination.md`). Per the Phase 4.3 design
-# note: "tenant scoping on symbol claims is a follow-up; for now,
-# render the full operator's view across all machines they have access
-# to." When coord-side tenant scoping lands, the proxy + frontend can
-# pivot to `tenant_id = Depends(get_tenant_id)` without breaking the
-# wire shape.
+# Tenant-scoped (plan `2026-05-24-symbol-claim-tenant-scoping.md` Phase 2):
+# the operator's resolved tenant rides BOTH channels —
+#
+#   1. the forwarded Cognito bearer (fleet-auth P2/D6; coord derives the
+#      home tenant from the `OperatorContext`), and
+#   2. an explicit `?tenant_id=` query param, which coord's
+#      `resolve_optional_tenant_scope` asserts against the bearer's home
+#      tenant (defense-in-depth: a mismatch is rejected 403, so a web bug
+#      forwarding the wrong tenant can't widen the view).
+#
+# NOTE the param must ride the `params` dict (coord reads it from the
+# query string), NOT `_proxy_coord_get`'s `tenant_id=` kwarg alone — that
+# kwarg only triggers bearer-forwarding and puts nothing on the wire.
+# Coord drops holders whose device belongs to another tenant; holders
+# gain a resolved `tenant_id` field (surfaced in `SymbolClaim`).
 
 
 @router.get("/symbol-claims")
@@ -2245,7 +2252,14 @@ async def get_symbol_claims(
     The dashboard groups client-side anyway; this filter is for
     targeted CLI / curl consumers.
     """
-    params: dict[str, Any] = {"kind": "symbol", "prefix": ""}
+    params: dict[str, Any] = {
+        "kind": "symbol",
+        "prefix": "",
+        # Explicit tenant scope — coord asserts this matches the forwarded
+        # bearer's home tenant and filters holders to the tenant's devices
+        # (plan 2026-05-24-symbol-claim-tenant-scoping Phase 2).
+        "tenant_id": str(tenant_id),
+    }
     if limit is not None:
         params["limit"] = limit
     # Operator bearer forwarded (fleet-auth P2/D6).
