@@ -24,6 +24,7 @@ import {
   GitPullRequest,
   History as HistoryIcon,
   Inbox,
+  Plug,
   Rocket,
   Scale,
   ScrollText,
@@ -130,6 +131,12 @@ const PRIMARY_TABS: NavItem[] = [
     label: "Pull Decisions",
     icon: GitPullRequest,
     testId: "coord-nav-pull-decisions",
+  },
+  {
+    href: "/admin/coord/onboarding",
+    label: "Onboarding",
+    icon: Plug,
+    testId: "coord-nav-onboarding",
   },
   {
     href: "/admin/coord/merge-settings",
