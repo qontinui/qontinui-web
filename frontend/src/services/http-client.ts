@@ -9,7 +9,25 @@ const log = createLogger("HttpClient");
 export interface HttpOptions extends RequestInit {
   skipAuth?: boolean;
   maxRetries?: number;
+  /**
+   * Per-request client-side timeout in milliseconds. Defaults to
+   * `DEFAULT_REQUEST_TIMEOUT_MS` (60s) — covers typical reads + backend cold
+   * starts. Long-running proxied operations (e.g. the audit wizard's
+   * /pr-merge/onboarding/audit, whose backend timeout was bumped to 90s in
+   * PR #569 to cover coord's 60s STARTER_PROFILE_WAIT) must pass a value
+   * larger than the backend's own timeout, or the client AbortController will
+   * fire first and surface the misleading "backend may be starting up"
+   * message instead of the real backend error.
+   */
+  timeoutMs?: number;
 }
+
+/**
+ * Default client-side fetch timeout. Sized to cover an Elastic Beanstalk
+ * cold-start (~10-15s) plus normal request latency, but small enough that a
+ * truly stuck request fails fast. Per-request `timeoutMs` overrides this.
+ */
+export const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
 
 export class HttpClient {
   private tokenManager: TokenManager;
@@ -109,24 +127,30 @@ export class HttpClient {
   }
 
   async fetch(url: string, options: HttpOptions = {}): Promise<Response> {
-    const { skipAuth = false, maxRetries = 3, ...fetchOptions } = options;
+    const {
+      skipAuth = false,
+      maxRetries = 3,
+      timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
+      ...fetchOptions
+    } = options;
 
     // Override retry strategy max retries if specified
     if (maxRetries !== 3) {
       this.retryStrategy = new RetryStrategy({ maxRetries });
     }
 
-    return this.executeRequestWithRetry(url, fetchOptions, skipAuth);
+    return this.executeRequestWithRetry(url, fetchOptions, skipAuth, timeoutMs);
   }
 
   private async executeRequestWithRetry(
     url: string,
     options: RequestInit,
     skipAuth: boolean,
+    timeoutMs: number,
     attempt: number = 1
   ): Promise<Response> {
     // Execute single request
-    const response = await this.executeSingleRequest(url, options, skipAuth);
+    const response = await this.executeSingleRequest(url, options, skipAuth, timeoutMs);
 
     // Handle 401 Unauthorized with token refresh.
     //
@@ -162,7 +186,7 @@ export class HttpClient {
       const refreshed = await this.refreshAccessToken();
       if (refreshed) {
         log.debug("Token refresh successful, retrying request");
-        return this.executeSingleRequest(url, options, skipAuth);
+        return this.executeSingleRequest(url, options, skipAuth, timeoutMs);
       }
       // Token refresh failed. Under Cognito-only auth there is no silent
       // re-mint, so a stale-token 401 that can't refresh is a dead session:
@@ -183,7 +207,7 @@ export class HttpClient {
     // Use RetryStrategy for rate limiting and server errors
     if (response.status === 429 || response.status >= 500) {
       return this.retryStrategy.executeWithRetry(
-        () => this.executeSingleRequest(url, options, skipAuth),
+        () => this.executeSingleRequest(url, options, skipAuth, timeoutMs),
         attempt
       );
     }
@@ -194,7 +218,8 @@ export class HttpClient {
   private async executeSingleRequest(
     url: string,
     options: RequestInit,
-    skipAuth: boolean
+    skipAuth: boolean,
+    timeoutMs: number
   ): Promise<Response> {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
@@ -223,8 +248,13 @@ export class HttpClient {
     }
 
     const controller = new AbortController();
-    // 60 second timeout to handle backend cold starts (can take 10-15 seconds)
-    const timeoutId = setTimeout(() => controller.abort(), 60000);
+    // Client-side timeout to handle backend cold starts (can take 10-15
+    // seconds) while still failing fast on truly stuck requests. Long-running
+    // proxied operations override this via `timeoutMs` so the client clock
+    // outlasts the backend's own timeout (otherwise the AbortController fires
+    // first and surfaces the misleading "backend may be starting up" text in
+    // place of the real backend error body).
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       const response = await fetch(url, {
