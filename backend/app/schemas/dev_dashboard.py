@@ -21,6 +21,11 @@ class RunnerHeartbeat(BaseModel):
     os_version: str | None = None
     running_task_count: int = 0
     running_task_ids: list[str] = Field(default_factory=list)
+    # Whether the advertised ``ip`` is actually served by the runner's HTTP
+    # bind (runners that bind loopback-only advertise a LAN IP they never
+    # listen on). Optional end-to-end: old runners omit it → None (unknown),
+    # which consumers must treat as "assume reachable" for back-compat.
+    lan_reachable: bool | None = None
 
 
 class RegisteredRunner(BaseModel):
@@ -35,6 +40,9 @@ class RegisteredRunner(BaseModel):
     os_version: str | None = None
     running_task_count: int = 0
     running_task_ids: list[str] = Field(default_factory=list)
+    # Pass-through of ``RunnerHeartbeat.lan_reachable`` — None when the
+    # runner predates the field (treat as "assume reachable").
+    lan_reachable: bool | None = None
     last_heartbeat: IsoDatetime
     is_healthy: bool = True  # False if heartbeat missed > 90s
 

@@ -48,6 +48,7 @@ class FleetRegistry:
                 os_version=heartbeat.os_version,
                 running_task_count=heartbeat.running_task_count,
                 running_task_ids=heartbeat.running_task_ids,
+                lan_reachable=heartbeat.lan_reachable,
                 last_heartbeat=datetime.now(UTC),
                 is_healthy=True,
             )

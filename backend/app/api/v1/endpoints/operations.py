@@ -296,6 +296,9 @@ async def get_fleet_status(
                 "name": beacon.instance_name or "primary",
                 "hostname": beacon.hostname,
                 "ipAddress": beacon.ip,
+                # None = runner predates the field (assume reachable);
+                # False = the advertised LAN ip is loopback-bound/dead.
+                "lanReachable": beacon.lan_reachable,
                 "port": beacon.port,
                 "os": beacon.os,
                 "osVersion": beacon.os_version,
