@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { setProductMode } from "qontinui-navigation";
+import { setProductMode } from "@qontinui/navigation";
 import type { NavItem } from "../types";
 import { getWebNavItems } from "../shared-nav-adapter";
 import { devNavItems } from "../nav-items";

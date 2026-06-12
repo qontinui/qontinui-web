@@ -6,7 +6,7 @@ import {
   SETTINGS_ITEMS,
   isItemAvailable,
   type NavigationItem,
-} from "qontinui-navigation";
+} from "@qontinui/navigation";
 import { resolveIcon } from "@/components/navigation/sidebar/icon-resolver";
 
 /**

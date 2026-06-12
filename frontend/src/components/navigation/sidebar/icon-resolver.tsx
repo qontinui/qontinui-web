@@ -1,5 +1,5 @@
 import React from "react";
-import type { IconName } from "qontinui-navigation";
+import type { IconName } from "@qontinui/navigation";
 import {
   Play,
   Activity,

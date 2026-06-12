@@ -18,7 +18,7 @@
  * Handlers, RSC, and client components alike.
  */
 
-import { getWebNavigation, type NavigationItem } from "qontinui-navigation";
+import { getWebNavigation, type NavigationItem } from "@qontinui/navigation";
 
 /** A page the co-pilot planner may target. */
 export interface CopilotPage {
