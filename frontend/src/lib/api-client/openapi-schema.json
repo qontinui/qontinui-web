@@ -68435,6 +68435,64 @@
         ]
       }
     },
+    "/api/v1/operations/migrations/queue": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/migrations/queue?repo=<owner/repo>``.\n\nThe coord-authoritative migration-reservation queue read-side: the\nordered live set (``queued`` / ``pr_bound``, each carrying its 1-based\n``position``) plus the last ``terminal_limit`` terminal rows. Backs the\nOperations dashboard's Migration Queue tile.\n\n``repo`` is required \u2014 coord 400s without it, since the queue is\nper-repo. Fleet-wide read; ``tenant_id`` is resolved only to forward the\noperator bearer so coord requires an authenticated operator (same posture\nas ``/merge/queue`` and ``/pr-merge/prs``).",
+        "operationId": "api_v1_operations_migrations_queue_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "title": "Repo",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "terminal_limit",
+            "required": false,
+            "schema": {
+              "default": 5,
+              "title": "Terminal Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Migrations Queue Api V1 Operations Migrations Queue Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Migrations Queue",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/plans": {
       "get": {
         "description": "List entries from ``coord.plans`` via coord (tenant-scoped).",
