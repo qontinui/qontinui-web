@@ -104,7 +104,10 @@ function PairDeviceStep({
         method: "POST",
         body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(`HTTP ${res.status}${text ? `: ${text}` : ""}`);
+      }
       const data = (await res.json()) as PairStartResponse;
       setPairCode(data.state);
       setRedirectUrl(data.redirect_url);

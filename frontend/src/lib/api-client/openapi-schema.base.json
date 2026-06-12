@@ -63771,6 +63771,55 @@
         ]
       }
     },
+    "/api/v1/operations/coord/devices/pair-start": {
+      "post": {
+        "description": "Proxy POST /coord/devices/pair-start with server-injected tenant_id.\n\nCoord's pair-start is a public route whose PairStartRequest requires\ntenant_id in the body (routes_phase3.rs:1035). The web proxy is the\nenforcement point: it resolves the operator's home tenant via\nget_tenant_id and injects it into the body before forwarding, so the\nfrontend never has to know or pass the tenant_id.",
+        "operationId": "api_v1_operations_coord_devices_pair_start_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Coord Devices Pair Start Api V1 Operations Coord Devices Pair Start Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Coord Devices Pair Start",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/next-step-settings": {
       "get": {
         "description": "Per-tenant read of the decision-engine autonomy settings.\n\nReturns the coord payload (``master_enabled``, ``domains`` list with\n``decision_domain``, ``label``, ``description``, ``autonomy_level``,\n``default_autonomy_level``, ``mode``, ``resolved_from``,\n``requires_master``, ``effective``) plus a synthesised ``can_edit``\nfield so the UI can enable/disable the Save controls without a\nseparate authz round-trip.",
