@@ -6,6 +6,7 @@ export { MachineCard } from "./MachineCard";
 export { DeviceStatusTile } from "./DeviceStatusTile";
 export { DevActionsTile } from "./DevActionsTile";
 export { MergeDependencyGraph } from "./MergeDependencyGraph";
+export { MigrationQueueTile } from "./MigrationQueueTile";
 export { MergeOrchestrationOnboarding } from "./MergeOrchestrationOnboarding";
 export { MergeTrain } from "./MergeTrain";
 export { TaskRunCard } from "./TaskRunCard";

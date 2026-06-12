@@ -501,6 +501,31 @@ async def get_pr_merge_prs(
     return await _proxy_coord_get("/pr-merge/prs", tenant_id=tenant_id)
 
 
+@router.get("/migrations/queue")
+async def get_migrations_queue(
+    repo: str,
+    terminal_limit: int = 5,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Proxy coord's ``GET /coord/migrations/queue?repo=<owner/repo>``.
+
+    The coord-authoritative migration-reservation queue read-side: the
+    ordered live set (``queued`` / ``pr_bound``, each carrying its 1-based
+    ``position``) plus the last ``terminal_limit`` terminal rows. Backs the
+    Operations dashboard's Migration Queue tile.
+
+    ``repo`` is required — coord 400s without it, since the queue is
+    per-repo. Fleet-wide read; ``tenant_id`` is resolved only to forward the
+    operator bearer so coord requires an authenticated operator (same posture
+    as ``/merge/queue`` and ``/pr-merge/prs``).
+    """
+    return await _proxy_coord_get(
+        "/coord/migrations/queue",
+        params={"repo": repo, "terminal_limit": terminal_limit},
+        tenant_id=tenant_id,
+    )
+
+
 # ---- PR Merge Orchestrator Phase 2 D2.4 — per-tenant settings ------------
 #
 # Five endpoints, each tenant-scoped via ``get_tenant_id``. The

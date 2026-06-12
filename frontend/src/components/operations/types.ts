@@ -486,3 +486,61 @@ export interface MachineGroup {
    */
   ciRunner?: CiRunnerInfo;
 }
+
+// ============================================================================
+// Migration reservation queue
+//
+// Mirrors coord's `Reservation` wire shape from
+// `migration_reservations.rs` (`GET /coord/migrations/queue?repo=`),
+// proxied through `GET /api/v1/operations/migrations/queue`. The
+// coord-authoritative reservation queue replaced the alembic head-claim
+// mutex: a client asks for a slot and coord assigns the `down_revision`
+// (merged chain head or queue tail), stacking racing reserves into an
+// ordered queue rather than forking the migration graph.
+// ============================================================================
+
+/**
+ * One migration reservation row — the full read-side shape coord serializes
+ * (every column). Timestamps are RFC 3339 strings.
+ *
+ * The lifecycle `state` is an open union: coord's CHECK constraint limits it
+ * to the five known values today, but the `| string` tail keeps a future
+ * coord state from crashing the render path (it just falls through to a
+ * neutral chip).
+ */
+export interface MigrationReservation {
+  id: string;
+  repo: string;
+  revision: string;
+  down_revision: string;
+  state: "queued" | "pr_bound" | "merged" | "expired" | "withdrawn" | string;
+  pr_number: number | null;
+  pr_url: string | null;
+  requested_by_machine?: string | null;
+  requested_by_session: string | null;
+  tenant_id?: string | null;
+  authoring_deadline: string | null;
+  created_at: string;
+  bound_at: string | null;
+  merged_at: string | null;
+  terminated_at: string | null;
+  terminal_reason: string | null;
+  /**
+   * 1-based position in the live queue (created_at order), matching what
+   * `POST /coord/migrations/reserve` returns to the author. Present only on
+   * live rows (`queued` / `pr_bound`); absent on terminal rows and on older
+   * coord deploys that predate the field — render falls back to the list
+   * index in that case.
+   */
+  position?: number | null;
+}
+
+/**
+ * The queue read response: the ordered live set plus the last few terminal
+ * rows for the given repo.
+ */
+export interface MigrationQueueResponse {
+  repo: string;
+  live: MigrationReservation[];
+  recent_terminal: MigrationReservation[];
+}

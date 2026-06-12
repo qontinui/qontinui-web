@@ -192,6 +192,53 @@ export const DEV_ACTIONS_LIMIT = 50;
  */
 export const DEV_ACTIONS_POLL_MS = 10_000;
 
+/**
+ * Migration reservation queue surface (coord-authoritative reservation
+ * queue, `migration_reservations.rs`). Proxies coord's
+ * `GET /coord/migrations/queue?repo=` through the web backend so the browser
+ * doesn't hit coord cross-origin and the operator bearer is forwarded
+ * consistently with the other dashboard proxies.
+ */
+export const MIGRATIONS_QUEUE_API = `${OPERATIONS_API}/migrations/queue`;
+
+/**
+ * Default repo for the migration queue tile. Alembic migrations live in
+ * `qontinui/qontinui-web`, so that is the queue an operator wants by
+ * default; the tile lets them switch to any `owner/repo`.
+ */
+export const MIGRATIONS_DEFAULT_REPO = "qontinui/qontinui-web";
+
+/**
+ * Trailing terminal rows to request alongside the full live set. Coord
+ * clamps this to 0..=50; a handful is enough context (recently
+ * merged/expired/withdrawn) without flooding the tile.
+ */
+export const MIGRATIONS_TERMINAL_LIMIT = 8;
+
+/**
+ * Polling interval for the migration queue (ms). Reservations change at
+ * author/merge cadence (a slot is taken, a PR binds, a merge flips it) —
+ * 15s surfaces a transition promptly without hot-looping coord, matching
+ * the gates-panel cadence.
+ */
+export const MIGRATIONS_QUEUE_POLL_MS = 15_000;
+
+/**
+ * Build the migration-queue request URL for a given repo. `repo` is
+ * required by coord (the queue is per-repo); `terminal_limit` defaults to
+ * {@link MIGRATIONS_TERMINAL_LIMIT}.
+ */
+export function migrationsQueueUrl(
+  repo: string,
+  terminalLimit: number = MIGRATIONS_TERMINAL_LIMIT
+): string {
+  const q = new URLSearchParams({
+    repo,
+    terminal_limit: String(terminalLimit),
+  });
+  return `${MIGRATIONS_QUEUE_API}?${q.toString()}`;
+}
+
 /** Polling interval in milliseconds. */
 export const POLL_INTERVAL_MS = 5_000;
 
