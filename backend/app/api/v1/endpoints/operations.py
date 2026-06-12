@@ -850,6 +850,45 @@ async def post_pr_merge_onboarding_accept(
     )
 
 
+# ---- Coord device pairing — Step 1 of the onboarding wizard -------------
+#
+# The wizard's Pair Device step (``MergeOrchestrationOnboarding.tsx``,
+# ``startPairing``) fires this route. Coord's ``POST /coord/devices/pair-start``
+# (``qontinui-coord/src/routes_phase3.rs::post_pair_start``) is a PUBLIC
+# route whose ``PairStartRequest`` struct (line 1013) requires ``tenant_id``
+# in the BODY at deserialization time. Per coord's own doc comment at line
+# 1031, the web-backend proxy is the enforcement point: it must resolve the
+# operator's home tenant from the authenticated bearer chain and inject it
+# into the body BEFORE forwarding, so the frontend never has to know or
+# pass the tenant_id. This is the only existing operations proxy that
+# mutates the body instead of forwarding it verbatim.
+#
+# Note: there is intentionally NO ``pair-complete`` proxy. The device-side
+# ``qontinui_profile device pair`` CLI calls coord's ``pair-complete``
+# directly over coord's public HTTP boundary; the wizard never invokes it.
+
+
+@router.post("/coord/devices/pair-start")
+async def post_coord_devices_pair_start(
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Proxy POST /coord/devices/pair-start with server-injected tenant_id.
+
+    Coord's pair-start is a public route whose PairStartRequest requires
+    tenant_id in the body (routes_phase3.rs:1035). The web proxy is the
+    enforcement point: it resolves the operator's home tenant via
+    get_tenant_id and injects it into the body before forwarding, so the
+    frontend never has to know or pass the tenant_id.
+    """
+    body["tenant_id"] = str(tenant_id)
+    return await _proxy_coord_post(
+        "/coord/devices/pair-start",
+        body,
+        tenant_id=tenant_id,
+    )
+
+
 # ---- PR Merge Orchestrator Phase 8 D8.6 — Suggestions inbox ------------
 
 
