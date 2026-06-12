@@ -8,6 +8,7 @@ import {
   LandedFeaturesPanel,
   MergeDependencyGraph,
   MergeTrain,
+  MigrationQueueTile,
 } from "@/components/operations";
 import { Activity } from "lucide-react";
 
@@ -61,6 +62,14 @@ export default function OperationsPage() {
            * surface for the gate system that already runs in coord.
            */}
           <GatesPanel />
+          {/*
+           * Migration reservation queue (coord-authoritative reservation
+           * queue, `migration_reservations.rs`). Per-repo ordered live set —
+           * each row leading with its 1-based queue position — plus recent
+           * terminal rows. Surfaces the slot succession that replaced the
+           * alembic head-claim mutex.
+           */}
+          <MigrationQueueTile />
           <FleetOverview />
           <LandedFeaturesPanel />
         </div>
