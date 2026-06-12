@@ -18,6 +18,14 @@ import { clearExtractionConfig } from "@/hooks/use-extraction-config";
 interface AuthContextType {
   user: User | null;
   loading: boolean;
+  /**
+   * Convenience selector: true iff the current user can mutate the
+   * coordination layer (coord tenant admin). Mutation controls on the
+   * AI-Dev coord pages gate on this; non-admin members may still VIEW.
+   */
+  isCoordAdmin: boolean;
+  /** Convenience selector for the derived account-tier label (or null). */
+  accountType: User["account_type"];
   logout: () => Promise<void>;
   updateUser: (data: Partial<User>) => Promise<void>;
   /**
@@ -415,6 +423,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         user,
         loading,
+        isCoordAdmin: user?.coord_is_admin === true,
+        accountType: user?.account_type ?? null,
         logout,
         updateUser,
         completeExternalLogin,
