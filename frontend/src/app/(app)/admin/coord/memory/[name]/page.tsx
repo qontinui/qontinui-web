@@ -56,6 +56,10 @@ import {
   X,
 } from "lucide-react";
 import { httpClient } from "@/services/service-factory";
+import {
+  CoordAdminOnly,
+  ReadOnlyNotice,
+} from "@/components/admin/coord/CoordAdminOnly";
 
 const API = "/api/v1/operations";
 
@@ -218,6 +222,11 @@ export default function CoordMemoryDetailPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="flex flex-wrap items-center gap-2">
+                <CoordAdminOnly
+                  fallback={
+                    <ReadOnlyNotice label="Editing and deleting memories is administrator only." />
+                  }
+                >
                 {!editing ? (
                   <>
                     <Button
@@ -300,6 +309,7 @@ export default function CoordMemoryDetailPage() {
                     </Button>
                   </>
                 )}
+                </CoordAdminOnly>
               </CardContent>
             </Card>
 

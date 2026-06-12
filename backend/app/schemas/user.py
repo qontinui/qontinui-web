@@ -47,6 +47,8 @@ class UserRead(schemas.BaseUser[uuid.UUID]):
     updated_at: IsoDatetime
     tenant_id: uuid.UUID | None = None
     tenant_slug: str | None = None
+    coord_is_admin: bool | None = None
+    account_type: str | None = None
 
 
 class UserCreate(schemas.BaseUserCreate):
