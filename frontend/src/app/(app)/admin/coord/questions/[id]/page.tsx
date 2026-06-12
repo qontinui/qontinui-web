@@ -38,10 +38,6 @@ import { useAuth } from "@/contexts/auth-context";
 import { cn } from "@/lib/utils";
 import { httpClient } from "@/services/service-factory";
 import {
-  CoordAdminOnly,
-  ReadOnlyNotice,
-} from "@/components/admin/coord/CoordAdminOnly";
-import {
   formatRelative,
   type AgentQuestionOption,
   type AgentQuestionRow,
@@ -287,11 +283,7 @@ export default function CoordQuestionDetailPage() {
                   </p>
                 </>
               ) : (
-                <CoordAdminOnly
-                  fallback={
-                    <ReadOnlyNotice label="Responding to agent questions is administrator only." />
-                  }
-                >
+                <>
                   <Textarea
                     rows={5}
                     placeholder="Type a response, or click an option above to seed it."
@@ -314,7 +306,7 @@ export default function CoordQuestionDetailPage() {
                       responding as {user?.email ?? "(unknown operator)"}
                     </span>
                   </div>
-                </CoordAdminOnly>
+                </>
               )}
             </CardContent>
           </Card>
