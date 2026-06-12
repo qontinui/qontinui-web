@@ -47,6 +47,22 @@ class CognitoAdminError(RuntimeError):
     """Raised when a Cognito admin operation fails irrecoverably."""
 
 
+class CognitoGroupExistsError(CognitoAdminError):
+    """Raised by :func:`create_group` when the group already exists.
+
+    Distinct subclass so the endpoint layer can map it to HTTP 409 without
+    string-matching the boto3 error message.
+    """
+
+
+class CognitoAmbiguousEmailError(CognitoAdminError):
+    """Raised by :func:`resolve_username_for_email` when >1 user matches.
+
+    Distinct subclass so the endpoint layer can map it to HTTP 409/422
+    rather than silently picking one of several matching pool users.
+    """
+
+
 # Lazy process-wide client. Built on first use (never at import time) so a
 # module import does not call AWS. Reset to ``None`` is never needed in
 # normal operation; tests may monkeypatch ``_get_client``.
@@ -318,3 +334,241 @@ def delete_federated_user(username: str) -> None:
         raise CognitoAdminError(f"AdminDeleteUser failed: {exc}") from exc
 
     logger.info("cognito_delete_user_ok", username=username)
+
+
+# ---------------------------------------------------------------------------
+# Group administration
+# ---------------------------------------------------------------------------
+#
+# Pool-wide group CRUD + group-membership management. The web + coord share
+# the SAME user pool (``us-east-1_rgTB9dbZ1``), so a group created here flows
+# straight into coord's ``cognito:groups`` token claim — completing in-
+# dashboard provisioning. All functions mirror the module style: a lazily-
+# built ``_get_client()`` + ``_pool_id()``, structured logging, and boto3
+# errors wrapped in :class:`CognitoAdminError` (or a more specific subclass)
+# so the endpoint layer maps them to HTTP codes without string-matching.
+#
+# IAM actions the web task role additionally needs on the pool ARN:
+#
+# * ``cognito-idp:ListGroups``               (list_groups)
+# * ``cognito-idp:CreateGroup``              (create_group)
+# * ``cognito-idp:DeleteGroup``              (delete_group)
+# * ``cognito-idp:ListUsersInGroup``         (list_users_in_group)
+# * ``cognito-idp:ListUsers``                (resolve_username_for_email)
+# * ``cognito-idp:AdminAddUserToGroup``      (add_user_to_group)
+# * ``cognito-idp:AdminRemoveUserFromGroup`` (remove_user_from_group)
+
+
+def _iso(value: Any) -> str | None:
+    """Render a boto3 datetime field as an ISO-8601 string (or ``None``)."""
+    if value is None:
+        return None
+    isoformat = getattr(value, "isoformat", None)
+    if callable(isoformat):
+        return str(isoformat())
+    return str(value)
+
+
+def _group_to_dict(group: dict[str, Any]) -> dict[str, Any]:
+    """Flatten a Cognito ``GroupType`` to the wire shape callers expect."""
+    return {
+        "group_name": group.get("GroupName"),
+        "description": group.get("Description"),
+        "creation_date": _iso(group.get("CreationDate")),
+        "last_modified_date": _iso(group.get("LastModifiedDate")),
+        "precedence": group.get("Precedence"),
+    }
+
+
+def list_groups() -> list[dict[str, Any]]:
+    """Return every group in the pool (paginated fully).
+
+    Each entry: ``{group_name, description, creation_date,
+    last_modified_date, precedence}``. Datetime fields are ISO strings.
+    """
+    client = _get_client()
+    groups: list[dict[str, Any]] = []
+    try:
+        paginator = client.get_paginator("list_groups")
+        for page in paginator.paginate(UserPoolId=_pool_id()):
+            for group in page.get("Groups") or []:
+                groups.append(_group_to_dict(group))
+    except (BotoCoreError, ClientError) as exc:
+        logger.error("cognito_list_groups_failed", error=str(exc))
+        raise CognitoAdminError(f"ListGroups failed: {exc}") from exc
+
+    logger.info("cognito_list_groups_ok", count=len(groups))
+    return groups
+
+
+def create_group(group_name: str, description: str | None = None) -> dict[str, Any]:
+    """Create a group; return the created group's wire dict.
+
+    Raises :class:`CognitoGroupExistsError` (→ 409) when a group with that
+    name already exists, so the endpoint can report a clean conflict instead
+    of a generic 502.
+    """
+    client = _get_client()
+    kwargs: dict[str, Any] = {"UserPoolId": _pool_id(), "GroupName": group_name}
+    if description:
+        kwargs["Description"] = description
+    try:
+        resp = client.create_group(**kwargs)
+    except ClientError as exc:
+        code = exc.response.get("Error", {}).get("Code", "")
+        if code == "GroupExistsException":
+            logger.info("cognito_create_group_exists", group_name=group_name)
+            raise CognitoGroupExistsError(
+                f"Group already exists: {group_name}"
+            ) from exc
+        logger.error(
+            "cognito_create_group_failed", group_name=group_name, error=str(exc)
+        )
+        raise CognitoAdminError(f"CreateGroup failed: {exc}") from exc
+    except BotoCoreError as exc:
+        logger.error(
+            "cognito_create_group_failed", group_name=group_name, error=str(exc)
+        )
+        raise CognitoAdminError(f"CreateGroup failed: {exc}") from exc
+
+    logger.info("cognito_create_group_ok", group_name=group_name)
+    return _group_to_dict(resp.get("Group") or {})
+
+
+def delete_group(group_name: str) -> None:
+    """Delete a group. No-op-safe is NOT assumed — a missing group surfaces
+    as a :class:`CognitoAdminError` the endpoint maps to 404."""
+    client = _get_client()
+    try:
+        client.delete_group(UserPoolId=_pool_id(), GroupName=group_name)
+    except (BotoCoreError, ClientError) as exc:
+        logger.error(
+            "cognito_delete_group_failed", group_name=group_name, error=str(exc)
+        )
+        raise CognitoAdminError(f"DeleteGroup failed: {exc}") from exc
+
+    logger.info("cognito_delete_group_ok", group_name=group_name)
+
+
+def list_users_in_group(group_name: str) -> list[dict[str, Any]]:
+    """Return the users in ``group_name`` (paginated fully).
+
+    Each entry: ``{username, email, status, enabled}``. ``email`` is pulled
+    from the user's ``Attributes`` list.
+    """
+    client = _get_client()
+    users: list[dict[str, Any]] = []
+    try:
+        paginator = client.get_paginator("list_users_in_group")
+        for page in paginator.paginate(
+            UserPoolId=_pool_id(), GroupName=group_name
+        ):
+            for user in page.get("Users") or []:
+                attrs = _attributes_to_dict(user.get("Attributes") or [])
+                users.append(
+                    {
+                        "username": user.get("Username"),
+                        "email": attrs.get("email"),
+                        "status": user.get("UserStatus"),
+                        "enabled": user.get("Enabled"),
+                    }
+                )
+    except (BotoCoreError, ClientError) as exc:
+        logger.error(
+            "cognito_list_users_in_group_failed",
+            group_name=group_name,
+            error=str(exc),
+        )
+        raise CognitoAdminError(f"ListUsersInGroup failed: {exc}") from exc
+
+    logger.info(
+        "cognito_list_users_in_group_ok", group_name=group_name, count=len(users)
+    )
+    return users
+
+
+def resolve_username_for_email(email: str) -> str | None:
+    """Resolve the pool ``Username`` for a verified-or-not account ``email``.
+
+    Filters ``ListUsers`` by the ``email`` attribute (limit 2 so a duplicate
+    is detected without paging). Returns the single match's ``Username``;
+    returns ``None`` when zero users match; raises
+    :class:`CognitoAmbiguousEmailError` (→ 409/422) when more than one user
+    matches (the email is not a unique key in every pool config, so the
+    caller must disambiguate rather than guess).
+
+    The Cognito ``ListUsers`` Filter syntax is ``attribute = "value"`` with
+    the value double-quoted; any embedded double-quote in the email is
+    stripped to keep the filter well-formed (a ``"`` is never valid in an
+    addr-spec local part unquoted, so this cannot match a legitimate user).
+    """
+    if not email:
+        return None
+    safe_email = email.replace('"', "")
+    client = _get_client()
+    try:
+        resp = client.list_users(
+            UserPoolId=_pool_id(),
+            Filter=f'email = "{safe_email}"',
+            Limit=2,
+        )
+    except (BotoCoreError, ClientError) as exc:
+        logger.error("cognito_list_users_by_email_failed", error=str(exc))
+        raise CognitoAdminError(f"ListUsers failed for email: {exc}") from exc
+
+    users = resp.get("Users") or []
+    if not users:
+        return None
+    if len(users) > 1:
+        logger.warning("cognito_email_ambiguous", count=len(users))
+        raise CognitoAmbiguousEmailError(
+            f"Multiple users match email: {email}"
+        )
+    username = users[0].get("Username")
+    if not isinstance(username, str) or not username:
+        return None
+    return username
+
+
+def add_user_to_group(username: str, group_name: str) -> None:
+    """Add ``username`` to ``group_name`` (``AdminAddUserToGroup``)."""
+    client = _get_client()
+    try:
+        client.admin_add_user_to_group(
+            UserPoolId=_pool_id(), Username=username, GroupName=group_name
+        )
+    except (BotoCoreError, ClientError) as exc:
+        logger.error(
+            "cognito_add_user_to_group_failed",
+            username=username,
+            group_name=group_name,
+            error=str(exc),
+        )
+        raise CognitoAdminError(f"AdminAddUserToGroup failed: {exc}") from exc
+
+    logger.info(
+        "cognito_add_user_to_group_ok", username=username, group_name=group_name
+    )
+
+
+def remove_user_from_group(username: str, group_name: str) -> None:
+    """Remove ``username`` from ``group_name`` (``AdminRemoveUserFromGroup``)."""
+    client = _get_client()
+    try:
+        client.admin_remove_user_from_group(
+            UserPoolId=_pool_id(), Username=username, GroupName=group_name
+        )
+    except (BotoCoreError, ClientError) as exc:
+        logger.error(
+            "cognito_remove_user_from_group_failed",
+            username=username,
+            group_name=group_name,
+            error=str(exc),
+        )
+        raise CognitoAdminError(f"AdminRemoveUserFromGroup failed: {exc}") from exc
+
+    logger.info(
+        "cognito_remove_user_from_group_ok",
+        username=username,
+        group_name=group_name,
+    )

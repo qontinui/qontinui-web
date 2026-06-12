@@ -72,6 +72,12 @@ from app.schemas.dev_dashboard import (
     RunnerHeartbeat,
     RunnerTaskRun,
 )
+from app.services import cognito_admin
+from app.services.cognito_admin import (
+    CognitoAdminError,
+    CognitoAmbiguousEmailError,
+    CognitoGroupExistsError,
+)
 from app.services.coord_device_status import (
     CoordDeviceStatusDisabledError,
     CoordDeviceStatusMintFailedError,
@@ -4024,3 +4030,213 @@ async def get_coord_my_tenants(
     Proxies coord ``GET /admin/coord/me``. Backs a tenant-switcher /
     cross-tenant role-grant picker in the member-management UI."""
     return await _proxy_coord_get("/admin/coord/me", tenant_id=tenant_id)
+
+
+# ---- Cognito GROUP administration (superuser-gated) ----------------------
+#
+# Pool-wide Cognito group CRUD + membership management, completing fully
+# in-dashboard provisioning: a superuser can create the SSO groups that
+# coord's ``/admin/coord/group-tenant-roles`` mappings (above) reference,
+# and add/remove members by email — all without leaving the dashboard or
+# touching the AWS console. The web + coord share the SAME pool
+# (``us-east-1_rgTB9dbZ1``), so a group created here flows straight into
+# coord's ``cognito:groups`` token claim.
+#
+# Gated on ``require_admin`` (``is_superuser``), NOT the per-tenant
+# ``require_coord_tenant_admin``: these are pool-wide operations that affect
+# every tenant keyed off the shared pool, so they deserve the higher bar.
+#
+# The synchronous boto3 calls in ``cognito_admin`` are offloaded to a
+# worker thread via ``asyncio.to_thread`` so they never block the event
+# loop (same pattern as ``auth/identities.py``). Module exceptions map to
+# HTTP codes here; boto3 ``ResourceNotFoundException`` (e.g. an unknown
+# group) is detected in the error text and mapped to 404.
+
+
+class _CreateGroupBody(BaseModel):
+    """Body for ``POST /coord/cognito/groups``."""
+
+    group_name: str = Field(..., min_length=1)
+    description: str | None = None
+
+
+class _GroupMemberBody(BaseModel):
+    """Body for add/remove group-member by email."""
+
+    email: str = Field(..., min_length=1)
+
+
+def _is_resource_not_found(exc: CognitoAdminError) -> bool:
+    """True when a wrapped boto3 error denotes a missing AWS resource."""
+    message = str(exc)
+    return (
+        "ResourceNotFoundException" in message or "not found" in message.lower()
+    )
+
+
+@router.get("/coord/cognito/groups")
+async def list_cognito_groups(
+    current_user: UserModel = Depends(require_admin),
+) -> dict[str, Any]:
+    """List every Cognito group in the shared pool. Superuser-gated."""
+    try:
+        groups = await asyncio.to_thread(cognito_admin.list_groups)
+    except CognitoAdminError as exc:
+        logger.error("cognito_groups_list_failed", error=str(exc))
+        raise HTTPException(status_code=502, detail="Could not list Cognito groups.")
+    return {"groups": groups}
+
+
+@router.post("/coord/cognito/groups")
+async def create_cognito_group(
+    body: _CreateGroupBody,
+    current_user: UserModel = Depends(require_admin),
+) -> dict[str, Any]:
+    """Create a Cognito group. 409 if a group with that name already
+    exists. Superuser-gated."""
+    try:
+        group = await asyncio.to_thread(
+            cognito_admin.create_group, body.group_name, body.description
+        )
+    except CognitoGroupExistsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except CognitoAdminError as exc:
+        logger.error(
+            "cognito_group_create_failed",
+            group_name=body.group_name,
+            error=str(exc),
+        )
+        raise HTTPException(status_code=502, detail="Could not create Cognito group.")
+    return group
+
+
+@router.delete("/coord/cognito/groups/{group_name}")
+async def delete_cognito_group(
+    group_name: str,
+    current_user: UserModel = Depends(require_admin),
+) -> dict[str, Any]:
+    """Delete a Cognito group. 404 if no such group. Superuser-gated."""
+    try:
+        await asyncio.to_thread(cognito_admin.delete_group, group_name)
+    except CognitoAdminError as exc:
+        if _is_resource_not_found(exc):
+            raise HTTPException(status_code=404, detail=f"No such group: {group_name}")
+        logger.error(
+            "cognito_group_delete_failed", group_name=group_name, error=str(exc)
+        )
+        raise HTTPException(status_code=502, detail="Could not delete Cognito group.")
+    return {"ok": True}
+
+
+@router.get("/coord/cognito/groups/{group_name}/users")
+async def list_cognito_group_users(
+    group_name: str,
+    current_user: UserModel = Depends(require_admin),
+) -> dict[str, Any]:
+    """List the members of a Cognito group. 404 if no such group.
+    Superuser-gated."""
+    try:
+        users = await asyncio.to_thread(
+            cognito_admin.list_users_in_group, group_name
+        )
+    except CognitoAdminError as exc:
+        if _is_resource_not_found(exc):
+            raise HTTPException(status_code=404, detail=f"No such group: {group_name}")
+        logger.error(
+            "cognito_group_users_list_failed",
+            group_name=group_name,
+            error=str(exc),
+        )
+        raise HTTPException(
+            status_code=502, detail="Could not list group members."
+        )
+    return {"users": users}
+
+
+@router.post("/coord/cognito/groups/{group_name}/users")
+async def add_cognito_group_user(
+    group_name: str,
+    body: _GroupMemberBody,
+    current_user: UserModel = Depends(require_admin),
+) -> dict[str, Any]:
+    """Add a user (resolved by email) to a Cognito group. Superuser-gated.
+
+    404 if no user has that email; 409 if the email is ambiguous (>1 match).
+    """
+    try:
+        username = await asyncio.to_thread(
+            cognito_admin.resolve_username_for_email, body.email
+        )
+    except CognitoAmbiguousEmailError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except CognitoAdminError as exc:
+        logger.error("cognito_email_resolve_failed", error=str(exc))
+        raise HTTPException(
+            status_code=502, detail="Could not resolve user by email."
+        )
+    if not username:
+        raise HTTPException(
+            status_code=404, detail=f"No user with email: {body.email}"
+        )
+
+    try:
+        await asyncio.to_thread(
+            cognito_admin.add_user_to_group, username, group_name
+        )
+    except CognitoAdminError as exc:
+        if _is_resource_not_found(exc):
+            raise HTTPException(status_code=404, detail=f"No such group: {group_name}")
+        logger.error(
+            "cognito_group_add_user_failed",
+            group_name=group_name,
+            error=str(exc),
+        )
+        raise HTTPException(
+            status_code=502, detail="Could not add user to group."
+        )
+    return {"ok": True, "username": username}
+
+
+@router.delete("/coord/cognito/groups/{group_name}/users")
+async def remove_cognito_group_user(
+    group_name: str,
+    body: _GroupMemberBody,
+    current_user: UserModel = Depends(require_admin),
+) -> dict[str, Any]:
+    """Remove a user (resolved by email) from a Cognito group.
+    Superuser-gated.
+
+    404 if no user has that email; 409 if the email is ambiguous (>1 match).
+    """
+    try:
+        username = await asyncio.to_thread(
+            cognito_admin.resolve_username_for_email, body.email
+        )
+    except CognitoAmbiguousEmailError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except CognitoAdminError as exc:
+        logger.error("cognito_email_resolve_failed", error=str(exc))
+        raise HTTPException(
+            status_code=502, detail="Could not resolve user by email."
+        )
+    if not username:
+        raise HTTPException(
+            status_code=404, detail=f"No user with email: {body.email}"
+        )
+
+    try:
+        await asyncio.to_thread(
+            cognito_admin.remove_user_from_group, username, group_name
+        )
+    except CognitoAdminError as exc:
+        if _is_resource_not_found(exc):
+            raise HTTPException(status_code=404, detail=f"No such group: {group_name}")
+        logger.error(
+            "cognito_group_remove_user_failed",
+            group_name=group_name,
+            error=str(exc),
+        )
+        raise HTTPException(
+            status_code=502, detail="Could not remove user from group."
+        )
+    return {"ok": True, "username": username}
