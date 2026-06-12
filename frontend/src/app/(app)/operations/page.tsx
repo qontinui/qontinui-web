@@ -28,8 +28,17 @@ export default function OperationsPage() {
         </div>
       </header>
 
-      <ScrollArea className="flex-1 min-h-0">
-        <div className="px-6 py-4 space-y-4">
+      {/*
+       * `horizontal` opt-in: if any panel renders wider than the viewport
+       * (e.g. the merge dependency graph or a wide escalation/train row), the
+       * region scrolls horizontally instead of clipping the overflow with no
+       * escape — otherwise action buttons (e.g. an escalation card's
+       * approve/merge) can end up stranded off-screen with no way to reach
+       * them. `min-w-0` lets shrinkable flex children fit so horizontal scroll
+       * is only needed when content is genuinely too wide.
+       */}
+      <ScrollArea horizontal className="flex-1 min-h-0">
+        <div className="px-6 py-4 space-y-4 min-w-0">
           {/*
            * Merge train anchors at the top — it is the demo's primary
            * visual anchor per `plans/2026-05-18-coordination-layer-demos.md`
