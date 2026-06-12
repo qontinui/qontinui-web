@@ -66909,7 +66909,7 @@
     },
     "/api/v1/operations/fleet": {
       "get": {
-        "description": "Return the user's fleet (runners + cross-machine Claude sessions).\n\nResponse shape:\n    ``{ \"runners\": list[Runner], \"claude_sessions\": dict[hostname, list[ClaudeSession]] }``\n\nThe ``runners`` list uses the canonical wire shape (with\n``derived_status``, ``ws_connected``, ...). The ``claude_sessions``\nsection comes from the in-memory cross-machine fleet registry.",
+        "description": "Return the user's fleet (runners + cross-machine Claude sessions).\n\nResponse shape:\n    ``{ \"runners\": list[Runner], \"claude_sessions\": dict[hostname, list[ClaudeSession]],\n    \"total_runners\": int, \"total_healthy\": int, \"total_running_tasks\": int,\n    \"total_claude_sessions\": int }``\n\nThe ``runners`` list uses the canonical wire shape (with\n``derived_status``, ``ws_connected``, ...). The ``claude_sessions``\nsection comes from the in-memory cross-machine fleet registry.\n\nThe ``total_*`` aggregates feed the FleetOverview stat row\n(``frontend/src/components/operations/FleetOverview.tsx`` reads\n``total_runners`` / ``total_healthy`` / ``total_running_tasks``):\n\n* ``total_runners`` \u2014 every runner in the merged list (DB-paired +\n  heartbeat-only beacons).\n* ``total_healthy`` \u2014 merged-list entries whose ``derivedStatus`` is\n  ``\"healthy\"`` (same staleness-gated derivation the list itself uses).\n* ``total_running_tasks`` \u2014 heartbeat-reported running-task counts from\n  the beacon registry (no live fan-out to runners on this poll path;\n  ``GET /fleet/tasks`` remains the live-fetch surface).",
         "operationId": "api_v1_operations_fleet_get",
         "responses": {
           "200": {
