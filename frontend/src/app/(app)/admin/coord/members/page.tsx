@@ -53,6 +53,9 @@ import {
 import {
   AlertTriangle,
   Building2,
+  ChevronDown,
+  ChevronRight,
+  KeyRound,
   Lock,
   Plus,
   ShieldCheck,
@@ -124,6 +127,29 @@ interface GroupTenantRoleRow {
 
 interface GroupTenantRolesResponse {
   group_tenant_roles: GroupTenantRoleRow[];
+}
+
+interface CognitoGroupRow {
+  group_name: string;
+  description: string | null;
+  creation_date: string | null;
+  last_modified_date: string | null;
+  precedence: number | null;
+}
+
+interface CognitoGroupsResponse {
+  groups: CognitoGroupRow[];
+}
+
+interface CognitoGroupUserRow {
+  username: string;
+  email: string | null;
+  status: string | null;
+  enabled: boolean | null;
+}
+
+interface CognitoGroupUsersResponse {
+  users: CognitoGroupUserRow[];
 }
 
 interface TenantRoleEntry {
@@ -868,11 +894,485 @@ function GroupTenantRolesSection() {
 }
 
 // ===========================================================================
+// Section e — Cognito Groups (superuser-only)
+// ===========================================================================
+
+/**
+ * Expandable members list for a single Cognito group.
+ *
+ * Lazily fetches `GET /coord/cognito/groups/{name}/users` when first opened and
+ * supports removing a user by email via `DELETE .../users {email}`.
+ */
+function CognitoGroupMembers({ groupName }: { groupName: string }) {
+  const [users, setUsers] = useState<CognitoGroupUserRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await httpClient.fetch(
+        `${OPERATIONS_API}/coord/cognito/groups/${encodeURIComponent(
+          groupName
+        )}/users`
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = (await res.json()) as CognitoGroupUsersResponse;
+      setUsers(json.users ?? []);
+    } catch (err) {
+      log.warn("load cognito group users failed", err);
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }, [groupName]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const removeUser = useCallback(
+    async (email: string) => {
+      setBusy(email);
+      try {
+        const res = await httpClient.fetch(
+          `${OPERATIONS_API}/coord/cognito/groups/${encodeURIComponent(
+            groupName
+          )}/users`,
+          { method: "DELETE", body: JSON.stringify({ email }) }
+        );
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(`HTTP ${res.status} ${text}`.trim());
+        }
+        toast.success(`Removed ${email} from ${groupName}`);
+        await load();
+      } catch (err) {
+        log.warn("remove cognito group user failed", err);
+        toast.error(
+          `Remove failed: ${err instanceof Error ? err.message : String(err)}`
+        );
+      } finally {
+        setBusy(null);
+      }
+    },
+    [groupName, load]
+  );
+
+  if (loading) {
+    return (
+      <div className="space-y-2 py-2">
+        <Skeleton className="h-6 w-full" />
+        <Skeleton className="h-6 w-full" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <p className="text-sm text-destructive flex items-center gap-1.5 py-2">
+        <AlertTriangle className="h-4 w-4" /> {error}
+      </p>
+    );
+  }
+
+  if (users.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground py-2">
+        No users in this group yet.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-1.5 py-2" data-testid={`cognito-users-${groupName}`}>
+      {users.map((u) => {
+        const label = u.email ?? u.username;
+        return (
+          <div
+            key={u.username}
+            className="flex items-center justify-between gap-2 rounded-sm border border-border px-2 py-1 text-sm"
+          >
+            <div className="flex flex-wrap items-center gap-2 min-w-0">
+              <span className="font-medium truncate">{label}</span>
+              {u.status ? (
+                <Badge variant="outline" className="text-[0.7rem]">
+                  {u.status}
+                </Badge>
+              ) : null}
+              {u.enabled === false ? (
+                <Badge variant="secondary" className="text-[0.7rem]">
+                  disabled
+                </Badge>
+              ) : null}
+            </div>
+            {u.email ? (
+              <DestructiveButton
+                size="icon"
+                aria-label={`Remove ${label} from ${groupName}`}
+                title={`Remove ${label} from ${groupName}`}
+                disabled={busy === u.email}
+                onClick={() => removeUser(u.email as string)}
+                className="size-6 shrink-0"
+                data-testid={`cognito-remove-user-${groupName}-${u.username}`}
+              >
+                <X className="h-3.5 w-3.5" />
+              </DestructiveButton>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * A single Cognito group row: name / description / created columns, an
+ * expand toggle that reveals members, an inline "add user by email" form, and a
+ * delete-group action.
+ */
+function CognitoGroupItem({
+  group,
+  onDeleted,
+}: {
+  group: CognitoGroupRow;
+  onDeleted: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [addEmail, setAddEmail] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  // Bump to force the members sub-list to refetch after an add.
+  const [membersKey, setMembersKey] = useState(0);
+
+  const addUser = useCallback(async () => {
+    const email = addEmail.trim();
+    if (!email) {
+      toast.error("Enter an email to add.");
+      return;
+    }
+    setAdding(true);
+    try {
+      const res = await httpClient.fetch(
+        `${OPERATIONS_API}/coord/cognito/groups/${encodeURIComponent(
+          group.group_name
+        )}/users`,
+        { method: "POST", body: JSON.stringify({ email }) }
+      );
+      if (res.status === 404) {
+        toast.error("No Cognito user with that email; they must sign up first.");
+        return;
+      }
+      if (res.status === 409) {
+        toast.error(
+          "Ambiguous email — more than one Cognito user matches. Resolve in Cognito first."
+        );
+        return;
+      }
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`HTTP ${res.status} ${text}`.trim());
+      }
+      toast.success(`Added ${email} to ${group.group_name}`);
+      setAddEmail("");
+      setExpanded(true);
+      setMembersKey((k) => k + 1);
+    } catch (err) {
+      log.warn("add cognito group user failed", err);
+      toast.error(
+        `Add failed: ${err instanceof Error ? err.message : String(err)}`
+      );
+    } finally {
+      setAdding(false);
+    }
+  }, [addEmail, group.group_name]);
+
+  const deleteGroup = useCallback(async () => {
+    setDeleting(true);
+    try {
+      const res = await httpClient.fetch(
+        `${OPERATIONS_API}/coord/cognito/groups/${encodeURIComponent(
+          group.group_name
+        )}`,
+        { method: "DELETE" }
+      );
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`HTTP ${res.status} ${text}`.trim());
+      }
+      toast.success(`Deleted group ${group.group_name}`);
+      onDeleted();
+    } catch (err) {
+      log.warn("delete cognito group failed", err);
+      toast.error(
+        `Delete failed: ${err instanceof Error ? err.message : String(err)}`
+      );
+      setDeleting(false);
+    }
+  }, [group.group_name, onDeleted]);
+
+  return (
+    <>
+      <TableRow data-testid={`cognito-group-row-${group.group_name}`}>
+        <TableCell className="font-medium">
+          <button
+            type="button"
+            className="flex items-center gap-1.5 hover:underline"
+            onClick={() => setExpanded((e) => !e)}
+            aria-expanded={expanded}
+            data-testid={`cognito-group-toggle-${group.group_name}`}
+          >
+            {expanded ? (
+              <ChevronDown className="h-4 w-4 shrink-0" />
+            ) : (
+              <ChevronRight className="h-4 w-4 shrink-0" />
+            )}
+            {group.group_name}
+          </button>
+        </TableCell>
+        <TableCell className="text-muted-foreground">
+          {group.description || "—"}
+        </TableCell>
+        <TableCell className="text-muted-foreground text-xs whitespace-nowrap">
+          {relativeTime(group.creation_date)}
+        </TableCell>
+        <TableCell className="text-right">
+          <DestructiveButton
+            size="sm"
+            disabled={deleting}
+            onClick={deleteGroup}
+            data-testid={`cognito-delete-group-${group.group_name}`}
+          >
+            <Trash2 className="h-4 w-4" />
+            Delete
+          </DestructiveButton>
+        </TableCell>
+      </TableRow>
+      {expanded && (
+        <TableRow data-testid={`cognito-group-detail-${group.group_name}`}>
+          <TableCell colSpan={4} className="bg-muted/30">
+            <div className="space-y-3">
+              <CognitoGroupMembers
+                key={membersKey}
+                groupName={group.group_name}
+              />
+              <div className="flex flex-wrap items-end gap-2 border-t border-border pt-3">
+                <div className="space-y-1 flex-1 min-w-[200px]">
+                  <Label htmlFor={`cognito-add-${group.group_name}`}>
+                    Add user by email
+                  </Label>
+                  <Input
+                    id={`cognito-add-${group.group_name}`}
+                    type="email"
+                    value={addEmail}
+                    onChange={(e) => setAddEmail(e.target.value)}
+                    placeholder="person@example.com"
+                    data-testid={`cognito-add-email-${group.group_name}`}
+                  />
+                </div>
+                <Button
+                  size="sm"
+                  onClick={addUser}
+                  disabled={adding}
+                  data-testid={`cognito-add-submit-${group.group_name}`}
+                >
+                  <UserPlus className="h-4 w-4" />
+                  Add
+                </Button>
+              </div>
+            </div>
+          </TableCell>
+        </TableRow>
+      )}
+    </>
+  );
+}
+
+/**
+ * Pool-wide Cognito group management. Superuser-only — pool-wide Cognito ops
+ * require staff/superuser access. A coord admin who is NOT a superuser sees a
+ * muted note instead of the controls.
+ */
+function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
+  const [groups, setGroups] = useState<CognitoGroupRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Create-group form state.
+  const [newName, setNewName] = useState("");
+  const [newDescription, setNewDescription] = useState("");
+  const [creating, setCreating] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await httpClient.fetch(
+        `${OPERATIONS_API}/coord/cognito/groups`
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = (await res.json()) as CognitoGroupsResponse;
+      setGroups(json.groups ?? []);
+    } catch (err) {
+      log.warn("load cognito groups failed", err);
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isSuperuser) void load();
+  }, [load, isSuperuser]);
+
+  const createGroup = useCallback(async () => {
+    const group_name = newName.trim();
+    if (!group_name) {
+      toast.error("Group name is required.");
+      return;
+    }
+    setCreating(true);
+    try {
+      const body: Record<string, unknown> = { group_name };
+      if (newDescription.trim()) body.description = newDescription.trim();
+      const res = await httpClient.fetch(
+        `${OPERATIONS_API}/coord/cognito/groups`,
+        { method: "POST", body: JSON.stringify(body) }
+      );
+      if (res.status === 409) {
+        toast.error(`A Cognito group named "${group_name}" already exists.`);
+        return;
+      }
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`HTTP ${res.status} ${text}`.trim());
+      }
+      toast.success(`Created group ${group_name}`);
+      setNewName("");
+      setNewDescription("");
+      await load();
+    } catch (err) {
+      log.warn("create cognito group failed", err);
+      toast.error(
+        `Create failed: ${err instanceof Error ? err.message : String(err)}`
+      );
+    } finally {
+      setCreating(false);
+    }
+  }, [newName, newDescription, load]);
+
+  return (
+    <Card data-testid="coord-members-cognito-groups">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <KeyRound className="h-4 w-4" />
+          Cognito Groups
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {!isSuperuser ? (
+          <p
+            className="text-sm text-muted-foreground"
+            data-testid="cognito-groups-superuser-required"
+          >
+            Cognito group management requires staff/superuser access.
+          </p>
+        ) : (
+          <>
+            <p className="text-xs text-muted-foreground">
+              Bind a group to a tenant+role above, create the matching Cognito
+              group here, then add members by email — no AWS console needed.
+            </p>
+
+            {/* Existing groups */}
+            {loading ? (
+              <div className="space-y-2">
+                <Skeleton className="h-8 w-full" />
+                <Skeleton className="h-8 w-full" />
+              </div>
+            ) : error ? (
+              <p className="text-sm text-destructive flex items-center gap-1.5">
+                <AlertTriangle className="h-4 w-4" /> {error}
+              </p>
+            ) : groups.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No Cognito groups yet.
+              </p>
+            ) : (
+              <Table data-testid="coord-cognito-groups-table">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead>Created</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {groups.map((g) => (
+                    <CognitoGroupItem
+                      key={g.group_name}
+                      group={g}
+                      onDeleted={load}
+                    />
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+
+            {/* Create-group form */}
+            <div className="border-t border-border pt-4 space-y-3">
+              <p className="text-sm font-medium">Create group</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label htmlFor="cognito-new-name">Group name</Label>
+                  <Input
+                    id="cognito-new-name"
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    placeholder="e.g. qontinui-admins"
+                    data-testid="cognito-new-name"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="cognito-new-description">
+                    Description (optional)
+                  </Label>
+                  <Input
+                    id="cognito-new-description"
+                    value={newDescription}
+                    onChange={(e) => setNewDescription(e.target.value)}
+                    placeholder="What this group is for"
+                    data-testid="cognito-new-description"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end">
+                <Button
+                  onClick={createGroup}
+                  disabled={creating}
+                  data-testid="cognito-create-submit"
+                >
+                  <Plus className="h-4 w-4" />
+                  Create group
+                </Button>
+              </div>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ===========================================================================
 // Page — admin-gated shell
 // ===========================================================================
 
 export default function MembersPage() {
-  const { isCoordAdmin, loading } = useAuth();
+  const { isCoordAdmin, user, loading } = useAuth();
   // Bumped after any membership mutation so dependent sections refetch.
   const [refreshKey, setRefreshKey] = useState(0);
   const bump = useCallback(() => setRefreshKey((k) => k + 1), []);
@@ -917,6 +1417,7 @@ export default function MembersPage() {
       <MembersTable refreshKey={refreshKey} onChanged={bump} />
       <InviteForm onInvited={bump} />
       <GroupTenantRolesSection />
+      <CognitoGroupsSection isSuperuser={user?.is_superuser === true} />
     </div>
   );
 }
