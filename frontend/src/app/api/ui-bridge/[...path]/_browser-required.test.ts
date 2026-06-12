@@ -12,7 +12,9 @@
 import { describe, it, expect } from "vitest";
 import {
   isBrowserRequiredRoute,
+  isKnownRoute,
   noBrowserResponse,
+  unknownRouteResponse,
 } from "./_browser-required";
 
 describe("isBrowserRequiredRoute", () => {
@@ -66,5 +68,51 @@ describe("noBrowserResponse", () => {
     expect(body.success).toBe(false);
     expect(body.code).toBe("NO_BROWSER_CONNECTED");
     expect(body.message).toContain("/control/discover");
+  });
+});
+
+describe("isKnownRoute", () => {
+  it("does not claim /ai/forms — there is no such route in the SDK contract", () => {
+    expect(isKnownRoute("/ai/forms", "GET")).toBe(false);
+    expect(isKnownRoute("/ai/forms", "POST")).toBe(false);
+  });
+
+  it("claims the real forms routes so they still proxy to the SDK", () => {
+    expect(isKnownRoute("/control/forms", "GET")).toBe(true);
+    expect(isKnownRoute("/control/forms/snapshot", "POST")).toBe(true);
+    expect(isKnownRoute("/control/forms/diff", "POST")).toBe(true);
+  });
+
+  it("claims SDK-manifest routes and relay-transport routes alike", () => {
+    expect(isKnownRoute("/control/discover", "POST")).toBe(true);
+    expect(isKnownRoute("/control/element/btn-42", "GET")).toBe(true);
+    // Relay-transport set (not in UI_BRIDGE_ROUTES):
+    expect(isKnownRoute("/tabs", "GET")).toBe(true);
+    expect(isKnownRoute("/commands/stream", "GET")).toBe(true);
+  });
+
+  it("rejects known paths under the wrong method", () => {
+    expect(isKnownRoute("/control/forms", "POST")).toBe(false);
+    expect(isKnownRoute("/commands", "GET")).toBe(false);
+  });
+});
+
+describe("unknownRouteResponse", () => {
+  it("returns an honest UNKNOWN_ROUTE 404, distinct from NO_BROWSER_CONNECTED", async () => {
+    const res = unknownRouteResponse("/control/no-such-route");
+    expect(res.status).toBe(404);
+    expect(res.headers.get("Content-Type")).toBe("application/json");
+    const body = await res.json();
+    expect(body.success).toBe(false);
+    expect(body.code).toBe("UNKNOWN_ROUTE");
+    expect(body.message).toContain("/control/no-such-route");
+  });
+
+  it("points /ai/forms callers at the real route, GET /control/forms", async () => {
+    const res = unknownRouteResponse("/ai/forms");
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.code).toBe("UNKNOWN_ROUTE");
+    expect(body.message).toContain("GET /control/forms");
   });
 });
