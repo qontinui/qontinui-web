@@ -27914,6 +27914,17 @@
             "title": "Is Healthy",
             "type": "boolean"
           },
+          "lan_reachable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lan Reachable"
+          },
           "last_heartbeat": {
             "title": "Last Heartbeat",
             "type": "string"
@@ -29358,6 +29369,17 @@
           "ip": {
             "title": "Ip",
             "type": "string"
+          },
+          "lan_reachable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lan Reachable"
           },
           "os": {
             "title": "Os",
