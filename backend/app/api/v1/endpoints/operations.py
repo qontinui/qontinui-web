@@ -1864,9 +1864,14 @@ async def get_agent_question(
 async def post_agent_question_response(
     question_id: str,
     body: dict[str, Any],
-    tenant_id: UUID = Depends(require_coord_tenant_admin),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
-    """Operator answers an agent question."""
+    """A tenant member (Developer or Administrator) answers an agent question.
+
+    Intentionally NOT admin-gated: a Developer must be able to answer their
+    own running agent's questions. Coord scopes the respond route to the
+    caller's tenant, so this stays within the shared account.
+    """
     return await _proxy_coord_post(
         f"/coord/agent-questions/{question_id}/respond",
         body,
