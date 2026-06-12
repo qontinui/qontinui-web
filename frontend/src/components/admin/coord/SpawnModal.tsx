@@ -67,7 +67,8 @@ const KNOWN_REPOS = [
 interface FleetHealthDevice {
   device_id: string;
   hostname?: string;
-  status?: string;
+  /** Coord `DeviceState` (serde-lowercase): healthy | degraded | partitioned | abandoned. */
+  state?: string;
 }
 
 interface FleetHealthPayload {
@@ -299,9 +300,9 @@ export function SpawnModal({
                       <span className="font-mono text-xs">
                         {d.hostname || d.device_id}
                       </span>
-                      {d.status && (
+                      {d.state && (
                         <span className="ml-2 text-xs text-muted-foreground">
-                          ({d.status})
+                          ({d.state})
                         </span>
                       )}
                     </SelectItem>
