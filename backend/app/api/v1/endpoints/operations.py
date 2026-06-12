@@ -271,11 +271,25 @@ async def get_fleet_status(
     """Return the user's fleet (runners + cross-machine Claude sessions).
 
     Response shape:
-        ``{ "runners": list[Runner], "claude_sessions": dict[hostname, list[ClaudeSession]] }``
+        ``{ "runners": list[Runner], "claude_sessions": dict[hostname, list[ClaudeSession]],
+        "total_runners": int, "total_healthy": int, "total_running_tasks": int,
+        "total_claude_sessions": int }``
 
     The ``runners`` list uses the canonical wire shape (with
     ``derived_status``, ``ws_connected``, ...). The ``claude_sessions``
     section comes from the in-memory cross-machine fleet registry.
+
+    The ``total_*`` aggregates feed the FleetOverview stat row
+    (``frontend/src/components/operations/FleetOverview.tsx`` reads
+    ``total_runners`` / ``total_healthy`` / ``total_running_tasks``):
+
+    * ``total_runners`` — every runner in the merged list (DB-paired +
+      heartbeat-only beacons).
+    * ``total_healthy`` — merged-list entries whose ``derivedStatus`` is
+      ``"healthy"`` (same staleness-gated derivation the list itself uses).
+    * ``total_running_tasks`` — heartbeat-reported running-task counts from
+      the beacon registry (no live fan-out to runners on this poll path;
+      ``GET /fleet/tasks`` remains the live-fetch surface).
     """
     runners = await runner_crud.list_runners(db, current_user.id)
     wire_runners = [_runner_to_wire(r).model_dump(mode="json") for r in runners]
@@ -296,6 +310,9 @@ async def get_fleet_status(
                 "name": beacon.instance_name or "primary",
                 "hostname": beacon.hostname,
                 "ipAddress": beacon.ip,
+                # None = runner predates the field (assume reachable);
+                # False = the advertised LAN ip is loopback-bound/dead.
+                "lanReachable": beacon.lan_reachable,
                 "port": beacon.port,
                 "os": beacon.os,
                 "osVersion": beacon.os_version,
@@ -330,6 +347,11 @@ async def get_fleet_status(
             hostname: [s.model_dump(mode="json") for s in sessions]
             for hostname, sessions in fleet_status.claude_sessions.items()
         },
+        "total_runners": len(wire_runners),
+        "total_healthy": sum(
+            1 for r in wire_runners if r.get("derivedStatus") == "healthy"
+        ),
+        "total_running_tasks": fleet_status.total_running_tasks,
         "total_claude_sessions": fleet_status.total_claude_sessions,
     }
 

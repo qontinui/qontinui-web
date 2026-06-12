@@ -25,12 +25,33 @@ const POLL_INTERVAL_MS = 10_000;
 interface FleetHealthDevice {
   device_id: string;
   hostname?: string;
-  status?: string;
-  last_heartbeat?: string | null;
+  /**
+   * Coord liveness state — `DeviceHealthSnapshot.state` (Rust
+   * `DeviceState`, serde-lowercase): healthy | degraded | partitioned |
+   * abandoned.
+   */
+  state?: string;
 }
 
 interface FleetHealthPayload {
   devices?: FleetHealthDevice[];
+}
+
+type BadgeVariant = "default" | "secondary" | "destructive" | "outline";
+
+/**
+ * Map a coord `DeviceState` value to a badge variant. Unrecognized /
+ * missing states fall back to "outline" (rendered as "unknown").
+ */
+const STATE_BADGE_VARIANT: Record<string, BadgeVariant> = {
+  healthy: "default",
+  degraded: "secondary",
+  partitioned: "destructive",
+  abandoned: "destructive",
+};
+
+function deviceStateBadgeVariant(state?: string): BadgeVariant {
+  return STATE_BADGE_VARIANT[state ?? ""] ?? "outline";
 }
 
 function HealthSummaryCard() {
@@ -104,16 +125,8 @@ function HealthSummaryCard() {
                   <span className="font-mono text-xs truncate">
                     {d.hostname || d.device_id}
                   </span>
-                  <Badge
-                    variant={
-                      d.status === "healthy"
-                        ? "default"
-                        : d.status === "degraded"
-                          ? "secondary"
-                          : "destructive"
-                    }
-                  >
-                    {d.status ?? "unknown"}
+                  <Badge variant={deviceStateBadgeVariant(d.state)}>
+                    {d.state ?? "unknown"}
                   </Badge>
                 </div>
                 <div className="flex items-center gap-1">
