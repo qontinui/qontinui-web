@@ -69170,7 +69170,7 @@
     },
     "/api/v1/operations/pr-merge/onboarding/audit": {
       "post": {
-        "description": "Spawn the repo-auditor subagent for the named repo + wait for the\nSTARTER_PROFILE. On precondition miss (no audit-capable device)\ncoord returns 409 with body ``{\"error\": \"no_audit_capable_device\",\n\"next_step\": \"pair_device\"}`` \u2014 the dashboard surfaces this as a\nredirect back to the pairing wizard, not a generic error toast.",
+        "description": "Spawn the repo-auditor subagent for the named repo + wait for the\nSTARTER_PROFILE. On precondition miss (no audit-capable device)\ncoord returns 409 with body ``{\"error\": \"no_audit_capable_device\",\n\"next_step\": \"pair_device\"}`` \u2014 the dashboard surfaces this as a\nredirect back to the pairing wizard, not a generic error toast.\n\nUses ``_COORD_TIMEOUT_AUDIT`` (90s) instead of the default 5s because\ncoord blocks up to 60s in ``wait_for_starter_profile`` waiting for the\nauditor subagent's write-back. With the default 5s timeout the web\nproxy 504s 55s before coord ever gives up, masking the real coord-side\nresponse (success or coord's own 504 with auditor diagnostics).",
         "operationId": "api_v1_operations_pr_merge_onboarding_audit_post",
         "requestBody": {
           "content": {

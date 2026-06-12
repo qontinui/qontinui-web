@@ -90,6 +90,16 @@ from app.websockets.safe_send import safe_close, safe_send_json
 # served from PG; if coord takes longer than 5s something is wrong.
 _COORD_TIMEOUT = httpx.Timeout(5.0)
 
+# Long-running coord endpoints that dispatch work to a paired device (e.g.,
+# the onboarding audit endpoint, which spawns the repo-auditor subagent and
+# blocks up to STARTER_PROFILE_WAIT_SECS=60s in
+# qontinui-coord/src/pr_merge/onboarding_routes.rs:69 waiting for the
+# auditor's STARTER_PROFILE write-back). The web proxy must outlast coord's
+# own in-handler deadline, otherwise the operator sees a spurious 504 while
+# coord is still legitimately working. 90s = coord's 60s wait + 30s slack
+# for agent-spawn round-trip and TLS/ALB overhead.
+_COORD_TIMEOUT_AUDIT = httpx.Timeout(90.0, connect=5.0)
+
 # Phase T2b — the legacy ``X-Qontinui-Tenant-Id`` email-bridge header is no
 # longer sent to coord. Coord resolves the operator/tenant from the
 # forwarded Cognito bearer (``resolve_operator_optional`` middleware,
@@ -825,11 +835,18 @@ async def post_pr_merge_onboarding_audit(
     coord returns 409 with body ``{"error": "no_audit_capable_device",
     "next_step": "pair_device"}`` — the dashboard surfaces this as a
     redirect back to the pairing wizard, not a generic error toast.
+
+    Uses ``_COORD_TIMEOUT_AUDIT`` (90s) instead of the default 5s because
+    coord blocks up to 60s in ``wait_for_starter_profile`` waiting for the
+    auditor subagent's write-back. With the default 5s timeout the web
+    proxy 504s 55s before coord ever gives up, masking the real coord-side
+    response (success or coord's own 504 with auditor diagnostics).
     """
     return await _proxy_coord_post(
         "/pr-merge/onboarding/audit",
         body,
         tenant_id=tenant_id,
+        timeout=_COORD_TIMEOUT_AUDIT,
     )
 
 
@@ -1102,14 +1119,19 @@ async def _proxy_coord_post(
     body: Any,
     *,
     tenant_id: UUID | None = None,
+    timeout: httpx.Timeout | None = None,
 ) -> Any:
     """Proxy a POST request to coord and return the JSON body.
 
     ``tenant_id`` — see ``_proxy_coord_get``.
+    ``timeout`` — optional per-route override. Defaults to ``_COORD_TIMEOUT``
+    (5s) which is appropriate for short JSON-from-PG endpoints. Endpoints
+    that dispatch device-side work (e.g., onboarding audit) must pass an
+    explicit longer timeout that outlasts coord's own in-handler deadline.
     """
     url = f"{settings.COORD_URL}{path}"
     headers = _tenant_headers(tenant_id) if tenant_id is not None else None
-    async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=timeout or _COORD_TIMEOUT) as client:
         try:
             resp = await client.post(url, json=body, headers=headers)
         except httpx.ConnectError:
