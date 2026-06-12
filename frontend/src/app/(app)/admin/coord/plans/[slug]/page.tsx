@@ -31,6 +31,10 @@ import {
 } from "@/components/ui/select";
 import { ArrowLeft, FileText, GitCommit, History } from "lucide-react";
 import { httpClient } from "@/services/service-factory";
+import {
+  CoordAdminOnly,
+  ReadOnlyNotice,
+} from "@/components/admin/coord/CoordAdminOnly";
 
 const API = "/api/v1/operations";
 
@@ -185,6 +189,15 @@ export default function CoordPlanDetailPage() {
             </CardHeader>
           </Card>
 
+          <CoordAdminOnly
+            fallback={
+              <Card data-testid="coord-plan-transition-readonly">
+                <CardContent className="p-4">
+                  <ReadOnlyNotice label="Plan status transitions are administrator only." />
+                </CardContent>
+              </Card>
+            }
+          >
           <Card data-testid="coord-plan-transition">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
@@ -235,6 +248,7 @@ export default function CoordPlanDetailPage() {
               </div>
             </CardContent>
           </Card>
+          </CoordAdminOnly>
 
           <Card data-testid="coord-plan-history">
             <CardHeader>

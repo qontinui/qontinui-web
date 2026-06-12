@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { ArrowLeft, BookOpen, RotateCcw } from "lucide-react";
 import { httpClient } from "@/services/service-factory";
+import { CoordAdminOnly } from "@/components/admin/coord/CoordAdminOnly";
 
 const API = "/api/v1/operations";
 
@@ -174,6 +175,7 @@ export default function CoordMemoryVersionPage() {
             </CardContent>
           </Card>
 
+          <CoordAdminOnly>
           <Card data-testid="coord-memory-version-restore">
             <CardContent className="p-4">
               <AlertDialog>
@@ -217,6 +219,7 @@ export default function CoordMemoryVersionPage() {
               </AlertDialog>
             </CardContent>
           </Card>
+          </CoordAdminOnly>
 
           <Card data-testid="coord-memory-version-content">
             <CardHeader>

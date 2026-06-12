@@ -658,7 +658,7 @@ async def get_pr_merge_settings(
 @router.patch("/pr-merge/settings")
 async def patch_pr_merge_settings(
     body: dict[str, Any],
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """UPSERT the tenant-level merge settings. Coord audits the change
     + publishes a Redis pubsub invalidation. Returns the post-write
@@ -694,7 +694,7 @@ async def get_pr_merge_repo_profile(
 async def patch_pr_merge_repo_profile(
     repo: str,
     body: dict[str, Any],
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """UPSERT the per-repo override row. Coord stamps
     ``profile_source='user_edit'``, audits the change, and publishes
@@ -982,7 +982,7 @@ async def get_pr_merge_suggestions(
 async def post_pr_merge_suggestion_accept(
     alert_id: int,
     body: dict[str, Any] | None = None,
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Apply the suggestion's ``proposed_diff`` to settings + resolve
     the alert + write a ``drift_suggestion_accepted`` user_override
@@ -999,7 +999,7 @@ async def post_pr_merge_suggestion_accept(
 async def post_pr_merge_suggestion_reject(
     alert_id: int,
     body: dict[str, Any] | None = None,
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Resolve the alert with ``resolution_action='rejected'`` + write
     a ``drift_suggestion_rejected`` user_override row (signal: don't
@@ -1016,7 +1016,7 @@ async def post_pr_merge_suggestion_reject(
 async def post_pr_merge_suggestion_mute(
     alert_id: int,
     body: dict[str, Any] | None = None,
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Mute the suggestion kind for ``body.days`` days (default 30).
     Stored in ``coord.tenant_merge_settings.suggestion_mutes`` JSONB.
@@ -1038,7 +1038,7 @@ async def post_pr_merge_suggestion_mute(
 @router.post("/pr-merge/kill-switch")
 async def post_pr_merge_kill_switch(
     body: dict[str, Any],
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Emergency-stop: flip the calling tenant's rollout_state to
     ``dry_run``. Body shape::
@@ -1072,7 +1072,7 @@ async def post_pr_merge_kill_switch(
 @router.post("/pr-merge/rollout")
 async def post_pr_merge_rollout(
     body: dict[str, Any],
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Rollout promote — set the tenant's (or a specific repo's)
     rollout_state to an arbitrary target. Body shape::
@@ -1135,7 +1135,7 @@ async def get_pr_merge_slo(
 async def post_pr_merge_escalation_decide(
     alert_id: int,
     body: dict[str, Any],
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Resolve a pending merge escalation with an operator decision.
 
@@ -1218,7 +1218,7 @@ async def _proxy_coord_post(
 @router.post("/agents/allocate")
 async def post_agents_allocate(
     body: dict[str, Any],
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Proxy `POST /agents/allocate` to coord.
 
@@ -1358,7 +1358,7 @@ async def get_gates_list(
 @router.post("/gates/{gate_id}/approve")
 async def approve_gate(
     gate_id: str,
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Approve an OperatorApproval gate (operator bearer forwarded —
     fleet-auth P2/D6)."""
@@ -1370,7 +1370,7 @@ async def approve_gate(
 @router.post("/gates/{gate_id}/reopen")
 async def reopen_gate(
     gate_id: str,
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Reopen a cleared/failed gate by server-side cloning it into a new open
     gate (undo-by-reopen; operator bearer forwarded — fleet-auth P2/D6).
@@ -1389,7 +1389,7 @@ async def reopen_gate(
 async def reject_gate(
     gate_id: str,
     reason: str | None = None,
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Reject an OperatorApproval gate (operator bearer forwarded —
     fleet-auth P2/D6)."""
@@ -1415,7 +1415,7 @@ async def reject_gate(
 @router.post("/gates/{gate_id}/mute")
 async def mute_gate(
     gate_id: str,
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Mute a gate so the sweep skips it (reversible — operator bearer
     forwarded, fleet-auth P2/D6)."""
@@ -1427,7 +1427,7 @@ async def mute_gate(
 @router.post("/gates/{gate_id}/unmute")
 async def unmute_gate(
     gate_id: str,
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Unmute a previously-muted gate (operator bearer forwarded —
     fleet-auth P2/D6)."""
@@ -1440,7 +1440,7 @@ async def unmute_gate(
 async def snooze_gate(
     gate_id: str,
     body: dict[str, Any],
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Snooze a gate until ``body["until"]`` (rfc3339) — the sweep skips it
     while ``snoozed_until`` is in the future (reversible; operator bearer
@@ -1679,7 +1679,7 @@ async def get_coord_plan_history(
 async def post_coord_plan_transition(
     slug: str,
     body: dict[str, Any],
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Transition a plan to a new status (tenant-scoped).
 
@@ -1864,7 +1864,7 @@ async def get_agent_question(
 async def post_agent_question_response(
     question_id: str,
     body: dict[str, Any],
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Operator answers an agent question."""
     return await _proxy_coord_post(
@@ -1990,7 +1990,7 @@ async def get_memory_entry(
 @router.post("/agents/spawn")
 async def post_agents_spawn(
     body: dict[str, Any],
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Proxy ``POST /agents/spawn`` to coord (Wave 4 spawn-from-plan).
 
@@ -2086,7 +2086,7 @@ async def get_memory_version(
 @router.post("/memory/upsert")
 async def post_memory_upsert(
     body: MemoryUpsertRequest,
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Upsert a memory entry (creates a new immutable version row).
 
@@ -2108,7 +2108,7 @@ async def post_memory_upsert(
 @router.delete("/memory/{name}")
 async def delete_memory_entry(
     name: str,
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Soft-delete (tombstone) a memory entry.
 
@@ -2123,7 +2123,7 @@ async def delete_memory_entry(
 async def post_memory_restore(
     name: str,
     body: MemoryRestoreRequest,
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Restore a memory entry to a previous version.
 
@@ -3284,7 +3284,7 @@ async def stream_coord_session_events(
 async def steal_coord_session(
     session_id: UUID,
     body: dict[str, Any],
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Steal a session's claim (Phase 6 wires the dashboard UI; the
     proxy lives here so the byte-paths are stable from Phase 5)."""
@@ -3296,7 +3296,7 @@ async def steal_coord_session(
 @router.delete("/sessions/{session_id}")
 async def close_coord_session(
     session_id: UUID,
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Close a session (DELETE → `state='closed'`, releases claim)."""
     return await _proxy_coord_delete(f"/sessions/{session_id}", tenant_id=tenant_id)
@@ -3306,7 +3306,7 @@ async def close_coord_session(
 async def handoff_coord_session(
     session_id: UUID,
     body: dict[str, Any],
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Hand a session off to another machine ("Continue elsewhere").
 
