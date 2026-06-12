@@ -3,7 +3,7 @@ import {
   getChildrenForPlatform,
   setDevelopmentMode,
   type NavigationItem,
-} from "qontinui-navigation";
+} from "@qontinui/navigation";
 import type { NavItem } from "./types";
 import { resolveIcon } from "./icon-resolver";
 

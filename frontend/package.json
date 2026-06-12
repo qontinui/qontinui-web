@@ -90,7 +90,7 @@
     "next": "^15.5.18",
     "next-themes": "^0.4.6",
     "pg": "^8.20.0",
-    "qontinui-navigation": "^0.1.0",
+    "@qontinui/navigation": "^0.1.2",
     "qrcode.react": "^4.2.0",
     "react": "19.1.5",
     "react-dom": "19.1.5",

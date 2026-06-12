@@ -7,7 +7,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useNavigationItem } from "qontinui-navigation";
+import { useNavigationItem } from "@qontinui/navigation";
 import type { NavItem } from "./types";
 
 export interface NavItemButtonProps {
