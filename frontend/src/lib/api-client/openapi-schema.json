@@ -1610,7 +1610,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/app__schemas__annotation__Screenshot"
+                  "$ref": "#/components/schemas/Screenshot-Input"
                 },
                 "type": "array"
               },
@@ -1790,7 +1790,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/app__schemas__annotation__Screenshot"
+                  "$ref": "#/components/schemas/Screenshot-Input"
                 },
                 "type": "array"
               },
@@ -3227,8 +3227,8 @@
             "title": "Approval Notes"
           },
           "image": {
+            "contentMediaType": "application/octet-stream",
             "description": "Baseline image file (PNG/JPEG)",
-            "format": "binary",
             "title": "Image",
             "type": "string"
           },
@@ -3356,7 +3356,7 @@
             "title": "Description"
           },
           "file": {
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File",
             "type": "string"
           },
@@ -3407,7 +3407,7 @@
       "Body_upload_avatar_api_v1_users_me_avatar_post": {
         "properties": {
           "file": {
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File",
             "type": "string"
           }
@@ -3421,7 +3421,7 @@
       "Body_upload_file_api_v1_files_upload_post": {
         "properties": {
           "file": {
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File",
             "type": "string"
           },
@@ -3435,6 +3435,20 @@
           "source_device_id"
         ],
         "title": "Body_upload_file_api_v1_files_upload_post",
+        "type": "object"
+      },
+      "Body_upload_image_api_v1_projects__project_id__images_upload_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_image_api_v1_projects__project_id__images_upload_post",
         "type": "object"
       },
       "Body_upload_recording_api_v1_recordings_upload_post": {
@@ -3451,7 +3465,7 @@
             "title": "Description"
           },
           "file": {
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File",
             "type": "string"
           },
@@ -3481,7 +3495,7 @@
       "Body_upload_render_image_api_v1_render_logs__render_log_id__images_post": {
         "properties": {
           "file": {
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File",
             "type": "string"
           }
@@ -3495,7 +3509,7 @@
       "Body_upload_screenshot_api_v1_annotations_upload_screenshot_post": {
         "properties": {
           "file": {
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File",
             "type": "string"
           }
@@ -3521,8 +3535,8 @@
             "title": "Extra Metadata"
           },
           "file": {
+            "contentMediaType": "application/octet-stream",
             "description": "Screenshot image file",
-            "format": "binary",
             "title": "File",
             "type": "string"
           },
@@ -3543,8 +3557,8 @@
       "Body_upload_screenshot_api_v1_execution_runs__run_id__screenshots_post": {
         "properties": {
           "file": {
+            "contentMediaType": "application/octet-stream",
             "description": "Screenshot image file",
-            "format": "binary",
             "title": "File",
             "type": "string"
           }
@@ -3558,7 +3572,7 @@
       "Body_upload_screenshot_api_v1_projects__project_id__screenshots_upload_post": {
         "properties": {
           "file": {
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File",
             "type": "string"
           }
@@ -3572,8 +3586,8 @@
       "Body_upload_screenshot_api_v1_testing_runs__run_id__screenshots_post": {
         "properties": {
           "image": {
+            "contentMediaType": "application/octet-stream",
             "description": "Screenshot image file (PNG/JPEG)",
-            "format": "binary",
             "title": "Image",
             "type": "string"
           },
@@ -3604,7 +3618,7 @@
             "title": "Duration Seconds"
           },
           "file": {
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File",
             "type": "string"
           },
@@ -11453,6 +11467,84 @@
         "title": "DiffRegionResponse",
         "type": "object"
       },
+      "DiscoveredState-Input": {
+        "description": "A discovered UI state (collection of co-occurring elements).\n\nStates represent distinct UI screens or views identified by the\nset of images that consistently appear together.",
+        "properties": {
+          "confidence": {
+            "default": 1.0,
+            "description": "Confidence score for state detection",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "type": "number"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Description of what this state represents",
+            "title": "Description"
+          },
+          "elementIds": {
+            "description": "IDs of DOM elements (for web extraction)",
+            "items": {
+              "type": "string"
+            },
+            "title": "Elementids",
+            "type": "array"
+          },
+          "id": {
+            "description": "Unique identifier for the state",
+            "title": "Id",
+            "type": "string"
+          },
+          "imageIds": {
+            "description": "IDs of images in this state",
+            "items": {
+              "type": "string"
+            },
+            "title": "Imageids",
+            "type": "array"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Additional metadata",
+            "title": "Metadata"
+          },
+          "name": {
+            "description": "Human-readable name",
+            "title": "Name",
+            "type": "string"
+          },
+          "renderIds": {
+            "description": "IDs of renders where this state appears",
+            "items": {
+              "type": "string"
+            },
+            "title": "Renderids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "DiscoveredState",
+        "type": "object"
+      },
       "DiscoveredStateImage": {
         "description": "Visual element within a discovered state.\n\nRepresents an image crop from a screenshot with its bounding box\nand optional pixel-level identification.",
         "properties": {
@@ -11760,66 +11852,7 @@
         "title": "DiscoveredStateStructure",
         "type": "object"
       },
-      "DiscoveredTransition-Input": {
-        "description": "A transition between discovered states.\n\nTransitions represent actions that change the active set of states\non the screen.",
-        "properties": {
-          "confidence": {
-            "default": 1.0,
-            "description": "Confidence score for transition detection",
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "title": "Confidence",
-            "type": "number"
-          },
-          "fromStateId": {
-            "description": "ID of the source state",
-            "title": "Fromstateid",
-            "type": "string"
-          },
-          "id": {
-            "description": "Unique identifier for the transition",
-            "title": "Id",
-            "type": "string"
-          },
-          "metadata": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Additional metadata",
-            "title": "Metadata"
-          },
-          "toStateId": {
-            "description": "ID of the target state",
-            "title": "Tostateid",
-            "type": "string"
-          },
-          "trigger": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/DiscoveryTransitionTrigger"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "What triggers this transition"
-          }
-        },
-        "required": [
-          "id",
-          "fromStateId",
-          "toStateId"
-        ],
-        "title": "DiscoveredTransition",
-        "type": "object"
-      },
-      "DiscoveredTransition-Output": {
+      "DiscoveredTransition": {
         "description": "A transition between discovered states.\n\nTransitions represent actions that change the active set of states\non the screen.",
         "properties": {
           "confidence": {
@@ -30638,6 +30671,37 @@
         "title": "ScheduledWorkflowRunUpdate",
         "type": "object"
       },
+      "Screenshot-Input": {
+        "description": "Individual screenshot metadata",
+        "properties": {
+          "height": {
+            "exclusiveMinimum": 0.0,
+            "title": "Height",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "width": {
+            "exclusiveMinimum": 0.0,
+            "title": "Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "url",
+          "width",
+          "height"
+        ],
+        "title": "Screenshot",
+        "type": "object"
+      },
       "ScreenshotSettingsSchema": {
         "description": "Screenshot and history settings schema.",
         "properties": {
@@ -32574,14 +32638,14 @@
           },
           "states": {
             "items": {
-              "$ref": "#/components/schemas/qontinui_schemas__discovery__models__DiscoveredState"
+              "$ref": "#/components/schemas/DiscoveredState-Input"
             },
             "title": "States",
             "type": "array"
           },
           "transitions": {
             "items": {
-              "$ref": "#/components/schemas/DiscoveredTransition-Input"
+              "$ref": "#/components/schemas/DiscoveredTransition"
             },
             "title": "Transitions",
             "type": "array"
@@ -32900,7 +32964,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/qontinui_schemas__discovery__models__DiscoveredState"
+                  "$ref": "#/components/schemas/DiscoveredState-Input"
                 },
                 "type": "array"
               },
@@ -32914,7 +32978,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/DiscoveredTransition-Input"
+                  "$ref": "#/components/schemas/DiscoveredTransition"
                 },
                 "type": "array"
               },
@@ -33294,7 +33358,7 @@
           "states": {
             "description": "States",
             "items": {
-              "$ref": "#/components/schemas/qontinui_schemas__discovery__models__DiscoveredState"
+              "$ref": "#/components/schemas/DiscoveredState-Input"
             },
             "title": "States",
             "type": "array"
@@ -33302,7 +33366,7 @@
           "transitions": {
             "description": "Transitions",
             "items": {
-              "$ref": "#/components/schemas/DiscoveredTransition-Input"
+              "$ref": "#/components/schemas/DiscoveredTransition"
             },
             "title": "Transitions",
             "type": "array"
@@ -33389,7 +33453,7 @@
           "transitions": {
             "description": "Transitions",
             "items": {
-              "$ref": "#/components/schemas/DiscoveredTransition-Output"
+              "$ref": "#/components/schemas/DiscoveredTransition"
             },
             "title": "Transitions",
             "type": "array"
@@ -40885,6 +40949,13 @@
       },
       "ValidationError": {
         "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
           "loc": {
             "items": {
               "anyOf": [
@@ -41250,7 +41321,7 @@
         "title": "VariableUpdate",
         "type": "object"
       },
-      "VerificationPhaseResult-Input": {
+      "VerificationPhaseResult": {
         "description": "Result of running all verification steps in a unified workflow iteration.",
         "properties": {
           "all_passed": {
@@ -41306,92 +41377,7 @@
           "step_results": {
             "description": "Individual step results",
             "items": {
-              "$ref": "#/components/schemas/VerificationStepResult-Input"
-            },
-            "title": "Step Results",
-            "type": "array"
-          },
-          "total_duration_ms": {
-            "description": "Total execution time in milliseconds",
-            "minimum": 0.0,
-            "title": "Total Duration Ms",
-            "type": "integer"
-          },
-          "total_steps": {
-            "description": "Total number of steps",
-            "minimum": 0.0,
-            "title": "Total Steps",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "iteration",
-          "all_passed",
-          "total_steps",
-          "passed_steps",
-          "failed_steps",
-          "total_duration_ms"
-        ],
-        "title": "VerificationPhaseResult",
-        "type": "object"
-      },
-      "VerificationPhaseResult-Output": {
-        "description": "Result of running all verification steps in a unified workflow iteration.",
-        "properties": {
-          "all_passed": {
-            "description": "Whether all verification steps passed",
-            "title": "All Passed",
-            "type": "boolean"
-          },
-          "critical_failure": {
-            "default": false,
-            "description": "Whether a critical gate failure occurred",
-            "title": "Critical Failure",
-            "type": "boolean"
-          },
-          "failed_steps": {
-            "description": "Number of steps that failed",
-            "minimum": 0.0,
-            "title": "Failed Steps",
-            "type": "integer"
-          },
-          "gate_based_evaluation": {
-            "default": false,
-            "description": "Whether evaluation was gate-based",
-            "title": "Gate Based Evaluation",
-            "type": "boolean"
-          },
-          "gate_results": {
-            "description": "Gate evaluation results",
-            "items": {
-              "$ref": "#/components/schemas/GateEvaluationResult"
-            },
-            "title": "Gate Results",
-            "type": "array"
-          },
-          "iteration": {
-            "description": "Iteration number (1-indexed)",
-            "minimum": 1.0,
-            "title": "Iteration",
-            "type": "integer"
-          },
-          "passed_steps": {
-            "description": "Number of steps that passed",
-            "minimum": 0.0,
-            "title": "Passed Steps",
-            "type": "integer"
-          },
-          "skipped_steps": {
-            "default": 0,
-            "description": "Number of steps skipped (gate stop_on_failure)",
-            "minimum": 0.0,
-            "title": "Skipped Steps",
-            "type": "integer"
-          },
-          "step_results": {
-            "description": "Individual step results",
-            "items": {
-              "$ref": "#/components/schemas/VerificationStepResult-Output"
+              "$ref": "#/components/schemas/VerificationStepResult"
             },
             "title": "Step Results",
             "type": "array"
@@ -41430,7 +41416,7 @@
             "type": "integer"
           },
           "result": {
-            "$ref": "#/components/schemas/VerificationPhaseResult-Input",
+            "$ref": "#/components/schemas/VerificationPhaseResult",
             "description": "Full verification phase result"
           }
         },
@@ -41482,7 +41468,7 @@
             "type": "integer"
           },
           "result_json": {
-            "$ref": "#/components/schemas/VerificationPhaseResult-Output",
+            "$ref": "#/components/schemas/VerificationPhaseResult",
             "description": "Full result data"
           },
           "skipped_steps": {
@@ -41587,7 +41573,7 @@
         "title": "VerificationResultsListResponse",
         "type": "object"
       },
-      "VerificationStepDetails-Input": {
+      "VerificationStepDetails": {
         "description": "Verification-specific details for test and check steps.",
         "properties": {
           "assertions_passed": {
@@ -41707,127 +41693,7 @@
         "title": "VerificationStepDetails",
         "type": "object"
       },
-      "VerificationStepDetails-Output": {
-        "description": "Verification-specific details for test and check steps.",
-        "properties": {
-          "assertions_passed": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Number of assertions passed",
-            "title": "Assertions Passed"
-          },
-          "assertions_total": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Total number of assertions",
-            "title": "Assertions Total"
-          },
-          "check_results": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/IndividualCheckResult"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Individual check results for check_group steps",
-            "title": "Check Results"
-          },
-          "console_output": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Console output from browser/runtime",
-            "title": "Console Output"
-          },
-          "exit_code": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Exit code from command execution",
-            "title": "Exit Code"
-          },
-          "page_snapshot": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Page snapshot (YAML accessibility tree)",
-            "title": "Page Snapshot"
-          },
-          "phase": {
-            "description": "Phase this step belongs to",
-            "title": "Phase",
-            "type": "string"
-          },
-          "stderr": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Standard error from the step",
-            "title": "Stderr"
-          },
-          "stdout": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Standard output from the step",
-            "title": "Stdout"
-          },
-          "step_id": {
-            "description": "Step ID from the workflow",
-            "title": "Step Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "step_id",
-          "phase"
-        ],
-        "title": "VerificationStepDetails",
-        "type": "object"
-      },
-      "VerificationStepResult-Input": {
+      "VerificationStepResult": {
         "description": "Result of executing a single verification step.",
         "properties": {
           "config": {
@@ -41934,133 +41800,7 @@
           "verification_details": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/VerificationStepDetails-Input"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Verification-specific fields"
-          }
-        },
-        "required": [
-          "step_index",
-          "step_type",
-          "step_name",
-          "success",
-          "duration_ms"
-        ],
-        "title": "VerificationStepResult",
-        "type": "object"
-      },
-      "VerificationStepResult-Output": {
-        "description": "Result of executing a single verification step.",
-        "properties": {
-          "config": {
-            "$ref": "#/components/schemas/StepExecutionConfig",
-            "description": "Step configuration"
-          },
-          "duration_ms": {
-            "description": "Execution duration in ms",
-            "minimum": 0.0,
-            "title": "Duration Ms",
-            "type": "integer"
-          },
-          "ended_at": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "When this step ended (ISO)",
-            "title": "Ended At"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Error message if failed",
-            "title": "Error"
-          },
-          "output_data": {
-            "anyOf": [
-              {},
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Additional output data from the step handler",
-            "title": "Output Data"
-          },
-          "screenshot_path": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Path to screenshot if captured",
-            "title": "Screenshot Path"
-          },
-          "started_at": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "When this step started (ISO)",
-            "title": "Started At"
-          },
-          "step_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Step ID from the workflow definition",
-            "title": "Step Id"
-          },
-          "step_index": {
-            "description": "Step index (0-based)",
-            "minimum": 0.0,
-            "title": "Step Index",
-            "type": "integer"
-          },
-          "step_name": {
-            "description": "Step name for display",
-            "title": "Step Name",
-            "type": "string"
-          },
-          "step_type": {
-            "description": "Step type that was executed",
-            "title": "Step Type",
-            "type": "string"
-          },
-          "success": {
-            "description": "Whether the step succeeded",
-            "title": "Success",
-            "type": "boolean"
-          },
-          "verification_details": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/VerificationStepDetails-Output"
+                "$ref": "#/components/schemas/VerificationStepDetails"
               },
               {
                 "type": "null"
@@ -44726,20 +44466,6 @@
           "has_more"
         ],
         "title": "Pagination",
-        "type": "object"
-      },
-      "fastapi___compat__v2__Body_upload_image_api_v1_projects__project_id__images_upload_post": {
-        "properties": {
-          "file": {
-            "format": "binary",
-            "title": "File",
-            "type": "string"
-          }
-        },
-        "required": [
-          "file"
-        ],
-        "title": "Body_upload_image_api_v1_projects__project_id__images_upload_post",
         "type": "object"
       },
       "qontinui_schemas__api__execution__IssueSource": {
@@ -74701,7 +74427,7 @@
           "content": {
             "multipart/form-data": {
               "schema": {
-                "$ref": "#/components/schemas/fastapi___compat__v2__Body_upload_image_api_v1_projects__project_id__images_upload_post"
+                "$ref": "#/components/schemas/Body_upload_image_api_v1_projects__project_id__images_upload_post"
               }
             }
           },
