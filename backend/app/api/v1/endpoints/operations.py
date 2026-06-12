@@ -2038,6 +2038,7 @@ async def _proxy_coord_delete(
     path: str,
     *,
     params: dict[str, Any] | None = None,
+    body: Any | None = None,
     tenant_id: UUID | None = None,
 ) -> Any:
     """Proxy a DELETE request to coord and return the JSON body.
@@ -2047,12 +2048,25 @@ async def _proxy_coord_delete(
     DELETE only sets a tombstone marker per Q3's event-sourced shape).
 
     ``params`` is forwarded as the query string when set.
+
+    ``body`` — when set, a JSON body is sent on the DELETE (coord's
+    ``DELETE /admin/coord/operators/{id}/roles`` and
+    ``DELETE /admin/coord/group-tenant-roles`` both take a JSON body
+    naming the role to remove). ``httpx`` supports a body on DELETE via
+    ``client.request("DELETE", ..., json=body)``; ``client.delete`` does
+    not accept ``json=``, so this branches. The bearer header is attached
+    on both paths.
     """
     url = f"{settings.COORD_URL}{path}"
     headers = _tenant_headers(tenant_id) if tenant_id is not None else None
     async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
         try:
-            resp = await client.delete(url, params=params, headers=headers)
+            if body is not None:
+                resp = await client.request(
+                    "DELETE", url, params=params, json=body, headers=headers
+                )
+            else:
+                resp = await client.delete(url, params=params, headers=headers)
         except httpx.ConnectError:
             raise HTTPException(
                 status_code=502,
@@ -3863,3 +3877,150 @@ async def delete_composition_rule(
     return await _proxy_coord_delete(
         f"/coord/composition-rules/{composition_rule_id}", tenant_id=tenant_id
     )
+
+
+# ---- Coord tenant-member management (admin-proxy) -------------------------
+#
+# Lets an authenticated coordination ADMIN manage coord tenant members +
+# roles from the dashboard, forwarding their OWN Cognito bearer to coord
+# (no separate service token). These proxy coord's ``/admin/coord/*``
+# operator/group-role endpoints (``qontinui-coord/src/routes_phase3.rs``).
+#
+# Gate: ``require_coord_tenant_admin``. Coord's ``GET /admin/coord/me``
+# computes ``is_admin`` as true iff the operator holds an admin/owner role
+# in ANY of their tenants (routes_phase3.rs:2170-2194 — it folds every
+# ``tenants[]`` row, not just the home tenant). So a Pizzeria-tenant admin
+# whose HOME tenant is different is NOT wrongly 403'd at this web gate. The
+# precise per-target authorization is coord's own re-check: the role
+# write/delete handlers call ``caller_is_admin_in_tenant`` against the
+# (possibly ``target_tenant_id``-named) target tenant and 403
+# ``not_admin_in_target_tenant`` if the caller lacks admin THERE. Web gate
+# (ANY-tenant admin) + coord per-target re-check is the correct pairing —
+# the web layer keeps the routes from being silently open while coord
+# enforces the exact target-tenant grant. Bodies pass through as
+# ``dict[str, Any]``; coord validates shape + role enum and its 4xx errors
+# surface verbatim.
+
+
+@router.get("/coord/members")
+async def get_coord_members(
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """List the caller's-tenant operators with their roles.
+
+    Proxies coord ``GET /admin/coord/operators`` →
+    ``{operators: [{operator_id, email, display_name, sso_provider,
+    last_login_at, created_at, roles: [str]}]}`` (scoped to the caller's
+    tenant by coord)."""
+    return await _proxy_coord_get("/admin/coord/operators", tenant_id=tenant_id)
+
+
+@router.post("/coord/members")
+async def post_coord_member(
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Create an operator in the caller's home tenant (pre-login invites OK).
+
+    Proxies coord ``POST /admin/coord/operators``. Body:
+    ``{email, display_name?, sso_subject, sso_provider, roles?: [str]}`` →
+    ``{operator_id}``."""
+    return await _proxy_coord_post(
+        "/admin/coord/operators", body, tenant_id=tenant_id
+    )
+
+
+@router.post("/coord/members/{operator_id}/roles")
+async def post_coord_member_role(
+    operator_id: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Grant a role to an operator.
+
+    Proxies coord ``POST /admin/coord/operators/{operator_id}/roles``. Body:
+    ``{role, target_tenant_id?}`` (role ∈
+    ``operator|agent_supervisor|admin|owner``; ``target_tenant_id`` for a
+    cross-tenant grant, which coord re-checks admin-in-target for) →
+    ``{ok: true}``."""
+    return await _proxy_coord_post(
+        f"/admin/coord/operators/{operator_id}/roles", body, tenant_id=tenant_id
+    )
+
+
+@router.delete("/coord/members/{operator_id}/roles")
+async def delete_coord_member_role(
+    operator_id: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Revoke a role from an operator.
+
+    Proxies coord ``DELETE /admin/coord/operators/{operator_id}/roles`` with
+    a JSON body ``{role}`` → ``{ok: true}``. The body is forwarded on the
+    DELETE via ``_proxy_coord_delete(body=...)`` (httpx ``request("DELETE",
+    json=...)``); the role name is NOT dropped."""
+    return await _proxy_coord_delete(
+        f"/admin/coord/operators/{operator_id}/roles",
+        body=body,
+        tenant_id=tenant_id,
+    )
+
+
+@router.get("/coord/group-tenant-roles")
+async def get_coord_group_tenant_roles(
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """List SSO-group → tenant → role mappings.
+
+    Proxies coord ``GET /admin/coord/group-tenant-roles`` →
+    ``{group_tenant_roles: [{group_id, tenant_slug, role, auto_create_tenant,
+    created_at, tenant_id}]}``."""
+    return await _proxy_coord_get(
+        "/admin/coord/group-tenant-roles", tenant_id=tenant_id
+    )
+
+
+@router.post("/coord/group-tenant-roles")
+async def post_coord_group_tenant_role(
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Create an SSO-group → tenant → role mapping.
+
+    Proxies coord ``POST /admin/coord/group-tenant-roles``. Body:
+    ``{group_id, tenant_slug, role, auto_create_tenant}`` → mapping echo.
+    Coord re-checks admin-in-target-tenant (or requires
+    ``auto_create_tenant`` for an unresolved slug)."""
+    return await _proxy_coord_post(
+        "/admin/coord/group-tenant-roles", body, tenant_id=tenant_id
+    )
+
+
+@router.delete("/coord/group-tenant-roles")
+async def delete_coord_group_tenant_role(
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Delete an SSO-group → tenant → role mapping.
+
+    Proxies coord ``DELETE /admin/coord/group-tenant-roles`` with a JSON
+    body ``{group_id, tenant_slug, role}`` → ``{ok, deleted}``. The body is
+    forwarded on the DELETE via ``_proxy_coord_delete(body=...)``."""
+    return await _proxy_coord_delete(
+        "/admin/coord/group-tenant-roles",
+        body=body,
+        tenant_id=tenant_id,
+    )
+
+
+@router.get("/coord/my-tenants")
+async def get_coord_my_tenants(
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Return the caller's home tenant + all tenant memberships + per-tenant
+    roles.
+
+    Proxies coord ``GET /admin/coord/me``. Backs a tenant-switcher /
+    cross-tenant role-grant picker in the member-management UI."""
+    return await _proxy_coord_get("/admin/coord/me", tenant_id=tenant_id)
