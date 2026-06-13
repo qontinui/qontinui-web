@@ -213,7 +213,7 @@ async def require_coord_tenant_admin(
     return identity.home_tenant_id
 
 
-def _tenant_headers(tenant_id: UUID) -> dict[str, str]:
+def _tenant_headers(tenant_id: UUID | None) -> dict[str, str]:
     """Build the request-headers dict forwarded to coord.
 
     Phase T2b — forwards ONLY the caller's Cognito bearer
@@ -222,7 +222,9 @@ def _tenant_headers(tenant_id: UUID) -> dict[str, str]:
     (the ``resolve_operator_optional`` middleware), so the legacy
     ``X-Qontinui-Tenant-Id`` email-bridge header is no longer sent. The
     ``tenant_id`` arg is retained for call-site compatibility (callers still
-    resolve + pass it) but no longer goes on the wire.
+    resolve + pass it) but no longer goes on the wire — so ``None`` is
+    accepted (the ``forward_bearer`` path forwards the bearer without a
+    resolved tenant).
     """
     headers: dict[str, str] = {}
     token = _caller_bearer.get()
@@ -452,6 +454,7 @@ async def _proxy_coord_get(
     *,
     params: dict[str, Any] | None = None,
     tenant_id: UUID | None = None,
+    forward_bearer: bool = False,
 ) -> Any:
     """Proxy a GET request to coord and return the JSON body.
 
@@ -474,9 +477,23 @@ async def _proxy_coord_get(
     *assert* the tenant (the claims read paths,
     plan 2026-05-24-symbol-claim-tenant-scoping) must ALSO put
     ``tenant_id`` in ``params`` so it rides the query string.
+
+    ``forward_bearer`` — forward the captured caller bearer EVEN WHEN
+    ``tenant_id is None``. The bearer/tenant coupling exists only because
+    historically every proxy resolved a tenant first (which also captured
+    the bearer). A fleet-wide endpoint that must keep forwarding the
+    operator bearer while tolerating coord-down identity resolution (so
+    total outage degrades to a banner rather than 502ing in the
+    dependency, ``/admin-dev/overview``) sets this True and passes its
+    best-effort ``tenant_id`` (possibly ``None``). Default False preserves
+    the prior behavior exactly: no bearer is forwarded unless a tenant was
+    resolved.
     """
     url = f"{settings.COORD_URL}{path}"
-    headers = _tenant_headers(tenant_id) if tenant_id is not None else None
+    if tenant_id is not None or forward_bearer:
+        headers = _tenant_headers(tenant_id)
+    else:
+        headers = None
     async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
         try:
             resp = await client.get(url, params=params, headers=headers)

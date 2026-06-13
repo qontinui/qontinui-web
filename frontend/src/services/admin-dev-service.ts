@@ -114,9 +114,14 @@ class AdminDevService {
    * Fetch the gates + rollout overview from coord (via the web proxy).
    * Throws on a non-2xx response (`httpClient.get` rejects with an Error
    * whose message embeds the status — parse with the page-side helpers).
+   *
+   * `opts.refresh` passes `?refresh=1` to bypass the backend's ~30s TTL
+   * cache (the manual Refresh button passes it; auto-poll does not, so the
+   * poll benefits from the cache).
    */
-  async getOverview(): Promise<DevOverview> {
-    return httpClient.get<DevOverview>(`${API}/overview`);
+  async getOverview(opts?: { refresh?: boolean }): Promise<DevOverview> {
+    const qs = opts?.refresh ? "?refresh=1" : "";
+    return httpClient.get<DevOverview>(`${API}/overview${qs}`);
   }
 }
 

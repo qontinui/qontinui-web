@@ -11,14 +11,19 @@
  *
  * Data: `adminDevService.getOverview()` → web backend
  * `GET /api/v1/admin-dev/overview` → coord `GET /coord/dev-overview`. The
- * frontend never talks to coord directly. Manual Refresh re-calls
- * getOverview (no auto-poll — gate/rollout state is operator-paced).
+ * frontend never talks to coord directly.
+ *
+ * Auto-refresh: opt-in, default ON, ~45s interval, with a "updated Xs ago"
+ * stamp that ticks every second and a pause/resume toggle. Polling cleans up
+ * its interval on unmount and never overlaps an in-flight request (an
+ * in-flight ref gates re-entry). Auto-poll reads through the backend's ~30s
+ * cache; manual Refresh passes `refresh:true` (`?refresh=1`) to bypass it.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Gauge, RefreshCw } from "lucide-react";
+import { Gauge, Pause, Play, RefreshCw } from "lucide-react";
 import {
   adminDevService,
   type DevOverview,
@@ -27,6 +32,10 @@ import { SummaryCards } from "./_components/SummaryCards";
 import { GatesTable } from "./_components/GatesTable";
 import { RolloutPanel } from "./_components/RolloutPanel";
 
+// Auto-refresh cadence. Slightly above the backend's ~30s cache TTL so a
+// poll usually lands a fresh server-side eval rather than a cache hit.
+const AUTO_REFRESH_MS = 45_000;
+
 function generatedAtLabel(iso: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);
@@ -34,29 +43,72 @@ function generatedAtLabel(iso: string | null): string {
   return d.toLocaleString();
 }
 
+function relativeAgoLabel(at: number | null, now: number): string {
+  if (at === null) return "";
+  const secs = Math.max(0, Math.round((now - at) / 1000));
+  if (secs < 5) return "updated just now";
+  if (secs < 60) return `updated ${secs}s ago`;
+  const mins = Math.floor(secs / 60);
+  const rem = secs % 60;
+  if (mins < 60) return rem ? `updated ${mins}m ${rem}s ago` : `updated ${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  return `updated ${hrs}h ${mins % 60}m ago`;
+}
+
 export default function CoordGatesPage() {
   const [overview, setOverview] = useState<DevOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+
+  // Wall-clock of the last successful load, and a 1s ticker that drives the
+  // "updated Xs ago" label without re-fetching.
+  const [updatedAt, setUpdatedAt] = useState<number | null>(null);
+  const [now, setNow] = useState<number>(() => Date.now());
+
+  // Guards against overlapping fetches (a slow request + a fired interval).
+  const inFlight = useRef(false);
 
   const load = useCallback(async (isRefresh: boolean) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
     if (isRefresh) setRefreshing(true);
     try {
-      const data = await adminDevService.getOverview();
+      const data = await adminDevService.getOverview(
+        isRefresh ? { refresh: true } : undefined,
+      );
       setOverview(data);
       setError(null);
+      setUpdatedAt(Date.now());
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
       setRefreshing(false);
+      inFlight.current = false;
     }
   }, []);
 
+  // Initial load.
   useEffect(() => {
     load(false);
   }, [load]);
+
+  // Auto-refresh interval (cleaned up on unmount / toggle off).
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const id = setInterval(() => {
+      load(false);
+    }, AUTO_REFRESH_MS);
+    return () => clearInterval(id);
+  }, [autoRefresh, load]);
+
+  // 1s ticker for the relative "updated Xs ago" stamp.
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
 
   return (
     <div className="p-3 sm:p-6 space-y-4" data-testid="coord-gates-page">
@@ -72,15 +124,39 @@ export default function CoordGatesPage() {
             </p>
           </div>
         </div>
-        <div className="ml-auto flex items-center gap-3">
-          {overview && (
+        <div className="ml-auto flex items-center gap-2 sm:gap-3">
+          {updatedAt !== null && (
             <span
-              className="text-xs text-muted-foreground hidden sm:inline"
-              data-testid="gates-generated-at"
+              className="text-xs text-muted-foreground hidden sm:inline tabular-nums"
+              data-testid="gates-updated-ago"
+              title={
+                overview
+                  ? `coord generated_at ${generatedAtLabel(overview.generated_at)}`
+                  : undefined
+              }
             >
-              as of {generatedAtLabel(overview.generated_at)}
+              {relativeAgoLabel(updatedAt, now)}
             </span>
           )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setAutoRefresh((v) => !v)}
+            data-testid="gates-autorefresh-toggle"
+            aria-pressed={autoRefresh}
+            title={
+              autoRefresh
+                ? "Auto-refresh on (~45s) — click to pause"
+                : "Auto-refresh paused — click to resume"
+            }
+          >
+            {autoRefresh ? (
+              <Pause className="h-3.5 w-3.5 mr-1" />
+            ) : (
+              <Play className="h-3.5 w-3.5 mr-1" />
+            )}
+            {autoRefresh ? "Auto" : "Paused"}
+          </Button>
           <Button
             variant="outline"
             size="sm"
