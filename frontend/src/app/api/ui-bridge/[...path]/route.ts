@@ -8,7 +8,10 @@
  * - GET  /commands/stream — SSE command delivery to browser
  * - POST /commands        — browser sends command responses
  * - POST /heartbeat       — browser heartbeat
- * - GET  /health          — transport diagnostics
+ * - GET  /health          — transport diagnostics (this module also merges
+ *                            `relayBus: "redis" | "in-memory" | "in-memory-degraded"`
+ *                            from `@/lib/ui-bridge/relay` so a single probe
+ *                            reveals whether cross-instance routing is live)
  * - GET  /tabs            — connected tab info
  *
  * All other routes are handled by the SDK's route matcher.
@@ -46,7 +49,7 @@ import {
   createNextRouteHandlers,
   SSEManager,
 } from "@qontinui/ui-bridge/server";
-import { handlers, relay } from "@/lib/ui-bridge/relay";
+import { handlers, relay, getRelayBusStatus } from "@/lib/ui-bridge/relay";
 import { NextRequest } from "next/server";
 import { passThroughBodyWithPeek } from "./body-passthrough";
 import { registrationBodyWithCallerId } from "./_caller-identity";
@@ -118,6 +121,36 @@ function noRelayClientsConnected(): boolean {
 
 function resolvePath(params: { path: string[] }): string {
   return "/" + params.path.join("/");
+}
+
+/**
+ * Merge the relay-bus transport status (`relay.ts::getRelayBusStatus`) into a
+ * `GET /health` JSON response so a single probe reveals whether cross-instance
+ * routing is live. Returns a fresh `Response` with `relayBus` added, or `null`
+ * when the body isn't a JSON object (forward the original untouched — never
+ * over-write a non-diagnostics body). The clone keeps the original consumable
+ * if augmentation bails.
+ */
+async function mergeRelayBusStatus(
+  response: Response,
+): Promise<Response | null> {
+  let body: unknown;
+  try {
+    body = await response.clone().json();
+  } catch {
+    return null;
+  }
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    return null;
+  }
+  const merged = { ...(body as Record<string, unknown>), relayBus: getRelayBusStatus() };
+  const headers = new Headers(response.headers);
+  headers.delete("content-length");
+  return new Response(JSON.stringify(merged), {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }
 
 async function wrapHandler(
@@ -247,6 +280,19 @@ async function wrapHandler(
   const response = await handler(forwardRequest, {
     params: { path: params.path.join("/") },
   });
+
+  // Relay-bus health surfacing (friction-2): the SDK's `/health` returns
+  // transport diagnostics but has no notion of whether the cross-instance
+  // relay BUS is live, degraded, or in-memory-by-design. Merge the module-level
+  // status from `relay.ts` so a single `GET /health` call answers
+  // `{ relayBus: "redis" | "in-memory" | "in-memory-degraded" }`. The degraded
+  // value is the alerting signal for the "navigate 200 but page never moves"
+  // class on serverless. Only the success (200, JSON) path is augmented; any
+  // error envelope is forwarded untouched.
+  if (method === "GET" && path === "/health" && response.ok) {
+    const augmented = await mergeRelayBusStatus(response);
+    if (augmented) return augmented;
+  }
 
   // Audit log (§4.8). Record one row per WRITE command the user issued
   // through the relay. Fire-and-forget: the `recordAudit` call doesn't
