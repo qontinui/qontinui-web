@@ -33,6 +33,16 @@ const LOCAL_EXTRA_SETTINGS: NavigationItem[] = [
     color: "#FFD700",
     platforms: ["web"],
   },
+  {
+    id: "settings-auto-response",
+    label: "Auto-Response Rules",
+    icon: "MessageSquare",
+    description:
+      "Fleet-wide rules that auto-respond to matching agent output",
+    route: "/settings/auto-response",
+    color: "#FFD700",
+    platforms: ["web"],
+  },
 ];
 
 function getSettingsNavItems(): {
