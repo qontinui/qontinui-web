@@ -14,6 +14,7 @@ from app.models.analytics_event import AnalyticsEvent
 from app.models.annotation import Annotation, AnnotationSet
 from app.models.application_profile import ApplicationProfile
 from app.models.audit_log import AuditLog
+from app.models.auto_response_rule import AutoResponseRule
 from app.models.automation import AutomationInputEvent
 from app.models.automation_log import AutomationLog
 from app.models.automation_screenshot import AutomationScreenshot
@@ -287,6 +288,8 @@ __all__ = [
     "DetectedIssue",
     # Finding Category Configs
     "FindingCategoryConfig",
+    # Auto-Response Rules (org-scoped, fleet-wide)
+    "AutoResponseRule",
     # Discoveries
     "Discovery",
     # State Discovery
