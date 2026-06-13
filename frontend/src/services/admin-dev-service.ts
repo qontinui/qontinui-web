@@ -101,6 +101,12 @@ export interface DevOverview {
   generated_at: string;
   gates: GateOverviewRow[];
   rollouts: RolloutOverview;
+  /**
+   * Present (set by the web proxy) when coord was unreachable/degraded and
+   * the envelope is empty as a result — the page surfaces it as a banner
+   * rather than showing a misleading "0 gates". Absent on a healthy fetch.
+   */
+  coord_error?: string;
 }
 
 class AdminDevService {

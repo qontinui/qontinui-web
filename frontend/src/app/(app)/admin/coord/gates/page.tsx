@@ -106,6 +106,17 @@ export default function CoordGatesPage() {
         </div>
       )}
 
+      {/* ---- coord-unavailable banner (proxy degraded to an empty envelope) ---- */}
+      {overview?.coord_error && (
+        <div
+          className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400"
+          data-testid="gates-coord-unavailable"
+        >
+          coord is currently unavailable ({overview.coord_error}) — showing no
+          gates or rollout state. Retry with Refresh.
+        </div>
+      )}
+
       {/* ---- Loading skeleton (first load) ---- */}
       {loading && !overview ? (
         <div className="space-y-4" data-testid="gates-loading">
