@@ -16,9 +16,9 @@ everywhere keeps the migration idempotent; the ``auth`` schema already exists
 (it owns ``auth.organizations`` / ``auth.users``) so it is NOT created here.
 No app-code imports, no backfill — the prod migrator container lacks app deps.
 
-down_revision chains off ``coord_plans_ingested_status`` — the single local
-head as reported by ``alembic heads`` at authoring time; the alembic-heads-pr
-CI gate is the authoritative single-head guard.
+down_revision chains off ``chkguard_02_parked_pr_head_sha`` — the slot coord
+assigned via ``/coord/migrations/reserve`` (position 2); the alembic-heads-pr
++ verify-claim CI gates are the authoritative single-head / reservation guard.
 """
 
 from collections.abc import Sequence
@@ -27,7 +27,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "autoresp01autoresprules"
-down_revision: str = "coord_plans_ingested_status"
+down_revision: str = "chkguard_02_parked_pr_head_sha"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
