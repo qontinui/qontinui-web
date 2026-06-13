@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { setProductMode } from "qontinui-navigation";
+import { setProductMode, setShowHiddenItems } from "@qontinui/navigation";
 import type { NavItem } from "../types";
 import { getWebNavItems } from "../shared-nav-adapter";
 import { devNavItems } from "../nav-items";
 import { useAuth } from "@/contexts/auth-context";
 import { useProductMode } from "@/contexts/product-mode-context";
+import { useAdvancedAutomation } from "@/contexts/advanced-automation-context";
 
 export function useSidebarNavigation() {
   const router = useRouter();
@@ -13,6 +14,7 @@ export function useSidebarNavigation() {
   const searchParams = useSearchParams();
   const { user, loading: authLoading } = useAuth();
   const { mode: productMode } = useProductMode();
+  const { showAdvancedAutomation } = useAdvancedAutomation();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -47,6 +49,7 @@ export function useSidebarNavigation() {
   // Sync product mode to the shared navigation package and rebuild items
   const allItems = useMemo(() => {
     setProductMode(productMode);
+    setShowHiddenItems(showAdvancedAutomation);
     const shared = getWebNavItems();
     // Insert devNavItems before SYSTEM so mode-specific items appear above
     // Settings/Help. Admin goes after SYSTEM (always last).
@@ -62,7 +65,7 @@ export function useSidebarNavigation() {
       ];
     }
     return [...shared, ...devNavItems];
-  }, [productMode]);
+  }, [productMode, showAdvancedAutomation]);
 
   const visibleNavItems = useMemo(() => {
     return filterNavItems(allItems);

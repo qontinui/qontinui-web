@@ -22,7 +22,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useNavigationItem, NavigationItemShell } from "qontinui-navigation";
+import { useNavigationItem, NavigationItemShell } from "@qontinui/navigation";
 import type { NavItem } from "./types";
 import { NestedSubGroup } from "./NestedSubGroup";
 
