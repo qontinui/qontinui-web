@@ -315,9 +315,7 @@ api_router.include_router(
 # Auto-response rules (org-scoped, fleet-wide). Operator CRUD router bakes its
 # full ``/organizations/...`` paths so it is mounted with NO prefix; the
 # runner-facing (device-JWT) router is mounted under ``/runner``.
-api_router.include_router(
-    auto_response_rules.router, tags=["auto-response-rules"]
-)
+api_router.include_router(auto_response_rules.router, tags=["auto-response-rules"])
 api_router.include_router(
     runner_auto_response_rules.router,
     prefix="/runner",
