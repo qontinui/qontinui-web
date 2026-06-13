@@ -44882,6 +44882,33 @@
         ]
       }
     },
+    "/api/v1/admin-dev/overview": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/dev-overview`` (gates + rollout overview).\n\nReturns coord's JSON envelope verbatim \u2014 the\n``{generated_at, gates, rollouts}`` contract the frontend\n``admin-dev-service`` types against. ``tenant_id`` is resolved only to\ntrigger bearer-forwarding (the overview is fleet-wide, not tenant-scoped\non the web side); coord authorizes on the forwarded operator bearer.",
+        "operationId": "api_v1_admin_dev_overview_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Dev Overview Api V1 Admin Dev Overview Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Dev Overview",
+        "tags": [
+          "admin-dev"
+        ]
+      }
+    },
     "/api/v1/admin/agent-sessions": {
       "get": {
         "description": "List agent sessions via coord's ``GET /coord/agent-sessions``.\n\nForwards the ``live`` / ``user_id`` / ``since`` / ``limit`` filters as\nquery params. ``limit`` (1..500) and the RFC3339 ``since`` are\nvalidated by FastAPI before forwarding. Returns coord's\n``{\"sessions\": [...], \"count\": N}`` envelope verbatim \u2014 the shape the\nfrontend expects.",
