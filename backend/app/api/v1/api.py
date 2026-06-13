@@ -21,6 +21,7 @@ See: D:/qontinui-root/qontinui-cloud-control/  (private repo)
 from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
+    admin_dev,
     agent_sessions,
     ai_prompts,
     analytics,
@@ -383,6 +384,11 @@ api_router.include_router(strategy.router, prefix="/strategy", tags=["strategy"]
 api_router.include_router(
     agent_sessions.router, prefix="/admin", tags=["admin-agent-sessions"]
 )
+# Superuser gates & rollout dashboard — proxies coord GET /coord/dev-overview.
+# NOTE: no prefix — the route already starts with /admin-dev, so the final
+# path is /api/v1/admin-dev/overview (it must NOT inherit agent_sessions'
+# /admin prefix).
+api_router.include_router(admin_dev.router, tags=["admin-dev"])
 
 # Cloud-control extension hook — no-op when no cloud-control package has
 # registered any route extensions. Cloud-control's
