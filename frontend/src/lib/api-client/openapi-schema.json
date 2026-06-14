@@ -56112,6 +56112,81 @@
         ]
       }
     },
+    "/api/v1/digital-twin/subspace/{subspace_id}/raw": {
+      "get": {
+        "description": "Raw ``DriftVerdict`` passthrough for one sub-space \u2014 the exact JSON an AI\nagent's ``tools/call`` receives. Backs Phase 2's \"show raw data\" button; the\ncontract is defined now so it is stable. Errors surface as coord's status\n(404 for a non-snapshot id, 502 for a tool failure) via ``_proxy_coord_get``.",
+        "operationId": "api_v1_digital_twin_subspace_subspace_id_raw_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "subspace_id",
+            "required": true,
+            "schema": {
+              "title": "Subspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Twin Subspace Raw Api V1 Digital Twin Subspace  Subspace Id  Raw Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Twin Subspace Raw",
+        "tags": [
+          "digital-twin"
+        ]
+      }
+    },
+    "/api/v1/digital-twin/subspaces": {
+      "get": {
+        "description": "Live numerator for the completeness matrix: a per-sub-space probe of\nevery fleet-wide snapshot twin observer.\n\nPer-tenant: the home tenant is resolved best-effort (and the caller's Cognito\nbearer captured for forwarding). The matrix reflects what coord can observe\nfor *their* tenant \u2014 flag-gated / tenant-scoped observers legitimately read\n``blind`` for some tenants. If coord/the tenant is unavailable we DEGRADE to\nan all-error matrix (HTTP 200), never 5xx.",
+        "operationId": "api_v1_digital_twin_subspaces_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Twin Subspaces Api V1 Digital Twin Subspaces Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Twin Subspaces",
+        "tags": [
+          "digital-twin"
+        ]
+      }
+    },
     "/api/v1/discoveries": {
       "get": {
         "description": "List discoveries with optional filtering.",

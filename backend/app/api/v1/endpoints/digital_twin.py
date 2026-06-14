@@ -27,14 +27,18 @@ from uuid import UUID
 
 import httpx
 import structlog
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
+from app.api.deps import get_current_active_user_async
 from app.api.v1.endpoints.operations import (
+    _caller_bearer,
+    _extract_caller_token,
     _proxy_coord_get,
     _tenant_headers,
     get_tenant_id,
 )
 from app.core.config import settings
+from app.services.coord_identity import get_coord_identity
 
 logger = structlog.get_logger(__name__)
 
@@ -163,18 +167,42 @@ async def _probe_subspace(
     }
 
 
+def _degraded_matrix(reason: str) -> dict[str, Any]:
+    """An all-error matrix returned (HTTP 200) when coord / the tenant cannot be
+    resolved — honest degradation, never a 5xx. The page must not hard-fail when
+    coord is down, and the Spec CI crawl gate flags a new route that 5xx's."""
+    return {
+        "subspaces": [
+            {"id": s, "status": "error", "error": reason} for s in _PROBEABLE_SUBSPACES
+        ],
+        "probed": len(_PROBEABLE_SUBSPACES),
+        "degraded": True,
+    }
+
+
 @router.get("/subspaces")
 async def get_twin_subspaces(
-    tenant_id: UUID = Depends(get_tenant_id),
+    request: Request,
+    _user=Depends(get_current_active_user_async),
 ) -> Any:
     """Live numerator for the completeness matrix: a per-sub-space probe of
     every fleet-wide snapshot twin observer.
 
-    Per-tenant: ``get_tenant_id`` resolves the operator's home tenant AND
-    captures the caller's Cognito bearer (forwarded to coord). The matrix the
-    user sees reflects what coord can observe for *their* tenant — flag-gated /
-    tenant-scoped observers legitimately read ``blind`` for some tenants.
+    Per-tenant: the home tenant is resolved best-effort (and the caller's Cognito
+    bearer captured for forwarding). The matrix reflects what coord can observe
+    for *their* tenant — flag-gated / tenant-scoped observers legitimately read
+    ``blind`` for some tenants. If coord/the tenant is unavailable we DEGRADE to
+    an all-error matrix (HTTP 200), never 5xx.
     """
+    _caller_bearer.set(_extract_caller_token(request))
+    try:
+        identity = await get_coord_identity(request)
+        tenant_id = identity.home_tenant_id
+    except Exception:  # coord unreachable / unresolvable — degrade, don't 5xx
+        tenant_id = None
+    if tenant_id is None:
+        return _degraded_matrix("coord_unavailable")
+
     cache_key = str(tenant_id)
     now = time.monotonic()
     cached = _MATRIX_CACHE.get(cache_key)
