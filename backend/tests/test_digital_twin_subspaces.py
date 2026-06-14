@@ -82,18 +82,23 @@ class TestClassify:
 def _build_test_app() -> FastAPI:
     from app.api.deps import get_current_active_user_async
     from app.api.v1.endpoints.digital_twin import router as dt_router
-    from app.api.v1.endpoints.operations import get_tenant_id
 
     test_app = FastAPI()
     mock_user = MagicMock()
     mock_user.id = uuid4()
     mock_user.is_active = True
     test_app.dependency_overrides[get_current_active_user_async] = lambda: mock_user
-    # Unique tenant per app build so the per-tenant TTL cache never bleeds
-    # between tests in the same process.
-    test_app.dependency_overrides[get_tenant_id] = lambda: uuid4()
+    # NOTE: the endpoint resolves the tenant by calling get_coord_identity()
+    # directly (not via a Depends), so tests that need a resolved tenant patch
+    # `digital_twin.get_coord_identity` rather than overriding a dependency.
     test_app.include_router(dt_router, prefix="/api/v1/digital-twin")
     return test_app
+
+
+def _resolved_identity(tenant_id=None):
+    """An AsyncMock standing in for get_coord_identity → a resolved home tenant
+    (fresh per call so the per-tenant TTL cache never bleeds between tests)."""
+    return AsyncMock(return_value=MagicMock(home_tenant_id=tenant_id or uuid4()))
 
 
 def _verdict_response(coverage, provenance, drift_class="ok") -> MagicMock:
@@ -139,7 +144,13 @@ class TestSubspacesEndpoint:
                 return _status_response(502)  # error
             return _verdict_response(1.0, "live_rds")  # default implemented
 
-        with patch("app.api.v1.endpoints.digital_twin.httpx.AsyncClient") as MockClient:
+        with (
+            patch(
+                "app.api.v1.endpoints.digital_twin.get_coord_identity",
+                new=_resolved_identity(),
+            ),
+            patch("app.api.v1.endpoints.digital_twin.httpx.AsyncClient") as MockClient,
+        ):
             instance = AsyncMock()
             instance.get.side_effect = fake_get
             instance.__aenter__ = AsyncMock(return_value=instance)
