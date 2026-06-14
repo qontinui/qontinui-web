@@ -11,7 +11,66 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Loader2, Save, Settings, FileText, Wrench, Info } from "lucide-react";
+import {
+  Loader2,
+  Save,
+  Settings,
+  FileText,
+  Wrench,
+  Info,
+  Sparkles,
+} from "lucide-react";
+import { useAdvancedAutomation } from "@/contexts/advanced-automation-context";
+
+/**
+ * Client-only "Show advanced automation features" toggle.
+ *
+ * Persisted in localStorage via {@link useAdvancedAutomation} (key
+ * `showAdvancedAutomation`). Rendered outside the runner-online gate because
+ * it's a pure UI preference that drives the shared navigation package's
+ * `setShowHiddenItems`, independent of any runner connection.
+ */
+function AdvancedAutomationSection() {
+  const { showAdvancedAutomation, setShowAdvancedAutomation } =
+    useAdvancedAutomation();
+
+  return (
+    <div className="rounded-lg border border-border">
+      <div className="px-4 py-3 border-b border-border bg-muted/50">
+        <h3 className="text-sm font-medium flex items-center gap-2">
+          <Sparkles className="size-4" />
+          Advanced Features
+        </h3>
+        <p className="text-xs text-muted-foreground">
+          Optional surfaces hidden from the sidebar by default
+        </p>
+      </div>
+      <div className="p-4 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="space-y-0.5">
+            <Label
+              htmlFor="show-advanced-automation"
+              className="text-sm text-foreground"
+            >
+              Show advanced automation features
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              Reveals the workflow-authoring tools (Workflow Builder, Step
+              Builders) in the sidebar. The Terminal/session flow is the primary
+              way to run AI work; these are advanced surfaces for building
+              reusable, gated, scheduled workflows.
+            </p>
+          </div>
+          <Switch
+            id="show-advanced-automation"
+            checked={showAdvancedAutomation}
+            onCheckedChange={setShowAdvancedAutomation}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function GeneralSettingsPage() {
   const { isOffline, isLoading: healthLoading } = useRunnerHealth();
@@ -71,7 +130,14 @@ export default function GeneralSettingsPage() {
   }
 
   if (isOffline) {
-    return <RunnerOfflineState />;
+    // The advanced-features toggle is a client-only UI preference and must
+    // remain available even when the runner is offline.
+    return (
+      <div className="p-6 space-y-6">
+        <AdvancedAutomationSection />
+        <RunnerOfflineState />
+      </div>
+    );
   }
 
   return (
@@ -101,6 +167,9 @@ export default function GeneralSettingsPage() {
           Save
         </Button>
       </div>
+
+      {/* Advanced Features Section (client-only UI preference) */}
+      <AdvancedAutomationSection />
 
       {/* Application Section */}
       <div className="rounded-lg border border-border">

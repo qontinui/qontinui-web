@@ -10,7 +10,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { useNavigationItem, NavigationItemShell } from "qontinui-navigation";
+import { useNavigationItem, NavigationItemShell } from "@qontinui/navigation";
 import type { NavItem } from "./types";
 
 export interface NestedSubGroupProps {
