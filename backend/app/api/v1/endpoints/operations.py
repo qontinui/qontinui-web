@@ -33,7 +33,7 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from qontinui_schemas.generated.per_type.memory_restore_request import (
     MemoryRestoreRequest,
@@ -89,16 +89,6 @@ from app.websockets.safe_send import safe_close, safe_send_json
 # Timeout for coord proxy reads. The merge queue is a small JSON payload
 # served from PG; if coord takes longer than 5s something is wrong.
 _COORD_TIMEOUT = httpx.Timeout(5.0)
-
-# Long-running coord endpoints that dispatch work to a paired device (e.g.,
-# the onboarding audit endpoint, which spawns the repo-auditor subagent and
-# blocks up to STARTER_PROFILE_WAIT_SECS=60s in
-# qontinui-coord/src/pr_merge/onboarding_routes.rs:69 waiting for the
-# auditor's STARTER_PROFILE write-back). The web proxy must outlast coord's
-# own in-handler deadline, otherwise the operator sees a spurious 504 while
-# coord is still legitimately working. 90s = coord's 60s wait + 30s slack
-# for agent-spawn round-trip and TLS/ALB overhead.
-_COORD_TIMEOUT_AUDIT = httpx.Timeout(90.0, connect=5.0)
 
 # Phase T2b — the legacy ``X-Qontinui-Tenant-Id`` email-bridge header is no
 # longer sent to coord. Coord resolves the operator/tenant from the
@@ -844,10 +834,11 @@ async def get_pr_merge_decisions(
 
 # ---- PR Merge Orchestrator Phase 8 D8.0 + D8.2 + D8.3 — onboarding --------
 #
-# Four proxies. precondition-status drives the wizard's polling loop on
-# step 2 ("Sign into Claude Code"); audit spawns the repo-auditor + waits
-# for STARTER_PROFILE; accept persists the (possibly hand-edited) profile;
-# profile-callback is the auditor-agent's write-back surface.
+# Five proxies. precondition-status drives the wizard's polling loop on
+# step 2 ("Sign into Claude Code"); audit dispatches the repo-auditor
+# (async, returns 202); audit-status is polled for the STARTER_PROFILE;
+# accept persists the (possibly hand-edited) profile; profile-callback is
+# the auditor-agent's write-back surface.
 
 
 @router.get("/pr-merge/onboarding/precondition-status")
@@ -868,24 +859,50 @@ async def get_pr_merge_onboarding_precondition(
 async def post_pr_merge_onboarding_audit(
     body: dict[str, Any],
     tenant_id: UUID = Depends(get_tenant_id),
-) -> Any:
-    """Spawn the repo-auditor subagent for the named repo + wait for the
-    STARTER_PROFILE. On precondition miss (no audit-capable device)
-    coord returns 409 with body ``{"error": "no_audit_capable_device",
-    "next_step": "pair_device"}`` — the dashboard surfaces this as a
-    redirect back to the pairing wizard, not a generic error toast.
+) -> JSONResponse:
+    """Dispatch the repo-auditor subagent for the named repo (async).
 
-    Uses ``_COORD_TIMEOUT_AUDIT`` (90s) instead of the default 5s because
-    coord blocks up to 60s in ``wait_for_starter_profile`` waiting for the
-    auditor subagent's write-back. With the default 5s timeout the web
-    proxy 504s 55s before coord ever gives up, masking the real coord-side
-    response (success or coord's own 504 with auditor diagnostics).
+    Coord now fire-and-forgets the auditor and immediately returns
+    ``202 {agent_id, repo, status: "running"}`` — the browser polls
+    ``/pr-merge/onboarding/audit-status`` for the STARTER_PROFILE instead of
+    blocking the connection for the audit's (multi-minute) duration. On a
+    precondition miss (no audit-capable device) coord returns 409 with body
+    ``{"error": "no_audit_capable_device", "next_step": "pair_device"}`` —
+    the dashboard surfaces this as a redirect back to the pairing wizard.
+
+    The proxy MUST pass coord's status code through: a bare JSON return would
+    be wrapped by FastAPI as ``200``, hiding the 202/running contract from
+    the browser. ``return_status=True`` surfaces ``(body, status)`` so we can
+    echo coord's 202 verbatim. Uses the default 5s timeout (the POST is now
+    fast — the slow audit work happens off-connection).
     """
-    return await _proxy_coord_post(
+    coord_body, status_code = await _proxy_coord_post(
         "/pr-merge/onboarding/audit",
         body,
         tenant_id=tenant_id,
-        timeout=_COORD_TIMEOUT_AUDIT,
+        return_status=True,
+    )
+    return JSONResponse(content=coord_body, status_code=status_code)
+
+
+@router.get("/pr-merge/onboarding/audit-status")
+async def get_pr_merge_onboarding_audit_status(
+    agent_id: str,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Poll the async repo-audit's status for the given ``agent_id``.
+
+    Coord runs ``poll_starter_profile_once(agent_id)`` once (stateless, no DB
+    writes) and returns ``{status: "running", agent_id}`` until the auditor
+    subagent writes back its STARTER_PROFILE, then
+    ``{status: "ready", agent_id, starter_profile, audit_confidence}`` (or
+    ``{status: "failed", agent_id, error}`` on a terminal error). The wizard
+    polls this every ~4s after receiving the 202 from the audit POST.
+    """
+    return await _proxy_coord_get(
+        "/pr-merge/onboarding/audit-status",
+        params={"agent_id": agent_id},
+        tenant_id=tenant_id,
     )
 
 
@@ -1159,6 +1176,7 @@ async def _proxy_coord_post(
     *,
     tenant_id: UUID | None = None,
     timeout: httpx.Timeout | None = None,
+    return_status: bool = False,
 ) -> Any:
     """Proxy a POST request to coord and return the JSON body.
 
@@ -1167,6 +1185,13 @@ async def _proxy_coord_post(
     (5s) which is appropriate for short JSON-from-PG endpoints. Endpoints
     that dispatch device-side work (e.g., onboarding audit) must pass an
     explicit longer timeout that outlasts coord's own in-handler deadline.
+    ``return_status`` — when True, return ``(json_body, status_code)`` instead
+    of just the JSON body, so the caller can surface coord's status code to
+    the browser (e.g. the async onboarding audit returns ``202`` and the
+    proxy must pass that through — FastAPI would otherwise wrap the bare JSON
+    body as ``200``). Coord 4xx/5xx still raise ``HTTPException`` either way;
+    this only distinguishes the <400 success codes. Default False preserves
+    the prior behavior exactly (returns just the JSON body).
     """
     url = f"{settings.COORD_URL}{path}"
     headers = _tenant_headers(tenant_id) if tenant_id is not None else None
@@ -1185,6 +1210,8 @@ async def _proxy_coord_post(
             )
     if resp.status_code >= 400:
         raise HTTPException(status_code=resp.status_code, detail=resp.text)
+    if return_status:
+        return resp.json(), resp.status_code
     return resp.json()
 
 

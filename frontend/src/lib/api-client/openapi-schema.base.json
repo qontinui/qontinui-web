@@ -67394,7 +67394,7 @@
     },
     "/api/v1/operations/pr-merge/onboarding/audit": {
       "post": {
-        "description": "Spawn the repo-auditor subagent for the named repo + wait for the\nSTARTER_PROFILE. On precondition miss (no audit-capable device)\ncoord returns 409 with body ``{\"error\": \"no_audit_capable_device\",\n\"next_step\": \"pair_device\"}`` \u2014 the dashboard surfaces this as a\nredirect back to the pairing wizard, not a generic error toast.\n\nUses ``_COORD_TIMEOUT_AUDIT`` (90s) instead of the default 5s because\ncoord blocks up to 60s in ``wait_for_starter_profile`` waiting for the\nauditor subagent's write-back. With the default 5s timeout the web\nproxy 504s 55s before coord ever gives up, masking the real coord-side\nresponse (success or coord's own 504 with auditor diagnostics).",
+        "description": "Dispatch the repo-auditor subagent for the named repo (async).\n\nCoord now fire-and-forgets the auditor and immediately returns\n``202 {agent_id, repo, status: \"running\"}`` \u2014 the browser polls\n``/pr-merge/onboarding/audit-status`` for the STARTER_PROFILE instead of\nblocking the connection for the audit's (multi-minute) duration. On a\nprecondition miss (no audit-capable device) coord returns 409 with body\n``{\"error\": \"no_audit_capable_device\", \"next_step\": \"pair_device\"}`` \u2014\nthe dashboard surfaces this as a redirect back to the pairing wizard.\n\nThe proxy MUST pass coord's status code through: a bare JSON return would\nbe wrapped by FastAPI as ``200``, hiding the 202/running contract from\nthe browser. ``return_status=True`` surfaces ``(body, status)`` so we can\necho coord's 202 verbatim. Uses the default 5s timeout (the POST is now\nfast \u2014 the slow audit work happens off-connection).",
         "operationId": "api_v1_operations_pr_merge_onboarding_audit_post",
         "requestBody": {
           "content": {
@@ -67412,9 +67412,7 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {
-                  "title": "Response Post Pr Merge Onboarding Audit Api V1 Operations Pr Merge Onboarding Audit Post"
-                }
+                "schema": {}
               }
             },
             "description": "Successful Response"
@@ -67436,6 +67434,54 @@
           }
         ],
         "summary": "Post Pr Merge Onboarding Audit",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/pr-merge/onboarding/audit-status": {
+      "get": {
+        "description": "Poll the async repo-audit's status for the given ``agent_id``.\n\nCoord runs ``poll_starter_profile_once(agent_id)`` once (stateless, no DB\nwrites) and returns ``{status: \"running\", agent_id}`` until the auditor\nsubagent writes back its STARTER_PROFILE, then\n``{status: \"ready\", agent_id, starter_profile, audit_confidence}`` (or\n``{status: \"failed\", agent_id, error}`` on a terminal error). The wizard\npolls this every ~4s after receiving the 202 from the audit POST.",
+        "operationId": "api_v1_operations_pr_merge_onboarding_audit_status_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Pr Merge Onboarding Audit Status Api V1 Operations Pr Merge Onboarding Audit Status Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Pr Merge Onboarding Audit Status",
         "tags": [
           "operations"
         ]
