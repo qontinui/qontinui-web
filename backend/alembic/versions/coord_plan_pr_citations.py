@@ -65,9 +65,12 @@ Idempotency / authorship posture
   ``CREATE``/``ALTER`` self-heal — the coord crate only SELECTs / INSERTs into
   this table.
 
-Stacked behind two in-flight migrations: ``down_revision`` is the coord-assigned
-slot predecessor ``autoresp01autoresprules`` (position 3). The CI alembic gate
-auto-rebinds this if the predecessor chain shifts before merge.
+Rebased onto the current single alembic head ``chkguard_02_parked_pr_head_sha``
+(2026-06-14): the originally-assigned slot predecessor ``autoresp01autoresprules``
+referenced an in-flight migration that never landed on ``main``, leaving this
+migration with a dangling ``down_revision`` (alembic ``KeyError`` → the
+multiple/unresolvable-heads CI failure). Re-pointed to the real head so the chain
+linearises.
 """
 
 from collections.abc import Sequence
@@ -76,7 +79,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_plan_pr_citations"
-down_revision: str | Sequence[str] | None = "autoresp01autoresprules"
+down_revision: str | Sequence[str] | None = "chkguard_02_parked_pr_head_sha"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
