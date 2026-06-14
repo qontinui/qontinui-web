@@ -27914,6 +27914,17 @@
             "title": "Is Healthy",
             "type": "boolean"
           },
+          "lan_reachable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lan Reachable"
+          },
           "last_heartbeat": {
             "title": "Last Heartbeat",
             "type": "string"
@@ -29358,6 +29369,17 @@
           "ip": {
             "title": "Ip",
             "type": "string"
+          },
+          "lan_reachable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lan Reachable"
           },
           "os": {
             "title": "Os",
@@ -44860,6 +44882,57 @@
         ]
       }
     },
+    "/api/v1/admin-dev/overview": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/dev-overview`` (gates + rollout overview).\n\nReturns coord's JSON envelope verbatim \u2014 the\n``{generated_at, gates, rollouts}`` contract the frontend\n``admin-dev-service`` types against. The overview is fleet-wide (not\ntenant-scoped on the web side); the caller bearer is forwarded so coord\nauthorizes on the operator identity. ``tenant_id`` is resolved\nbest-effort only (it may be ``None`` when coord identity resolution\nfails) and is used solely as the cache key \u2014 coord-down callers (key\n``None``) never share a cache entry with resolved ones.\n\nCaching: a fresh successful envelope is served from a ~30s in-process\ncache; ``?refresh=1`` bypasses it (the frontend Refresh button passes\nit). Degraded ``coord_error`` envelopes are never cached.\n\nWhen coord is unreachable/degraded (connect-refused \u2192 502, timeout \u2192\n504, etc.) the endpoint returns an empty envelope annotated with\n``coord_error`` rather than re-raising the 5xx, so the dashboard renders\na clear \"coord unavailable\" state instead of a broken page. Because\nidentity resolution no longer hard-fails the request, this covers a TOTAL\ncoord outage too (not just the case where ``/admin/coord/me`` happened to\nsucceed). The Spec CI crawl, which runs without a live coord, stays green.",
+        "operationId": "api_v1_admin_dev_overview_get",
+        "parameters": [
+          {
+            "description": "Bypass the ~30s in-process cache and refetch from coord.",
+            "in": "query",
+            "name": "refresh",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Bypass the ~30s in-process cache and refetch from coord.",
+              "title": "Refresh",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Dev Overview Api V1 Admin Dev Overview Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Dev Overview",
+        "tags": [
+          "admin-dev"
+        ]
+      }
+    },
     "/api/v1/admin/agent-sessions": {
       "get": {
         "description": "List agent sessions via coord's ``GET /coord/agent-sessions``.\n\nForwards the ``live`` / ``user_id`` / ``since`` / ``limit`` filters as\nquery params. ``limit`` (1..500) and the RFC3339 ``since`` are\nvalidated by FastAPI before forwarding. Returns coord's\n``{\"sessions\": [...], \"count\": N}`` envelope verbatim \u2014 the shape the\nfrontend expects.",
@@ -46447,7 +46520,7 @@
     },
     "/api/v1/auth/identities/{provider}": {
       "delete": {
-        "description": "Unlink ``provider`` from the caller.\n\nLockout guard: refuses (409) to remove the caller's last/only identity.",
+        "description": "Unlink a linked identity from the caller.\n\nTargets the identity matching ``provider`` (and ``user_id`` when given).\nLockout guard: refuses (409) to remove the caller's last/only identity.",
         "operationId": "api_v1_auth_identities_provider_delete",
         "parameters": [
           {
@@ -46457,6 +46530,24 @@
             "schema": {
               "title": "Provider",
               "type": "string"
+            }
+          },
+          {
+            "description": "Target a SPECIFIC linked identity by its provider user id. Required to disambiguate when an account has multiple identities of the same provider (e.g. two Google accounts, or one account double-linked by oid + sub); omitting it falls back to the first provider match.",
+            "in": "query",
+            "name": "user_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Target a SPECIFIC linked identity by its provider user id. Required to disambiguate when an account has multiple identities of the same provider (e.g. two Google accounts, or one account double-linked by oid + sub); omitting it falls back to the first provider match.",
+              "title": "User Id"
             }
           }
         ],
@@ -52967,7 +53058,7 @@
     },
     "/api/v1/devices/pair-codes/{code}/redeem": {
       "post": {
-        "description": "Redeem a single-use pair code for a device JWT.\n\n**UNAUTHENTICATED ON PURPOSE.** This endpoint deliberately requires\nNO operator JWT \u2014 the pair code IS the credential. The runner has\nno operator JWT yet (that's why it needs to pair), so any\nauth-gated alternative would defeat the entire flow.\n\nThe resulting device JWT is tenant-scoped to the **code's**\nmint-time tenant, NOT to anything the runner asserts in the request\nbody. The runner's ``device_id`` is recorded but used only as the\nnew device's stable identity \u2014 the runner cannot escalate to a\ndifferent tenant by claiming a different ``device_id``.\n\nReturns:\n\n* **200** + :class:`PairCodeRedeemOut` on success.\n* **404** if the code doesn't exist (or never did).\n* **409** if the code has already been redeemed (single-use).\n* **410** if the code has expired.\n* **502** if the downstream coord ``pair-cli`` call fails.",
+        "description": "Redeem a single-use pair code for a device JWT.\n\n**UNAUTHENTICATED ON PURPOSE.** This endpoint deliberately requires\nNO operator JWT \u2014 the pair code IS the credential. The runner has\nno operator JWT yet (that's why it needs to pair), so any\nauth-gated alternative would defeat the entire flow.\n\nThe resulting device JWT is tenant-scoped to the **code's**\nmint-time tenant, NOT to anything the runner asserts in the request\nbody. The runner's ``device_id`` is recorded but used only as the\nnew device's stable identity \u2014 the runner cannot escalate to a\ndifferent tenant by claiming a different ``device_id``.\n\nReturns:\n\n* **200** + :class:`PairCodeRedeemOut` on success.\n* **404** if the code doesn't exist (or never did).\n* **409** if the code has already been redeemed (single-use).\n* **410** if the code has expired.\n* **502** if the downstream coord ``pair-cli`` call fails.\n* **503** + ``Retry-After`` if coord is temporarily unavailable\n  (e.g. mid-deploy) after the proxy's connect-failure retries.\n* **504** if coord did not respond in time (no retry \u2014 the request\n  may have been processed).",
         "operationId": "api_v1_devices_pair_codes_code_redeem_post",
         "parameters": [
           {
@@ -63276,7 +63367,7 @@
     },
     "/api/v1/operations/claims/list": {
       "get": {
-        "description": "List active claims by kind + resource_key prefix.\n\nForwards the operator bearer (via ``get_tenant_id`` \u2192 ``tenant_id=``)\nso coord can authenticate the operator once it gates this route\n(fleet-auth P2/D6). Backward-compatible while coord is anonymous.",
+        "description": "List active claims by kind + resource_key prefix, tenant-scoped.\n\nCoord's ``/coord/claims/list`` tenant-scopes optionally (plan\n2026-05-24-symbol-claim-tenant-scoping, qontinui-coord#528): the\nforwarded operator bearer (``tenant_id=`` kwarg \u2192 fleet-auth P2/D6)\nalready derives the scope server-side; the explicit ``tenant_id``\nQUERY param on top makes coord assert param == bearer home tenant,\nso a web bug forwarding the wrong tenant is rejected 403 instead of\nsilently widening the view. Mirrors the symbol-claims proxy (#559).",
         "operationId": "api_v1_operations_claims_list_get",
         "parameters": [
           {
@@ -63748,6 +63839,55 @@
           }
         ],
         "summary": "Update Composition Rule",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/devices/pair-start": {
+      "post": {
+        "description": "Proxy POST /coord/devices/pair-start with server-injected tenant_id.\n\nCoord's pair-start is a public route whose PairStartRequest requires\ntenant_id in the body (routes_phase3.rs:1035). The web proxy is the\nenforcement point: it resolves the operator's home tenant via\nget_tenant_id and injects it into the body before forwarding, so the\nfrontend never has to know or pass the tenant_id.",
+        "operationId": "api_v1_operations_coord_devices_pair_start_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Coord Devices Pair Start Api V1 Operations Coord Devices Pair Start Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Coord Devices Pair Start",
         "tags": [
           "operations"
         ]
@@ -64678,7 +64818,7 @@
     },
     "/api/v1/operations/fleet": {
       "get": {
-        "description": "Return the user's fleet (runners + cross-machine Claude sessions).\n\nResponse shape:\n    ``{ \"runners\": list[Runner], \"claude_sessions\": dict[hostname, list[ClaudeSession]] }``\n\nThe ``runners`` list uses the canonical wire shape (with\n``derived_status``, ``ws_connected``, ...). The ``claude_sessions``\nsection comes from the in-memory cross-machine fleet registry.",
+        "description": "Return the user's fleet (runners + cross-machine Claude sessions).\n\nResponse shape:\n    ``{ \"runners\": list[Runner], \"claude_sessions\": dict[hostname, list[ClaudeSession]],\n    \"total_runners\": int, \"total_healthy\": int, \"total_running_tasks\": int,\n    \"total_claude_sessions\": int }``\n\nThe ``runners`` list uses the canonical wire shape (with\n``derived_status``, ``ws_connected``, ...). The ``claude_sessions``\nsection comes from the in-memory cross-machine fleet registry.\n\nThe ``total_*`` aggregates feed the FleetOverview stat row\n(``frontend/src/components/operations/FleetOverview.tsx`` reads\n``total_runners`` / ``total_healthy`` / ``total_running_tasks``):\n\n* ``total_runners`` \u2014 every runner in the merged list (DB-paired +\n  heartbeat-only beacons).\n* ``total_healthy`` \u2014 merged-list entries whose ``derivedStatus`` is\n  ``\"healthy\"`` (same staleness-gated derivation the list itself uses).\n* ``total_running_tasks`` \u2014 heartbeat-reported running-task counts from\n  the beacon registry (no live fan-out to runners on this poll path;\n  ``GET /fleet/tasks`` remains the live-fetch surface).",
         "operationId": "api_v1_operations_fleet_get",
         "responses": {
           "200": {
@@ -66253,6 +66393,64 @@
         ]
       }
     },
+    "/api/v1/operations/migrations/queue": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/migrations/queue?repo=<owner/repo>``.\n\nThe coord-authoritative migration-reservation queue read-side: the\nordered live set (``queued`` / ``pr_bound``, each carrying its 1-based\n``position``) plus the last ``terminal_limit`` terminal rows. Backs the\nOperations dashboard's Migration Queue tile.\n\n``repo`` is required \u2014 coord 400s without it, since the queue is\nper-repo. Fleet-wide read; ``tenant_id`` is resolved only to forward the\noperator bearer so coord requires an authenticated operator (same posture\nas ``/merge/queue`` and ``/pr-merge/prs``).",
+        "operationId": "api_v1_operations_migrations_queue_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "title": "Repo",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "terminal_limit",
+            "required": false,
+            "schema": {
+              "default": 5,
+              "title": "Terminal Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Migrations Queue Api V1 Operations Migrations Queue Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Migrations Queue",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/plans": {
       "get": {
         "description": "List entries from ``coord.plans`` via coord (tenant-scoped).",
@@ -66881,7 +67079,7 @@
     },
     "/api/v1/operations/pr-merge/onboarding/audit": {
       "post": {
-        "description": "Spawn the repo-auditor subagent for the named repo + wait for the\nSTARTER_PROFILE. On precondition miss (no audit-capable device)\ncoord returns 409 with body ``{\"error\": \"no_audit_capable_device\",\n\"next_step\": \"pair_device\"}`` \u2014 the dashboard surfaces this as a\nredirect back to the pairing wizard, not a generic error toast.",
+        "description": "Spawn the repo-auditor subagent for the named repo + wait for the\nSTARTER_PROFILE. On precondition miss (no audit-capable device)\ncoord returns 409 with body ``{\"error\": \"no_audit_capable_device\",\n\"next_step\": \"pair_device\"}`` \u2014 the dashboard surfaces this as a\nredirect back to the pairing wizard, not a generic error toast.\n\nUses ``_COORD_TIMEOUT_AUDIT`` (90s) instead of the default 5s because\ncoord blocks up to 60s in ``wait_for_starter_profile`` waiting for the\nauditor subagent's write-back. With the default 5s timeout the web\nproxy 504s 55s before coord ever gives up, masking the real coord-side\nresponse (success or coord's own 504 with auditor diagnostics).",
         "operationId": "api_v1_operations_pr_merge_onboarding_audit_post",
         "requestBody": {
           "content": {
@@ -67110,6 +67308,55 @@
           }
         ],
         "summary": "Patch Pr Merge Repo Profile",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/pr-merge/rollout": {
+      "post": {
+        "description": "Rollout promote \u2014 set the tenant's (or a specific repo's)\nrollout_state to an arbitrary target. Body shape::\n\n    {\n        \"scope\": \"tenant\" | \"repo:<owner/name>\",\n        \"state\": \"dry_run\" | \"shadow\" | \"live\",\n        \"reason\": \"<operator's stated reason>\",\n        \"force\": false\n    }\n\nThe promote counterpart to the kill-switch's downward-only flip.\nCoord:\n1. Verifies the tenant owns the repo (when scope=repo).\n2. UPSERTs the per-tenant or per-repo ``rollout_state`` (a\n   never-configured repo is created rather than no-op'd).\n3. Requires the current resolved state to be ``shadow`` when\n   promoting to ``live`` unless ``force=true``.\n4. Invalidates the settings cache + writes a\n   ``coord.user_overrides(override_kind='rollout_promote')`` audit\n   row.\n\nCoord additionally rejects non-interactive bearers on this mutation\n(``403 non_interactive_write_forbidden``) \u2014 the promote is reserved\nfor a logged-in dashboard session, which is exactly what this proxy\nforwards.\n\nReturns ``{ \"scope\", \"state\", \"affected_repos\" }``.",
+        "operationId": "api_v1_operations_pr_merge_rollout_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Pr Merge Rollout Api V1 Operations Pr Merge Rollout Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Pr Merge Rollout",
         "tags": [
           "operations"
         ]

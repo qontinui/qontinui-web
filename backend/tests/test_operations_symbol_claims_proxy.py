@@ -14,6 +14,11 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+# Fixed operator tenant so tests can assert the proxy forwards exactly
+# this value as coord's ``?tenant_id=`` scope param (plan
+# 2026-05-24-symbol-claim-tenant-scoping Phase 2).
+TEST_TENANT_ID = uuid4()
+
 
 def _build_test_app(*, authenticated: bool = True) -> FastAPI:
     from app.api.deps import get_current_active_user_async
@@ -31,7 +36,7 @@ def _build_test_app(*, authenticated: bool = True) -> FastAPI:
         # The symbol-claims proxy now depends on get_tenant_id (fleet-auth
         # P2/D6 — forwards the operator bearer). Override it so the proxy
         # path doesn't hit a real DB / coord for tenant resolution.
-        test_app.dependency_overrides[get_tenant_id] = lambda: uuid4()
+        test_app.dependency_overrides[get_tenant_id] = lambda: TEST_TENANT_ID
     test_app.include_router(operations_router, prefix="/api/v1/operations")
     return test_app
 
@@ -99,6 +104,31 @@ class TestGetSymbolClaims:
         called_params = instance.get.call_args.kwargs.get("params", {})
         assert called_params.get("kind") == "symbol"
         assert called_params.get("prefix") == ""
+
+    def test_tenant_scope_forwarded_as_query_param(self, auth_client: TestClient):
+        """The operator's resolved tenant rides the QUERY STRING.
+
+        Coord reads the scope from ``ListQuery.tenant_id`` and asserts it
+        against the forwarded bearer's home tenant — the ``tenant_id=``
+        kwarg of ``_proxy_coord_get`` alone only triggers
+        bearer-forwarding and puts nothing on the wire (the forwarding
+        trap called out in plan 2026-05-24-symbol-claim-tenant-scoping).
+        """
+        coord_payload = {
+            "kind": "symbol",
+            "prefix": "",
+            "holders": [],
+            "truncated": False,
+        }
+        mock_resp = _mock_response(json_data=coord_payload)
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = mock_resp
+            _configure_mock_client(MockClient, instance)
+            resp = auth_client.get(f"{API_PREFIX}/symbol-claims")
+        assert resp.status_code == 200
+        called_params = instance.get.call_args.kwargs.get("params", {})
+        assert called_params.get("tenant_id") == str(TEST_TENANT_ID)
 
     def test_limit_forwarded(self, auth_client: TestClient):
         coord_payload = {

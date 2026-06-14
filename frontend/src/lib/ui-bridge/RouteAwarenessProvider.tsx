@@ -46,21 +46,28 @@ export function RouteAwarenessProvider({
   });
 
   // Register client-side navigation handler for UI Bridge pageNavigate commands.
-  // This allows navigate commands to use Next.js router.push() instead of
-  // window.location.href, which would destroy the SSE connection and React tree.
+  // This allows navigate commands to use Next.js router.push() instead of raw
+  // history.pushState / window.location.href — pushState updates the URL bar
+  // but the App Router never re-renders (useSearchParams stays stale), and a
+  // location assignment destroys the SSE connection and React tree.
+  //
+  // Mount-order robustness: the SDK creates `window.__UI_BRIDGE__` lazily and
+  // always MERGES into an existing object, never clobbers (0.13.0
+  // `w.__UI_BRIDGE__ ?? (w.__UI_BRIDGE__ = {})`), and reads `navigateHandler`
+  // off the global at command time. So when the global doesn't exist yet at
+  // mount (provider mounts before SDK init), we create it ourselves instead of
+  // silently no-oping — the old `if (g)` guard never retried, leaving soft
+  // navigation on the raw-pushState fallback for the whole session.
   useEffect(() => {
-    const g = (window as Record<string, unknown>).__UI_BRIDGE__ as
-      | (Record<string, unknown> & { navigateHandler?: (url: string) => void })
-      | undefined;
-    if (g) {
-      g.navigateHandler = (url: string) => router.push(url);
-    }
+    const w = window as unknown as {
+      __UI_BRIDGE__?: Record<string, unknown> & {
+        navigateHandler?: (url: string) => void;
+      };
+    };
+    const g = w.__UI_BRIDGE__ ?? (w.__UI_BRIDGE__ = {});
+    g.navigateHandler = (url: string) => router.push(url);
     return () => {
-      const g2 = (window as Record<string, unknown>).__UI_BRIDGE__ as
-        | (Record<string, unknown> & {
-            navigateHandler?: (url: string) => void;
-          })
-        | undefined;
+      const g2 = w.__UI_BRIDGE__;
       if (g2) delete g2.navigateHandler;
     };
   }, [router]);

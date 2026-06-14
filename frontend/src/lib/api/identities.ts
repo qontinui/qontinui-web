@@ -74,21 +74,25 @@ export class UnlinkIdentityError extends Error {
 }
 
 /**
- * DELETE a linked provider. On 409 (lockout guard — last/native identity) the
- * server's human-readable reason is surfaced via `UnlinkIdentityError` so the
- * UI can explain WHY the unlink was refused (no-surprise reversibility).
- * Returns the refreshed identity list.
+ * DELETE a linked provider. Pass `userId` to target a SPECIFIC identity when the
+ * provider has more than one linked (two Google accounts, or one account
+ * double-linked) — without it the server removes the first provider match.
+ * On 409 (lockout guard — last/native identity) the server's human-readable
+ * reason is surfaced via `UnlinkIdentityError` so the UI can explain WHY the
+ * unlink was refused (no-surprise reversibility). Returns the refreshed list.
  */
 export async function unlinkIdentity(
-  provider: string
+  provider: string,
+  userId?: string | null
 ): Promise<IdentityListResponse> {
   // Use the raw fetch wrapper (not `httpClient.delete`) so we can read the
   // error body and distinguish the 409 lockout from a generic failure. The
   // `.get/.post` helpers prepend the API base for us, but the raw `.fetch`
   // does not, so build the absolute URL here (same as those helpers do).
+  const query = userId ? `?user_id=${encodeURIComponent(userId)}` : "";
   const url = `${ApiConfig.getBaseUrl()}${IDENTITIES_PATH}/${encodeURIComponent(
     provider
-  )}`;
+  )}${query}`;
   const res = await httpClient.fetch(url, {
     method: "DELETE",
   });

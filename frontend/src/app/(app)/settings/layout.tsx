@@ -6,7 +6,7 @@ import {
   SETTINGS_ITEMS,
   isItemAvailable,
   type NavigationItem,
-} from "qontinui-navigation";
+} from "@qontinui/navigation";
 import { resolveIcon } from "@/components/navigation/sidebar/icon-resolver";
 
 /**
@@ -23,6 +23,15 @@ const LOCAL_EXTRA_SETTINGS: NavigationItem[] = [
     description: "Opt in to the AI co-pilot and view activity audit log",
     route: "/settings/co-pilot",
     color: "#FFD700",
+  },
+  {
+    id: "settings-notifications",
+    label: "Notifications",
+    icon: "Bell",
+    description: "Per-type notification delivery preferences (in-app and email)",
+    route: "/settings/notifications",
+    color: "#FFD700",
+    platforms: ["web"],
   },
 ];
 

@@ -86,6 +86,7 @@ vi.mock("@/lib/ui-bridge/relay", () => {
       PUT: fakeHandler,
       DELETE: fakeHandler,
     },
+    getRelayBusStatus: () => "in-memory",
   };
 });
 

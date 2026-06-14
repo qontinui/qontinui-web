@@ -217,6 +217,15 @@ class ErrorCode(StrEnum):
     UNPROCESSABLE_ENTITY = "UNPROCESSABLE_ENTITY"
     """Generic unprocessable entity error"""
 
+    BAD_GATEWAY = "BAD_GATEWAY"
+    """An upstream service returned an invalid response"""
+
+    SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE"
+    """A required service is temporarily unavailable; retryable"""
+
+    GATEWAY_TIMEOUT = "GATEWAY_TIMEOUT"
+    """An upstream service did not respond in time"""
+
 
 # Mapping of HTTP status codes to default error codes
 DEFAULT_ERROR_CODES = {
@@ -229,6 +238,9 @@ DEFAULT_ERROR_CODES = {
     423: ErrorCode.RESOURCE_LOCKED,
     429: ErrorCode.RATE_LIMIT_EXCEEDED,
     500: ErrorCode.INTERNAL_SERVER_ERROR,
+    502: ErrorCode.BAD_GATEWAY,
+    503: ErrorCode.SERVICE_UNAVAILABLE,
+    504: ErrorCode.GATEWAY_TIMEOUT,
 }
 
 

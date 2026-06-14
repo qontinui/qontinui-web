@@ -19,11 +19,13 @@ import {
   BookOpen,
   Boxes,
   FileText,
+  Gauge,
   GitBranch,
   GitMerge,
   GitPullRequest,
   History as HistoryIcon,
   Inbox,
+  Plug,
   Rocket,
   Scale,
   ScrollText,
@@ -58,6 +60,12 @@ const PRIMARY_TABS: NavItem[] = [
     label: "Plans",
     icon: FileText,
     testId: "coord-nav-plans",
+  },
+  {
+    href: "/admin/coord/gates",
+    label: "Gates",
+    icon: Gauge,
+    testId: "coord-nav-gates",
   },
   {
     href: "/admin/coord/spawn",
@@ -130,6 +138,18 @@ const PRIMARY_TABS: NavItem[] = [
     label: "Pull Decisions",
     icon: GitPullRequest,
     testId: "coord-nav-pull-decisions",
+  },
+  {
+    href: "/admin/coord/onboarding",
+    label: "Onboarding",
+    icon: Plug,
+    testId: "coord-nav-onboarding",
+  },
+  {
+    href: "/admin/coord/merge-settings",
+    label: "Merge Settings",
+    icon: GitMerge,
+    testId: "coord-nav-merge-settings",
   },
 ];
 

@@ -90,6 +90,16 @@ from app.websockets.safe_send import safe_close, safe_send_json
 # served from PG; if coord takes longer than 5s something is wrong.
 _COORD_TIMEOUT = httpx.Timeout(5.0)
 
+# Long-running coord endpoints that dispatch work to a paired device (e.g.,
+# the onboarding audit endpoint, which spawns the repo-auditor subagent and
+# blocks up to STARTER_PROFILE_WAIT_SECS=60s in
+# qontinui-coord/src/pr_merge/onboarding_routes.rs:69 waiting for the
+# auditor's STARTER_PROFILE write-back). The web proxy must outlast coord's
+# own in-handler deadline, otherwise the operator sees a spurious 504 while
+# coord is still legitimately working. 90s = coord's 60s wait + 30s slack
+# for agent-spawn round-trip and TLS/ALB overhead.
+_COORD_TIMEOUT_AUDIT = httpx.Timeout(90.0, connect=5.0)
+
 # Phase T2b — the legacy ``X-Qontinui-Tenant-Id`` email-bridge header is no
 # longer sent to coord. Coord resolves the operator/tenant from the
 # forwarded Cognito bearer (``resolve_operator_optional`` middleware,
@@ -203,7 +213,7 @@ async def require_coord_tenant_admin(
     return identity.home_tenant_id
 
 
-def _tenant_headers(tenant_id: UUID) -> dict[str, str]:
+def _tenant_headers(tenant_id: UUID | None) -> dict[str, str]:
     """Build the request-headers dict forwarded to coord.
 
     Phase T2b — forwards ONLY the caller's Cognito bearer
@@ -212,7 +222,9 @@ def _tenant_headers(tenant_id: UUID) -> dict[str, str]:
     (the ``resolve_operator_optional`` middleware), so the legacy
     ``X-Qontinui-Tenant-Id`` email-bridge header is no longer sent. The
     ``tenant_id`` arg is retained for call-site compatibility (callers still
-    resolve + pass it) but no longer goes on the wire.
+    resolve + pass it) but no longer goes on the wire — so ``None`` is
+    accepted (the ``forward_bearer`` path forwards the bearer without a
+    resolved tenant).
     """
     headers: dict[str, str] = {}
     token = _caller_bearer.get()
@@ -261,11 +273,25 @@ async def get_fleet_status(
     """Return the user's fleet (runners + cross-machine Claude sessions).
 
     Response shape:
-        ``{ "runners": list[Runner], "claude_sessions": dict[hostname, list[ClaudeSession]] }``
+        ``{ "runners": list[Runner], "claude_sessions": dict[hostname, list[ClaudeSession]],
+        "total_runners": int, "total_healthy": int, "total_running_tasks": int,
+        "total_claude_sessions": int }``
 
     The ``runners`` list uses the canonical wire shape (with
     ``derived_status``, ``ws_connected``, ...). The ``claude_sessions``
     section comes from the in-memory cross-machine fleet registry.
+
+    The ``total_*`` aggregates feed the FleetOverview stat row
+    (``frontend/src/components/operations/FleetOverview.tsx`` reads
+    ``total_runners`` / ``total_healthy`` / ``total_running_tasks``):
+
+    * ``total_runners`` — every runner in the merged list (DB-paired +
+      heartbeat-only beacons).
+    * ``total_healthy`` — merged-list entries whose ``derivedStatus`` is
+      ``"healthy"`` (same staleness-gated derivation the list itself uses).
+    * ``total_running_tasks`` — heartbeat-reported running-task counts from
+      the beacon registry (no live fan-out to runners on this poll path;
+      ``GET /fleet/tasks`` remains the live-fetch surface).
     """
     runners = await runner_crud.list_runners(db, current_user.id)
     wire_runners = [_runner_to_wire(r).model_dump(mode="json") for r in runners]
@@ -286,6 +312,9 @@ async def get_fleet_status(
                 "name": beacon.instance_name or "primary",
                 "hostname": beacon.hostname,
                 "ipAddress": beacon.ip,
+                # None = runner predates the field (assume reachable);
+                # False = the advertised LAN ip is loopback-bound/dead.
+                "lanReachable": beacon.lan_reachable,
                 "port": beacon.port,
                 "os": beacon.os,
                 "osVersion": beacon.os_version,
@@ -320,6 +349,11 @@ async def get_fleet_status(
             hostname: [s.model_dump(mode="json") for s in sessions]
             for hostname, sessions in fleet_status.claude_sessions.items()
         },
+        "total_runners": len(wire_runners),
+        "total_healthy": sum(
+            1 for r in wire_runners if r.get("derivedStatus") == "healthy"
+        ),
+        "total_running_tasks": fleet_status.total_running_tasks,
         "total_claude_sessions": fleet_status.total_claude_sessions,
     }
 
@@ -420,6 +454,7 @@ async def _proxy_coord_get(
     *,
     params: dict[str, Any] | None = None,
     tenant_id: UUID | None = None,
+    forward_bearer: bool = False,
 ) -> Any:
     """Proxy a GET request to coord and return the JSON body.
 
@@ -434,11 +469,31 @@ async def _proxy_coord_get(
     resolved tenant. Fleet-wide endpoints (``/merge/queue``,
     ``/pr-merge/prs``) ALSO pass it now — not to scope (they stay
     fleet-wide) but to forward the bearer so coord requires an
-    authenticated operator. Only truly anonymous callers (``/claims/*``)
-    leave it ``None``.
+    authenticated operator.
+
+    NOTE: this kwarg puts NOTHING on the wire itself (the legacy
+    ``X-Qontinui-Tenant-Id`` header was retired in fleet-auth T2b) — it
+    only triggers bearer-forwarding. An endpoint that needs coord to
+    *assert* the tenant (the claims read paths,
+    plan 2026-05-24-symbol-claim-tenant-scoping) must ALSO put
+    ``tenant_id`` in ``params`` so it rides the query string.
+
+    ``forward_bearer`` — forward the captured caller bearer EVEN WHEN
+    ``tenant_id is None``. The bearer/tenant coupling exists only because
+    historically every proxy resolved a tenant first (which also captured
+    the bearer). A fleet-wide endpoint that must keep forwarding the
+    operator bearer while tolerating coord-down identity resolution (so
+    total outage degrades to a banner rather than 502ing in the
+    dependency, ``/admin-dev/overview``) sets this True and passes its
+    best-effort ``tenant_id`` (possibly ``None``). Default False preserves
+    the prior behavior exactly: no bearer is forwarded unless a tenant was
+    resolved.
     """
     url = f"{settings.COORD_URL}{path}"
-    headers = _tenant_headers(tenant_id) if tenant_id is not None else None
+    if tenant_id is not None or forward_bearer:
+        headers = _tenant_headers(tenant_id)
+    else:
+        headers = None
     async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
         try:
             resp = await client.get(url, params=params, headers=headers)
@@ -493,6 +548,31 @@ async def get_pr_merge_prs(
     (operator decision 2026-05-31), mirroring ``/merge/queue``.
     """
     return await _proxy_coord_get("/pr-merge/prs", tenant_id=tenant_id)
+
+
+@router.get("/migrations/queue")
+async def get_migrations_queue(
+    repo: str,
+    terminal_limit: int = 5,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Proxy coord's ``GET /coord/migrations/queue?repo=<owner/repo>``.
+
+    The coord-authoritative migration-reservation queue read-side: the
+    ordered live set (``queued`` / ``pr_bound``, each carrying its 1-based
+    ``position``) plus the last ``terminal_limit`` terminal rows. Backs the
+    Operations dashboard's Migration Queue tile.
+
+    ``repo`` is required — coord 400s without it, since the queue is
+    per-repo. Fleet-wide read; ``tenant_id`` is resolved only to forward the
+    operator bearer so coord requires an authenticated operator (same posture
+    as ``/merge/queue`` and ``/pr-merge/prs``).
+    """
+    return await _proxy_coord_get(
+        "/coord/migrations/queue",
+        params={"repo": repo, "terminal_limit": terminal_limit},
+        tenant_id=tenant_id,
+    )
 
 
 # ---- PR Merge Orchestrator Phase 2 D2.4 — per-tenant settings ------------
@@ -794,11 +874,18 @@ async def post_pr_merge_onboarding_audit(
     coord returns 409 with body ``{"error": "no_audit_capable_device",
     "next_step": "pair_device"}`` — the dashboard surfaces this as a
     redirect back to the pairing wizard, not a generic error toast.
+
+    Uses ``_COORD_TIMEOUT_AUDIT`` (90s) instead of the default 5s because
+    coord blocks up to 60s in ``wait_for_starter_profile`` waiting for the
+    auditor subagent's write-back. With the default 5s timeout the web
+    proxy 504s 55s before coord ever gives up, masking the real coord-side
+    response (success or coord's own 504 with auditor diagnostics).
     """
     return await _proxy_coord_post(
         "/pr-merge/onboarding/audit",
         body,
         tenant_id=tenant_id,
+        timeout=_COORD_TIMEOUT_AUDIT,
     )
 
 
@@ -814,6 +901,45 @@ async def post_pr_merge_onboarding_accept(
     """
     return await _proxy_coord_post(
         "/pr-merge/onboarding/accept",
+        body,
+        tenant_id=tenant_id,
+    )
+
+
+# ---- Coord device pairing — Step 1 of the onboarding wizard -------------
+#
+# The wizard's Pair Device step (``MergeOrchestrationOnboarding.tsx``,
+# ``startPairing``) fires this route. Coord's ``POST /coord/devices/pair-start``
+# (``qontinui-coord/src/routes_phase3.rs::post_pair_start``) is a PUBLIC
+# route whose ``PairStartRequest`` struct (line 1013) requires ``tenant_id``
+# in the BODY at deserialization time. Per coord's own doc comment at line
+# 1031, the web-backend proxy is the enforcement point: it must resolve the
+# operator's home tenant from the authenticated bearer chain and inject it
+# into the body BEFORE forwarding, so the frontend never has to know or
+# pass the tenant_id. This is the only existing operations proxy that
+# mutates the body instead of forwarding it verbatim.
+#
+# Note: there is intentionally NO ``pair-complete`` proxy. The device-side
+# ``qontinui_profile device pair`` CLI calls coord's ``pair-complete``
+# directly over coord's public HTTP boundary; the wizard never invokes it.
+
+
+@router.post("/coord/devices/pair-start")
+async def post_coord_devices_pair_start(
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Proxy POST /coord/devices/pair-start with server-injected tenant_id.
+
+    Coord's pair-start is a public route whose PairStartRequest requires
+    tenant_id in the body (routes_phase3.rs:1035). The web proxy is the
+    enforcement point: it resolves the operator's home tenant via
+    get_tenant_id and injects it into the body before forwarding, so the
+    frontend never has to know or pass the tenant_id.
+    """
+    body["tenant_id"] = str(tenant_id)
+    return await _proxy_coord_post(
+        "/coord/devices/pair-start",
         body,
         tenant_id=tenant_id,
     )
@@ -926,6 +1052,46 @@ async def post_pr_merge_kill_switch(
     )
 
 
+@router.post("/pr-merge/rollout")
+async def post_pr_merge_rollout(
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Rollout promote — set the tenant's (or a specific repo's)
+    rollout_state to an arbitrary target. Body shape::
+
+        {
+            "scope": "tenant" | "repo:<owner/name>",
+            "state": "dry_run" | "shadow" | "live",
+            "reason": "<operator's stated reason>",
+            "force": false
+        }
+
+    The promote counterpart to the kill-switch's downward-only flip.
+    Coord:
+    1. Verifies the tenant owns the repo (when scope=repo).
+    2. UPSERTs the per-tenant or per-repo ``rollout_state`` (a
+       never-configured repo is created rather than no-op'd).
+    3. Requires the current resolved state to be ``shadow`` when
+       promoting to ``live`` unless ``force=true``.
+    4. Invalidates the settings cache + writes a
+       ``coord.user_overrides(override_kind='rollout_promote')`` audit
+       row.
+
+    Coord additionally rejects non-interactive bearers on this mutation
+    (``403 non_interactive_write_forbidden``) — the promote is reserved
+    for a logged-in dashboard session, which is exactly what this proxy
+    forwards.
+
+    Returns ``{ "scope", "state", "affected_repos" }``.
+    """
+    return await _proxy_coord_post(
+        "/pr-merge/rollout",
+        body,
+        tenant_id=tenant_id,
+    )
+
+
 @router.get("/pr-merge/slo")
 async def get_pr_merge_slo(
     tenant_id: UUID = Depends(get_tenant_id),
@@ -992,14 +1158,19 @@ async def _proxy_coord_post(
     body: Any,
     *,
     tenant_id: UUID | None = None,
+    timeout: httpx.Timeout | None = None,
 ) -> Any:
     """Proxy a POST request to coord and return the JSON body.
 
     ``tenant_id`` — see ``_proxy_coord_get``.
+    ``timeout`` — optional per-route override. Defaults to ``_COORD_TIMEOUT``
+    (5s) which is appropriate for short JSON-from-PG endpoints. Endpoints
+    that dispatch device-side work (e.g., onboarding audit) must pass an
+    explicit longer timeout that outlasts coord's own in-handler deadline.
     """
     url = f"{settings.COORD_URL}{path}"
     headers = _tenant_headers(tenant_id) if tenant_id is not None else None
-    async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=timeout or _COORD_TIMEOUT) as client:
         try:
             resp = await client.post(url, json=body, headers=headers)
         except httpx.ConnectError:
@@ -1062,12 +1233,21 @@ async def get_claims_list(
     limit: int | None = None,
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
-    """List active claims by kind + resource_key prefix.
+    """List active claims by kind + resource_key prefix, tenant-scoped.
 
-    Forwards the operator bearer (via ``get_tenant_id`` → ``tenant_id=``)
-    so coord can authenticate the operator once it gates this route
-    (fleet-auth P2/D6). Backward-compatible while coord is anonymous."""
-    params: dict[str, Any] = {"kind": kind, "prefix": prefix}
+    Coord's ``/coord/claims/list`` tenant-scopes optionally (plan
+    2026-05-24-symbol-claim-tenant-scoping, qontinui-coord#528): the
+    forwarded operator bearer (``tenant_id=`` kwarg → fleet-auth P2/D6)
+    already derives the scope server-side; the explicit ``tenant_id``
+    QUERY param on top makes coord assert param == bearer home tenant,
+    so a web bug forwarding the wrong tenant is rejected 403 instead of
+    silently widening the view. Mirrors the symbol-claims proxy (#559).
+    """
+    params: dict[str, Any] = {
+        "kind": kind,
+        "prefix": prefix,
+        "tenant_id": str(tenant_id),
+    }
     if limit is not None:
         params["limit"] = limit
     return await _proxy_coord_get(
@@ -2201,14 +2381,21 @@ async def get_deploy_rollback_proposal(
 # `kind=symbol` pinned. Optional `?machine_id` filter is forwarded so a
 # future per-machine view can fan out without changing the proxy.
 #
-# Tenant scoping is intentionally absent here, mirroring the existing
-# `/operations/claims/list` posture (Phase 5 of plan
-# `2026-05-18-agent-spawn-coordination.md`). Per the Phase 4.3 design
-# note: "tenant scoping on symbol claims is a follow-up; for now,
-# render the full operator's view across all machines they have access
-# to." When coord-side tenant scoping lands, the proxy + frontend can
-# pivot to `tenant_id = Depends(get_tenant_id)` without breaking the
-# wire shape.
+# Tenant-scoped (plan `2026-05-24-symbol-claim-tenant-scoping.md` Phase 2):
+# the operator's resolved tenant rides BOTH channels —
+#
+#   1. the forwarded Cognito bearer (fleet-auth P2/D6; coord derives the
+#      home tenant from the `OperatorContext`), and
+#   2. an explicit `?tenant_id=` query param, which coord's
+#      `resolve_optional_tenant_scope` asserts against the bearer's home
+#      tenant (defense-in-depth: a mismatch is rejected 403, so a web bug
+#      forwarding the wrong tenant can't widen the view).
+#
+# NOTE the param must ride the `params` dict (coord reads it from the
+# query string), NOT `_proxy_coord_get`'s `tenant_id=` kwarg alone — that
+# kwarg only triggers bearer-forwarding and puts nothing on the wire.
+# Coord drops holders whose device belongs to another tenant; holders
+# gain a resolved `tenant_id` field (surfaced in `SymbolClaim`).
 
 
 @router.get("/symbol-claims")
@@ -2245,7 +2432,14 @@ async def get_symbol_claims(
     The dashboard groups client-side anyway; this filter is for
     targeted CLI / curl consumers.
     """
-    params: dict[str, Any] = {"kind": "symbol", "prefix": ""}
+    params: dict[str, Any] = {
+        "kind": "symbol",
+        "prefix": "",
+        # Explicit tenant scope — coord asserts this matches the forwarded
+        # bearer's home tenant and filters holders to the tenant's devices
+        # (plan 2026-05-24-symbol-claim-tenant-scoping Phase 2).
+        "tenant_id": str(tenant_id),
+    }
     if limit is not None:
         params["limit"] = limit
     # Operator bearer forwarded (fleet-auth P2/D6).

@@ -166,7 +166,20 @@ export const GLOBAL_SERVER_WAIVERS: readonly GlobalServerWaiver[] = [
 // ---------------------------------------------------------------------------
 
 export const PER_ROUTE_WAIVERS: Readonly<Record<string, PerRouteWaiver>> = {
-  // (populated after the baseline-capture run — see report)
+  "/admin/coord/gates": {
+    serverPatterns: ["/api/v1/admin-dev/overview"],
+    class: "ci-env",
+    note:
+      "CI-ENV-UNAVOIDABLE (hermetic lane). /api/v1/admin-dev/overview is the " +
+      "backend proxy for the gates & rollout dashboard: it resolves the home " +
+      "tenant via coord (GET /admin/coord/me) and forwards to coord " +
+      "GET /coord/dev-overview. No coord runs in the hermetic Spec CI stack, so " +
+      "the tenant-resolution dependency 502s before the handler runs (the " +
+      "handler itself degrades coord-down to an empty 200 + coord_error banner " +
+      "in prod). Same class as the /api/v1/operations/ global waiver — a " +
+      "coord-backed /admin/coord/* dashboard with no IR spec. Route-scoped " +
+      "because exactly one crawl route owns this endpoint.",
+  },
 };
 
 // ---------------------------------------------------------------------------

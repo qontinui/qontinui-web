@@ -26,7 +26,7 @@ from typing import Any
 
 import httpx
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -392,29 +392,43 @@ async def link_identity(
 async def unlink_identity(
     *,
     provider: str,
+    user_id: str | None = Query(
+        default=None,
+        description=(
+            "Target a SPECIFIC linked identity by its provider user id. Required "
+            "to disambiguate when an account has multiple identities of the same "
+            "provider (e.g. two Google accounts, or one account double-linked by "
+            "oid + sub); omitting it falls back to the first provider match."
+        ),
+    ),
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_active_user_async),
 ) -> IdentityListResponse:
-    """Unlink ``provider`` from the caller.
+    """Unlink a linked identity from the caller.
 
+    Targets the identity matching ``provider`` (and ``user_id`` when given).
     Lockout guard: refuses (409) to remove the caller's last/only identity.
     """
     canonical_username = await _resolve_username(current_user)
     identities = await _list_identities(canonical_username)
 
-    # Locate the target identity (case-insensitive provider match).
+    # Locate the target identity: by (provider, user_id) when a user_id is given
+    # (the disambiguating path), else the first case-insensitive provider match.
     target = next(
         (
             i
             for i in identities.identities
-            if i.provider and i.provider.lower() == provider.lower()
+            if i.provider
+            and i.provider.lower() == provider.lower()
+            and (user_id is None or i.user_id == user_id)
         ),
         None,
     )
     if target is None:
+        suffix = f" with user id '{user_id}'" if user_id else ""
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No linked identity for provider '{provider}'.",
+            detail=f"No linked identity for provider '{provider}'{suffix}.",
         )
 
     # Lockout guard: never remove the last/only identity, and never unlink

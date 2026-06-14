@@ -12,7 +12,13 @@
 // ============================================================================
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ExternalLink, GitCommitHorizontal, Loader2, RefreshCw } from "lucide-react";
+import {
+  DatabaseZap,
+  ExternalLink,
+  GitCommitHorizontal,
+  Loader2,
+  RefreshCw,
+} from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -25,7 +31,11 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CommitSessionChip } from "./CommitSessionChip";
-import { getLineageStats, getRecentCommits } from "./api";
+import {
+  getLineageStats,
+  getRecentCommits,
+  isSchemaMigrationPending,
+} from "./api";
 import type { LineageRow, LineageStats } from "./types";
 import { commitUrl, formatTs, shortSha } from "./format";
 
@@ -65,6 +75,13 @@ export function CommitLineage() {
   const [rows, setRows] = useState<LineageRow[]>(EMPTY_ROWS);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Coord answered 503 schema_migration_pending: a required column is mid-
+  // migration. Transient + self-healing (the poll keeps retrying), so it gets
+  // a friendly "feature updating" panel instead of the destructive error card.
+  const [migrationPending, setMigrationPending] = useState(false);
+  // The `coord.<table>.<column>` coord reported missing — surfaced as a
+  // subdued operator breadcrumb under the friendly panel.
+  const [migrationMissing, setMigrationMissing] = useState<string | null>(null);
   const [lastFetchedAt, setLastFetchedAt] = useState<string | null>(null);
   const hasFetched = useRef(false);
 
@@ -79,11 +96,20 @@ export function CommitLineage() {
       if (signal?.aborted) return;
       setStats(s);
       setRows(r.length > 0 ? r : EMPTY_ROWS);
+      setMigrationPending(false);
+      setMigrationMissing(null);
       setLastFetchedAt(new Date().toISOString());
       hasFetched.current = true;
     } catch (e) {
       if (signal?.aborted) return;
-      setError(e instanceof Error ? e.message : String(e));
+      if (isSchemaMigrationPending(e)) {
+        setMigrationPending(true);
+        setMigrationMissing(e.missing ?? null);
+      } else {
+        setMigrationPending(false);
+        setMigrationMissing(null);
+        setError(e instanceof Error ? e.message : String(e));
+      }
       hasFetched.current = true;
     } finally {
       if (!signal?.aborted) setLoading(false);
@@ -133,6 +159,28 @@ export function CommitLineage() {
           Refresh
         </Button>
       </div>
+
+      {migrationPending && (
+        <Card>
+          <CardContent className="flex items-start gap-3 p-4">
+            <DatabaseZap className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+            <div>
+              <div className="text-sm font-medium">
+                This feature is updating
+              </div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                A database migration is in progress. Check back in a few minutes
+                — this page refreshes automatically.
+              </div>
+              {migrationMissing && (
+                <div className="mt-1 font-mono text-[11px] text-muted-foreground/70">
+                  waiting on: {migrationMissing}
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {error && (
         <Card className="border-destructive">
@@ -266,7 +314,9 @@ export function CommitLineage() {
                         <ExternalLink className="h-3 w-3" />
                       </a>
                     </TableCell>
-                    <TableCell className="font-mono text-xs">{r.repo}</TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {r.repo}
+                    </TableCell>
                     <TableCell className="font-mono text-xs">
                       {r.branch ?? "—"}
                     </TableCell>
@@ -295,11 +345,13 @@ export function CommitLineage() {
             <div className="text-sm text-muted-foreground">
               {loading
                 ? "Loading…"
-                : error
-                  ? "Could not load lineage — see the banner above."
-                  : hasFetched.current
-                    ? "No commit lineage recorded yet."
-                    : "Loading…"}
+                : migrationPending
+                  ? "Feature updating — a database migration is in progress."
+                  : error
+                    ? "Could not load lineage — see the banner above."
+                    : hasFetched.current
+                      ? "No commit lineage recorded yet."
+                      : "Loading…"}
             </div>
           )}
         </CardContent>

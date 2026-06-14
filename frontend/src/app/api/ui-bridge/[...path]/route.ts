@@ -8,7 +8,10 @@
  * - GET  /commands/stream — SSE command delivery to browser
  * - POST /commands        — browser sends command responses
  * - POST /heartbeat       — browser heartbeat
- * - GET  /health          — transport diagnostics
+ * - GET  /health          — transport diagnostics (this module also merges
+ *                            `relayBus: "redis" | "in-memory" | "in-memory-degraded"`
+ *                            from `@/lib/ui-bridge/relay` so a single probe
+ *                            reveals whether cross-instance routing is live)
  * - GET  /tabs            — connected tab info
  *
  * All other routes are handled by the SDK's route matcher.
@@ -17,14 +20,17 @@
  * - Paths that match neither `UI_BRIDGE_ROUTES` (the SDK's canonical
  *   route contract) nor the relay-transport set above would otherwise
  *   produce a bare HTTP 404 from the SDK. We short-circuit them to HTTP
- *   503 with `{success:false, code:"NO_BROWSER_CONNECTED", ...}` so
- *   callers reading `success`/`code` get a structured signal instead of
- *   404. Notable paths in this bucket (iter 2 + iter 4): `/ai/find`
- *   aliases, `/control/page-health`, `/control/tabs`, `/sdk/*`,
- *   `/control/network/*` stub routes.
+ *   404 with `{success:false, code:"UNKNOWN_ROUTE", ...}` so callers
+ *   reading `success`/`code` get a structured signal that the route does
+ *   not exist — deliberately distinct from `NO_BROWSER_CONNECTED` 503
+ *   (browser-required route, no relay client), which this bucket was
+ *   previously conflated with. Notable paths in this bucket (iter 2 +
+ *   iter 4): `/ai/find` aliases, `/ai/forms` (forms live at
+ *   `GET /control/forms`), `/control/page-health`, `/control/tabs`,
+ *   `/sdk/*`, `/control/network/*` stub routes.
  *
  *   The proxy auto-tracks the SDK contract: when the SDK adds a route to
- *   `UI_BRIDGE_ROUTES`, the proxy stops 503-ing it and forwards instead —
+ *   `UI_BRIDGE_ROUTES`, the proxy stops 404-ing it and forwards instead —
  *   no allow-list maintenance required.
  *
  * - Routes that DO exist in `UI_BRIDGE_ROUTES` but whose SDK handler
@@ -42,16 +48,16 @@
 import {
   createNextRouteHandlers,
   SSEManager,
-  UI_BRIDGE_ROUTES,
 } from "@qontinui/ui-bridge/server";
-import { handlers, relay } from "@/lib/ui-bridge/relay";
+import { handlers, relay, getRelayBusStatus } from "@/lib/ui-bridge/relay";
 import { NextRequest } from "next/server";
 import { passThroughBodyWithPeek } from "./body-passthrough";
 import { registrationBodyWithCallerId } from "./_caller-identity";
 import {
   isBrowserRequiredRoute,
+  isKnownRoute,
   noBrowserResponse,
-  type CompiledRoute,
+  unknownRouteResponse,
   type HttpMethod,
 } from "./_browser-required";
 import {
@@ -96,74 +102,10 @@ const routeHandlers = createNextRouteHandlers(handlers, {
 // Wrap handlers to adapt from Next.js 15 async params to the expected sync params
 type NextContext = { params: Promise<{ path: string[] }> };
 
-/**
- * Compile a UI_BRIDGE_ROUTES entry (e.g. `/control/element/:id/state`) to an
- * anchored regex matching concrete request paths. Mirrors the SDK's
- * `findMatchingRoute` so we stay byte-compatible with what the SDK accepts —
- * if the SDK would match, so do we; if it wouldn't, neither do we.
- */
-function compileRouteRegex(routePath: string): RegExp {
-  const source = routePath
-    .replace(/:[^/]+/g, "([^/]+)")
-    .replace(/\//g, "\\/");
-  return new RegExp(`^${source}$`);
-}
-
-const COMPILED_SDK_ROUTES: readonly CompiledRoute[] = UI_BRIDGE_ROUTES.map(
-  (route) => ({
-    method: route.method as HttpMethod,
-    regex: compileRouteRegex(route.path),
-  }),
-);
-
-
-/**
- * Relay-transport paths the SDK's `handleRelayRoute` claims before the
- * UI_BRIDGE_ROUTES matcher runs. None of these appear in UI_BRIDGE_ROUTES,
- * so we list them explicitly. Order doesn't matter — these are checked
- * in `isKnownRoute` alongside the SDK routes.
- *
- * Sources (SDK 0.8.0, `dist/server/nextjs.mjs::handleRelayRoute`):
- *   - GET  /commands/stream             (SSE command delivery)
- *   - POST /commands                    (browser command responses)
- *   - GET  /health, GET /status         (transport diagnostics)
- *   - GET  /tabs, GET /tabs/wait        (tab info / blocking wait)
- *   - POST /tabs/:id/activate           (CDP tab activate)
- *   - POST /tabs/:id/close              (CDP tab close)
- *   - GET  /control/events/stream       (SSE)
- *   - GET  /control/changes/stream      (SSE)
- *
- * `POST /heartbeat` is intentionally also in UI_BRIDGE_ROUTES, so it's
- * already covered by COMPILED_SDK_ROUTES.
- */
-const RELAY_TRANSPORT_ROUTES: readonly CompiledRoute[] = [
-  { method: "GET", regex: /^\/commands\/stream$/ },
-  { method: "POST", regex: /^\/commands$/ },
-  { method: "GET", regex: /^\/health$/ },
-  { method: "GET", regex: /^\/status$/ },
-  { method: "GET", regex: /^\/tabs$/ },
-  { method: "GET", regex: /^\/tabs\/wait$/ },
-  { method: "POST", regex: /^\/tabs\/([^/]+)\/activate$/ },
-  { method: "POST", regex: /^\/tabs\/([^/]+)\/close$/ },
-  { method: "GET", regex: /^\/control\/events\/stream$/ },
-  { method: "GET", regex: /^\/control\/changes\/stream$/ },
-];
-
-/**
- * True when `path` + `method` would be claimed either by the SDK's
- * `UI_BRIDGE_ROUTES` matcher OR by the relay-transport handler. False
- * means the SDK would 404; the proxy translates that to a structured
- * `NO_BROWSER_CONNECTED` 503.
- */
-function isKnownRoute(path: string, method: HttpMethod): boolean {
-  for (const route of COMPILED_SDK_ROUTES) {
-    if (route.method === method && route.regex.test(path)) return true;
-  }
-  for (const route of RELAY_TRANSPORT_ROUTES) {
-    if (route.method === method && route.regex.test(path)) return true;
-  }
-  return false;
-}
+// Route knowledge (`isKnownRoute` + the compiled UI_BRIDGE_ROUTES /
+// relay-transport sets) lives in `./_browser-required` — a Next route
+// file may not export non-handler functions, and the sibling module
+// makes the unknown-route contract unit-testable.
 
 /**
  * True when no browser tab is currently connected to the relay — neither
@@ -179,6 +121,36 @@ function noRelayClientsConnected(): boolean {
 
 function resolvePath(params: { path: string[] }): string {
   return "/" + params.path.join("/");
+}
+
+/**
+ * Merge the relay-bus transport status (`relay.ts::getRelayBusStatus`) into a
+ * `GET /health` JSON response so a single probe reveals whether cross-instance
+ * routing is live. Returns a fresh `Response` with `relayBus` added, or `null`
+ * when the body isn't a JSON object (forward the original untouched — never
+ * over-write a non-diagnostics body). The clone keeps the original consumable
+ * if augmentation bails.
+ */
+async function mergeRelayBusStatus(
+  response: Response,
+): Promise<Response | null> {
+  let body: unknown;
+  try {
+    body = await response.clone().json();
+  } catch {
+    return null;
+  }
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    return null;
+  }
+  const merged = { ...(body as Record<string, unknown>), relayBus: getRelayBusStatus() };
+  const headers = new Headers(response.headers);
+  headers.delete("content-length");
+  return new Response(JSON.stringify(merged), {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }
 
 async function wrapHandler(
@@ -256,13 +228,16 @@ async function wrapHandler(
   }
 
   // Pre-process: short-circuit routes the SDK would 404 on. We surface a
-  // structured 503 NO_BROWSER_CONNECTED instead of a bare 404 so callers
-  // reading `success`/`code` (page-health probes, runner SDK shims,
-  // multi-tab debug UI) get a meaningful signal. The check is derived from
-  // UI_BRIDGE_ROUTES + the relay-transport set — no hardcoded allow-list,
-  // so the proxy auto-tracks new SDK routes as the SDK ships them.
+  // structured 404 UNKNOWN_ROUTE instead of a bare 404 so callers reading
+  // `success`/`code` (page-health probes, runner SDK shims, multi-tab
+  // debug UI) get a meaningful signal — and deliberately NOT the
+  // NO_BROWSER_CONNECTED 503 these paths used to get: "no such route"
+  // must be distinguishable from "no browser attached". The check is
+  // derived from UI_BRIDGE_ROUTES + the relay-transport set — no
+  // hardcoded allow-list, so the proxy auto-tracks new SDK routes as the
+  // SDK ships them.
   if (!isKnownRoute(path, method)) {
-    return noBrowserResponse(path);
+    return unknownRouteResponse(path);
   }
 
   // Pre-process: short-circuit browser-required routes when no browser
@@ -305,6 +280,19 @@ async function wrapHandler(
   const response = await handler(forwardRequest, {
     params: { path: params.path.join("/") },
   });
+
+  // Relay-bus health surfacing (friction-2): the SDK's `/health` returns
+  // transport diagnostics but has no notion of whether the cross-instance
+  // relay BUS is live, degraded, or in-memory-by-design. Merge the module-level
+  // status from `relay.ts` so a single `GET /health` call answers
+  // `{ relayBus: "redis" | "in-memory" | "in-memory-degraded" }`. The degraded
+  // value is the alerting signal for the "navigate 200 but page never moves"
+  // class on serverless. Only the success (200, JSON) path is augmented; any
+  // error envelope is forwarded untouched.
+  if (method === "GET" && path === "/health" && response.ok) {
+    const augmented = await mergeRelayBusStatus(response);
+    if (augmented) return augmented;
+  }
 
   // Audit log (§4.8). Record one row per WRITE command the user issued
   // through the relay. Fire-and-forget: the `recordAudit` call doesn't

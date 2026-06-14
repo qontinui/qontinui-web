@@ -27,7 +27,7 @@ import hmac
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -106,17 +106,33 @@ class CoordNotificationResponse(BaseModel):
 
 def _require_coord_secret(
     x_coord_service_secret: str | None = Header(default=None, alias=_SECRET_HEADER),
+    # Plain `Request` annotation so FastAPI injects it (a `Request | None`
+    # union is rejected as a response-field type); None default keeps the
+    # dependency directly callable in unit tests.
+    request: Request = None,  # type: ignore[assignment]
 ) -> None:
     """Authenticate the coord service call via the shared secret.
 
     Rejects (401) when the secret is unconfigured (empty) — the feature is
     then OFF and no call is ever accepted — or when the presented header
-    does not constant-time match. Never reveals which condition failed.
+    does not constant-time match. Never reveals which condition failed
+    to the CLIENT; the server-side log carries enough shape (header
+    presence/length + User-Agent, never the value) to identify a
+    misconfigured caller — there is a recurring ~5-min-cadence 401 sender
+    on this endpoint that ALB/access logs can't fingerprint.
     """
     configured = settings.COORD_WEB_SERVICE_SECRET or ""
     presented = x_coord_service_secret or ""
     # Empty configured secret => feature unconfigured => reject all.
     if not configured or not hmac.compare_digest(presented, configured):
+        logger.warning(
+            "coord_notification_rejected",
+            configured_empty=not configured,
+            presented_len=len(presented),
+            user_agent=request.headers.get("user-agent")
+            if request is not None
+            else None,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="invalid or missing coord service secret",

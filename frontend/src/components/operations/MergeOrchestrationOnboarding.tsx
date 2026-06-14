@@ -104,7 +104,10 @@ function PairDeviceStep({
         method: "POST",
         body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(`HTTP ${res.status}${text ? `: ${text}` : ""}`);
+      }
       const data = (await res.json()) as PairStartResponse;
       setPairCode(data.state);
       setRedirectUrl(data.redirect_url);
@@ -260,6 +263,12 @@ function AuditStep({ ready }: AuditStepProps) {
       const res = await httpClient.fetch(`${OPERATIONS_API}/pr-merge/onboarding/audit`, {
         method: "POST",
         body: JSON.stringify({ repo: repo.trim() }),
+        // The audit proxy waits up to 90s for coord's STARTER_PROFILE_WAIT
+        // (PR #569). The shared httpClient's default 60s client-side timeout
+        // would fire first and surface "backend may be starting up" instead of
+        // the real backend response, so explicitly grant 120s here (90s server
+        // budget + 30s network/proxy slack).
+        timeoutMs: 120_000,
       });
       if (!res.ok) {
         if (res.status === 409) {
