@@ -1,10 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-<<<<<<< HEAD
 import { setProductMode, setShowHiddenItems } from "@qontinui/navigation";
-=======
-import { setProductMode } from "@qontinui/navigation";
->>>>>>> de05431b (refactor(nav): migrate to canonical @qontinui/navigation package)
 import type { NavItem } from "../types";
 import { getWebNavItems } from "../shared-nav-adapter";
 import { devNavItems } from "../nav-items";

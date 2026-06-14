@@ -18,16 +18,12 @@
  * Handlers, RSC, and client components alike.
  */
 
-<<<<<<< HEAD
 import {
   getWebNavigation,
   getShowHiddenItems,
   setShowHiddenItems,
   type NavigationItem,
 } from "@qontinui/navigation";
-=======
-import { getWebNavigation, type NavigationItem } from "@qontinui/navigation";
->>>>>>> de05431b (refactor(nav): migrate to canonical @qontinui/navigation package)
 
 /** A page the co-pilot planner may target. */
 export interface CopilotPage {

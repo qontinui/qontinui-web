@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "base_sha": "60ce14fc645eb692a5abdb19db30d14f794f8e1e",
+  "ours_sha": "de05431b72118e4a3c01d3dcb2ab94f8abf6a03f",
+  "theirs_sha": "55fc5c990c3b55064a9a005e3f654df4776b195f",
+  "entries": [
+    {
+      "path": "frontend/package-lock.json",
+      "base_oid": "de437768670bfc00287714f533ab11e88179b96c",
+      "ours_oid": "76bd1b6d13dfe92c8a78d8efe5cfbc00e369b773",
+      "theirs_oid": "ce24607e97f4472a97863d82c77cec839e7a81d8",
+      "base_path": "frontend/package-lock.json.base",
+      "ours_path": "frontend/package-lock.json.ours",
+      "theirs_path": "frontend/package-lock.json.theirs",
+      "hunks": [
+        "<<<<<<< HEAD\n        \"@qontinui/navigation\": \"^0.1.3\",\n=======\n        \"@qontinui/navigation\": \"^0.1.2\",\n>>>>>>> de05431b (refactor(nav): migrate to canonical @qontinui/navigation package)\n",
+        "<<<<<<< HEAD\n      \"version\": \"0.1.3\",\n      \"resolved\": \"https://registry.npmjs.org/@qontinui/navigation/-/navigation-0.1.3.tgz\",\n      \"integrity\": \"sha512-I9flSGD9UzLE5eaBl9cBxf3RSYmPbODBdrqvfR5dJ6TykK5B2lcRvUdWRx7EnSxCrUobDtsp1FWZKL9O4CsUjw==\",\n=======\n      \"version\": \"0.1.2\",\n      \"resolved\": \"https://registry.npmjs.org/@qontinui/navigation/-/navigation-0.1.2.tgz\",\n      \"integrity\": \"sha512-+zh9r9GSJzhw6FwLdT9Y0TquGxk8VX8pG2XmI8rCYNidiVqSPMXa2q8Z0s/gMddqWem7kUlzTwQKdbnvpgSAUA==\",\n>>>>>>> de05431b (refactor(nav): migrate to canonical @qontinui/navigation package)\n"
+      ]
+    },
+    {
+      "path": "frontend/package.json",
+      "base_oid": "039d60d4f5661712c26fc583ebfc58baf3c7be42",
+      "ours_oid": "03250a5d4467e5c1faf1998dae59a300bf9dfa75",
+      "theirs_oid": "6e2054a8b755fc17f6391d5e4efd32097d213b83",
+      "base_path": "frontend/package.json.base",
+      "ours_path": "frontend/package.json.ours",
+      "theirs_path": "frontend/package.json.theirs",
+      "hunks": [
+        "<<<<<<< HEAD\n=======\n    \"@qontinui/navigation\": \"^0.1.2\",\n>>>>>>> de05431b (refactor(nav): migrate to canonical @qontinui/navigation package)\n"
+      ]
+    },
+    {
+      "path": "frontend/src/components/navigation/sidebar/_hooks/use-sidebar-navigation.ts",
+      "base_oid": "0df29c4e21dad995d5c1bcfe8ea5655afd316f43",
+      "ours_oid": "bcd45b8e419beb4dcaa2ada62ce0afe2ba9a4f72",
+      "theirs_oid": "e0696df0bbc6d1f9600373ac29bc2756a1fe6b65",
+      "base_path": "frontend/src/components/navigation/sidebar/_hooks/use-sidebar-navigation.ts.base",
+      "ours_path": "frontend/src/components/navigation/sidebar/_hooks/use-sidebar-navigation.ts.ours",
+      "theirs_path": "frontend/src/components/navigation/sidebar/_hooks/use-sidebar-navigation.ts.theirs",
+      "hunks": [
+        "<<<<<<< HEAD\nimport { setProductMode, setShowHiddenItems } from \"@qontinui/navigation\";\n=======\nimport { setProductMode } from \"@qontinui/navigation\";\n>>>>>>> de05431b (refactor(nav): migrate to canonical @qontinui/navigation package)\n"
+      ]
+    },
+    {
+      "path": "frontend/src/lib/co-pilot/pageMap.ts",
+      "base_oid": "34625e5c1cfb7e50c2ff0d2cbc170bdb8b39de50",
+      "ours_oid": "94d13a40e260becf060e787748016fdd4cb3dbd0",
+      "theirs_oid": "9d97faf42e489c9a8f9056066ee4fad50222c8b9",
+      "base_path": "frontend/src/lib/co-pilot/pageMap.ts.base",
+      "ours_path": "frontend/src/lib/co-pilot/pageMap.ts.ours",
+      "theirs_path": "frontend/src/lib/co-pilot/pageMap.ts.theirs",
+      "hunks": [
+        "<<<<<<< HEAD\nimport {\n  getWebNavigation,\n  getShowHiddenItems,\n  setShowHiddenItems,\n  type NavigationItem,\n} from \"@qontinui/navigation\";\n=======\nimport { getWebNavigation, type NavigationItem } from \"@qontinui/navigation\";\n>>>>>>> de05431b (refactor(nav): migrate to canonical @qontinui/navigation package)\n"
+      ]
+    }
+  ]
+}
