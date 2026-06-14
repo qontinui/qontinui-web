@@ -44,7 +44,11 @@ class TestClassify:
     def test_unconfigured_provenance_is_blind(self):
         assert (
             _classify(
-                {"coverage": 0.0, "provenance": "config:unconfigured", "drift_class": "ok"}
+                {
+                    "coverage": 0.0,
+                    "provenance": "config:unconfigured",
+                    "drift_class": "ok",
+                }
             )
             == "blind"
         )
@@ -53,7 +57,9 @@ class TestClassify:
         # Even with coverage, an unknown drift_class means the observer couldn't
         # read it for this tenant.
         assert (
-            _classify({"coverage": 0.9, "provenance": "live_rds", "drift_class": "unknown"})
+            _classify(
+                {"coverage": 0.9, "provenance": "live_rds", "drift_class": "unknown"}
+            )
             == "blind"
         )
 
@@ -133,9 +139,7 @@ class TestSubspacesEndpoint:
                 return _status_response(502)  # error
             return _verdict_response(1.0, "live_rds")  # default implemented
 
-        with patch(
-            "app.api.v1.endpoints.digital_twin.httpx.AsyncClient"
-        ) as MockClient:
+        with patch("app.api.v1.endpoints.digital_twin.httpx.AsyncClient") as MockClient:
             instance = AsyncMock()
             instance.get.side_effect = fake_get
             instance.__aenter__ = AsyncMock(return_value=instance)
@@ -157,9 +161,7 @@ class TestSubspacesEndpoint:
 
     def test_coord_unreachable_marks_error_not_500(self):
         client = TestClient(_build_test_app())
-        with patch(
-            "app.api.v1.endpoints.digital_twin.httpx.AsyncClient"
-        ) as MockClient:
+        with patch("app.api.v1.endpoints.digital_twin.httpx.AsyncClient") as MockClient:
             instance = AsyncMock()
             instance.get.side_effect = httpx.ConnectError("refused")
             instance.__aenter__ = AsyncMock(return_value=instance)

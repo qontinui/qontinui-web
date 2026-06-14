@@ -45,7 +45,10 @@ export function UiBridgePanel() {
   const specGraph = useRunnerSpecGraph(deviceId, appId);
   const snapshot = useRunnerSnapshot(deviceId, snapshotRequested);
 
-  const specs = specList.data?.specs ?? [];
+  // useMemo so the array reference is stable across renders (the `?? []`
+  // otherwise makes a new array every render → react-hooks/exhaustive-deps on
+  // the totalStates memo below).
+  const specs = useMemo(() => specList.data?.specs ?? [], [specList.data]);
   const graphPages = specGraph.data?.pages ?? [];
   const snap = snapshot.data;
 
