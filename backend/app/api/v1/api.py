@@ -27,6 +27,7 @@ from app.api.v1.endpoints import (
     analytics,
     annotations,
     annotations_ws,
+    auto_response_rules,
     automation,
     automation_ws,
     background_removal,
@@ -85,6 +86,7 @@ from app.api.v1.endpoints import (
     recording_pipeline,
     recordings,
     render_logs,
+    runner_auto_response_rules,
     runner_chat,
     runner_chat_ws,
     runner_command_ws,
@@ -309,6 +311,15 @@ api_router.include_router(
     finding_categories.router,
     prefix="/finding-categories",
     tags=["finding-categories"],
+)
+# Auto-response rules (org-scoped, fleet-wide). Operator CRUD router bakes its
+# full ``/organizations/...`` paths so it is mounted with NO prefix; the
+# runner-facing (device-JWT) router is mounted under ``/runner``.
+api_router.include_router(auto_response_rules.router, tags=["auto-response-rules"])
+api_router.include_router(
+    runner_auto_response_rules.router,
+    prefix="/runner",
+    tags=["auto-response-rules-runner"],
 )
 # Workflow step types, GUI action types, and phases (per-user, auto-seeded)
 api_router.include_router(
