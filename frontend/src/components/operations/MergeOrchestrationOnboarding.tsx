@@ -29,6 +29,15 @@ const log = createLogger("MergeOrchestrationOnboarding");
 
 const PRECONDITION_POLL_MS = 5_000;
 
+// Poll cadence + client-side cap for the async repo audit (coord dispatches
+// the auditor + returns 202; the wizard polls audit-status for the
+// STARTER_PROFILE write-back). The cap is NON-FATAL — the agent may still
+// finish after we stop polling (the repo is already enrolled at dispatch),
+// so on exceed we surface a soft "taking longer than usual" message rather
+// than an error.
+const AUDIT_POLL_MS = 4_000;
+const AUDIT_POLL_CAP_MS = 8 * 60_000;
+
 // ----------------------------------------------------------------------------
 // Wire types (mirrors coord's pr_merge::onboarding_routes shapes)
 // ----------------------------------------------------------------------------
@@ -70,7 +79,20 @@ interface AuditResponse {
   repo: string;
   starter_profile: StarterProfile;
   audit_confidence: number | null;
-  audit_latency_secs: number;
+  // Legacy synchronous-path field. The async status response no longer
+  // carries it (the latency is a process-local Instant in coord, lost across
+  // the stateless poll), so it's optional and the cards guard its render.
+  audit_latency_secs?: number;
+}
+
+// Response of GET /pr-merge/onboarding/audit-status (the async poll). Mirrors
+// coord's stateless status wrapper over poll_starter_profile_once.
+interface AuditStatusResponse {
+  status: "running" | "ready" | "failed";
+  agent_id: string;
+  starter_profile?: StarterProfile;
+  audit_confidence?: number;
+  error?: string;
 }
 
 // ----------------------------------------------------------------------------
@@ -249,6 +271,9 @@ function AuditStep({ ready }: AuditStepProps) {
   const [editedProfile, setEditedProfile] = useState<StarterProfile | null>(
     null
   );
+  // The async audit's agent_id, set from the 202 response. While set (and no
+  // auditResult yet) the poll useEffect runs, GETting audit-status every ~4s.
+  const [auditAgentId, setAuditAgentId] = useState<string | null>(null);
   const [acceptBusy, setAcceptBusy] = useState(false);
   const [accepted, setAccepted] = useState(false);
 
@@ -260,15 +285,13 @@ function AuditStep({ ready }: AuditStepProps) {
     setBusy(true);
     setError(null);
     try {
+      // The audit is now async: coord dispatches the auditor + returns 202
+      // {agent_id, repo, status:"running"} immediately. The POST is fast, so
+      // the default client-side timeout is correct — the slow audit work
+      // happens off-connection and we poll audit-status for the result.
       const res = await httpClient.fetch(`${OPERATIONS_API}/pr-merge/onboarding/audit`, {
         method: "POST",
         body: JSON.stringify({ repo: repo.trim() }),
-        // The audit proxy waits up to 90s for coord's STARTER_PROFILE_WAIT
-        // (PR #569). The shared httpClient's default 60s client-side timeout
-        // would fire first and surface "backend may be starting up" instead of
-        // the real backend response, so explicitly grant 120s here (90s server
-        // budget + 30s network/proxy slack).
-        timeoutMs: 120_000,
       });
       if (!res.ok) {
         if (res.status === 409) {
@@ -283,16 +306,100 @@ function AuditStep({ ready }: AuditStepProps) {
         const text = await res.text();
         throw new Error(`HTTP ${res.status}: ${text}`);
       }
-      const data = (await res.json()) as AuditResponse;
-      setAuditResult(data);
-      setEditedProfile(data.starter_profile);
+      const data = (await res.json()) as Partial<AuditResponse> & {
+        agent_id?: string;
+        status?: string;
+      };
+      // Defensive: if a synchronous 200 with a profile ever comes back (legacy
+      // coord), use it directly — not the primary path.
+      if (res.status === 200 && data.starter_profile) {
+        setAuditResult(data as AuditResponse);
+        setEditedProfile(data.starter_profile);
+        return;
+      }
+      // Primary path: 202 {agent_id, repo, status:"running"}. Store the
+      // agent_id (the poll useEffect takes over) and keep the spinner busy.
+      if (data.agent_id) {
+        setAuditAgentId(data.agent_id);
+      } else {
+        throw new Error("audit dispatch returned no agent_id");
+      }
     } catch (err) {
       log.warn("audit failed", err);
       setError(err instanceof Error ? err.message : String(err));
-    } finally {
       setBusy(false);
     }
+    // NOTE: busy stays true on the 202 path — the poll useEffect clears it
+    // when a terminal status (ready/failed) or the cap lands.
   }, [repo]);
+
+  // Poll the async audit status while an agent_id is in flight and no result
+  // has landed. Mirrors the top-level precondition pollStatus pattern, with a
+  // client-side cap so a never-completing audit degrades to a soft message
+  // instead of spinning forever.
+  useEffect(() => {
+    if (!auditAgentId || auditResult) return;
+    let cancelled = false;
+    const startedAt = Date.now();
+
+    const poll = async () => {
+      try {
+        const res = await httpClient.fetch(
+          `${OPERATIONS_API}/pr-merge/onboarding/audit-status?agent_id=${encodeURIComponent(
+            auditAgentId
+          )}`
+        );
+        if (cancelled) return;
+        if (!res.ok) {
+          // Transient proxy/coord hiccup — keep polling rather than fail.
+          log.warn("audit-status poll non-ok", res.status);
+          return;
+        }
+        const data = (await res.json()) as AuditStatusResponse;
+        if (cancelled) return;
+        if (data.status === "ready" && data.starter_profile) {
+          setAuditResult({
+            agent_id: data.agent_id,
+            repo,
+            starter_profile: data.starter_profile,
+            audit_confidence: data.audit_confidence ?? null,
+          });
+          setEditedProfile(data.starter_profile);
+          setAuditAgentId(null);
+          setBusy(false);
+        } else if (data.status === "failed") {
+          setError(data.error ?? "Audit failed on the device.");
+          setAuditAgentId(null);
+          setBusy(false);
+        }
+        // status === "running" → keep polling.
+      } catch (err) {
+        if (cancelled) return;
+        // Network blip — keep polling; the cap will eventually stop us.
+        log.warn("audit-status poll error", err);
+      }
+    };
+
+    poll();
+    const id = setInterval(() => {
+      if (Date.now() - startedAt > AUDIT_POLL_CAP_MS) {
+        clearInterval(id);
+        if (cancelled) return;
+        setError(
+          "Audit is taking longer than usual; it may still finish — retry or check the device."
+        );
+        setAuditAgentId(null);
+        setBusy(false);
+        return;
+      }
+      poll();
+    }, AUDIT_POLL_MS);
+
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [auditAgentId, auditResult, repo]);
 
   const acceptProfile = useCallback(async () => {
     if (!auditResult || !editedProfile) return;
@@ -386,9 +493,15 @@ function AuditStep({ ready }: AuditStepProps) {
           />
           <Button onClick={runAudit} disabled={busy} size="sm">
             {busy && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
-            Audit (~30s)
+            {busy ? "Auditing…" : "Audit"}
           </Button>
         </div>
+        {busy && auditAgentId && (
+          <p className="text-xs text-muted-foreground flex items-center gap-1">
+            <Loader2 className="h-3 w-3 animate-spin" /> Auditing on your device —
+            this can take a few minutes. You can leave this open.
+          </p>
+        )}
         {error && (
           <p className="text-xs text-red-300 flex items-center gap-1">
             <AlertTriangle className="h-3 w-3" /> {error}
@@ -410,10 +523,15 @@ function AuditStep({ ready }: AuditStepProps) {
       <div className="flex items-center gap-2 text-xs">
         <CheckCircle2 className="h-3 w-3 text-green-400" />
         <span>
-          Audit complete in{" "}
-          <span className="font-mono">
-            {auditResult.audit_latency_secs.toFixed(1)}s
-          </span>
+          Audit complete
+          {auditResult.audit_latency_secs !== undefined && (
+            <>
+              {" in "}
+              <span className="font-mono">
+                {auditResult.audit_latency_secs.toFixed(1)}s
+              </span>
+            </>
+          )}
         </span>
         <Badge
           variant={confidence >= 0.85 ? "default" : "outline"}
