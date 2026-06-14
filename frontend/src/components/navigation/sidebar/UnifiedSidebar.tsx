@@ -9,7 +9,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/contexts/auth-context";
 import { useSidebar } from "@/contexts/sidebar-context";
 import { useProductMode } from "@/contexts/product-mode-context";
-import { STORAGE_KEYS } from "qontinui-navigation";
+import { STORAGE_KEYS } from "@qontinui/navigation";
 import { toast } from "sonner";
 import { getComponent } from "@/lib/extension-slots";
 import type { CreateOrganizationDialogProps } from "@/lib/cloud-component-slots";

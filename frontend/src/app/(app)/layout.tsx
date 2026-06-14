@@ -16,6 +16,7 @@ import { TenantProvider } from "@/contexts/tenant-context";
 import { SidebarProvider, useSidebar } from "@/contexts/sidebar-context";
 import { TabStateProvider } from "@/contexts/tab-state-context";
 import { ProductModeProvider } from "@/contexts/product-mode-context";
+import { AdvancedAutomationProvider } from "@/contexts/advanced-automation-context";
 import { AppInitializer } from "@/components/offline/AppInitializer";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { BetaBanner } from "@/components/beta-banner";
@@ -165,6 +166,7 @@ export default function AppLayout({
             <TenantProvider>
             <SidebarProvider>
               <ProductModeProvider>
+                <AdvancedAutomationProvider>
                 <AutomationProvider>
                   <TabStateProvider>
                     <AppInitializer>
@@ -182,6 +184,7 @@ export default function AppLayout({
                     </AppInitializer>
                   </TabStateProvider>
                 </AutomationProvider>
+                </AdvancedAutomationProvider>
               </ProductModeProvider>
             </SidebarProvider>
             </TenantProvider>

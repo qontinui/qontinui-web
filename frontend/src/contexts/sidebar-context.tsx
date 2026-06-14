@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect } from "react";
-import { STORAGE_KEYS } from "qontinui-navigation";
+import { STORAGE_KEYS } from "@qontinui/navigation";
 
 interface SidebarContextType {
   isCollapsed: boolean;

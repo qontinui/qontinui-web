@@ -18,7 +18,12 @@
  * Handlers, RSC, and client components alike.
  */
 
-import { getWebNavigation, type NavigationItem } from "qontinui-navigation";
+import {
+  getWebNavigation,
+  getShowHiddenItems,
+  setShowHiddenItems,
+  type NavigationItem,
+} from "@qontinui/navigation";
 
 /** A page the co-pilot planner may target. */
 export interface CopilotPage {
@@ -129,11 +134,21 @@ function collectItems(): NavigationItem[] {
   // `pages` array is exactly what makes the runner planner fall back to its
   // hardcoded `page-…` ids (the live-E2E failure) — so we treat "no items" as a
   // bug to surface, not a state to ship.
+  // Include items flagged `hidden` — the advanced workflow-authoring surfaces
+  // (Workflow Builder, Step Builders) are hidden from the SIDEBAR but remain
+  // valid navigation targets, so the co-pilot must still be able to ground a
+  // step on e.g. /build/workflows. `setShowHiddenItems` toggles synchronous
+  // global state in the registry; set -> derive -> restore happens in one tick
+  // (no await between) so this stays net-pure and cannot interleave.
   let groups: ReturnType<typeof getWebNavigation> = [];
+  const prevShowHidden = getShowHiddenItems();
+  setShowHiddenItems(true);
   try {
     groups = getWebNavigation() ?? [];
   } catch {
     groups = [];
+  } finally {
+    setShowHiddenItems(prevShowHidden);
   }
   for (const group of groups) {
     for (const item of group.items ?? []) visit(item);

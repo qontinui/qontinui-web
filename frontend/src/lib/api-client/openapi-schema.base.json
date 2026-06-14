@@ -44882,6 +44882,57 @@
         ]
       }
     },
+    "/api/v1/admin-dev/overview": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/dev-overview`` (gates + rollout overview).\n\nReturns coord's JSON envelope verbatim \u2014 the\n``{generated_at, gates, rollouts}`` contract the frontend\n``admin-dev-service`` types against. The overview is fleet-wide (not\ntenant-scoped on the web side); the caller bearer is forwarded so coord\nauthorizes on the operator identity. ``tenant_id`` is resolved\nbest-effort only (it may be ``None`` when coord identity resolution\nfails) and is used solely as the cache key \u2014 coord-down callers (key\n``None``) never share a cache entry with resolved ones.\n\nCaching: a fresh successful envelope is served from a ~30s in-process\ncache; ``?refresh=1`` bypasses it (the frontend Refresh button passes\nit). Degraded ``coord_error`` envelopes are never cached.\n\nWhen coord is unreachable/degraded (connect-refused \u2192 502, timeout \u2192\n504, etc.) the endpoint returns an empty envelope annotated with\n``coord_error`` rather than re-raising the 5xx, so the dashboard renders\na clear \"coord unavailable\" state instead of a broken page. Because\nidentity resolution no longer hard-fails the request, this covers a TOTAL\ncoord outage too (not just the case where ``/admin/coord/me`` happened to\nsucceed). The Spec CI crawl, which runs without a live coord, stays green.",
+        "operationId": "api_v1_admin_dev_overview_get",
+        "parameters": [
+          {
+            "description": "Bypass the ~30s in-process cache and refetch from coord.",
+            "in": "query",
+            "name": "refresh",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Bypass the ~30s in-process cache and refetch from coord.",
+              "title": "Refresh",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Dev Overview Api V1 Admin Dev Overview Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Dev Overview",
+        "tags": [
+          "admin-dev"
+        ]
+      }
+    },
     "/api/v1/admin/agent-sessions": {
       "get": {
         "description": "List agent sessions via coord's ``GET /coord/agent-sessions``.\n\nForwards the ``live`` / ``user_id`` / ``since`` / ``limit`` filters as\nquery params. ``limit`` (1..500) and the RFC3339 ``since`` are\nvalidated by FastAPI before forwarding. Returns coord's\n``{\"sessions\": [...], \"count\": N}`` envelope verbatim \u2014 the shape the\nfrontend expects.",

@@ -19,6 +19,7 @@ import {
   BookOpen,
   Boxes,
   FileText,
+  Gauge,
   GitBranch,
   GitMerge,
   GitPullRequest,
@@ -59,6 +60,12 @@ const PRIMARY_TABS: NavItem[] = [
     label: "Plans",
     icon: FileText,
     testId: "coord-nav-plans",
+  },
+  {
+    href: "/admin/coord/gates",
+    label: "Gates",
+    icon: Gauge,
+    testId: "coord-nav-gates",
   },
   {
     href: "/admin/coord/spawn",
