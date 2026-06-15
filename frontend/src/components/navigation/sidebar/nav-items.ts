@@ -57,7 +57,7 @@ export const devNavItems: NavItem[] = [
     icon: React.createElement(Bot, { className: "size-5" }),
     route: "/co-pilot",
     color: "#6366F1",
-    group: "Runners",
+    group: "Coordination",
   },
 
   // ===========================================================================
@@ -72,7 +72,7 @@ export const devNavItems: NavItem[] = [
     icon: React.createElement(Server, { className: "size-5" }),
     route: "/runners",
     color: "#10B981",
-    group: "Runners",
+    group: "Coordination",
   },
   {
     id: "scheduled-runs",
@@ -96,7 +96,7 @@ export const devNavItems: NavItem[] = [
     icon: React.createElement(Activity, { className: "size-5" }),
     route: "/operations",
     color: "#10B981",
-    group: "Runners",
+    group: "Coordination",
   },
   {
     id: "commits",
@@ -105,7 +105,22 @@ export const devNavItems: NavItem[] = [
     icon: React.createElement(GitCommitHorizontal, { className: "size-5" }),
     route: "/commits",
     color: "#10B981",
-    group: "Runners",
+    group: "Coordination",
+  },
+  // Coord Console — the coordination-layer admin surface (fleet, trees, pull
+  // decisions, plans). Promoted into the Coordination group for prominence.
+  // NOTE: /admin/coord/layout.tsx enforces is_superuser, so this stays
+  // adminOnly — non-admins get coord reporting via Operations + Commits
+  // (which gate on "any authenticated user, tenant-scoped" server-side).
+  {
+    id: "admin-coord",
+    label: "Coord Console",
+    description: "Coordination layer — fleet, trees, pull decisions, plans",
+    icon: React.createElement(Network, { className: "size-5" }),
+    route: "/admin/coord",
+    color: "#10B981",
+    adminOnly: true,
+    group: "Coordination",
   },
 
   // ===========================================================================
@@ -619,15 +634,6 @@ export const devNavItems: NavItem[] = [
         description: "Admin overview and metrics",
         icon: React.createElement(LayoutDashboard, { className: "size-4" }),
         route: "/admin",
-        color: "#FF6B6B",
-        adminOnly: true,
-      },
-      {
-        id: "admin-coord",
-        label: "Coord Console",
-        description: "Coordination layer — fleet, trees, pull decisions, plans",
-        icon: React.createElement(Network, { className: "size-4" }),
-        route: "/admin/coord",
         color: "#FF6B6B",
         adminOnly: true,
       },

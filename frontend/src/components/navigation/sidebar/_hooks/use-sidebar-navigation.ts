@@ -8,6 +8,56 @@ import { useAuth } from "@/contexts/auth-context";
 import { useProductMode } from "@/contexts/product-mode-context";
 import { useAdvancedAutomation } from "@/contexts/advanced-automation-context";
 
+// ===========================================================================
+// Web menu policy (coord + sessions centric).
+//
+// qontinui-web's focus is the coordination layer + Terminal/agent sessions, not
+// workflow/visual authoring. Terminal sessions live in `coord.sessions` and do
+// NOT produce task_runs, findings, observations, or library assets — so the
+// workflow/task/automation pages below are dead weight for a session+coord user
+// and are demoted out of the default menu.
+//
+// WEB_HIDDEN_IDS — runner-only features whose web routes 404 (no page exists on
+// web). Always removed from the web sidebar.
+const WEB_HIDDEN_IDS = new Set<string>([
+  "reflection",
+  "tasks",
+  "triggers",
+]);
+
+// WEB_ADVANCED_IDS — workflow / task / automation / visual surfaces. Removed
+// from the default web menu but revealed by the Settings → General "Show
+// advanced automation features" toggle (same toggle that reveals the
+// package-level `hidden` items via setShowHiddenItems). Routes stay registered
+// so deep-links keep working.
+const WEB_ADVANCED_IDS = new Set<string>([
+  // execution / review (task_run-scoped, not session-scoped)
+  "active",
+  "runs",
+  "run-findings",
+  "memory",
+  "gui-automation",
+  "scheduled-runs",
+  // workflow / automation authoring + assets
+  "library",
+  "state-machine",
+  "state-machine-dev",
+  "specs",
+  "build-flow-designer",
+  "review",
+  "inspector",
+  // visual automation (belongs to visual mode; never in the coord default)
+  "vga",
+  // insights / config that are workflow/automation-scoped
+  "error-monitor",
+  "processes",
+  "architecture",
+  "observations",
+  "config-findings",
+  "config-hooks",
+  "config-ui-bridge",
+]);
+
 export function useSidebarNavigation() {
   const router = useRouter();
   const pathname = usePathname();
@@ -28,6 +78,11 @@ export function useSidebarNavigation() {
       return items
         .filter((item) => {
           if (item.hiddenInProd && (!mounted || !isDevelopment)) return false;
+          // Web menu policy: runner-only items that 404 on web are always gone;
+          // workflow/automation/visual items are gated behind the advanced toggle.
+          if (WEB_HIDDEN_IDS.has(item.id)) return false;
+          if (!showAdvancedAutomation && WEB_ADVANCED_IDS.has(item.id))
+            return false;
           if (
             item.productMode &&
             item.productMode !== "both" &&
@@ -43,7 +98,7 @@ export function useSidebarNavigation() {
         }))
         .filter((item) => !item.children || item.children.length > 0);
     },
-    [mounted, isDevelopment, authLoading, user, productMode]
+    [mounted, isDevelopment, authLoading, user, productMode, showAdvancedAutomation]
   );
 
   // Sync product mode to the shared navigation package and rebuild items
