@@ -32,7 +32,7 @@ import {
 import { ArrowLeft, FileText, GitCommit, History } from "lucide-react";
 import { httpClient } from "@/services/service-factory";
 import { useCoordIdentity } from "@/components/admin/coord/use-coord-identity";
-import { isCoordMember } from "@/lib/coord-permissions";
+import { canAdminCoord } from "@/lib/coord-permissions";
 
 const API = "/api/v1/operations";
 
@@ -70,8 +70,10 @@ interface PlanHistoryResponse {
 export default function CoordPlanDetailPage() {
   const params = useParams<{ slug: string }>();
   const router = useRouter();
-  // Coord gates plan transition on tenant membership only (no role tier).
-  const canTransition = isCoordMember(useCoordIdentity());
+  // Plan status transition is an ADMIN-only operator action (coord#598 matrix:
+  // `POST /plans/:slug/transition` is wrapped by the operator-admin require_role
+  // gate), so the transition card is hidden for non-admin members.
+  const canTransition = canAdminCoord(useCoordIdentity());
   const slug = useMemo(() => {
     const raw = params?.slug;
     if (!raw) return "";

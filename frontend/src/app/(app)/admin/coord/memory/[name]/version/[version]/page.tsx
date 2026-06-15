@@ -39,7 +39,7 @@ import {
 import { ArrowLeft, BookOpen, RotateCcw } from "lucide-react";
 import { httpClient } from "@/services/service-factory";
 import { useCoordIdentity } from "@/components/admin/coord/use-coord-identity";
-import { isCoordMember } from "@/lib/coord-permissions";
+import { canAdminCoord } from "@/lib/coord-permissions";
 
 const API = "/api/v1/operations";
 
@@ -57,8 +57,13 @@ interface CoordMemoryVersionDetail {
 export default function CoordMemoryVersionPage() {
   const params = useParams<{ name: string; version: string }>();
   const router = useRouter();
-  // Coord gates memory restore on tenant membership only (no role tier).
-  const canRestore = isCoordMember(useCoordIdentity());
+  // Memory RESTORE is an ADMIN-only action (coord#598 matrix:
+  // `POST /coord/memory/:name/restore` is wrapped by the operator-admin
+  // require_role gate). NOTE the split: memory upsert/delete (the detail page)
+  // stay MEMBER-level (runner federation drives them), but rolling a memory
+  // back to a prior version is admin-only. Non-admins see the version content
+  // read-only without the restore affordance.
+  const canRestore = canAdminCoord(useCoordIdentity());
 
   const name = useMemo(() => {
     const raw = params?.name;

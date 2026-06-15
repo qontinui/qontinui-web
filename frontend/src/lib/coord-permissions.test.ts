@@ -69,9 +69,12 @@ describe("canAdminCoord", () => {
 
 describe("isCoordMember", () => {
   it("is true for any caller with at least one coord role", () => {
-    // This is the gate the console uses for spawn / plan-transition / memory
-    // writes / question-respond / merge / onboarding — coord gates all of
-    // these on tenant membership, NOT on a role tier.
+    // This is the MEMBER-level gate the console uses for the controls coord
+    // gates on tenant membership rather than a role tier: memory upsert/delete
+    // (runner federation), agent-question respond ("developers answer their own
+    // agents"), and merge onboarding (pair-start/accept/audit). ADMIN-only
+    // controls (spawn, plan-transition, memory restore, rollout/kill-switch/
+    // settings PATCH) gate on canAdminCoord instead — see coord#598.
     expect(isCoordMember(id(["operator"]))).toBe(true);
     expect(isCoordMember(id(["agent_supervisor"]))).toBe(true);
     expect(isCoordMember(id(["admin"]))).toBe(true);

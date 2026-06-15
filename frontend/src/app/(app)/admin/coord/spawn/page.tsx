@@ -33,7 +33,7 @@ import {
 import { ExternalLink, Filter, RefreshCw, Rocket } from "lucide-react";
 import { SpawnModal } from "@/components/admin/coord/SpawnModal";
 import { useCoordIdentity } from "@/components/admin/coord/use-coord-identity";
-import { isCoordMember } from "@/lib/coord-permissions";
+import { canAdminCoord } from "@/lib/coord-permissions";
 import type { CoordPlanRow } from "@/components/admin/coord/PlanCard";
 import { httpClient } from "@/services/service-factory";
 
@@ -71,9 +71,10 @@ function statusBadgeVariant(
 }
 
 export default function CoordSpawnPage() {
-  // Coord gates `POST /agents/spawn` on tenant membership only (no role tier),
-  // so any coord member may spawn.
-  const canSpawn = isCoordMember(useCoordIdentity());
+  // Spawning an agent is an ADMIN-only operator action (coord#598 matrix:
+  // `POST /agents/spawn` is wrapped by the operator-admin require_role gate),
+  // so only callers holding the coord `admin` role see the spawn affordance.
+  const canSpawn = canAdminCoord(useCoordIdentity());
   const [status, setStatus] = useState("in_progress");
   const [data, setData] = useState<PlansListResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -125,7 +126,7 @@ export default function CoordSpawnPage() {
           <p className="text-xs text-muted-foreground">
             {canSpawn
               ? "Pick a plan, hit Spawn, fill in device + repos + intent + the initial prompt. Coord acquires claims and ships the prompt on first tick."
-              : "Read-only view of plans available to spawn from. Spawning an agent requires coordination-layer access (a linked coord tenant membership)."}
+              : "Read-only view of plans available to spawn from. Spawning an agent is an admin-only operator action (requires the coord admin role)."}
           </p>
 
           <div className="flex flex-wrap items-center gap-2">

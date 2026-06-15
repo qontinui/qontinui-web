@@ -14,21 +14,23 @@
  * is only possible from a logged-in dashboard session — i.e. here.
  *
  * This is ENTIRELY a write surface (per-repo rollout promote/demote, the
- * emergency kill-switch, tenant merge defaults). The /admin/coord layout
- * is now viewable by all authenticated users, so this page gates itself.
- * Coord gates the rollout/kill-switch/settings routes on tenant membership
- * (no role tier), so the gate here is "is the caller a coord tenant member":
- * non-members get a read-only notice instead of the mutating component.
- * CoordNav comes from the layout.
+ * emergency kill-switch, tenant merge defaults + per-repo profile PATCH).
+ * The /admin/coord layout is now viewable by all authenticated users, so
+ * this page gates itself. Per the coord#598 matrix, ALL of these are
+ * ADMIN-only operator actions (`POST /pr-merge/rollout`, `/kill-switch`,
+ * PATCH `/pr-merge/settings`, PATCH `/pr-merge/repos/:repo/profile` are
+ * wrapped by the operator-admin require_role gate), so the gate here is
+ * `canAdminCoord`: non-admins get a read-only notice instead of the
+ * mutating component. CoordNav comes from the layout.
  */
 
 import { ShieldAlert } from "lucide-react";
 import { MergeOrchestrationSettings } from "@/components/operations/MergeOrchestrationSettings";
 import { useCoordIdentity } from "@/components/admin/coord/use-coord-identity";
-import { isCoordMember } from "@/lib/coord-permissions";
+import { canAdminCoord } from "@/lib/coord-permissions";
 
 export default function MergeSettingsPage() {
-  const canMutate = isCoordMember(useCoordIdentity());
+  const canMutate = canAdminCoord(useCoordIdentity());
 
   if (!canMutate) {
     return (
@@ -40,11 +42,12 @@ export default function MergeSettingsPage() {
           <ShieldAlert className="h-5 w-5 shrink-0 text-muted-foreground" />
           <div>
             <p className="font-medium">
-              Merge orchestration requires coordination-layer access
+              Merge orchestration is an admin-only operator surface
             </p>
             <p className="text-muted-foreground">
-              Merge rollout promote/demote, the emergency kill-switch, and
-              tenant merge defaults require a linked coord tenant membership.
+              Merge rollout promote/demote, the emergency kill-switch, tenant
+              merge defaults, and per-repo profile edits require the coord
+              admin role.
             </p>
           </div>
         </div>
