@@ -151,6 +151,134 @@ jobs:
           fi
           exit 0
 
+      # ── Φ_Schema authored-DAG snapshot (superset of chain-head) ───────────
+      # Phase 3 of the coord migration/drift/provenance plan. The chain-head
+      # step above POSTs only the head(s); coord now also wants the FULL
+      # authored DAG so it can render per-revision provenance (parents, the
+      # objects each revision touches, reversibility, merge points). Same
+      # stdlib-only scan, same bearer, same fail-open posture — observes, never
+      # gates. Upserts one row per revision into coord.migration_revisions.
+      - name: Report alembic DAG snapshot to coord
+        continue-on-error: true
+        env:
+          COORD_INGEST_TOKEN: ${{ secrets.COORD_INGEST_TOKEN }}
+        run: |
+          set -uo pipefail
+          python3 - <<'PY' > /tmp/snap.json
+          import json, os, re
+
+          D = "backend/alembic/versions"
+          GITHUB_SHA = os.environ.get("GITHUB_SHA")
+
+
+          def quoted_tokens(rhs):
+              return re.findall(r"[\"']([^\"']+)[\"']", rhs)
+
+
+          def parse_down_revisions(src):
+              # Capture the RHS of the FIRST `down_revision = ...`. Handles
+              # None -> [], a single id, and a tuple ('a','b'). The optional
+              # `: str | ...` annotation is tolerated by anchoring on `=`.
+              m = re.search(r"^down_revision[^=\n]*=\s*(.+)$", src, re.M)
+              if not m:
+                  return []
+              return quoted_tokens(m.group(1))
+
+
+          def parse_revision(src):
+              m = re.search(r"^revision(?::\s*str)?\s*=\s*[\"']([^\"']+)", src, re.M)
+              return m.group(1) if m else None
+
+
+          def block_after(src, header_regex):
+              # Return the source from the matched def header to the next
+              # top-level `def ` (or EOF). Good enough for our flat migration
+              # files.
+              m = re.search(header_regex, src, re.M)
+              if not m:
+                  return ""
+              start = m.end()
+              nxt = re.search(r"^def ", src[start:], re.M)
+              return src[start: start + nxt.start()] if nxt else src[start:]
+
+
+          def parse_reversible(src):
+              body = block_after(src, r"^def downgrade\s*\(")
+              # Reversible iff the downgrade body actually does DDL (`op.`),
+              # i.e. it is not just pass / comments / `...`.
+              return bool(re.search(r"\bop\.", body))
+
+
+          def parse_objects_touched(src):
+              body = block_after(src, r"^def upgrade\s*\(")
+              objs = []
+              for name in re.findall(r"op\.create_table\(\s*[\"']([^\"']+)", body):
+                  objs.append({"op": "created", "object_type": "table", "name": name})
+              for name in re.findall(r"op\.drop_table\(\s*[\"']([^\"']+)", body):
+                  objs.append({"op": "dropped", "object_type": "table", "name": name})
+              for name in re.findall(r"op\.create_index\(\s*[\"']([^\"']+)", body):
+                  objs.append({"op": "created", "object_type": "index", "name": name})
+              for name in re.findall(r"op\.drop_index\(\s*[\"']([^\"']+)", body):
+                  objs.append({"op": "dropped", "object_type": "index", "name": name})
+              # add_column: best-effort grab of the sa.Column("c") first arg in
+              # the same call. If not easily grabbable, skip (empty is fine).
+              for chunk in re.findall(r"op\.add_column\((.*?)\)\s*$", body, re.M | re.S):
+                  cm = re.search(r"sa\.Column\(\s*[\"']([^\"']+)", chunk)
+                  if cm:
+                      objs.append(
+                          {"op": "created", "object_type": "column", "name": cm.group(1)}
+                      )
+              return objs
+
+
+          revisions = []
+          try:
+              files = sorted(f for f in os.listdir(D) if f.endswith(".py"))
+          except OSError:
+              files = []
+          for f in files:
+              try:
+                  src = open(os.path.join(D, f), encoding="utf-8").read()
+                  rev = parse_revision(src)
+                  if not rev:
+                      continue
+                  downs = parse_down_revisions(src)
+                  revisions.append({
+                      "revision": rev,
+                      "down_revisions": downs,
+                      "objects_touched": parse_objects_touched(src),
+                      "reversible": parse_reversible(src),
+                      "is_merge_point": len(downs) > 1,
+                      "authored_in_sha": None,
+                      "authored_at": None,
+                  })
+              except Exception as e:  # best-effort — never crash the step
+                  print(f"# skip {f}: {e}")
+
+          print(json.dumps({
+              "repo": "qontinui/qontinui-web",
+              "source_sha": GITHUB_SHA,
+              "revisions": revisions,
+          }))
+          PY
+          N=$(python3 -c "import json;print(len(json.load(open('/tmp/snap.json'))['revisions']))" 2>/dev/null || echo 0)
+          if [ "${N:-0}" = "0" ]; then
+            echo "::warning::DAG snapshot parsed 0 revisions — skipping (best-effort)"
+            exit 0
+          fi
+          echo "DAG snapshot: $N revisions"
+          CODE=$(curl -s -o /tmp/snap_resp -w '%{http_code}' --max-time 20 \
+            -X POST "https://coord.qontinui.io/coord/schema/revisions-snapshot" \
+            -H "Authorization: Bearer $COORD_INGEST_TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d @/tmp/snap.json || echo 000)
+          if [ "$CODE" = "200" ]; then
+            echo "snapshot reported: $(head -c 200 /tmp/snap_resp)"
+          else
+            echo "::warning::revisions-snapshot returned $CODE (best-effort, migration proceeds): $(head -c 300 /tmp/snap_resp 2>/dev/null)"
+          fi
+          exit 0
+
       # The migrator Dockerfile uses qontinui-root as build context (one
       # level up from any sibling repo's checkout). Sibling-checkout pattern
       # mirrors backend-deploy-production.yml and the runner CI.
@@ -304,6 +432,67 @@ jobs:
             echo "::error::Migrator exited with code ${EXIT_CODE} (reason: ${STOP_REASON})"
             exit 1
           fi
+
+      # ── Report the migration apply to coord (best-effort) ─────────────────
+      # Phase 3 provenance: after the migrator one-shot succeeds (the step
+      # above `exit 1`s otherwise), record the apply event in
+      # coord.migration_applications. The applied revision == the authored head
+      # computed by the same stdlib scan used for chain-head attestation. This
+      # workflow targets the STAGING CANONICAL DB (see header line ~9), so
+      # database = canonical-pg. Best-effort, fail-open — never gates, never
+      # alters the (already-green) migrate outcome.
+      - name: Report migration apply to coord
+        continue-on-error: true
+        env:
+          COORD_INGEST_TOKEN: ${{ secrets.COORD_INGEST_TOKEN }}
+        run: |
+          set -uo pipefail
+          HEADS_LINE=$(python3 - <<'PY'
+          import os, re
+          revs, parents = set(), set()
+          d = "backend/alembic/versions"
+          for f in os.listdir(d):
+              if not f.endswith(".py"):
+                  continue
+              s = open(os.path.join(d, f), encoding="utf-8").read()
+              m = re.search(r"^revision(?::\s*str)?\s*=\s*[\"']([^\"']+)", s, re.M)
+              if m:
+                  revs.add(m.group(1))
+              for dm in re.finditer(r"^down_revision[^=]*=\s*(.+)", s, re.M):
+                  for tok in re.findall(r"[\"']([^\"']+)[\"']", dm.group(1)):
+                      parents.add(tok)
+          heads = sorted(revs - parents)
+          print(f"{','.join(heads)} {len(heads)}")
+          PY
+          )
+          HEADS="${HEADS_LINE% *}"
+          COUNT="${HEADS_LINE##* }"
+          if [ -z "${HEADS:-}" ] || [ "${COUNT:-0}" != "1" ]; then
+            echo "::warning::cannot report apply — authored head count=${COUNT:-0} (expected single head); skipping"
+            exit 0
+          fi
+          echo "applied head: $HEADS"
+          BODY=$(python3 -c "
+          import json, os, sys
+          print(json.dumps({
+              'repo': 'qontinui/qontinui-web',
+              'revision': sys.argv[1],
+              'database': 'canonical-pg',
+              'applied_by': 'migrate-workflow',
+              'source_sha': os.environ.get('GITHUB_SHA'),
+              'duration_ms': None,
+          }))" "$HEADS")
+          CODE=$(curl -s -o /tmp/apply_resp -w '%{http_code}' --max-time 20 \
+            -X POST "https://coord.qontinui.io/coord/schema/applications" \
+            -H "Authorization: Bearer $COORD_INGEST_TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d "$BODY" || echo 000)
+          if [ "$CODE" = "200" ]; then
+            echo "apply reported: $(head -c 200 /tmp/apply_resp)"
+          else
+            echo "::warning::applications POST returned $CODE (best-effort): $(head -c 300 /tmp/apply_resp 2>/dev/null)"
+          fi
+          exit 0
 
       # ── Page on migration failure (best-effort) ───────────────────────────
       # A failed migrate run used to just turn red — nobody was paged, which is
