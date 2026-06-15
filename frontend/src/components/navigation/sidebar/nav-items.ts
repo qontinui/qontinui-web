@@ -110,10 +110,11 @@ export const devNavItems: NavItem[] = [
   // Coord Console — the coordination-layer surface (fleet, trees, pull
   // decisions, plans). Promoted into the Coordination group for prominence.
   // NOTE: /admin/coord/layout.tsx is VIEWABLE by every authenticated user
-  // (operator/mutation controls are gated per-control on is_superuser via
-  // useCoordOperator), so this is NOT adminOnly — all authenticated users
-  // see it. The read views give them the same coord reporting as Operations
-  // + Commits, with write controls hidden unless they're a superuser.
+  // (mutation controls are gated per-control on the caller's COORD role via
+  // useCoordIdentity + @/lib/coord-permissions, mirroring coord's server-side
+  // RBAC), so this is NOT adminOnly — all authenticated users see it. The
+  // read views give them the same coord reporting as Operations + Commits,
+  // with write controls hidden unless their coord role can drive them.
   {
     id: "admin-coord",
     label: "Coord Console",

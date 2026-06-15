@@ -32,7 +32,8 @@ import {
 } from "@/components/ui/select";
 import { ExternalLink, Filter, RefreshCw, Rocket } from "lucide-react";
 import { SpawnModal } from "@/components/admin/coord/SpawnModal";
-import { useCoordOperator } from "@/components/admin/coord/use-coord-operator";
+import { useCoordIdentity } from "@/components/admin/coord/use-coord-identity";
+import { isCoordMember } from "@/lib/coord-permissions";
 import type { CoordPlanRow } from "@/components/admin/coord/PlanCard";
 import { httpClient } from "@/services/service-factory";
 
@@ -70,7 +71,9 @@ function statusBadgeVariant(
 }
 
 export default function CoordSpawnPage() {
-  const { isOperator } = useCoordOperator();
+  // Coord gates `POST /agents/spawn` on tenant membership only (no role tier),
+  // so any coord member may spawn.
+  const canSpawn = isCoordMember(useCoordIdentity());
   const [status, setStatus] = useState("in_progress");
   const [data, setData] = useState<PlansListResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -120,9 +123,9 @@ export default function CoordSpawnPage() {
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-xs text-muted-foreground">
-            {isOperator
+            {canSpawn
               ? "Pick a plan, hit Spawn, fill in device + repos + intent + the initial prompt. Coord acquires claims and ships the prompt on first tick."
-              : "Read-only view of plans available to spawn from. Spawning an agent is an operator action and requires admin privileges."}
+              : "Read-only view of plans available to spawn from. Spawning an agent requires coordination-layer access (a linked coord tenant membership)."}
           </p>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -195,7 +198,7 @@ export default function CoordSpawnPage() {
                   >
                     detail <ExternalLink className="h-3 w-3" />
                   </Link>
-                  {isOperator && (
+                  {canSpawn && (
                     <Button
                       size="sm"
                       onClick={() => setSpawnTarget(p)}
@@ -219,7 +222,7 @@ export default function CoordSpawnPage() {
         </CardContent>
       </Card>
 
-      {isOperator && spawnTarget && (
+      {canSpawn && spawnTarget && (
         <SpawnModal
           open={spawnTarget !== null}
           onClose={() => setSpawnTarget(null)}

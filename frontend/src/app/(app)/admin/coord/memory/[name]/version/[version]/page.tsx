@@ -38,7 +38,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { ArrowLeft, BookOpen, RotateCcw } from "lucide-react";
 import { httpClient } from "@/services/service-factory";
-import { useCoordOperator } from "@/components/admin/coord/use-coord-operator";
+import { useCoordIdentity } from "@/components/admin/coord/use-coord-identity";
+import { isCoordMember } from "@/lib/coord-permissions";
 
 const API = "/api/v1/operations";
 
@@ -56,7 +57,8 @@ interface CoordMemoryVersionDetail {
 export default function CoordMemoryVersionPage() {
   const params = useParams<{ name: string; version: string }>();
   const router = useRouter();
-  const { isOperator } = useCoordOperator();
+  // Coord gates memory restore on tenant membership only (no role tier).
+  const canRestore = isCoordMember(useCoordIdentity());
 
   const name = useMemo(() => {
     const raw = params?.name;
@@ -176,7 +178,7 @@ export default function CoordMemoryVersionPage() {
             </CardContent>
           </Card>
 
-          {isOperator && (
+          {canRestore && (
           <Card data-testid="coord-memory-version-restore">
             <CardContent className="p-4">
               <AlertDialog>

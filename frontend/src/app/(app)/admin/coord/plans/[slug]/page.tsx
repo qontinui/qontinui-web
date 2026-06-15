@@ -31,7 +31,8 @@ import {
 } from "@/components/ui/select";
 import { ArrowLeft, FileText, GitCommit, History } from "lucide-react";
 import { httpClient } from "@/services/service-factory";
-import { useCoordOperator } from "@/components/admin/coord/use-coord-operator";
+import { useCoordIdentity } from "@/components/admin/coord/use-coord-identity";
+import { isCoordMember } from "@/lib/coord-permissions";
 
 const API = "/api/v1/operations";
 
@@ -69,7 +70,8 @@ interface PlanHistoryResponse {
 export default function CoordPlanDetailPage() {
   const params = useParams<{ slug: string }>();
   const router = useRouter();
-  const { isOperator } = useCoordOperator();
+  // Coord gates plan transition on tenant membership only (no role tier).
+  const canTransition = isCoordMember(useCoordIdentity());
   const slug = useMemo(() => {
     const raw = params?.slug;
     if (!raw) return "";
@@ -187,7 +189,7 @@ export default function CoordPlanDetailPage() {
             </CardHeader>
           </Card>
 
-          {isOperator && (
+          {canTransition && (
           <Card data-testid="coord-plan-transition">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">

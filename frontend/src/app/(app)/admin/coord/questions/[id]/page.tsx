@@ -35,7 +35,8 @@ import {
   MessageSquareWarning,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
-import { useCoordOperator } from "@/components/admin/coord/use-coord-operator";
+import { useCoordIdentity } from "@/components/admin/coord/use-coord-identity";
+import { isCoordMember } from "@/lib/coord-permissions";
 import { cn } from "@/lib/utils";
 import { httpClient } from "@/services/service-factory";
 import {
@@ -61,7 +62,12 @@ export default function CoordQuestionDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const { user } = useAuth();
-  const { isOperator } = useCoordOperator();
+  const identity = useCoordIdentity();
+  // Coord gates `POST /coord/agent-questions/:id/respond` (the route this page
+  // proxies to) on tenant membership only — no role tier — so any coord member
+  // may answer. (The agent_supervisor-gated `respond-sso` variant is a
+  // different route the console does not use.)
+  const canRespond = isCoordMember(identity);
 
   const id = useMemo(() => {
     const raw = params?.id;
@@ -215,7 +221,7 @@ export default function CoordQuestionDetailPage() {
             </Card>
           )}
 
-          {isOperator && !answered && options.length > 0 && (
+          {canRespond && !answered && options.length > 0 && (
             <Card data-testid="coord-question-options">
               <CardHeader>
                 <CardTitle className="text-sm">Suggested options</CardTitle>
@@ -269,7 +275,7 @@ export default function CoordQuestionDetailPage() {
                 <Inbox className="h-4 w-4" />
                 {answered
                   ? "Recorded response"
-                  : isOperator
+                  : canRespond
                     ? "Respond"
                     : "Response"}
               </CardTitle>
@@ -288,13 +294,14 @@ export default function CoordQuestionDetailPage() {
                       : ""}
                   </p>
                 </>
-              ) : !isOperator ? (
+              ) : !canRespond ? (
                 <p
                   className="text-sm text-muted-foreground italic"
                   data-testid="coord-question-readonly"
                 >
                   This question is awaiting an operator response. Answering
-                  agent questions requires admin privileges.
+                  agent questions requires coordination-layer access (a linked
+                  coord tenant membership).
                 </p>
               ) : (
                 <>

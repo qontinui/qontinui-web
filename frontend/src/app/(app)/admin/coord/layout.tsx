@@ -6,16 +6,19 @@
  * Plan `2026-05-19-coordinator-production-readiness.md` Phase 2 (Wave 2).
  *
  * Renders the CoordNav + page body. The console is VIEWABLE by every
- * authenticated user — this layout does NOT gate on is_superuser. Standard
+ * authenticated user — this layout does NOT gate on any role. Standard
  * `(app)` auth (middleware + AppAuthGate) still requires an authenticated
  * session to reach any page here; an unauthenticated visitor is redirected
  * to /login by that layer, not by this component.
  *
- * Operator/mutation controls below this layout (spawn, plan transitions,
- * memory writes, rollout promote/demote, onboarding writes, question
- * answers) are gated PER-CONTROL on is_superuser via `useCoordOperator()`
- * — "view for all, mutate for admins". This layout is no longer the
- * write-gate.
+ * Mutation controls below this layout (spawn, plan transitions, memory
+ * writes, rollout promote/demote, onboarding writes, question answers) are
+ * gated PER-CONTROL on the caller's COORD role via `useCoordIdentity()` +
+ * `@/lib/coord-permissions` — mirroring coord's server-side RBAC
+ * (`operator < agent_supervisor < admin`). Coord gates these routes on
+ * tenant membership, so the controls are visible to any coord member and
+ * hidden from non-members. This layout is no longer the write-gate, and the
+ * gating is UX only — coord enforces the real boundary server-side.
  *
  * Five primary pages:
  *  - /admin/coord/fleet

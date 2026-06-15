@@ -12,7 +12,8 @@
  *
  * No write controls — this page is read-only for everyone. (The coord
  * console layout is viewable by all authenticated users; write controls
- * elsewhere are gated per-control on is_superuser via useCoordOperator.)
+ * elsewhere are gated per-control on the caller's coord role via
+ * useCoordIdentity + @/lib/coord-permissions.)
  */
 
 import { useCallback, useEffect, useState } from "react";
