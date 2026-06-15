@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/select";
 import { ArrowLeft, FileText, GitCommit, History } from "lucide-react";
 import { httpClient } from "@/services/service-factory";
+import { useCoordOperator } from "@/components/admin/coord/use-coord-operator";
 
 const API = "/api/v1/operations";
 
@@ -68,6 +69,7 @@ interface PlanHistoryResponse {
 export default function CoordPlanDetailPage() {
   const params = useParams<{ slug: string }>();
   const router = useRouter();
+  const { isOperator } = useCoordOperator();
   const slug = useMemo(() => {
     const raw = params?.slug;
     if (!raw) return "";
@@ -185,6 +187,7 @@ export default function CoordPlanDetailPage() {
             </CardHeader>
           </Card>
 
+          {isOperator && (
           <Card data-testid="coord-plan-transition">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
@@ -235,6 +238,7 @@ export default function CoordPlanDetailPage() {
               </div>
             </CardContent>
           </Card>
+          )}
 
           <Card data-testid="coord-plan-history">
             <CardHeader>

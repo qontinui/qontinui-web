@@ -12,12 +12,41 @@
  * requires: `POST /pr-merge/rollout` rejects non-interactive bearers
  * (403 non_interactive_write_forbidden), so promoting a repo to `live`
  * is only possible from a logged-in dashboard session — i.e. here.
- * Admin-gating + CoordNav come from the /admin/coord layout.
+ *
+ * This is ENTIRELY a write surface (per-repo rollout promote/demote, the
+ * emergency kill-switch, tenant merge defaults). The /admin/coord layout
+ * is now viewable by all authenticated users, so this page gates itself:
+ * non-superusers get a read-only "operator action" notice instead of the
+ * mutating settings component. CoordNav comes from the layout.
  */
 
+import { ShieldAlert } from "lucide-react";
 import { MergeOrchestrationSettings } from "@/components/operations/MergeOrchestrationSettings";
+import { useCoordOperator } from "@/components/admin/coord/use-coord-operator";
 
 export default function MergeSettingsPage() {
+  const { isOperator } = useCoordOperator();
+
+  if (!isOperator) {
+    return (
+      <div className="p-3 sm:p-6" data-testid="coord-merge-settings-page">
+        <div
+          className="flex items-start gap-3 rounded-md border border-border bg-muted/40 p-4 text-sm"
+          data-testid="coord-merge-settings-readonly"
+        >
+          <ShieldAlert className="h-5 w-5 shrink-0 text-muted-foreground" />
+          <div>
+            <p className="font-medium">Operator actions require admin privileges</p>
+            <p className="text-muted-foreground">
+              Merge rollout promote/demote and the emergency kill-switch are
+              operator-only. Ask an administrator to make changes here.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-3 sm:p-6" data-testid="coord-merge-settings-page">
       <MergeOrchestrationSettings />

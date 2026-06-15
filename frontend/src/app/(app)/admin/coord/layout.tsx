@@ -1,12 +1,23 @@
 "use client";
 
 /**
- * /admin/coord/* — operator console shell.
+ * /admin/coord/* — coordination console shell.
  *
  * Plan `2026-05-19-coordinator-production-readiness.md` Phase 2 (Wave 2).
  *
- * Admin-gates every page below this layout, renders the CoordNav, and
- * routes the page body. Five primary pages:
+ * Renders the CoordNav + page body. The console is VIEWABLE by every
+ * authenticated user — this layout does NOT gate on is_superuser. Standard
+ * `(app)` auth (middleware + AppAuthGate) still requires an authenticated
+ * session to reach any page here; an unauthenticated visitor is redirected
+ * to /login by that layer, not by this component.
+ *
+ * Operator/mutation controls below this layout (spawn, plan transitions,
+ * memory writes, rollout promote/demote, onboarding writes, question
+ * answers) are gated PER-CONTROL on is_superuser via `useCoordOperator()`
+ * — "view for all, mutate for admins". This layout is no longer the
+ * write-gate.
+ *
+ * Five primary pages:
  *  - /admin/coord/fleet
  *  - /admin/coord/trees
  *  - /admin/coord/plans (+ /admin/coord/plans/[slug])
@@ -17,11 +28,7 @@
  * (PR #158) live in CoordNav.
  */
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { Activity } from "lucide-react";
-import { useAuth } from "@/contexts/auth-context";
 import CoordNav from "@/components/admin/coord/CoordNav";
 
 export default function CoordLayout({
@@ -29,20 +36,6 @@ export default function CoordLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { user } = useAuth();
-  const router = useRouter();
-
-  useEffect(() => {
-    if (user && !user.is_superuser) {
-      toast.error("Access denied - Admin privileges required");
-      router.push("/build/workflows");
-    }
-  }, [user, router]);
-
-  if (!user?.is_superuser) {
-    return null;
-  }
-
   return (
     <div
       data-testid="coord-layout"

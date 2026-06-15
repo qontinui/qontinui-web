@@ -107,11 +107,13 @@ export const devNavItems: NavItem[] = [
     color: "#10B981",
     group: "Coordination",
   },
-  // Coord Console — the coordination-layer admin surface (fleet, trees, pull
+  // Coord Console — the coordination-layer surface (fleet, trees, pull
   // decisions, plans). Promoted into the Coordination group for prominence.
-  // NOTE: /admin/coord/layout.tsx enforces is_superuser, so this stays
-  // adminOnly — non-admins get coord reporting via Operations + Commits
-  // (which gate on "any authenticated user, tenant-scoped" server-side).
+  // NOTE: /admin/coord/layout.tsx is VIEWABLE by every authenticated user
+  // (operator/mutation controls are gated per-control on is_superuser via
+  // useCoordOperator), so this is NOT adminOnly — all authenticated users
+  // see it. The read views give them the same coord reporting as Operations
+  // + Commits, with write controls hidden unless they're a superuser.
   {
     id: "admin-coord",
     label: "Coord Console",
@@ -119,7 +121,6 @@ export const devNavItems: NavItem[] = [
     icon: React.createElement(Network, { className: "size-5" }),
     route: "/admin/coord",
     color: "#10B981",
-    adminOnly: true,
     group: "Coordination",
   },
 

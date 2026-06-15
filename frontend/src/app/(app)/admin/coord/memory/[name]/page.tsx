@@ -56,6 +56,7 @@ import {
   X,
 } from "lucide-react";
 import { httpClient } from "@/services/service-factory";
+import { useCoordOperator } from "@/components/admin/coord/use-coord-operator";
 
 const API = "/api/v1/operations";
 
@@ -81,6 +82,7 @@ interface CoordMemoryDetail {
 export default function CoordMemoryDetailPage() {
   const params = useParams<{ name: string }>();
   const router = useRouter();
+  const { isOperator } = useCoordOperator();
   const name = useMemo(() => {
     const raw = params?.name;
     if (!raw) return "";
@@ -218,7 +220,15 @@ export default function CoordMemoryDetailPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="flex flex-wrap items-center gap-2">
-                {!editing ? (
+                {!isOperator ? (
+                  <p
+                    className="text-xs text-muted-foreground italic"
+                    data-testid="coord-memory-readonly"
+                  >
+                    Read-only — editing and deleting memory require admin
+                    privileges.
+                  </p>
+                ) : !editing ? (
                   <>
                     <Button
                       variant="outline"

@@ -35,6 +35,7 @@ import {
   MessageSquareWarning,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
+import { useCoordOperator } from "@/components/admin/coord/use-coord-operator";
 import { cn } from "@/lib/utils";
 import { httpClient } from "@/services/service-factory";
 import {
@@ -60,6 +61,7 @@ export default function CoordQuestionDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const { user } = useAuth();
+  const { isOperator } = useCoordOperator();
 
   const id = useMemo(() => {
     const raw = params?.id;
@@ -213,7 +215,7 @@ export default function CoordQuestionDetailPage() {
             </Card>
           )}
 
-          {options.length > 0 && (
+          {isOperator && !answered && options.length > 0 && (
             <Card data-testid="coord-question-options">
               <CardHeader>
                 <CardTitle className="text-sm">Suggested options</CardTitle>
@@ -265,7 +267,11 @@ export default function CoordQuestionDetailPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-sm">
                 <Inbox className="h-4 w-4" />
-                {answered ? "Recorded response" : "Respond"}
+                {answered
+                  ? "Recorded response"
+                  : isOperator
+                    ? "Respond"
+                    : "Response"}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -282,6 +288,14 @@ export default function CoordQuestionDetailPage() {
                       : ""}
                   </p>
                 </>
+              ) : !isOperator ? (
+                <p
+                  className="text-sm text-muted-foreground italic"
+                  data-testid="coord-question-readonly"
+                >
+                  This question is awaiting an operator response. Answering
+                  agent questions requires admin privileges.
+                </p>
               ) : (
                 <>
                   <Textarea

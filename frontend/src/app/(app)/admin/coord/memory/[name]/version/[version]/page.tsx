@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { ArrowLeft, BookOpen, RotateCcw } from "lucide-react";
 import { httpClient } from "@/services/service-factory";
+import { useCoordOperator } from "@/components/admin/coord/use-coord-operator";
 
 const API = "/api/v1/operations";
 
@@ -55,6 +56,7 @@ interface CoordMemoryVersionDetail {
 export default function CoordMemoryVersionPage() {
   const params = useParams<{ name: string; version: string }>();
   const router = useRouter();
+  const { isOperator } = useCoordOperator();
 
   const name = useMemo(() => {
     const raw = params?.name;
@@ -174,6 +176,7 @@ export default function CoordMemoryVersionPage() {
             </CardContent>
           </Card>
 
+          {isOperator && (
           <Card data-testid="coord-memory-version-restore">
             <CardContent className="p-4">
               <AlertDialog>
@@ -217,6 +220,7 @@ export default function CoordMemoryVersionPage() {
               </AlertDialog>
             </CardContent>
           </Card>
+          )}
 
           <Card data-testid="coord-memory-version-content">
             <CardHeader>

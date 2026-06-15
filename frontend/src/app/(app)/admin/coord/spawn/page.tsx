@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/select";
 import { ExternalLink, Filter, RefreshCw, Rocket } from "lucide-react";
 import { SpawnModal } from "@/components/admin/coord/SpawnModal";
+import { useCoordOperator } from "@/components/admin/coord/use-coord-operator";
 import type { CoordPlanRow } from "@/components/admin/coord/PlanCard";
 import { httpClient } from "@/services/service-factory";
 
@@ -69,6 +70,7 @@ function statusBadgeVariant(
 }
 
 export default function CoordSpawnPage() {
+  const { isOperator } = useCoordOperator();
   const [status, setStatus] = useState("in_progress");
   const [data, setData] = useState<PlansListResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -118,9 +120,9 @@ export default function CoordSpawnPage() {
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-xs text-muted-foreground">
-            Pick a plan, hit Spawn, fill in device + repos + intent + the
-            initial prompt. Coord acquires claims and ships the prompt on
-            first tick.
+            {isOperator
+              ? "Pick a plan, hit Spawn, fill in device + repos + intent + the initial prompt. Coord acquires claims and ships the prompt on first tick."
+              : "Read-only view of plans available to spawn from. Spawning an agent is an operator action and requires admin privileges."}
           </p>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -193,14 +195,16 @@ export default function CoordSpawnPage() {
                   >
                     detail <ExternalLink className="h-3 w-3" />
                   </Link>
-                  <Button
-                    size="sm"
-                    onClick={() => setSpawnTarget(p)}
-                    data-testid="coord-spawn-row-button"
-                  >
-                    <Rocket className="h-3 w-3 mr-1" />
-                    Spawn
-                  </Button>
+                  {isOperator && (
+                    <Button
+                      size="sm"
+                      onClick={() => setSpawnTarget(p)}
+                      data-testid="coord-spawn-row-button"
+                    >
+                      <Rocket className="h-3 w-3 mr-1" />
+                      Spawn
+                    </Button>
+                  )}
                 </div>
               ))}
             </div>
@@ -215,7 +219,7 @@ export default function CoordSpawnPage() {
         </CardContent>
       </Card>
 
-      {spawnTarget && (
+      {isOperator && spawnTarget && (
         <SpawnModal
           open={spawnTarget !== null}
           onClose={() => setSpawnTarget(null)}
