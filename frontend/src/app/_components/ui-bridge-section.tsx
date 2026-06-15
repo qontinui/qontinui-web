@@ -24,7 +24,7 @@ export function UIBridgeSection() {
         </div>
 
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-          <Card className="p-8 bg-card border-border hover:border-primary/50 transition-all duration-300 group">
+          <Card className="p-8 bg-card border-border">
             <div className="mb-4">
               <div className="w-12 h-12 bg-primary/20 rounded-lg flex items-center justify-center">
                 <Layers className="h-6 w-6 text-primary" />
@@ -39,7 +39,7 @@ export function UIBridgeSection() {
             </p>
           </Card>
 
-          <Card className="p-8 bg-card border-border hover:border-secondary/50 transition-all duration-300 group">
+          <Card className="p-8 bg-card border-border">
             <div className="mb-4">
               <div className="w-12 h-12 bg-secondary/20 rounded-lg flex items-center justify-center">
                 <Monitor className="h-6 w-6 text-secondary" />
@@ -52,7 +52,7 @@ export function UIBridgeSection() {
             </p>
           </Card>
 
-          <Card className="p-8 bg-card border-border hover:border-accent/50 transition-all duration-300 group">
+          <Card className="p-8 bg-card border-border">
             <div className="mb-4">
               <div className="w-12 h-12 bg-accent/20 rounded-lg flex items-center justify-center">
                 <Cpu className="h-6 w-6 text-accent" />
@@ -67,7 +67,7 @@ export function UIBridgeSection() {
             </p>
           </Card>
 
-          <Card className="p-8 bg-card border-border hover:border-primary/50 transition-all duration-300 group">
+          <Card className="p-8 bg-card border-border">
             <div className="mb-4">
               <div className="w-12 h-12 bg-primary/20 rounded-lg flex items-center justify-center">
                 <Puzzle className="h-6 w-6 text-primary" />
@@ -82,7 +82,7 @@ export function UIBridgeSection() {
             </p>
           </Card>
 
-          <Card className="p-8 bg-card border-border hover:border-secondary/50 transition-all duration-300 group">
+          <Card className="p-8 bg-card border-border">
             <div className="mb-4">
               <div className="w-12 h-12 bg-secondary/20 rounded-lg flex items-center justify-center">
                 <Chrome className="h-6 w-6 text-secondary" />
@@ -95,7 +95,7 @@ export function UIBridgeSection() {
             </p>
           </Card>
 
-          <Card className="p-8 bg-card border-border hover:border-accent/50 transition-all duration-300 group">
+          <Card className="p-8 bg-card border-border">
             <div className="mb-4">
               <div className="w-12 h-12 bg-accent/20 rounded-lg flex items-center justify-center">
                 <Bot className="h-6 w-6 text-accent" />
