@@ -4,6 +4,8 @@ import { useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AuthForm } from "@/components/auth-form";
 import { useAuth } from "@/contexts/auth-context";
+import { startCognitoSignup } from "@/services/auth/cognito-oauth";
+import { toast } from "sonner";
 
 export const dynamic = "force-dynamic";
 
@@ -50,13 +52,21 @@ export default function LoginPage() {
           Don&apos;t have an account?{" "}
           <button
             type="button"
-            onClick={() => {
-              // Reuse the auth dialog from the marketing header by sending
-              // the user to the landing page with a hint. The header reads
-              // this via state, not URL, so we just route them home — they
-              // can click "Sign In" to open the dialog with the Register
-              // tab. For now we link to the home page CTA.
-              router.push("/");
+            onClick={async () => {
+              // Send new users straight to the Cognito hosted-UI registration
+              // screen so they can create an account. Same PKCE/`/auth/callback`
+              // round-trip as sign-in, carrying the post-signup `next` path.
+              try {
+                await startCognitoSignup(
+                  next && next.startsWith("/") ? next : undefined
+                );
+              } catch (error: unknown) {
+                toast.error(
+                  error instanceof Error
+                    ? error.message
+                    : "Could not start sign-up. Please try again."
+                );
+              }
             }}
             className="text-primary underline-offset-4 hover:underline"
           >
