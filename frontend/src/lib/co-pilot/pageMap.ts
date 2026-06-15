@@ -44,11 +44,17 @@ function routeForItem(item: NavigationItem): string {
 /**
  * The co-pilot's OWN route. Excluded from the targetable page list so the
  * planner can never ground a step on the co-pilot surface or "navigate to
- * /co-pilot" from /co-pilot (self-targeting). The co-pilot only ever drives
- * OTHER pages after it soft-navigates away, so its own page is never a valid
- * target. Pairs with the `data-bridge-invisible` guard on the page wrappers.
+ * /prompt-home" from /prompt-home (self-targeting). The co-pilot only ever
+ * drives OTHER pages after it soft-navigates away, so its own page is never a
+ * valid target. Pairs with the `data-bridge-invisible` guard on the surface
+ * wrappers.
+ *
+ * The co-pilot surface IS the Home route (`/prompt-home`) — Home renders the
+ * co-pilot, matching the runner. (The shared navigation registry surfaces
+ * `prompt-home` as a web nav item, so this exclusion keeps Home out of the
+ * planner's targetable pages.)
  */
-const SELF_ROUTE = "/co-pilot";
+const SELF_ROUTE = "/prompt-home";
 
 /**
  * Co-pilot-local description overrides, keyed by nav-item id.
@@ -212,7 +218,11 @@ const RUNNER_PAGE_ID_ALIASES: Readonly<Record<string, string>> = {
   "page-processes": "processes",
   "page-triggers": "triggers",
   "page-tasks": "tasks",
-  "page-prompt-home": "prompt-home",
+  // NOTE: no `page-prompt-home` alias — `/prompt-home` is the co-pilot's OWN
+  // surface (SELF_ROUTE), excluded from the targetable page map. A leaked
+  // runner `page-prompt-home` must NOT resolve to a navigable target (the
+  // co-pilot never navigates to itself), so it deliberately falls through to
+  // `undefined`.
   "page-reflection": "reflection",
   "page-architecture": "architecture",
   "page-help": "help",

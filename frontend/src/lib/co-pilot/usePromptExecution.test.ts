@@ -253,13 +253,13 @@ describe("usePromptExecution — navigate landing poll (honest success)", () => 
   };
 
   beforeEach(() => {
-    // Start every test on the co-pilot's own route.
-    window.history.replaceState({}, "", "/co-pilot");
+    // Start every test on the co-pilot's own route (the Home surface).
+    window.history.replaceState({}, "", "/prompt-home");
   });
 
   it("marks the navigate step FAILED only when the tab NEVER moves within the full poll window", async () => {
     // Genuine non-delivery: the relay accepted the command (200) but the page
-    // never moves — we stay on /co-pilot for the entire window. The poll must run
+    // never moves — we stay on /prompt-home for the entire window. The poll must run
     // to the deadline and THEN fail honestly (not prematurely). Fake timers let
     // the full ~5s landing window elapse instantly; render FIRST (under real
     // timers) so the hook's initial mount commits before we freeze the clock.
