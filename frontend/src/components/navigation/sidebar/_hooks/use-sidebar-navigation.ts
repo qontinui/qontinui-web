@@ -17,14 +17,10 @@ import { useAdvancedAutomation } from "@/contexts/advanced-automation-context";
 // workflow/task/automation pages below are dead weight for a session+coord user
 // and are demoted out of the default menu.
 //
-// WEB_HIDDEN_IDS — runner-only features whose web routes 404 (no page exists on
-// web). Always removed from the web sidebar.
-const WEB_HIDDEN_IDS = new Set<string>([
-  "reflection",
-  "tasks",
-  "triggers",
-]);
-
+// (reflection/tasks/triggers — runner-only features whose web routes 404 — are
+// now filtered out at the source by `platforms: ["runner"]` in
+// @qontinui/navigation >=0.1.4, so no web-local hide list is needed for them.)
+//
 // WEB_ADVANCED_IDS — workflow / task / automation / visual surfaces. Removed
 // from the default web menu but revealed by the Settings → General "Show
 // advanced automation features" toggle (same toggle that reveals the
@@ -78,9 +74,9 @@ export function useSidebarNavigation() {
       return items
         .filter((item) => {
           if (item.hiddenInProd && (!mounted || !isDevelopment)) return false;
-          // Web menu policy: runner-only items that 404 on web are always gone;
-          // workflow/automation/visual items are gated behind the advanced toggle.
-          if (WEB_HIDDEN_IDS.has(item.id)) return false;
+          // Web menu policy: workflow/automation/visual items are gated behind
+          // the advanced toggle. (Runner-only items are platform-filtered by
+          // the shared nav package.)
           if (!showAdvancedAutomation && WEB_ADVANCED_IDS.has(item.id))
             return false;
           if (
