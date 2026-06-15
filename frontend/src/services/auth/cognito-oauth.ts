@@ -45,6 +45,11 @@ export type CognitoProvider = "Google" | "MicrosoftEntra" | "GitHub";
 const AUTHORIZE_ENDPOINT = `${COGNITO_HOSTED_UI_DOMAIN}/oauth2/authorize`;
 const TOKEN_ENDPOINT = `${COGNITO_HOSTED_UI_DOMAIN}/oauth2/token`;
 const LOGOUT_ENDPOINT = `${COGNITO_HOSTED_UI_DOMAIN}/logout`;
+// Hosted-UI registration screen. Same OAuth2 params as `/oauth2/authorize`
+// (and the same `/auth/callback` round-trip), but lands the user directly on
+// the "create account" form instead of the sign-in form — the right
+// destination for a "Get started"/new-user CTA.
+const SIGNUP_ENDPOINT = `${COGNITO_HOSTED_UI_DOMAIN}/signup`;
 
 // sessionStorage keys for the in-flight PKCE values. Tab-scoped, single-use:
 // cleared by `consumePkceState()` as soon as the callback reads them.
@@ -193,6 +198,26 @@ export async function startCognitoLogin(
 }
 
 /**
+ * Begin account creation: navigate to the Cognito hosted-UI **registration**
+ * screen (`/signup`) so a brand-new user lands directly on the "create account"
+ * form instead of the sign-in form. Wire-identical to `startCognitoLogin()`
+ * with no provider (same PKCE verifier/challenge, same `state`, same
+ * `/auth/callback` round-trip) — only the hosted-UI endpoint differs, and the
+ * hosted UI still links back to "Sign in" for users who already have an
+ * account. This is the correct destination for a "Get started" CTA.
+ *
+ * @param next Optional post-signup destination (a same-origin path), carried
+ *             through `state` exactly as in the login flow.
+ */
+export async function startCognitoSignup(next?: string): Promise<void> {
+  await beginAuthorize(
+    undefined,
+    buildLoginState(generateState(), next),
+    SIGNUP_ENDPOINT
+  );
+}
+
+/**
  * Build the login-mode OAuth `state`: the CSRF token, optionally followed by
  * `.` + the **base64url** of the post-login `next` path.
  *
@@ -239,13 +264,15 @@ export async function startCognitoLink(
 }
 
 /**
- * Shared authorize-URL builder + redirect for both login and link modes. Mints
- * the PKCE verifier/challenge, stashes the verifier + the caller-built `state`
- * in sessionStorage, and navigates to the Cognito hosted UI.
+ * Shared authorize-URL builder + redirect for login, signup, and link modes.
+ * Mints the PKCE verifier/challenge, stashes the verifier + the caller-built
+ * `state` in sessionStorage, and navigates to the given Cognito hosted-UI
+ * endpoint (`/oauth2/authorize` for login/link, `/signup` for registration).
  */
 async function beginAuthorize(
   provider: CognitoProvider | undefined,
-  stateValue: string
+  stateValue: string,
+  endpoint: string = AUTHORIZE_ENDPOINT
 ): Promise<void> {
   const verifier = generateCodeVerifier();
   const challenge = await deriveCodeChallenge(verifier);
@@ -266,7 +293,7 @@ async function beginAuthorize(
     params.set("identity_provider", provider);
   }
 
-  window.location.assign(`${AUTHORIZE_ENDPOINT}?${params.toString()}`);
+  window.location.assign(`${endpoint}?${params.toString()}`);
 }
 
 /**
