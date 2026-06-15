@@ -3931,9 +3931,7 @@ async def post_coord_member(
     Proxies coord ``POST /admin/coord/operators``. Body:
     ``{email, display_name?, sso_subject, sso_provider, roles?: [str]}`` →
     ``{operator_id}``."""
-    return await _proxy_coord_post(
-        "/admin/coord/operators", body, tenant_id=tenant_id
-    )
+    return await _proxy_coord_post("/admin/coord/operators", body, tenant_id=tenant_id)
 
 
 @router.post("/coord/members/{operator_id}/roles")
@@ -4069,9 +4067,7 @@ class _GroupMemberBody(BaseModel):
 def _is_resource_not_found(exc: CognitoAdminError) -> bool:
     """True when a wrapped boto3 error denotes a missing AWS resource."""
     message = str(exc)
-    return (
-        "ResourceNotFoundException" in message or "not found" in message.lower()
-    )
+    return "ResourceNotFoundException" in message or "not found" in message.lower()
 
 
 @router.get("/coord/cognito/groups")
@@ -4136,9 +4132,7 @@ async def list_cognito_group_users(
     """List the members of a Cognito group. 404 if no such group.
     Superuser-gated."""
     try:
-        users = await asyncio.to_thread(
-            cognito_admin.list_users_in_group, group_name
-        )
+        users = await asyncio.to_thread(cognito_admin.list_users_in_group, group_name)
     except CognitoAdminError as exc:
         if _is_resource_not_found(exc):
             raise HTTPException(status_code=404, detail=f"No such group: {group_name}")
@@ -4147,9 +4141,7 @@ async def list_cognito_group_users(
             group_name=group_name,
             error=str(exc),
         )
-        raise HTTPException(
-            status_code=502, detail="Could not list group members."
-        )
+        raise HTTPException(status_code=502, detail="Could not list group members.")
     return {"users": users}
 
 
@@ -4171,18 +4163,12 @@ async def add_cognito_group_user(
         raise HTTPException(status_code=409, detail=str(exc))
     except CognitoAdminError as exc:
         logger.error("cognito_email_resolve_failed", error=str(exc))
-        raise HTTPException(
-            status_code=502, detail="Could not resolve user by email."
-        )
+        raise HTTPException(status_code=502, detail="Could not resolve user by email.")
     if not username:
-        raise HTTPException(
-            status_code=404, detail=f"No user with email: {body.email}"
-        )
+        raise HTTPException(status_code=404, detail=f"No user with email: {body.email}")
 
     try:
-        await asyncio.to_thread(
-            cognito_admin.add_user_to_group, username, group_name
-        )
+        await asyncio.to_thread(cognito_admin.add_user_to_group, username, group_name)
     except CognitoAdminError as exc:
         if _is_resource_not_found(exc):
             raise HTTPException(status_code=404, detail=f"No such group: {group_name}")
@@ -4191,9 +4177,7 @@ async def add_cognito_group_user(
             group_name=group_name,
             error=str(exc),
         )
-        raise HTTPException(
-            status_code=502, detail="Could not add user to group."
-        )
+        raise HTTPException(status_code=502, detail="Could not add user to group.")
     return {"ok": True, "username": username}
 
 
@@ -4216,13 +4200,9 @@ async def remove_cognito_group_user(
         raise HTTPException(status_code=409, detail=str(exc))
     except CognitoAdminError as exc:
         logger.error("cognito_email_resolve_failed", error=str(exc))
-        raise HTTPException(
-            status_code=502, detail="Could not resolve user by email."
-        )
+        raise HTTPException(status_code=502, detail="Could not resolve user by email.")
     if not username:
-        raise HTTPException(
-            status_code=404, detail=f"No user with email: {body.email}"
-        )
+        raise HTTPException(status_code=404, detail=f"No user with email: {body.email}")
 
     try:
         await asyncio.to_thread(
@@ -4236,7 +4216,5 @@ async def remove_cognito_group_user(
             group_name=group_name,
             error=str(exc),
         )
-        raise HTTPException(
-            status_code=502, detail="Could not remove user from group."
-        )
+        raise HTTPException(status_code=502, detail="Could not remove user from group.")
     return {"ok": True, "username": username}
