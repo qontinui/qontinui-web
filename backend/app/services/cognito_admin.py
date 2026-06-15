@@ -460,9 +460,7 @@ def list_users_in_group(group_name: str) -> list[dict[str, Any]]:
     users: list[dict[str, Any]] = []
     try:
         paginator = client.get_paginator("list_users_in_group")
-        for page in paginator.paginate(
-            UserPoolId=_pool_id(), GroupName=group_name
-        ):
+        for page in paginator.paginate(UserPoolId=_pool_id(), GroupName=group_name):
             for user in page.get("Users") or []:
                 attrs = _attributes_to_dict(user.get("Attributes") or [])
                 users.append(
@@ -521,9 +519,7 @@ def resolve_username_for_email(email: str) -> str | None:
         return None
     if len(users) > 1:
         logger.warning("cognito_email_ambiguous", count=len(users))
-        raise CognitoAmbiguousEmailError(
-            f"Multiple users match email: {email}"
-        )
+        raise CognitoAmbiguousEmailError(f"Multiple users match email: {email}")
     username = users[0].get("Username")
     if not isinstance(username, str) or not username:
         return None

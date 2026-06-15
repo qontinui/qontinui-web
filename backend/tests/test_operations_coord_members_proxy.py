@@ -128,9 +128,7 @@ class TestMembersPost:
             instance = AsyncMock()
             instance.post.return_value = mock_resp
             _configure_mock_client(MockClient, instance)
-            resp = auth_client.post(
-                f"{API_PREFIX}/coord/members/op-9/roles", json=body
-            )
+            resp = auth_client.post(f"{API_PREFIX}/coord/members/op-9/roles", json=body)
         assert resp.status_code == 200
         assert instance.post.call_args.args[0].endswith(
             "/admin/coord/operators/op-9/roles"
@@ -149,9 +147,7 @@ class TestMembersPost:
             instance = AsyncMock()
             instance.post.return_value = mock_resp
             _configure_mock_client(MockClient, instance)
-            resp = auth_client.post(
-                f"{API_PREFIX}/coord/group-tenant-roles", json=body
-            )
+            resp = auth_client.post(f"{API_PREFIX}/coord/group-tenant-roles", json=body)
         assert resp.status_code == 200
         assert instance.post.call_args.args[0].endswith(
             "/admin/coord/group-tenant-roles"
@@ -174,7 +170,10 @@ class TestMembersDeleteWithBody:
             )
         assert resp.status_code == 200
         # Body-bearing DELETE routes through client.request("DELETE", ...).
-        method, url = instance.request.call_args.args[0], instance.request.call_args.args[1]
+        method, url = (
+            instance.request.call_args.args[0],
+            instance.request.call_args.args[1],
+        )
         assert method == "DELETE"
         assert url.endswith("/admin/coord/operators/op-9/roles")
         assert instance.request.call_args.kwargs.get("json") == body
@@ -191,7 +190,10 @@ class TestMembersDeleteWithBody:
                 "DELETE", f"{API_PREFIX}/coord/group-tenant-roles", json=body
             )
         assert resp.status_code == 200
-        method, url = instance.request.call_args.args[0], instance.request.call_args.args[1]
+        method, url = (
+            instance.request.call_args.args[0],
+            instance.request.call_args.args[1],
+        )
         assert method == "DELETE"
         assert url.endswith("/admin/coord/group-tenant-roles")
         assert instance.request.call_args.kwargs.get("json") == body
