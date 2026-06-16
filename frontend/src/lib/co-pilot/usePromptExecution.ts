@@ -159,8 +159,9 @@ const TAB_REGISTRATION_WAIT_MS = 500;
  * within the full window.
  *
  * SELF-NAV NUANCE: the co-pilot drives its OWN tab. A SUCCESSFUL navigate
- * soft-routes this very page away from /co-pilot, which unmounts the co-pilot
- * surface and tears down this running hook — so on success the poll naturally
+ * soft-routes this very page away from the co-pilot Home (/prompt-home), which
+ * unmounts the co-pilot surface and tears down this running hook — so on
+ * success the poll naturally
  * stops (and the caller's abort/mounted guards prevent acting on an unmounted
  * component). The poll therefore typically resolves true mid-window on success,
  * or runs the full window and resolves false only when the nav did NOT take
