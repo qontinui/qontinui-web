@@ -289,7 +289,11 @@ test.describe("Runner Download Page (/runner/download)", () => {
     await expect(page.getByText(/latest version/i)).toBeVisible({
       timeout: 10000,
     });
-    await expect(page.getByText(/1\.0\.0-beta/i)).toBeVisible();
+    // The version is sourced from LATEST_RELEASE on the download page and is
+    // bumped every release — assert a semver is rendered rather than pinning a
+    // literal (the prior hard-coded "1.0.0-beta" silently rotted once the
+    // release version moved to 0.1.0, failing E2E on main for every PR).
+    await expect(page.getByText(/\d+\.\d+\.\d+/).first()).toBeVisible();
   });
 
   test("detects platform and shows platform callout", async ({ page }) => {

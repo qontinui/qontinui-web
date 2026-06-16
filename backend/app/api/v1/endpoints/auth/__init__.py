@@ -50,13 +50,22 @@ async def read_users_me(
     # the user's own profile read.
     tenant_id = None
     tenant_slug = None
+    coord_is_admin = None
+    account_type = None
     try:
         identity = await get_coord_identity(request)
         tenant_id = identity.home_tenant_id
         tenant_slug = identity.slug_for(identity.home_tenant_id)
+        if tenant_id is not None:
+            # A coord home tenant resolved: surface the caller's admin status
+            # and derive a coarse account tier for the frontend. "viewer" is
+            # reserved for the future and intentionally not produced here.
+            coord_is_admin = identity.is_admin
+            account_type = "administrator" if identity.is_admin else "developer"
     except HTTPException:
         # Unlinked operator / coord unreachable — degrade to "(not
         # assigned)" instead of surfacing a 403/502 on /users/me.
+        # coord_is_admin / account_type stay None (fail-soft).
         pass
 
     return UserRead.model_validate(
@@ -83,6 +92,8 @@ async def read_users_me(
             "preferences": getattr(current_user, "preferences", None),
             "tenant_id": tenant_id,
             "tenant_slug": tenant_slug,
+            "coord_is_admin": coord_is_admin,
+            "account_type": account_type,
         }
     )
 
