@@ -77,6 +77,24 @@ export const devNavItems: NavItem[] = [
     color: "#10B981",
     group: "Coordination",
   },
+  // Coord Console — the coordination-layer surface (fleet, trees, pull
+  // decisions, plans). VIEWABLE by every authenticated user: /admin/coord's
+  // layout gates nothing; mutation controls are gated per-control on the
+  // caller's COORD role via useCoordIdentity + @/lib/coord-permissions
+  // (mirroring coord's server-side RBAC). So it is NOT adminOnly — and it sits
+  // contiguously with the Coordination block above (Runners, Commits) so it
+  // never spawns a second "Coordination" header (the bug #597 fixed for the
+  // old adminOnly placement no longer applies now that it's non-admin).
+  {
+    id: "admin-coord",
+    label: "Coord Console",
+    description: "Coordination layer — fleet, trees, pull decisions, plans",
+    icon: React.createElement(Network, { className: "size-5" }),
+    route: "/admin/coord",
+    color: "#10B981",
+    group: "Coordination",
+  },
+
   // Scheduled Runs — cron-style workflow dispatches. Advanced/automation (gated
   // behind the "Show advanced automation features" toggle on web); kept out of
   // the Coordination block so it never splits that group's header.
@@ -634,19 +652,9 @@ export const devNavItems: NavItem[] = [
         color: "#FF6B6B",
         adminOnly: true,
       },
-      // Coord Console — the coordination-layer admin surface (fleet, trees,
-      // pull decisions, plans). Lives under Admin (its /admin/coord route is
-      // is_superuser-gated) so it doesn't spawn a second "Coordination" header
-      // after SYSTEM. Non-admins get coord reporting via Operations + Commits.
-      {
-        id: "admin-coord",
-        label: "Coord Console",
-        description: "Coordination layer — fleet, trees, pull decisions, plans",
-        icon: React.createElement(Network, { className: "size-4" }),
-        route: "/admin/coord",
-        color: "#FF6B6B",
-        adminOnly: true,
-      },
+      // (Coord Console is no longer an Admin submenu child — it's now a
+      // non-adminOnly top-level Coordination item, since the console is
+      // viewable by every authenticated user.)
     ],
   },
 ];

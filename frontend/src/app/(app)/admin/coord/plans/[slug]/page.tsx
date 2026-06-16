@@ -31,10 +31,8 @@ import {
 } from "@/components/ui/select";
 import { ArrowLeft, FileText, GitCommit, History } from "lucide-react";
 import { httpClient } from "@/services/service-factory";
-import {
-  CoordAdminOnly,
-  ReadOnlyNotice,
-} from "@/components/admin/coord/CoordAdminOnly";
+import { useCoordIdentity } from "@/components/admin/coord/use-coord-identity";
+import { canAdminCoord } from "@/lib/coord-permissions";
 
 const API = "/api/v1/operations";
 
@@ -72,6 +70,10 @@ interface PlanHistoryResponse {
 export default function CoordPlanDetailPage() {
   const params = useParams<{ slug: string }>();
   const router = useRouter();
+  // Plan status transition is an ADMIN-only operator action (coord#598 matrix:
+  // `POST /plans/:slug/transition` is wrapped by the operator-admin require_role
+  // gate), so the transition card is hidden for non-admin members.
+  const canTransition = canAdminCoord(useCoordIdentity());
   const slug = useMemo(() => {
     const raw = params?.slug;
     if (!raw) return "";
@@ -189,15 +191,7 @@ export default function CoordPlanDetailPage() {
             </CardHeader>
           </Card>
 
-          <CoordAdminOnly
-            fallback={
-              <Card data-testid="coord-plan-transition-readonly">
-                <CardContent className="p-4">
-                  <ReadOnlyNotice label="Plan status transitions are administrator only." />
-                </CardContent>
-              </Card>
-            }
-          >
+          {canTransition && (
           <Card data-testid="coord-plan-transition">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
@@ -248,7 +242,7 @@ export default function CoordPlanDetailPage() {
               </div>
             </CardContent>
           </Card>
-          </CoordAdminOnly>
+          )}
 
           <Card data-testid="coord-plan-history">
             <CardHeader>

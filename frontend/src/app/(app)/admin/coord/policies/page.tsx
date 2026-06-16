@@ -10,7 +10,10 @@
  *  - Platform master-flag state (master_enabled)
  *  - Fleet table of tenants with non-default autonomy_level opt-ins
  *
- * No write controls. Gated by is_superuser via the coord admin layout.
+ * No write controls — this page is read-only for everyone. (The coord
+ * console layout is viewable by all authenticated users; write controls
+ * elsewhere are gated per-control on the caller's coord role via
+ * useCoordIdentity + @/lib/coord-permissions.)
  */
 
 import { useCallback, useEffect, useState } from "react";

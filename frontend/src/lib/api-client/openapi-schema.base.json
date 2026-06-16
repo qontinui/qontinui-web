@@ -64759,6 +64759,35 @@
         ]
       }
     },
+    "/api/v1/operations/coord/identity": {
+      "get": {
+        "description": "Return the calling operator's coord role set for UI gating.\n\nBacks the frontend ``useCoordIdentity()`` hook. The Coord Console is\nviewable by every authenticated user; this endpoint tells the UI which\ncoord roles the caller holds so it can hide controls the caller's role\ncan't drive (UX only \u2014 coord enforces the real boundary server-side).\n\nSourced from coord's ``GET /admin/coord/me`` (reuses ``coord_identity``;\nno re-implementation). Coord's role hierarchy is\n``operator < agent_supervisor < admin``.\n\nFail-soft: an operator that coord can't resolve to a linked tenant\n(coord 403 ``tenant_not_resolved``) is not a coord member, so we return\nan empty role set rather than propagating the 403 \u2014 the console stays\nviewable and every role-gated control simply hides.",
+        "operationId": "api_v1_operations_coord_identity_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Coord Caller Identity Api V1 Operations Coord Identity Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Coord Caller Identity",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/members": {
       "get": {
         "description": "List the caller's-tenant operators with their roles.\n\nProxies coord ``GET /admin/coord/operators`` \u2192\n``{operators: [{operator_id, email, display_name, sso_provider,\nlast_login_at, created_at, roles: [str]}]}`` (scoped to the caller's\ntenant by coord).",

@@ -32,9 +32,10 @@ import {
 } from "@/components/ui/select";
 import { ExternalLink, Filter, RefreshCw, Rocket } from "lucide-react";
 import { SpawnModal } from "@/components/admin/coord/SpawnModal";
+import { useCoordIdentity } from "@/components/admin/coord/use-coord-identity";
+import { canAdminCoord } from "@/lib/coord-permissions";
 import type { CoordPlanRow } from "@/components/admin/coord/PlanCard";
 import { httpClient } from "@/services/service-factory";
-import { CoordAdminOnly } from "@/components/admin/coord/CoordAdminOnly";
 
 const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 15_000;
@@ -70,6 +71,10 @@ function statusBadgeVariant(
 }
 
 export default function CoordSpawnPage() {
+  // Spawning an agent is an ADMIN-only operator action (coord#598 matrix:
+  // `POST /agents/spawn` is wrapped by the operator-admin require_role gate),
+  // so only callers holding the coord `admin` role see the spawn affordance.
+  const canSpawn = canAdminCoord(useCoordIdentity());
   const [status, setStatus] = useState("in_progress");
   const [data, setData] = useState<PlansListResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -119,9 +124,9 @@ export default function CoordSpawnPage() {
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-xs text-muted-foreground">
-            Pick a plan, hit Spawn, fill in device + repos + intent + the
-            initial prompt. Coord acquires claims and ships the prompt on
-            first tick.
+            {canSpawn
+              ? "Pick a plan, hit Spawn, fill in device + repos + intent + the initial prompt. Coord acquires claims and ships the prompt on first tick."
+              : "Read-only view of plans available to spawn from. Spawning an agent is an admin-only operator action (requires the coord admin role)."}
           </p>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -194,7 +199,7 @@ export default function CoordSpawnPage() {
                   >
                     detail <ExternalLink className="h-3 w-3" />
                   </Link>
-                  <CoordAdminOnly>
+                  {canSpawn && (
                     <Button
                       size="sm"
                       onClick={() => setSpawnTarget(p)}
@@ -203,7 +208,7 @@ export default function CoordSpawnPage() {
                       <Rocket className="h-3 w-3 mr-1" />
                       Spawn
                     </Button>
-                  </CoordAdminOnly>
+                  )}
                 </div>
               ))}
             </div>
@@ -218,7 +223,7 @@ export default function CoordSpawnPage() {
         </CardContent>
       </Card>
 
-      {spawnTarget && (
+      {canSpawn && spawnTarget && (
         <SpawnModal
           open={spawnTarget !== null}
           onClose={() => setSpawnTarget(null)}

@@ -1,12 +1,26 @@
 "use client";
 
 /**
- * /admin/coord/* — operator console shell.
+ * /admin/coord/* — coordination console shell.
  *
  * Plan `2026-05-19-coordinator-production-readiness.md` Phase 2 (Wave 2).
  *
- * Admin-gates every page below this layout, renders the CoordNav, and
- * routes the page body. Five primary pages:
+ * Renders the CoordNav + page body. The console is VIEWABLE by every
+ * authenticated user — this layout does NOT gate on any role. Standard
+ * `(app)` auth (middleware + AppAuthGate) still requires an authenticated
+ * session to reach any page here; an unauthenticated visitor is redirected
+ * to /login by that layer, not by this component.
+ *
+ * Mutation controls below this layout (spawn, plan transitions, memory
+ * writes, rollout promote/demote, onboarding writes, question answers) are
+ * gated PER-CONTROL on the caller's COORD role via `useCoordIdentity()` +
+ * `@/lib/coord-permissions` — mirroring coord's server-side RBAC
+ * (`operator < agent_supervisor < admin`). Coord gates these routes on
+ * tenant membership, so the controls are visible to any coord member and
+ * hidden from non-members. This layout is no longer the write-gate, and the
+ * gating is UX only — coord enforces the real boundary server-side.
+ *
+ * Five primary pages:
  *  - /admin/coord/fleet
  *  - /admin/coord/trees
  *  - /admin/coord/plans (+ /admin/coord/plans/[slug])
@@ -25,11 +39,12 @@ export default function CoordLayout({
 }: {
   children: React.ReactNode;
 }) {
-  // Any authenticated tenant member may VIEW the coordination pages. The
-  // parent `(app)` AppAuthGate already redirects truly-unauthenticated
-  // visitors to /login, so no per-section auth guard is needed here.
-  // Mutation controls within each page gate on `isCoordAdmin` (read from
-  // useAuth) so non-admin "Developer"-tier members see read-only views.
+  // Any authenticated user may VIEW the coordination pages. The parent
+  // `(app)` AppAuthGate already redirects truly-unauthenticated visitors to
+  // /login, so no per-section auth guard is needed here. Mutation controls
+  // within each page gate per-control on the caller's COORD role via
+  // useCoordIdentity() + @/lib/coord-permissions (mirroring coord's
+  // server-side RBAC), so non-members see read-only views.
   return (
     <div
       data-testid="coord-layout"

@@ -211,6 +211,38 @@ async def require_coord_tenant_admin(
     return identity.home_tenant_id
 
 
+@router.get("/coord/identity")
+async def get_coord_caller_identity(
+    request: Request,
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> dict[str, Any]:
+    """Return the calling operator's coord role set for UI gating.
+
+    Backs the frontend ``useCoordIdentity()`` hook. The Coord Console is
+    viewable by every authenticated user; this endpoint tells the UI which
+    coord roles the caller holds so it can hide controls the caller's role
+    can't drive (UX only — coord enforces the real boundary server-side).
+
+    Sourced from coord's ``GET /admin/coord/me`` (reuses ``coord_identity``;
+    no re-implementation). Coord's role hierarchy is
+    ``operator < agent_supervisor < admin``.
+
+    Fail-soft: an operator that coord can't resolve to a linked tenant
+    (coord 403 ``tenant_not_resolved``) is not a coord member, so we return
+    an empty role set rather than propagating the 403 — the console stays
+    viewable and every role-gated control simply hides.
+    """
+    try:
+        identity = await get_coord_identity(request)
+    except HTTPException as exc:
+        # Not a linked coord member → no coord roles. Transport failures
+        # (502/504) still propagate so the UI can show a coord-down state.
+        if exc.status_code == 403:
+            return {"roles": [], "is_admin": False}
+        raise
+    return {"roles": list(identity.roles), "is_admin": identity.is_admin}
+
+
 def _tenant_headers(tenant_id: UUID | None) -> dict[str, str]:
     """Build the request-headers dict forwarded to coord.
 

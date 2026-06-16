@@ -38,7 +38,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { ArrowLeft, BookOpen, RotateCcw } from "lucide-react";
 import { httpClient } from "@/services/service-factory";
-import { CoordAdminOnly } from "@/components/admin/coord/CoordAdminOnly";
+import { useCoordIdentity } from "@/components/admin/coord/use-coord-identity";
+import { canAdminCoord } from "@/lib/coord-permissions";
 
 const API = "/api/v1/operations";
 
@@ -56,6 +57,13 @@ interface CoordMemoryVersionDetail {
 export default function CoordMemoryVersionPage() {
   const params = useParams<{ name: string; version: string }>();
   const router = useRouter();
+  // Memory RESTORE is an ADMIN-only action (coord#598 matrix:
+  // `POST /coord/memory/:name/restore` is wrapped by the operator-admin
+  // require_role gate). NOTE the split: memory upsert/delete (the detail page)
+  // stay MEMBER-level (runner federation drives them), but rolling a memory
+  // back to a prior version is admin-only. Non-admins see the version content
+  // read-only without the restore affordance.
+  const canRestore = canAdminCoord(useCoordIdentity());
 
   const name = useMemo(() => {
     const raw = params?.name;
@@ -175,7 +183,7 @@ export default function CoordMemoryVersionPage() {
             </CardContent>
           </Card>
 
-          <CoordAdminOnly>
+          {canRestore && (
           <Card data-testid="coord-memory-version-restore">
             <CardContent className="p-4">
               <AlertDialog>
@@ -219,7 +227,7 @@ export default function CoordMemoryVersionPage() {
               </AlertDialog>
             </CardContent>
           </Card>
-          </CoordAdminOnly>
+          )}
 
           <Card data-testid="coord-memory-version-content">
             <CardHeader>

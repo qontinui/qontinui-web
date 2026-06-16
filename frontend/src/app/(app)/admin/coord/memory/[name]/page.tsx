@@ -56,10 +56,8 @@ import {
   X,
 } from "lucide-react";
 import { httpClient } from "@/services/service-factory";
-import {
-  CoordAdminOnly,
-  ReadOnlyNotice,
-} from "@/components/admin/coord/CoordAdminOnly";
+import { useCoordIdentity } from "@/components/admin/coord/use-coord-identity";
+import { isCoordMember } from "@/lib/coord-permissions";
 
 const API = "/api/v1/operations";
 
@@ -85,6 +83,9 @@ interface CoordMemoryDetail {
 export default function CoordMemoryDetailPage() {
   const params = useParams<{ name: string }>();
   const router = useRouter();
+  // Coord gates memory upsert/delete on tenant membership only (no role tier),
+  // so any coord member may edit/delete.
+  const canEdit = isCoordMember(useCoordIdentity());
   const name = useMemo(() => {
     const raw = params?.name;
     if (!raw) return "";
@@ -222,12 +223,16 @@ export default function CoordMemoryDetailPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="flex flex-wrap items-center gap-2">
-                <CoordAdminOnly
-                  fallback={
-                    <ReadOnlyNotice label="Editing and deleting memories is administrator only." />
-                  }
-                >
-                {!editing ? (
+                {!canEdit ? (
+                  <p
+                    className="text-xs text-muted-foreground italic"
+                    data-testid="coord-memory-readonly"
+                  >
+                    Read-only — editing and deleting memory require
+                    coordination-layer access (a linked coord tenant
+                    membership).
+                  </p>
+                ) : !editing ? (
                   <>
                     <Button
                       variant="outline"
@@ -309,7 +314,6 @@ export default function CoordMemoryDetailPage() {
                     </Button>
                   </>
                 )}
-                </CoordAdminOnly>
               </CardContent>
             </Card>
 
