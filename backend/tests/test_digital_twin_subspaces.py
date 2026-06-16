@@ -241,9 +241,7 @@ def _delivery_verdict_response() -> MagicMock:
 class TestDeliveryEndpoint:
     def test_proxies_coord_and_returns_verdict(self):
         client = TestClient(_build_delivery_app())
-        with patch(
-            "app.api.v1.endpoints.operations.httpx.AsyncClient"
-        ) as MockClient:
+        with patch("app.api.v1.endpoints.operations.httpx.AsyncClient") as MockClient:
             instance = AsyncMock()
             instance.get.return_value = _delivery_verdict_response()
             instance.__aenter__ = AsyncMock(return_value=instance)
@@ -272,9 +270,7 @@ class TestDeliveryEndpoint:
 
     def test_missing_param_is_400_without_calling_coord(self):
         client = TestClient(_build_delivery_app())
-        with patch(
-            "app.api.v1.endpoints.operations.httpx.AsyncClient"
-        ) as MockClient:
+        with patch("app.api.v1.endpoints.operations.httpx.AsyncClient") as MockClient:
             resp = client.get(f"{API_PREFIX}/delivery/verdict")
             # Validated locally — coord is never dialed for an empty param set.
             MockClient.assert_not_called()
@@ -282,9 +278,7 @@ class TestDeliveryEndpoint:
 
     def test_coord_tool_failure_surfaces_status(self):
         client = TestClient(_build_delivery_app())
-        with patch(
-            "app.api.v1.endpoints.operations.httpx.AsyncClient"
-        ) as MockClient:
+        with patch("app.api.v1.endpoints.operations.httpx.AsyncClient") as MockClient:
             instance = AsyncMock()
             instance.get.return_value = _status_response(502)
             instance.__aenter__ = AsyncMock(return_value=instance)
