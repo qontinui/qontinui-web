@@ -129,7 +129,14 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
       </Suspense>
       <div
         className={cn(
-          "flex-1 flex flex-col min-h-0 transition-all duration-300",
+          // `min-w-0`: this is a flex child of the row above; without it the
+          // default `min-width: auto` keeps it from shrinking below its
+          // content's intrinsic width, so a page with wide content (e.g.
+          // /operations) pushes the wrapper past the viewport and the root
+          // `overflow-hidden` clips the right edge — stranding off-screen
+          // controls with no scroll escape. `min-w-0` lets it shrink to the
+          // available width so page content fits instead of overflowing.
+          "flex-1 flex flex-col min-h-0 min-w-0 transition-all duration-300",
           isCollapsed ? "ml-16" : "ml-64"
         )}
       >
