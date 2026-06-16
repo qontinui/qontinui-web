@@ -38,7 +38,10 @@ def _build_test_app(*, server_tenant=None, authenticated: bool = True) -> FastAP
     client-supplied one — is what the proxy uses.
     """
     from app.api.deps import get_current_active_user_async
-    from app.api.v1.endpoints.operations import get_tenant_id
+    from app.api.v1.endpoints.operations import (
+        get_tenant_id,
+        require_coord_tenant_admin,
+    )
     from app.api.v1.endpoints.operations import router as operations_router
 
     test_app = FastAPI()
@@ -55,6 +58,12 @@ def _build_test_app(*, server_tenant=None, authenticated: bool = True) -> FastAP
         # so the isolation test can pin the *server-resolved* tenant.
         resolved = server_tenant if server_tenant is not None else uuid4()
         test_app.dependency_overrides[get_tenant_id] = lambda: resolved
+        # The gate *mutation* actions (approve/reject/mute/unmute/snooze) are
+        # admin-gated via require_coord_tenant_admin; in prod it resolves the
+        # same home tenant AND asserts is_admin. Override it to the same
+        # resolved tenant so these tests exercise the proxy path as a coord
+        # admin without hitting a real coord.
+        test_app.dependency_overrides[require_coord_tenant_admin] = lambda: resolved
     test_app.include_router(operations_router, prefix="/api/v1/operations")
     return test_app
 

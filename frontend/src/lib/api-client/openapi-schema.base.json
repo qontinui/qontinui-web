@@ -41030,6 +41030,17 @@
       "UserRead": {
         "description": "Schema for reading user data (fastapi-users compatible with UUID).",
         "properties": {
+          "account_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Type"
+          },
           "avatar_url": {
             "anyOf": [
               {
@@ -41051,6 +41062,17 @@
               }
             ],
             "title": "Company"
+          },
+          "coord_is_admin": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coord Is Admin"
           },
           "created_at": {
             "title": "Created At",
@@ -43668,6 +43690,47 @@
           "toml"
         ],
         "title": "WriteConfigRequest",
+        "type": "object"
+      },
+      "_CreateGroupBody": {
+        "description": "Body for ``POST /coord/cognito/groups``.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "group_name": {
+            "minLength": 1,
+            "title": "Group Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "group_name"
+        ],
+        "title": "_CreateGroupBody",
+        "type": "object"
+      },
+      "_GroupMemberBody": {
+        "description": "Body for add/remove group-member by email.",
+        "properties": {
+          "email": {
+            "minLength": 1,
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "_GroupMemberBody",
         "type": "object"
       },
       "app__api__v1__endpoints__batch_import__FileInfo": {
@@ -63314,7 +63377,7 @@
     },
     "/api/v1/operations/agent-questions/{question_id}/respond": {
       "post": {
-        "description": "Operator answers an agent question.",
+        "description": "A tenant member (Developer or Administrator) answers an agent question.\n\nIntentionally NOT admin-gated: a Developer must be able to answer their\nown running agent's questions. Coord scopes the respond route to the\ncaller's tenant, so this stays within the shared account.",
         "operationId": "api_v1_operations_agent_questions_question_id_respond_post",
         "parameters": [
           {
@@ -64054,6 +64117,298 @@
         ]
       }
     },
+    "/api/v1/operations/coord/cognito/groups": {
+      "get": {
+        "description": "List every Cognito group in the shared pool. Superuser-gated.",
+        "operationId": "api_v1_operations_coord_cognito_groups_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Cognito Groups Api V1 Operations Coord Cognito Groups Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Cognito Groups",
+        "tags": [
+          "operations"
+        ]
+      },
+      "post": {
+        "description": "Create a Cognito group. 409 if a group with that name already\nexists. Superuser-gated.",
+        "operationId": "api_v1_operations_coord_cognito_groups_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_CreateGroupBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Cognito Group Api V1 Operations Coord Cognito Groups Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Create Cognito Group",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/cognito/groups/{group_name}": {
+      "delete": {
+        "description": "Delete a Cognito group. 404 if no such group. Superuser-gated.",
+        "operationId": "api_v1_operations_coord_cognito_groups_group_name_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_name",
+            "required": true,
+            "schema": {
+              "title": "Group Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Delete Cognito Group Api V1 Operations Coord Cognito Groups  Group Name  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Cognito Group",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/cognito/groups/{group_name}/users": {
+      "delete": {
+        "description": "Remove a user (resolved by email) from a Cognito group.\nSuperuser-gated.\n\n404 if no user has that email; 409 if the email is ambiguous (>1 match).",
+        "operationId": "api_v1_operations_coord_cognito_groups_group_name_users_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_name",
+            "required": true,
+            "schema": {
+              "title": "Group Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_GroupMemberBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Remove Cognito Group User Api V1 Operations Coord Cognito Groups  Group Name  Users Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Remove Cognito Group User",
+        "tags": [
+          "operations"
+        ]
+      },
+      "get": {
+        "description": "List the members of a Cognito group. 404 if no such group.\nSuperuser-gated.",
+        "operationId": "api_v1_operations_coord_cognito_groups_group_name_users_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_name",
+            "required": true,
+            "schema": {
+              "title": "Group Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Cognito Group Users Api V1 Operations Coord Cognito Groups  Group Name  Users Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Cognito Group Users",
+        "tags": [
+          "operations"
+        ]
+      },
+      "post": {
+        "description": "Add a user (resolved by email) to a Cognito group. Superuser-gated.\n\n404 if no user has that email; 409 if the email is ambiguous (>1 match).",
+        "operationId": "api_v1_operations_coord_cognito_groups_group_name_users_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_name",
+            "required": true,
+            "schema": {
+              "title": "Group Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_GroupMemberBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Add Cognito Group User Api V1 Operations Coord Cognito Groups  Group Name  Users Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Add Cognito Group User",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/composition-rules": {
       "get": {
         "description": "List the tenant's composition rules. Tenant-admin only.",
@@ -64278,6 +64633,346 @@
           }
         ],
         "summary": "Post Coord Devices Pair Start",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/group-tenant-roles": {
+      "delete": {
+        "description": "Delete an SSO-group \u2192 tenant \u2192 role mapping.\n\nProxies coord ``DELETE /admin/coord/group-tenant-roles`` with a JSON\nbody ``{group_id, tenant_slug, role}`` \u2192 ``{ok, deleted}``. The body is\nforwarded on the DELETE via ``_proxy_coord_delete(body=...)``.",
+        "operationId": "api_v1_operations_coord_group_tenant_roles_delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Delete Coord Group Tenant Role Api V1 Operations Coord Group Tenant Roles Delete"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Coord Group Tenant Role",
+        "tags": [
+          "operations"
+        ]
+      },
+      "get": {
+        "description": "List SSO-group \u2192 tenant \u2192 role mappings.\n\nProxies coord ``GET /admin/coord/group-tenant-roles`` \u2192\n``{group_tenant_roles: [{group_id, tenant_slug, role, auto_create_tenant,\ncreated_at, tenant_id}]}``.",
+        "operationId": "api_v1_operations_coord_group_tenant_roles_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Coord Group Tenant Roles Api V1 Operations Coord Group Tenant Roles Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Coord Group Tenant Roles",
+        "tags": [
+          "operations"
+        ]
+      },
+      "post": {
+        "description": "Create an SSO-group \u2192 tenant \u2192 role mapping.\n\nProxies coord ``POST /admin/coord/group-tenant-roles``. Body:\n``{group_id, tenant_slug, role, auto_create_tenant}`` \u2192 mapping echo.\nCoord re-checks admin-in-target-tenant (or requires\n``auto_create_tenant`` for an unresolved slug).",
+        "operationId": "api_v1_operations_coord_group_tenant_roles_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Coord Group Tenant Role Api V1 Operations Coord Group Tenant Roles Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Coord Group Tenant Role",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/members": {
+      "get": {
+        "description": "List the caller's-tenant operators with their roles.\n\nProxies coord ``GET /admin/coord/operators`` \u2192\n``{operators: [{operator_id, email, display_name, sso_provider,\nlast_login_at, created_at, roles: [str]}]}`` (scoped to the caller's\ntenant by coord).",
+        "operationId": "api_v1_operations_coord_members_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Coord Members Api V1 Operations Coord Members Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Coord Members",
+        "tags": [
+          "operations"
+        ]
+      },
+      "post": {
+        "description": "Create an operator in the caller's home tenant (pre-login invites OK).\n\nProxies coord ``POST /admin/coord/operators``. Body:\n``{email, display_name?, sso_subject, sso_provider, roles?: [str]}`` \u2192\n``{operator_id}``.",
+        "operationId": "api_v1_operations_coord_members_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Coord Member Api V1 Operations Coord Members Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Coord Member",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/members/{operator_id}/roles": {
+      "delete": {
+        "description": "Revoke a role from an operator.\n\nProxies coord ``DELETE /admin/coord/operators/{operator_id}/roles`` with\na JSON body ``{role}`` \u2192 ``{ok: true}``. The body is forwarded on the\nDELETE via ``_proxy_coord_delete(body=...)`` (httpx ``request(\"DELETE\",\njson=...)``); the role name is NOT dropped.",
+        "operationId": "api_v1_operations_coord_members_operator_id_roles_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operator_id",
+            "required": true,
+            "schema": {
+              "title": "Operator Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Delete Coord Member Role Api V1 Operations Coord Members  Operator Id  Roles Delete"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Coord Member Role",
+        "tags": [
+          "operations"
+        ]
+      },
+      "post": {
+        "description": "Grant a role to an operator.\n\nProxies coord ``POST /admin/coord/operators/{operator_id}/roles``. Body:\n``{role, target_tenant_id?}`` (role \u2208\n``operator|agent_supervisor|admin|owner``; ``target_tenant_id`` for a\ncross-tenant grant, which coord re-checks admin-in-target for) \u2192\n``{ok: true}``.",
+        "operationId": "api_v1_operations_coord_members_operator_id_roles_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operator_id",
+            "required": true,
+            "schema": {
+              "title": "Operator Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Coord Member Role Api V1 Operations Coord Members  Operator Id  Roles Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Coord Member Role",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/my-tenants": {
+      "get": {
+        "description": "Return the caller's home tenant + all tenant memberships + per-tenant\nroles.\n\nProxies coord ``GET /admin/coord/me``. Backs a tenant-switcher /\ncross-tenant role-grant picker in the member-management UI.",
+        "operationId": "api_v1_operations_coord_my_tenants_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Coord My Tenants Api V1 Operations Coord My Tenants Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Coord My Tenants",
         "tags": [
           "operations"
         ]

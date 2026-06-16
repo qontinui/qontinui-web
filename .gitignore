@@ -102,6 +102,10 @@ create_dev_user*.py
 # Example/demo files
 examples/
 src/examples/
+# ...but example pages under the public docs tree are real pages, not local demos
+# (covers /docs/examples and /docs/python/examples)
+!frontend/src/app/**/docs/**/examples/
+!frontend/src/app/**/docs/**/examples/**
 
 # Claude development guidelines (local only)
 CLAUDE.md

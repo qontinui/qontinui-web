@@ -46,22 +46,20 @@ export default function LoginPage() {
 
         <AuthForm next={next && next.startsWith("/") ? next : undefined} />
 
+        {/*
+          Qontinui is invite-only during the beta — self-service registration
+          is intentionally disabled on the Cognito user pool (the hosted-UI
+          `/signup` endpoint errors out). Rather than route new users into that
+          dead end, point them at a real "request access" channel.
+        */}
         <p className="text-center text-sm text-muted-foreground">
-          Don&apos;t have an account?{" "}
-          <button
-            type="button"
-            onClick={() => {
-              // Reuse the auth dialog from the marketing header by sending
-              // the user to the landing page with a hint. The header reads
-              // this via state, not URL, so we just route them home — they
-              // can click "Sign In" to open the dialog with the Register
-              // tab. For now we link to the home page CTA.
-              router.push("/");
-            }}
+          Don&apos;t have an account? Qontinui is currently invite-only.{" "}
+          <a
+            href="mailto:support@qontinui.io?subject=Qontinui%20access%20request"
             className="text-primary underline-offset-4 hover:underline"
           >
-            Get started
-          </button>
+            Request access
+          </a>
         </p>
       </div>
     </div>

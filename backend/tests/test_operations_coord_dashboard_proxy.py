@@ -55,6 +55,7 @@ def _build_test_app(*, resolves_tenant: bool = True) -> FastAPI:
     )
     from app.api.v1.endpoints.operations import (
         get_tenant_id,
+        require_coord_tenant_admin,
     )
     from app.api.v1.endpoints.operations import (
         router as operations_router,
@@ -85,6 +86,11 @@ def _build_test_app(*, resolves_tenant: bool = True) -> FastAPI:
             )
 
     test_app.dependency_overrides[get_tenant_id] = _resolver
+    # Coordination MUTATIONS (plan transition, memory upsert/delete/restore, …)
+    # are admin-gated via require_coord_tenant_admin; override it with the same
+    # resolver so these proxy tests exercise the forward path (and still get a
+    # 403 when resolves_tenant is False).
+    test_app.dependency_overrides[require_coord_tenant_admin] = _resolver
     test_app.include_router(operations_router, prefix="/api/v1/operations")
     return test_app
 
