@@ -110,3 +110,53 @@ export interface RawVerdictResponse {
   tool: string;
   verdict: DriftVerdict;
 }
+
+/** One cited PR in a delivery verdict's components. */
+export interface DeliveryPr {
+  repo: string;
+  pr: number | null;
+  merged: boolean;
+  branch: string | null;
+}
+
+/** One observed deploy/serving env in a delivery verdict's components. */
+export interface DeliveryEnv {
+  surface: string | null;
+  target: string | null;
+  repo: string | null;
+  in_sync: boolean | null;
+  lag_seconds: number | null;
+  drift_class: string | null;
+  deployed_sha: string | null;
+  observed_age_seconds: number | null;
+}
+
+/**
+ * The well-known `components` shape of an `instance="delivery"` DriftVerdict
+ * (coord `delivery_view.rs`). All fields defensively optional — the card reads
+ * what is present and degrades gracefully.
+ */
+export interface DeliveryComponents {
+  slug?: string;
+  plan_id?: string | null;
+  status?: string | null;
+  ingested_status?: string | null;
+  registered?: boolean;
+  prs?: DeliveryPr[];
+  all_merged?: boolean;
+  unmerged_prs?: DeliveryPr[];
+  deployed_envs?: DeliveryEnv[];
+  staleness_inputs?: {
+    live_refreshed?: boolean;
+    oldest_cited_age_seconds?: number | null;
+    deploy_staleness_seconds?: number | null;
+    refresh_errors?: string[];
+  };
+}
+
+/** The body of GET /api/v1/digital-twin/delivery/verdict (coord route shape). */
+export interface DeliveryVerdictResponse {
+  plan_slug: string | null;
+  tool: string;
+  verdict: DriftVerdict;
+}
