@@ -3,7 +3,6 @@
 import * as React from "react";
 import { useCallback } from "react";
 import { useRouter } from "next/navigation";
-import nextDynamic from "next/dynamic";
 import { cn } from "@/lib/utils";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/contexts/auth-context";
@@ -16,22 +15,11 @@ import type { CreateOrganizationDialogProps } from "@/lib/cloud-component-slots"
 import { useSidebarNavigation } from "./_hooks/use-sidebar-navigation";
 import { useSidebarProjects } from "./_hooks/use-sidebar-projects";
 import { useSidebarOrganizations } from "./_hooks/use-sidebar-organizations";
-import { useImportExport } from "./_hooks/use-import-export";
 import { SearchTrigger } from "./_components/SearchTrigger";
 import { SidebarHeader } from "./_components/SidebarHeader";
 import { SidebarNav } from "./_components/SidebarNav";
 import { SidebarFooter } from "./_components/SidebarFooter";
 import { ProjectSwitcher } from "./ProjectSwitcher";
-
-const ProjectExportDialog = nextDynamic(
-  () =>
-    import("@/components/automation-builder/components/ProjectExportDialog").then(
-      (m) => ({
-        default: m.ProjectExportDialog,
-      })
-    ),
-  { ssr: false }
-);
 
 interface UnifiedSidebarProps {
   className?: string;
@@ -85,9 +73,6 @@ const UnifiedSidebarContent: React.FC<UnifiedSidebarProps> = ({
     handleOrganizationChange,
     handleCreateOrganization,
   } = useSidebarOrganizations();
-
-  const { showExportDialog, setShowExportDialog, handleExport, handleImport } =
-    useImportExport();
 
   const handleLogout = useCallback(async () => {
     logout();
@@ -162,8 +147,6 @@ const UnifiedSidebarContent: React.FC<UnifiedSidebarProps> = ({
           isCollapsed={isCollapsed}
           user={user}
           onLogout={handleLogout}
-          onExport={handleExport}
-          onImport={handleImport}
           onDocs={handleDocs}
           onToggleCollapse={toggleCollapse}
         />
@@ -172,10 +155,6 @@ const UnifiedSidebarContent: React.FC<UnifiedSidebarProps> = ({
       <CreateOrganizationDialogSlot
         open={showCreateOrgDialog}
         onOpenChange={setShowCreateOrgDialog}
-      />
-      <ProjectExportDialog
-        open={showExportDialog}
-        onOpenChange={setShowExportDialog}
       />
     </TooltipProvider>
   );
