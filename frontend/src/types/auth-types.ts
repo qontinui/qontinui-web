@@ -18,6 +18,18 @@ export interface User {
   updated_at: string;
   tenant_id?: string | null;
   tenant_slug?: string | null;
+  /**
+   * True iff the user can mutate the coordination layer (coord tenant admin).
+   * Backend-derived on `GET /auth/users/me`. Distinct from `is_superuser`
+   * (platform-wide admin): a tenant member may VIEW the AI-Dev coord pages
+   * without holding this flag, but mutation controls are gated on it.
+   */
+  coord_is_admin?: boolean | null;
+  /**
+   * Derived account-tier label. "administrator" iff `coord_is_admin`, else
+   * "developer" (when a tenant resolved), else null. ("viewer" is reserved.)
+   */
+  account_type?: "administrator" | "developer" | "viewer" | null;
 }
 
 export interface TokenResponse {
