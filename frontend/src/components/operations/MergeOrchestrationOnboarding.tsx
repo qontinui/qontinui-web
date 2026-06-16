@@ -23,6 +23,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
 import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
+import {
+  CoordAdminOnly,
+  ReadOnlyNotice,
+} from "@/components/admin/coord/CoordAdminOnly";
 import { OPERATIONS_API } from "./utils";
 
 const log = createLogger("MergeOrchestrationOnboarding");
@@ -739,11 +743,23 @@ export function MergeOrchestrationOnboarding() {
             Audit first repo
           </StepBadge>
         </div>
+        {/* Steps 1 + 2 (pair your own device, sign into Claude Code) are
+            available to all tenant members — a Developer pairs their own
+            runner. Step 3 (repo audit) WRITES coord.tenant_repos, a
+            tenant-config action, so it is admin-gated. */}
         {step === 1 && <PairDeviceStep onPaired={() => pollStatus()} />}
         {step === 2 && (
           <ClaudeCodeStep status={status} onReady={() => setStep(3)} />
         )}
-        {step === 3 && <AuditStep ready={status?.ready ?? false} />}
+        {step === 3 && (
+          <CoordAdminOnly
+            fallback={
+              <ReadOnlyNotice label="Repo onboarding (the audit + accept step) is administrator only. Your device is paired and ready." />
+            }
+          >
+            <AuditStep ready={status?.ready ?? false} />
+          </CoordAdminOnly>
+        )}
       </CardContent>
     </Card>
   );
