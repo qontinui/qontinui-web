@@ -117,7 +117,14 @@ jobs:
               m = re.search(r"^revision(?::\s*str)?\s*=\s*[\"']([^\"']+)", s, re.M)
               if m:
                   revs.add(m.group(1))
-              for dm in re.finditer(r"^down_revision[^=]*=\s*(.+)", s, re.M):
+              # `[^=\n]` (NOT `[^=]`) so the assignment's `=` must be on the
+              # SAME line. A negated class matches newlines, so `[^=]*` let a
+              # docstring sentence starting "down_revision ..." greedily bridge
+              # across lines to the next `=`, capturing revision-ids mentioned in
+              # the prose (including the head itself) → heads=0 → silent skip →
+              # coord's pre-deploy drift gate wedged (2026-06-15 13h-outage root
+              # cause).
+              for dm in re.finditer(r"^down_revision[^=\n]*=\s*(.+)", s, re.M):
                   for tok in re.findall(r"[\"']([^\"']+)[\"']", dm.group(1)):
                       parents.add(tok)
           heads = sorted(revs - parents)
@@ -127,7 +134,11 @@ jobs:
           HEADS="${HEADS_LINE% *}"
           COUNT="${HEADS_LINE##* }"
           if [ -z "${HEADS:-}" ] || [ "${COUNT:-0}" = "0" ]; then
-            echo "::warning::could not compute the authored alembic head — skipping attestation"
+            # LOUD, not silent: a missing/zero head leaves coord's chain-head
+            # attestation stale → coord_alembic_drift stuck Pending → EVERY coord
+            # deploy blocks at the pre-deploy drift gate (the 2026-06-15 13h
+            # outage). Surface it as an error annotation so it cannot hide.
+            echo "::error::could not compute the authored alembic head (HEADS='${HEADS:-}' COUNT='${COUNT:-0}') — chain-head attestation SKIPPED; coord deploys will wedge on alembic-drift until fixed"
             exit 0
           fi
           echo "authored chain head(s): $HEADS (count=$COUNT)"
