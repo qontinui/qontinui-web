@@ -32,6 +32,7 @@ import {
   Activity,
   Bot,
   GitCommitHorizontal,
+  Boxes,
 } from "lucide-react";
 import type { NavItem } from "./types";
 
@@ -109,6 +110,21 @@ export const devNavItems: NavItem[] = [
     route: "/scheduled-runs",
     color: "#0EA5E9",
     group: "Automation",
+  },
+
+  // ===========================================================================
+  // Digital Twin — completeness matrix over the coordination-layer observers.
+  // Visualizes how complete the twin is + the per-observer credibility envelope
+  // (the same information AI agents receive). Coord-backed like Operations.
+  // ===========================================================================
+  {
+    id: "digital-twin",
+    label: "Digital Twin",
+    description: "Twin completeness + observer credibility",
+    icon: React.createElement(Boxes, { className: "size-5" }),
+    route: "/digital-twin",
+    color: "#6366F1",
+    group: "Runners",
   },
 
   // ===========================================================================
