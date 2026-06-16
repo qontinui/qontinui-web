@@ -26,11 +26,11 @@ export default function LoginPage() {
     if (next && next.startsWith("/")) {
       router.replace(next);
     } else {
-      // Land on the general, mode-aware home. `/dashboard` forwards to
-      // `/build/workflows` (AI Dev) or `/tools/visual-automation` (Visual)
-      // based on the stored product mode. Superusers are NOT sent to the
-      // admin-only area on login — Admin is an opt-in sidebar destination.
-      router.replace("/dashboard");
+      // Coord-centric product: the Coord Console is the post-login home.
+      // (`/admin/coord` redirects to its Fleet tab.) The console is meant to
+      // be viewable by any authenticated user; per-control mutations stay
+      // coord-RBAC gated server-side.
+      router.replace("/admin/coord");
     }
   }, [loading, user, next, router]);
 
