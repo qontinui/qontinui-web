@@ -617,6 +617,21 @@ export const devNavItems: NavItem[] = [
   },
 
   // ===========================================================================
+  // AI-Dev Coordination (member-visible — Developers view the coord layer)
+  // ===========================================================================
+  {
+    id: "ai-dev-coordination",
+    label: "AI-Dev Coordination",
+    description: "Coordination layer — fleet, plans, gates, merge queue",
+    icon: React.createElement(Network, { className: "size-5" }),
+    route: "/admin/coord",
+    color: "#06B6D4",
+    group: "Runners",
+    // No adminOnly: any authenticated member can reach the coord pages;
+    // mutation controls are gated on coord_is_admin per-page.
+  },
+
+  // ===========================================================================
   // Admin (superuser only)
   // ===========================================================================
   {

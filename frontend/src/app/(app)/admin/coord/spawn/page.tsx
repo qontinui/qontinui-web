@@ -34,6 +34,7 @@ import { ExternalLink, Filter, RefreshCw, Rocket } from "lucide-react";
 import { SpawnModal } from "@/components/admin/coord/SpawnModal";
 import type { CoordPlanRow } from "@/components/admin/coord/PlanCard";
 import { httpClient } from "@/services/service-factory";
+import { CoordAdminOnly } from "@/components/admin/coord/CoordAdminOnly";
 
 const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 15_000;
@@ -193,14 +194,16 @@ export default function CoordSpawnPage() {
                   >
                     detail <ExternalLink className="h-3 w-3" />
                   </Link>
-                  <Button
-                    size="sm"
-                    onClick={() => setSpawnTarget(p)}
-                    data-testid="coord-spawn-row-button"
-                  >
-                    <Rocket className="h-3 w-3 mr-1" />
-                    Spawn
-                  </Button>
+                  <CoordAdminOnly>
+                    <Button
+                      size="sm"
+                      onClick={() => setSpawnTarget(p)}
+                      data-testid="coord-spawn-row-button"
+                    >
+                      <Rocket className="h-3 w-3 mr-1" />
+                      Spawn
+                    </Button>
+                  </CoordAdminOnly>
                 </div>
               ))}
             </div>

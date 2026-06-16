@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
+import { CoordAdminOnly } from "@/components/admin/coord/CoordAdminOnly";
 import { OPERATIONS_API } from "./utils";
 
 const log = createLogger("MergeOrchestrationSettings");
@@ -985,11 +986,13 @@ function SloRepoCard({
           {w.total_decisions} decision(s) in 7d ({w.shadow_decisions} shadow) /{" "}
           {w30.total_decisions} in 30d ({w30.shadow_decisions} shadow).
         </p>
-        <RolloutStateControl
-          repo={slo.repo}
-          current={slo.current_rollout_state}
-          onChanged={onChanged}
-        />
+        <CoordAdminOnly>
+          <RolloutStateControl
+            repo={slo.repo}
+            current={slo.current_rollout_state}
+            onChanged={onChanged}
+          />
+        </CoordAdminOnly>
       </CardContent>
     </Card>
   );
@@ -1148,51 +1151,59 @@ export function MergeOrchestrationSettings() {
           </CardContent>
         </Card>
       )}
-      {/* Phase 9 D9.4 — Emergency kill switch (red border, prominent). */}
-      <KillSwitchCard onKilled={triggerReload} />
-      {/* Phase 9 D9.6 — SLO Dashboard. */}
+      {/* Phase 9 D9.4 — Emergency kill switch (red border, prominent).
+          Admin-only mutation control. */}
+      <CoordAdminOnly>
+        <KillSwitchCard onKilled={triggerReload} />
+      </CoordAdminOnly>
+      {/* Phase 9 D9.6 — SLO Dashboard. Read-only metrics render for all
+          members; the embedded rollout promote control is itself gated. */}
       <SloDashboardCard data={slo} onChanged={triggerReload} />
-      {profile === null ? (
+      {/* Tenant defaults + per-repo overrides are tenant-config writes —
+          admin only. */}
+      <CoordAdminOnly>
+        {profile === null ? (
+          <Card>
+            <CardContent className="pt-4">
+              <Skeleton className="h-32 w-full" />
+            </CardContent>
+          </Card>
+        ) : (
+          <TenantDefaultsCard profile={profile} onSaved={triggerReload} />
+        )}
         <Card>
-          <CardContent className="pt-4">
-            <Skeleton className="h-32 w-full" />
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between text-base">
+              <span>Per-repo overrides</span>
+              {repos !== null && (
+                <Badge variant="outline" className="font-mono text-xs">
+                  {repos.length}
+                </Badge>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {repos === null ? (
+              <Skeleton className="h-24 w-full" />
+            ) : repos.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                No repos registered. Repos auto-register on first PATCH of
+                their per-repo override.
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                {repos.map((r) => (
+                  <RepoOverrideCard
+                    key={r.repo}
+                    repoRow={r}
+                    onSaved={triggerReload}
+                  />
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
-      ) : (
-        <TenantDefaultsCard profile={profile} onSaved={triggerReload} />
-      )}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center justify-between text-base">
-            <span>Per-repo overrides</span>
-            {repos !== null && (
-              <Badge variant="outline" className="font-mono text-xs">
-                {repos.length}
-              </Badge>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {repos === null ? (
-            <Skeleton className="h-24 w-full" />
-          ) : repos.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
-              No repos registered. Repos auto-register on first PATCH of
-              their per-repo override.
-            </p>
-          ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-              {repos.map((r) => (
-                <RepoOverrideCard
-                  key={r.repo}
-                  repoRow={r}
-                  onSaved={triggerReload}
-                />
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      </CoordAdminOnly>
     </div>
   );
 }
