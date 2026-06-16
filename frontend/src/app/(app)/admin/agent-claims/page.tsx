@@ -12,27 +12,16 @@
  *  - Stale-claim alerts
  */
 
-import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
-import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import AgentClaimsDashboard from "@/components/admin/agent-claims/AgentClaimsDashboard";
 
 export default function AgentClaimsPage() {
-  const { user } = useAuth();
+  // Any authenticated tenant member may VIEW this observability dashboard.
+  // The parent `(app)` AppAuthGate handles unauthenticated redirects; the
+  // mutating gate approve/reject controls inside the dashboard gate on
+  // `isCoordAdmin`.
   const router = useRouter();
-
-  useEffect(() => {
-    if (user && !user.is_superuser) {
-      toast.error("Access denied - Admin privileges required");
-      router.push("/build/workflows");
-    }
-  }, [user, router]);
-
-  if (!user?.is_superuser) {
-    return null;
-  }
 
   return (
     <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">

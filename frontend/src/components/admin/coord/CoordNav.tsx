@@ -30,6 +30,7 @@ import {
   Scale,
   ScrollText,
   ShieldCheck,
+  UserCog,
   Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -150,6 +151,12 @@ const PRIMARY_TABS: NavItem[] = [
     label: "Merge Settings",
     icon: GitMerge,
     testId: "coord-nav-merge-settings",
+  },
+  {
+    href: "/admin/coord/members",
+    label: "Members",
+    icon: UserCog,
+    testId: "coord-nav-members",
   },
 ];
 
