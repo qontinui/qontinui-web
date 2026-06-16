@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, Download, Upload, FileText, LogOut } from "lucide-react";
+import { ChevronDown, FileText, LogOut } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -24,8 +24,6 @@ export interface UserMenuProps {
     tenant_slug?: string | null;
   } | null;
   onLogout: () => void;
-  onExport: () => void;
-  onImport: () => void;
   onDocs: () => void;
 }
 
@@ -42,8 +40,6 @@ export function UserMenu({
   isCollapsed,
   user,
   onLogout,
-  onExport,
-  onImport,
   onDocs,
 }: UserMenuProps) {
   if (!user) return null;
@@ -89,14 +85,6 @@ export function UserMenu({
             </p>
           </div>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={onExport}>
-            <Download className="mr-2 size-4" />
-            Export Project
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={onImport}>
-            <Upload className="mr-2 size-4" />
-            Import Project
-          </DropdownMenuItem>
           <DropdownMenuItem onClick={onDocs}>
             <FileText className="mr-2 size-4" />
             Documentation
@@ -152,14 +140,6 @@ export function UserMenu({
           </p>
         </div>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={onExport}>
-          <Download className="mr-2 size-4" />
-          Export Project
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={onImport}>
-          <Upload className="mr-2 size-4" />
-          Import Project
-        </DropdownMenuItem>
         <DropdownMenuItem onClick={onDocs}>
           <FileText className="mr-2 size-4" />
           Documentation
