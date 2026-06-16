@@ -29,7 +29,6 @@ import {
   ScanSearch,
   Server,
   CalendarClock,
-  Activity,
   GitCommitHorizontal,
   Boxes,
 } from "lucide-react";
@@ -66,20 +65,9 @@ export const devNavItems: NavItem[] = [
     group: "Coordination",
   },
 
-  // ===========================================================================
-  // Operations — first-class fleet view (Phase 4B promotion of the former
-  // /dev-dashboard). Cross-machine view of runners, Claude Code sessions,
-  // and active workflows.
-  // ===========================================================================
-  {
-    id: "operations",
-    label: "Operations",
-    description: "Cross-machine fleet view",
-    icon: React.createElement(Activity, { className: "size-5" }),
-    route: "/operations",
-    color: "#10B981",
-    group: "Coordination",
-  },
+  // NOTE: there is no top-level "Operations" item. The cross-machine fleet
+  // view + operations panels were merged into the Coord Console's Fleet tab
+  // (/admin/coord/fleet); /operations redirects there.
   {
     id: "commits",
     label: "Commits",
