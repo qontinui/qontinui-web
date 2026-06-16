@@ -98,6 +98,28 @@ function tierLabel(role: string): string {
   return opt ? opt.label : role;
 }
 
+/**
+ * Human-facing name for a tenant entry. coord's `/admin/coord/me` returns the
+ * slug as `slug`; we also accept `tenant_slug` in case a future proxy remaps it.
+ * UUIDs are the last resort — they are not user-facing.
+ */
+function tenantName(t: TenantRoleEntry): string {
+  return t.slug ?? t.tenant_slug ?? t.tenant_id ?? "—";
+}
+
+/**
+ * Human-facing name for the home tenant. coord returns only `home_tenant_id`,
+ * so resolve the slug by matching it against the tenant list (the home tenant
+ * is always one of the operator's tenants).
+ */
+function homeTenantName(data: MyTenantsResponse): string {
+  if (data.home_tenant_slug) return data.home_tenant_slug;
+  const match = data.tenants?.find(
+    (t) => t.tenant_id != null && t.tenant_id === data.home_tenant_id
+  );
+  return match ? tenantName(match) : (data.home_tenant_id ?? "—");
+}
+
 // ---------------------------------------------------------------------------
 // Wire types — mirror the web backend's /coord/* proxy responses.
 // ---------------------------------------------------------------------------
@@ -154,6 +176,8 @@ interface CognitoGroupUsersResponse {
 
 interface TenantRoleEntry {
   tenant_id?: string;
+  /** coord `/admin/coord/me` returns the slug here; `tenant_slug` is a fallback. */
+  slug?: string;
   tenant_slug?: string;
   roles?: string[];
 }
@@ -218,20 +242,16 @@ function MyTenantsCard() {
           <div className="space-y-2 text-sm">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-muted-foreground">Home tenant:</span>
-              <span className="font-medium">
-                {data.home_tenant_slug ?? data.home_tenant_id ?? "—"}
-              </span>
+              <span className="font-medium">{homeTenantName(data)}</span>
             </div>
             {data.tenants && data.tenants.length > 0 ? (
               <div className="space-y-1.5">
                 {data.tenants.map((t, i) => (
                   <div
-                    key={t.tenant_id ?? t.tenant_slug ?? i}
+                    key={t.tenant_id ?? t.slug ?? t.tenant_slug ?? i}
                     className="flex flex-wrap items-center gap-2"
                   >
-                    <span className="font-medium">
-                      {t.tenant_slug ?? t.tenant_id ?? "—"}
-                    </span>
+                    <span className="font-medium">{tenantName(t)}</span>
                     <span className="flex flex-wrap gap-1">
                       {(t.roles ?? []).map((r) => (
                         <Badge key={r} variant="secondary">
@@ -628,7 +648,7 @@ function InviteForm({ onInvited }: { onInvited: () => void }) {
 // Section d — Group → tenant → role mappings
 // ===========================================================================
 
-function GroupTenantRolesSection() {
+function GroupTenantRolesSection({ isSuperuser }: { isSuperuser: boolean }) {
   const [rows, setRows] = useState<GroupTenantRoleRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -639,6 +659,11 @@ function GroupTenantRolesSection() {
   const [tenantSlug, setTenantSlug] = useState("");
   const [role, setRole] = useState<CoordRole>("operator");
   const [autoCreate, setAutoCreate] = useState(true);
+  // Create the Cognito group as part of the same action (superuser-only — pool
+  // -wide group creation requires staff access). Folds the previously-separate
+  // "create group" then "add mapping" steps into one, so a mapping can never be
+  // added for a group that doesn't exist.
+  const [alsoCreateGroup, setAlsoCreateGroup] = useState(isSuperuser);
   const [submitting, setSubmitting] = useState(false);
 
   const slugValid = tenantSlug === "" || TENANT_SLUG_RE.test(tenantSlug);
@@ -676,13 +701,40 @@ function GroupTenantRolesSection() {
     }
     setSubmitting(true);
     try {
+      const gid = groupId.trim();
+      const slug = tenantSlug.trim();
+      // Step 1 (optional, superuser-only): ensure the Cognito group exists, so
+      // the mapping is never orphaned. A pre-existing group (409) is fine.
+      let groupCreated = false;
+      if (alsoCreateGroup && isSuperuser) {
+        const gres = await httpClient.fetch(
+          `${OPERATIONS_API}/coord/cognito/groups`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              group_name: gid,
+              description: `${tierLabel(role)} for ${slug}`,
+            }),
+          }
+        );
+        if (gres.status !== 409) {
+          if (!gres.ok) {
+            const text = await gres.text();
+            throw new Error(
+              `Create group failed: HTTP ${gres.status} ${text}`.trim()
+            );
+          }
+          groupCreated = true;
+        }
+      }
+      // Step 2: the group → tenant → role mapping.
       const res = await httpClient.fetch(
         `${OPERATIONS_API}/coord/group-tenant-roles`,
         {
           method: "POST",
           body: JSON.stringify({
-            group_id: groupId.trim(),
-            tenant_slug: tenantSlug.trim(),
+            group_id: gid,
+            tenant_slug: slug,
             role,
             auto_create_tenant: autoCreate,
           }),
@@ -692,11 +744,16 @@ function GroupTenantRolesSection() {
         const text = await res.text();
         throw new Error(`HTTP ${res.status} ${text}`.trim());
       }
-      toast.success("Mapping added");
+      toast.success(
+        groupCreated
+          ? `Group "${gid}" created + mapping added`
+          : "Mapping added"
+      );
       setGroupId("");
       setTenantSlug("");
       setRole("operator");
       setAutoCreate(true);
+      setAlsoCreateGroup(isSuperuser);
       await load();
     } catch (err) {
       log.warn("add mapping failed", err);
@@ -706,7 +763,15 @@ function GroupTenantRolesSection() {
     } finally {
       setSubmitting(false);
     }
-  }, [groupId, tenantSlug, role, autoCreate, load]);
+  }, [
+    groupId,
+    tenantSlug,
+    role,
+    autoCreate,
+    alsoCreateGroup,
+    isSuperuser,
+    load,
+  ]);
 
   const deleteMapping = useCallback(
     async (row: GroupTenantRoleRow) => {
@@ -752,8 +817,10 @@ function GroupTenantRolesSection() {
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-xs text-muted-foreground">
-          This binds a Cognito group to a tenant + role; create the group and add
-          users in the AWS Cognito console.
+          Binds a Cognito group to a tenant + role.{" "}
+          {isSuperuser
+            ? "With “Also create Cognito group” checked, the group is created in the same step — then add members in the Cognito Groups section below."
+            : "Create the group in the Cognito Groups section (or AWS console) first; group creation requires staff access."}
         </p>
 
         {/* Existing mappings */}
@@ -876,6 +943,18 @@ function GroupTenantRolesSection() {
                 Auto-create tenant
               </label>
             </div>
+            {isSuperuser && (
+              <div className="flex items-end">
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <Checkbox
+                    checked={alsoCreateGroup}
+                    onCheckedChange={(c) => setAlsoCreateGroup(c === true)}
+                    data-testid="map-also-create-group"
+                  />
+                  Also create Cognito group
+                </label>
+              </div>
+            )}
           </div>
           <div className="flex justify-end">
             <Button
@@ -1416,7 +1495,7 @@ export default function MembersPage() {
       <MyTenantsCard />
       <MembersTable refreshKey={refreshKey} onChanged={bump} />
       <InviteForm onInvited={bump} />
-      <GroupTenantRolesSection />
+      <GroupTenantRolesSection isSuperuser={user?.is_superuser === true} />
       <CognitoGroupsSection isSuperuser={user?.is_superuser === true} />
     </div>
   );
