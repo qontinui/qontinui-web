@@ -5,16 +5,20 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Boxes } from "lucide-react";
 import { CoverageMatrix } from "./_components/CoverageMatrix";
 import { AskTheTwin } from "./_components/AskTheTwin";
+import { DeliveryVerdictCard } from "./_components/DeliveryVerdictCard";
 import { UiBridgePanel } from "./_components/UiBridgePanel";
 
 /**
  * Digital Twin Explorer.
  *
- * Two tabs spanning the twin's two halves:
+ * Three tabs spanning the twin's two halves:
  *  - Completeness — the coordination-layer observers: which observation
  *    sub-spaces (Ξ) are live, partial, blind, or unbuilt for this tenant, with
  *    the credibility envelope each reports; plus "Ask the Twin" (your connected
  *    AI answers questions from the same tools).
+ *  - Delivery — the parameterized "has this plan/PR landed?" read: a plan slug
+ *    resolves to the same `coord_query_delivery` verdict an agent gets (plan
+ *    status ⋈ per-PR merge state ⋈ deploy state), with provenance + staleness.
  *  - UI Bridge — the runner's UI half: processed/cached spec pages + state graph
  *    vs an automation-required live snapshot.
  *
@@ -41,6 +45,7 @@ export default function DigitalTwinPage() {
       <Tabs defaultValue="completeness" className="flex min-h-0 flex-1 flex-col">
         <TabsList className="mx-6 mt-3 w-fit shrink-0">
           <TabsTrigger value="completeness">Completeness</TabsTrigger>
+          <TabsTrigger value="delivery">Delivery</TabsTrigger>
           <TabsTrigger value="ui-bridge">UI Bridge</TabsTrigger>
         </TabsList>
 
@@ -49,6 +54,11 @@ export default function DigitalTwinPage() {
             <div className="space-y-6 px-6 py-4">
               <CoverageMatrix />
               <AskTheTwin />
+            </div>
+          </TabsContent>
+          <TabsContent value="delivery" className="mt-0">
+            <div className="px-6 py-4">
+              <DeliveryVerdictCard />
             </div>
           </TabsContent>
           <TabsContent value="ui-bridge" className="mt-0">

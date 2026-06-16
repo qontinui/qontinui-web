@@ -76,6 +76,30 @@ function instanceClause(verdict: DriftVerdict): string | null {
       if (eco !== undefined) return `Ecosystems observed: ${String(eco)}.`;
       return null;
     }
+    case "delivery": {
+      const status = comp.status;
+      const prs = Array.isArray(comp.prs) ? comp.prs : [];
+      const allMerged = comp.all_merged;
+      const unmerged = Array.isArray(comp.unmerged_prs)
+        ? comp.unmerged_prs.length
+        : 0;
+      if (prs.length === 0) {
+        return status !== undefined && status !== null
+          ? `Plan status “${String(status)}”; no cited PRs found.`
+          : "No cited PRs found for this plan.";
+      }
+      const mergeClause =
+        allMerged === true
+          ? "all merged"
+          : unmerged > 0
+            ? `${unmerged} still unmerged`
+            : "merge state mixed";
+      const statusPart =
+        status !== undefined && status !== null
+          ? `Plan status “${String(status)}”; `
+          : "";
+      return `${statusPart}${prs.length} cited PR${prs.length === 1 ? "" : "s"}, ${mergeClause}.`;
+    }
     default:
       return null;
   }

@@ -185,3 +185,114 @@ class TestSubspacesEndpoint:
         assert resp.status_code == 200
         statuses = {s["status"] for s in resp.json()["subspaces"]}
         assert statuses == {"error"}
+
+
+# ---------------------------------------------------------------------------
+# GET /digital-twin/delivery/verdict — parameterized delivery read (Phase 5)
+# ---------------------------------------------------------------------------
+
+
+def _build_delivery_app() -> FastAPI:
+    """Like ``_build_test_app`` but also overrides ``get_tenant_id`` — the
+    delivery route resolves the tenant via that Depends (to forward the bearer),
+    not via ``get_coord_identity``."""
+    from app.api.deps import get_current_active_user_async
+    from app.api.v1.endpoints.digital_twin import router as dt_router
+    from app.api.v1.endpoints.operations import get_tenant_id
+
+    test_app = FastAPI()
+    mock_user = MagicMock()
+    mock_user.id = uuid4()
+    mock_user.is_active = True
+    test_app.dependency_overrides[get_current_active_user_async] = lambda: mock_user
+    test_app.dependency_overrides[get_tenant_id] = lambda: uuid4()
+    test_app.include_router(dt_router, prefix="/api/v1/digital-twin")
+    return test_app
+
+
+def _delivery_verdict_response() -> MagicMock:
+    """A coord delivery-route body: instance="delivery" DriftVerdict envelope."""
+    resp = MagicMock(spec=httpx.Response)
+    resp.status_code = 200
+    resp.json.return_value = {
+        "plan_slug": "2026-06-13-approach-d-conductor-engine",
+        "tool": "coord_query_delivery",
+        "verdict": {
+            "instance": "delivery",
+            "drift_class": "none",
+            "drift_subclass": None,
+            "coverage": 1.0,
+            "credibility": 0.9,
+            "staleness_seconds": 0,
+            "provenance": "join:live",
+            "components": {
+                "status": "shipped",
+                "all_merged": True,
+                "registered": True,
+                "prs": [{"repo": "qontinui-runner", "pr": 583, "merged": True}],
+                "unmerged_prs": [],
+                "deployed_envs": [],
+            },
+        },
+    }
+    return resp
+
+
+class TestDeliveryEndpoint:
+    def test_proxies_coord_and_returns_verdict(self):
+        client = TestClient(_build_delivery_app())
+        with patch(
+            "app.api.v1.endpoints.operations.httpx.AsyncClient"
+        ) as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = _delivery_verdict_response()
+            instance.__aenter__ = AsyncMock(return_value=instance)
+            instance.__aexit__ = AsyncMock(return_value=False)
+            MockClient.return_value = instance
+            resp = client.get(
+                f"{API_PREFIX}/delivery/verdict",
+                params={"plan_slug": "2026-06-13-approach-d-conductor-engine"},
+            )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["tool"] == "coord_query_delivery"
+        assert body["verdict"]["instance"] == "delivery"
+        assert body["verdict"]["components"]["all_merged"] is True
+        # The slug rode the coord query string (coord scopes the lookup on it).
+        called_url, called_kwargs = (
+            instance.get.call_args.args,
+            instance.get.call_args.kwargs,
+        )
+        assert called_url[0].endswith("/coord/twin/delivery/verdict")
+        assert (
+            called_kwargs["params"]["plan_slug"]
+            == "2026-06-13-approach-d-conductor-engine"
+        )
+
+    def test_missing_param_is_400_without_calling_coord(self):
+        client = TestClient(_build_delivery_app())
+        with patch(
+            "app.api.v1.endpoints.operations.httpx.AsyncClient"
+        ) as MockClient:
+            resp = client.get(f"{API_PREFIX}/delivery/verdict")
+            # Validated locally — coord is never dialed for an empty param set.
+            MockClient.assert_not_called()
+        assert resp.status_code == 400
+
+    def test_coord_tool_failure_surfaces_status(self):
+        client = TestClient(_build_delivery_app())
+        with patch(
+            "app.api.v1.endpoints.operations.httpx.AsyncClient"
+        ) as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = _status_response(502)
+            instance.__aenter__ = AsyncMock(return_value=instance)
+            instance.__aexit__ = AsyncMock(return_value=False)
+            MockClient.return_value = instance
+            resp = client.get(
+                f"{API_PREFIX}/delivery/verdict",
+                params={"plan_slug": "some-plan"},
+            )
+        # _proxy_coord_get re-raises coord's >=400 status as an HTTPException.
+        assert resp.status_code == 502
