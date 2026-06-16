@@ -204,7 +204,9 @@ async def require_coord_tenant_admin(
     identity = await get_coord_identity(request)
     if identity.home_tenant_id is None:
         raise HTTPException(status_code=403, detail="tenant_not_resolved")
-    if not identity.is_admin:
+    # qontinui superusers (staff) keep full access — they're a superset of the
+    # coord tenant-admin role, matching the frontend `isCoordAdmin` gate.
+    if not identity.is_admin and not current_user.is_superuser:
         raise HTTPException(status_code=403, detail="not_coord_tenant_admin")
     return identity.home_tenant_id
 
