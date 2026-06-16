@@ -31,6 +31,7 @@ import {
   CalendarClock,
   Activity,
   GitCommitHorizontal,
+  Boxes,
 } from "lucide-react";
 import type { NavItem } from "./types";
 
@@ -99,6 +100,21 @@ export const devNavItems: NavItem[] = [
     route: "/scheduled-runs",
     color: "#0EA5E9",
     group: "Automation",
+  },
+
+  // ===========================================================================
+  // Digital Twin — completeness matrix over the coordination-layer observers.
+  // Visualizes how complete the twin is + the per-observer credibility envelope
+  // (the same information AI agents receive). Coord-backed like Operations.
+  // ===========================================================================
+  {
+    id: "digital-twin",
+    label: "Digital Twin",
+    description: "Twin completeness + observer credibility",
+    icon: React.createElement(Boxes, { className: "size-5" }),
+    route: "/digital-twin",
+    color: "#6366F1",
+    group: "Runners",
   },
 
   // ===========================================================================
@@ -630,6 +646,10 @@ export const devNavItems: NavItem[] = [
         color: "#FF6B6B",
         adminOnly: true,
       },
+      // Coord Console — the coordination-layer admin surface (fleet, trees,
+      // pull decisions, plans). Lives under Admin (its /admin/coord route is
+      // is_superuser-gated) so it doesn't spawn a second "Coordination" header
+      // after SYSTEM. Non-admins get coord reporting via Operations + Commits.
       {
         id: "admin-coord",
         label: "Coord Console",
