@@ -423,7 +423,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         user,
         loading,
-        isCoordAdmin: user?.coord_is_admin === true,
+        // Coord admins manage coordination; qontinui superusers (staff) are a
+        // superset and keep the full access they had before the per-page gating.
+        isCoordAdmin:
+          user?.coord_is_admin === true || user?.is_superuser === true,
         accountType: user?.account_type ?? null,
         logout,
         updateUser,
