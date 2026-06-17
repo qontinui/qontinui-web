@@ -226,7 +226,8 @@
       "description": "Live identity/tenancy/role/scope ground truth (Cognito + coord).",
       "research_status": "partial",
       "research_doc": "open-questions/missing-twin-sub-spaces.md",
-      "query_kind": "snapshot",
+      "query_kind": "parameterized",
+      "_query_kind_note": "Deliberately NOT auto-probed: coord_query_auth_config exposes Cognito pool wiring / app-clients / tenancy graph — the most recon-sensitive sub-space. coord drops it from the snapshot map (/coord/twin/auth/verdict 404s); it stays available to the Phase-2 interactive explorer.",
       "coord_query_tool": "coord_query_auth_config",
       "observer_module": "auth_observation_watcher.rs"
     },

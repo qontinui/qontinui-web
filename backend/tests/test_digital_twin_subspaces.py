@@ -138,8 +138,8 @@ class TestSubspacesEndpoint:
                 return _verdict_response(0.4, "live_aws")  # partial
             if "/twin/config/" in url:
                 return _verdict_response(0.0, "config:unconfigured")  # blind
-            if "/twin/auth/" in url:
-                return _status_response(404)  # no_snapshot_tool
+            if "/twin/worktree/" in url:
+                return _status_response(404)  # no_snapshot_tool classification
             if "/twin/health/" in url:
                 return _status_response(502)  # error
             return _verdict_response(1.0, "live_rds")  # default implemented
@@ -165,8 +165,11 @@ class TestSubspacesEndpoint:
         assert by_id["release"]["status"] == "implemented"
         assert by_id["infra"]["status"] == "partial"
         assert by_id["config"]["status"] == "blind"
-        assert by_id["auth"]["status"] == "no_snapshot_tool"
+        assert by_id["worktree"]["status"] == "no_snapshot_tool"
         assert by_id["health"]["status"] == "error"
+        # `auth` is intentionally NOT probed (sensitive — Cognito wiring), so it
+        # never appears in the matrix response.
+        assert "auth" not in by_id
         # Envelope metrics ride along for the responding cells.
         assert by_id["release"]["metrics"]["provenance"] == "live_aws"
 

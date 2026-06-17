@@ -62,7 +62,11 @@ _PROBEABLE_SUBSPACES: tuple[str, ...] = (
     "health",
     "deps",
     "route_serving",
-    "auth",
+    # NOTE: `auth` is intentionally absent — coord_query_auth_config exposes
+    # Cognito pool wiring / tenancy graph (the most recon-sensitive sub-space),
+    # so coord drops it from its snapshot map (/coord/twin/auth/verdict 404s) and
+    # we don't probe it. The manifest marks `auth` parameterized (interactive
+    # explorer only).
     "client_telemetry",
     "worktree",
 )
