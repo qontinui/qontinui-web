@@ -157,18 +157,39 @@ def _extract_bearer(request: Request) -> str | None:
     return None
 
 
-async def _fetch_identity(bearer: str | None) -> CoordIdentity:
+# Must match ``operations.ACTIVE_TENANT_HEADER``: the dashboard tenant-switcher
+# selection. Forwarded to coord's /me so the returned identity (home tenant +
+# per-tenant ``roles``) reflects the SELECTED tenant — coord re-scopes the
+# operator context to it, membership-validated (never widening).
+ACTIVE_TENANT_HEADER = "X-Qontinui-Active-Tenant"
+
+
+def _extract_active_tenant(request: Request) -> str | None:
+    """Read the dashboard tenant-switcher selection header, if present."""
+    return request.headers.get(ACTIVE_TENANT_HEADER) or None
+
+
+async def _fetch_identity(
+    bearer: str | None, active_tenant: str | None = None
+) -> CoordIdentity:
     """Call coord ``GET /admin/coord/me`` with the forwarded bearer.
 
     Maps transport failures to 502/504 (same posture as
     ``operations.py::_proxy_coord_get``) and surfaces coord's own status
     codes verbatim — notably the 403 it raises for an unlinked operator
     (the boundary's fail-closed authz gate).
+
+    When ``active_tenant`` is supplied it is forwarded as
+    ``X-Qontinui-Active-Tenant`` so coord re-scopes the operator's identity
+    (home tenant + per-tenant roles) to that tenant — but only if the
+    operator is a member, validated coord-side.
     """
     url = f"{settings.COORD_URL}/admin/coord/me"
     headers: dict[str, str] = {}
     if bearer:
         headers["Authorization"] = f"Bearer {bearer}"
+    if active_tenant:
+        headers[ACTIVE_TENANT_HEADER] = active_tenant
     async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
         try:
             resp = await client.get(url, headers=headers)
@@ -209,7 +230,9 @@ async def get_coord_identity(request: Request) -> CoordIdentity:
     cached = getattr(request.state, _REQUEST_STATE_KEY, None)
     if isinstance(cached, CoordIdentity):
         return cached
-    identity = await _fetch_identity(_extract_bearer(request))
+    identity = await _fetch_identity(
+        _extract_bearer(request), _extract_active_tenant(request)
+    )
     setattr(request.state, _REQUEST_STATE_KEY, identity)
     return identity
 

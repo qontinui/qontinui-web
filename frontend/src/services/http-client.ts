@@ -6,6 +6,24 @@ import { createLogger } from "@/lib/logger";
 
 const log = createLogger("HttpClient");
 
+/**
+ * The dashboard tenant-switcher selection, persisted by `tenant-context.tsx`.
+ * Read here directly (not via React context — `HttpClient` is a plain class)
+ * to attach the `X-Qontinui-Active-Tenant` header to coord-proxy calls so the
+ * operator's coord context re-scopes to the chosen tenant. The key MUST match
+ * `tenant-context.tsx`'s `STORAGE_KEY`.
+ */
+const ACTIVE_TENANT_STORAGE_KEY = "qontinui.active_tenant_id";
+
+function readActiveTenantId(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return localStorage.getItem(ACTIVE_TENANT_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
 export interface HttpOptions extends RequestInit {
   skipAuth?: boolean;
   maxRetries?: number;
@@ -235,6 +253,17 @@ export class HttpClient {
       });
       if (accessToken) {
         headers["Authorization"] = `Bearer ${accessToken}`;
+      }
+    }
+
+    // Forward the dashboard tenant-switcher selection on coord-proxy calls so
+    // the operator's coord context re-scopes to the chosen tenant (validated
+    // coord-side against their memberships). The backend reads this only on
+    // `/operations/*`, so scope the header to those calls.
+    if (!skipAuth && url.includes("/api/v1/operations/")) {
+      const activeTenant = readActiveTenantId();
+      if (activeTenant) {
+        headers["X-Qontinui-Active-Tenant"] = activeTenant;
       }
     }
 
