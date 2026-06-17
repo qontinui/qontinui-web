@@ -189,6 +189,30 @@ class TestSubspacesEndpoint:
         statuses = {s["status"] for s in resp.json()["subspaces"]}
         assert statuses == {"error"}
 
+    def test_tenant_gate_403_surfaces_restricted(self):
+        # coord's twin tenant gate 403s every route for a non-allowed operator;
+        # the matrix surfaces a top-level `restricted` flag + per-cell
+        # "restricted" (an access decision, distinct from a 502 tool failure).
+        client = TestClient(_build_test_app())
+        with (
+            patch(
+                "app.api.v1.endpoints.digital_twin.get_coord_identity",
+                new=_resolved_identity(),
+            ),
+            patch("app.api.v1.endpoints.digital_twin.httpx.AsyncClient") as MockClient,
+        ):
+            instance = AsyncMock()
+            instance.get.side_effect = lambda url, **kw: _status_response(403)
+            instance.__aenter__ = AsyncMock(return_value=instance)
+            instance.__aexit__ = AsyncMock(return_value=False)
+            MockClient.return_value = instance
+            resp = client.get(f"{API_PREFIX}/subspaces")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["restricted"] is True
+        assert {s["status"] for s in body["subspaces"]} == {"restricted"}
+
 
 # ---------------------------------------------------------------------------
 # GET /digital-twin/delivery/verdict — parameterized delivery read (Phase 5)

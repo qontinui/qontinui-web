@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Lock } from "lucide-react";
 import { useDigitalTwinSubspaces } from "../_hooks/useDigitalTwinSubspaces";
 import { resolveSubspaces, summarize } from "../_lib/resolve";
 import type { ResolvedSubspace } from "../_lib/types";
@@ -46,6 +46,23 @@ export function CoverageMatrix() {
   const summary = useMemo(() => summarize(rows), [rows]);
 
   const tiers: (1 | 2 | 3)[] = [1, 2, 3];
+
+  // coord's twin tenant gate denied this operator (home tenant outside the
+  // configured internal-tenant allowlist). Show a clear access message rather
+  // than an all-"error" grid — it's an access decision, not an outage.
+  if (data?.restricted) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-border bg-card px-6 py-16 text-center">
+        <Lock className="size-8 text-muted-foreground" />
+        <h2 className="text-base font-semibold">Access restricted</h2>
+        <p className="max-w-md text-sm text-muted-foreground">
+          The Digital Twin is limited to internal Qontinui operators. Your tenant
+          isn&apos;t on the allowlist for the fleet-wide twin observers — ask an
+          administrator if you need access.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

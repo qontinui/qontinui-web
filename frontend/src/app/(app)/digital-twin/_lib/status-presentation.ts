@@ -49,6 +49,12 @@ export const STATUS_STYLES: Record<CellStatus, StatusStyle> = {
     border: "border-l-zinc-300 dark:border-l-zinc-600",
     meaning: "Enumerated in the taxonomy but no observer exists yet.",
   },
+  restricted: {
+    label: "Restricted",
+    dot: "bg-zinc-400",
+    border: "border-l-zinc-400",
+    meaning: "Access restricted — the twin is limited to internal operators for this tenant.",
+  },
   error: {
     label: "Error",
     dot: "bg-red-500",
