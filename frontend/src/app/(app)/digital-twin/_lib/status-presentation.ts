@@ -71,6 +71,8 @@ export function formatStaleness(seconds: number | null | undefined): string {
 }
 
 export function formatRatio(value: number | null | undefined): string {
-  if (value === null || value === undefined) return "—";
+  // Guard NaN too — a coord verdict can carry a non-numeric credibility (the
+  // Auth observer did in prod), which would otherwise render as "NaN%".
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
   return `${Math.round(value * 100)}%`;
 }
