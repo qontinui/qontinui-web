@@ -77,6 +77,21 @@ export const devNavItems: NavItem[] = [
     color: "#10B981",
     group: "Coordination",
   },
+  // Coord Console — the coordination-layer surface (fleet, trees, pull
+  // decisions, plans; the old Operations fleet view folded into its Fleet tab).
+  // VISIBLE TO ALL authenticated users: the /admin/coord pages are viewable by
+  // any tenant member (layout guard relaxed in 5a02ee3d), with mutation
+  // controls gated per-control via <CoordAdminOnly>. Not adminOnly, so it sits
+  // in the Coordination block (pre-SYSTEM) and stays a single group header.
+  {
+    id: "admin-coord",
+    label: "Coord Console",
+    description: "Coordination layer — fleet, trees, pull decisions, plans",
+    icon: React.createElement(Network, { className: "size-5" }),
+    route: "/admin/coord",
+    color: "#10B981",
+    group: "Coordination",
+  },
   // Scheduled Runs — cron-style workflow dispatches. Advanced/automation (gated
   // behind the "Show advanced automation features" toggle on web); kept out of
   // the Coordination block so it never splits that group's header.
@@ -634,19 +649,9 @@ export const devNavItems: NavItem[] = [
         color: "#FF6B6B",
         adminOnly: true,
       },
-      // Coord Console — the coordination-layer admin surface (fleet, trees,
-      // pull decisions, plans). Lives under Admin (its /admin/coord route is
-      // is_superuser-gated) so it doesn't spawn a second "Coordination" header
-      // after SYSTEM. Non-admins get coord reporting via Operations + Commits.
-      {
-        id: "admin-coord",
-        label: "Coord Console",
-        description: "Coordination layer — fleet, trees, pull decisions, plans",
-        icon: React.createElement(Network, { className: "size-4" }),
-        route: "/admin/coord",
-        color: "#FF6B6B",
-        adminOnly: true,
-      },
+      // (Coord Console moved out to a top-level Coordination item, visible to
+      // all — see above. Its pages are viewable by any tenant member; mutations
+      // stay admin-gated via <CoordAdminOnly>.)
     ],
   },
 ];
