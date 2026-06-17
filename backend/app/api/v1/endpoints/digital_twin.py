@@ -140,6 +140,12 @@ async def _probe_subspace(
         logger.warning("twin_probe_unreachable", subspace=subspace, error=str(exc))
         return {"id": subspace, "status": "error", "error": "coord_unreachable"}
 
+    if resp.status_code == 403:
+        # coord's twin tenant gate (require_twin_tenant) denied this operator —
+        # their home tenant is outside COORD_TWIN_ALLOWED_TENANT_IDS. Distinct
+        # from a tool failure: it's an access decision, surfaced as "restricted"
+        # so the UI shows a friendly access message instead of an all-error grid.
+        return {"id": subspace, "status": "restricted"}
     if resp.status_code == 404:
         # coord serves no snapshot tool for this id (parameterized/not-built).
         return {"id": subspace, "status": "no_snapshot_tool"}
@@ -218,7 +224,16 @@ async def get_twin_subspaces(
         results = await asyncio.gather(
             *(_probe_subspace(client, s, headers) for s in _PROBEABLE_SUBSPACES)
         )
-    payload = {"subspaces": list(results), "probed": len(results)}
+    # coord's twin tenant gate (when armed) 403s every route for an operator
+    # outside COORD_TWIN_ALLOWED_TENANT_IDS. Surface that as a top-level
+    # `restricted` flag so the UI shows a friendly access message rather than an
+    # all-"error" grid (an access decision, not an outage).
+    restricted = any(r.get("status") == "restricted" for r in results)
+    payload = {
+        "subspaces": list(results),
+        "probed": len(results),
+        "restricted": restricted,
+    }
     _MATRIX_CACHE[cache_key] = (now, payload)
     return payload
 
