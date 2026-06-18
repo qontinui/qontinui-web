@@ -95,11 +95,32 @@ export interface RolloutOverview {
   features: FeatureRollout[];
 }
 
+// ---- Counts --------------------------------------------------------------
+
+/**
+ * Tenant-wide counts computed across ALL gates (not just the returned page),
+ * so the summary stays accurate no matter the `limit`/filter. The `gates`
+ * array is a capped, OPEN-first page; these are the true totals.
+ */
+export interface GateCounts {
+  total: number;
+  open: number;
+  cleared: number;
+  cleared_today: number;
+  failed: number;
+  stale: number;
+  muted: number;
+  snoozed: number;
+}
+
+export type GateVerdict = "open" | "cleared" | "failed";
+
 // ---- Top-level envelope --------------------------------------------------
 
 export interface DevOverview {
   generated_at: string;
   gates: GateOverviewRow[];
+  counts: GateCounts;
   rollouts: RolloutOverview;
   /**
    * Present (set by the web proxy) when coord was unreachable/degraded and
@@ -117,11 +138,22 @@ class AdminDevService {
    *
    * `opts.refresh` passes `?refresh=1` to bypass the backend's ~30s TTL
    * cache (the manual Refresh button passes it; auto-poll does not, so the
-   * poll benefits from the cache).
+   * poll benefits from the cache). `opts.verdict` filters server-side;
+   * `opts.limit` caps the page (coord orders OPEN-first either way).
    */
-  async getOverview(opts?: { refresh?: boolean }): Promise<DevOverview> {
-    const qs = opts?.refresh ? "?refresh=1" : "";
-    return httpClient.get<DevOverview>(`${API}/overview${qs}`);
+  async getOverview(opts?: {
+    refresh?: boolean;
+    verdict?: GateVerdict;
+    limit?: number;
+  }): Promise<DevOverview> {
+    const p = new URLSearchParams();
+    if (opts?.refresh) p.set("refresh", "1");
+    if (opts?.verdict) p.set("verdict", opts.verdict);
+    if (opts?.limit) p.set("limit", String(opts.limit));
+    const qs = p.toString();
+    return httpClient.get<DevOverview>(
+      `${API}/overview${qs ? `?${qs}` : ""}`,
+    );
   }
 }
 

@@ -8,33 +8,7 @@
  */
 
 import { Card, CardContent } from "@/components/ui/card";
-import type {
-  DevOverview,
-  GateOverviewRow,
-} from "@/services/admin-dev-service";
-
-function isToday(iso: string | null): boolean {
-  if (!iso) return false;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return false;
-  const now = new Date();
-  return (
-    d.getUTCFullYear() === now.getUTCFullYear() &&
-    d.getUTCMonth() === now.getUTCMonth() &&
-    d.getUTCDate() === now.getUTCDate()
-  );
-}
-
-/** A verdict is "failed" when it is neither passing nor cleared/pending. */
-function isFailed(verdict: string): boolean {
-  const v = verdict.toLowerCase();
-  return v === "fail" || v === "failed" || v === "error" || v === "veto";
-}
-
-/** A gate is "open" while it has not yet cleared. */
-function isOpen(g: GateOverviewRow): boolean {
-  return g.cleared_at === null || g.cleared_at === undefined;
-}
+import type { DevOverview } from "@/services/admin-dev-service";
 
 interface StatCardProps {
   label: string;
@@ -70,15 +44,10 @@ function StatCard({ label, value, testId, tone = "default" }: StatCardProps) {
 }
 
 export function SummaryCards({ overview }: { overview: DevOverview }) {
-  const gates = overview.gates;
-
-  const open = gates.filter(isOpen).length;
-  const clearedToday = gates.filter((g) => isToday(g.cleared_at)).length;
-  const failed = gates.filter((g) => isFailed(g.verdict)).length;
-  const stale = gates.filter((g) => g.stale).length;
-  const snoozed = gates.filter((g) => g.snoozed_until !== null).length;
-  const muted = gates.filter((g) => g.muted).length;
-
+  // Use the tenant-wide `counts` (computed across ALL gates), NOT the returned
+  // page — the page is OPEN-first and capped, so page-derived totals would
+  // undercount cleared/failed once a tenant has more gates than the cap.
+  const c = overview.counts;
   const am = overview.rollouts.auto_merge;
 
   return (
@@ -87,34 +56,34 @@ export function SummaryCards({ overview }: { overview: DevOverview }) {
       data-testid="gates-summary-cards"
     >
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
-        <StatCard label="Open" value={open} testId="summary-open" />
+        <StatCard label="Open" value={c.open} testId="summary-open" />
         <StatCard
           label="Cleared today"
-          value={clearedToday}
+          value={c.cleared_today}
           testId="summary-cleared-today"
           tone="success"
         />
         <StatCard
           label="Failed"
-          value={failed}
+          value={c.failed}
           testId="summary-failed"
           tone="destructive"
         />
         <StatCard
           label="Stale"
-          value={stale}
+          value={c.stale}
           testId="summary-stale"
           tone="warning"
         />
         <StatCard
           label="Snoozed"
-          value={snoozed}
+          value={c.snoozed}
           testId="summary-snoozed"
           tone="muted"
         />
         <StatCard
           label="Muted"
-          value={muted}
+          value={c.muted}
           testId="summary-muted"
           tone="muted"
         />

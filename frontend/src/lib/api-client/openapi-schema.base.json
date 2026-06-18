@@ -44961,6 +44961,39 @@
               "title": "Refresh",
               "type": "boolean"
             }
+          },
+          {
+            "description": "Max gates in the page (coord orders OPEN-first, so the actionable + ETA-bearing gates surface within the cap).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "description": "Max gates in the page (coord orders OPEN-first, so the actionable + ETA-bearing gates surface within the cap).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Optional verdict filter; omit for all (still open-first).",
+            "in": "query",
+            "name": "verdict",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^(open|cleared|failed)$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional verdict filter; omit for all (still open-first).",
+              "title": "Verdict"
+            }
           }
         ],
         "responses": {
