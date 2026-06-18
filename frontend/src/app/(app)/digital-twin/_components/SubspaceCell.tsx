@@ -1,5 +1,6 @@
 "use client";
 
+import { useUIElement } from "@qontinui/ui-bridge/react";
 import { cn } from "@/lib/utils";
 import {
   STATUS_STYLES,
@@ -23,8 +24,17 @@ export function SubspaceCell({ row, onSelect }: SubspaceCellProps) {
   const style = STATUS_STYLES[row.cellStatus];
   const metrics = row.query_kind === "snapshot" ? row.metrics : undefined;
 
+  // Register with the UI Bridge so the cell is discoverable + clickable by a
+  // stable id (e.g. `digital-twin-cell-schema`) for automation + spec-checks.
+  const { ref } = useUIElement({
+    id: `digital-twin-cell-${row.id}`,
+    label: `Digital Twin sub-space cell: ${row.id}`,
+    type: "button",
+  });
+
   return (
     <button
+      ref={ref}
       type="button"
       onClick={() => onSelect(row)}
       title={style.meaning}
