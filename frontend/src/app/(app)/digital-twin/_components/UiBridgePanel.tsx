@@ -9,6 +9,7 @@ import {
   RefreshCw,
   WifiOff,
 } from "lucide-react";
+import { useUIElement } from "@qontinui/ui-bridge/react";
 import { Button } from "@/components/ui/button";
 import { useRealtimeConnections } from "@/hooks/useRealtimeConnections";
 import {
@@ -57,6 +58,23 @@ export function UiBridgePanel() {
     [specs],
   );
 
+  // UI Bridge: stable ids for the tab's controls (automation + spec-checks).
+  const { ref: appIdRef } = useUIElement({
+    id: "ui-bridge-app-id",
+    label: "UI Bridge app id to inspect",
+    type: "input",
+  });
+  const { ref: refreshRef } = useUIElement({
+    id: "ui-bridge-refresh",
+    label: "Refresh UI Bridge spec list/graph",
+    type: "button",
+  });
+  const { ref: captureRef } = useUIElement({
+    id: "ui-bridge-capture-snapshot",
+    label: "Capture a live UI Bridge snapshot from the runner",
+    type: "button",
+  });
+
   if (!deviceId) {
     return (
       <div className="rounded-lg border border-border bg-card p-4">
@@ -75,6 +93,7 @@ export function UiBridgePanel() {
           App
         </label>
         <input
+          ref={appIdRef}
           id="dt-app-id"
           value={appId}
           list="dt-app-id-options"
@@ -87,6 +106,7 @@ export function UiBridgePanel() {
           ))}
         </datalist>
         <Button
+          ref={refreshRef}
           variant="ghost"
           size="sm"
           className="h-7 gap-1.5 text-xs"
@@ -171,6 +191,7 @@ export function UiBridgePanel() {
           </p>
 
           <Button
+            ref={captureRef}
             size="sm"
             className="mb-3 gap-1.5"
             disabled={snapshot.isFetching}

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
+import { useUIElement } from "@qontinui/ui-bridge/react";
 import {
   Dialog,
   DialogContent,
@@ -49,6 +50,13 @@ export function SubspaceDetail({ row, onOpenChange }: SubspaceDetailProps) {
   useEffect(() => {
     setShowRaw(false);
   }, [row?.id]);
+
+  // UI Bridge: stable id for the raw-data toggle (automation + spec-checks).
+  const { ref: showRawRef } = useUIElement({
+    id: "digital-twin-show-raw",
+    label: "Toggle the raw DriftVerdict JSON in the sub-space drawer",
+    type: "button",
+  });
 
   if (!row) return null;
   const style = STATUS_STYLES[row.cellStatus];
@@ -153,6 +161,7 @@ export function SubspaceDetail({ row, onOpenChange }: SubspaceDetailProps) {
                   Raw verdict
                 </span>
                 <Button
+                  ref={showRawRef}
                   variant="ghost"
                   size="sm"
                   className="h-7 gap-1.5 text-xs"
