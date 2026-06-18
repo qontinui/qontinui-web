@@ -23,7 +23,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Gauge, Pause, Play, RefreshCw } from "lucide-react";
+import { Archive, Gauge, Pause, Play, RefreshCw } from "lucide-react";
 import {
   adminDevService,
   type DevOverview,
@@ -61,6 +61,9 @@ export default function CoordGatesPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  // When on, the gate list page includes reaper-archived gates (live-only by
+  // default). The `counts.archived` tile is always shown regardless.
+  const [includeArchived, setIncludeArchived] = useState(false);
 
   // Wall-clock of the last successful load, and a 1s ticker that drives the
   // "updated Xs ago" label without re-fetching.
@@ -75,9 +78,10 @@ export default function CoordGatesPage() {
     inFlight.current = true;
     if (isRefresh) setRefreshing(true);
     try {
-      const data = await adminDevService.getOverview(
-        isRefresh ? { refresh: true } : undefined,
-      );
+      const data = await adminDevService.getOverview({
+        refresh: isRefresh,
+        includeArchived,
+      });
       setOverview(data);
       setError(null);
       setUpdatedAt(Date.now());
@@ -88,7 +92,7 @@ export default function CoordGatesPage() {
       setRefreshing(false);
       inFlight.current = false;
     }
-  }, []);
+  }, [includeArchived]);
 
   // Initial load.
   useEffect(() => {
@@ -138,6 +142,21 @@ export default function CoordGatesPage() {
               {relativeAgoLabel(updatedAt, now)}
             </span>
           )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIncludeArchived((v) => !v)}
+            data-testid="gates-archived-toggle"
+            aria-pressed={includeArchived}
+            title={
+              includeArchived
+                ? "Showing archived gates — click to hide"
+                : "Show reaper-archived gates"
+            }
+          >
+            <Archive className="h-3.5 w-3.5 mr-1" />
+            {includeArchived ? "Archived: on" : "Archived"}
+          </Button>
           <Button
             variant="ghost"
             size="sm"
