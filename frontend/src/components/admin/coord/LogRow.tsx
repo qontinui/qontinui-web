@@ -14,6 +14,7 @@
 import { useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { LevelBadge } from "@/components/admin/coord/LevelBadge";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 export interface AgentLogRow {
@@ -25,6 +26,13 @@ export interface AgentLogRow {
   event?: string;
   payload?: Record<string, unknown> | null;
   occurred_at?: string;
+  /**
+   * `true` when the agent has no `coord.agent_worktrees` row — an
+   * interactive / runner-managed or PTY-CLI session rather than a
+   * coord-spawned agent. Derived by coord's `get_recent`; `undefined`
+   * on older coord shapes (then the badge is omitted).
+   */
+  is_interactive?: boolean;
   // Coord may use `ts` or `created_at` in older shapes — tolerate both.
   ts?: string;
   created_at?: string;
@@ -114,6 +122,20 @@ export function LogRow({
         <span className="font-medium text-foreground truncate">
           {log.event ?? "(no event)"}
         </span>
+        {log.is_interactive !== undefined && (
+          <Badge
+            data-testid="log-row-source-badge"
+            variant={log.is_interactive ? "info" : "secondary"}
+            className="text-[10px] px-1 py-0 leading-tight"
+            title={
+              log.is_interactive
+                ? "Interactive / PTY-CLI session (no coord worktree)"
+                : "Coord-spawned agent (has a worktree)"
+            }
+          >
+            {log.is_interactive ? "interactive" : "spawned"}
+          </Badge>
+        )}
         {!hideAgentId && (
           <button
             type="button"
