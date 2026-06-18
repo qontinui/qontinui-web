@@ -1,7 +1,7 @@
 """coord.findings (Session Bus Phase 2 — ephemeral cross-session knowledge feed)
 
 Revision ID: coord_findings
-Revises: coord_wip_attribution
+Revises: dropautoresp01_drop_auto_response_rules
 Create Date: 2026-06-15
 
 Phase 2 of plan
@@ -65,13 +65,14 @@ does NOT add it to the boot ``require_table`` canonical-schema gate, so coord an
 this migration can land in either order without the boot-gate crash-loop that
 caused the 2026-06 deploy outage (plan §"Autonomous drivers", review item 16).
 
-NOTE (land-time): ``down_revision`` is pinned to the ``coord_wip_attribution``
-head as of web origin/main ``b99887af`` (2026-06-15). Before merging, RE-POINT it
-via ``coord_migration_reserve`` (which assigns ``down_revision`` server-side and
-serializes against concurrent migrations) — do NOT hand-merge a guessed chain
-(memory ``feedback_migration_reservation_withdraw_cascade_repoint_hazard``).
+NOTE: ``down_revision`` was assigned by ``coord_migration_reserve`` on 2026-06-18
+(reservation ``543124fb-acc8-4b5b-b91f-d7e88cd0812a``, position 2 → chained off the
+queue tail ``dropautoresp01_drop_auto_response_rules``, NOT the bare main head — the
+queue's fork prevention). The reservation is bound to PR #602 via
+``coord_migration_bind_pr``; coord releases it on merge. Do NOT hand-edit the
+``down_revision`` (memory ``feedback_migration_reservation_withdraw_cascade_repoint_hazard``).
 
-Chains off ``coord_wip_attribution``.
+Chains off ``dropautoresp01_drop_auto_response_rules``.
 """
 
 from collections.abc import Sequence
@@ -81,7 +82,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_findings"
-down_revision: str | Sequence[str] | None = "coord_wip_attribution"
+down_revision: str | Sequence[str] | None = "dropautoresp01_drop_auto_response_rules"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
