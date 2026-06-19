@@ -22252,6 +22252,24 @@
         "title": "LockResponse",
         "type": "object"
       },
+      "MachineRenameRequest": {
+        "description": "Body for ``PATCH /fleet/machines/{hostname}``.\n\n``name`` is the desired friendly display name. A non-empty (after\ntrim) string upserts the name; an empty/whitespace-only string or\n``null`` clears it (reverting the machine to its raw hostname).",
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "title": "MachineRenameRequest",
+        "type": "object"
+      },
       "MacroCreate": {
         "description": "Create a new macro.",
         "properties": {
@@ -68128,6 +68146,66 @@
           }
         ],
         "summary": "Get Fleet Health",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/fleet/machines/{hostname}": {
+      "patch": {
+        "description": "Set or clear the current user's friendly display name for a machine.\n\n* Non-empty ``name`` (after trim, max ``100`` chars): UPSERT the row\n  for ``(current_user.id, hostname)``.\n* Empty/whitespace-only ``name`` or ``null``: DELETE the row (clearing\n  reverts the machine to showing its raw hostname).\n\nThe ``hostname`` need NOT exist in the fleet (a user may rename a\nmachine that's briefly offline) \u2014 the name is stored regardless.\n\nResponse: ``{ \"hostname\": <hostname>, \"name\": <name> | null }`` (``name``\nis ``null`` after a clear).",
+        "operationId": "api_v1_operations_fleet_machines_hostname_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "hostname",
+            "required": true,
+            "schema": {
+              "title": "Hostname",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MachineRenameRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rename Machine Api V1 Operations Fleet Machines  Hostname  Patch",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Rename Machine",
         "tags": [
           "operations"
         ]
