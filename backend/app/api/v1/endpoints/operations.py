@@ -3868,6 +3868,67 @@ async def delete_priority_set(
     )
 
 
+# Plan ``2026-06-13-unified-automation-rule-framework.md`` — Phase 5c.
+# Forward coord's unified automation-rule (policy) CRUD through the web backend
+# so the Admin Coord Console authoring UI manages tenant-scoped rules without
+# the browser hitting coord cross-origin. Replaces the org-scoped #580
+# auto-response store (deleted in Phase 5a). Coord owns the kind→storage
+# mapping; the UI sends the typed ``kind`` and coord persists it.
+#
+# Same auth posture as the priority-sets proxy above: EVERY route gated by
+# ``require_coord_tenant_admin`` (coord's ``/admin/coord/me`` ``is_admin`` is
+# the source of truth; the web-side gate keeps the surface from being silently
+# opened). ``require_coord_tenant_admin`` captures the caller's bearer so
+# ``_proxy_coord_*`` forwards only the bearer (coord derives the tenant).
+# Coord 4xx error bodies pass through verbatim via the ``_proxy_coord_*``
+# helpers.
+
+
+@router.get("/coord/policies")
+async def list_coord_policies(
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """List the tenant's automation policies (rules). Tenant-admin only."""
+    return await _proxy_coord_get("/coord/policies", tenant_id=tenant_id)
+
+
+@router.post("/coord/policies")
+async def create_coord_policy(
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Create an automation policy. Body forwarded verbatim. Tenant-admin only.
+
+    The body carries the typed ``kind`` (e.g. ``terminal_auto_response``) plus
+    ``condition``/``action`` sub-objects; coord maps the kind to storage and
+    returns its 4xx (validation, duplicate) verbatim.
+    """
+    return await _proxy_coord_post("/coord/policies", body, tenant_id=tenant_id)
+
+
+@router.patch("/coord/policies/{policy_id}")
+async def update_coord_policy(
+    policy_id: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Update an automation policy. Body forwarded verbatim. Tenant-admin only."""
+    return await _proxy_coord_patch(
+        f"/coord/policies/{policy_id}", body, tenant_id=tenant_id
+    )
+
+
+@router.delete("/coord/policies/{policy_id}")
+async def delete_coord_policy(
+    policy_id: str,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Delete an automation policy. Tenant-admin only."""
+    return await _proxy_coord_delete(
+        f"/coord/policies/{policy_id}", tenant_id=tenant_id
+    )
+
+
 @router.get("/coord/composition-rules")
 async def list_composition_rules(
     tenant_id: UUID = Depends(require_coord_tenant_admin),

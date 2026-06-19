@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MessageSquare, Send, Loader2, WifiOff, Bot, User } from "lucide-react";
+import { useUIElement } from "@qontinui/ui-bridge/react";
 import { Button } from "@/components/ui/button";
 import { useRealtimeConnections } from "@/hooks/useRealtimeConnections";
 import { useChatWebSocket } from "@/hooks/useChatWebSocket";
@@ -75,6 +76,18 @@ export function AskTheTwin() {
     setInput("");
   }, [input, busy]);
 
+  // UI Bridge: stable ids so automation can type a question + submit it.
+  const { ref: inputRef } = useUIElement({
+    id: "ask-the-twin-input",
+    label: "Digital Twin question input",
+    type: "input",
+  });
+  const { ref: submitRef } = useUIElement({
+    id: "ask-the-twin-submit",
+    label: "Ask the Twin — submit question",
+    type: "button",
+  });
+
   if (!activeRunner) {
     return (
       <section className="rounded-lg border border-border bg-card p-4">
@@ -132,6 +145,7 @@ export function AskTheTwin() {
 
       <div className="flex items-end gap-2">
         <textarea
+          ref={inputRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
@@ -144,7 +158,7 @@ export function AskTheTwin() {
           placeholder="Ask a question about the digital twin…"
           className="min-h-[2.5rem] flex-1 resize-y rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         />
-        <Button onClick={handleSubmit} disabled={busy || !input.trim()} className="gap-1.5">
+        <Button ref={submitRef} onClick={handleSubmit} disabled={busy || !input.trim()} className="gap-1.5">
           {busy ? (
             <Loader2 className="size-4 animate-spin" />
           ) : (
