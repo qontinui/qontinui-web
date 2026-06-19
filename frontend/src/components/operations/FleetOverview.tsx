@@ -20,6 +20,7 @@ import { useDeviceStatusStream } from "./useDeviceStatusStream";
 import { useSymbolClaimsStream } from "./useSymbolClaimsStream";
 import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_API, POLL_INTERVAL_MS, relativeTime } from "./utils";
+import { CollapsiblePanel } from "./CollapsiblePanel";
 import type {
   CiRunnerInfo,
   CiRunnersByHost,
@@ -291,8 +292,18 @@ export function FleetOverview() {
 
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="space-y-6">
-        {/* Machine cards grid */}
+      <CollapsiblePanel
+        storageKey="fleet:overview"
+        icon={<Server className="h-4 w-4" />}
+        title="Fleet overview"
+        summary={
+          <Badge variant="outline" className="text-[10px]">
+            {machineGroups.length}
+          </Badge>
+        }
+      >
+        <div className="space-y-6">
+          {/* Machine cards grid */}
         {isEmpty ? (
           <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
             <Server className="h-10 w-10 opacity-30" />
@@ -411,7 +422,8 @@ export function FleetOverview() {
             </div>
           </div>
         )}
-      </div>
+        </div>
+      </CollapsiblePanel>
     </TooltipProvider>
   );
 }
