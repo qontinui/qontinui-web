@@ -4,7 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DestructiveButton } from "@/components/ui/destructive-button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { CollapsiblePanel } from "./CollapsiblePanel";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -619,27 +619,35 @@ export function GatesPanel() {
 
   const loading = gates === null && error === null;
   const count = gates?.length ?? 0;
+  const failedCount = (gates ?? []).filter((g) => g.verdict === "failed").length;
 
   return (
-    <Card className="mb-4">
-      <CardHeader className="pb-3">
-        {/* data-content-role + data-content-id anchor this CardTitle <div>
-            (not a semantic <hN>) in the UI-Bridge content registry with a
-            stable, text-independent id (`heading-gates`) — the Spec-CI
-            operations spec asserts it as the panel's empty-state-safe anchor. */}
-        <CardTitle
-          className="flex items-center gap-2 text-base"
-          data-content-role="heading"
-          data-content-id="heading-gates"
-        >
-          <ShieldCheck className="h-4 w-4" />
+    <CollapsiblePanel
+      storageKey="fleet:gates"
+      icon={<ShieldCheck className="h-4 w-4" />}
+      // data-content-role + data-content-id anchor the heading span in the
+      // UI-Bridge content registry with a stable, text-independent id
+      // (`heading-gates`) — the Spec-CI operations spec asserts it as the
+      // panel's empty-state-safe anchor. The header always renders (even
+      // collapsed), so the anchor stays present.
+      title={
+        <span data-content-role="heading" data-content-id="heading-gates">
           Gates
+        </span>
+      }
+      summary={
+        <>
           <Badge variant="outline" className="ml-2 font-mono text-xs">
             {count}
           </Badge>
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
+          {failedCount > 0 && (
+            <Badge variant="destructive" className="ml-1 font-mono text-xs">
+              {failedCount} failed
+            </Badge>
+          )}
+        </>
+      }
+    >
         {/* Error state — surfaced honestly, polling continues underneath. */}
         {error && (
           <p className="text-xs text-red-300 mb-2 flex items-center gap-1">
@@ -689,7 +697,6 @@ export function GatesPanel() {
             ))}
           </div>
         )}
-      </CardContent>
-    </Card>
+    </CollapsiblePanel>
   );
 }

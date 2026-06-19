@@ -55,7 +55,6 @@ type PrNodeData = {
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -63,6 +62,7 @@ import { AlertTriangle, GitBranch, RefreshCw } from "lucide-react";
 import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_API } from "./utils";
+import { CollapsiblePanel } from "./CollapsiblePanel";
 
 const log = createLogger("MergeDependencyGraph");
 
@@ -325,14 +325,18 @@ export function MergeDependencyGraph({
   }, [graph]);
 
   return (
-    <Card className="mb-4">
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <GitBranch className="h-4 w-4" />
-          Cross-repo PR dependency graph
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
+    <CollapsiblePanel
+      storageKey="fleet:dep-graph"
+      icon={<GitBranch className="h-4 w-4" />}
+      title="Cross-repo PR dependency graph"
+      summary={
+        graph?.cycle_detected ? (
+          <Badge variant="destructive" className="ml-2 font-mono text-xs">
+            cycle
+          </Badge>
+        ) : null
+      }
+    >
         <div className="flex items-end gap-2 mb-4 flex-wrap">
           <div className="flex flex-col gap-1">
             <Label htmlFor="dep-graph-repo" className="text-xs">
@@ -443,7 +447,6 @@ export function MergeDependencyGraph({
             This PR has no cross-repo dependencies — single-node component.
           </p>
         )}
-      </CardContent>
-    </Card>
+    </CollapsiblePanel>
   );
 }

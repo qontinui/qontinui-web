@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   GitMerge,
@@ -17,6 +16,7 @@ import {
 import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_API, relativeTime } from "./utils";
+import { CollapsiblePanel } from "./CollapsiblePanel";
 import type {
   BlastRadiusBlock,
   BlastRadiusBlocksResponse,
@@ -1026,20 +1026,36 @@ export function MergeTrain() {
   // state is visible rather than the section silently vanishing).
   const showGateDecisionsSection = gateBlocks !== null;
 
+  // Blocked proposals (conflict / overlap) are the actionable signal — keep a
+  // count in the header so it stays visible when the panel is collapsed.
+  const blockedCount = useMemo(
+    () =>
+      (proposals ?? []).filter(
+        (p) => p.status === "conflict" || p.status === "blocked-by-overlap"
+      ).length,
+    [proposals]
+  );
+
   return (
-    <Card className="mb-4">
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <GitMerge className="h-4 w-4" />
-          Merge train
+    <CollapsiblePanel
+      storageKey="fleet:merge-train"
+      icon={<GitMerge className="h-4 w-4" />}
+      title="Merge train"
+      summary={
+        <>
           {proposals && (
             <Badge variant="outline" className="ml-2 font-mono text-xs">
               {proposals.length}
             </Badge>
           )}
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
+          {blockedCount > 0 && (
+            <Badge variant="destructive" className="ml-1 font-mono text-xs">
+              {blockedCount} blocked
+            </Badge>
+          )}
+        </>
+      }
+    >
         {error && <p className="text-xs text-red-300 mb-2">{error}</p>}
         {showSuggestionsSection && suggestions && (
           <div className="mb-4">
@@ -1182,7 +1198,6 @@ export function MergeTrain() {
             is enforced upstream-first; cycle members are flagged red.
           </p>
         </div>
-      </CardContent>
-    </Card>
+    </CollapsiblePanel>
   );
 }
