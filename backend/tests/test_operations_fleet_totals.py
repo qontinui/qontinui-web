@@ -93,13 +93,18 @@ class TestFleetTotals:
         from app.schemas.dev_dashboard import ClaudeSessionReport, RunnerHeartbeat
         from app.services.dev_dashboard_service import FleetRegistry
 
+        # Heartbeat-only beacon on an *owned* host (db-healthy) but a
+        # different port — i.e. a second un-paired instance on a machine the
+        # caller already has a device on. The cross-tenant scoping guard in
+        # ``get_fleet_status`` admits this one; the rejected case is covered by
+        # ``test_beacon_on_unowned_host_is_filtered``.
         registry = FleetRegistry()
         asyncio.run(
             registry.register_heartbeat(
                 RunnerHeartbeat(
-                    hostname="beacon-host",
+                    hostname="db-healthy",
                     ip="192.168.1.50",
-                    port=9876,
+                    port=9877,
                     instance_name="primary",
                     os="windows",
                     running_task_count=3,
@@ -110,7 +115,7 @@ class TestFleetTotals:
         asyncio.run(
             registry.report_claude_sessions(
                 ClaudeSessionReport(
-                    hostname="beacon-host",
+                    hostname="db-healthy",
                     sessions=[
                         {"pid": 101, "working_directory": "D:/repo-a"},
                         {"pid": 102, "working_directory": "D:/repo-b"},
@@ -139,23 +144,81 @@ class TestFleetTotals:
         assert resp.status_code == 200
         body = resp.json()
 
-        # The merged list: 2 DB devices + 1 heartbeat-only beacon.
+        # The merged list: 2 DB devices + 1 heartbeat-only beacon on an owned
+        # host. Keyed by (hostname, port) because the beacon shares the
+        # db-healthy hostname on a different port.
         assert len(body["runners"]) == 3
         assert body["total_runners"] == 3
 
-        # Healthy = the WS-connected DB device + the fresh beacon. The
-        # offline DB device must not count.
-        statuses = {r["hostname"]: r["derivedStatus"] for r in body["runners"]}
-        assert statuses["db-healthy"] == "healthy"
-        assert statuses["db-offline"] == "offline"
-        assert statuses["beacon-host"] == "healthy"
+        by_key = {(r["hostname"], r["port"]): r for r in body["runners"]}
+        assert by_key[("db-healthy", 9876)]["derivedStatus"] == "healthy"
+        assert by_key[("db-offline", 9876)]["derivedStatus"] == "offline"
+        # The fresh beacon (db-healthy:9877) is admitted and healthy.
+        assert by_key[("db-healthy", 9877)]["derivedStatus"] == "healthy"
+        # Healthy = WS-connected DB device + fresh beacon; offline excluded.
         assert body["total_healthy"] == 2
 
-        # Heartbeat-reported running tasks from the beacon registry.
+        # Heartbeat-reported running tasks from the (owned) beacon.
         assert body["total_running_tasks"] == 3
 
-        # Pre-existing aggregate keeps working.
+        # Pre-existing aggregate keeps working (sessions on an owned host).
         assert body["total_claude_sessions"] == 2
+
+    def test_beacon_on_unowned_host_is_filtered(self, client: TestClient) -> None:
+        """Cross-tenant regression guard: a beacon from a host the caller owns
+        no device on must not appear in the caller's fleet, contribute to
+        totals, or leak its Claude sessions."""
+        import asyncio
+
+        from app.schemas.dev_dashboard import ClaudeSessionReport, RunnerHeartbeat
+        from app.services.dev_dashboard_service import FleetRegistry
+
+        registry = FleetRegistry()
+        asyncio.run(
+            registry.register_heartbeat(
+                RunnerHeartbeat(
+                    hostname="other-tenant-host",
+                    ip="10.0.0.9",
+                    port=9876,
+                    instance_name="primary",
+                    os="windows",
+                    running_task_count=5,
+                    running_task_ids=["x1", "x2", "x3", "x4", "x5"],
+                )
+            )
+        )
+        asyncio.run(
+            registry.report_claude_sessions(
+                ClaudeSessionReport(
+                    hostname="other-tenant-host",
+                    sessions=[{"pid": 1, "working_directory": "D:/secret"}],
+                )
+            )
+        )
+
+        db_devices = [_db_device(hostname="db-mine", port=9876, ws_connected=True)]
+
+        with (
+            patch(
+                "app.api.v1.endpoints.operations.runner_crud.list_runners",
+                AsyncMock(return_value=db_devices),
+            ),
+            patch(
+                "app.api.v1.endpoints.operations.get_fleet_registry",
+                return_value=registry,
+            ),
+        ):
+            resp = client.get(f"{API_PREFIX}/fleet")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        hostnames = {r["hostname"] for r in body["runners"]}
+        assert "other-tenant-host" not in hostnames
+        assert hostnames == {"db-mine"}
+        assert body["total_runners"] == 1
+        # The un-owned beacon's tasks and sessions must not leak into totals.
+        assert body["total_running_tasks"] == 0
+        assert body["total_claude_sessions"] == 0
 
     def test_totals_zero_on_empty_fleet(self, client: TestClient) -> None:
         from app.services.dev_dashboard_service import FleetRegistry

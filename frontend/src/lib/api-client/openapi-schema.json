@@ -68313,7 +68313,7 @@
     },
     "/api/v1/operations/fleet/tasks": {
       "get": {
-        "description": "Get all running tasks across all runners (cross-machine beacon).",
+        "description": "Get all running tasks across all runners (cross-machine beacon).\n\nScoped to the caller's own devices: the fleet registry is process-global\nand the beacon path is unauthenticated, so tasks are filtered to runners\non a hostname the caller owns a device on \u2014 the same cross-tenant guard\napplied by ``GET /fleet``. Without it, every caller saw every tenant's\nrunning-task prompts and ids.",
         "operationId": "api_v1_operations_fleet_tasks_get",
         "responses": {
           "200": {
