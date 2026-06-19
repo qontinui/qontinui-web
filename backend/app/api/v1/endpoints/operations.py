@@ -920,36 +920,6 @@ async def get_pr_merge_graph(
     )
 
 
-# ---- PR Merge Orchestrator Phase 6 D6.4 + D6.6 — escalation surface -----
-#
-# Two endpoints proxying the coord-side ``src/pr_merge/escalations_routes.rs``
-# handlers. Both tenant-scoped via the ``X-Qontinui-Tenant-Id`` header;
-# the web side authenticates the dashboard user and resolves them to a
-# tenant before forwarding. Same posture as the Phase 2 settings
-# endpoints — anonymous on coord, authenticated + tenant-scoped here.
-
-
-@router.get("/pr-merge/escalations")
-async def get_pr_merge_escalations(
-    include_resolved: bool = False,
-    tenant_id: UUID = Depends(get_tenant_id),
-) -> Any:
-    """Tenant-scoped list of pending (and optionally resolved) merge
-    escalations. Drives the MergeTrain "Escalations" dashboard section.
-
-    Each row is a joined view across ``coord.alerts``
-    (kind='merge_escalation'), ``coord.merge_escalations_meta``, and
-    ``coord.merge_decisions``. The payload carries PR link, reason,
-    specialist rationale, rule citations, suggested action, and the
-    structured alternatives the operator picks from.
-    """
-    return await _proxy_coord_get(
-        "/pr-merge/escalations",
-        params={"include_resolved": "true" if include_resolved else "false"},
-        tenant_id=tenant_id,
-    )
-
-
 # ---- Coordination-transparency: gate-decision reads ----------------------
 #
 # Plan 2026-06-07-coordination-transparency-surfaces.md T2 — surface the
@@ -961,8 +931,7 @@ async def get_pr_merge_escalations(
 # NOT ``require_coord_tenant_admin``. The whole point of the transparency
 # surface is that the developer whose PR was held can see *why* — coverage,
 # the removed export, and who references it — without needing operator
-# rights. The admin gate stays only on the decide/write action
-# (``post_pr_merge_escalation_decide``). Coord resolves the tenant from the
+# rights. These are read-only reads. Coord resolves the tenant from the
 # forwarded Cognito bearer (``_tenant_headers``) and scopes its SQL via the
 # ``TenantId`` extractor, exactly like the sibling read routes above.
 
@@ -1317,45 +1286,6 @@ async def get_pr_merge_slo(
     """
     return await _proxy_coord_get(
         "/pr-merge/slo",
-        tenant_id=tenant_id,
-    )
-
-
-@router.post("/pr-merge/escalations/{alert_id}/decide")
-async def post_pr_merge_escalation_decide(
-    alert_id: int,
-    body: dict[str, Any],
-    tenant_id: UUID = Depends(require_coord_tenant_admin),
-) -> Any:
-    """Resolve a pending merge escalation with an operator decision.
-
-    Body shape:
-
-        {
-            "resolution_action": "approve_merge"
-                                 | "reject"
-                                 | "approve_with_modification"
-                                 | "add_to_rulebook",
-            "rationale": "<operator text>",
-            "modification": {...},  // only if approve_with_modification
-            "rulebook_addition": "<markdown>"  // only if add_to_rulebook
-        }
-
-    Coord:
-    1. Verifies the alert belongs to the caller's tenant.
-    2. Marks the alert resolved (``resolved_at``, ``resolution_action``,
-       ``resolution_by``).
-    3. Inserts a ``decided_by='operator'`` row in ``coord.merge_decisions``
-       FK'd back to the alert.
-    4. Dispatches the chosen action through the same channels Phase 4's
-       executor uses (``coord.merge_proposals`` for approve_merge,
-       App-token client for reject, per-tenant override write for
-       add_to_rulebook).
-    5. Stamps an ``auth_sso::audit_mutation`` row.
-    """
-    return await _proxy_coord_post(
-        f"/pr-merge/escalations/{alert_id}/decide",
-        body,
         tenant_id=tenant_id,
     )
 
