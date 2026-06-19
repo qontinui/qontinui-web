@@ -14,7 +14,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -29,6 +28,10 @@ import {
   MergeTrain,
   MigrationQueueTile,
 } from "@/components/operations";
+// Imported from its own module (not the barrel) so the inline HealthSummaryCard
+// renders the real presentational primitive even when tests mock the heavy
+// "@/components/operations" panels.
+import { CollapsiblePanel } from "@/components/operations/CollapsiblePanel";
 import { httpClient } from "@/services/service-factory";
 
 const API = "/api/v1/operations";
@@ -92,28 +95,40 @@ function HealthSummaryCard() {
   }, [fetchData]);
 
   const devices = data?.devices ?? [];
+  const unhealthy = devices.filter(
+    (d) => d.state && d.state !== "healthy"
+  ).length;
 
   return (
-    <Card data-testid="coord-fleet-health">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <HeartPulse className="h-4 w-4" />
-          Fleet health
+    <CollapsiblePanel
+      data-testid="coord-fleet-health"
+      storageKey="fleet:health"
+      icon={<HeartPulse className="h-4 w-4" />}
+      title="Fleet health"
+      contentClassName="space-y-2"
+      summary={
+        <>
           <Badge variant="outline" className="ml-2">
             {devices.length}
           </Badge>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="ml-auto"
-            onClick={fetchData}
-            data-testid="coord-fleet-health-refresh"
-          >
-            <RefreshCw className="h-3 w-3" />
-          </Button>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-2">
+          {unhealthy > 0 && (
+            <Badge variant="destructive" className="ml-1">
+              {unhealthy} unhealthy
+            </Badge>
+          )}
+        </>
+      }
+      headerActions={
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={fetchData}
+          data-testid="coord-fleet-health-refresh"
+        >
+          <RefreshCw className="h-3 w-3" />
+        </Button>
+      }
+    >
         {error && (
           <p className="text-sm text-destructive">
             Failed to load fleet/health: {error}
@@ -167,8 +182,7 @@ function HealthSummaryCard() {
             ))}
           </ul>
         )}
-      </CardContent>
-    </Card>
+    </CollapsiblePanel>
   );
 }
 
@@ -184,7 +198,14 @@ export default function CoordFleetPage() {
     >
       <HealthSummaryCard />
       <FleetOverview />
-      <DevActionsTile />
+
+      {/* Dev Actions + Migration Queue paired side-by-side: two narrow
+          ledger/queue lists. Full-width stacked on mobile, two columns on
+          large screens. */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <DevActionsTile />
+        <MigrationQueueTile />
+      </div>
 
       {/* Merged from the former standalone /operations page. */}
       <MergeTrain />
@@ -193,7 +214,6 @@ export default function CoordFleetPage() {
       </div>
       <CiStatusPanel />
       <GatesPanel />
-      <MigrationQueueTile />
       <LandedFeaturesPanel />
     </div>
   );

@@ -10,6 +10,7 @@ import {
 import { ExternalLink, Layers, RefreshCw } from "lucide-react";
 import { MIGRATIONS_DEFAULT_REPO, relativeTime } from "./utils";
 import { useMigrationQueueStream } from "./useMigrationQueueStream";
+import { CollapsiblePanel } from "./CollapsiblePanel";
 import type { MigrationReservation } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -261,26 +262,23 @@ export function MigrationQueueTile() {
   const liveRows = useMemo(() => live, [live]);
 
   return (
-    <section
-      className="rounded-lg border border-border bg-card/30 p-4"
+    <CollapsiblePanel
       data-ui-bridge-id="operations.migration-queue-tile"
       data-testid="operations-migration-queue-tile"
-    >
-      <header className="flex items-center justify-between mb-3 gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <Layers className="w-4 h-4 text-muted-foreground shrink-0" />
-          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider shrink-0">
-            Migration queue
-          </h2>
-          <Badge
-            variant="outline"
-            className="text-[10px] shrink-0"
-            data-ui-bridge-id="operations.migration-queue-count"
-          >
-            {liveRows.length}
-          </Badge>
-        </div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+      storageKey="fleet:migration-queue"
+      icon={<Layers className="w-4 h-4 text-muted-foreground shrink-0" />}
+      title="Migration queue"
+      summary={
+        <Badge
+          variant="outline"
+          className="text-[10px] shrink-0"
+          data-ui-bridge-id="operations.migration-queue-count"
+        >
+          {liveRows.length}
+        </Badge>
+      }
+      headerActions={
+        <>
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -313,9 +311,9 @@ export function MigrationQueueTile() {
           >
             <RefreshCw className="w-3 h-3" />
           </button>
-        </div>
-      </header>
-
+        </>
+      }
+    >
       {!seeded && liveRows.length === 0 ? (
         <p className="text-xs text-muted-foreground italic px-2 py-3">
           Loading migration queue&hellip;
@@ -357,6 +355,6 @@ export function MigrationQueueTile() {
           )}
         </>
       )}
-    </section>
+    </CollapsiblePanel>
   );
 }
