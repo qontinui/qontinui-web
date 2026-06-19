@@ -21,6 +21,8 @@ reset per-test so registrations don't leak between cases.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -124,17 +126,49 @@ class TestHeartbeatIngest:
 # ---------------------------------------------------------------------------
 
 
-def _patch_no_db_runners():
-    """Make the DB-paired-runners read return [] (beacon-only fleet)."""
+def _owned_device(*, hostname: str, port: int) -> Any:
+    """Minimal ``coord.devices`` ORM stand-in the caller owns.
+
+    `GET /fleet` scopes beacons to hostnames the caller owns a device on
+    (cross-tenant guard), so to observe a beacon we must own a device on its
+    host. Uses a *different* port than the beacon so the beacon is still
+    merged (the db_keys skip is keyed on the (hostname, port) pair).
+    """
+    now = datetime.now(UTC)
+    return SimpleNamespace(
+        device_id=uuid4(),
+        user_id=uuid4(),
+        name=f"runner-{hostname}",
+        hostname=hostname,
+        port=port,
+        os="windows",
+        os_version="11",
+        capabilities=[],
+        ws_session_id=None,
+        ui_error=None,
+        recent_crash=None,
+        derived_status="offline",
+        last_heartbeat=None,
+        created_at=now,
+        ci_runner_status=None,
+        ci_runner_labels=None,
+        ci_runner_last_job_at=None,
+    )
+
+
+def _patch_owned_spaceship():
+    """Caller owns a device on the ``spaceship`` host (different port), so the
+    ``spaceship:9876`` beacon passes the cross-tenant scoping guard and is
+    surfaced in ``GET /fleet``."""
     return patch(
         "app.api.v1.endpoints.operations.runner_crud.list_runners",
-        new=AsyncMock(return_value=[]),
+        new=AsyncMock(return_value=[_owned_device(hostname="spaceship", port=1)]),
     )
 
 
 class TestFleetResponse:
     def _fleet_runner(self, client: TestClient, runner_id: str) -> dict[str, Any]:
-        with _patch_no_db_runners():
+        with _patch_owned_spaceship():
             resp = client.get(f"{API_PREFIX}/fleet")
         assert resp.status_code == 200
         runners = resp.json()["runners"]
