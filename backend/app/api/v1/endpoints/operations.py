@@ -405,9 +405,9 @@ async def get_fleet_status(
     # into the fleet read so the frontend can render names without a
     # second round-trip; `{}` when the user has saved none.
     name_rows = await db.execute(
-        select(
-            MachineDisplayName.hostname, MachineDisplayName.name
-        ).where(MachineDisplayName.user_id == current_user.id)
+        select(MachineDisplayName.hostname, MachineDisplayName.name).where(
+            MachineDisplayName.user_id == current_user.id
+        )
     )
     machine_display_names: dict[str, str] = dict(name_rows.all())
 
