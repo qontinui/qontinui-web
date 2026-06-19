@@ -45029,6 +45029,33 @@
         ]
       }
     },
+    "/api/v1/admin-dev/prs": {
+      "get": {
+        "description": "Proxy coord's ``GET /pr-merge/prs`` (open PRs + merge status).\n\nPure passthrough: returns coord's JSON envelope verbatim \u2014 the\n``{prs, total}`` contract where each PR is already enriched coord-side\nwith a typed ``merge_status`` + ``blocking_summary`` (coord owns that\nshape; the web side computes nothing and renames nothing). The list is\nfleet-wide (not tenant-scoped on the web side); the caller bearer is\nforwarded so coord authorizes on the operator identity. ``tenant_id`` is\nresolved best-effort only (it may be ``None`` when coord identity\nresolution fails) and is used solely to trigger bearer-forwarding.\n\nMirrors ``get_dev_overview``'s auth + degradation posture exactly:\n``require_admin`` (superuser) is the hard web-side gate, the bearer is\ncaptured best-effort so a coord-down identity resolution never 502s in\nthe dependency, and ``forward_bearer=True`` forwards the bearer even when\nthe tenant is unresolved. When coord is unreachable/degraded\n(connect-refused \u2192 502, timeout \u2192 504, etc.) the endpoint returns an\nempty ``{prs, total, coord_error}`` envelope rather than re-raising the\n5xx, so the dashboard renders a clear \"coord unavailable\" state.\n\nUnlike the overview, this list is NOT cached: it reflects fast-moving PR\n+ CI state where stale data is misleading on a merge-readiness dashboard.",
+        "operationId": "api_v1_admin_dev_prs_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Prs Api V1 Admin Dev Prs Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Prs",
+        "tags": [
+          "admin-dev"
+        ]
+      }
+    },
     "/api/v1/admin/agent-sessions": {
       "get": {
         "description": "List agent sessions via coord's ``GET /coord/agent-sessions``.\n\nForwards the ``live`` / ``user_id`` / ``since`` / ``limit`` filters as\nquery params. ``limit`` (1..500) and the RFC3339 ``since`` are\nvalidated by FastAPI before forwarding. Returns coord's\n``{\"sessions\": [...], \"count\": N}`` envelope verbatim \u2014 the shape the\nfrontend expects.",

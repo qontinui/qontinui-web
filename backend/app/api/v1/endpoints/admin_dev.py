@@ -217,6 +217,63 @@ async def get_dev_overview(
     return envelope
 
 
+def _empty_prs(detail: str) -> dict[str, Any]:
+    """A valid (empty) open-PRs envelope annotated with ``coord_error``.
+
+    Mirrors :func:`_empty_overview`'s degradation convention: the shape
+    matches coord's ``{prs, total}`` contract so the frontend types stay
+    valid, and ``coord_error`` (an optional field the page surfaces as a
+    banner) explains why the data is empty. Returned instead of re-raising a
+    coord-down 5xx so the dashboard renders a "coord unavailable" state
+    rather than a broken page.
+    """
+    return {
+        "prs": [],
+        "total": 0,
+        "coord_error": detail,
+    }
+
+
+@router.get("/admin-dev/prs")
+async def get_prs(
+    tenant_id: UUID | None = Depends(_capture_bearer_best_effort),
+    _admin: User = Depends(require_admin),  # superuser gate (hard, never weakened)
+) -> Any:
+    """Proxy coord's ``GET /pr-merge/prs`` (open PRs + merge status).
+
+    Pure passthrough: returns coord's JSON envelope verbatim — the
+    ``{prs, total}`` contract where each PR is already enriched coord-side
+    with a typed ``merge_status`` + ``blocking_summary`` (coord owns that
+    shape; the web side computes nothing and renames nothing). The list is
+    fleet-wide (not tenant-scoped on the web side); the caller bearer is
+    forwarded so coord authorizes on the operator identity. ``tenant_id`` is
+    resolved best-effort only (it may be ``None`` when coord identity
+    resolution fails) and is used solely to trigger bearer-forwarding.
+
+    Mirrors ``get_dev_overview``'s auth + degradation posture exactly:
+    ``require_admin`` (superuser) is the hard web-side gate, the bearer is
+    captured best-effort so a coord-down identity resolution never 502s in
+    the dependency, and ``forward_bearer=True`` forwards the bearer even when
+    the tenant is unresolved. When coord is unreachable/degraded
+    (connect-refused → 502, timeout → 504, etc.) the endpoint returns an
+    empty ``{prs, total, coord_error}`` envelope rather than re-raising the
+    5xx, so the dashboard renders a clear "coord unavailable" state.
+
+    Unlike the overview, this list is NOT cached: it reflects fast-moving PR
+    + CI state where stale data is misleading on a merge-readiness dashboard.
+    """
+    try:
+        envelope = await _proxy_coord_get(
+            "/pr-merge/prs", tenant_id=tenant_id, forward_bearer=True
+        )
+    except HTTPException as exc:
+        if exc.status_code in _COORD_DOWN_STATUSES:
+            detail = exc.detail if isinstance(exc.detail, str) else "coord unavailable"
+            return _empty_prs(detail)
+        raise
+    return envelope
+
+
 async def _cache_get(key: _CacheKey) -> dict[str, Any] | None:
     """Return a non-expired cached envelope for ``key`` or ``None``."""
     now = time.monotonic()
