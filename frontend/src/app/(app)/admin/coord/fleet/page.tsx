@@ -183,8 +183,8 @@ export default function CoordFleetPage() {
       data-testid="coord-fleet-page"
     >
       <HealthSummaryCard />
-      <DevActionsTile />
       <FleetOverview />
+      <DevActionsTile />
 
       {/* Merged from the former standalone /operations page. */}
       <MergeTrain />

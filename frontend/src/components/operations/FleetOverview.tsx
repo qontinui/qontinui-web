@@ -288,6 +288,32 @@ export function FleetOverview() {
   return (
     <TooltipProvider delayDuration={200}>
       <div className="space-y-6">
+        {/* Machine cards grid */}
+        {isEmpty ? (
+          <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
+            <Server className="h-10 w-10 opacity-30" />
+            <p className="text-sm font-medium">No runners online</p>
+            <p className="text-xs max-w-sm text-center">
+              Connect a runner via Settings → Backend Connection, or launch a
+              Claude Code session on any machine to see it here.
+            </p>
+          </div>
+        ) : (
+          <div>
+            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+              Machines
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {machineGroups.map((group) => (
+                <MachineCard key={group.hostname} machine={group} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Device status broadcast (qontinui-coord Phase 6 Item 3) */}
+        <DeviceStatusTile stream={deviceStatus} />
+
         {/* Summary stats row */}
         <div className="flex flex-wrap items-center gap-3">
           <StatBadge
@@ -341,32 +367,6 @@ export function FleetOverview() {
             )}
           </div>
         </div>
-
-        {/* Machine cards grid */}
-        {isEmpty ? (
-          <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
-            <Server className="h-10 w-10 opacity-30" />
-            <p className="text-sm font-medium">No runners online</p>
-            <p className="text-xs max-w-sm text-center">
-              Connect a runner via Settings → Backend Connection, or launch a
-              Claude Code session on any machine to see it here.
-            </p>
-          </div>
-        ) : (
-          <div>
-            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-              Machines
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {machineGroups.map((group) => (
-                <MachineCard key={group.hostname} machine={group} />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Device status broadcast (qontinui-coord Phase 6 Item 3) */}
-        <DeviceStatusTile stream={deviceStatus} />
 
         {/* Active workflows */}
         {runningTasks.length > 0 && (
