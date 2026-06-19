@@ -326,9 +326,24 @@ async def get_fleet_status(
 
     # Merge heartbeat-only runners (not yet paired/registered in the DB)
     # so they appear on the Operations page alongside paired devices.
+    #
+    # SCOPING GUARD (cross-tenant leak fix): the fleet registry is a single
+    # process-global dict and the POST /heartbeat beacon endpoint is
+    # unauthenticated, so a beacon carries NO owner/tenant identity. Without a
+    # guard, every authenticated caller saw — and had ``current_user.id``
+    # stamped onto — every *other* tenant's beaconing runner. Restrict the
+    # merge to beacons whose hostname matches a device this caller already
+    # owns: a runner beaconing from a machine the caller has no paired device
+    # on is not theirs to see. This is a hostname-match heuristic; the durable
+    # fix is to stamp an authenticated owner on the heartbeat itself and scope
+    # the registry by it (see follow-up bug note).
     db_keys = {(r.hostname, r.port) for r in runners}
+    owned_hostnames = {r.hostname.lower() for r in runners if r.hostname}
     for beacon in fleet_status.runners:
         if (beacon.hostname, beacon.port) in db_keys:
+            continue
+        if not beacon.hostname or beacon.hostname.lower() not in owned_hostnames:
+            # Beacon from a host this caller owns no device on → not theirs.
             continue
         wire_runners.append(
             {
@@ -368,18 +383,29 @@ async def get_fleet_status(
                 ),
             }
 
+    # Same cross-tenant guard as the runner merge above: claude-session reports
+    # and the task/session totals come from the global registry keyed by
+    # hostname, so restrict them to hostnames this caller owns a device on.
+    # Otherwise the counts — and the session prompts/ids — leak across tenants.
+    owned_claude_sessions = {
+        hostname: [s.model_dump(mode="json") for s in sessions]
+        for hostname, sessions in fleet_status.claude_sessions.items()
+        if hostname and hostname.lower() in owned_hostnames
+    }
+    owned_running_tasks = sum(
+        beacon.running_task_count
+        for beacon in fleet_status.runners
+        if beacon.hostname and beacon.hostname.lower() in owned_hostnames
+    )
     result: dict[str, Any] = {
         "runners": wire_runners,
-        "claude_sessions": {
-            hostname: [s.model_dump(mode="json") for s in sessions]
-            for hostname, sessions in fleet_status.claude_sessions.items()
-        },
+        "claude_sessions": owned_claude_sessions,
         "total_runners": len(wire_runners),
         "total_healthy": sum(
             1 for r in wire_runners if r.get("derivedStatus") == "healthy"
         ),
-        "total_running_tasks": fleet_status.total_running_tasks,
-        "total_claude_sessions": fleet_status.total_claude_sessions,
+        "total_running_tasks": owned_running_tasks,
+        "total_claude_sessions": sum(len(s) for s in owned_claude_sessions.values()),
     }
 
     if ci_runners:
@@ -391,15 +417,45 @@ async def get_fleet_status(
 @router.get("/fleet/tasks", response_model=AggregatedTaskRuns)
 async def get_all_tasks(
     *,
+    db: AsyncSession = Depends(get_async_db),
     current_user: UserModel = Depends(get_current_active_user_async),
 ) -> AggregatedTaskRuns:
-    """Get all running tasks across all runners (cross-machine beacon)."""
+    """Get all running tasks across all runners (cross-machine beacon).
+
+    Scoped to the caller's own devices: the fleet registry is process-global
+    and the beacon path is unauthenticated, so tasks are filtered to runners
+    on a hostname the caller owns a device on — the same cross-tenant guard
+    applied by ``GET /fleet``. Without it, every caller saw every tenant's
+    running-task prompts and ids.
+    """
+    runners = await runner_crud.list_runners(db, current_user.id)
+    owned_hostnames = {r.hostname.lower() for r in runners if r.hostname}
     registry = get_fleet_registry()
     tasks = await registry.get_all_running_tasks()
+    owned_tasks = [
+        t for t in tasks if str(t.get("runner_hostname", "")).lower() in owned_hostnames
+    ]
     return AggregatedTaskRuns(
-        task_runs=[RunnerTaskRun(**t) for t in tasks],
-        total=len(tasks),
+        task_runs=[RunnerTaskRun(**t) for t in owned_tasks],
+        total=len(owned_tasks),
     )
+
+
+async def _caller_owns_runner_host(
+    db: AsyncSession, user_id: Any, runner_id: str
+) -> bool:
+    """Whether the caller owns a device on the host encoded in ``runner_id``.
+
+    Beacon runner ids are ``hostname:port`` and the fleet registry is a single
+    process-global, unauthenticated store. The per-runner proxy/remove
+    endpoints below must therefore verify the caller owns the target host
+    before acting on it — otherwise any authenticated user could read another
+    tenant's task output/workflow-state or delete their runner (cross-tenant
+    IDOR). Returns False when the caller owns no device on that hostname.
+    """
+    host = runner_id.rsplit(":", 1)[0].lower()
+    runners = await runner_crud.list_runners(db, user_id)
+    return any((r.hostname or "").lower() == host for r in runners)
 
 
 @router.get("/fleet/runners/{runner_id}/output")
@@ -407,9 +463,14 @@ async def get_runner_task_output(
     runner_id: str,
     task_run_id: str = Query(...),
     tail_chars: int = Query(default=5000),
+    db: AsyncSession = Depends(get_async_db),
     current_user: UserModel = Depends(get_current_active_user_async),
 ) -> dict:
     """Proxy to a specific runner to get task output."""
+    if not await _caller_owns_runner_host(db, current_user.id, runner_id):
+        raise HTTPException(
+            status_code=404, detail=f"Runner {runner_id} not found or unreachable"
+        )
     registry = get_fleet_registry()
     result = await registry.proxy_runner_request(
         runner_id,
@@ -428,9 +489,14 @@ async def get_runner_task_output(
 async def get_runner_workflow_state(
     runner_id: str,
     task_run_id: str = Query(...),
+    db: AsyncSession = Depends(get_async_db),
     current_user: UserModel = Depends(get_current_active_user_async),
 ) -> dict:
     """Proxy to a specific runner to get workflow state."""
+    if not await _caller_owns_runner_host(db, current_user.id, runner_id):
+        raise HTTPException(
+            status_code=404, detail=f"Runner {runner_id} not found or unreachable"
+        )
     registry = get_fleet_registry()
     result = await registry.proxy_runner_request(
         runner_id,
@@ -447,9 +513,12 @@ async def get_runner_workflow_state(
 @router.delete("/fleet/runners/{runner_id}")
 async def remove_runner(
     runner_id: str,
+    db: AsyncSession = Depends(get_async_db),
     current_user: UserModel = Depends(get_current_active_user_async),
 ) -> dict:
     """Manually remove a runner from the cross-machine beacon registry."""
+    if not await _caller_owns_runner_host(db, current_user.id, runner_id):
+        raise HTTPException(status_code=404, detail=f"Runner {runner_id} not found")
     registry = get_fleet_registry()
     removed = await registry.remove_runner(runner_id)
     if not removed:
