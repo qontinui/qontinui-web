@@ -409,9 +409,7 @@ async def get_fleet_status(
             MachineDisplayName.user_id == current_user.id
         )
     )
-    machine_display_names: dict[str, str] = {
-        hostname: name for hostname, name in name_rows.all()
-    }
+    machine_display_names: dict[str, str] = dict(name_rows.tuples().all())
 
     result: dict[str, Any] = {
         "runners": wire_runners,
