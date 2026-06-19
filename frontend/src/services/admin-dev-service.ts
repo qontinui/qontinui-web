@@ -115,6 +115,66 @@ export interface GateCounts {
 
 export type GateVerdict = "open" | "cleared" | "failed";
 
+// ---- Open PRs (fleet-wide) -----------------------------------------------
+
+/**
+ * The typed merge classification coord computes per PR. Kebab-case, exhaustive
+ * value set — mirrors coord's `merge_status` emitter. `unknown` is the safe
+ * fallback when none of the typed predicates resolved.
+ */
+export type PrMergeStatus =
+  | "draft"
+  | "ci-failed"
+  | "ci-pending"
+  | "conflicts"
+  | "behind-base"
+  | "review-required"
+  | "blast-radius-block"
+  | "awaiting-specialist-review"
+  | "ready"
+  | "queued"
+  | "ready-but-unlanded"
+  | "unknown";
+
+/**
+ * One open PR fleet-wide, enriched by coord. Passthrough through the web
+ * proxy — coord owns `merge_status` + `blocking_summary`; the web side renames
+ * nothing. Keep in sync with coord's PrRow emitter (snake_case on the wire).
+ */
+export interface PrRow {
+  repo: string; // "owner/name"
+  pr_number: number;
+  branch: string;
+  base_branch: string;
+  head_sha: string;
+  pr_state: string; // "open" | "draft"
+  mergeable: boolean | null;
+  merge_state_status: string | null; // "CLEAN" | "DIRTY" | "BEHIND" | "BLOCKED" | "UNKNOWN" | ...
+  review_decision: string | null; // "REVIEW_REQUIRED" | "APPROVED" | ...
+  required_checks_satisfied: boolean | null;
+  last_refreshed_at: string | null; // ISO
+  last_predicate_eval_at: string | null; // ISO
+  ci_lifecycle: string | null; // "complete" | "pending" | null
+  ci_conclusion: string | null; // "success" | "failure" | null
+  correlation_id: string | null;
+  merge_status: PrMergeStatus;
+  blocking_summary: string;
+  escalation_alert_id: number | null;
+  proposal_status: string | null;
+  proposal_age_secs: number | null;
+}
+
+export interface PrListResponse {
+  prs: PrRow[];
+  total: number;
+  /**
+   * Present (set by the web proxy) when coord was unreachable/degraded and the
+   * envelope is empty as a result — the page surfaces it as a banner rather
+   * than showing a misleading "0 PRs". Absent on a healthy fetch.
+   */
+  coord_error?: string;
+}
+
 // ---- Top-level envelope --------------------------------------------------
 
 export interface DevOverview {
@@ -154,6 +214,18 @@ class AdminDevService {
     return httpClient.get<DevOverview>(
       `${API}/overview${qs ? `?${qs}` : ""}`,
     );
+  }
+
+  /**
+   * Fetch every open PR fleet-wide with its CI/merge classification from coord
+   * (via the web proxy `GET /api/v1/admin-dev/prs` → coord `GET /pr-merge/prs`).
+   * Throws on a non-2xx response. `opts.refresh` passes `?refresh=1` to bypass
+   * any backend TTL cache (the manual Refresh button passes it; auto-poll does
+   * not).
+   */
+  async getPrs(opts?: { refresh?: boolean }): Promise<PrListResponse> {
+    const qs = opts?.refresh ? "?refresh=1" : "";
+    return httpClient.get<PrListResponse>(`${API}/prs${qs}`);
   }
 }
 
