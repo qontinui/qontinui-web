@@ -433,9 +433,7 @@ async def get_all_tasks(
     registry = get_fleet_registry()
     tasks = await registry.get_all_running_tasks()
     owned_tasks = [
-        t
-        for t in tasks
-        if str(t.get("runner_hostname", "")).lower() in owned_hostnames
+        t for t in tasks if str(t.get("runner_hostname", "")).lower() in owned_hostnames
     ]
     return AggregatedTaskRuns(
         task_runs=[RunnerTaskRun(**t) for t in owned_tasks],
