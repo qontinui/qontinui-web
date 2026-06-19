@@ -147,7 +147,8 @@ function ProgressCell({ gate }: { gate: GateOverviewRow }) {
  * `phase_name`, and never assume a plan-specific field exists.
  */
 function GateAnchor({ gate }: { gate: GateOverviewRow }) {
-  const anchorId = gate.plan_slug ?? gate.work_unit_id ?? null;
+  const anchorId =
+    gate.plan_slug ?? gate.work_unit_slug ?? gate.work_unit_id ?? null;
   if (!anchorId && !gate.phase_name) return null;
   return (
     <div className="text-[11px] text-muted-foreground truncate">

@@ -55,6 +55,8 @@ export interface GateOverviewRow {
    * are null on that path; `phase_name` is shared by both anchor kinds.
    */
   work_unit_id: string | null;
+  /** Human-readable work-unit slug (`LEFT JOIN coord.work_units`), preferred over the raw id when present. */
+  work_unit_slug: string | null;
   phase_name: string | null;
   predicate: Record<string, unknown>;
   verdict: string;
