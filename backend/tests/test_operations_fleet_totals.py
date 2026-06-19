@@ -39,9 +39,25 @@ def _build_test_app() -> FastAPI:
     mock_user.is_verified = True
     mock_user.is_superuser = False
     test_app.dependency_overrides[get_current_active_user_async] = lambda: mock_user
-    test_app.dependency_overrides[get_async_db] = lambda: None
+    test_app.dependency_overrides[get_async_db] = lambda: _empty_names_db()
     test_app.include_router(operations_router, prefix=API_PREFIX)
     return test_app
+
+
+def _empty_names_db() -> Any:
+    """A minimal async-DB stand-in for the per-user machine-display-name SELECT.
+
+    ``get_fleet_status`` issues ``await db.execute(select(MachineDisplayName...))``
+    and reads ``result.tuples().all()`` to build the ``machine_display_names``
+    map. These tests don't exercise display names, so the mock returns an empty
+    result → ``machine_display_names == {}`` while keeping every other assertion
+    (totals, scoping) unchanged.
+    """
+    result = MagicMock()
+    result.tuples.return_value.all.return_value = []
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=result)
+    return db
 
 
 def _db_device(
@@ -163,6 +179,10 @@ class TestFleetTotals:
 
         # Pre-existing aggregate keeps working (sessions on an owned host).
         assert body["total_claude_sessions"] == 2
+
+        # Per-user machine display names are folded into the fleet read;
+        # empty (no names saved) for this test.
+        assert body["machine_display_names"] == {}
 
     def test_beacon_on_unowned_host_is_filtered(self, client: TestClient) -> None:
         """Cross-tenant regression guard: a beacon from a host the caller owns

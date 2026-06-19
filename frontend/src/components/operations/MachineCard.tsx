@@ -1,19 +1,28 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Monitor, Laptop, Terminal, Cpu, Circle } from "lucide-react";
-import { relativeTime } from "./utils";
+import { Monitor, Laptop, Terminal, Cpu, Circle, Pencil, Loader2 } from "lucide-react";
+import { httpClient } from "@/services/service-factory";
+import { machineRenameUrl, relativeTime } from "./utils";
 import { CiRunnerBadge } from "./CiRunnerBadge";
 import type { MachineGroup } from "./types";
 
 interface MachineCardProps {
   machine: MachineGroup;
+  /**
+   * Called after a successful rename so the parent can re-fetch the fleet
+   * payload and reconcile the authoritative `machine_display_names`. Optional —
+   * when absent, the optimistic local name + the 10s poll keep the card honest.
+   */
+  onRenamed?: () => void;
 }
 
 function OsIcon({ os }: { os: string }) {
@@ -78,8 +87,88 @@ function HealthDot({
  * this component just no longer renders them. Phase 9 cleanup deletes
  * those fields entirely.
  */
-export function MachineCard({ machine }: MachineCardProps) {
-  const { hostname, runners, claudeSessions } = machine;
+export function MachineCard({ machine, onRenamed }: MachineCardProps) {
+  const { hostname, displayName, runners, claudeSessions } = machine;
+
+  // The shown title: an operator alias when set, otherwise the raw hostname.
+  // Optimistic local override wins while a save is in flight / before the poll
+  // reconciles the authoritative `machine_display_names`.
+  const [optimisticName, setOptimisticName] = useState<string | null>(null);
+  const shownName = optimisticName ?? displayName ?? hostname;
+
+  // Inline-rename state (mirrors PrioritySetsSection's edit UX).
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(shownName);
+  const [saving, setSaving] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  // Guards against the blur-after-Enter (or blur-after-Escape) double-save.
+  const committedRef = useRef(false);
+
+  // A fresh authoritative name (poll reconciled) clears any optimistic override.
+  useEffect(() => {
+    setOptimisticName(null);
+  }, [displayName]);
+
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [editing]);
+
+  const startEditing = () => {
+    setRenameError(null);
+    setDraft(displayName ?? optimisticName ?? hostname);
+    committedRef.current = false;
+    setEditing(true);
+  };
+
+  const cancelEditing = () => {
+    committedRef.current = true;
+    setEditing(false);
+    setRenameError(null);
+  };
+
+  const saveRename = async () => {
+    if (committedRef.current) return;
+    committedRef.current = true;
+
+    // Trimmed empty string clears the alias (reverts to hostname) per contract.
+    const next = draft.trim();
+    const current = displayName ?? "";
+    setEditing(false);
+
+    // No-op when nothing changed (e.g. blur with the title untouched).
+    if (next === current) return;
+
+    // Optimistic: an empty next clears back to the hostname.
+    setOptimisticName(next === "" ? hostname : next);
+    setSaving(true);
+    setRenameError(null);
+
+    try {
+      const res = await httpClient.fetch(machineRenameUrl(hostname), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: next }),
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      // Re-fetch the fleet so the authoritative name lands; the
+      // `displayName`-keyed effect then drops the optimistic override.
+      onRenamed?.();
+    } catch (err) {
+      // Revert the optimistic name and surface a subtle inline error.
+      setOptimisticName(null);
+      setRenameError(
+        err instanceof Error ? err.message : "Failed to rename machine"
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
 
   // Determine overall machine health from derivedStatus
   const healthyRunners = runners.filter((r) => r.derivedStatus === "healthy");
@@ -98,8 +187,8 @@ export function MachineCard({ machine }: MachineCardProps) {
       data-hostname={hostname}
     >
       <CardHeader className="pb-0 py-0">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
             <div
               className={`h-2.5 w-2.5 rounded-full shrink-0 ${
                 allHealthy
@@ -109,15 +198,64 @@ export function MachineCard({ machine }: MachineCardProps) {
                     : "bg-red-500"
               }`}
             />
-            <CardTitle className="text-base">{hostname}</CardTitle>
+            {editing ? (
+              <Input
+                ref={inputRef}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onBlur={saveRename}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    saveRename();
+                  } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    cancelEditing();
+                  }
+                }}
+                placeholder={hostname}
+                aria-label={`Rename ${hostname}`}
+                className="h-7 text-base"
+              />
+            ) : (
+              <CardTitle className="text-base truncate">{shownName}</CardTitle>
+            )}
           </div>
 
-          <Badge variant={osBadgeVariant(os)} className="gap-1">
-            <OsIcon os={os} />
-            {os}
-            {osVersion ? ` ${osVersion}` : ""}
-          </Badge>
+          <div className="flex items-center gap-2 shrink-0">
+            {!editing && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={startEditing}
+                    disabled={saving}
+                    aria-label={`Rename ${hostname}`}
+                    className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40 disabled:pointer-events-none"
+                  >
+                    {saving ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Pencil className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top">Rename machine</TooltipContent>
+              </Tooltip>
+            )}
+
+            <Badge variant={osBadgeVariant(os)} className="gap-1">
+              <OsIcon os={os} />
+              {os}
+              {osVersion ? ` ${osVersion}` : ""}
+            </Badge>
+          </div>
         </div>
+        {renameError && (
+          <p className="text-xs text-destructive mt-1">
+            Rename failed: {renameError}
+          </p>
+        )}
       </CardHeader>
 
       <CardContent className="space-y-3 pb-0">
