@@ -75,21 +75,34 @@ _COORD_DOWN_STATUSES = {502, 503, 504}
 # degraded envelope (so a transient outage can't pin a stale banner).
 _CACHE_TTL_SECONDS = 30.0
 
-# tenant_id (or None) -> (monotonic_expiry, cached_envelope)
-_overview_cache: dict[UUID | None, tuple[float, dict[str, Any]]] = {}
+# cache key (tenant_id, limit, verdict) -> (monotonic_expiry, cached_envelope).
+# limit/verdict are part of the key so different views never serve each other's
+# cached page.
+_CacheKey = tuple[UUID | None, int, str | None]
+_overview_cache: dict[_CacheKey, tuple[float, dict[str, Any]]] = {}
 _cache_lock = asyncio.Lock()
 
 
 def _empty_overview(detail: str) -> dict[str, Any]:
     """A valid (empty) dev-overview envelope annotated with ``coord_error``.
 
-    Shape matches coord's ``{generated_at, gates, rollouts}`` contract so the
-    frontend types stay valid; ``coord_error`` (an optional field the page
-    surfaces as a banner) explains why the data is empty.
+    Shape matches coord's ``{generated_at, gates, counts, rollouts}`` contract
+    so the frontend types stay valid; ``coord_error`` (an optional field the
+    page surfaces as a banner) explains why the data is empty.
     """
     return {
         "generated_at": datetime.now(UTC).isoformat(),
         "gates": [],
+        "counts": {
+            "total": 0,
+            "open": 0,
+            "cleared": 0,
+            "cleared_today": 0,
+            "failed": 0,
+            "stale": 0,
+            "muted": 0,
+            "snoozed": 0,
+        },
         "rollouts": {
             "auto_merge": {"live": [], "shadow": [], "dry_run": []},
             "features": [],
@@ -134,6 +147,18 @@ async def get_dev_overview(
         default=False,
         description="Bypass the ~30s in-process cache and refetch from coord.",
     ),
+    limit: int = Query(
+        default=200,
+        ge=1,
+        le=500,
+        description="Max gates in the page (coord orders OPEN-first, so the "
+        "actionable + ETA-bearing gates surface within the cap).",
+    ),
+    verdict: str | None = Query(
+        default=None,
+        pattern="^(open|cleared|failed)$",
+        description="Optional verdict filter; omit for all (still open-first).",
+    ),
     tenant_id: UUID | None = Depends(_capture_bearer_best_effort),
     _admin: User = Depends(require_admin),  # superuser gate (hard, never weakened)
 ) -> Any:
@@ -160,14 +185,24 @@ async def get_dev_overview(
     coord outage too (not just the case where ``/admin/coord/me`` happened to
     succeed). The Spec CI crawl, which runs without a live coord, stays green.
     """
+    cache_key: _CacheKey = (tenant_id, limit, verdict)
     if not refresh:
-        cached = await _cache_get(tenant_id)
+        cached = await _cache_get(cache_key)
         if cached is not None:
             return cached
 
+    # Forward the page controls to coord (the shared `_proxy_coord_get` already
+    # threads `params` onto the query string). `verdict` is omitted when None.
+    params: dict[str, Any] = {"limit": limit}
+    if verdict is not None:
+        params["verdict"] = verdict
+
     try:
         envelope = await _proxy_coord_get(
-            "/coord/dev-overview", tenant_id=tenant_id, forward_bearer=True
+            "/coord/dev-overview",
+            params=params,
+            tenant_id=tenant_id,
+            forward_bearer=True,
         )
     except HTTPException as exc:
         if exc.status_code in _COORD_DOWN_STATUSES:
@@ -178,27 +213,27 @@ async def get_dev_overview(
 
     # Only cache a successful coord envelope (never a degraded one).
     if isinstance(envelope, dict) and "coord_error" not in envelope:
-        await _cache_set(tenant_id, envelope)
+        await _cache_set(cache_key, envelope)
     return envelope
 
 
-async def _cache_get(tenant_id: UUID | None) -> dict[str, Any] | None:
-    """Return a non-expired cached envelope for ``tenant_id`` or ``None``."""
+async def _cache_get(key: _CacheKey) -> dict[str, Any] | None:
+    """Return a non-expired cached envelope for ``key`` or ``None``."""
     now = time.monotonic()
     async with _cache_lock:
-        entry = _overview_cache.get(tenant_id)
+        entry = _overview_cache.get(key)
         if entry is None:
             return None
         expiry, envelope = entry
         if expiry <= now:
             # Stale — drop it so the dict doesn't accumulate dead keys.
-            _overview_cache.pop(tenant_id, None)
+            _overview_cache.pop(key, None)
             return None
         return envelope
 
 
-async def _cache_set(tenant_id: UUID | None, envelope: dict[str, Any]) -> None:
-    """Store ``envelope`` for ``tenant_id`` with a ~30s TTL."""
+async def _cache_set(key: _CacheKey, envelope: dict[str, Any]) -> None:
+    """Store ``envelope`` for ``key`` with a ~30s TTL."""
     expiry = time.monotonic() + _CACHE_TTL_SECONDS
     async with _cache_lock:
-        _overview_cache[tenant_id] = (expiry, envelope)
+        _overview_cache[key] = (expiry, envelope)

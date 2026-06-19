@@ -51,6 +51,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ApiConfig } from "@/services/api-config";
+import { CoordAdminOnly } from "@/components/admin/coord/CoordAdminOnly";
 
 const POLL_INTERVAL_MS = 10_000;
 const API = `${ApiConfig.API_BASE_URL}/api/v1/operations/claims`;
@@ -1016,29 +1017,37 @@ function GatesSection({
                     </TableCell>
                     <TableCell>
                       {isOperatorApproval && g.verdict === "open" ? (
-                        <div className="flex items-center gap-1">
-                          <DestructiveButton
-                            size="sm"
-                            className="h-7 text-xs text-green-700 border-green-300 hover:bg-green-50"
-                            disabled={actionInFlight === g.gate_id}
-                            onClick={() => handleApprove(g.gate_id)}
-                            data-testid="gate-approve-btn"
-                          >
-                            <CheckCircle className="mr-1 h-3 w-3" />
-                            Approve
-                          </DestructiveButton>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-7 text-xs text-red-700 border-red-300 hover:bg-red-50"
-                            disabled={actionInFlight === g.gate_id}
-                            onClick={() => handleReject(g.gate_id)}
-                            data-testid="gate-reject-btn"
-                          >
-                            <XCircle className="mr-1 h-3 w-3" />
-                            Reject
-                          </Button>
-                        </div>
+                        <CoordAdminOnly
+                          fallback={
+                            <span className="text-xs text-muted-foreground">
+                              —
+                            </span>
+                          }
+                        >
+                          <div className="flex items-center gap-1">
+                            <DestructiveButton
+                              size="sm"
+                              className="h-7 text-xs text-green-700 border-green-300 hover:bg-green-50"
+                              disabled={actionInFlight === g.gate_id}
+                              onClick={() => handleApprove(g.gate_id)}
+                              data-testid="gate-approve-btn"
+                            >
+                              <CheckCircle className="mr-1 h-3 w-3" />
+                              Approve
+                            </DestructiveButton>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 text-xs text-red-700 border-red-300 hover:bg-red-50"
+                              disabled={actionInFlight === g.gate_id}
+                              onClick={() => handleReject(g.gate_id)}
+                              data-testid="gate-reject-btn"
+                            >
+                              <XCircle className="mr-1 h-3 w-3" />
+                              Reject
+                            </Button>
+                          </div>
+                        </CoordAdminOnly>
                       ) : (
                         <span className="text-xs text-muted-foreground">
                           —

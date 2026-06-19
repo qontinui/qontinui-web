@@ -14,8 +14,6 @@ export function SidebarFooter({
   isCollapsed,
   user,
   onLogout,
-  onExport,
-  onImport,
   onDocs,
   onToggleCollapse,
 }: SidebarFooterProps) {
@@ -40,8 +38,6 @@ export function SidebarFooter({
         isCollapsed={isCollapsed}
         user={user}
         onLogout={onLogout}
-        onExport={onExport}
-        onImport={onImport}
         onDocs={onDocs}
       />
       <CollapseToggle isCollapsed={isCollapsed} onToggle={onToggleCollapse} />

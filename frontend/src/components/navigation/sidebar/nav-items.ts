@@ -29,9 +29,8 @@ import {
   ScanSearch,
   Server,
   CalendarClock,
-  Activity,
-  Bot,
   GitCommitHorizontal,
+  Boxes,
 } from "lucide-react";
 import type { NavItem } from "./types";
 
@@ -44,21 +43,12 @@ import type { NavItem } from "./types";
 
 export const devNavItems: NavItem[] = [
   // ===========================================================================
-  // AI Co-Pilot (production-visible). Natural-language command surface that
-  // plans a prompt and drives this app through the paired runner. Local entry
-  // because the shared qontinui-navigation package (node_modules) does not yet
-  // expose it; the sidebar merges these non-admin devNavItems as production
-  // items in use-sidebar-navigation.ts.
+  // NOTE: there is no local "Co-Pilot" nav item. Home IS the co-pilot — the
+  // shared `@qontinui/navigation` registry's `prompt-home` item ("Home", route
+  // `/prompt-home`) renders the co-pilot command surface directly, matching the
+  // runner (where prompt-home/Home IS the co-pilot). `/co-pilot` redirects to
+  // `/prompt-home` for legacy bookmarks.
   // ===========================================================================
-  {
-    id: "co-pilot",
-    label: "Co-Pilot",
-    description: "Describe a task in plain language; the AI plans and runs it",
-    icon: React.createElement(Bot, { className: "size-5" }),
-    route: "/co-pilot",
-    color: "#6366F1",
-    group: "Coordination",
-  },
 
   // ===========================================================================
   // Runners (production-visible). The unified /runners page covers online
@@ -74,30 +64,10 @@ export const devNavItems: NavItem[] = [
     color: "#10B981",
     group: "Coordination",
   },
-  {
-    id: "scheduled-runs",
-    label: "Scheduled Runs",
-    description: "Cron-style workflow dispatches",
-    icon: React.createElement(CalendarClock, { className: "size-5" }),
-    route: "/scheduled-runs",
-    color: "#0EA5E9",
-    group: "Runners",
-  },
 
-  // ===========================================================================
-  // Operations — first-class fleet view (Phase 4B promotion of the former
-  // /dev-dashboard). Cross-machine view of runners, Claude Code sessions,
-  // and active workflows.
-  // ===========================================================================
-  {
-    id: "operations",
-    label: "Operations",
-    description: "Cross-machine fleet view",
-    icon: React.createElement(Activity, { className: "size-5" }),
-    route: "/operations",
-    color: "#10B981",
-    group: "Coordination",
-  },
+  // NOTE: there is no top-level "Operations" item. The cross-machine fleet
+  // view + operations panels were merged into the Coord Console's Fleet tab
+  // (/admin/coord/fleet); /operations redirects there.
   {
     id: "commits",
     label: "Commits",
@@ -107,11 +77,12 @@ export const devNavItems: NavItem[] = [
     color: "#10B981",
     group: "Coordination",
   },
-  // Coord Console — the coordination-layer admin surface (fleet, trees, pull
-  // decisions, plans). Promoted into the Coordination group for prominence.
-  // NOTE: /admin/coord/layout.tsx enforces is_superuser, so this stays
-  // adminOnly — non-admins get coord reporting via Operations + Commits
-  // (which gate on "any authenticated user, tenant-scoped" server-side).
+  // Coord Console — the coordination-layer surface (fleet, trees, pull
+  // decisions, plans; the old Operations fleet view folded into its Fleet tab).
+  // VISIBLE TO ALL authenticated users: the /admin/coord pages are viewable by
+  // any tenant member (layout guard relaxed in 5a02ee3d), with mutation
+  // controls gated per-control via <CoordAdminOnly>. Not adminOnly, so it sits
+  // in the Coordination block (pre-SYSTEM) and stays a single group header.
   {
     id: "admin-coord",
     label: "Coord Console",
@@ -119,8 +90,34 @@ export const devNavItems: NavItem[] = [
     icon: React.createElement(Network, { className: "size-5" }),
     route: "/admin/coord",
     color: "#10B981",
-    adminOnly: true,
     group: "Coordination",
+  },
+  // Scheduled Runs — cron-style workflow dispatches. Advanced/automation (gated
+  // behind the "Show advanced automation features" toggle on web); kept out of
+  // the Coordination block so it never splits that group's header.
+  {
+    id: "scheduled-runs",
+    label: "Scheduled Runs",
+    description: "Cron-style workflow dispatches",
+    icon: React.createElement(CalendarClock, { className: "size-5" }),
+    route: "/scheduled-runs",
+    color: "#0EA5E9",
+    group: "Automation",
+  },
+
+  // ===========================================================================
+  // Digital Twin — completeness matrix over the coordination-layer observers.
+  // Visualizes how complete the twin is + the per-observer credibility envelope
+  // (the same information AI agents receive). Coord-backed like Operations.
+  // ===========================================================================
+  {
+    id: "digital-twin",
+    label: "Digital Twin",
+    description: "Twin completeness + observer credibility",
+    icon: React.createElement(Boxes, { className: "size-5" }),
+    route: "/digital-twin",
+    color: "#6366F1",
+    group: "Runners",
   },
 
   // ===========================================================================
@@ -617,6 +614,21 @@ export const devNavItems: NavItem[] = [
   },
 
   // ===========================================================================
+  // AI-Dev Coordination (member-visible — Developers view the coord layer)
+  // ===========================================================================
+  {
+    id: "ai-dev-coordination",
+    label: "AI-Dev Coordination",
+    description: "Coordination layer — fleet, plans, gates, merge queue",
+    icon: React.createElement(Network, { className: "size-5" }),
+    route: "/admin/coord",
+    color: "#06B6D4",
+    group: "Runners",
+    // No adminOnly: any authenticated member can reach the coord pages;
+    // mutation controls are gated on coord_is_admin per-page.
+  },
+
+  // ===========================================================================
   // Admin (superuser only)
   // ===========================================================================
   {
@@ -637,6 +649,9 @@ export const devNavItems: NavItem[] = [
         color: "#FF6B6B",
         adminOnly: true,
       },
+      // (Coord Console moved out to a top-level Coordination item, visible to
+      // all — see above. Its pages are viewable by any tenant member; mutations
+      // stay admin-gated via <CoordAdminOnly>.)
     ],
   },
 ];

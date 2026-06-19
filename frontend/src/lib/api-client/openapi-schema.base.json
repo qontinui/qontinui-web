@@ -2171,227 +2171,6 @@
         "title": "AutoCreateBaselinesResponse",
         "type": "object"
       },
-      "AutoResponseRuleCreate": {
-        "description": "Schema for creating an auto-response rule.",
-        "properties": {
-          "backoff": {
-            "$ref": "#/components/schemas/BackoffConfig"
-          },
-          "enabled": {
-            "default": true,
-            "title": "Enabled",
-            "type": "boolean"
-          },
-          "name": {
-            "maxLength": 200,
-            "minLength": 1,
-            "title": "Name",
-            "type": "string"
-          },
-          "pattern": {
-            "maxLength": 1000,
-            "minLength": 1,
-            "title": "Pattern",
-            "type": "string"
-          },
-          "prompt": {
-            "minLength": 1,
-            "title": "Prompt",
-            "type": "string"
-          }
-        },
-        "required": [
-          "name",
-          "pattern",
-          "prompt",
-          "backoff"
-        ],
-        "title": "AutoResponseRuleCreate",
-        "type": "object"
-      },
-      "AutoResponseRuleListResponse": {
-        "description": "List of auto-response rules for an organization.",
-        "properties": {
-          "count": {
-            "title": "Count",
-            "type": "integer"
-          },
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/AutoResponseRuleResponse"
-            },
-            "title": "Items",
-            "type": "array"
-          }
-        },
-        "required": [
-          "items",
-          "count"
-        ],
-        "title": "AutoResponseRuleListResponse",
-        "type": "object"
-      },
-      "AutoResponseRuleReorder": {
-        "description": "Reorder request \u2014 the desired ordering of rule ids.",
-        "properties": {
-          "ordered_ids": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "title": "Ordered Ids",
-            "type": "array"
-          }
-        },
-        "required": [
-          "ordered_ids"
-        ],
-        "title": "AutoResponseRuleReorder",
-        "type": "object"
-      },
-      "AutoResponseRuleResponse": {
-        "description": "Full auto-response rule row.",
-        "properties": {
-          "backoff": {
-            "$ref": "#/components/schemas/BackoffConfig"
-          },
-          "created_at": {
-            "title": "Created At",
-            "type": "string"
-          },
-          "enabled": {
-            "title": "Enabled",
-            "type": "boolean"
-          },
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "is_built_in": {
-            "title": "Is Built In",
-            "type": "boolean"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "organization_id": {
-            "format": "uuid",
-            "title": "Organization Id",
-            "type": "string"
-          },
-          "pattern": {
-            "title": "Pattern",
-            "type": "string"
-          },
-          "prompt": {
-            "title": "Prompt",
-            "type": "string"
-          },
-          "sort_order": {
-            "title": "Sort Order",
-            "type": "integer"
-          },
-          "updated_at": {
-            "title": "Updated At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "organization_id",
-          "name",
-          "pattern",
-          "prompt",
-          "enabled",
-          "is_built_in",
-          "sort_order",
-          "backoff",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "AutoResponseRuleResponse",
-        "type": "object"
-      },
-      "AutoResponseRuleUpdate": {
-        "description": "Schema for partially updating an auto-response rule (PUT).",
-        "properties": {
-          "backoff": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/BackoffConfig"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "enabled": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Enabled"
-          },
-          "name": {
-            "anyOf": [
-              {
-                "maxLength": 200,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Name"
-          },
-          "pattern": {
-            "anyOf": [
-              {
-                "maxLength": 1000,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pattern"
-          },
-          "prompt": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Prompt"
-          },
-          "sort_order": {
-            "anyOf": [
-              {
-                "minimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Sort Order"
-          }
-        },
-        "title": "AutoResponseRuleUpdate",
-        "type": "object"
-      },
       "AutomationScreenshot": {
         "properties": {
           "automation_metadata": {
@@ -2829,39 +2608,6 @@
           "image_size"
         ],
         "title": "BackgroundRemovalStatistics",
-        "type": "object"
-      },
-      "BackoffConfig": {
-        "description": "Exponential backoff schedule for a rule's auto-continue retries.",
-        "properties": {
-          "initial_delay_secs": {
-            "minimum": 0.0,
-            "title": "Initial Delay Secs",
-            "type": "integer"
-          },
-          "max_delay_secs": {
-            "anyOf": [
-              {
-                "minimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Max Delay Secs"
-          },
-          "multiplier": {
-            "minimum": 1.0,
-            "title": "Multiplier",
-            "type": "number"
-          }
-        },
-        "required": [
-          "initial_delay_secs",
-          "multiplier"
-        ],
-        "title": "BackoffConfig",
         "type": "object"
       },
       "BaselineFromScreenshot": {
@@ -29875,67 +29621,6 @@
         "title": "RunnerProcessSessionOutputLine",
         "type": "object"
       },
-      "RunnerRule": {
-        "description": "Slim rule projection served to runners (enabled rules only).",
-        "properties": {
-          "backoff": {
-            "$ref": "#/components/schemas/BackoffConfig"
-          },
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "pattern": {
-            "title": "Pattern",
-            "type": "string"
-          },
-          "prompt": {
-            "title": "Prompt",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "pattern",
-          "prompt",
-          "backoff"
-        ],
-        "title": "RunnerRule",
-        "type": "object"
-      },
-      "RunnerRulesResponse": {
-        "description": "Response for the device-JWT runner rules endpoint.",
-        "properties": {
-          "etag": {
-            "title": "Etag",
-            "type": "string"
-          },
-          "rules": {
-            "items": {
-              "$ref": "#/components/schemas/RunnerRule"
-            },
-            "title": "Rules",
-            "type": "array"
-          },
-          "updated_at": {
-            "title": "Updated At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "rules",
-          "updated_at",
-          "etag"
-        ],
-        "title": "RunnerRulesResponse",
-        "type": "object"
-      },
       "RunnerStatus": {
         "description": "Health/availability state of a runner, computed server-side from the\nWebSocket-presence and heartbeat-freshness signals.",
         "enum": [
@@ -41030,6 +40715,17 @@
       "UserRead": {
         "description": "Schema for reading user data (fastapi-users compatible with UUID).",
         "properties": {
+          "account_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Type"
+          },
           "avatar_url": {
             "anyOf": [
               {
@@ -41051,6 +40747,17 @@
               }
             ],
             "title": "Company"
+          },
+          "coord_is_admin": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coord Is Admin"
           },
           "created_at": {
             "title": "Created At",
@@ -43670,6 +43377,47 @@
         "title": "WriteConfigRequest",
         "type": "object"
       },
+      "_CreateGroupBody": {
+        "description": "Body for ``POST /coord/cognito/groups``.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "group_name": {
+            "minLength": 1,
+            "title": "Group Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "group_name"
+        ],
+        "title": "_CreateGroupBody",
+        "type": "object"
+      },
+      "_GroupMemberBody": {
+        "description": "Body for add/remove group-member by email.",
+        "properties": {
+          "email": {
+            "minLength": 1,
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "_GroupMemberBody",
+        "type": "object"
+      },
       "app__api__v1__endpoints__batch_import__FileInfo": {
         "description": "Information about a file to import.",
         "properties": {
@@ -45212,6 +44960,39 @@
               "description": "Bypass the ~30s in-process cache and refetch from coord.",
               "title": "Refresh",
               "type": "boolean"
+            }
+          },
+          {
+            "description": "Max gates in the page (coord orders OPEN-first, so the actionable + ETA-bearing gates surface within the cap).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "description": "Max gates in the page (coord orders OPEN-first, so the actionable + ETA-bearing gates surface within the cap).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Optional verdict filter; omit for all (still open-first).",
+            "in": "query",
+            "name": "verdict",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^(open|cleared|failed)$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional verdict filter; omit for all (still open-first).",
+              "title": "Verdict"
             }
           }
         ],
@@ -53945,6 +53726,168 @@
         "summary": "List Running Tasks",
         "tags": [
           "device-chat"
+        ]
+      }
+    },
+    "/api/v1/digital-twin/delivery/verdict": {
+      "get": {
+        "description": "Delivery verdict for one plan \u2014 \"has this plan/PR actually landed?\".\n\nThe *parameterized* twin read (Phase 5 of plan\n``2026-06-15-twin-delivery-verdict-completion-view``). Unlike the snapshot\nmatrix, delivery needs an argument (``plan_slug``, or ``repo``+``pr``), so it\nis a distinct on-demand route rather than a matrix cell. It proxies coord's\nSSO-gated ``GET /coord/twin/delivery/verdict`` (``twin_routes.rs``), which\ndispatches the SAME ``coord_query_delivery`` MCP tool an agent calls \u2014 with\n``force_refresh=true`` server-side \u2014 so the dashboard answer is byte-identical\nto (and as fresh as) what an agent would receive: plan lifecycle status \u22c8\nper-PR merge state \u22c8 best-effort deploy state, with provenance + staleness.\n\nValidates the parameter set locally (mirroring coord) to avoid a wasted\nround-trip; coord's own 4xx/5xx (e.g. a tool failure \u2192 502) still surface via\n:func:`_proxy_coord_get`.",
+        "operationId": "api_v1_digital_twin_delivery_verdict_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "plan_slug",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Plan Slug"
+            }
+          },
+          {
+            "in": "query",
+            "name": "repo",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Repo"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pr",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Pr"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Delivery Verdict Api V1 Digital Twin Delivery Verdict Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Delivery Verdict",
+        "tags": [
+          "digital-twin"
+        ]
+      }
+    },
+    "/api/v1/digital-twin/subspace/{subspace_id}/raw": {
+      "get": {
+        "description": "Raw ``DriftVerdict`` passthrough for one sub-space \u2014 the exact JSON an AI\nagent's ``tools/call`` receives. Backs Phase 2's \"show raw data\" button; the\ncontract is defined now so it is stable. Errors surface as coord's status\n(404 for a non-snapshot id, 502 for a tool failure) via ``_proxy_coord_get``.",
+        "operationId": "api_v1_digital_twin_subspace_subspace_id_raw_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "subspace_id",
+            "required": true,
+            "schema": {
+              "title": "Subspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Twin Subspace Raw Api V1 Digital Twin Subspace  Subspace Id  Raw Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Twin Subspace Raw",
+        "tags": [
+          "digital-twin"
+        ]
+      }
+    },
+    "/api/v1/digital-twin/subspaces": {
+      "get": {
+        "description": "Live numerator for the completeness matrix: a per-sub-space probe of\nevery fleet-wide snapshot twin observer.\n\nPer-tenant: the home tenant is resolved best-effort (and the caller's Cognito\nbearer captured for forwarding). The matrix reflects what coord can observe\nfor *their* tenant \u2014 flag-gated / tenant-scoped observers legitimately read\n``blind`` for some tenants. If coord/the tenant is unavailable we DEGRADE to\nan all-error matrix (HTTP 200), never 5xx.",
+        "operationId": "api_v1_digital_twin_subspaces_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Twin Subspaces Api V1 Digital Twin Subspaces Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Twin Subspaces",
+        "tags": [
+          "digital-twin"
         ]
       }
     },
@@ -63239,7 +63182,7 @@
     },
     "/api/v1/operations/agent-questions/{question_id}/respond": {
       "post": {
-        "description": "Operator answers an agent question.",
+        "description": "A tenant member (Developer or Administrator) answers an agent question.\n\nIntentionally NOT admin-gated: a Developer must be able to answer their\nown running agent's questions. Coord scopes the respond route to the\ncaller's tenant, so this stays within the shared account.",
         "operationId": "api_v1_operations_agent_questions_question_id_respond_post",
         "parameters": [
           {
@@ -63979,6 +63922,298 @@
         ]
       }
     },
+    "/api/v1/operations/coord/cognito/groups": {
+      "get": {
+        "description": "List every Cognito group in the shared pool. Superuser-gated.",
+        "operationId": "api_v1_operations_coord_cognito_groups_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Cognito Groups Api V1 Operations Coord Cognito Groups Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Cognito Groups",
+        "tags": [
+          "operations"
+        ]
+      },
+      "post": {
+        "description": "Create a Cognito group. 409 if a group with that name already\nexists. Superuser-gated.",
+        "operationId": "api_v1_operations_coord_cognito_groups_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_CreateGroupBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Cognito Group Api V1 Operations Coord Cognito Groups Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Create Cognito Group",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/cognito/groups/{group_name}": {
+      "delete": {
+        "description": "Delete a Cognito group. 404 if no such group. Superuser-gated.",
+        "operationId": "api_v1_operations_coord_cognito_groups_group_name_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_name",
+            "required": true,
+            "schema": {
+              "title": "Group Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Delete Cognito Group Api V1 Operations Coord Cognito Groups  Group Name  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Cognito Group",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/cognito/groups/{group_name}/users": {
+      "delete": {
+        "description": "Remove a user (resolved by email) from a Cognito group.\nSuperuser-gated.\n\n404 if no user has that email; 409 if the email is ambiguous (>1 match).",
+        "operationId": "api_v1_operations_coord_cognito_groups_group_name_users_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_name",
+            "required": true,
+            "schema": {
+              "title": "Group Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_GroupMemberBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Remove Cognito Group User Api V1 Operations Coord Cognito Groups  Group Name  Users Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Remove Cognito Group User",
+        "tags": [
+          "operations"
+        ]
+      },
+      "get": {
+        "description": "List the members of a Cognito group. 404 if no such group.\nSuperuser-gated.",
+        "operationId": "api_v1_operations_coord_cognito_groups_group_name_users_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_name",
+            "required": true,
+            "schema": {
+              "title": "Group Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Cognito Group Users Api V1 Operations Coord Cognito Groups  Group Name  Users Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Cognito Group Users",
+        "tags": [
+          "operations"
+        ]
+      },
+      "post": {
+        "description": "Add a user (resolved by email) to a Cognito group. Superuser-gated.\n\n404 if no user has that email; 409 if the email is ambiguous (>1 match).",
+        "operationId": "api_v1_operations_coord_cognito_groups_group_name_users_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_name",
+            "required": true,
+            "schema": {
+              "title": "Group Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_GroupMemberBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Add Cognito Group User Api V1 Operations Coord Cognito Groups  Group Name  Users Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Add Cognito Group User",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/composition-rules": {
       "get": {
         "description": "List the tenant's composition rules. Tenant-admin only.",
@@ -64208,6 +64443,346 @@
         ]
       }
     },
+    "/api/v1/operations/coord/group-tenant-roles": {
+      "delete": {
+        "description": "Delete an SSO-group \u2192 tenant \u2192 role mapping.\n\nProxies coord ``DELETE /admin/coord/group-tenant-roles`` with a JSON\nbody ``{group_id, tenant_slug, role}`` \u2192 ``{ok, deleted}``. The body is\nforwarded on the DELETE via ``_proxy_coord_delete(body=...)``.",
+        "operationId": "api_v1_operations_coord_group_tenant_roles_delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Delete Coord Group Tenant Role Api V1 Operations Coord Group Tenant Roles Delete"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Coord Group Tenant Role",
+        "tags": [
+          "operations"
+        ]
+      },
+      "get": {
+        "description": "List SSO-group \u2192 tenant \u2192 role mappings.\n\nProxies coord ``GET /admin/coord/group-tenant-roles`` \u2192\n``{group_tenant_roles: [{group_id, tenant_slug, role, auto_create_tenant,\ncreated_at, tenant_id}]}``.",
+        "operationId": "api_v1_operations_coord_group_tenant_roles_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Coord Group Tenant Roles Api V1 Operations Coord Group Tenant Roles Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Coord Group Tenant Roles",
+        "tags": [
+          "operations"
+        ]
+      },
+      "post": {
+        "description": "Create an SSO-group \u2192 tenant \u2192 role mapping.\n\nProxies coord ``POST /admin/coord/group-tenant-roles``. Body:\n``{group_id, tenant_slug, role, auto_create_tenant}`` \u2192 mapping echo.\nCoord re-checks admin-in-target-tenant (or requires\n``auto_create_tenant`` for an unresolved slug).",
+        "operationId": "api_v1_operations_coord_group_tenant_roles_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Coord Group Tenant Role Api V1 Operations Coord Group Tenant Roles Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Coord Group Tenant Role",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/members": {
+      "get": {
+        "description": "List the caller's-tenant operators with their roles.\n\nProxies coord ``GET /admin/coord/operators`` \u2192\n``{operators: [{operator_id, email, display_name, sso_provider,\nlast_login_at, created_at, roles: [str]}]}`` (scoped to the caller's\ntenant by coord).",
+        "operationId": "api_v1_operations_coord_members_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Coord Members Api V1 Operations Coord Members Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Coord Members",
+        "tags": [
+          "operations"
+        ]
+      },
+      "post": {
+        "description": "Create an operator in the caller's home tenant (pre-login invites OK).\n\nProxies coord ``POST /admin/coord/operators``. Body:\n``{email, display_name?, sso_subject, sso_provider, roles?: [str]}`` \u2192\n``{operator_id}``.",
+        "operationId": "api_v1_operations_coord_members_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Coord Member Api V1 Operations Coord Members Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Coord Member",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/members/{operator_id}/roles": {
+      "delete": {
+        "description": "Revoke a role from an operator.\n\nProxies coord ``DELETE /admin/coord/operators/{operator_id}/roles`` with\na JSON body ``{role}`` \u2192 ``{ok: true}``. The body is forwarded on the\nDELETE via ``_proxy_coord_delete(body=...)`` (httpx ``request(\"DELETE\",\njson=...)``); the role name is NOT dropped.",
+        "operationId": "api_v1_operations_coord_members_operator_id_roles_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operator_id",
+            "required": true,
+            "schema": {
+              "title": "Operator Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Delete Coord Member Role Api V1 Operations Coord Members  Operator Id  Roles Delete"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Coord Member Role",
+        "tags": [
+          "operations"
+        ]
+      },
+      "post": {
+        "description": "Grant a role to an operator.\n\nProxies coord ``POST /admin/coord/operators/{operator_id}/roles``. Body:\n``{role, target_tenant_id?}`` (role \u2208\n``operator|agent_supervisor|admin|owner``; ``target_tenant_id`` for a\ncross-tenant grant, which coord re-checks admin-in-target for) \u2192\n``{ok: true}``.",
+        "operationId": "api_v1_operations_coord_members_operator_id_roles_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operator_id",
+            "required": true,
+            "schema": {
+              "title": "Operator Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Coord Member Role Api V1 Operations Coord Members  Operator Id  Roles Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Coord Member Role",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/my-tenants": {
+      "get": {
+        "description": "Return the caller's home tenant + all tenant memberships + per-tenant\nroles.\n\nProxies coord ``GET /admin/coord/me``. Backs a tenant-switcher /\ncross-tenant role-grant picker in the member-management UI.",
+        "operationId": "api_v1_operations_coord_my_tenants_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Coord My Tenants Api V1 Operations Coord My Tenants Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Coord My Tenants",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/next-step-settings": {
       "get": {
         "description": "Per-tenant read of the decision-engine autonomy settings.\n\nReturns the coord payload (``master_enabled``, ``domains`` list with\n``decision_domain``, ``label``, ``description``, ``autonomy_level``,\n``default_autonomy_level``, ``mode``, ``resolved_from``,\n``requires_master``, ``effective``) plus a synthesised ``can_edit``\nfield so the UI can enable/disable the Save controls without a\nseparate authz round-trip.",
@@ -64304,6 +64879,186 @@
           }
         ],
         "summary": "Get Next Step Settings Fleet",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/policies": {
+      "get": {
+        "description": "List the tenant's automation policies (rules). Tenant-admin only.",
+        "operationId": "api_v1_operations_coord_policies_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response List Coord Policies Api V1 Operations Coord Policies Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Coord Policies",
+        "tags": [
+          "operations"
+        ]
+      },
+      "post": {
+        "description": "Create an automation policy. Body forwarded verbatim. Tenant-admin only.\n\nThe body carries the typed ``kind`` (e.g. ``terminal_auto_response``) plus\n``condition``/``action`` sub-objects; coord maps the kind to storage and\nreturns its 4xx (validation, duplicate) verbatim.",
+        "operationId": "api_v1_operations_coord_policies_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Create Coord Policy Api V1 Operations Coord Policies Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Create Coord Policy",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/policies/{policy_id}": {
+      "delete": {
+        "description": "Delete an automation policy. Tenant-admin only.",
+        "operationId": "api_v1_operations_coord_policies_policy_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "policy_id",
+            "required": true,
+            "schema": {
+              "title": "Policy Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Delete Coord Policy Api V1 Operations Coord Policies  Policy Id  Delete"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Coord Policy",
+        "tags": [
+          "operations"
+        ]
+      },
+      "patch": {
+        "description": "Update an automation policy. Body forwarded verbatim. Tenant-admin only.",
+        "operationId": "api_v1_operations_coord_policies_policy_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "policy_id",
+            "required": true,
+            "schema": {
+              "title": "Policy Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Update Coord Policy Api V1 Operations Coord Policies  Policy Id  Patch"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update Coord Policy",
         "tags": [
           "operations"
         ]
@@ -69243,347 +69998,6 @@
         "summary": "Update Organization",
         "tags": [
           "organizations"
-        ]
-      }
-    },
-    "/api/v1/organizations/{organization_id}/auto-response-rules": {
-      "get": {
-        "description": "List auto-response rules for an organization (auto-seeds defaults).",
-        "operationId": "api_v1_organizations_organization_id_auto_response_rules_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "organization_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Organization Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AutoResponseRuleListResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "List Rules",
-        "tags": [
-          "auto-response-rules"
-        ]
-      },
-      "post": {
-        "description": "Create a new (custom) auto-response rule.",
-        "operationId": "api_v1_organizations_organization_id_auto_response_rules_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "organization_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Organization Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AutoResponseRuleCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AutoResponseRuleResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Create Rule",
-        "tags": [
-          "auto-response-rules"
-        ]
-      }
-    },
-    "/api/v1/organizations/{organization_id}/auto-response-rules/reorder": {
-      "post": {
-        "description": "Apply a new ordering to the org's auto-response rules.",
-        "operationId": "api_v1_organizations_organization_id_auto_response_rules_reorder_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "organization_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Organization Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AutoResponseRuleReorder"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AutoResponseRuleListResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Reorder Rules",
-        "tags": [
-          "auto-response-rules"
-        ]
-      }
-    },
-    "/api/v1/organizations/{organization_id}/auto-response-rules/{rule_id}": {
-      "delete": {
-        "description": "Delete a custom auto-response rule (403 on built-in).",
-        "operationId": "api_v1_organizations_organization_id_auto_response_rules_rule_id_delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "organization_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Organization Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "rule_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Rule Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Delete Rule",
-        "tags": [
-          "auto-response-rules"
-        ]
-      },
-      "get": {
-        "description": "Get a single auto-response rule by id.",
-        "operationId": "api_v1_organizations_organization_id_auto_response_rules_rule_id_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "organization_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Organization Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "rule_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Rule Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AutoResponseRuleResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Rule",
-        "tags": [
-          "auto-response-rules"
-        ]
-      },
-      "put": {
-        "description": "Partially update an auto-response rule (built-ins editable).",
-        "operationId": "api_v1_organizations_organization_id_auto_response_rules_rule_id_put",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "organization_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Organization Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "rule_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Rule Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AutoResponseRuleUpdate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AutoResponseRuleResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Update Rule",
-        "tags": [
-          "auto-response-rules"
         ]
       }
     },
@@ -81516,64 +81930,6 @@
         "summary": "Upload render image",
         "tags": [
           "render-logs"
-        ]
-      }
-    },
-    "/api/v1/runner/auto-response-rules": {
-      "get": {
-        "description": "Return the enabled auto-response rules for the device's primary org.",
-        "operationId": "api_v1_runner_auto_response_rules_get",
-        "parameters": [
-          {
-            "in": "header",
-            "name": "If-None-Match",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "If-None-Match"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RunnerRulesResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "304": {
-            "description": "Not Modified"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Get Runner Rules",
-        "tags": [
-          "auto-response-rules-runner"
         ]
       }
     },

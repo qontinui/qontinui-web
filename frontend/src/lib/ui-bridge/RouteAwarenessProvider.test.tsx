@@ -5,7 +5,7 @@
  * The SDK's soft-nav path prefers a host-provided `navigateHandler` over raw
  * `history.pushState` — pushState updates the URL bar but the Next.js App
  * Router never re-renders, so `useSearchParams()` goes stale (observed live:
- * soft nav to `/co-pilot?bridgeDebug=1` never activated bridgeDebug). The
+ * soft nav to `/prompt-home?bridgeDebug=1` never activated bridgeDebug). The
  * provider used to register the handler only `if (window.__UI_BRIDGE__)`
  * already existed — a silent no-op with no retry when the provider mounted
  * before SDK init. Since the SDK merges into an existing global rather than
@@ -21,7 +21,7 @@ import { cleanup, render } from "@testing-library/react";
 const pushMock = vi.fn();
 
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/co-pilot",
+  usePathname: () => "/prompt-home",
   useSearchParams: () => new URLSearchParams(),
   useParams: () => ({}),
   useRouter: () => ({ push: pushMock }),
@@ -66,8 +66,8 @@ describe("RouteAwarenessProvider navigateHandler registration", () => {
 
     // Soft nav with a changed query param goes through router.push, which
     // re-renders the App Router (raw pushState would not).
-    w.__UI_BRIDGE__?.navigateHandler?.("/co-pilot?bridgeDebug=1");
-    expect(pushMock).toHaveBeenCalledWith("/co-pilot?bridgeDebug=1");
+    w.__UI_BRIDGE__?.navigateHandler?.("/prompt-home?bridgeDebug=1");
+    expect(pushMock).toHaveBeenCalledWith("/prompt-home?bridgeDebug=1");
   });
 
   it("merges into an existing bridge global without clobbering its fields", () => {

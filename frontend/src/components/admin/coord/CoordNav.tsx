@@ -30,7 +30,9 @@ import {
   Scale,
   ScrollText,
   ShieldCheck,
+  UserCog,
   Users,
+  Workflow,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -134,6 +136,12 @@ const PRIMARY_TABS: NavItem[] = [
     testId: "coord-nav-policies",
   },
   {
+    href: "/admin/coord/automation-rules",
+    label: "Automation Rules",
+    icon: Workflow,
+    testId: "coord-nav-automation-rules",
+  },
+  {
     href: "/admin/coord/pull-decisions",
     label: "Pull Decisions",
     icon: GitPullRequest,
@@ -150,6 +158,12 @@ const PRIMARY_TABS: NavItem[] = [
     label: "Merge Settings",
     icon: GitMerge,
     testId: "coord-nav-merge-settings",
+  },
+  {
+    href: "/admin/coord/members",
+    label: "Members",
+    icon: UserCog,
+    testId: "coord-nav-members",
   },
 ];
 

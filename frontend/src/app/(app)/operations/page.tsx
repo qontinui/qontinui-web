@@ -1,88 +1,22 @@
 "use client";
 
-import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  CiStatusPanel,
-  FleetOverview,
-  GatesPanel,
-  LandedFeaturesPanel,
-  MergeDependencyGraph,
-  MergeTrain,
-  MigrationQueueTile,
-} from "@/components/operations";
-import { Activity } from "lucide-react";
+/**
+ * /operations — retired. Its cross-machine fleet view + operations panels
+ * (merge train, dependency graph, CI status, gates, migration queue, landed
+ * features) were merged into the Coord Console's Fleet tab so there is one
+ * fleet view instead of two. This route now redirects there; kept as a
+ * redirect (not deleted) so existing bookmarks / deep-links keep working.
+ */
 
-export default function OperationsPage() {
-  return (
-    <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
-      <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
-        <div className="flex items-center gap-2">
-          <Activity className="h-5 w-5 text-muted-foreground" />
-          <div>
-            <h1 className="text-lg font-semibold">Operations</h1>
-            <p className="text-xs text-muted-foreground">
-              Cross-machine fleet view — runners, Claude Code sessions, and
-              active workflows.
-            </p>
-          </div>
-        </div>
-      </header>
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 
-      {/*
-       * `horizontal` opt-in: if any panel renders wider than the viewport
-       * (e.g. the merge dependency graph or a wide escalation/train row), the
-       * region scrolls horizontally instead of clipping the overflow with no
-       * escape — otherwise action buttons (e.g. an escalation card's
-       * approve/merge) can end up stranded off-screen with no way to reach
-       * them. `min-w-0` lets shrinkable flex children fit so horizontal scroll
-       * is only needed when content is genuinely too wide.
-       */}
-      <ScrollArea horizontal className="flex-1 min-h-0">
-        <div className="px-6 py-4 space-y-4 min-w-0">
-          {/*
-           * Merge train anchors at the top — it is the demo's primary
-           * visual anchor per `plans/2026-05-18-coordination-layer-demos.md`
-           * §5.2.1. FleetOverview below shows the machines + Claude
-           * sessions. LandedFeaturesPanel surfaces the deployed demo
-           * features via embedded iframes (§5.2.2).
-           */}
-          <MergeTrain />
-          {/*
-           * PR Merge Orchestrator Phase 5 D5.5 — cross-repo
-           * dependency DAG. Operator inputs (repo, pr) to render the
-           * connected component. Anchor id matches the in-link from
-           * MergeTrain.tsx's "Cross-repo dependencies" section.
-           */}
-          <div id="merge-dep-graph">
-            <MergeDependencyGraph />
-          </div>
-          {/*
-           * CI Status Dashboard (plan 2026-05-25-ci-status-dashboard).
-           * Per-repo red/amber/green main + open-PR check view, pushed
-           * live via useCiStatusStream, with a per-repo "notify when
-           * green" gate action.
-           */}
-          <CiStatusPanel />
-          {/*
-           * Gates panel (plan
-           * 2026-06-05-plan-gate-web-surface-and-productization Phase 2).
-           * Tenant-scoped list + light reversible management (approve /
-           * mute / snooze) of the user's coord gates — the read/manage
-           * surface for the gate system that already runs in coord.
-           */}
-          <GatesPanel />
-          {/*
-           * Migration reservation queue (coord-authoritative reservation
-           * queue, `migration_reservations.rs`). Per-repo ordered live set —
-           * each row leading with its 1-based queue position — plus recent
-           * terminal rows. Surfaces the slot succession that replaced the
-           * alembic head-claim mutex.
-           */}
-          <MigrationQueueTile />
-          <FleetOverview />
-          <LandedFeaturesPanel />
-        </div>
-      </ScrollArea>
-    </div>
-  );
+export default function OperationsRedirect() {
+  const router = useRouter();
+
+  useEffect(() => {
+    router.replace("/admin/coord/fleet");
+  }, [router]);
+
+  return null;
 }

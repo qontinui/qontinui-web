@@ -57,7 +57,7 @@ export default function DocsHomePage() {
               title="Qontinui Web"
               description="Configuration builder for creating automation workflows in your browser"
               links={[
-                { href: "/docs/web/overview", label: "Overview" },
+                { href: "/docs/web", label: "Overview" },
                 { href: "/docs/web/states", label: "Working with States" },
                 { href: "/docs/web/actions", label: "Action Types" },
                 { href: "/docs/web/transitions", label: "State Transitions" },
@@ -101,8 +101,8 @@ export default function DocsHomePage() {
               description="Use Qontinui programmatically in your Python projects"
               links={[
                 {
-                  href: "https://qontinui.com/api-docs",
-                  label: "API Reference",
+                  href: "https://github.com/qontinui/qontinui",
+                  label: "API Reference (source)",
                   external: true,
                 },
                 { href: "/docs/python/installation", label: "Installation" },
@@ -157,7 +157,7 @@ export default function DocsHomePage() {
               <ResourceCard
                 title="Community Support"
                 description="Get help and share your projects"
-                link="https://github.com/jspinak/qontinui/discussions"
+                link="https://github.com/qontinui/qontinui/issues"
               />
             </div>
           </div>

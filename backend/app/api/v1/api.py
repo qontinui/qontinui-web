@@ -27,7 +27,6 @@ from app.api.v1.endpoints import (
     analytics,
     annotations,
     annotations_ws,
-    auto_response_rules,
     automation,
     automation_ws,
     background_removal,
@@ -46,6 +45,7 @@ from app.api.v1.endpoints import (
     device_bridge_ws,
     devices,
     devices_ws,
+    digital_twin,
     discoveries,
     element_annotations,
     error_monitor,
@@ -86,7 +86,6 @@ from app.api.v1.endpoints import (
     recording_pipeline,
     recordings,
     render_logs,
-    runner_auto_response_rules,
     runner_chat,
     runner_chat_ws,
     runner_command_ws,
@@ -207,6 +206,10 @@ api_router.include_router(
 api_router.include_router(runner_wake.router, prefix="/device", tags=["device-wake"])
 # Operations — fleet aggregation + cross-machine Claude session monitoring.
 api_router.include_router(operations.router, prefix="/operations", tags=["operations"])
+# Digital Twin Explorer (Phase 1) — coord-backed completeness matrix.
+api_router.include_router(
+    digital_twin.router, prefix="/digital-twin", tags=["digital-twin"]
+)
 # Identity-contract I3-web — PR -> responsible qontinui user(s) resolver.
 api_router.include_router(
     identity_resolution.router, prefix="/identity", tags=["identity-resolution"]
@@ -311,15 +314,6 @@ api_router.include_router(
     finding_categories.router,
     prefix="/finding-categories",
     tags=["finding-categories"],
-)
-# Auto-response rules (org-scoped, fleet-wide). Operator CRUD router bakes its
-# full ``/organizations/...`` paths so it is mounted with NO prefix; the
-# runner-facing (device-JWT) router is mounted under ``/runner``.
-api_router.include_router(auto_response_rules.router, tags=["auto-response-rules"])
-api_router.include_router(
-    runner_auto_response_rules.router,
-    prefix="/runner",
-    tags=["auto-response-rules-runner"],
 )
 # Workflow step types, GUI action types, and phases (per-user, auto-seeded)
 api_router.include_router(

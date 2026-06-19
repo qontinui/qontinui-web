@@ -22,27 +22,15 @@
  * pattern stays consistent across admin surfaces.
  */
 
-import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
-import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import AgentSessionsDashboard from "@/components/admin/agent-sessions/AgentSessionsDashboard";
 
 export default function AgentSessionsPage() {
-  const { user } = useAuth();
+  // Any authenticated tenant member may VIEW this audit/observability
+  // dashboard. The parent `(app)` AppAuthGate handles unauthenticated
+  // redirects. This page is read-only.
   const router = useRouter();
-
-  useEffect(() => {
-    if (user && !user.is_superuser) {
-      toast.error("Access denied - Admin privileges required");
-      router.push("/build/workflows");
-    }
-  }, [user, router]);
-
-  if (!user?.is_superuser) {
-    return null;
-  }
 
   return (
     <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">

@@ -17,32 +17,20 @@
  * (PR #158) live in CoordNav.
  */
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { Activity } from "lucide-react";
-import { useAuth } from "@/contexts/auth-context";
 import CoordNav from "@/components/admin/coord/CoordNav";
+import { CoordTenantSwitcher } from "@/components/admin/coord/CoordTenantSwitcher";
 
 export default function CoordLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const { user } = useAuth();
-  const router = useRouter();
-
-  useEffect(() => {
-    if (user && !user.is_superuser) {
-      toast.error("Access denied - Admin privileges required");
-      router.push("/build/workflows");
-    }
-  }, [user, router]);
-
-  if (!user?.is_superuser) {
-    return null;
-  }
-
+  // Any authenticated tenant member may VIEW the coordination pages. The
+  // parent `(app)` AppAuthGate already redirects truly-unauthenticated
+  // visitors to /login, so no per-section auth guard is needed here.
+  // Mutation controls within each page gate on `isCoordAdmin` (read from
+  // useAuth) so non-admin "Developer"-tier members see read-only views.
   return (
     <div
       data-testid="coord-layout"
@@ -57,6 +45,9 @@ export default function CoordLayout({
           <p className="text-xs text-muted-foreground hidden sm:block">
             Cross-machine fleet state, primary trees, plans, alerts, history.
           </p>
+        </div>
+        <div className="ml-auto shrink-0">
+          <CoordTenantSwitcher />
         </div>
       </header>
 

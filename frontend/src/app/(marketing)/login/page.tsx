@@ -4,8 +4,6 @@ import { useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AuthForm } from "@/components/auth-form";
 import { useAuth } from "@/contexts/auth-context";
-import { startCognitoSignup } from "@/services/auth/cognito-oauth";
-import { toast } from "sonner";
 
 export const dynamic = "force-dynamic";
 
@@ -28,11 +26,11 @@ export default function LoginPage() {
     if (next && next.startsWith("/")) {
       router.replace(next);
     } else {
-      // Land on the general, mode-aware home. `/dashboard` forwards to
-      // `/build/workflows` (AI Dev) or `/tools/visual-automation` (Visual)
-      // based on the stored product mode. Superusers are NOT sent to the
-      // admin-only area on login — Admin is an opt-in sidebar destination.
-      router.replace("/dashboard");
+      // Coord-centric product: the Coord Console is the post-login home.
+      // (`/admin/coord` redirects to its Fleet tab.) The console is meant to
+      // be viewable by any authenticated user; per-control mutations stay
+      // coord-RBAC gated server-side.
+      router.replace("/admin/coord");
     }
   }, [loading, user, next, router]);
 
@@ -48,30 +46,20 @@ export default function LoginPage() {
 
         <AuthForm next={next && next.startsWith("/") ? next : undefined} />
 
+        {/*
+          Qontinui is invite-only during the beta — self-service registration
+          is intentionally disabled on the Cognito user pool (the hosted-UI
+          `/signup` endpoint errors out). Rather than route new users into that
+          dead end, point them at a real "request access" channel.
+        */}
         <p className="text-center text-sm text-muted-foreground">
-          Don&apos;t have an account?{" "}
-          <button
-            type="button"
-            onClick={async () => {
-              // Send new users straight to the Cognito hosted-UI registration
-              // screen so they can create an account. Same PKCE/`/auth/callback`
-              // round-trip as sign-in, carrying the post-signup `next` path.
-              try {
-                await startCognitoSignup(
-                  next && next.startsWith("/") ? next : undefined
-                );
-              } catch (error: unknown) {
-                toast.error(
-                  error instanceof Error
-                    ? error.message
-                    : "Could not start sign-up. Please try again."
-                );
-              }
-            }}
+          Don&apos;t have an account? Qontinui is currently invite-only.{" "}
+          <a
+            href="mailto:support@qontinui.io?subject=Qontinui%20access%20request"
             className="text-primary underline-offset-4 hover:underline"
           >
-            Get started
-          </button>
+            Request access
+          </a>
         </p>
       </div>
     </div>

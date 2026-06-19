@@ -1,12 +1,15 @@
 "use client";
 
 /**
- * /admin/coord/fleet — fleet overview.
+ * /admin/coord/fleet — fleet + operations overview.
  *
- * Wraps the existing FleetOverview component (rendered today on
- * /operations) and adds cross-links per device into the coord-side
- * pages (Trees / Claims / Sessions). Pulls fleet/health rollup from
- * coord via /api/v1/operations/fleet/health.
+ * The single cross-machine view: fleet health + per-device coord
+ * cross-links (Trees / Claims / Sessions) + the FleetOverview, plus the
+ * operations panels that used to live on the standalone /operations page
+ * (merge train, cross-repo dependency graph, CI status, gates, migration
+ * queue, landed features). /operations now redirects here, so there is one
+ * fleet view instead of two. Fleet/health rollup comes from coord via
+ * /api/v1/operations/fleet/health.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -16,7 +19,16 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { ExternalLink, HeartPulse, RefreshCw } from "lucide-react";
-import { DevActionsTile, FleetOverview } from "@/components/operations";
+import {
+  CiStatusPanel,
+  DevActionsTile,
+  FleetOverview,
+  GatesPanel,
+  LandedFeaturesPanel,
+  MergeDependencyGraph,
+  MergeTrain,
+  MigrationQueueTile,
+} from "@/components/operations";
 import { httpClient } from "@/services/service-factory";
 
 const API = "/api/v1/operations";
@@ -162,10 +174,27 @@ function HealthSummaryCard() {
 
 export default function CoordFleetPage() {
   return (
-    <div className="p-3 sm:p-6 space-y-4" data-testid="coord-fleet-page">
+    // `overflow-x-auto` mirrors the old /operations ScrollArea: wide panels
+    // (the merge dependency graph, escalation/train rows) scroll instead of
+    // stranding action buttons off-screen. Vertical scroll comes from the
+    // coord layout's <main overflow-y-auto>.
+    <div
+      className="p-3 sm:p-6 space-y-4 overflow-x-auto"
+      data-testid="coord-fleet-page"
+    >
       <HealthSummaryCard />
       <DevActionsTile />
       <FleetOverview />
+
+      {/* Merged from the former standalone /operations page. */}
+      <MergeTrain />
+      <div id="merge-dep-graph">
+        <MergeDependencyGraph />
+      </div>
+      <CiStatusPanel />
+      <GatesPanel />
+      <MigrationQueueTile />
+      <LandedFeaturesPanel />
     </div>
   );
 }

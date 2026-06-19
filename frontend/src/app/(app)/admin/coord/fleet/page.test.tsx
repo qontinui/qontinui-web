@@ -21,12 +21,19 @@ vi.mock("@/services/service-factory", () => ({
   },
 }));
 
-// The page composes two heavyweight operations components that fetch on
+// The page composes several heavyweight operations components that fetch on
 // mount; they are out of scope here (the badge wiring under test lives in
-// HealthSummaryCard).
+// HealthSummaryCard). Stub every operations export the Fleet page imports —
+// the page merged in the former /operations panels.
 vi.mock("@/components/operations", () => ({
   DevActionsTile: () => null,
   FleetOverview: () => null,
+  MergeTrain: () => null,
+  MergeDependencyGraph: () => null,
+  CiStatusPanel: () => null,
+  GatesPanel: () => null,
+  MigrationQueueTile: () => null,
+  LandedFeaturesPanel: () => null,
 }));
 
 import CoordFleetPage from "./page";

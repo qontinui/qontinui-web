@@ -72,6 +72,12 @@ from app.schemas.dev_dashboard import (
     RunnerHeartbeat,
     RunnerTaskRun,
 )
+from app.services import cognito_admin
+from app.services.cognito_admin import (
+    CognitoAdminError,
+    CognitoAmbiguousEmailError,
+    CognitoGroupExistsError,
+)
 from app.services.coord_device_status import (
     CoordDeviceStatusDisabledError,
     CoordDeviceStatusMintFailedError,
@@ -127,6 +133,19 @@ _caller_bearer: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "coord_caller_bearer", default=None
 )
 
+# The dashboard tenant-switcher selection. qontinui-web forwards the
+# operator's chosen tenant to coord as ``X-Qontinui-Active-Tenant``; coord
+# re-scopes the operator's context to it ONLY IF the operator holds a role
+# in that tenant (validated coord-side — see qontinui-coord
+# ``auth::apply_active_tenant_override``). Absent/invalid/non-member → coord
+# keeps the operator's home tenant. Captured per-request alongside the
+# bearer and forwarded by ``_tenant_headers``.
+ACTIVE_TENANT_HEADER = "X-Qontinui-Active-Tenant"
+
+_caller_active_tenant: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "coord_caller_active_tenant", default=None
+)
+
 
 def _extract_caller_token(request: Request) -> str | None:
     """Pull the caller's bearer token from the ``access_token`` cookie or
@@ -173,6 +192,7 @@ async def get_tenant_id(
     bearer forwarding) but no longer goes on the wire.
     """
     _caller_bearer.set(_extract_caller_token(request))
+    _caller_active_tenant.set(request.headers.get(ACTIVE_TENANT_HEADER))
     identity = await get_coord_identity(request)
     if identity.home_tenant_id is None:
         raise HTTPException(status_code=403, detail="tenant_not_resolved")
@@ -195,10 +215,20 @@ async def require_coord_tenant_admin(
     the write route is a noted follow-up, not this PR.
     """
     _caller_bearer.set(_extract_caller_token(request))
+    _caller_active_tenant.set(request.headers.get(ACTIVE_TENANT_HEADER))
     identity = await get_coord_identity(request)
     if identity.home_tenant_id is None:
         raise HTTPException(status_code=403, detail="tenant_not_resolved")
-    if not identity.is_admin:
+    # Admin is checked IN THE ACTIVE TENANT, not as a union across all of the
+    # operator's tenants. With the active-tenant header forwarded, coord's
+    # /me returns `roles` scoped to the selected tenant (its
+    # `apply_active_tenant_override` re-scopes the operator context), so
+    # `identity.roles` reflects the operator's role THERE — an operator who is
+    # Administrator of tenant A but only Developer of tenant B is correctly
+    # denied admin writes after switching to B. (`is_admin` remains a union
+    # and would wrongly pass.) qontinui superusers (staff) keep full access.
+    is_active_tenant_admin = "admin" in identity.roles
+    if not is_active_tenant_admin and not current_user.is_superuser:
         raise HTTPException(status_code=403, detail="not_coord_tenant_admin")
     return identity.home_tenant_id
 
@@ -220,6 +250,11 @@ def _tenant_headers(tenant_id: UUID | None) -> dict[str, str]:
     token = _caller_bearer.get()
     if token:
         headers["Authorization"] = f"Bearer {token}"
+    # Forward the dashboard tenant-switcher selection so coord re-scopes the
+    # operator's context to the chosen tenant (membership-validated coord-side).
+    active = _caller_active_tenant.get()
+    if active:
+        headers[ACTIVE_TENANT_HEADER] = active
     return headers
 
 
@@ -658,7 +693,7 @@ async def get_pr_merge_settings(
 @router.patch("/pr-merge/settings")
 async def patch_pr_merge_settings(
     body: dict[str, Any],
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """UPSERT the tenant-level merge settings. Coord audits the change
     + publishes a Redis pubsub invalidation. Returns the post-write
@@ -694,7 +729,7 @@ async def get_pr_merge_repo_profile(
 async def patch_pr_merge_repo_profile(
     repo: str,
     body: dict[str, Any],
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """UPSERT the per-repo override row. Coord stamps
     ``profile_source='user_edit'``, audits the change, and publishes
@@ -982,7 +1017,7 @@ async def get_pr_merge_suggestions(
 async def post_pr_merge_suggestion_accept(
     alert_id: int,
     body: dict[str, Any] | None = None,
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Apply the suggestion's ``proposed_diff`` to settings + resolve
     the alert + write a ``drift_suggestion_accepted`` user_override
@@ -999,7 +1034,7 @@ async def post_pr_merge_suggestion_accept(
 async def post_pr_merge_suggestion_reject(
     alert_id: int,
     body: dict[str, Any] | None = None,
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Resolve the alert with ``resolution_action='rejected'`` + write
     a ``drift_suggestion_rejected`` user_override row (signal: don't
@@ -1016,7 +1051,7 @@ async def post_pr_merge_suggestion_reject(
 async def post_pr_merge_suggestion_mute(
     alert_id: int,
     body: dict[str, Any] | None = None,
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Mute the suggestion kind for ``body.days`` days (default 30).
     Stored in ``coord.tenant_merge_settings.suggestion_mutes`` JSONB.
@@ -1038,7 +1073,7 @@ async def post_pr_merge_suggestion_mute(
 @router.post("/pr-merge/kill-switch")
 async def post_pr_merge_kill_switch(
     body: dict[str, Any],
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Emergency-stop: flip the calling tenant's rollout_state to
     ``dry_run``. Body shape::
@@ -1072,7 +1107,7 @@ async def post_pr_merge_kill_switch(
 @router.post("/pr-merge/rollout")
 async def post_pr_merge_rollout(
     body: dict[str, Any],
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Rollout promote — set the tenant's (or a specific repo's)
     rollout_state to an arbitrary target. Body shape::
@@ -1135,7 +1170,7 @@ async def get_pr_merge_slo(
 async def post_pr_merge_escalation_decide(
     alert_id: int,
     body: dict[str, Any],
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Resolve a pending merge escalation with an operator decision.
 
@@ -1218,7 +1253,7 @@ async def _proxy_coord_post(
 @router.post("/agents/allocate")
 async def post_agents_allocate(
     body: dict[str, Any],
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Proxy `POST /agents/allocate` to coord.
 
@@ -1358,7 +1393,7 @@ async def get_gates_list(
 @router.post("/gates/{gate_id}/approve")
 async def approve_gate(
     gate_id: str,
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Approve an OperatorApproval gate (operator bearer forwarded —
     fleet-auth P2/D6)."""
@@ -1370,7 +1405,7 @@ async def approve_gate(
 @router.post("/gates/{gate_id}/reopen")
 async def reopen_gate(
     gate_id: str,
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Reopen a cleared/failed gate by server-side cloning it into a new open
     gate (undo-by-reopen; operator bearer forwarded — fleet-auth P2/D6).
@@ -1389,7 +1424,7 @@ async def reopen_gate(
 async def reject_gate(
     gate_id: str,
     reason: str | None = None,
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Reject an OperatorApproval gate (operator bearer forwarded —
     fleet-auth P2/D6)."""
@@ -1415,7 +1450,7 @@ async def reject_gate(
 @router.post("/gates/{gate_id}/mute")
 async def mute_gate(
     gate_id: str,
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Mute a gate so the sweep skips it (reversible — operator bearer
     forwarded, fleet-auth P2/D6)."""
@@ -1427,7 +1462,7 @@ async def mute_gate(
 @router.post("/gates/{gate_id}/unmute")
 async def unmute_gate(
     gate_id: str,
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Unmute a previously-muted gate (operator bearer forwarded —
     fleet-auth P2/D6)."""
@@ -1440,7 +1475,7 @@ async def unmute_gate(
 async def snooze_gate(
     gate_id: str,
     body: dict[str, Any],
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Snooze a gate until ``body["until"]`` (rfc3339) — the sweep skips it
     while ``snoozed_until`` is in the future (reversible; operator bearer
@@ -1679,7 +1714,7 @@ async def get_coord_plan_history(
 async def post_coord_plan_transition(
     slug: str,
     body: dict[str, Any],
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Transition a plan to a new status (tenant-scoped).
 
@@ -1866,7 +1901,12 @@ async def post_agent_question_response(
     body: dict[str, Any],
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
-    """Operator answers an agent question."""
+    """A tenant member (Developer or Administrator) answers an agent question.
+
+    Intentionally NOT admin-gated: a Developer must be able to answer their
+    own running agent's questions. Coord scopes the respond route to the
+    caller's tenant, so this stays within the shared account.
+    """
     return await _proxy_coord_post(
         f"/coord/agent-questions/{question_id}/respond",
         body,
@@ -1990,7 +2030,7 @@ async def get_memory_entry(
 @router.post("/agents/spawn")
 async def post_agents_spawn(
     body: dict[str, Any],
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Proxy ``POST /agents/spawn`` to coord (Wave 4 spawn-from-plan).
 
@@ -2033,6 +2073,7 @@ async def _proxy_coord_delete(
     path: str,
     *,
     params: dict[str, Any] | None = None,
+    body: Any | None = None,
     tenant_id: UUID | None = None,
 ) -> Any:
     """Proxy a DELETE request to coord and return the JSON body.
@@ -2042,12 +2083,25 @@ async def _proxy_coord_delete(
     DELETE only sets a tombstone marker per Q3's event-sourced shape).
 
     ``params`` is forwarded as the query string when set.
+
+    ``body`` — when set, a JSON body is sent on the DELETE (coord's
+    ``DELETE /admin/coord/operators/{id}/roles`` and
+    ``DELETE /admin/coord/group-tenant-roles`` both take a JSON body
+    naming the role to remove). ``httpx`` supports a body on DELETE via
+    ``client.request("DELETE", ..., json=body)``; ``client.delete`` does
+    not accept ``json=``, so this branches. The bearer header is attached
+    on both paths.
     """
     url = f"{settings.COORD_URL}{path}"
     headers = _tenant_headers(tenant_id) if tenant_id is not None else None
     async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
         try:
-            resp = await client.delete(url, params=params, headers=headers)
+            if body is not None:
+                resp = await client.request(
+                    "DELETE", url, params=params, json=body, headers=headers
+                )
+            else:
+                resp = await client.delete(url, params=params, headers=headers)
         except httpx.ConnectError:
             raise HTTPException(
                 status_code=502,
@@ -2086,7 +2140,7 @@ async def get_memory_version(
 @router.post("/memory/upsert")
 async def post_memory_upsert(
     body: MemoryUpsertRequest,
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Upsert a memory entry (creates a new immutable version row).
 
@@ -2108,7 +2162,7 @@ async def post_memory_upsert(
 @router.delete("/memory/{name}")
 async def delete_memory_entry(
     name: str,
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Soft-delete (tombstone) a memory entry.
 
@@ -2123,7 +2177,7 @@ async def delete_memory_entry(
 async def post_memory_restore(
     name: str,
     body: MemoryRestoreRequest,
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Restore a memory entry to a previous version.
 
@@ -3284,7 +3338,7 @@ async def stream_coord_session_events(
 async def steal_coord_session(
     session_id: UUID,
     body: dict[str, Any],
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Steal a session's claim (Phase 6 wires the dashboard UI; the
     proxy lives here so the byte-paths are stable from Phase 5)."""
@@ -3296,7 +3350,7 @@ async def steal_coord_session(
 @router.delete("/sessions/{session_id}")
 async def close_coord_session(
     session_id: UUID,
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Close a session (DELETE → `state='closed'`, releases claim)."""
     return await _proxy_coord_delete(f"/sessions/{session_id}", tenant_id=tenant_id)
@@ -3306,7 +3360,7 @@ async def close_coord_session(
 async def handoff_coord_session(
     session_id: UUID,
     body: dict[str, Any],
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Hand a session off to another machine ("Continue elsewhere").
 
@@ -3744,6 +3798,7 @@ async def get_next_step_settings_fleet(
     never sent on the wire.
     """
     _caller_bearer.set(_extract_caller_token(request))
+    _caller_active_tenant.set(request.headers.get(ACTIVE_TENANT_HEADER))
     return await _proxy_coord_get(
         "/coord/next-step-settings/fleet", tenant_id=current_user.id
     )
@@ -3813,6 +3868,67 @@ async def delete_priority_set(
     )
 
 
+# Plan ``2026-06-13-unified-automation-rule-framework.md`` — Phase 5c.
+# Forward coord's unified automation-rule (policy) CRUD through the web backend
+# so the Admin Coord Console authoring UI manages tenant-scoped rules without
+# the browser hitting coord cross-origin. Replaces the org-scoped #580
+# auto-response store (deleted in Phase 5a). Coord owns the kind→storage
+# mapping; the UI sends the typed ``kind`` and coord persists it.
+#
+# Same auth posture as the priority-sets proxy above: EVERY route gated by
+# ``require_coord_tenant_admin`` (coord's ``/admin/coord/me`` ``is_admin`` is
+# the source of truth; the web-side gate keeps the surface from being silently
+# opened). ``require_coord_tenant_admin`` captures the caller's bearer so
+# ``_proxy_coord_*`` forwards only the bearer (coord derives the tenant).
+# Coord 4xx error bodies pass through verbatim via the ``_proxy_coord_*``
+# helpers.
+
+
+@router.get("/coord/policies")
+async def list_coord_policies(
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """List the tenant's automation policies (rules). Tenant-admin only."""
+    return await _proxy_coord_get("/coord/policies", tenant_id=tenant_id)
+
+
+@router.post("/coord/policies")
+async def create_coord_policy(
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Create an automation policy. Body forwarded verbatim. Tenant-admin only.
+
+    The body carries the typed ``kind`` (e.g. ``terminal_auto_response``) plus
+    ``condition``/``action`` sub-objects; coord maps the kind to storage and
+    returns its 4xx (validation, duplicate) verbatim.
+    """
+    return await _proxy_coord_post("/coord/policies", body, tenant_id=tenant_id)
+
+
+@router.patch("/coord/policies/{policy_id}")
+async def update_coord_policy(
+    policy_id: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Update an automation policy. Body forwarded verbatim. Tenant-admin only."""
+    return await _proxy_coord_patch(
+        f"/coord/policies/{policy_id}", body, tenant_id=tenant_id
+    )
+
+
+@router.delete("/coord/policies/{policy_id}")
+async def delete_coord_policy(
+    policy_id: str,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Delete an automation policy. Tenant-admin only."""
+    return await _proxy_coord_delete(
+        f"/coord/policies/{policy_id}", tenant_id=tenant_id
+    )
+
+
 @router.get("/coord/composition-rules")
 async def list_composition_rules(
     tenant_id: UUID = Depends(require_coord_tenant_admin),
@@ -3858,3 +3974,338 @@ async def delete_composition_rule(
     return await _proxy_coord_delete(
         f"/coord/composition-rules/{composition_rule_id}", tenant_id=tenant_id
     )
+
+
+# ---- Coord tenant-member management (admin-proxy) -------------------------
+#
+# Lets an authenticated coordination ADMIN manage coord tenant members +
+# roles from the dashboard, forwarding their OWN Cognito bearer to coord
+# (no separate service token). These proxy coord's ``/admin/coord/*``
+# operator/group-role endpoints (``qontinui-coord/src/routes_phase3.rs``).
+#
+# Gate: ``require_coord_tenant_admin``. Coord's ``GET /admin/coord/me``
+# computes ``is_admin`` as true iff the operator holds an admin/owner role
+# in ANY of their tenants (routes_phase3.rs:2170-2194 — it folds every
+# ``tenants[]`` row, not just the home tenant). So a Pizzeria-tenant admin
+# whose HOME tenant is different is NOT wrongly 403'd at this web gate. The
+# precise per-target authorization is coord's own re-check: the role
+# write/delete handlers call ``caller_is_admin_in_tenant`` against the
+# (possibly ``target_tenant_id``-named) target tenant and 403
+# ``not_admin_in_target_tenant`` if the caller lacks admin THERE. Web gate
+# (ANY-tenant admin) + coord per-target re-check is the correct pairing —
+# the web layer keeps the routes from being silently open while coord
+# enforces the exact target-tenant grant. Bodies pass through as
+# ``dict[str, Any]``; coord validates shape + role enum and its 4xx errors
+# surface verbatim.
+
+
+@router.get("/coord/members")
+async def get_coord_members(
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """List the caller's-tenant operators with their roles.
+
+    Proxies coord ``GET /admin/coord/operators`` →
+    ``{operators: [{operator_id, email, display_name, sso_provider,
+    last_login_at, created_at, roles: [str]}]}`` (scoped to the caller's
+    tenant by coord)."""
+    return await _proxy_coord_get("/admin/coord/operators", tenant_id=tenant_id)
+
+
+@router.post("/coord/members")
+async def post_coord_member(
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Create an operator in the caller's home tenant (pre-login invites OK).
+
+    Proxies coord ``POST /admin/coord/operators``. Body:
+    ``{email, display_name?, sso_subject, sso_provider, roles?: [str]}`` →
+    ``{operator_id}``."""
+    return await _proxy_coord_post("/admin/coord/operators", body, tenant_id=tenant_id)
+
+
+@router.post("/coord/members/{operator_id}/roles")
+async def post_coord_member_role(
+    operator_id: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Grant a role to an operator.
+
+    Proxies coord ``POST /admin/coord/operators/{operator_id}/roles``. Body:
+    ``{role, target_tenant_id?}`` (role ∈
+    ``operator|agent_supervisor|admin|owner``; ``target_tenant_id`` for a
+    cross-tenant grant, which coord re-checks admin-in-target for) →
+    ``{ok: true}``."""
+    return await _proxy_coord_post(
+        f"/admin/coord/operators/{operator_id}/roles", body, tenant_id=tenant_id
+    )
+
+
+@router.delete("/coord/members/{operator_id}/roles")
+async def delete_coord_member_role(
+    operator_id: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Revoke a role from an operator.
+
+    Proxies coord ``DELETE /admin/coord/operators/{operator_id}/roles`` with
+    a JSON body ``{role}`` → ``{ok: true}``. The body is forwarded on the
+    DELETE via ``_proxy_coord_delete(body=...)`` (httpx ``request("DELETE",
+    json=...)``); the role name is NOT dropped."""
+    return await _proxy_coord_delete(
+        f"/admin/coord/operators/{operator_id}/roles",
+        body=body,
+        tenant_id=tenant_id,
+    )
+
+
+@router.get("/coord/group-tenant-roles")
+async def get_coord_group_tenant_roles(
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """List SSO-group → tenant → role mappings.
+
+    Proxies coord ``GET /admin/coord/group-tenant-roles`` →
+    ``{group_tenant_roles: [{group_id, tenant_slug, role, auto_create_tenant,
+    created_at, tenant_id}]}``."""
+    return await _proxy_coord_get(
+        "/admin/coord/group-tenant-roles", tenant_id=tenant_id
+    )
+
+
+@router.post("/coord/group-tenant-roles")
+async def post_coord_group_tenant_role(
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Create an SSO-group → tenant → role mapping.
+
+    Proxies coord ``POST /admin/coord/group-tenant-roles``. Body:
+    ``{group_id, tenant_slug, role, auto_create_tenant}`` → mapping echo.
+    Coord re-checks admin-in-target-tenant (or requires
+    ``auto_create_tenant`` for an unresolved slug)."""
+    return await _proxy_coord_post(
+        "/admin/coord/group-tenant-roles", body, tenant_id=tenant_id
+    )
+
+
+@router.delete("/coord/group-tenant-roles")
+async def delete_coord_group_tenant_role(
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Delete an SSO-group → tenant → role mapping.
+
+    Proxies coord ``DELETE /admin/coord/group-tenant-roles`` with a JSON
+    body ``{group_id, tenant_slug, role}`` → ``{ok, deleted}``. The body is
+    forwarded on the DELETE via ``_proxy_coord_delete(body=...)``."""
+    return await _proxy_coord_delete(
+        "/admin/coord/group-tenant-roles",
+        body=body,
+        tenant_id=tenant_id,
+    )
+
+
+@router.get("/coord/my-tenants")
+async def get_coord_my_tenants(
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Return the caller's home tenant + all tenant memberships + per-tenant
+    roles.
+
+    Proxies coord ``GET /admin/coord/me``. Backs a tenant-switcher /
+    cross-tenant role-grant picker in the member-management UI."""
+    return await _proxy_coord_get("/admin/coord/me", tenant_id=tenant_id)
+
+
+# ---- Cognito GROUP administration (superuser-gated) ----------------------
+#
+# Pool-wide Cognito group CRUD + membership management, completing fully
+# in-dashboard provisioning: a superuser can create the SSO groups that
+# coord's ``/admin/coord/group-tenant-roles`` mappings (above) reference,
+# and add/remove members by email — all without leaving the dashboard or
+# touching the AWS console. The web + coord share the SAME pool
+# (``us-east-1_rgTB9dbZ1``), so a group created here flows straight into
+# coord's ``cognito:groups`` token claim.
+#
+# Gated on ``require_admin`` (``is_superuser``), NOT the per-tenant
+# ``require_coord_tenant_admin``: these are pool-wide operations that affect
+# every tenant keyed off the shared pool, so they deserve the higher bar.
+#
+# The synchronous boto3 calls in ``cognito_admin`` are offloaded to a
+# worker thread via ``asyncio.to_thread`` so they never block the event
+# loop (same pattern as ``auth/identities.py``). Module exceptions map to
+# HTTP codes here; boto3 ``ResourceNotFoundException`` (e.g. an unknown
+# group) is detected in the error text and mapped to 404.
+
+
+class _CreateGroupBody(BaseModel):
+    """Body for ``POST /coord/cognito/groups``."""
+
+    group_name: str = Field(..., min_length=1)
+    description: str | None = None
+
+
+class _GroupMemberBody(BaseModel):
+    """Body for add/remove group-member by email."""
+
+    email: str = Field(..., min_length=1)
+
+
+def _is_resource_not_found(exc: CognitoAdminError) -> bool:
+    """True when a wrapped boto3 error denotes a missing AWS resource."""
+    message = str(exc)
+    return "ResourceNotFoundException" in message or "not found" in message.lower()
+
+
+@router.get("/coord/cognito/groups")
+async def list_cognito_groups(
+    current_user: UserModel = Depends(require_admin),
+) -> dict[str, Any]:
+    """List every Cognito group in the shared pool. Superuser-gated."""
+    try:
+        groups = await asyncio.to_thread(cognito_admin.list_groups)
+    except CognitoAdminError as exc:
+        logger.error("cognito_groups_list_failed", error=str(exc))
+        raise HTTPException(status_code=502, detail="Could not list Cognito groups.")
+    return {"groups": groups}
+
+
+@router.post("/coord/cognito/groups")
+async def create_cognito_group(
+    body: _CreateGroupBody,
+    current_user: UserModel = Depends(require_admin),
+) -> dict[str, Any]:
+    """Create a Cognito group. 409 if a group with that name already
+    exists. Superuser-gated."""
+    try:
+        group = await asyncio.to_thread(
+            cognito_admin.create_group, body.group_name, body.description
+        )
+    except CognitoGroupExistsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except CognitoAdminError as exc:
+        logger.error(
+            "cognito_group_create_failed",
+            group_name=body.group_name,
+            error=str(exc),
+        )
+        raise HTTPException(status_code=502, detail="Could not create Cognito group.")
+    return group
+
+
+@router.delete("/coord/cognito/groups/{group_name}")
+async def delete_cognito_group(
+    group_name: str,
+    current_user: UserModel = Depends(require_admin),
+) -> dict[str, Any]:
+    """Delete a Cognito group. 404 if no such group. Superuser-gated."""
+    try:
+        await asyncio.to_thread(cognito_admin.delete_group, group_name)
+    except CognitoAdminError as exc:
+        if _is_resource_not_found(exc):
+            raise HTTPException(status_code=404, detail=f"No such group: {group_name}")
+        logger.error(
+            "cognito_group_delete_failed", group_name=group_name, error=str(exc)
+        )
+        raise HTTPException(status_code=502, detail="Could not delete Cognito group.")
+    return {"ok": True}
+
+
+@router.get("/coord/cognito/groups/{group_name}/users")
+async def list_cognito_group_users(
+    group_name: str,
+    current_user: UserModel = Depends(require_admin),
+) -> dict[str, Any]:
+    """List the members of a Cognito group. 404 if no such group.
+    Superuser-gated."""
+    try:
+        users = await asyncio.to_thread(cognito_admin.list_users_in_group, group_name)
+    except CognitoAdminError as exc:
+        if _is_resource_not_found(exc):
+            raise HTTPException(status_code=404, detail=f"No such group: {group_name}")
+        logger.error(
+            "cognito_group_users_list_failed",
+            group_name=group_name,
+            error=str(exc),
+        )
+        raise HTTPException(status_code=502, detail="Could not list group members.")
+    return {"users": users}
+
+
+@router.post("/coord/cognito/groups/{group_name}/users")
+async def add_cognito_group_user(
+    group_name: str,
+    body: _GroupMemberBody,
+    current_user: UserModel = Depends(require_admin),
+) -> dict[str, Any]:
+    """Add a user (resolved by email) to a Cognito group. Superuser-gated.
+
+    404 if no user has that email; 409 if the email is ambiguous (>1 match).
+    """
+    try:
+        username = await asyncio.to_thread(
+            cognito_admin.resolve_username_for_email, body.email
+        )
+    except CognitoAmbiguousEmailError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except CognitoAdminError as exc:
+        logger.error("cognito_email_resolve_failed", error=str(exc))
+        raise HTTPException(status_code=502, detail="Could not resolve user by email.")
+    if not username:
+        raise HTTPException(status_code=404, detail=f"No user with email: {body.email}")
+
+    try:
+        await asyncio.to_thread(cognito_admin.add_user_to_group, username, group_name)
+    except CognitoAdminError as exc:
+        if _is_resource_not_found(exc):
+            raise HTTPException(status_code=404, detail=f"No such group: {group_name}")
+        logger.error(
+            "cognito_group_add_user_failed",
+            group_name=group_name,
+            error=str(exc),
+        )
+        raise HTTPException(status_code=502, detail="Could not add user to group.")
+    return {"ok": True, "username": username}
+
+
+@router.delete("/coord/cognito/groups/{group_name}/users")
+async def remove_cognito_group_user(
+    group_name: str,
+    body: _GroupMemberBody,
+    current_user: UserModel = Depends(require_admin),
+) -> dict[str, Any]:
+    """Remove a user (resolved by email) from a Cognito group.
+    Superuser-gated.
+
+    404 if no user has that email; 409 if the email is ambiguous (>1 match).
+    """
+    try:
+        username = await asyncio.to_thread(
+            cognito_admin.resolve_username_for_email, body.email
+        )
+    except CognitoAmbiguousEmailError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except CognitoAdminError as exc:
+        logger.error("cognito_email_resolve_failed", error=str(exc))
+        raise HTTPException(status_code=502, detail="Could not resolve user by email.")
+    if not username:
+        raise HTTPException(status_code=404, detail=f"No user with email: {body.email}")
+
+    try:
+        await asyncio.to_thread(
+            cognito_admin.remove_user_from_group, username, group_name
+        )
+    except CognitoAdminError as exc:
+        if _is_resource_not_found(exc):
+            raise HTTPException(status_code=404, detail=f"No such group: {group_name}")
+        logger.error(
+            "cognito_group_remove_user_failed",
+            group_name=group_name,
+            error=str(exc),
+        )
+        raise HTTPException(status_code=502, detail="Could not remove user from group.")
+    return {"ok": True, "username": username}

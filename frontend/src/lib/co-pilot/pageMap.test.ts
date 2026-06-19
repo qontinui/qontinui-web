@@ -131,6 +131,6 @@ describe("pageIdToUrl — runner-id leakage fallback", () => {
 
 describe("pageMap invariants", () => {
   it("never advertises the co-pilot's own route as a target", () => {
-    expect(Object.values(pageMap)).not.toContain("/co-pilot");
+    expect(Object.values(pageMap)).not.toContain("/prompt-home");
   });
 });
