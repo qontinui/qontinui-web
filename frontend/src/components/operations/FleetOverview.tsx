@@ -43,6 +43,7 @@ function buildMachineGroups(
 ): MachineGroup[] {
   const byHost = new Map<string, MachineGroup>();
   const ciRunners: CiRunnersByHost = fleet.ci_runners ?? {};
+  const displayNames: Record<string, string> = fleet.machine_display_names ?? {};
 
   // The symbol-claims map is keyed by machine_id (UUID); the MachineGroup
   // is keyed by hostname. Symbol claims arrive from coord BEFORE the
@@ -66,6 +67,7 @@ function buildMachineGroups(
       const activity = deviceStatusByHost.get(hostname);
       group = {
         hostname,
+        displayName: displayNames[hostname],
         runners: [],
         claudeSessions: fleet.claude_sessions[hostname] ?? [],
         currentActivity: activity,
@@ -83,6 +85,7 @@ function buildMachineGroups(
       const activity = deviceStatusByHost.get(hostname);
       byHost.set(hostname, {
         hostname,
+        displayName: displayNames[hostname],
         runners: [],
         claudeSessions: sessions,
         currentActivity: activity,
@@ -101,6 +104,7 @@ function buildMachineGroups(
     if (!byHost.has(hostname)) {
       byHost.set(hostname, {
         hostname,
+        displayName: displayNames[hostname],
         runners: [],
         claudeSessions: [],
         currentActivity,
@@ -316,7 +320,11 @@ export function FleetOverview() {
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {machineGroups.map((group) => (
-                <MachineCard key={group.hostname} machine={group} />
+                <MachineCard
+                  key={group.hostname}
+                  machine={group}
+                  onRenamed={fetchData}
+                />
               ))}
             </div>
           </div>

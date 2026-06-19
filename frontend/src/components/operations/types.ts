@@ -414,6 +414,14 @@ export interface FleetStatus {
   claude_sessions: Record<string, ClaudeSessionInfo[]>; // hostname -> sessions
   /** Per-hostname CI runner info, when the device has CI capability. */
   ci_runners?: CiRunnersByHost;
+  /**
+   * Operator-set friendly machine names, keyed by hostname, scoped to the
+   * current user. Set via `PATCH /api/v1/operations/fleet/machines/{hostname}`.
+   * May be `{}` / absent (no machine has been renamed). When present for a
+   * hostname, the `MachineCard` title shows the alias instead of the raw
+   * hostname; grouping and React keys still use the hostname.
+   */
+  machine_display_names?: Record<string, string>;
   total_runners: number;
   total_healthy: number;
   total_running_tasks: number;
@@ -466,6 +474,13 @@ export interface CiRunnerInfo {
 
 export interface MachineGroup {
   hostname: string;
+  /**
+   * Operator-set friendly name for this machine, joined from the fleet
+   * payload's `machine_display_names[hostname]`. Absent when the machine has
+   * not been renamed; the `MachineCard` then shows the raw `hostname`.
+   * Grouping and React keys always use `hostname`, never this.
+   */
+  displayName?: string;
   runners: Runner[];
   claudeSessions: ClaudeSessionInfo[];
   currentActivity?: DeviceStatus;

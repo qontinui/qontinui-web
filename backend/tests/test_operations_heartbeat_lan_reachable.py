@@ -54,9 +54,25 @@ def _build_test_app() -> FastAPI:
     mock_user.email = "lan.reachable@example.com"
     mock_user.is_active = True
     test_app.dependency_overrides[get_current_active_user_async] = lambda: mock_user
-    test_app.dependency_overrides[get_async_db] = lambda: None
+    test_app.dependency_overrides[get_async_db] = lambda: _empty_names_db()
     test_app.include_router(operations_router, prefix="/api/v1/operations")
     return test_app
+
+
+def _empty_names_db() -> Any:
+    """A minimal async-DB stand-in for the per-user machine-display-name SELECT.
+
+    ``GET /fleet`` issues ``await db.execute(select(MachineDisplayName...))`` and
+    reads ``result.tuples().all()`` to build ``machine_display_names``. These
+    tests exercise only the beacon ``lan_reachable`` pass-through, so the mock
+    returns an empty result (no saved names) and leaves the beacon assertions
+    untouched.
+    """
+    result = MagicMock()
+    result.tuples.return_value.all.return_value = []
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=result)
+    return db
 
 
 @pytest.fixture()

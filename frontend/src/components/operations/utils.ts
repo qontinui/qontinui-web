@@ -239,6 +239,17 @@ export function migrationsQueueUrl(
   return `${MIGRATIONS_QUEUE_API}?${q.toString()}`;
 }
 
+/**
+ * PATCH endpoint to set (or clear) a machine's operator-friendly display name.
+ * Body `{ name: string }`: a non-empty name sets the alias; an empty string
+ * clears it (reverts to the raw hostname). Tenant/user scoped server-side via
+ * the operator bearer; the caller never passes a user_id.
+ * Response: `{ hostname: string, name: string | null }`.
+ */
+export function machineRenameUrl(hostname: string): string {
+  return `${OPERATIONS_API}/fleet/machines/${encodeURIComponent(hostname)}`;
+}
+
 /** Polling interval in milliseconds. */
 export const POLL_INTERVAL_MS = 5_000;
 
