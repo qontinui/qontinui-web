@@ -49,7 +49,8 @@ export interface SubspaceProbe {
     | "partial"
     | "blind"
     | "error"
-    | "no_snapshot_tool";
+    | "no_snapshot_tool"
+    | "restricted";
   tool?: string;
   metrics?: VerdictMetrics;
   error?: string;
@@ -60,6 +61,12 @@ export interface SubspaceProbe {
 export interface SubspacesProbeResponse {
   subspaces: SubspaceProbe[];
   probed: number;
+  /**
+   * True when coord's twin tenant gate denied this operator (home tenant outside
+   * COORD_TWIN_ALLOWED_TENANT_IDS) — the UI shows a friendly access message
+   * instead of an all-error grid.
+   */
+  restricted?: boolean;
 }
 
 /**
@@ -74,7 +81,8 @@ export type CellStatus =
   | "not-built"
   | "interactive"
   | "error"
-  | "probing";
+  | "probing"
+  | "restricted";
 
 /** A manifest row joined with its resolved display status + any live metrics. */
 export interface ResolvedSubspace extends SubspaceManifestEntry {

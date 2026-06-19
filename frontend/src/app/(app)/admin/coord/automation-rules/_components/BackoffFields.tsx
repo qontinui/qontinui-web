@@ -13,6 +13,10 @@ interface BackoffFieldsProps {
 /**
  * Numeric inputs for an exponential-backoff schedule. ``max_delay_secs`` is
  * nullable — toggling "Unbounded" off lets the operator set a cap.
+ *
+ * Copied from the deleted #580 settings UI
+ * (`settings/auto-response/_components/BackoffFields.tsx`), re-scoped to the
+ * tenant-admin Automation Rules page (local `../types`).
  */
 export function BackoffFields({ value, onChange }: BackoffFieldsProps) {
   const update = (patch: Partial<BackoffConfig>) =>
@@ -76,9 +80,7 @@ export function BackoffFields({ value, onChange }: BackoffFieldsProps) {
             min={0}
             step={1}
             value={value.max_delay_secs ?? 0}
-            onChange={(e) =>
-              update({ max_delay_secs: Number(e.target.value) })
-            }
+            onChange={(e) => update({ max_delay_secs: Number(e.target.value) })}
           />
         )}
       </div>

@@ -41,6 +41,18 @@ extra steps beyond reserving and pushing.
 
 5. Coord unreachable → FAIL CLOSED (same posture as the old gate).
 
+## Reserve mode (``--reserve``) — the pre-push helper
+
+Run with ``--reserve --machine-id <uuid>`` to do the reservation step BEFORE
+opening a PR: for each NEW ``backend/alembic/versions/*.py`` that lacks a live
+reservation, it ``POST``s ``/coord/migrations/reserve`` and writes coord's
+ASSIGNED ``down_revision`` back into the file. coord owns chain succession —
+the assigned value (merged head, or the in-flight queue tail when
+``position > 1``) is written verbatim; the head is NEVER computed from the
+local checkout. Reusing this reserve step plus a push makes the verify gate's
+auto-bind a no-surprise. Reserve mode shares all of the verify gate's
+diff/parse/coord-client plumbing (same exit-code contract).
+
 The gate runs UNAUTHENTICATED (the workflow has ``permissions: contents: read``
 and passes no secret — only ``COORD_URL``). That is safe: ``bind-pr`` is
 server-side verified against the PR's actual file content by coord's GitHub
@@ -107,6 +119,34 @@ def parse_revision_file(path: Path) -> tuple[str | None, str | None]:
         rev.group("id") if rev else None,
         down.group("id") if down else None,
     )
+
+
+def set_down_revision(text: str, assigned: str) -> str:
+    """Return ``text`` with its ``down_revision`` assignment rewritten to
+    ``assigned`` (the value coord returned). Preserves the existing left-hand
+    side (any ``down_revision: <type> =`` prefix) and re-quotes the value with
+    double quotes. Raises ``ValueError`` if no ``down_revision`` line is found —
+    the caller must not silently leave a freshly-reserved migration unchained.
+
+    coord OWNS chain succession: ``assigned`` is written verbatim, never a head
+    computed from the local checkout. When the reservation's ``position > 1``
+    the migration is stacked behind in-flight migrations; the assigned value is
+    the in-flight tail and is still written as-is."""
+    # Match the LHS up to and including ``=`` (keeping any ``: <type>`` prefix),
+    # then the quoted/None RHS, anchored at line start (mirrors DOWN_REVISION_RE
+    # but capturing the LHS so we can preserve a typed declaration).
+    lhs_rhs = re.compile(
+        r"""^(?P<lhs>down_revision\s*(?::\s*[^=]+)?\s*=\s*)"""
+        r"""(?:['"][^'"]*['"]|None)""",
+        re.MULTILINE,
+    )
+    new_text, n = lhs_rhs.subn(lambda m: f'{m.group("lhs")}"{assigned}"', text, count=1)
+    if n == 0:
+        raise ValueError(
+            "no `down_revision = ...` assignment found to rewrite "
+            "(expected `down_revision: <type> = <value>` or `down_revision = None`)"
+        )
+    return new_text
 
 
 def added_revision_files(base_ref: str) -> list[Path]:
@@ -217,6 +257,18 @@ class CoordClient:
             "POST",
             f"/coord/migrations/{reservation_id}/bind-pr",
             {"pr_url": pr_url},
+        )
+
+    def reserve(self, repo: str, revision: str, machine_id: str) -> HttpResponse:
+        """POST /coord/migrations/reserve — claim a slot. coord ASSIGNS the
+        ``down_revision`` (the merged chain head, or the live-queue tail) and
+        returns ``{reservation_id, down_revision, position, authoring_deadline}``.
+        The caller writes the returned ``down_revision`` into the migration file
+        verbatim — coord owns chain succession; the client never computes it."""
+        return self._request(
+            "POST",
+            "/coord/migrations/reserve",
+            {"repo": repo, "revision": revision, "machine_id": machine_id},
         )
 
 
@@ -393,6 +445,74 @@ def interpret_bind_result(path: Path, resp: HttpResponse) -> tuple[bool, str]:
     )
 
 
+def interpret_reserve_result(
+    path: Path, revision: str, resp: HttpResponse
+) -> tuple[bool, str | None]:
+    """Map a reserve HTTP response to ``(ok, assigned_down_revision)``. HTTP-free
+    given a response object so the unit tests drive it directly.
+
+    * 200 → ``(True, <assigned down_revision>)`` — write it into the file.
+    * 409 ``duplicate_revision`` → a live reservation already exists; re-use ITS
+      assigned ``down_revision`` (idempotent re-run / someone else reserved the
+      same revision id). ``(True, <existing down_revision>)``.
+    * anything else → ``(False, None)`` with the message printed by the caller.
+    """
+    if resp.status == 200:
+        body = resp.body or {}
+        assigned = body.get("down_revision")
+        if not isinstance(assigned, str):
+            return False, None
+        return True, assigned
+
+    body = resp.body or {}
+    if resp.status == 409 and body.get("error") == "duplicate_revision":
+        existing = body.get("reservation") or {}
+        assigned = existing.get("down_revision")
+        if isinstance(assigned, str):
+            return True, assigned
+    return False, None
+
+
+def reserve_file(
+    client: CoordClient,
+    path: Path,
+    revision: str,
+    machine_id: str,
+) -> tuple[bool, str]:
+    """Reserve a slot for one added migration and write coord's ASSIGNED
+    ``down_revision`` back into the file. Returns ``(ok, message)``.
+
+    coord owns chain succession — the assigned value is written verbatim, never
+    a head computed locally (so a ``position > 1`` stacked reservation chains off
+    the in-flight tail coord hands back, not the local main head)."""
+    resp = client.reserve(REPO, revision, machine_id)
+    ok, assigned = interpret_reserve_result(path, revision, resp)
+    if not ok or assigned is None:
+        body = resp.body or {}
+        err = body.get("error") or body
+        return False, (
+            f"{path}: reserve failed HTTP {resp.status}: {err!r}. "
+            "No slot assigned; the migration's down_revision was left unchanged."
+        )
+
+    text = path.read_text(encoding="utf-8")
+    _, existing_down = parse_revision_file(path) if path.exists() else (None, None)
+    if existing_down == assigned:
+        return True, (
+            f"{path}: reserved (down_revision={assigned!r}); file already "
+            "chains off the assigned head — no rewrite needed."
+        )
+    try:
+        new_text = set_down_revision(text, assigned)
+    except ValueError as e:
+        return False, f"{path}: reserved but could not rewrite the file: {e}"
+    path.write_text(new_text, encoding="utf-8")
+    return True, (
+        f"{path}: reserved — coord assigned down_revision={assigned!r}; wrote it "
+        "into the migration. Commit + push and the verify gate auto-binds the PR."
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Orchestration
 # --------------------------------------------------------------------------- #
@@ -430,6 +550,93 @@ def process_file(
     return interpret_bind_result(path, resp)
 
 
+def run_reserve(args: argparse.Namespace) -> int:
+    """RESERVE mode (pre-push helper). For every NEW migration that lacks a live
+    reservation, POST /coord/migrations/reserve and write coord's assigned
+    ``down_revision`` into the file. Reuses the verify gate's diff/parse/coord
+    plumbing — same exit-code contract (0 ok / 1 a file failed / 2 config or
+    coord-unreachable)."""
+    if not args.machine_id:
+        print(
+            "ERROR: reserve mode needs --machine-id (or $COORD_MACHINE_ID) — "
+            "coord scopes the reservation to your machine UUID.",
+            file=sys.stderr,
+        )
+        return 2
+
+    try:
+        added = added_revision_files(args.base_ref)
+    except subprocess.CalledProcessError as e:
+        print(
+            f"ERROR: git diff against {args.base_ref} failed: {e.stderr}",
+            file=sys.stderr,
+        )
+        return 2
+
+    if not added:
+        print(
+            f"reserve migration: no new revisions vs {args.base_ref} — "
+            "nothing to reserve"
+        )
+        return 0
+
+    client = CoordClient(args.coord_url)
+    # Skip files that ALREADY have a live reservation (idempotent re-run) — read
+    # the queue once and match on revision id, reusing the verify gate's lookup.
+    try:
+        queue = client.get_queue(REPO)
+    except CoordUnreachableError as e:
+        print(
+            f"reserve migration: BLOCKED — coord unreachable at {args.coord_url}: {e}",
+            file=sys.stderr,
+        )
+        return 2
+
+    failures: list[str] = []
+    for path in added:
+        rev, _down = parse_revision_file(path)
+        if not rev:
+            failures.append(
+                f"{path}: could not parse `revision` declaration. "
+                'Expected: `revision: str = "..."` or `revision = "..."`'
+            )
+            continue
+        if find_reservation(queue, rev) is not None:
+            print(
+                f"reserve migration: ok  {path}: revision {rev!r} already has a "
+                "live reservation — skipping (run the verify gate to bind)."
+            )
+            continue
+        try:
+            ok, msg = reserve_file(client, path, rev, args.machine_id)
+        except CoordUnreachableError as e:
+            ok, msg = (
+                False,
+                f"{path}: coord became unreachable during reserve: {e}. "
+                "Failing closed; retry later.",
+            )
+        if ok:
+            print(f"reserve migration: ok  {msg}")
+        else:
+            failures.append(msg)
+
+    if failures:
+        print("", file=sys.stderr)
+        print("=" * 72, file=sys.stderr)
+        print(
+            f"reserve migration: {len(failures)} revision(s) could not be reserved:",
+            file=sys.stderr,
+        )
+        print("=" * 72, file=sys.stderr)
+        for f in failures:
+            print("", file=sys.stderr)
+            print(f, file=sys.stderr)
+        return 1
+
+    print(f"reserve migration: reserved {len(added)} new revision(s)")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="verify migration reservation (auto-binds the PR)"
@@ -456,7 +663,23 @@ def main() -> int:
         help="This PR's number (from github.event.pull_request.number). "
         "Defaults to $PR_NUMBER.",
     )
+    parser.add_argument(
+        "--reserve",
+        action="store_true",
+        help="RESERVE mode: for each NEW migration that lacks a reservation, "
+        "POST /coord/migrations/reserve and write coord's assigned down_revision "
+        "into the file (a pre-push step). Without this flag the script runs the "
+        "verify/bind gate (CI default).",
+    )
+    parser.add_argument(
+        "--machine-id",
+        default=os.environ.get("COORD_MACHINE_ID") or None,
+        help="Your machine UUID (reserve mode only). Defaults to $COORD_MACHINE_ID.",
+    )
     args = parser.parse_args()
+
+    if args.reserve:
+        return run_reserve(args)
 
     pr_number: int | None = None
     if args.pr_number:

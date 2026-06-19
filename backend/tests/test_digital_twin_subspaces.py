@@ -138,8 +138,8 @@ class TestSubspacesEndpoint:
                 return _verdict_response(0.4, "live_aws")  # partial
             if "/twin/config/" in url:
                 return _verdict_response(0.0, "config:unconfigured")  # blind
-            if "/twin/auth/" in url:
-                return _status_response(404)  # no_snapshot_tool
+            if "/twin/worktree/" in url:
+                return _status_response(404)  # no_snapshot_tool classification
             if "/twin/health/" in url:
                 return _status_response(502)  # error
             return _verdict_response(1.0, "live_rds")  # default implemented
@@ -165,8 +165,11 @@ class TestSubspacesEndpoint:
         assert by_id["release"]["status"] == "implemented"
         assert by_id["infra"]["status"] == "partial"
         assert by_id["config"]["status"] == "blind"
-        assert by_id["auth"]["status"] == "no_snapshot_tool"
+        assert by_id["worktree"]["status"] == "no_snapshot_tool"
         assert by_id["health"]["status"] == "error"
+        # `auth` is intentionally NOT probed (sensitive — Cognito wiring), so it
+        # never appears in the matrix response.
+        assert "auth" not in by_id
         # Envelope metrics ride along for the responding cells.
         assert by_id["release"]["metrics"]["provenance"] == "live_aws"
 
@@ -185,6 +188,30 @@ class TestSubspacesEndpoint:
         assert resp.status_code == 200
         statuses = {s["status"] for s in resp.json()["subspaces"]}
         assert statuses == {"error"}
+
+    def test_tenant_gate_403_surfaces_restricted(self):
+        # coord's twin tenant gate 403s every route for a non-allowed operator;
+        # the matrix surfaces a top-level `restricted` flag + per-cell
+        # "restricted" (an access decision, distinct from a 502 tool failure).
+        client = TestClient(_build_test_app())
+        with (
+            patch(
+                "app.api.v1.endpoints.digital_twin.get_coord_identity",
+                new=_resolved_identity(),
+            ),
+            patch("app.api.v1.endpoints.digital_twin.httpx.AsyncClient") as MockClient,
+        ):
+            instance = AsyncMock()
+            instance.get.side_effect = lambda url, **kw: _status_response(403)
+            instance.__aenter__ = AsyncMock(return_value=instance)
+            instance.__aexit__ = AsyncMock(return_value=False)
+            MockClient.return_value = instance
+            resp = client.get(f"{API_PREFIX}/subspaces")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["restricted"] is True
+        assert {s["status"] for s in body["subspaces"]} == {"restricted"}
 
 
 # ---------------------------------------------------------------------------

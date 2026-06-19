@@ -1,5 +1,6 @@
 "use client";
 
+import { useUIElement } from "@qontinui/ui-bridge/react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Boxes } from "lucide-react";
@@ -27,6 +28,23 @@ import { UiBridgePanel } from "./_components/UiBridgePanel";
  * sibling coord-backed Operations / Commits pages.
  */
 export default function DigitalTwinPage() {
+  // UI Bridge: stable ids so automation can switch tabs by id.
+  const { ref: tabCompletenessRef } = useUIElement({
+    id: "digital-twin-tab-completeness",
+    label: "Digital Twin — Completeness tab",
+    type: "button",
+  });
+  const { ref: tabDeliveryRef } = useUIElement({
+    id: "digital-twin-tab-delivery",
+    label: "Digital Twin — Delivery tab",
+    type: "button",
+  });
+  const { ref: tabUiBridgeRef } = useUIElement({
+    id: "digital-twin-tab-ui-bridge",
+    label: "Digital Twin — UI Bridge tab",
+    type: "button",
+  });
+
   return (
     <div className="flex h-[calc(100vh-44px)] flex-col overflow-hidden bg-background">
       <header className="flex shrink-0 items-center justify-between border-b border-border px-6 py-3">
@@ -44,9 +62,15 @@ export default function DigitalTwinPage() {
 
       <Tabs defaultValue="completeness" className="flex min-h-0 flex-1 flex-col">
         <TabsList className="mx-6 mt-3 w-fit shrink-0">
-          <TabsTrigger value="completeness">Completeness</TabsTrigger>
-          <TabsTrigger value="delivery">Delivery</TabsTrigger>
-          <TabsTrigger value="ui-bridge">UI Bridge</TabsTrigger>
+          <TabsTrigger ref={tabCompletenessRef} value="completeness">
+            Completeness
+          </TabsTrigger>
+          <TabsTrigger ref={tabDeliveryRef} value="delivery">
+            Delivery
+          </TabsTrigger>
+          <TabsTrigger ref={tabUiBridgeRef} value="ui-bridge">
+            UI Bridge
+          </TabsTrigger>
         </TabsList>
 
         <ScrollArea className="min-h-0 flex-1">

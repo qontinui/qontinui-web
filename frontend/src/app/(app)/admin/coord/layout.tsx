@@ -19,6 +19,7 @@
 
 import { Activity } from "lucide-react";
 import CoordNav from "@/components/admin/coord/CoordNav";
+import { CoordTenantSwitcher } from "@/components/admin/coord/CoordTenantSwitcher";
 
 export default function CoordLayout({
   children,
@@ -44,6 +45,9 @@ export default function CoordLayout({
           <p className="text-xs text-muted-foreground hidden sm:block">
             Cross-machine fleet state, primary trees, plans, alerts, history.
           </p>
+        </div>
+        <div className="ml-auto shrink-0">
+          <CoordTenantSwitcher />
         </div>
       </header>
 

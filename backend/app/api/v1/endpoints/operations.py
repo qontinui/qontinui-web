@@ -133,6 +133,19 @@ _caller_bearer: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "coord_caller_bearer", default=None
 )
 
+# The dashboard tenant-switcher selection. qontinui-web forwards the
+# operator's chosen tenant to coord as ``X-Qontinui-Active-Tenant``; coord
+# re-scopes the operator's context to it ONLY IF the operator holds a role
+# in that tenant (validated coord-side — see qontinui-coord
+# ``auth::apply_active_tenant_override``). Absent/invalid/non-member → coord
+# keeps the operator's home tenant. Captured per-request alongside the
+# bearer and forwarded by ``_tenant_headers``.
+ACTIVE_TENANT_HEADER = "X-Qontinui-Active-Tenant"
+
+_caller_active_tenant: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "coord_caller_active_tenant", default=None
+)
+
 
 def _extract_caller_token(request: Request) -> str | None:
     """Pull the caller's bearer token from the ``access_token`` cookie or
@@ -179,6 +192,7 @@ async def get_tenant_id(
     bearer forwarding) but no longer goes on the wire.
     """
     _caller_bearer.set(_extract_caller_token(request))
+    _caller_active_tenant.set(request.headers.get(ACTIVE_TENANT_HEADER))
     identity = await get_coord_identity(request)
     if identity.home_tenant_id is None:
         raise HTTPException(status_code=403, detail="tenant_not_resolved")
@@ -201,12 +215,20 @@ async def require_coord_tenant_admin(
     the write route is a noted follow-up, not this PR.
     """
     _caller_bearer.set(_extract_caller_token(request))
+    _caller_active_tenant.set(request.headers.get(ACTIVE_TENANT_HEADER))
     identity = await get_coord_identity(request)
     if identity.home_tenant_id is None:
         raise HTTPException(status_code=403, detail="tenant_not_resolved")
-    # qontinui superusers (staff) keep full access — they're a superset of the
-    # coord tenant-admin role, matching the frontend `isCoordAdmin` gate.
-    if not identity.is_admin and not current_user.is_superuser:
+    # Admin is checked IN THE ACTIVE TENANT, not as a union across all of the
+    # operator's tenants. With the active-tenant header forwarded, coord's
+    # /me returns `roles` scoped to the selected tenant (its
+    # `apply_active_tenant_override` re-scopes the operator context), so
+    # `identity.roles` reflects the operator's role THERE — an operator who is
+    # Administrator of tenant A but only Developer of tenant B is correctly
+    # denied admin writes after switching to B. (`is_admin` remains a union
+    # and would wrongly pass.) qontinui superusers (staff) keep full access.
+    is_active_tenant_admin = "admin" in identity.roles
+    if not is_active_tenant_admin and not current_user.is_superuser:
         raise HTTPException(status_code=403, detail="not_coord_tenant_admin")
     return identity.home_tenant_id
 
@@ -228,6 +250,11 @@ def _tenant_headers(tenant_id: UUID | None) -> dict[str, str]:
     token = _caller_bearer.get()
     if token:
         headers["Authorization"] = f"Bearer {token}"
+    # Forward the dashboard tenant-switcher selection so coord re-scopes the
+    # operator's context to the chosen tenant (membership-validated coord-side).
+    active = _caller_active_tenant.get()
+    if active:
+        headers[ACTIVE_TENANT_HEADER] = active
     return headers
 
 
@@ -3771,6 +3798,7 @@ async def get_next_step_settings_fleet(
     never sent on the wire.
     """
     _caller_bearer.set(_extract_caller_token(request))
+    _caller_active_tenant.set(request.headers.get(ACTIVE_TENANT_HEADER))
     return await _proxy_coord_get(
         "/coord/next-step-settings/fleet", tenant_id=current_user.id
     )
@@ -3837,6 +3865,67 @@ async def delete_priority_set(
     """Delete a priority set. Tenant-admin only."""
     return await _proxy_coord_delete(
         f"/coord/priority-sets/{priority_set_id}", tenant_id=tenant_id
+    )
+
+
+# Plan ``2026-06-13-unified-automation-rule-framework.md`` — Phase 5c.
+# Forward coord's unified automation-rule (policy) CRUD through the web backend
+# so the Admin Coord Console authoring UI manages tenant-scoped rules without
+# the browser hitting coord cross-origin. Replaces the org-scoped #580
+# auto-response store (deleted in Phase 5a). Coord owns the kind→storage
+# mapping; the UI sends the typed ``kind`` and coord persists it.
+#
+# Same auth posture as the priority-sets proxy above: EVERY route gated by
+# ``require_coord_tenant_admin`` (coord's ``/admin/coord/me`` ``is_admin`` is
+# the source of truth; the web-side gate keeps the surface from being silently
+# opened). ``require_coord_tenant_admin`` captures the caller's bearer so
+# ``_proxy_coord_*`` forwards only the bearer (coord derives the tenant).
+# Coord 4xx error bodies pass through verbatim via the ``_proxy_coord_*``
+# helpers.
+
+
+@router.get("/coord/policies")
+async def list_coord_policies(
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """List the tenant's automation policies (rules). Tenant-admin only."""
+    return await _proxy_coord_get("/coord/policies", tenant_id=tenant_id)
+
+
+@router.post("/coord/policies")
+async def create_coord_policy(
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Create an automation policy. Body forwarded verbatim. Tenant-admin only.
+
+    The body carries the typed ``kind`` (e.g. ``terminal_auto_response``) plus
+    ``condition``/``action`` sub-objects; coord maps the kind to storage and
+    returns its 4xx (validation, duplicate) verbatim.
+    """
+    return await _proxy_coord_post("/coord/policies", body, tenant_id=tenant_id)
+
+
+@router.patch("/coord/policies/{policy_id}")
+async def update_coord_policy(
+    policy_id: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Update an automation policy. Body forwarded verbatim. Tenant-admin only."""
+    return await _proxy_coord_patch(
+        f"/coord/policies/{policy_id}", body, tenant_id=tenant_id
+    )
+
+
+@router.delete("/coord/policies/{policy_id}")
+async def delete_coord_policy(
+    policy_id: str,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Delete an automation policy. Tenant-admin only."""
+    return await _proxy_coord_delete(
+        f"/coord/policies/{policy_id}", tenant_id=tenant_id
     )
 
 

@@ -32,6 +32,7 @@ import {
   ShieldCheck,
   UserCog,
   Users,
+  Workflow,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -133,6 +134,12 @@ const PRIMARY_TABS: NavItem[] = [
     label: "Policies",
     icon: Scale,
     testId: "coord-nav-policies",
+  },
+  {
+    href: "/admin/coord/automation-rules",
+    label: "Automation Rules",
+    icon: Workflow,
+    testId: "coord-nav-automation-rules",
   },
   {
     href: "/admin/coord/pull-decisions",
