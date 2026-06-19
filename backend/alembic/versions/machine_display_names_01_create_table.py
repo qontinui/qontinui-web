@@ -19,7 +19,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "machine_display_names_01"
-down_revision: str | None = "coord_session_messages"
+down_revision: str | None = "coord_workunits_02_gate_anchor"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
