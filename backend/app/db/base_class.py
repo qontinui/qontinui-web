@@ -1,6 +1,5 @@
 from app.db.base import Base  # noqa
 from app.models.analytics_event import AnalyticsEvent  # noqa
-from app.models.auto_response_rule import AutoResponseRule  # noqa
 from app.models.annotation import Annotation, AnnotationSet  # noqa
 from app.models.audit_log import AuditLog  # noqa
 from app.models.capture import CaptureDetectedElement  # noqa

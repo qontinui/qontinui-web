@@ -2171,227 +2171,6 @@
         "title": "AutoCreateBaselinesResponse",
         "type": "object"
       },
-      "AutoResponseRuleCreate": {
-        "description": "Schema for creating an auto-response rule.",
-        "properties": {
-          "backoff": {
-            "$ref": "#/components/schemas/BackoffConfig"
-          },
-          "enabled": {
-            "default": true,
-            "title": "Enabled",
-            "type": "boolean"
-          },
-          "name": {
-            "maxLength": 200,
-            "minLength": 1,
-            "title": "Name",
-            "type": "string"
-          },
-          "pattern": {
-            "maxLength": 1000,
-            "minLength": 1,
-            "title": "Pattern",
-            "type": "string"
-          },
-          "prompt": {
-            "minLength": 1,
-            "title": "Prompt",
-            "type": "string"
-          }
-        },
-        "required": [
-          "name",
-          "pattern",
-          "prompt",
-          "backoff"
-        ],
-        "title": "AutoResponseRuleCreate",
-        "type": "object"
-      },
-      "AutoResponseRuleListResponse": {
-        "description": "List of auto-response rules for an organization.",
-        "properties": {
-          "count": {
-            "title": "Count",
-            "type": "integer"
-          },
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/AutoResponseRuleResponse"
-            },
-            "title": "Items",
-            "type": "array"
-          }
-        },
-        "required": [
-          "items",
-          "count"
-        ],
-        "title": "AutoResponseRuleListResponse",
-        "type": "object"
-      },
-      "AutoResponseRuleReorder": {
-        "description": "Reorder request \u2014 the desired ordering of rule ids.",
-        "properties": {
-          "ordered_ids": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "title": "Ordered Ids",
-            "type": "array"
-          }
-        },
-        "required": [
-          "ordered_ids"
-        ],
-        "title": "AutoResponseRuleReorder",
-        "type": "object"
-      },
-      "AutoResponseRuleResponse": {
-        "description": "Full auto-response rule row.",
-        "properties": {
-          "backoff": {
-            "$ref": "#/components/schemas/BackoffConfig"
-          },
-          "created_at": {
-            "title": "Created At",
-            "type": "string"
-          },
-          "enabled": {
-            "title": "Enabled",
-            "type": "boolean"
-          },
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "is_built_in": {
-            "title": "Is Built In",
-            "type": "boolean"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "organization_id": {
-            "format": "uuid",
-            "title": "Organization Id",
-            "type": "string"
-          },
-          "pattern": {
-            "title": "Pattern",
-            "type": "string"
-          },
-          "prompt": {
-            "title": "Prompt",
-            "type": "string"
-          },
-          "sort_order": {
-            "title": "Sort Order",
-            "type": "integer"
-          },
-          "updated_at": {
-            "title": "Updated At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "organization_id",
-          "name",
-          "pattern",
-          "prompt",
-          "enabled",
-          "is_built_in",
-          "sort_order",
-          "backoff",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "AutoResponseRuleResponse",
-        "type": "object"
-      },
-      "AutoResponseRuleUpdate": {
-        "description": "Schema for partially updating an auto-response rule (PUT).",
-        "properties": {
-          "backoff": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/BackoffConfig"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "enabled": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Enabled"
-          },
-          "name": {
-            "anyOf": [
-              {
-                "maxLength": 200,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Name"
-          },
-          "pattern": {
-            "anyOf": [
-              {
-                "maxLength": 1000,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pattern"
-          },
-          "prompt": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Prompt"
-          },
-          "sort_order": {
-            "anyOf": [
-              {
-                "minimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Sort Order"
-          }
-        },
-        "title": "AutoResponseRuleUpdate",
-        "type": "object"
-      },
       "AutomationScreenshot": {
         "properties": {
           "automation_metadata": {
@@ -2829,39 +2608,6 @@
           "image_size"
         ],
         "title": "BackgroundRemovalStatistics",
-        "type": "object"
-      },
-      "BackoffConfig": {
-        "description": "Exponential backoff schedule for a rule's auto-continue retries.",
-        "properties": {
-          "initial_delay_secs": {
-            "minimum": 0.0,
-            "title": "Initial Delay Secs",
-            "type": "integer"
-          },
-          "max_delay_secs": {
-            "anyOf": [
-              {
-                "minimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Max Delay Secs"
-          },
-          "multiplier": {
-            "minimum": 1.0,
-            "title": "Multiplier",
-            "type": "number"
-          }
-        },
-        "required": [
-          "initial_delay_secs",
-          "multiplier"
-        ],
-        "title": "BackoffConfig",
         "type": "object"
       },
       "BaselineFromScreenshot": {
@@ -29875,67 +29621,6 @@
         "title": "RunnerProcessSessionOutputLine",
         "type": "object"
       },
-      "RunnerRule": {
-        "description": "Slim rule projection served to runners (enabled rules only).",
-        "properties": {
-          "backoff": {
-            "$ref": "#/components/schemas/BackoffConfig"
-          },
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "pattern": {
-            "title": "Pattern",
-            "type": "string"
-          },
-          "prompt": {
-            "title": "Prompt",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "pattern",
-          "prompt",
-          "backoff"
-        ],
-        "title": "RunnerRule",
-        "type": "object"
-      },
-      "RunnerRulesResponse": {
-        "description": "Response for the device-JWT runner rules endpoint.",
-        "properties": {
-          "etag": {
-            "title": "Etag",
-            "type": "string"
-          },
-          "rules": {
-            "items": {
-              "$ref": "#/components/schemas/RunnerRule"
-            },
-            "title": "Rules",
-            "type": "array"
-          },
-          "updated_at": {
-            "title": "Updated At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "rules",
-          "updated_at",
-          "etag"
-        ],
-        "title": "RunnerRulesResponse",
-        "type": "object"
-      },
       "RunnerStatus": {
         "description": "Health/availability state of a runner, computed server-side from the\nWebSocket-presence and heartbeat-freshness signals.",
         "enum": [
@@ -45275,6 +44960,39 @@
               "description": "Bypass the ~30s in-process cache and refetch from coord.",
               "title": "Refresh",
               "type": "boolean"
+            }
+          },
+          {
+            "description": "Max gates in the page (coord orders OPEN-first, so the actionable + ETA-bearing gates surface within the cap).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "description": "Max gates in the page (coord orders OPEN-first, so the actionable + ETA-bearing gates surface within the cap).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Optional verdict filter; omit for all (still open-first).",
+            "in": "query",
+            "name": "verdict",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^(open|cleared|failed)$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional verdict filter; omit for all (still open-first).",
+              "title": "Verdict"
             }
           }
         ],
@@ -65166,6 +64884,186 @@
         ]
       }
     },
+    "/api/v1/operations/coord/policies": {
+      "get": {
+        "description": "List the tenant's automation policies (rules). Tenant-admin only.",
+        "operationId": "api_v1_operations_coord_policies_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response List Coord Policies Api V1 Operations Coord Policies Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Coord Policies",
+        "tags": [
+          "operations"
+        ]
+      },
+      "post": {
+        "description": "Create an automation policy. Body forwarded verbatim. Tenant-admin only.\n\nThe body carries the typed ``kind`` (e.g. ``terminal_auto_response``) plus\n``condition``/``action`` sub-objects; coord maps the kind to storage and\nreturns its 4xx (validation, duplicate) verbatim.",
+        "operationId": "api_v1_operations_coord_policies_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Create Coord Policy Api V1 Operations Coord Policies Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Create Coord Policy",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/policies/{policy_id}": {
+      "delete": {
+        "description": "Delete an automation policy. Tenant-admin only.",
+        "operationId": "api_v1_operations_coord_policies_policy_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "policy_id",
+            "required": true,
+            "schema": {
+              "title": "Policy Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Delete Coord Policy Api V1 Operations Coord Policies  Policy Id  Delete"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Coord Policy",
+        "tags": [
+          "operations"
+        ]
+      },
+      "patch": {
+        "description": "Update an automation policy. Body forwarded verbatim. Tenant-admin only.",
+        "operationId": "api_v1_operations_coord_policies_policy_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "policy_id",
+            "required": true,
+            "schema": {
+              "title": "Policy Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Update Coord Policy Api V1 Operations Coord Policies  Policy Id  Patch"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update Coord Policy",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/priority-sets": {
       "get": {
         "description": "List the tenant's priority sets. Tenant-admin only.",
@@ -70100,347 +69998,6 @@
         "summary": "Update Organization",
         "tags": [
           "organizations"
-        ]
-      }
-    },
-    "/api/v1/organizations/{organization_id}/auto-response-rules": {
-      "get": {
-        "description": "List auto-response rules for an organization (auto-seeds defaults).",
-        "operationId": "api_v1_organizations_organization_id_auto_response_rules_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "organization_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Organization Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AutoResponseRuleListResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "List Rules",
-        "tags": [
-          "auto-response-rules"
-        ]
-      },
-      "post": {
-        "description": "Create a new (custom) auto-response rule.",
-        "operationId": "api_v1_organizations_organization_id_auto_response_rules_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "organization_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Organization Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AutoResponseRuleCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AutoResponseRuleResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Create Rule",
-        "tags": [
-          "auto-response-rules"
-        ]
-      }
-    },
-    "/api/v1/organizations/{organization_id}/auto-response-rules/reorder": {
-      "post": {
-        "description": "Apply a new ordering to the org's auto-response rules.",
-        "operationId": "api_v1_organizations_organization_id_auto_response_rules_reorder_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "organization_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Organization Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AutoResponseRuleReorder"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AutoResponseRuleListResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Reorder Rules",
-        "tags": [
-          "auto-response-rules"
-        ]
-      }
-    },
-    "/api/v1/organizations/{organization_id}/auto-response-rules/{rule_id}": {
-      "delete": {
-        "description": "Delete a custom auto-response rule (403 on built-in).",
-        "operationId": "api_v1_organizations_organization_id_auto_response_rules_rule_id_delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "organization_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Organization Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "rule_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Rule Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Delete Rule",
-        "tags": [
-          "auto-response-rules"
-        ]
-      },
-      "get": {
-        "description": "Get a single auto-response rule by id.",
-        "operationId": "api_v1_organizations_organization_id_auto_response_rules_rule_id_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "organization_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Organization Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "rule_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Rule Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AutoResponseRuleResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Rule",
-        "tags": [
-          "auto-response-rules"
-        ]
-      },
-      "put": {
-        "description": "Partially update an auto-response rule (built-ins editable).",
-        "operationId": "api_v1_organizations_organization_id_auto_response_rules_rule_id_put",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "organization_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Organization Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "rule_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Rule Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AutoResponseRuleUpdate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AutoResponseRuleResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Update Rule",
-        "tags": [
-          "auto-response-rules"
         ]
       }
     },
@@ -82373,64 +81930,6 @@
         "summary": "Upload render image",
         "tags": [
           "render-logs"
-        ]
-      }
-    },
-    "/api/v1/runner/auto-response-rules": {
-      "get": {
-        "description": "Return the enabled auto-response rules for the device's primary org.",
-        "operationId": "api_v1_runner_auto_response_rules_get",
-        "parameters": [
-          {
-            "in": "header",
-            "name": "If-None-Match",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "If-None-Match"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RunnerRulesResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "304": {
-            "description": "Not Modified"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Get Runner Rules",
-        "tags": [
-          "auto-response-rules-runner"
         ]
       }
     },
