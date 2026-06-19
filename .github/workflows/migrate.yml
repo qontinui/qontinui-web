@@ -86,6 +86,12 @@ jobs:
     steps:
       - name: Check out qontinui-web
         uses: actions/checkout@v5
+        with:
+          # Full history so the DAG-snapshot step can resolve each migration
+          # file's INTRODUCING commit (`git log --diff-filter=A`) into
+          # `authored_in_sha` — the join key coord's lifecycle view uses against
+          # `commit_lineage`. Shallow (default depth-1) would leave it null.
+          fetch-depth: 0
 
       # ── Φ_Schema declared-side chain-head attestation ─────────────────────
       # coord's schema observer can only see the ACTUAL side (the stamped
@@ -175,11 +181,39 @@ jobs:
           COORD_INGEST_TOKEN: ${{ secrets.COORD_INGEST_TOKEN }}
         run: |
           set -uo pipefail
+          # Map each version file to its INTRODUCING commit (the one that ADDED
+          # it) + that commit's date, in ONE git pass (newest-first). Powers
+          # per-revision authored_in_sha / authored_at below. Best-effort: a
+          # shallow clone or git failure yields an empty map → authored_in_sha
+          # stays null (the prior behavior), never a hard fail.
+          git log --diff-filter=A --name-only --format='C|%H|%cI' \
+            -- backend/alembic/versions/ > /tmp/addmap.txt 2>/dev/null || : > /tmp/addmap.txt
           python3 - <<'PY' > /tmp/snap.json
           import json, os, re
 
           D = "backend/alembic/versions"
           GITHUB_SHA = os.environ.get("GITHUB_SHA")
+
+          # filename (basename) -> (introducing_sha, committer_date_iso). Parsed
+          # from the `git log --diff-filter=A --name-only` dump above: each
+          # `C|<sha>|<date>` line sets the current commit, each subsequent path
+          # line attributes that file's ADD. Newest-first, so the FIRST add seen
+          # per file wins (the most recent add if a file was ever re-added).
+          add_map = {}
+          try:
+              cur_sha = cur_date = None
+              with open("/tmp/addmap.txt", encoding="utf-8") as fh:
+                  for line in fh:
+                      line = line.rstrip("\n")
+                      if line.startswith("C|"):
+                          parts = line.split("|", 2)
+                          cur_sha = parts[1] if len(parts) > 1 else None
+                          cur_date = parts[2] if len(parts) > 2 else None
+                      elif line.endswith(".py") and cur_sha:
+                          base = os.path.basename(line)
+                          add_map.setdefault(base, (cur_sha, cur_date))
+          except OSError:
+              add_map = {}
 
 
           def quoted_tokens(rhs):
@@ -254,14 +288,15 @@ jobs:
                   if not rev:
                       continue
                   downs = parse_down_revisions(src)
+                  authored_in_sha, authored_at = add_map.get(f, (None, None))
                   revisions.append({
                       "revision": rev,
                       "down_revisions": downs,
                       "objects_touched": parse_objects_touched(src),
                       "reversible": parse_reversible(src),
                       "is_merge_point": len(downs) > 1,
-                      "authored_in_sha": None,
-                      "authored_at": None,
+                      "authored_in_sha": authored_in_sha,
+                      "authored_at": authored_at,
                   })
               except Exception as e:  # best-effort — never crash the step
                   print(f"# skip {f}: {e}")
