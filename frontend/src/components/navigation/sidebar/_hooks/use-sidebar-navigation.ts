@@ -21,37 +21,34 @@ import { useAdvancedAutomation } from "@/contexts/advanced-automation-context";
 // now filtered out at the source by `platforms: ["runner"]` in
 // @qontinui/navigation >=0.1.4, so no web-local hide list is needed for them.)
 //
-// WEB_ADVANCED_IDS — workflow / task / automation / visual surfaces. Removed
-// from the default web menu but revealed by the Settings → General "Show
-// advanced automation features" toggle (same toggle that reveals the
-// package-level `hidden` items via setShowHiddenItems). Routes stay registered
-// so deep-links keep working.
+// WEB_ADVANCED_IDS — web-only demotions. The shared @qontinui/navigation
+// package (>=0.1.5) now flags the workflow/automation/insights/config long tail
+// `hidden: true` at the source, so those items are gated by the same Settings →
+// General "Show advanced automation features" toggle (setShowHiddenItems) on
+// BOTH apps — no web-local entry needed for them anymore.
+//
+// What remains here is the set qontinui-web demotes but the runner KEEPS: the
+// task_run-scoped execution/review surfaces (runs/active/findings/memory) — a
+// coord+sessions user works in `coord.sessions`, which produce no task_runs —
+// plus a handful of web-local nav ids that have no package entry
+// (scheduled-runs, state-machine-dev, build-flow-designer, review, inspector,
+// observations). Routes stay registered so deep-links keep working.
 const WEB_ADVANCED_IDS = new Set<string>([
-  // execution / review (task_run-scoped, not session-scoped)
+  // execution / review (task_run-scoped, not session-scoped) — runner keeps these
   "active",
   "runs",
   "run-findings",
   "memory",
   "gui-automation",
+  // web-local nav ids with no shared-package entry
   "scheduled-runs",
-  // workflow / automation authoring + assets
-  "library",
-  "state-machine",
   "state-machine-dev",
-  "specs",
   "build-flow-designer",
   "review",
   "inspector",
+  "observations",
   // visual automation (belongs to visual mode; never in the coord default)
   "vga",
-  // insights / config that are workflow/automation-scoped
-  "error-monitor",
-  "processes",
-  "architecture",
-  "observations",
-  "config-findings",
-  "config-hooks",
-  "config-ui-bridge",
 ]);
 
 export function useSidebarNavigation() {
