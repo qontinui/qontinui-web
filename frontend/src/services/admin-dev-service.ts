@@ -150,6 +150,19 @@ export type PrMergeStatus =
   | "unknown";
 
 /**
+ * Per-PR deploy classification coord computes for recently-merged PRs
+ * (answering "has my PR deployed yet?"). Kebab-case on the wire. Only
+ * populated for merged rows (returned when `include_merged` is set); `null`/
+ * absent for open/draft rows.
+ */
+export type PrDeployState =
+  | "deployed"
+  | "in-flight"
+  | "stale"
+  | "rolled-back"
+  | "unknown";
+
+/**
  * One open PR fleet-wide, enriched by coord. Passthrough through the web
  * proxy — coord owns `merge_status` + `blocking_summary`; the web side renames
  * nothing. Keep in sync with coord's PrRow emitter (snake_case on the wire).
@@ -175,6 +188,13 @@ export interface PrRow {
   escalation_alert_id: number | null;
   proposal_status: string | null;
   proposal_age_secs: number | null;
+  // ---- Merged-PR enrichment (only present when include_merged is set) ----
+  // Absent/null on open & draft rows.
+  merged_at?: string | null; // ISO — when the PR merged
+  merge_commit_sha?: string | null; // the merge/squash commit on base
+  deploy_state?: PrDeployState | null; // "has it deployed yet?"
+  deploy_lag_secs?: number | null; // deploy lag in seconds (in-flight context)
+  deployed_surface?: string | null; // e.g. "ecs" | "vercel"
 }
 
 export interface PrListResponse {
@@ -235,10 +255,23 @@ class AdminDevService {
    * Throws on a non-2xx response. `opts.refresh` passes `?refresh=1` to bypass
    * any backend TTL cache (the manual Refresh button passes it; auto-poll does
    * not).
+   *
+   * `opts.includeMerged` (hours, e.g. 24) passes `include_merged=<hours>` so
+   * coord additionally returns PRs merged within that window, each carrying the
+   * deploy-state enrichment (`deploy_state`, `deploy_lag_secs`,
+   * `deployed_surface`, `merged_at`, `merge_commit_sha`). Omitted/0 → open +
+   * draft only (unchanged behavior).
    */
-  async getPrs(opts?: { refresh?: boolean }): Promise<PrListResponse> {
-    const qs = opts?.refresh ? "?refresh=1" : "";
-    return httpClient.get<PrListResponse>(`${API}/prs${qs}`);
+  async getPrs(opts?: {
+    refresh?: boolean;
+    includeMerged?: number;
+  }): Promise<PrListResponse> {
+    const p = new URLSearchParams();
+    if (opts?.refresh) p.set("refresh", "1");
+    if (opts?.includeMerged && opts.includeMerged > 0)
+      p.set("include_merged", String(opts.includeMerged));
+    const qs = p.toString();
+    return httpClient.get<PrListResponse>(`${API}/prs${qs ? `?${qs}` : ""}`);
   }
 }
 
