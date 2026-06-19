@@ -119,8 +119,8 @@ export default function CoordGatesPage() {
           <div className="min-w-0">
             <h2 className="text-base font-semibold">Gates &amp; rollout</h2>
             <p className="text-xs text-muted-foreground">
-              Plan-gate progress, verdicts, continuation state, and the
-              auto-merge / feature-enablement rollout tiers.
+              Gate progress, verdicts, continuation state, and the auto-merge /
+              feature-enablement rollout tiers.
             </p>
           </div>
         </div>

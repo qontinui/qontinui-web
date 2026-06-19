@@ -77,6 +77,13 @@ function instanceClause(verdict: DriftVerdict): string | null {
       return null;
     }
     case "delivery": {
+      // The anchor noun is generic over plan vs work-unit (coord generalized
+      // delivery off the plan vocabulary). `anchor_kind` drives the wording; we
+      // never decide rendering on an opaque status value.
+      const anchorKind = comp.anchor_kind;
+      const noun = anchorKind === "work_unit" ? "work unit" : "plan";
+      const statusLabel =
+        anchorKind === "work_unit" ? "Unit status" : "Plan status";
       const status = comp.status;
       const prs = Array.isArray(comp.prs) ? comp.prs : [];
       const allMerged = comp.all_merged;
@@ -85,8 +92,8 @@ function instanceClause(verdict: DriftVerdict): string | null {
         : 0;
       if (prs.length === 0) {
         return status !== undefined && status !== null
-          ? `Plan status “${String(status)}”; no cited PRs found.`
-          : "No cited PRs found for this plan.";
+          ? `${statusLabel} “${String(status)}”; no cited PRs found.`
+          : `No cited PRs found for this ${noun}.`;
       }
       const mergeClause =
         allMerged === true
@@ -96,7 +103,7 @@ function instanceClause(verdict: DriftVerdict): string | null {
             : "merge state mixed";
       const statusPart =
         status !== undefined && status !== null
-          ? `Plan status “${String(status)}”; `
+          ? `${statusLabel} “${String(status)}”; `
           : "";
       return `${statusPart}${prs.length} cited PR${prs.length === 1 ? "" : "s"}, ${mergeClause}.`;
     }

@@ -15,6 +15,7 @@ import { useDeliveryVerdict } from "../_hooks/useDeliveryVerdict";
 import { summarizeVerdict } from "../_lib/verdict-formatter";
 import { formatRatio, formatStaleness } from "../_lib/status-presentation";
 import type {
+  DeliveryAnchorKind,
   DeliveryComponents,
   DeliveryEnv,
   DeliveryPr,
@@ -64,6 +65,40 @@ function driftBadgeStyle(driftClass: string | undefined): {
 function prUrl(repo: string, pr: number): string {
   const slug = repo.includes("/") ? repo : `qontinui/${repo}`;
   return `https://github.com/${slug}/pull/${pr}`;
+}
+
+/**
+ * Resolve how to present the work anchor, generic over plan vs work-unit.
+ * Coord's delivery verdict generalized off the plan vocabulary: a verdict may
+ * now anchor to a generic work-unit (`anchor_kind === "work_unit"`, with
+ * `plan_id` null and `work_unit_id` populated) instead of a plan. We never
+ * crash on a null `plan_id` and key the noun + identifier off `anchor_kind`,
+ * not a hard-coded vocabulary word.
+ */
+function anchorPresentation(components: DeliveryComponents | undefined): {
+  noun: string;
+  statusLabel: string;
+  /** The opaque identifier to show (slug, work-unit id, or "—"). */
+  identifier: string;
+} {
+  const kind: DeliveryAnchorKind = components?.anchor_kind ?? "plan";
+  const slug = components?.slug ?? null;
+  if (kind === "work_unit") {
+    const id = slug ?? components?.work_unit_id ?? null;
+    return {
+      noun: "work unit",
+      statusLabel: "Unit status",
+      identifier: id ?? "—",
+    };
+  }
+  // Default / "plan" / "none": fall back to plan-style presentation. For "none"
+  // there is no anchor to name, so the generic "Status" label reads correctly.
+  const id = slug ?? components?.plan_id ?? null;
+  return {
+    noun: kind === "none" ? "work" : "plan",
+    statusLabel: kind === "none" ? "Status" : "Plan status",
+    identifier: id ?? "—",
+  };
 }
 
 function PrRow({ pr }: { pr: DeliveryPr }) {
@@ -144,6 +179,7 @@ export function DeliveryVerdictCard() {
   const badge = driftBadgeStyle(verdict?.drift_class);
   const prs = components?.prs ?? [];
   const envs = components?.deployed_envs ?? [];
+  const anchor = anchorPresentation(components);
 
   return (
     <section className="rounded-lg border border-border bg-card p-4">
@@ -151,10 +187,10 @@ export function DeliveryVerdictCard() {
         <PackageCheck className="size-4" /> Has it landed? — delivery verdict
       </h2>
       <p className="mb-3 text-xs text-muted-foreground">
-        Enter a plan slug to get the same authoritative answer an AI agent gets:
-        plan status joined with each cited PR&apos;s merge state and best-effort
-        deploy state — with provenance and staleness, so a stale answer is
-        visibly stale. No local working tree required.
+        Enter a work-unit slug to get the same authoritative answer an AI agent
+        gets: the unit&apos;s status joined with each cited PR&apos;s merge state
+        and best-effort deploy state — with provenance and staleness, so a stale
+        answer is visibly stale. No local working tree required.
       </p>
 
       <div className="flex items-center gap-2">
@@ -247,7 +283,11 @@ export function DeliveryVerdictCard() {
 
           <Separator />
           <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-            <Fact label="Plan status" value={components?.status ?? "—"} />
+            <Fact
+              label={`${anchor.noun[0]!.toUpperCase()}${anchor.noun.slice(1)}`}
+              value={anchor.identifier}
+            />
+            <Fact label={anchor.statusLabel} value={components?.status ?? "—"} />
             <Fact
               label="Registered"
               value={

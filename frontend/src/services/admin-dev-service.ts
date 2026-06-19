@@ -21,6 +21,11 @@ export type ProgressBasis =
   | "sql_count"
   | "metric_threshold"
   | "plan_ready"
+  // Generic work-unit anchor kinds (coord generalized gate predicates off the
+  // plan vocabulary). The table renders the basis string opaquely, so these
+  // flow through the filter + column without special-casing.
+  | "unit_ready"
+  | "unit_status"
   | "binary"
   | "indeterminate";
 
@@ -44,6 +49,12 @@ export interface GateOverviewRow {
   resource_key: string | null;
   plan_id: string | null;
   plan_slug: string | null;
+  /**
+   * Generic work-unit anchor id, present when a gate is anchored to a work unit
+   * instead of a plan (coord generic-unit generalization). `plan_id`/`plan_slug`
+   * are null on that path; `phase_name` is shared by both anchor kinds.
+   */
+  work_unit_id: string | null;
   phase_name: string | null;
   predicate: Record<string, unknown>;
   verdict: string;
