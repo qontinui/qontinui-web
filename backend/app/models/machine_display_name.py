@@ -27,9 +27,7 @@ class MachineDisplayName(Base):
         primary_key=True,
         nullable=False,
     )
-    hostname: Mapped[str] = mapped_column(
-        String(255), primary_key=True, nullable=False
-    )
+    hostname: Mapped[str] = mapped_column(String(255), primary_key=True, nullable=False)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
