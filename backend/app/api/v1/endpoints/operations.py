@@ -46,6 +46,8 @@ from qontinui_schemas.generated.per_type.memory_restore_request import (
 from qontinui_schemas.generated.per_type.memory_upsert_request import (
     MemoryUpsertRequest,
 )
+from sqlalchemy import delete, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.websockets import WebSocketState
 
@@ -64,6 +66,7 @@ from app.api.deps import (
 from app.api.v1.endpoints.devices import _device_to_wire as _runner_to_wire
 from app.core.config import settings
 from app.crud import runner_crud
+from app.models.machine_display_name import MachineDisplayName
 from app.models.user import User as UserModel
 from app.schemas.dev_dashboard import (
     AggregatedTaskRuns,
@@ -368,6 +371,16 @@ async def get_fleet_status(
                 ),
             }
 
+    # Per-user friendly machine display names (hostname -> name). Folded
+    # into the fleet read so the frontend can render names without a
+    # second round-trip; `{}` when the user has saved none.
+    name_rows = await db.execute(
+        select(
+            MachineDisplayName.hostname, MachineDisplayName.name
+        ).where(MachineDisplayName.user_id == current_user.id)
+    )
+    machine_display_names: dict[str, str] = dict(name_rows.all())
+
     result: dict[str, Any] = {
         "runners": wire_runners,
         "claude_sessions": {
@@ -380,12 +393,84 @@ async def get_fleet_status(
         ),
         "total_running_tasks": fleet_status.total_running_tasks,
         "total_claude_sessions": fleet_status.total_claude_sessions,
+        "machine_display_names": machine_display_names,
     }
 
     if ci_runners:
         result["ci_runners"] = ci_runners
 
     return result
+
+
+# Max length for a user-assigned machine display name. Trimmed names
+# longer than this are rejected (the frontend should mirror this limit).
+_MACHINE_NAME_MAX_LEN = 100
+
+
+class MachineRenameRequest(BaseModel):
+    """Body for ``PATCH /fleet/machines/{hostname}``.
+
+    ``name`` is the desired friendly display name. A non-empty (after
+    trim) string upserts the name; an empty/whitespace-only string or
+    ``null`` clears it (reverting the machine to its raw hostname).
+    """
+
+    name: str | None = None
+
+
+@router.patch("/fleet/machines/{hostname}")
+async def rename_machine(
+    hostname: str,
+    body: MachineRenameRequest,
+    *,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> dict[str, Any]:
+    """Set or clear the current user's friendly display name for a machine.
+
+    * Non-empty ``name`` (after trim, max ``100`` chars): UPSERT the row
+      for ``(current_user.id, hostname)``.
+    * Empty/whitespace-only ``name`` or ``null``: DELETE the row (clearing
+      reverts the machine to showing its raw hostname).
+
+    The ``hostname`` need NOT exist in the fleet (a user may rename a
+    machine that's briefly offline) — the name is stored regardless.
+
+    Response: ``{ "hostname": <hostname>, "name": <name> | null }`` (``name``
+    is ``null`` after a clear).
+    """
+    name = (body.name or "").strip()
+
+    if not name:
+        await db.execute(
+            delete(MachineDisplayName).where(
+                MachineDisplayName.user_id == current_user.id,
+                MachineDisplayName.hostname == hostname,
+            )
+        )
+        await db.commit()
+        return {"hostname": hostname, "name": None}
+
+    if len(name) > _MACHINE_NAME_MAX_LEN:
+        raise HTTPException(
+            status_code=422,
+            detail=f"name must be at most {_MACHINE_NAME_MAX_LEN} characters",
+        )
+
+    stmt = (
+        pg_insert(MachineDisplayName)
+        .values(user_id=current_user.id, hostname=hostname, name=name)
+        .on_conflict_do_update(
+            index_elements=[
+                MachineDisplayName.user_id,
+                MachineDisplayName.hostname,
+            ],
+            set_={"name": name, "updated_at": datetime.now(UTC)},
+        )
+    )
+    await db.execute(stmt)
+    await db.commit()
+    return {"hostname": hostname, "name": name}
 
 
 @router.get("/fleet/tasks", response_model=AggregatedTaskRuns)
