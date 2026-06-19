@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Sparkles, Hourglass } from "lucide-react";
 import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_API } from "./utils";
+import { CollapsiblePanel } from "./CollapsiblePanel";
 import {
   DEMO_FEATURES,
   type DemoFeature,
@@ -146,14 +146,11 @@ export function LandedFeaturesPanel() {
   }, [landedAt]);
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Sparkles className="h-4 w-4" />
-          Live features
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
+    <CollapsiblePanel
+      storageKey="fleet:landed-features"
+      icon={<Sparkles className="h-4 w-4" />}
+      title="Live features"
+    >
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Skeleton className="h-72" />
@@ -171,7 +168,6 @@ export function LandedFeaturesPanel() {
             ))}
           </div>
         )}
-      </CardContent>
-    </Card>
+    </CollapsiblePanel>
   );
 }
