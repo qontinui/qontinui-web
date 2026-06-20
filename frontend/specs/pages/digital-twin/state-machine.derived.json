@@ -2,7 +2,7 @@
   "version": "1.0",
   "id": "digital-twin",
   "name": "Digital Twin Explorer",
-  "description": "The /digital-twin completeness matrix + the cell-detail interactive flow (coord#634/web#587, hardened by web#609/#612/#614 and UI-Bridge-instrumented by web#617). ci-bot is a superuser so the authed page renders. Two route stubs make the page deterministic without live coord: GET /api/v1/digital-twin/subspaces (the matrix probe, restricted:false) sets the cells' credibility/status, and GET /api/v1/digital-twin/subspace/schema/raw returns a DriftVerdict so the Schema drawer's 'Show raw data' toggle (gated on isSnapshot && verdict) renders. Assertions target the web#617 useUIElement ids (digital-twin-tab-*, digital-twin-cell-*, digital-twin-show-raw), which resolve against the UI-Bridge registry the matcher reads; the page titles ('Digital Twin', 'Ask the Twin') resolve via the wrapper's content-discovery pass (provider.tsx contentDiscovery enabled). STRUCTURE NOTE: spec-ci's structural lane evaluates every state against the INITIAL render, so only initially-present states are declared (shell + matrix). The cell -> drawer -> raw-verdict interaction is a transition with activateStates:[] whose waitAfter (the show-raw toggle appearing) is the pass condition. CI runs with NO connected runner, so Ask-the-Twin and the UI Bridge tab show their 'Connect a runner' empty states — their runner-only input ids (ask-the-twin-*, ui-bridge-*) do NOT mount and are NOT asserted; the cell-drawer flow needs no runner. The drawer is a modal Dialog, so a tab-switch transition is intentionally omitted (it would either be blocked by the open modal or unmount the matrix the drawer transition needs). Read-only; structural.",
+  "description": "The /digital-twin completeness matrix + the cell-detail interactive flow + the Delivery-tab verdict lookup (coord#634/web#587, hardened by web#609/#612/#614, UI-Bridge-instrumented by web#617 and this change for the Delivery card). ci-bot is a superuser so the authed page renders. Two route stubs make the page deterministic without live coord: GET /api/v1/digital-twin/subspaces (the matrix probe, restricted:false) sets the cells' credibility/status, and GET /api/v1/digital-twin/subspace/schema/raw returns a DriftVerdict so the Schema drawer's 'Show raw data' toggle (gated on isSnapshot && verdict) renders. Assertions target the web#617 useUIElement ids (digital-twin-tab-*, digital-twin-cell-*, digital-twin-show-raw), which resolve against the UI-Bridge registry the matcher reads; the page titles ('Digital Twin', 'Ask the Twin') resolve via the wrapper's content-discovery pass (provider.tsx contentDiscovery enabled). STRUCTURE NOTE: spec-ci's structural lane evaluates every state against the INITIAL render, so only initially-present states are declared (shell + matrix). The cell -> drawer -> raw-verdict interaction is a transition with activateStates:[] whose waitAfter (the show-raw toggle appearing) is the pass condition. CI runs with NO connected runner, so Ask-the-Twin and the UI Bridge tab show their 'Connect a runner' empty states — their runner-only input ids (ask-the-twin-*, ui-bridge-*) do NOT mount and are NOT asserted; the cell-drawer flow needs no runner. The drawer is a modal Dialog, so a tab-switch transition is intentionally omitted (it would either be blocked by the open modal or unmount the matrix the drawer transition needs). Read-only; structural.",
   "provenance": { "source": "ai-generated", "appId": "qontinui-web" },
   "metadata": {
     "tags": ["coord", "digital-twin", "twin", "route-stub", "ui-bridge-instrumented"],
@@ -49,6 +49,39 @@
             "credibility": 0.9,
             "carve_out": [],
             "components": { "alembic_head": "spec-ci-head-0001", "chain_head": null }
+          }
+        }
+      },
+      {
+        "urlPattern": "**/api/v1/digital-twin/delivery/verdict**",
+        "status": 200,
+        "contentType": "application/json",
+        "body": {
+          "plan_slug": "2026-06-15-twin-delivery-verdict-completion-view",
+          "tool": "coord_query_delivery",
+          "verdict": {
+            "instance": "delivery",
+            "drift_class": "none",
+            "d3_outcome": "Confirmed",
+            "posterior": 0.95,
+            "coverage": 1.0,
+            "staleness_seconds": 0,
+            "provenance": "coord_delivery_join_live",
+            "credibility": 0.95,
+            "carve_out": [],
+            "components": {
+              "slug": "2026-06-15-twin-delivery-verdict-completion-view",
+              "anchor_kind": "plan",
+              "status": "shipped",
+              "registered": true,
+              "all_merged": true,
+              "unmerged_prs": [],
+              "prs": [
+                { "repo": "qontinui-coord", "pr": 655, "merged": true, "branch": "feat/twin-delivery-verdict" },
+                { "repo": "qontinui-web", "pr": 603, "merged": true, "branch": "feat/twin-delivery-web-card" }
+              ],
+              "deployed_envs": []
+            }
           }
         }
       }
@@ -162,6 +195,39 @@
     }
   ],
   "transitions": [
+    {
+      "id": "digital-twin-delivery-lookup",
+      "name": "Delivery tab: switch, look up a work-unit, read the verdict",
+      "description": "Behavioral READ of the Delivery tab (shipped by plan 2026-06-15-twin-delivery-verdict-completion-view): (1) click the Delivery tab trigger (id digital-twin-tab-delivery) -> the DeliveryVerdictCard mounts, asserted by its lookup input (id digital-twin-delivery-input) appearing; (2) type a work-unit slug into that input; (3) click 'Look up' (id digital-twin-delivery-submit) -> the stubbed GET /digital-twin/delivery/verdict resolves and the verdict block renders, asserted by its 'Show raw data' toggle (id digital-twin-delivery-show-raw, gated on verdict && summary) appearing; (4) switch back to the Completeness tab (id digital-twin-tab-completeness) so the matrix remounts for the open-drawer transition that follows (Radix Tabs unmounts inactive content). The DeliveryVerdictCard controls were instrumented with stable useUIElement ids in this same change (they previously had none). activateStates is empty; the transition passes iff every action executes and each waitAfter resolves. The type action's idle waitAfter lets React flush so the submit button is enabled before the click. Runs FIRST (and restores Completeness) so it does not collide with the modal Dialog the open-drawer transition opens. Needs no connected runner (delivery is coord-backed and stubbed here).",
+      "fromStates": ["digital-twin-shell"],
+      "activateStates": [],
+      "exitStates": [],
+      "effect": "read",
+      "actions": [
+        {
+          "type": "click",
+          "target": { "id": "digital-twin-tab-delivery" },
+          "waitAfter": { "type": "element", "query": { "id": "digital-twin-delivery-input" }, "timeout": 10000 }
+        },
+        {
+          "type": "type",
+          "target": { "id": "digital-twin-delivery-input" },
+          "params": { "text": "2026-06-15-twin-delivery-verdict-completion-view" },
+          "waitAfter": { "type": "idle", "timeout": 3000 }
+        },
+        {
+          "type": "click",
+          "target": { "id": "digital-twin-delivery-submit" },
+          "waitAfter": { "type": "element", "query": { "id": "digital-twin-delivery-show-raw" }, "timeout": 12000 }
+        },
+        {
+          "type": "click",
+          "target": { "id": "digital-twin-tab-completeness" },
+          "waitAfter": { "type": "element", "query": { "id": "digital-twin-cell-schema" }, "timeout": 10000 }
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
     {
       "id": "digital-twin-open-drawer",
       "name": "Open the Schema sub-space drawer (cell click)",
