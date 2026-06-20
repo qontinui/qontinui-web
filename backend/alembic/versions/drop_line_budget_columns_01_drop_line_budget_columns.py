@@ -1,7 +1,7 @@
 """drop coord line-budget columns — vestigial after coord #707
 
 Revision ID: drop_line_budget_columns_01
-Revises: coord_session_messages
+Revises: gatesarchival01
 Create Date: 2026-06-19
 
 Drops two now-dead columns from the ``coord`` schema:
@@ -19,11 +19,13 @@ Pure ``op.execute`` DDL, every statement schema-qualified to ``coord`` (the
 idempotent-friendly, matching the house style of the surrounding migrations. No
 app-code imports, no backfill — the prod migrator container lacks app deps.
 
-down_revision chains off ``coord_session_messages`` — the head assigned by
+down_revision chains off ``gatesarchival01`` — the head assigned by
 coord's migration-reservation handshake (POST /coord/migrations/reserve,
-reservation_id 96f78417-4cbe-470e-85eb-56c6f9b988d8, position 3, i.e. stacked
-behind two in-flight migrations). The assignment is used VERBATIM rather than
-hand-picking a head.
+reservation_id 4aa61467-fb06-4c5f-ae03-7808ba3eb7c2, position 5, i.e. stacked
+behind four in-flight migrations). The assignment is used VERBATIM rather than
+hand-picking a head. Rechained 2026-06-20 off the prior ``coord_session_messages``
+reservation (withdrawn 2026-06-19 to unblock the P1 work-unit migrations) onto
+the current live-queue tail to clear a predicted alembic head-fork.
 
 NOTE: qontinui-web's alembic tree is intentionally multi-headed; chaining off
 coord's reservation-tracked head is correct and expected — no attempt is made to
@@ -45,7 +47,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "drop_line_budget_columns_01"
-down_revision: str = "coord_session_messages"
+down_revision: str = "gatesarchival01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
