@@ -31,6 +31,7 @@ import { httpClient } from "@/services/service-factory";
 import {
   composedOutcomeVariant,
   dimensionOutcomeVariant,
+  type BadgeVariant,
   type DimensionVerdict,
 } from "@/components/admin/coord/LandCard";
 
@@ -132,6 +133,64 @@ export function rollbackProposalPossible(
   if (!ver?.settled) return false;
   const o = (ver.composed_outcome ?? "").toLowerCase();
   return o === "failure" || o === "contradiction";
+}
+
+// ---- Schema-drift subclass → badge variant + label ------------------------
+//
+// The schema/migration dimension's drift verdict (coord's
+// `coord_query_migration_state`) carries an optional `drift_subclass`. A
+// *predicted alembic head-fork* arrives two ways:
+//
+//   schema:predicted_head_fork          — unmanaged / conflicting fork.
+//                                         Stays a RED d3 Contradiction (the
+//                                         per-dimension `outcome` already
+//                                         colors it `destructive` — unchanged).
+//   schema:predicted_head_fork_managed  — a fork coord can AUTO-RESOLVE
+//                                         (d3 `Failure`, canonical drift_class
+//                                         `pending`). Rendered AMBER
+//                                         ("auto-managed") — visually distinct
+//                                         from the red Contradiction and from
+//                                         healthy green: coord owns it, no
+//                                         operator action needed.
+//
+// Exported (and unit-tested) so this managed/unmanaged color+label contract
+// can't silently drift from coord's subclass taxonomy.
+
+export const MANAGED_HEAD_FORK_SUBCLASS =
+  "schema:predicted_head_fork_managed";
+
+/**
+ * A managed predicted-head-fork is the one verdict whose `outcome`-derived
+ * color we override: coord auto-resolves it, so it must read amber
+ * ("auto-managed"), NOT the red its `Failure`/`Contradiction` outcome would
+ * otherwise produce.
+ */
+export function isManagedPredictedHeadFork(
+  v?: DimensionVerdict | null
+): boolean {
+  return v?.drift_subclass === MANAGED_HEAD_FORK_SUBCLASS;
+}
+
+/**
+ * Badge variant for a single dimension verdict chip. Identical to
+ * `dimensionOutcomeVariant(outcome)` EXCEPT a managed predicted-head-fork is
+ * forced amber (`warning`) — coord auto-resolves it so it is neither a red
+ * failure nor a green pass.
+ */
+export function verdictChipVariant(v?: DimensionVerdict | null): BadgeVariant {
+  if (isManagedPredictedHeadFork(v)) return "warning";
+  return dimensionOutcomeVariant(v?.outcome);
+}
+
+/**
+ * Friendly chip label. A managed predicted-head-fork reads "auto-managed"
+ * (its raw d3 outcome would otherwise read "Failure"/"contradiction", which
+ * misleads — coord is resolving it). All other verdicts show their raw
+ * outcome token unchanged.
+ */
+export function verdictChipLabel(v?: DimensionVerdict | null): string {
+  if (isManagedPredictedHeadFork(v)) return "auto-managed";
+  return v?.outcome ?? "—";
 }
 
 // ---- Card -----------------------------------------------------------------
@@ -263,10 +322,11 @@ export function DeployCard({ row }: { row: DeployRow }) {
                   <span className="text-muted-foreground">{v.drift_class}</span>
                 )}
                 <Badge
-                  variant={dimensionOutcomeVariant(v.outcome)}
+                  variant={verdictChipVariant(v)}
                   className="text-[10px] px-1 py-0"
+                  data-testid="coord-deploy-verdict-outcome"
                 >
-                  {v.outcome ?? "—"}
+                  {verdictChipLabel(v)}
                 </Badge>
               </span>
             ))}
