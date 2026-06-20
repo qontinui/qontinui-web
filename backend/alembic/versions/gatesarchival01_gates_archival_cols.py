@@ -1,7 +1,7 @@
 """coord.gates — archival columns (gate-reaper Tier 1)
 
 Revision ID: gatesarchival01
-Revises: coord_findings
+Revises: step5drain_01_merge_escalations
 Create Date: 2026-06-19
 
 Adds four nullable archival/lifecycle columns + one partial "live gates" index
@@ -41,9 +41,11 @@ earlier in this same linear chain). It is NOT added to any
 ALTERs it.
 
 NOTE: both ``revision`` and ``down_revision`` are RESERVED via a coord
-migration-queue head-claim (reservation 09314c5f-..., position 2 behind the
-in-flight ``coord_findings``) — do NOT re-derive ``down_revision`` from a local
-``alembic heads``.
+migration-queue head-claim (reservation 690f1467-..., position 4 behind the
+in-flight ``step5drain_01_merge_escalations``) — do NOT re-derive
+``down_revision`` from a local ``alembic heads``. Rechained 2026-06-20 from the
+buried ``coord_findings`` (which had since acquired merged children) onto the
+live-queue tail to clear a predicted head-fork.
 """
 
 from collections.abc import Sequence
@@ -52,7 +54,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "gatesarchival01"
-down_revision: str | Sequence[str] | None = "coord_findings"
+down_revision: str | Sequence[str] | None = "step5drain_01_merge_escalations"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
