@@ -8234,87 +8234,6 @@
         "title": "ContextUpdate",
         "type": "object"
       },
-      "CoordNotificationRequest": {
-        "description": "Body of the coord -> web gate-action webhook (the T3 contract).",
-        "properties": {
-          "block_reason_code": {
-            "description": "Coord's gate block-reason code (e.g. 'blast_radius').",
-            "title": "Block Reason Code",
-            "type": "string"
-          },
-          "coverage": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Analysis coverage fraction in [0,1], or null if unknown.",
-            "title": "Coverage"
-          },
-          "evidence": {
-            "anyOf": [
-              {},
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Arbitrary gate evidence payload (opaque) \u2014 coord emits a list of removed-export records for blast-radius blocks, null otherwise. Accepted as-is and passed through to notification metadata.",
-            "title": "Evidence"
-          },
-          "graph_available": {
-            "description": "Whether a code graph backed the decision (authority signal).",
-            "title": "Graph Available",
-            "type": "boolean"
-          },
-          "head_sha": {
-            "description": "Head commit SHA of the PR at escalation.",
-            "title": "Head Sha",
-            "type": "string"
-          },
-          "pr_number": {
-            "description": "The pull-request number.",
-            "minimum": 1.0,
-            "title": "Pr Number",
-            "type": "integer"
-          },
-          "repo": {
-            "description": "owner/name of the GitHub repository.",
-            "title": "Repo",
-            "type": "string"
-          },
-          "responsible_context": {
-            "$ref": "#/components/schemas/ResponsibleContext",
-            "description": "Embedded responsible-user context (no coord callback needed)."
-          }
-        },
-        "required": [
-          "repo",
-          "pr_number",
-          "block_reason_code",
-          "head_sha",
-          "graph_available",
-          "responsible_context"
-        ],
-        "title": "CoordNotificationRequest",
-        "type": "object"
-      },
-      "CoordNotificationResponse": {
-        "description": "Honest count of users actually notified (may be 0).",
-        "properties": {
-          "notified_user_count": {
-            "title": "Notified User Count",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "notified_user_count"
-        ],
-        "title": "CoordNotificationResponse",
-        "type": "object"
-      },
       "CoreSettingsSchema": {
         "description": "Core framework settings schema.",
         "properties": {
@@ -29742,53 +29661,6 @@
         "title": "ResolveRequest",
         "type": "object"
       },
-      "ResponsibleContext": {
-        "description": "The responsible-user context coord embeds so web needs no callback.\n\nField names/types mirror coord's emitted payload EXACTLY (the cross-\nrepo contract). ``github_author_id`` is GitHub's numeric id (int);\nthe resolver coerces it to the string join key.",
-        "properties": {
-          "device_owner_user_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Device Owner User Id"
-          },
-          "github_author_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Github Author Id"
-          },
-          "tenant_fallback_user_ids": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Tenant Fallback User Ids",
-            "type": "array"
-          },
-          "tenant_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tenant Id"
-          }
-        },
-        "title": "ResponsibleContext",
-        "type": "object"
-      },
       "ResponsibleUserOut": {
         "description": "One responsible user + the resolution source.",
         "properties": {
@@ -46243,6 +46115,21 @@
       "get": {
         "description": "Proxy coord's ``GET /pr-merge/prs`` (open PRs + merge status).\n\nPure passthrough: returns coord's JSON envelope verbatim \u2014 the\n``{prs, total}`` contract where each PR is already enriched coord-side\nwith a typed ``merge_status`` + ``blocking_summary`` (coord owns that\nshape; the web side computes nothing and renames nothing). The list is\nfleet-wide (not tenant-scoped on the web side); the caller bearer is\nforwarded so coord authorizes on the operator identity. ``tenant_id`` is\nresolved best-effort only (it may be ``None`` when coord identity\nresolution fails) and is used solely to trigger bearer-forwarding.\n\nMirrors ``get_dev_overview``'s auth + degradation posture exactly:\n``require_admin`` (superuser) is the hard web-side gate, the bearer is\ncaptured best-effort so a coord-down identity resolution never 502s in\nthe dependency, and ``forward_bearer=True`` forwards the bearer even when\nthe tenant is unresolved. When coord is unreachable/degraded\n(connect-refused \u2192 502, timeout \u2192 504, etc.) the endpoint returns an\nempty ``{prs, total, coord_error}`` envelope rather than re-raising the\n5xx, so the dashboard renders a clear \"coord unavailable\" state.\n\nUnlike the overview, this list is NOT cached: it reflects fast-moving PR\n+ CI state where stale data is misleading on a merge-readiness dashboard.",
         "operationId": "api_v1_admin_dev_prs_get",
+        "parameters": [
+          {
+            "description": "When >0, ask coord to include recently-merged PRs (with per-PR deploy_state) in the list, not just open PRs. 0 (default) preserves the open-PRs-only behavior. coord honors this only after its own per-PR-deploy-state PR lands; forwarding it is harmless before then.",
+            "in": "query",
+            "name": "include_merged",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "When >0, ask coord to include recently-merged PRs (with per-PR deploy_state) in the list, not just open PRs. 0 (default) preserves the open-PRs-only behavior. coord honors this only after its own per-PR-deploy-state PR lands; forwarding it is harmless before then.",
+              "minimum": 0,
+              "title": "Include Merged",
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -46253,6 +46140,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "security": [
@@ -61602,66 +61499,6 @@
         ]
       }
     },
-    "/api/v1/internal/coord-notifications": {
-      "post": {
-        "description": "Receive coord's gate-action webhook and notify responsible users.\n\nResolves the responsible user(s) from the embedded context (no coord\ncallback), then for each \u2014 after privacy narrowing of the tenant-\nfallback source and a dedupe check \u2014 creates a prefs-gated in-app +\nemail GATE_ACTION notification. Returns the honest count actually\ncreated (0 is a valid, expected outcome: everyone opted out, every\ncandidate was a non-admin fallback, or all were already notified).",
-        "operationId": "api_v1_internal_coord_notifications_post",
-        "parameters": [
-          {
-            "in": "header",
-            "name": "X-Coord-Service-Secret",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Coord-Service-Secret"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CoordNotificationRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CoordNotificationResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Receive Coord Notification",
-        "tags": [
-          "internal"
-        ]
-      }
-    },
     "/api/v1/issues": {
       "get": {
         "description": "List detected issues with optional filtering.",
@@ -70147,115 +69984,6 @@
           }
         ],
         "summary": "Get Pr Merge Decisions",
-        "tags": [
-          "operations"
-        ]
-      }
-    },
-    "/api/v1/operations/pr-merge/escalations": {
-      "get": {
-        "description": "Tenant-scoped list of pending (and optionally resolved) merge\nescalations. Drives the MergeTrain \"Escalations\" dashboard section.\n\nEach row is a joined view across ``coord.alerts``\n(kind='merge_escalation'), ``coord.merge_escalations_meta``, and\n``coord.merge_decisions``. The payload carries PR link, reason,\nspecialist rationale, rule citations, suggested action, and the\nstructured alternatives the operator picks from.",
-        "operationId": "api_v1_operations_pr_merge_escalations_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "include_resolved",
-            "required": false,
-            "schema": {
-              "default": false,
-              "title": "Include Resolved",
-              "type": "boolean"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Get Pr Merge Escalations Api V1 Operations Pr Merge Escalations Get"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Pr Merge Escalations",
-        "tags": [
-          "operations"
-        ]
-      }
-    },
-    "/api/v1/operations/pr-merge/escalations/{alert_id}/decide": {
-      "post": {
-        "description": "Resolve a pending merge escalation with an operator decision.\n\nBody shape:\n\n    {\n        \"resolution_action\": \"approve_merge\"\n                             | \"reject\"\n                             | \"approve_with_modification\"\n                             | \"add_to_rulebook\",\n        \"rationale\": \"<operator text>\",\n        \"modification\": {...},  // only if approve_with_modification\n        \"rulebook_addition\": \"<markdown>\"  // only if add_to_rulebook\n    }\n\nCoord:\n1. Verifies the alert belongs to the caller's tenant.\n2. Marks the alert resolved (``resolved_at``, ``resolution_action``,\n   ``resolution_by``).\n3. Inserts a ``decided_by='operator'`` row in ``coord.merge_decisions``\n   FK'd back to the alert.\n4. Dispatches the chosen action through the same channels Phase 4's\n   executor uses (``coord.merge_proposals`` for approve_merge,\n   App-token client for reject, per-tenant override write for\n   add_to_rulebook).\n5. Stamps an ``auth_sso::audit_mutation`` row.",
-        "operationId": "api_v1_operations_pr_merge_escalations_alert_id_decide_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "alert_id",
-            "required": true,
-            "schema": {
-              "title": "Alert Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": true,
-                "title": "Body",
-                "type": "object"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Post Pr Merge Escalation Decide Api V1 Operations Pr Merge Escalations  Alert Id  Decide Post"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Post Pr Merge Escalation Decide",
         "tags": [
           "operations"
         ]

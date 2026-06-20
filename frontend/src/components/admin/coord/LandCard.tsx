@@ -49,6 +49,11 @@ export type LandDimension = "git" | "cascade" | "ci" | "release";
 export interface DimensionVerdict {
   dimension: LandDimension | string;
   drift_class?: string | null;
+  // Optional finer-grained class coord may attach alongside `drift_class`
+  // (e.g. the schema dimension's `schema:predicted_head_fork` /
+  // `schema:predicted_head_fork_managed`). Mirrors the digital-twin verdict
+  // wire shape's `drift_subclass`. Rendered defensively — absent on most rows.
+  drift_subclass?: string | null;
   outcome?: string | null;
   detail?: string | null;
 }

@@ -18,11 +18,22 @@
  * stamp that ticks every second and a pause/resume toggle. Polling cleans up
  * its interval on unmount and never overlaps an in-flight request (an in-flight
  * ref gates re-entry). Manual Refresh passes `refresh:true` (`?refresh=1`).
+ *
+ * Tabs: "Open" (default — open + draft PRs, unchanged) vs "Recently merged
+ * (24h)" (calls `getPrs({ includeMerged: 24 })`, surfacing a Deploy badge
+ * column answering "has my PR deployed yet?"). Switching tabs re-fetches; the
+ * auto-refresh / "updated Xs ago" machinery is shared across both.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 import { GitPullRequest, Pause, Play, RefreshCw } from "lucide-react";
 import {
   adminDevService,
@@ -32,6 +43,11 @@ import { PrsTable } from "./_components/PrsTable";
 
 // Auto-refresh cadence — matches the gates dashboard.
 const AUTO_REFRESH_MS = 45_000;
+
+// "Recently merged" lookback window (hours) → coord `include_merged`.
+const MERGED_LOOKBACK_HOURS = 24;
+
+type PrTab = "open" | "merged";
 
 function relativeAgoLabel(at: number | null, now: number): string {
   if (at === null) return "";
@@ -47,6 +63,7 @@ function relativeAgoLabel(at: number | null, now: number): string {
 }
 
 export default function CoordPrsPage() {
+  const [tab, setTab] = useState<PrTab>("open");
   const [data, setData] = useState<PrListResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -61,28 +78,37 @@ export default function CoordPrsPage() {
   // Guards against overlapping fetches (a slow request + a fired interval).
   const inFlight = useRef(false);
 
-  const load = useCallback(async (isRefresh: boolean) => {
-    if (inFlight.current) return;
-    inFlight.current = true;
-    if (isRefresh) setRefreshing(true);
-    try {
-      const resp = await adminDevService.getPrs(
-        isRefresh ? { refresh: true } : undefined,
-      );
-      setData(resp);
-      setError(null);
-      setUpdatedAt(Date.now());
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-      inFlight.current = false;
-    }
-  }, []);
+  const load = useCallback(
+    async (isRefresh: boolean) => {
+      if (inFlight.current) return;
+      inFlight.current = true;
+      if (isRefresh) setRefreshing(true);
+      try {
+        const resp = await adminDevService.getPrs({
+          ...(isRefresh ? { refresh: true } : {}),
+          ...(tab === "merged"
+            ? { includeMerged: MERGED_LOOKBACK_HOURS }
+            : {}),
+        });
+        setData(resp);
+        setError(null);
+        setUpdatedAt(Date.now());
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+        inFlight.current = false;
+      }
+    },
+    [tab],
+  );
 
-  // Initial load.
+  // Initial load + reload whenever the active tab changes. Clear stale rows
+  // first so the other tab's content doesn't flash before the refetch lands.
   useEffect(() => {
+    setLoading(true);
+    setData(null);
     load(false);
   }, [load]);
 
@@ -180,33 +206,51 @@ export default function CoordPrsPage() {
         </div>
       )}
 
-      {/* ---- Loading skeleton (first load) ---- */}
-      {loading && !data ? (
-        <div className="space-y-4" data-testid="prs-loading">
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-64 w-full" />
-        </div>
-      ) : data ? (
-        data.prs.length === 0 ? (
-          <div
-            className="rounded-md border border-border px-3 py-8 text-center text-sm text-muted-foreground italic"
-            data-testid="prs-empty"
-          >
-            No open PRs.
-          </div>
-        ) : (
-          <PrsTable prs={data.prs} />
-        )
-      ) : (
-        !error && (
-          <div
-            className="text-center text-sm text-muted-foreground italic py-8"
-            data-testid="prs-empty-overview"
-          >
-            No PR data available.
-          </div>
-        )
-      )}
+      {/* ---- Open vs Recently-merged tabs ---- */}
+      <Tabs value={tab} onValueChange={(v) => setTab(v as PrTab)}>
+        <TabsList data-testid="coord-prs-tabs">
+          <TabsTrigger value="open" data-testid="coord-prs-tab-open">
+            Open
+          </TabsTrigger>
+          <TabsTrigger value="merged" data-testid="coord-prs-tab-merged">
+            Recently merged (24h)
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Both tabs share one data source (the active-tab fetch). Render the
+            same body under whichever tab is active; the empty-state copy and
+            the table's Deploy column adapt to `merged`. */}
+        <TabsContent value={tab} className="mt-3">
+          {loading && !data ? (
+            <div className="space-y-4" data-testid="prs-loading">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-64 w-full" />
+            </div>
+          ) : data ? (
+            data.prs.length === 0 ? (
+              <div
+                className="rounded-md border border-border px-3 py-8 text-center text-sm text-muted-foreground italic"
+                data-testid="prs-empty"
+              >
+                {tab === "merged"
+                  ? "No PRs merged in the last 24h."
+                  : "No open PRs."}
+              </div>
+            ) : (
+              <PrsTable prs={data.prs} merged={tab === "merged"} />
+            )
+          ) : (
+            !error && (
+              <div
+                className="text-center text-sm text-muted-foreground italic py-8"
+                data-testid="prs-empty-overview"
+              >
+                No PR data available.
+              </div>
+            )
+          )}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

@@ -236,6 +236,15 @@ def _empty_prs(detail: str) -> dict[str, Any]:
 
 @router.get("/admin-dev/prs")
 async def get_prs(
+    include_merged: int = Query(
+        default=0,
+        ge=0,
+        description="When >0, ask coord to include recently-merged PRs (with "
+        "per-PR deploy_state) in the list, not just open PRs. 0 (default) "
+        "preserves the open-PRs-only behavior. coord honors this only after "
+        "its own per-PR-deploy-state PR lands; forwarding it is harmless "
+        "before then.",
+    ),
     tenant_id: UUID | None = Depends(_capture_bearer_best_effort),
     _admin: User = Depends(require_admin),  # superuser gate (hard, never weakened)
 ) -> Any:
@@ -262,9 +271,21 @@ async def get_prs(
     Unlike the overview, this list is NOT cached: it reflects fast-moving PR
     + CI state where stale data is misleading on a merge-readiness dashboard.
     """
+    # Forward `include_merged` to coord only when set (>0) so the default
+    # request is byte-for-byte the legacy open-PRs-only call. The shared
+    # `_proxy_coord_get` threads `params` onto the query string. coord adds
+    # `deploy_state`/`deploy_lag_secs`/`deployed_surface` to each PR row when
+    # honoring it; this proxy returns coord's envelope verbatim (no field
+    # whitelist/rename), so those enriched fields pass through unchanged.
+    params: dict[str, Any] | None = None
+    if include_merged > 0:
+        params = {"include_merged": include_merged}
     try:
         envelope = await _proxy_coord_get(
-            "/pr-merge/prs", tenant_id=tenant_id, forward_bearer=True
+            "/pr-merge/prs",
+            params=params,
+            tenant_id=tenant_id,
+            forward_bearer=True,
         )
     except HTTPException as exc:
         if exc.status_code in _COORD_DOWN_STATUSES:

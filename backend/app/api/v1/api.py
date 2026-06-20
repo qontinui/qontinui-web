@@ -64,7 +64,6 @@ from app.api.v1.endpoints import (
     identity_resolution,
     images,
     integration_testing,
-    internal,
     issues,
     known_issues,
     library,
@@ -214,9 +213,6 @@ api_router.include_router(
 api_router.include_router(
     identity_resolution.router, prefix="/identity", tags=["identity-resolution"]
 )
-# Internal service-to-service surface (no user auth). Gate-action
-# notifications webhook (coord -> web, T3) lives here under /internal.
-api_router.include_router(internal.router, prefix="/internal", tags=["internal"])
 # Device process logs proxy — read persisted process logs from the device's PG DB
 api_router.include_router(
     runner_logs.router, prefix="/device-logs", tags=["device-logs"]

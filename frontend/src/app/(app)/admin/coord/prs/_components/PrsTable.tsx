@@ -21,7 +21,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { PrRow, PrMergeStatus } from "@/services/admin-dev-service";
+import type {
+  PrRow,
+  PrMergeStatus,
+  PrDeployState,
+} from "@/services/admin-dev-service";
 
 // ---- formatting helpers --------------------------------------------------
 
@@ -173,6 +177,73 @@ function MergeStateCell({ pr }: { pr: PrRow }) {
   );
 }
 
+// ---- deploy-state badge (merged tab) ------------------------------------
+
+/**
+ * Maps the coord deploy_state to a badge tone + label answering "has my PR
+ * deployed yet?". `deployed` reads calm-green; the actionable-stuck states
+ * (`stale`/`rolled-back`) are LOUD red; `in-flight` is amber ("not yet");
+ * `unknown` is muted grey.
+ */
+const DEPLOY_STATE_META: Record<
+  PrDeployState,
+  { tone: BadgeTone; label: string }
+> = {
+  deployed: { tone: "success", label: "Deployed ✓" },
+  "in-flight": { tone: "warning", label: "Not deployed yet" },
+  stale: { tone: "destructive", label: "Stale" },
+  "rolled-back": { tone: "destructive", label: "Rolled back" },
+  unknown: { tone: "secondary", label: "Unknown" },
+};
+
+function DeployCell({ pr }: { pr: PrRow }) {
+  const state = pr.deploy_state;
+  // Open/draft rows (or coord with no signal) carry no deploy_state → em-dash.
+  if (!state) {
+    return <span className="text-xs text-muted-foreground">—</span>;
+  }
+  const meta = DEPLOY_STATE_META[state] ?? DEPLOY_STATE_META.unknown;
+
+  // Suffix context: in-flight → lag; deployed → "Nm ago" from merged_at.
+  let suffix = "";
+  if (state === "in-flight" && typeof pr.deploy_lag_secs === "number") {
+    suffix = `(lag ${formatAge(pr.deploy_lag_secs)})`;
+  } else if (state === "deployed" && pr.merged_at) {
+    const rel = formatRelative(pr.merged_at);
+    if (rel !== "—") suffix = rel;
+  }
+
+  const title = [
+    `deploy: ${state}`,
+    pr.deployed_surface ? `surface: ${pr.deployed_surface}` : null,
+    typeof pr.deploy_lag_secs === "number"
+      ? `lag: ${formatAge(pr.deploy_lag_secs)}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  return (
+    <div className="flex flex-col gap-0.5">
+      <div className="flex items-center gap-1.5">
+        <Badge variant={meta.tone} title={title} data-testid="deploy-badge">
+          {meta.label}
+        </Badge>
+        {pr.deployed_surface && (
+          <span className="text-[11px] text-muted-foreground">
+            {pr.deployed_surface}
+          </span>
+        )}
+      </div>
+      {suffix && (
+        <span className="text-[11px] text-muted-foreground tabular-nums">
+          {suffix}
+        </span>
+      )}
+    </div>
+  );
+}
+
 // ---- table ---------------------------------------------------------------
 
 const ALL = "__all__";
@@ -181,7 +252,14 @@ function prGithubUrl(pr: PrRow): string {
   return `https://github.com/${pr.repo}/pull/${pr.pr_number}`;
 }
 
-export function PrsTable({ prs }: { prs: PrRow[] }) {
+export function PrsTable({
+  prs,
+  merged = false,
+}: {
+  prs: PrRow[];
+  /** When true (the "Recently merged" tab) show the Deploy + Merged columns. */
+  merged?: boolean;
+}) {
   const [repoFilter, setRepoFilter] = useState<string>(ALL);
   const [statusFilter, setStatusFilter] = useState<string>(ALL);
 
@@ -260,6 +338,8 @@ export function PrsTable({ prs }: { prs: PrRow[] }) {
               <TableHead>CI</TableHead>
               <TableHead>Merge state</TableHead>
               <TableHead>Blocking reason</TableHead>
+              {merged && <TableHead>Deploy</TableHead>}
+              {merged && <TableHead>Merged</TableHead>}
               <TableHead>Age</TableHead>
             </TableRow>
           </TableHeader>
@@ -267,7 +347,7 @@ export function PrsTable({ prs }: { prs: PrRow[] }) {
             {rows.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={8}
+                  colSpan={merged ? 10 : 8}
                   className="text-center text-sm text-muted-foreground italic py-6"
                 >
                   No PRs match the current filters.
@@ -326,6 +406,21 @@ export function PrsTable({ prs }: { prs: PrRow[] }) {
                   <TableCell>
                     <BlockingBadge pr={p} />
                   </TableCell>
+                  {merged && (
+                    <TableCell>
+                      <DeployCell pr={p} />
+                    </TableCell>
+                  )}
+                  {merged && (
+                    <TableCell className="whitespace-nowrap">
+                      <span
+                        className="text-sm text-muted-foreground tabular-nums"
+                        title={formatAbsolute(p.merged_at ?? null)}
+                      >
+                        {formatRelative(p.merged_at ?? null)}
+                      </span>
+                    </TableCell>
+                  )}
                   <TableCell className="whitespace-nowrap">
                     <span
                       className="text-sm text-muted-foreground tabular-nums"

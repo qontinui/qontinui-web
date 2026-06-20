@@ -149,7 +149,6 @@ function TenantDefaultsCard({
   profile: EffectiveProfile;
   onSaved: () => void;
 }) {
-  const [lineBudget, setLineBudget] = useState<string>(String(profile.line_budget));
   const [minDwell, setMinDwell] = useState<string>(String(profile.min_green_dwell));
   const [confidence, setConfidence] = useState<string>(String(profile.confidence_threshold));
   const [autoMerge, setAutoMerge] = useState<boolean>(profile.auto_merge_enabled);
@@ -160,25 +159,18 @@ function TenantDefaultsCard({
   const [shadowFloor, setShadowFloor] = useState<string>(
     String(profile.audit_confidence_shadow_floor)
   );
-  const [rulebookText, setRulebookText] = useState<string>(
-    profile.rulebook_overrides ? JSON.stringify(profile.rulebook_overrides, null, 2) : ""
-  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Re-sync local state when the upstream profile changes
   // (e.g. after the parent re-fetches post-save).
   useEffect(() => {
-    setLineBudget(String(profile.line_budget));
     setMinDwell(String(profile.min_green_dwell));
     setConfidence(String(profile.confidence_threshold));
     setAutoMerge(profile.auto_merge_enabled);
     setDryRun(profile.dry_run);
     setEscalatePathsText(profile.escalate_paths.join("\n"));
     setShadowFloor(String(profile.audit_confidence_shadow_floor));
-    setRulebookText(
-      profile.rulebook_overrides ? JSON.stringify(profile.rulebook_overrides, null, 2) : ""
-    );
   }, [profile]);
 
   const handleSave = useCallback(async () => {
@@ -193,7 +185,6 @@ function TenantDefaultsCard({
       // a separate "Reset to default" action per-field (not yet
       // wired; the Phase 8 onboarding has the inheritance model).
       const body: Record<string, unknown> = {
-        line_budget: parseIntOrThrow("line_budget", lineBudget),
         min_green_dwell_secs: parseIntOrThrow("min_green_dwell_secs", minDwell),
         confidence_threshold: parseFloatOrThrow("confidence_threshold", confidence),
         auto_merge_enabled: autoMerge,
@@ -207,18 +198,6 @@ function TenantDefaultsCard({
           .map((s) => s.trim())
           .filter((s) => s.length > 0),
       };
-      const trimmedRulebook = rulebookText.trim();
-      if (trimmedRulebook.length > 0) {
-        try {
-          body.rulebook_overrides = JSON.parse(trimmedRulebook);
-        } catch (e) {
-          throw new Error(
-            `rulebook_overrides must be valid JSON: ${e instanceof Error ? e.message : String(e)}`
-          );
-        }
-      } else {
-        body.rulebook_overrides = null;
-      }
       const res = await httpClient.fetch(`${OPERATIONS_API}/pr-merge/settings`, {
         method: "PATCH",
         body: JSON.stringify(body),
@@ -234,14 +213,12 @@ function TenantDefaultsCard({
       setSaving(false);
     }
   }, [
-    lineBudget,
     minDwell,
     confidence,
     autoMerge,
     dryRun,
     shadowFloor,
     escalatePathsText,
-    rulebookText,
     onSaved,
   ]);
 
@@ -255,20 +232,6 @@ function TenantDefaultsCard({
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="space-y-1">
-            <Label htmlFor="line-budget">Line budget</Label>
-            <Input
-              id="line-budget"
-              type="number"
-              min={0}
-              value={lineBudget}
-              onChange={(e) => setLineBudget(e.target.value)}
-              data-testid="settings-line-budget"
-            />
-            <p className="text-xs text-muted-foreground">
-              Max changed lines before auto-escalation.
-            </p>
-          </div>
           <div className="space-y-1">
             <Label htmlFor="min-green-dwell">Min green dwell (s)</Label>
             <Input
@@ -358,21 +321,6 @@ function TenantDefaultsCard({
           />
           <p className="text-xs text-muted-foreground">
             Globs that auto-escalate any PR touching them.
-          </p>
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="rulebook-overrides">Rulebook overrides (JSON)</Label>
-          <Textarea
-            id="rulebook-overrides"
-            value={rulebookText}
-            onChange={(e) => setRulebookText(e.target.value)}
-            placeholder="{}"
-            rows={4}
-            data-testid="settings-rulebook-overrides"
-          />
-          <p className="text-xs text-muted-foreground">
-            Free-form addendum injected into the auditor specialist
-            prompt. Blank = no addendum.
           </p>
         </div>
         {error && (
