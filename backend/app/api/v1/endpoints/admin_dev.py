@@ -75,10 +75,10 @@ _COORD_DOWN_STATUSES = {502, 503, 504}
 # degraded envelope (so a transient outage can't pin a stale banner).
 _CACHE_TTL_SECONDS = 30.0
 
-# cache key (tenant_id, limit, verdict) -> (monotonic_expiry, cached_envelope).
-# limit/verdict are part of the key so different views never serve each other's
-# cached page.
-_CacheKey = tuple[UUID | None, int, str | None]
+# cache key (tenant_id, limit, verdict, include_archived) ->
+# (monotonic_expiry, cached_envelope). limit/verdict/include_archived are part
+# of the key so different views never serve each other's cached page.
+_CacheKey = tuple[UUID | None, int, str | None, bool]
 _overview_cache: dict[_CacheKey, tuple[float, dict[str, Any]]] = {}
 _cache_lock = asyncio.Lock()
 
@@ -102,6 +102,7 @@ def _empty_overview(detail: str) -> dict[str, Any]:
             "stale": 0,
             "muted": 0,
             "snoozed": 0,
+            "archived": 0,
         },
         "rollouts": {
             "auto_merge": {"live": [], "shadow": [], "dry_run": []},
@@ -159,6 +160,11 @@ async def get_dev_overview(
         pattern="^(open|cleared|failed)$",
         description="Optional verdict filter; omit for all (still open-first).",
     ),
+    include_archived: bool = Query(
+        default=False,
+        description="Include reaper-archived (archived_at IS NOT NULL) gates in "
+        "the page. Omitted/false ⇒ live gates only (the default hot path).",
+    ),
     tenant_id: UUID | None = Depends(_capture_bearer_best_effort),
     _admin: User = Depends(require_admin),  # superuser gate (hard, never weakened)
 ) -> Any:
@@ -185,17 +191,20 @@ async def get_dev_overview(
     coord outage too (not just the case where ``/admin/coord/me`` happened to
     succeed). The Spec CI crawl, which runs without a live coord, stays green.
     """
-    cache_key: _CacheKey = (tenant_id, limit, verdict)
+    cache_key: _CacheKey = (tenant_id, limit, verdict, include_archived)
     if not refresh:
         cached = await _cache_get(cache_key)
         if cached is not None:
             return cached
 
     # Forward the page controls to coord (the shared `_proxy_coord_get` already
-    # threads `params` onto the query string). `verdict` is omitted when None.
+    # threads `params` onto the query string). `verdict` is omitted when None;
+    # `include_archived` is sent as `1` only when set (live-only is the default).
     params: dict[str, Any] = {"limit": limit}
     if verdict is not None:
         params["verdict"] = verdict
+    if include_archived:
+        params["include_archived"] = 1
 
     try:
         envelope = await _proxy_coord_get(

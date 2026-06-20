@@ -124,6 +124,8 @@ export interface GateCounts {
   stale: number;
   muted: number;
   snoozed: number;
+  /** Reaper-archived gates (archived_at IS NOT NULL), retained for audit. */
+  archived: number;
 }
 
 export type GateVerdict = "open" | "cleared" | "failed";
@@ -233,16 +235,20 @@ class AdminDevService {
    * cache (the manual Refresh button passes it; auto-poll does not, so the
    * poll benefits from the cache). `opts.verdict` filters server-side;
    * `opts.limit` caps the page (coord orders OPEN-first either way).
+   * `opts.includeArchived` includes reaper-archived gates in the page
+   * (default: live gates only).
    */
   async getOverview(opts?: {
     refresh?: boolean;
     verdict?: GateVerdict;
     limit?: number;
+    includeArchived?: boolean;
   }): Promise<DevOverview> {
     const p = new URLSearchParams();
     if (opts?.refresh) p.set("refresh", "1");
     if (opts?.verdict) p.set("verdict", opts.verdict);
     if (opts?.limit) p.set("limit", String(opts.limit));
+    if (opts?.includeArchived) p.set("include_archived", "1");
     const qs = p.toString();
     return httpClient.get<DevOverview>(
       `${API}/overview${qs ? `?${qs}` : ""}`,

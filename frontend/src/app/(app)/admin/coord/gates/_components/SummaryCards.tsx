@@ -3,8 +3,8 @@
 /**
  * SummaryCards — at-a-glance counts for the gates & rollout dashboard.
  *
- * Open / cleared-today / failed / stale / snoozed / muted gate counts, plus
- * a rollout summary (live/shadow/dry_run auto-merge repo counts).
+ * Open / cleared-today / failed / stale / snoozed / muted / archived gate
+ * counts, plus a rollout summary (live/shadow/dry_run auto-merge repo counts).
  */
 
 import { Card, CardContent } from "@/components/ui/card";
@@ -55,7 +55,7 @@ export function SummaryCards({ overview }: { overview: DevOverview }) {
       className="space-y-3"
       data-testid="gates-summary-cards"
     >
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2 sm:gap-3">
         <StatCard label="Open" value={c.open} testId="summary-open" />
         <StatCard
           label="Cleared today"
@@ -85,6 +85,12 @@ export function SummaryCards({ overview }: { overview: DevOverview }) {
           label="Muted"
           value={c.muted}
           testId="summary-muted"
+          tone="muted"
+        />
+        <StatCard
+          label="Archived"
+          value={c.archived}
+          testId="summary-archived"
           tone="muted"
         />
       </div>
