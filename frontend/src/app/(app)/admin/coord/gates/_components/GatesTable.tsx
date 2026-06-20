@@ -137,6 +137,28 @@ function ProgressCell({ gate }: { gate: GateOverviewRow }) {
   );
 }
 
+// ---- anchor cell ---------------------------------------------------------
+
+/**
+ * The gate's work anchor sub-line, generic over plan vs work-unit (coord
+ * generalized gate predicates off the plan vocabulary). A gate may anchor to a
+ * plan (`plan_slug`/`plan_id`) or a generic work unit (`work_unit_id`, with the
+ * plan fields null). We show whichever identifier is present plus the shared
+ * `phase_name`, and never assume a plan-specific field exists.
+ */
+function GateAnchor({ gate }: { gate: GateOverviewRow }) {
+  const anchorId =
+    gate.plan_slug ?? gate.work_unit_slug ?? gate.work_unit_id ?? null;
+  if (!anchorId && !gate.phase_name) return null;
+  return (
+    <div className="text-[11px] text-muted-foreground truncate">
+      {anchorId}
+      {anchorId && gate.phase_name ? " · " : ""}
+      {gate.phase_name}
+    </div>
+  );
+}
+
 // ---- table ---------------------------------------------------------------
 
 type SortKey = "age" | "fraction" | "eta";
@@ -267,13 +289,7 @@ export function GatesTable({ gates }: { gates: GateOverviewRow[] }) {
                     <div className="font-medium text-sm truncate" title={g.title}>
                       {g.title}
                     </div>
-                    {(g.plan_slug || g.phase_name) && (
-                      <div className="text-[11px] text-muted-foreground truncate">
-                        {g.plan_slug}
-                        {g.plan_slug && g.phase_name ? " · " : ""}
-                        {g.phase_name}
-                      </div>
-                    )}
+                    <GateAnchor gate={g} />
                   </TableCell>
                   <TableCell className="max-w-[16rem]">
                     <div

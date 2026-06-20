@@ -140,13 +140,29 @@ export interface DeliveryEnv {
 }
 
 /**
+ * Which kind of work anchor a delivery verdict resolved against. Additive
+ * field (coord generic-unit generalization): `plan` is the legacy path
+ * (`plan_id` populated), `work_unit` is the generic work-unit path (`plan_id`
+ * is `null`, `work_unit_id` populated), `none` when no anchor resolved.
+ */
+export type DeliveryAnchorKind = "plan" | "work_unit" | "none";
+
+/**
  * The well-known `components` shape of an `instance="delivery"` DriftVerdict
  * (coord `delivery_view.rs`). All fields defensively optional — the card reads
  * what is present and degrades gracefully.
  */
 export interface DeliveryComponents {
   slug?: string;
+  /**
+   * Which anchor resolved — drives generic vs plan-specific rendering. The card
+   * never hard-codes a status vocabulary word; it keys display off this and the
+   * opaque `status` / `drift_class` the API returns.
+   */
+  anchor_kind?: DeliveryAnchorKind;
   plan_id?: string | null;
+  /** Generic work-unit anchor id (populated on the `work_unit` path). */
+  work_unit_id?: string | null;
   status?: string | null;
   ingested_status?: string | null;
   registered?: boolean;

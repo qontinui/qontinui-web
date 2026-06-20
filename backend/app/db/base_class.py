@@ -10,6 +10,7 @@ from app.models.extraction import (
     ExtractionAnnotation,  # noqa
 )
 from app.models.library import Macro  # noqa
+from app.models.machine_display_name import MachineDisplayName  # noqa
 from app.models.phase_result import PhaseResult  # noqa
 from app.models.project import Project  # noqa
 from app.models.device import Device  # noqa

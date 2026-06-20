@@ -46,6 +46,8 @@ from qontinui_schemas.generated.per_type.memory_restore_request import (
 from qontinui_schemas.generated.per_type.memory_upsert_request import (
     MemoryUpsertRequest,
 )
+from sqlalchemy import delete, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.websockets import WebSocketState
 
@@ -64,6 +66,7 @@ from app.api.deps import (
 from app.api.v1.endpoints.devices import _device_to_wire as _runner_to_wire
 from app.core.config import settings
 from app.crud import runner_crud
+from app.models.machine_display_name import MachineDisplayName
 from app.models.user import User as UserModel
 from app.schemas.dev_dashboard import (
     AggregatedTaskRuns,
@@ -326,9 +329,24 @@ async def get_fleet_status(
 
     # Merge heartbeat-only runners (not yet paired/registered in the DB)
     # so they appear on the Operations page alongside paired devices.
+    #
+    # SCOPING GUARD (cross-tenant leak fix): the fleet registry is a single
+    # process-global dict and the POST /heartbeat beacon endpoint is
+    # unauthenticated, so a beacon carries NO owner/tenant identity. Without a
+    # guard, every authenticated caller saw — and had ``current_user.id``
+    # stamped onto — every *other* tenant's beaconing runner. Restrict the
+    # merge to beacons whose hostname matches a device this caller already
+    # owns: a runner beaconing from a machine the caller has no paired device
+    # on is not theirs to see. This is a hostname-match heuristic; the durable
+    # fix is to stamp an authenticated owner on the heartbeat itself and scope
+    # the registry by it (see follow-up bug note).
     db_keys = {(r.hostname, r.port) for r in runners}
+    owned_hostnames = {r.hostname.lower() for r in runners if r.hostname}
     for beacon in fleet_status.runners:
         if (beacon.hostname, beacon.port) in db_keys:
+            continue
+        if not beacon.hostname or beacon.hostname.lower() not in owned_hostnames:
+            # Beacon from a host this caller owns no device on → not theirs.
             continue
         wire_runners.append(
             {
@@ -368,18 +386,41 @@ async def get_fleet_status(
                 ),
             }
 
+    # Same cross-tenant guard as the runner merge above: claude-session reports
+    # and the task/session totals come from the global registry keyed by
+    # hostname, so restrict them to hostnames this caller owns a device on.
+    # Otherwise the counts — and the session prompts/ids — leak across tenants.
+    owned_claude_sessions = {
+        hostname: [s.model_dump(mode="json") for s in sessions]
+        for hostname, sessions in fleet_status.claude_sessions.items()
+        if hostname and hostname.lower() in owned_hostnames
+    }
+    owned_running_tasks = sum(
+        beacon.running_task_count
+        for beacon in fleet_status.runners
+        if beacon.hostname and beacon.hostname.lower() in owned_hostnames
+    )
+
+    # Per-user friendly machine display names (hostname -> name). Folded
+    # into the fleet read so the frontend can render names without a
+    # second round-trip; `{}` when the user has saved none.
+    name_rows = await db.execute(
+        select(MachineDisplayName.hostname, MachineDisplayName.name).where(
+            MachineDisplayName.user_id == current_user.id
+        )
+    )
+    machine_display_names: dict[str, str] = dict(name_rows.tuples().all())
+
     result: dict[str, Any] = {
         "runners": wire_runners,
-        "claude_sessions": {
-            hostname: [s.model_dump(mode="json") for s in sessions]
-            for hostname, sessions in fleet_status.claude_sessions.items()
-        },
+        "claude_sessions": owned_claude_sessions,
         "total_runners": len(wire_runners),
         "total_healthy": sum(
             1 for r in wire_runners if r.get("derivedStatus") == "healthy"
         ),
-        "total_running_tasks": fleet_status.total_running_tasks,
-        "total_claude_sessions": fleet_status.total_claude_sessions,
+        "total_running_tasks": owned_running_tasks,
+        "total_claude_sessions": sum(len(s) for s in owned_claude_sessions.values()),
+        "machine_display_names": machine_display_names,
     }
 
     if ci_runners:
@@ -388,18 +429,119 @@ async def get_fleet_status(
     return result
 
 
+# Max length for a user-assigned machine display name. Trimmed names
+# longer than this are rejected (the frontend should mirror this limit).
+_MACHINE_NAME_MAX_LEN = 100
+
+
+class MachineRenameRequest(BaseModel):
+    """Body for ``PATCH /fleet/machines/{hostname}``.
+
+    ``name`` is the desired friendly display name. A non-empty (after
+    trim) string upserts the name; an empty/whitespace-only string or
+    ``null`` clears it (reverting the machine to its raw hostname).
+    """
+
+    name: str | None = None
+
+
+@router.patch("/fleet/machines/{hostname}")
+async def rename_machine(
+    hostname: str,
+    body: MachineRenameRequest,
+    *,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> dict[str, Any]:
+    """Set or clear the current user's friendly display name for a machine.
+
+    * Non-empty ``name`` (after trim, max ``100`` chars): UPSERT the row
+      for ``(current_user.id, hostname)``.
+    * Empty/whitespace-only ``name`` or ``null``: DELETE the row (clearing
+      reverts the machine to showing its raw hostname).
+
+    The ``hostname`` need NOT exist in the fleet (a user may rename a
+    machine that's briefly offline) — the name is stored regardless.
+
+    Response: ``{ "hostname": <hostname>, "name": <name> | null }`` (``name``
+    is ``null`` after a clear).
+    """
+    name = (body.name or "").strip()
+
+    if not name:
+        await db.execute(
+            delete(MachineDisplayName).where(
+                MachineDisplayName.user_id == current_user.id,
+                MachineDisplayName.hostname == hostname,
+            )
+        )
+        await db.commit()
+        return {"hostname": hostname, "name": None}
+
+    if len(name) > _MACHINE_NAME_MAX_LEN:
+        raise HTTPException(
+            status_code=422,
+            detail=f"name must be at most {_MACHINE_NAME_MAX_LEN} characters",
+        )
+
+    stmt = (
+        pg_insert(MachineDisplayName)
+        .values(user_id=current_user.id, hostname=hostname, name=name)
+        .on_conflict_do_update(
+            index_elements=[
+                MachineDisplayName.user_id,
+                MachineDisplayName.hostname,
+            ],
+            set_={"name": name, "updated_at": datetime.now(UTC)},
+        )
+    )
+    await db.execute(stmt)
+    await db.commit()
+    return {"hostname": hostname, "name": name}
+
+
 @router.get("/fleet/tasks", response_model=AggregatedTaskRuns)
 async def get_all_tasks(
     *,
+    db: AsyncSession = Depends(get_async_db),
     current_user: UserModel = Depends(get_current_active_user_async),
 ) -> AggregatedTaskRuns:
-    """Get all running tasks across all runners (cross-machine beacon)."""
+    """Get all running tasks across all runners (cross-machine beacon).
+
+    Scoped to the caller's own devices: the fleet registry is process-global
+    and the beacon path is unauthenticated, so tasks are filtered to runners
+    on a hostname the caller owns a device on — the same cross-tenant guard
+    applied by ``GET /fleet``. Without it, every caller saw every tenant's
+    running-task prompts and ids.
+    """
+    runners = await runner_crud.list_runners(db, current_user.id)
+    owned_hostnames = {r.hostname.lower() for r in runners if r.hostname}
     registry = get_fleet_registry()
     tasks = await registry.get_all_running_tasks()
+    owned_tasks = [
+        t for t in tasks if str(t.get("runner_hostname", "")).lower() in owned_hostnames
+    ]
     return AggregatedTaskRuns(
-        task_runs=[RunnerTaskRun(**t) for t in tasks],
-        total=len(tasks),
+        task_runs=[RunnerTaskRun(**t) for t in owned_tasks],
+        total=len(owned_tasks),
     )
+
+
+async def _caller_owns_runner_host(
+    db: AsyncSession, user_id: Any, runner_id: str
+) -> bool:
+    """Whether the caller owns a device on the host encoded in ``runner_id``.
+
+    Beacon runner ids are ``hostname:port`` and the fleet registry is a single
+    process-global, unauthenticated store. The per-runner proxy/remove
+    endpoints below must therefore verify the caller owns the target host
+    before acting on it — otherwise any authenticated user could read another
+    tenant's task output/workflow-state or delete their runner (cross-tenant
+    IDOR). Returns False when the caller owns no device on that hostname.
+    """
+    host = runner_id.rsplit(":", 1)[0].lower()
+    runners = await runner_crud.list_runners(db, user_id)
+    return any((r.hostname or "").lower() == host for r in runners)
 
 
 @router.get("/fleet/runners/{runner_id}/output")
@@ -407,9 +549,14 @@ async def get_runner_task_output(
     runner_id: str,
     task_run_id: str = Query(...),
     tail_chars: int = Query(default=5000),
+    db: AsyncSession = Depends(get_async_db),
     current_user: UserModel = Depends(get_current_active_user_async),
 ) -> dict:
     """Proxy to a specific runner to get task output."""
+    if not await _caller_owns_runner_host(db, current_user.id, runner_id):
+        raise HTTPException(
+            status_code=404, detail=f"Runner {runner_id} not found or unreachable"
+        )
     registry = get_fleet_registry()
     result = await registry.proxy_runner_request(
         runner_id,
@@ -428,9 +575,14 @@ async def get_runner_task_output(
 async def get_runner_workflow_state(
     runner_id: str,
     task_run_id: str = Query(...),
+    db: AsyncSession = Depends(get_async_db),
     current_user: UserModel = Depends(get_current_active_user_async),
 ) -> dict:
     """Proxy to a specific runner to get workflow state."""
+    if not await _caller_owns_runner_host(db, current_user.id, runner_id):
+        raise HTTPException(
+            status_code=404, detail=f"Runner {runner_id} not found or unreachable"
+        )
     registry = get_fleet_registry()
     result = await registry.proxy_runner_request(
         runner_id,
@@ -447,9 +599,12 @@ async def get_runner_workflow_state(
 @router.delete("/fleet/runners/{runner_id}")
 async def remove_runner(
     runner_id: str,
+    db: AsyncSession = Depends(get_async_db),
     current_user: UserModel = Depends(get_current_active_user_async),
 ) -> dict:
     """Manually remove a runner from the cross-machine beacon registry."""
+    if not await _caller_owns_runner_host(db, current_user.id, runner_id):
+        raise HTTPException(status_code=404, detail=f"Runner {runner_id} not found")
     registry = get_fleet_registry()
     removed = await registry.remove_runner(runner_id)
     if not removed:
@@ -765,36 +920,6 @@ async def get_pr_merge_graph(
     )
 
 
-# ---- PR Merge Orchestrator Phase 6 D6.4 + D6.6 — escalation surface -----
-#
-# Two endpoints proxying the coord-side ``src/pr_merge/escalations_routes.rs``
-# handlers. Both tenant-scoped via the ``X-Qontinui-Tenant-Id`` header;
-# the web side authenticates the dashboard user and resolves them to a
-# tenant before forwarding. Same posture as the Phase 2 settings
-# endpoints — anonymous on coord, authenticated + tenant-scoped here.
-
-
-@router.get("/pr-merge/escalations")
-async def get_pr_merge_escalations(
-    include_resolved: bool = False,
-    tenant_id: UUID = Depends(get_tenant_id),
-) -> Any:
-    """Tenant-scoped list of pending (and optionally resolved) merge
-    escalations. Drives the MergeTrain "Escalations" dashboard section.
-
-    Each row is a joined view across ``coord.alerts``
-    (kind='merge_escalation'), ``coord.merge_escalations_meta``, and
-    ``coord.merge_decisions``. The payload carries PR link, reason,
-    specialist rationale, rule citations, suggested action, and the
-    structured alternatives the operator picks from.
-    """
-    return await _proxy_coord_get(
-        "/pr-merge/escalations",
-        params={"include_resolved": "true" if include_resolved else "false"},
-        tenant_id=tenant_id,
-    )
-
-
 # ---- Coordination-transparency: gate-decision reads ----------------------
 #
 # Plan 2026-06-07-coordination-transparency-surfaces.md T2 — surface the
@@ -806,8 +931,7 @@ async def get_pr_merge_escalations(
 # NOT ``require_coord_tenant_admin``. The whole point of the transparency
 # surface is that the developer whose PR was held can see *why* — coverage,
 # the removed export, and who references it — without needing operator
-# rights. The admin gate stays only on the decide/write action
-# (``post_pr_merge_escalation_decide``). Coord resolves the tenant from the
+# rights. These are read-only reads. Coord resolves the tenant from the
 # forwarded Cognito bearer (``_tenant_headers``) and scopes its SQL via the
 # ``TenantId`` extractor, exactly like the sibling read routes above.
 
@@ -1162,45 +1286,6 @@ async def get_pr_merge_slo(
     """
     return await _proxy_coord_get(
         "/pr-merge/slo",
-        tenant_id=tenant_id,
-    )
-
-
-@router.post("/pr-merge/escalations/{alert_id}/decide")
-async def post_pr_merge_escalation_decide(
-    alert_id: int,
-    body: dict[str, Any],
-    tenant_id: UUID = Depends(require_coord_tenant_admin),
-) -> Any:
-    """Resolve a pending merge escalation with an operator decision.
-
-    Body shape:
-
-        {
-            "resolution_action": "approve_merge"
-                                 | "reject"
-                                 | "approve_with_modification"
-                                 | "add_to_rulebook",
-            "rationale": "<operator text>",
-            "modification": {...},  // only if approve_with_modification
-            "rulebook_addition": "<markdown>"  // only if add_to_rulebook
-        }
-
-    Coord:
-    1. Verifies the alert belongs to the caller's tenant.
-    2. Marks the alert resolved (``resolved_at``, ``resolution_action``,
-       ``resolution_by``).
-    3. Inserts a ``decided_by='operator'`` row in ``coord.merge_decisions``
-       FK'd back to the alert.
-    4. Dispatches the chosen action through the same channels Phase 4's
-       executor uses (``coord.merge_proposals`` for approve_merge,
-       App-token client for reject, per-tenant override write for
-       add_to_rulebook).
-    5. Stamps an ``auth_sso::audit_mutation`` row.
-    """
-    return await _proxy_coord_post(
-        f"/pr-merge/escalations/{alert_id}/decide",
-        body,
         tenant_id=tenant_id,
     )
 

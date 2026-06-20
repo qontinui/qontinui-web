@@ -43,7 +43,7 @@
     "@monaco-editor/react": "^4.7.0",
     "@next/third-parties": "^15.5.12",
     "@qontinui/design-tokens": "^1.0.0",
-    "@qontinui/navigation": "^0.1.4",
+    "@qontinui/navigation": "^0.1.5",
     "@qontinui/shared-types": "^0.5.0",
     "@qontinui/ui-bridge": "^0.13.0",
     "@qontinui/ui-bridge-auto": "^0.1.7",

@@ -236,11 +236,33 @@ jobs:
       # the schemas checkout root.
       - name: Build vision-audit
         working-directory: qontinui-schemas
+        env:
+          # crates.io registry fetches occasionally flake on a cold cache (a
+          # transient "download of <crate> failed" / "unable to update registry
+          # crates-io" — observed 2026-06-13 during the Stage-A burn-in, which
+          # failed this step outright). Because an INFRA error here fails the job
+          # in BOTH shadow and enforce modes, an unhardened registry hiccup would
+          # become a FALSE required-check failure once the gate is enforced
+          # (Stage B). cargo's own net-retry plus the bounded outer
+          # retry-with-backoff below neutralize that single observed flake vector
+          # without masking a genuine build break (still fails after `max`).
+          CARGO_NET_RETRY: "5"
+          CARGO_NET_GIT_FETCH_WITH_CLI: "true"
         run: |
           set -euo pipefail
-          cargo build --release \
+          attempt=0
+          max=3
+          until cargo build --release \
             --manifest-path rust-vision-core/Cargo.toml \
-            --bin vision-audit
+            --bin vision-audit; do
+            attempt=$((attempt + 1))
+            if [ "$attempt" -ge "$max" ]; then
+              echo "::error::cargo build failed after ${max} attempts — likely a genuine build break (a transient crates.io fetch would normally clear within the retries)."
+              exit 1
+            fi
+            echo "::warning::cargo build attempt ${attempt} failed; retrying after backoff (probable transient registry/network fetch)."
+            sleep "$((attempt * 15))"
+          done
           BIN_PATH="$GITHUB_WORKSPACE/qontinui-schemas/target/release/vision-audit"
           if [ ! -x "$BIN_PATH" ]; then
             echo "::error::vision-audit binary not found at $BIN_PATH after build."

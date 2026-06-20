@@ -17,6 +17,7 @@ import {
 import { httpClient } from "@/services/service-factory";
 import { devActionDetailUrl, relativeTime } from "./utils";
 import { useDevActionsStream } from "./useDevActionsStream";
+import { CollapsiblePanel } from "./CollapsiblePanel";
 import type {
   DevAction,
   DevActionCategory,
@@ -377,24 +378,37 @@ export function DevActionsTile() {
   }, []);
 
   const rows = useMemo(() => actions, [actions]);
+  // Failures/contradictions are the signal an operator cares about — surface a
+  // count in the header so it stays visible even when the panel is collapsed.
+  const failures = useMemo(
+    () =>
+      rows.filter(
+        (a) => a.category === "failure" || a.category === "contradiction"
+      ).length,
+    [rows]
+  );
 
   return (
-    <section
-      className="rounded-lg border border-border bg-card/30 p-4"
+    <CollapsiblePanel
       data-ui-bridge-id="operations.dev-actions-tile"
       data-testid="operations-dev-actions-tile"
-    >
-      <header className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <ListChecks className="w-4 h-4 text-muted-foreground" />
-          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-            Dev actions
-          </h2>
+      storageKey="fleet:dev-actions"
+      icon={<ListChecks className="w-4 h-4 text-muted-foreground" />}
+      title="Dev actions"
+      summary={
+        <>
           <Badge variant="outline" className="text-[10px]">
             {rows.length}
           </Badge>
-        </div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          {failures > 0 && (
+            <Badge variant="destructive" className="text-[10px]">
+              {failures} failed
+            </Badge>
+          )}
+        </>
+      }
+      headerActions={
+        <>
           {error && (
             <Badge variant="destructive" className="text-[10px]">
               error
@@ -409,9 +423,9 @@ export function DevActionsTile() {
           >
             <RefreshCw className="w-3 h-3" />
           </button>
-        </div>
-      </header>
-
+        </>
+      }
+    >
       {!seeded && rows.length === 0 ? (
         <p className="text-xs text-muted-foreground italic px-2 py-3">
           Loading dev actions&hellip;
@@ -431,6 +445,6 @@ export function DevActionsTile() {
           ))}
         </ul>
       )}
-    </section>
+    </CollapsiblePanel>
   );
 }

@@ -70,6 +70,12 @@ const PRIMARY_TABS: NavItem[] = [
     testId: "coord-nav-gates",
   },
   {
+    href: "/admin/coord/prs",
+    label: "Pull Requests",
+    icon: GitPullRequest,
+    testId: "coord-nav-prs",
+  },
+  {
     href: "/admin/coord/spawn",
     label: "Spawn",
     icon: Rocket,

@@ -3,12 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { CollapsiblePanel } from "./CollapsiblePanel";
 import {
   Tooltip,
   TooltipContent,
@@ -283,24 +278,25 @@ export function CiStatusPanel() {
   }, [byRepo]);
 
   return (
-    <Card className="mb-4">
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Activity className="h-4 w-4" />
-          CI status
-          <Badge variant="outline" className="ml-2 font-mono text-xs">
-            {rows.length}
-          </Badge>
-          <span
-            className={`ml-auto h-2 w-2 rounded-full ${
-              connected ? "bg-green-500" : "bg-muted-foreground/40"
-            }`}
-            aria-label={connected ? "Live (WS connected)" : "Polling"}
-            title={connected ? "Live (WS connected)" : "Polling"}
-          />
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
+    <CollapsiblePanel
+      storageKey="fleet:ci-status"
+      icon={<Activity className="h-4 w-4" />}
+      title="CI status"
+      summary={
+        <Badge variant="outline" className="ml-2 font-mono text-xs">
+          {rows.length}
+        </Badge>
+      }
+      headerActions={
+        <span
+          className={`h-2 w-2 rounded-full ${
+            connected ? "bg-green-500" : "bg-muted-foreground/40"
+          }`}
+          aria-label={connected ? "Live (WS connected)" : "Polling"}
+          title={connected ? "Live (WS connected)" : "Polling"}
+        />
+      }
+    >
         {error && <p className="text-xs text-red-300 mb-2">{error}</p>}
         {rows.length === 0 ? (
           <p className="text-xs text-muted-foreground">
@@ -313,7 +309,6 @@ export function CiStatusPanel() {
             ))}
           </div>
         )}
-      </CardContent>
-    </Card>
+    </CollapsiblePanel>
   );
 }

@@ -76,6 +76,7 @@ from app.models.extraction import ExtractionAnnotation, ExtractionSession
 from app.models.feedback_score import FeedbackScore
 from app.models.finding_category_config import FindingCategoryConfig
 from app.models.known_issue import KnownIssue
+from app.models.machine_display_name import MachineDisplayName
 from app.models.notification import (
     Notification,
     NotificationPreferences,
@@ -490,6 +491,8 @@ __all__ = [
     "WorkflowEventType",
     # Push Devices (mobile push notification tokens)
     "PushDevice",
+    # Machine display names (per-user friendly fleet machine names)
+    "MachineDisplayName",
     # Wrapper marketplace (Phase 6)
     "WrapperEntry",
     "WrapperRating",

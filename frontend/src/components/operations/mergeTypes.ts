@@ -108,67 +108,6 @@ export interface PrListResponse {
 }
 
 // ============================================================================
-// PR Merge Orchestrator Phase 6 D6.2 — Escalation surface wire types.
-//
-// Mirrors coord's `GET /pr-merge/escalations` response (see
-// `qontinui-coord/src/pr_merge/escalations_routes.rs::EscalationRow` /
-// `EscalationListResponse`). The MergeTrain "Escalations" section
-// renders one card per row above the existing PR-outer-state +
-// cross-repo-dependencies sections.
-// ============================================================================
-
-export type EscalationSeverity = "critical" | "warning" | "info" | string;
-
-export type EscalationResolutionAction =
-  | "approve_merge"
-  | "reject"
-  | "approve_with_modification"
-  | "add_to_rulebook";
-
-/** One row in the alternatives JSONB array — a button on the card. */
-export interface EscalationAlternative {
-  action: EscalationResolutionAction;
-  label: string;
-  /** Optional MERGE_DECISION-shaped modification (e.g. {merge_strategy: "rebase"}). */
-  modification?: Record<string, unknown> | null;
-}
-
-export interface EscalationRow {
-  alert_id: number;
-  tenant_id: string;
-  repo: string;
-  pr_number: number;
-  severity: EscalationSeverity;
-  summary: string;
-  /** Free-form payload from coord.alerts.detail (PR refs, system_reason, etc.). */
-  detail: Record<string, unknown>;
-  first_seen_at: string;
-  last_seen_at: string;
-  page_due_at: string | null;
-  paged_at: string | null;
-  resolved_at: string | null;
-  resolution_action: string | null;
-  resolution_by: string | null;
-  /** Linked specialist merge_decisions.decision_id (null on system-injected rows). */
-  decision_id: string | null;
-  /** Specialist's free-form rationale, joined from coord.merge_decisions. */
-  specialist_rationale: string | null;
-  /** Specialist's rule_citations[], joined from coord.merge_decisions. */
-  specialist_rule_citations: string[];
-  /** Suggested action text from the sidecar. */
-  suggested_action: string | null;
-  /** Operator-targeted question if the specialist posed one. */
-  operator_question: string | null;
-  /** Structured alternatives — one per button on the card. */
-  alternatives: EscalationAlternative[];
-}
-
-export interface EscalationListResponse {
-  escalations: EscalationRow[];
-  total: number;
-}
-
-// ============================================================================
 // PR Merge Orchestrator Phase 8 D8.6 — Suggestions inbox wire types.
 //
 // Mirrors coord's `GET /pr-merge/suggestions` response (see

@@ -20,6 +20,7 @@ import { useDeviceStatusStream } from "./useDeviceStatusStream";
 import { useSymbolClaimsStream } from "./useSymbolClaimsStream";
 import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_API, POLL_INTERVAL_MS, relativeTime } from "./utils";
+import { CollapsiblePanel } from "./CollapsiblePanel";
 import type {
   CiRunnerInfo,
   CiRunnersByHost,
@@ -42,6 +43,7 @@ function buildMachineGroups(
 ): MachineGroup[] {
   const byHost = new Map<string, MachineGroup>();
   const ciRunners: CiRunnersByHost = fleet.ci_runners ?? {};
+  const displayNames: Record<string, string> = fleet.machine_display_names ?? {};
 
   // The symbol-claims map is keyed by machine_id (UUID); the MachineGroup
   // is keyed by hostname. Symbol claims arrive from coord BEFORE the
@@ -65,6 +67,7 @@ function buildMachineGroups(
       const activity = deviceStatusByHost.get(hostname);
       group = {
         hostname,
+        displayName: displayNames[hostname],
         runners: [],
         claudeSessions: fleet.claude_sessions[hostname] ?? [],
         currentActivity: activity,
@@ -82,6 +85,7 @@ function buildMachineGroups(
       const activity = deviceStatusByHost.get(hostname);
       byHost.set(hostname, {
         hostname,
+        displayName: displayNames[hostname],
         runners: [],
         claudeSessions: sessions,
         currentActivity: activity,
@@ -100,6 +104,7 @@ function buildMachineGroups(
     if (!byHost.has(hostname)) {
       byHost.set(hostname, {
         hostname,
+        displayName: displayNames[hostname],
         runners: [],
         claudeSessions: [],
         currentActivity,
@@ -287,7 +292,47 @@ export function FleetOverview() {
 
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="space-y-6">
+      <CollapsiblePanel
+        storageKey="fleet:overview"
+        icon={<Server className="h-4 w-4" />}
+        title="Fleet overview"
+        summary={
+          <Badge variant="outline" className="text-[10px]">
+            {machineGroups.length}
+          </Badge>
+        }
+      >
+        <div className="space-y-6">
+          {/* Machine cards grid */}
+        {isEmpty ? (
+          <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
+            <Server className="h-10 w-10 opacity-30" />
+            <p className="text-sm font-medium">No runners online</p>
+            <p className="text-xs max-w-sm text-center">
+              Connect a runner via Settings → Backend Connection, or launch a
+              Claude Code session on any machine to see it here.
+            </p>
+          </div>
+        ) : (
+          <div>
+            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+              Machines
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {machineGroups.map((group) => (
+                <MachineCard
+                  key={group.hostname}
+                  machine={group}
+                  onRenamed={fetchData}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Device status broadcast (qontinui-coord Phase 6 Item 3) */}
+        <DeviceStatusTile stream={deviceStatus} />
+
         {/* Summary stats row */}
         <div className="flex flex-wrap items-center gap-3">
           <StatBadge
@@ -342,32 +387,6 @@ export function FleetOverview() {
           </div>
         </div>
 
-        {/* Machine cards grid */}
-        {isEmpty ? (
-          <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
-            <Server className="h-10 w-10 opacity-30" />
-            <p className="text-sm font-medium">No runners online</p>
-            <p className="text-xs max-w-sm text-center">
-              Connect a runner via Settings → Backend Connection, or launch a
-              Claude Code session on any machine to see it here.
-            </p>
-          </div>
-        ) : (
-          <div>
-            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-              Machines
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {machineGroups.map((group) => (
-                <MachineCard key={group.hostname} machine={group} />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Device status broadcast (qontinui-coord Phase 6 Item 3) */}
-        <DeviceStatusTile stream={deviceStatus} />
-
         {/* Active workflows */}
         {runningTasks.length > 0 && (
           <div>
@@ -403,7 +422,8 @@ export function FleetOverview() {
             </div>
           </div>
         )}
-      </div>
+        </div>
+      </CollapsiblePanel>
     </TooltipProvider>
   );
 }

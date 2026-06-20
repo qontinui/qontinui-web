@@ -53,4 +53,35 @@ describe("summarizeVerdict — delivery instance", () => {
     const { prose } = summarizeVerdict("delivery", v);
     expect(prose).toContain("no cited PRs");
   });
+
+  it("renders a work-unit anchor generically (no plan vocabulary)", () => {
+    const v = deliveryVerdict("none", {
+      anchor_kind: "work_unit",
+      work_unit_id: "11111111-1111-1111-1111-111111111111",
+      plan_id: null,
+      status: "graduated",
+      all_merged: true,
+      prs: [{ repo: "qontinui-web", pr: 700, merged: true }],
+      unmerged_prs: [],
+    });
+    const { prose } = summarizeVerdict("delivery", v);
+    // Opaque status is surfaced under a generic "Unit status" label, never the
+    // plan-specific "Plan status" wording.
+    expect(prose).toContain("Unit status");
+    expect(prose).toContain("graduated");
+    expect(prose).not.toContain("Plan status");
+    expect(prose).toContain("1 cited PR,");
+    expect(prose).toContain("all merged");
+  });
+
+  it("falls back to plan wording when no anchor_kind is present", () => {
+    const v = deliveryVerdict("none", {
+      status: "shipped",
+      all_merged: true,
+      prs: [{ repo: "qontinui-web", pr: 1, merged: true }],
+      unmerged_prs: [],
+    });
+    const { prose } = summarizeVerdict("delivery", v);
+    expect(prose).toContain("Plan status");
+  });
 });

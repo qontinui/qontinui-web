@@ -1,0 +1,249 @@
+{
+  "version": "1.0",
+  "id": "digital-twin",
+  "name": "Digital Twin Explorer",
+  "description": "The /digital-twin completeness matrix + the cell-detail interactive flow + the Delivery-tab verdict lookup (coord#634/web#587, hardened by web#609/#612/#614, UI-Bridge-instrumented by web#617 and this change for the Delivery card). ci-bot is a superuser so the authed page renders. Two route stubs make the page deterministic without live coord: GET /api/v1/digital-twin/subspaces (the matrix probe, restricted:false) sets the cells' credibility/status, and GET /api/v1/digital-twin/subspace/schema/raw returns a DriftVerdict so the Schema drawer's 'Show raw data' toggle (gated on isSnapshot && verdict) renders. Assertions target the web#617 useUIElement ids (digital-twin-tab-*, digital-twin-cell-*, digital-twin-show-raw), which resolve against the UI-Bridge registry the matcher reads; the page titles ('Digital Twin', 'Ask the Twin') resolve via the wrapper's content-discovery pass (provider.tsx contentDiscovery enabled). STRUCTURE NOTE: spec-ci's structural lane evaluates every state against the INITIAL render, so only initially-present states are declared (shell + matrix). The cell -> drawer -> raw-verdict interaction is a transition with activateStates:[] whose waitAfter (the show-raw toggle appearing) is the pass condition. CI runs with NO connected runner, so Ask-the-Twin and the UI Bridge tab show their 'Connect a runner' empty states — their runner-only input ids (ask-the-twin-*, ui-bridge-*) do NOT mount and are NOT asserted; the cell-drawer flow needs no runner. The drawer is a modal Dialog, so a tab-switch transition is intentionally omitted (it would either be blocked by the open modal or unmount the matrix the drawer transition needs). Read-only; structural.",
+  "provenance": { "source": "ai-generated", "appId": "qontinui-web" },
+  "metadata": {
+    "tags": ["coord", "digital-twin", "twin", "route-stub", "ui-bridge-instrumented"],
+    "extraSettleMs": 3000,
+    "settleUntilPresent": [{ "id": "digital-twin-cell-schema" }],
+    "routeStubs": [
+      {
+        "urlPattern": "**/api/v1/digital-twin/subspaces",
+        "status": 200,
+        "contentType": "application/json",
+        "body": {
+          "probed": 10,
+          "restricted": false,
+          "subspaces": [
+            { "id": "release", "status": "partial", "tool": "coord_query_release_state", "metrics": { "coverage": 0.9, "credibility": 0.9, "posterior": 0.9, "staleness_seconds": null, "provenance": "ecs_describe_tasks", "drift_class": "none" } },
+            { "id": "schema", "status": "implemented", "tool": "coord_query_migration_state", "metrics": { "coverage": 1.0, "credibility": 0.9, "posterior": 0.9, "staleness_seconds": null, "provenance": "live_rds_catalog", "drift_class": "divergent" } },
+            { "id": "infra", "status": "implemented", "tool": "coord_query_infra_drift", "metrics": { "coverage": 1.0, "credibility": 0.9, "posterior": 0.9, "staleness_seconds": null, "provenance": "aws_sdk_describe", "drift_class": "none" } },
+            { "id": "infra_health", "status": "implemented", "tool": "coord_query_infra_health_drift", "metrics": { "coverage": 1.0, "credibility": 0.9, "posterior": 0.9, "staleness_seconds": null, "provenance": "aws_sdk_infra_health", "drift_class": "none" } },
+            { "id": "config", "status": "partial", "tool": "coord_query_config_state", "metrics": { "coverage": 0.9, "credibility": 0.9, "posterior": 0.9, "staleness_seconds": null, "provenance": "config_observer_composed", "drift_class": "missing-env" } },
+            { "id": "health", "status": "implemented", "tool": "coord_query_health", "metrics": { "coverage": 1.0, "credibility": 0.9, "posterior": 0.9, "staleness_seconds": null, "provenance": "health_observer", "drift_class": "none" } },
+            { "id": "deps", "status": "blind", "tool": "coord_query_dependency_state", "metrics": { "coverage": 0.0, "credibility": 0.0, "posterior": 0.0, "staleness_seconds": null, "provenance": "dependency_observer:unconfigured", "drift_class": "unknown" } },
+            { "id": "route_serving", "status": "implemented", "tool": "coord_query_route_serving_drift", "metrics": { "coverage": 1.0, "credibility": 0.9, "posterior": 0.9, "staleness_seconds": null, "provenance": "coord_manifest", "drift_class": "none" } },
+            { "id": "client_telemetry", "status": "partial", "tool": "coord_query_client_telemetry_drift", "metrics": { "coverage": 0.6, "credibility": 0.7, "posterior": 0.7, "staleness_seconds": null, "provenance": "served_bundle_observer", "drift_class": "none" } },
+            { "id": "worktree", "status": "partial", "tool": "coord_list_worktrees", "metrics": { "coverage": 0.5, "credibility": 0.7, "posterior": 0.7, "staleness_seconds": null, "provenance": "worktree_observer", "drift_class": "none" } }
+          ]
+        }
+      },
+      {
+        "urlPattern": "**/api/v1/digital-twin/subspace/schema/raw",
+        "status": 200,
+        "contentType": "application/json",
+        "body": {
+          "subspace": "schema",
+          "tool": "coord_query_migration_state",
+          "verdict": {
+            "instance": "schema",
+            "drift_class": "divergent",
+            "drift_subclass": "schema:predicted_head_fork",
+            "d3_outcome": "Contradiction",
+            "posterior": 0.9,
+            "coverage": 1.0,
+            "staleness_seconds": null,
+            "provenance": "live_rds_catalog",
+            "credibility": 0.9,
+            "carve_out": [],
+            "components": { "alembic_head": "spec-ci-head-0001", "chain_head": null }
+          }
+        }
+      },
+      {
+        "urlPattern": "**/api/v1/digital-twin/delivery/verdict**",
+        "status": 200,
+        "contentType": "application/json",
+        "body": {
+          "plan_slug": "2026-06-15-twin-delivery-verdict-completion-view",
+          "tool": "coord_query_delivery",
+          "verdict": {
+            "instance": "delivery",
+            "drift_class": "none",
+            "d3_outcome": "Confirmed",
+            "posterior": 0.95,
+            "coverage": 1.0,
+            "staleness_seconds": 0,
+            "provenance": "coord_delivery_join_live",
+            "credibility": 0.95,
+            "carve_out": [],
+            "components": {
+              "slug": "2026-06-15-twin-delivery-verdict-completion-view",
+              "anchor_kind": "plan",
+              "status": "shipped",
+              "registered": true,
+              "all_merged": true,
+              "unmerged_prs": [],
+              "prs": [
+                { "repo": "qontinui-coord", "pr": 655, "merged": true, "branch": "feat/twin-delivery-verdict" },
+                { "repo": "qontinui-web", "pr": 603, "merged": true, "branch": "feat/twin-delivery-web-card" }
+              ],
+              "deployed_envs": []
+            }
+          }
+        }
+      }
+    ]
+  },
+  "states": [
+    {
+      "id": "digital-twin-shell",
+      "name": "Explorer shell + tabs",
+      "description": "The /digital-twin chrome that renders on the default Completeness tab: the page title, the three tab triggers (Completeness / Delivery / UI Bridge — registered via web#617 useUIElement ids), and the 'Ask the Twin' section heading (which renders in both the runner and no-runner branches — in CI there is no runner, so its input/submit controls do not mount and are not asserted). Identifies the page mounted, authenticated, not redirected.",
+      "isInitial": true,
+      "assertions": [
+        {
+          "id": "digital-twin-shell-elem-0",
+          "description": "h1 'Digital Twin' — the page title proving the section mounted (authed, not redirected). Resolves via content-discovery.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "role": "heading", "text": "Digital Twin" }, "label": "Page title" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "digital-twin-shell-elem-1",
+          "description": "Completeness tab trigger (web#617 id digital-twin-tab-completeness).",
+          "category": "navigation",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "digital-twin-tab-completeness" }, "label": "Completeness tab" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "digital-twin-shell-elem-2",
+          "description": "Delivery tab trigger (id digital-twin-tab-delivery).",
+          "category": "navigation",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "digital-twin-tab-delivery" }, "label": "Delivery tab" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "digital-twin-shell-elem-3",
+          "description": "UI Bridge tab trigger (id digital-twin-tab-ui-bridge).",
+          "category": "navigation",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "digital-twin-tab-ui-bridge" }, "label": "UI Bridge tab" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "digital-twin-shell-elem-4",
+          "description": "'Ask the Twin' section heading (h2; renders in both the runner and no-runner branches). Resolves via content-discovery.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "role": "heading", "text": "Ask the Twin" }, "label": "Ask the Twin heading" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
+    {
+      "id": "digital-twin-matrix",
+      "name": "Completeness matrix cells",
+      "description": "The sub-space cells the matrix renders from the 25-row manifest taxonomy (the matrix denominator), joined with the stubbed GET /subspaces probe for live status. Each cell is registered with a web#617 useUIElement id digital-twin-cell-<manifestId>; this state asserts a representative set across status classes: schema (snapshot, implemented — the drawer-transition target), infra (snapshot, implemented), deps (snapshot, the 'blind' class). settleUntilPresent waits for digital-twin-cell-schema to register before the matcher snapshots, dodging the probe/render load race.",
+      "assertions": [
+        {
+          "id": "digital-twin-matrix-elem-0",
+          "description": "Schema sub-space cell (id digital-twin-cell-schema) — the drawer-transition target.",
+          "category": "data-display",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "digital-twin-cell-schema" }, "label": "Schema cell" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "digital-twin-matrix-elem-1",
+          "description": "Infra sub-space cell (id digital-twin-cell-infra).",
+          "category": "data-display",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "digital-twin-cell-infra" }, "label": "Infra cell" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "digital-twin-matrix-elem-2",
+          "description": "Deps sub-space cell (id digital-twin-cell-deps) — the 'blind' status class.",
+          "category": "data-display",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "digital-twin-cell-deps" }, "label": "Deps cell" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    }
+  ],
+  "transitions": [
+    {
+      "id": "digital-twin-delivery-lookup",
+      "name": "Delivery tab: switch, look up a work-unit, read the verdict",
+      "description": "Behavioral READ of the Delivery tab (shipped by plan 2026-06-15-twin-delivery-verdict-completion-view): (1) click the Delivery tab trigger (id digital-twin-tab-delivery) -> the DeliveryVerdictCard mounts, asserted by its lookup input (id digital-twin-delivery-input) appearing; (2) type a work-unit slug into that input; (3) click 'Look up' (id digital-twin-delivery-submit) -> the stubbed GET /digital-twin/delivery/verdict resolves and the verdict block renders, asserted by its 'Show raw data' toggle (id digital-twin-delivery-show-raw, gated on verdict && summary) appearing; (4) switch back to the Completeness tab (id digital-twin-tab-completeness) so the matrix remounts for the open-drawer transition that follows (Radix Tabs unmounts inactive content). The DeliveryVerdictCard controls were instrumented with stable useUIElement ids in this same change (they previously had none). activateStates is empty; the transition passes iff every action executes and each waitAfter resolves. The type action's idle waitAfter lets React flush so the submit button is enabled before the click. Runs FIRST (and restores Completeness) so it does not collide with the modal Dialog the open-drawer transition opens. Needs no connected runner (delivery is coord-backed and stubbed here).",
+      "fromStates": ["digital-twin-shell"],
+      "activateStates": [],
+      "exitStates": [],
+      "effect": "read",
+      "actions": [
+        {
+          "type": "click",
+          "target": { "id": "digital-twin-tab-delivery" },
+          "waitAfter": { "type": "element", "query": { "id": "digital-twin-delivery-input" }, "timeout": 10000 }
+        },
+        {
+          "type": "type",
+          "target": { "id": "digital-twin-delivery-input" },
+          "params": { "text": "2026-06-15-twin-delivery-verdict-completion-view" },
+          "waitAfter": { "type": "idle", "timeout": 3000 }
+        },
+        {
+          "type": "click",
+          "target": { "id": "digital-twin-delivery-submit" },
+          "waitAfter": { "type": "element", "query": { "id": "digital-twin-delivery-show-raw" }, "timeout": 12000 }
+        },
+        {
+          "type": "click",
+          "target": { "id": "digital-twin-tab-completeness" },
+          "waitAfter": { "type": "element", "query": { "id": "digital-twin-cell-schema" }, "timeout": 10000 }
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
+    {
+      "id": "digital-twin-open-drawer",
+      "name": "Open the Schema sub-space drawer (cell click)",
+      "description": "Behavioral READ: click the Schema sub-space cell (id digital-twin-cell-schema). The detail Dialog opens; because schema is query_kind 'snapshot' and the stubbed GET /subspace/schema/raw returns a verdict, the 'Show raw data' toggle (id digital-twin-show-raw, gated on isSnapshot && verdict) renders. The waitAfter on that toggle appearing is the pass condition — proving the cell -> drawer -> raw-verdict flow works end-to-end. activateStates is empty (the structural lane only models the initial render), so this transition passes iff the click executes without error AND show-raw appears within the timeout. Needs no connected runner (the matrix + drawer are coord-backed and stubbed here).",
+      "fromStates": ["digital-twin-matrix"],
+      "activateStates": [],
+      "exitStates": [],
+      "effect": "read",
+      "actions": [
+        {
+          "type": "click",
+          "target": { "id": "digital-twin-cell-schema" },
+          "waitAfter": { "type": "element", "query": { "id": "digital-twin-show-raw" }, "timeout": 12000 }
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    }
+  ]
+}
