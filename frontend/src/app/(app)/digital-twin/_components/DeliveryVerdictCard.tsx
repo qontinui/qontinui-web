@@ -8,6 +8,7 @@ import {
   PackageCheck,
   Search,
 } from "lucide-react";
+import { useUIElement } from "@qontinui/ui-bridge/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
@@ -171,6 +172,24 @@ export function DeliveryVerdictCard() {
     setSubmitted(slug);
   }, [input]);
 
+  // UI Bridge: stable ids for the lookup controls (automation + spec-checks),
+  // mirroring the matrix cells / AskTheTwin instrumentation (web#617).
+  const { ref: inputRef } = useUIElement({
+    id: "digital-twin-delivery-input",
+    label: "Delivery verdict — work-unit slug",
+    type: "input",
+  });
+  const { ref: submitRef } = useUIElement({
+    id: "digital-twin-delivery-submit",
+    label: "Delivery verdict — look up",
+    type: "button",
+  });
+  const { ref: showRawRef } = useUIElement({
+    id: "digital-twin-delivery-show-raw",
+    label: "Delivery verdict — toggle raw data",
+    type: "button",
+  });
+
   const verdict = data?.verdict;
   const components = (verdict?.components ?? undefined) as
     | DeliveryComponents
@@ -195,6 +214,7 @@ export function DeliveryVerdictCard() {
 
       <div className="flex items-center gap-2">
         <Input
+          ref={inputRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
@@ -208,6 +228,7 @@ export function DeliveryVerdictCard() {
           spellCheck={false}
         />
         <Button
+          ref={submitRef}
           onClick={handleSubmit}
           disabled={!input.trim() || isFetching}
           className="gap-1.5"
@@ -313,6 +334,7 @@ export function DeliveryVerdictCard() {
               <code>{data?.tool ?? "coord_query_delivery"}</code>.
             </span>
             <Button
+              ref={showRawRef}
               variant="ghost"
               size="sm"
               className="h-7 gap-1.5 text-xs"

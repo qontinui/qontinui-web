@@ -20,9 +20,6 @@ import { CollapsiblePanel } from "./CollapsiblePanel";
 import type {
   BlastRadiusBlock,
   BlastRadiusBlocksResponse,
-  EscalationAlternative,
-  EscalationListResponse,
-  EscalationRow,
   PrListResponse,
   PrRow,
   ProposalDetail,
@@ -244,161 +241,9 @@ function PrRowDisplay({ pr }: { pr: PrRow }) {
   );
 }
 
-// ----------------------------------------------------------------------------
-// PR Merge Orchestrator Phase 6 D6.2 — Escalation card
-// ----------------------------------------------------------------------------
-//
-// One card per pending escalation. The severity drives the border colour
-// (critical=red, warning=amber, info=muted/hidden). The card body shows
-// the PR link, reason (from coord.alerts.detail.reason), specialist
-// rationale + rule citations (joined from coord.merge_decisions), the
-// suggested action, and a row of alternative-action buttons. Clicking a
-// button POSTs to `/operations/pr-merge/escalations/:alert_id/decide`
-// with the alternative's `action` + `modification`.
-
-function escalationBorderClass(severity: string): string {
-  switch (severity) {
-    case "critical":
-      return "border-red-500/60 bg-red-500/5";
-    case "warning":
-      return "border-amber-500/60 bg-amber-500/5";
-    default:
-      return "border-border bg-muted/10 text-muted-foreground";
-  }
-}
-
-function severityBadgeClass(severity: string): string {
-  switch (severity) {
-    case "critical":
-      return "bg-red-500/15 text-red-200 border-red-500/30";
-    case "warning":
-      return "bg-amber-500/15 text-amber-200 border-amber-500/30";
-    default:
-      return "bg-muted text-muted-foreground border-border";
-  }
-}
-
 /** Build the GitHub PR URL from repo + pr_number. */
 function prHref(repo: string, pr_number: number): string {
   return `https://github.com/${repo}/pull/${pr_number}`;
-}
-
-interface EscalationCardProps {
-  esc: EscalationRow;
-  onDecide: (
-    alertId: number,
-    action: EscalationAlternative["action"],
-    modification: Record<string, unknown> | null
-  ) => Promise<void>;
-  busy: boolean;
-}
-
-function EscalationCard({ esc, onDecide, busy }: EscalationCardProps) {
-  const reason = useMemo(() => {
-    const r = (esc.detail as Record<string, unknown> | undefined)?.["reason"];
-    if (typeof r === "string") return r;
-    const sr = (esc.detail as Record<string, unknown> | undefined)?.[
-      "system_reason"
-    ];
-    if (typeof sr === "string") return sr;
-    return null;
-  }, [esc.detail]);
-
-  return (
-    <div
-      className={`border rounded-md p-3 mb-2 ${escalationBorderClass(
-        esc.severity
-      )}`}
-      data-alert-id={esc.alert_id}
-      data-severity={esc.severity}
-      data-repo={esc.repo}
-      data-pr-number={esc.pr_number}
-    >
-      <div className="flex items-start gap-3">
-        <ShieldAlert className="h-4 w-4 mt-0.5 shrink-0" />
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <Badge
-              variant="outline"
-              className={`font-mono text-[10px] uppercase ${severityBadgeClass(
-                esc.severity
-              )}`}
-            >
-              {esc.severity}
-            </Badge>
-            <a
-              href={prHref(esc.repo, esc.pr_number)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-mono text-xs hover:underline flex items-center gap-1"
-            >
-              {esc.repo}#{esc.pr_number}
-              <ExternalLink className="h-3 w-3" />
-            </a>
-            <span className="text-xs text-muted-foreground tabular-nums">
-              {relativeTime(esc.first_seen_at)}
-            </span>
-          </div>
-          <p className="text-sm mt-1">{esc.summary}</p>
-          {reason && (
-            <p className="text-xs text-muted-foreground mt-1">
-              <span className="font-semibold">Reason:</span> {reason}
-            </p>
-          )}
-          {esc.specialist_rationale && (
-            <p className="text-xs mt-1">
-              <span className="font-semibold">Specialist rationale:</span>{" "}
-              {esc.specialist_rationale}
-            </p>
-          )}
-          {esc.specialist_rule_citations.length > 0 && (
-            <div className="flex gap-1 mt-1 flex-wrap">
-              <span className="text-xs font-semibold">Rules:</span>
-              {esc.specialist_rule_citations.map((c) => (
-                <Badge
-                  key={c}
-                  variant="outline"
-                  className="font-mono text-[10px] normal-case"
-                >
-                  {c}
-                </Badge>
-              ))}
-            </div>
-          )}
-          {esc.operator_question && (
-            <p className="text-xs italic mt-1">
-              <span className="font-semibold not-italic">Question:</span>{" "}
-              {esc.operator_question}
-            </p>
-          )}
-          {esc.suggested_action && (
-            <p className="text-xs mt-1">
-              <span className="font-semibold">Suggested:</span>{" "}
-              {esc.suggested_action}
-            </p>
-          )}
-          {esc.alternatives.length > 0 && (
-            <div className="flex gap-2 mt-3 flex-wrap">
-              {esc.alternatives.map((alt) => (
-                <Button
-                  key={alt.action}
-                  size="sm"
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() =>
-                    onDecide(esc.alert_id, alt.action, alt.modification ?? null)
-                  }
-                  data-action={alt.action}
-                >
-                  {alt.label}
-                </Button>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
 }
 
 // ----------------------------------------------------------------------------
@@ -651,9 +496,6 @@ export function MergeTrain() {
   const [proposals, setProposals] = useState<ProposalDetail[] | null>(null);
   // PR Merge Orchestrator Phase 1 D1.6 -- outer PR-level state list.
   const [prs, setPrs] = useState<PrRow[] | null>(null);
-  // PR Merge Orchestrator Phase 6 D6.2 -- pending escalations list.
-  const [escalations, setEscalations] = useState<EscalationRow[] | null>(null);
-  const [decideBusy, setDecideBusy] = useState<number | null>(null);
   // PR Merge Orchestrator Phase 8 D8.6 -- pending suggestions list.
   const [suggestions, setSuggestions] = useState<SuggestionRow[] | null>(null);
   const [suggestionBusy, setSuggestionBusy] = useState<number | null>(null);
@@ -685,79 +527,6 @@ export function MergeTrain() {
       }
     }
   }, []);
-
-  // PR Merge Orchestrator Phase 6 D6.2 -- fetch active escalations.
-  // Best-effort like fetchPrs: a failure here does NOT clear `error`
-  // (proposal-side wins). 404 on this endpoint means coord hasn't been
-  // deployed with the Phase 6 endpoint yet -- silently skip rendering
-  // the escalations section in that case.
-  const fetchEscalations = useCallback(async () => {
-    try {
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/escalations?include_resolved=false`
-      );
-      if (!res.ok) {
-        if (res.status === 404) {
-          if (!cleanedUpRef.current) setEscalations([]);
-          return;
-        }
-        throw new Error(`HTTP ${res.status}`);
-      }
-      const body = (await res.json()) as
-        | EscalationListResponse
-        | EscalationRow[];
-      const list = Array.isArray(body) ? body : (body.escalations ?? []);
-      if (!cleanedUpRef.current) {
-        setEscalations(list);
-      }
-    } catch (err) {
-      log.warn("fetchEscalations failed", err);
-      if (!cleanedUpRef.current) setEscalations([]);
-    }
-  }, []);
-
-  // PR Merge Orchestrator Phase 6 D6.4 -- operator-decision POST.
-  // Filters `info` severity rows out of the active-escalations render but
-  // leaves the decide path open for them if/when alternatives become
-  // available.
-  const onDecide = useCallback(
-    async (
-      alertId: number,
-      action: EscalationAlternative["action"],
-      modification: Record<string, unknown> | null
-    ) => {
-      setDecideBusy(alertId);
-      try {
-        const res = await httpClient.fetch(
-          `${OPERATIONS_API}/pr-merge/escalations/${alertId}/decide`,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              resolution_action: action,
-              rationale: `Operator chose ${action} via dashboard`,
-              ...(modification != null ? { modification } : {}),
-            }),
-          }
-        );
-        if (!res.ok) {
-          const text = await res.text();
-          log.warn("decide failed", res.status, text);
-          if (!cleanedUpRef.current)
-            setError(`Decide failed: HTTP ${res.status}`);
-          return;
-        }
-        // Refetch to drop the now-resolved row from the active list.
-        await fetchEscalations();
-      } catch (err) {
-        log.warn("decide threw", err);
-        if (!cleanedUpRef.current)
-          setError(err instanceof Error ? err.message : String(err));
-      } finally {
-        if (!cleanedUpRef.current) setDecideBusy(null);
-      }
-    },
-    [fetchEscalations]
-  );
 
   // PR Merge Orchestrator Phase 8 D8.6 -- fetch pending suggestions.
   // Drift suggestions + audit-stale alerts. Best-effort, 404-tolerant.
@@ -900,9 +669,6 @@ export function MergeTrain() {
       // visually consistent.
       fetchQueue();
       fetchPrs();
-      // Phase 6 D6.2: escalations can fire on the same events (a
-      // failing check_run can trigger a specialist run that escalates).
-      fetchEscalations();
       // Phase 8 D8.6: suggestions are background-watcher-emitted, not
       // event-driven, so this fetch is a low-stakes refresh — it catches
       // newly-emitted drift suggestions on the same WS-driven tick.
@@ -912,13 +678,7 @@ export function MergeTrain() {
       // held-PRs view consistent with the queue/PR columns.
       fetchGateBlocks();
     }, REFETCH_DEBOUNCE_MS);
-  }, [
-    fetchQueue,
-    fetchPrs,
-    fetchEscalations,
-    fetchSuggestions,
-    fetchGateBlocks,
-  ]);
+  }, [fetchQueue, fetchPrs, fetchSuggestions, fetchGateBlocks]);
 
   const connectWs = useCallback(() => {
     if (cleanedUpRef.current || document.hidden) return;
@@ -971,13 +731,11 @@ export function MergeTrain() {
     cleanedUpRef.current = false;
     fetchQueue();
     fetchPrs();
-    fetchEscalations();
     fetchSuggestions();
     fetchGateBlocks();
     const pollId = setInterval(() => {
       fetchQueue();
       fetchPrs();
-      fetchEscalations();
       fetchSuggestions();
       fetchGateBlocks();
     }, POLL_INTERVAL_MS);
@@ -989,14 +747,7 @@ export function MergeTrain() {
       if (reconnectRef.current) clearTimeout(reconnectRef.current);
       if (wsRef.current) wsRef.current.close();
     };
-  }, [
-    fetchQueue,
-    fetchPrs,
-    fetchEscalations,
-    fetchSuggestions,
-    fetchGateBlocks,
-    connectWs,
-  ]);
+  }, [fetchQueue, fetchPrs, fetchSuggestions, fetchGateBlocks, connectWs]);
 
   // PR Merge Orchestrator Phase 1 D1.6 -- decide whether to render the PR
   // Outer State sub-section. We render the heading + content only when BOTH
@@ -1005,20 +756,6 @@ export function MergeTrain() {
   // state when both are present").
   const showOuterSection = prs !== null && prs.length > 0 && proposals !== null;
 
-  // PR Merge Orchestrator Phase 6 D6.2 -- filter `info` severity rows
-  // OUT of the active-escalations list (per the plan: "don't show in
-  // active escalations"), and sort `critical` rows to the top.
-  const activeEscalations = useMemo(() => {
-    if (!escalations) return null;
-    const filtered = escalations.filter((e) => e.severity !== "info");
-    return filtered.sort((a, b) => {
-      const order = (s: string) =>
-        s === "critical" ? 0 : s === "warning" ? 1 : 2;
-      return order(a.severity) - order(b.severity);
-    });
-  }, [escalations]);
-  const showEscalationsSection =
-    activeEscalations !== null && activeEscalations.length > 0;
   // PR Merge Orchestrator Phase 8 D8.6 -- Suggestions inbox visibility.
   const showSuggestionsSection = suggestions !== null && suggestions.length > 0;
   // Coordination-transparency T2 -- show the Gate decisions section once the
@@ -1081,30 +818,6 @@ export function MergeTrain() {
             </div>
           </div>
         )}
-        {showEscalationsSection && activeEscalations && (
-          <div className="mb-4">
-            <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2 flex items-center gap-1">
-              <ShieldAlert className="h-3 w-3" />
-              Escalations
-              <Badge
-                variant="outline"
-                className="ml-2 font-mono text-[10px] normal-case"
-              >
-                {activeEscalations.length}
-              </Badge>
-            </h4>
-            <div>
-              {activeEscalations.map((esc) => (
-                <EscalationCard
-                  key={esc.alert_id}
-                  esc={esc}
-                  onDecide={onDecide}
-                  busy={decideBusy === esc.alert_id}
-                />
-              ))}
-            </div>
-          </div>
-        )}
         {showGateDecisionsSection && gateBlocks && (
           <div className="mb-4" data-testid="gate-decisions">
             <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2 flex items-center gap-1">
@@ -1133,9 +846,6 @@ export function MergeTrain() {
                   />
                 ))}
                 <p className="text-[11px] text-muted-foreground pt-1">
-                  A held PR is unblocked by an operator decision in the
-                  Escalations section above
-                  {showEscalationsSection ? "" : " (when one is pending)"}.
                   Coverage labels reflect how complete the code graph was when
                   the gate ran — a degraded decision is never authoritative.
                 </p>
