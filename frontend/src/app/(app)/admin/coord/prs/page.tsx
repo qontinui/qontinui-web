@@ -40,6 +40,7 @@ import {
   type PrListResponse,
 } from "@/services/admin-dev-service";
 import { PrsTable } from "./_components/PrsTable";
+import { DeployStatusStrip } from "./_components/DeployStatusStrip";
 
 // Auto-refresh cadence — matches the gates dashboard.
 const AUTO_REFRESH_MS = 45_000;
@@ -205,6 +206,9 @@ export default function CoordPrsPage() {
           Retry with Refresh.
         </div>
       )}
+
+      {/* ---- Deploy-status strip — glanceable per-surface "is prod current?" ---- */}
+      <DeployStatusStrip />
 
       {/* ---- Open vs Recently-merged tabs ---- */}
       <Tabs value={tab} onValueChange={(v) => setTab(v as PrTab)}>
