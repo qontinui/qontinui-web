@@ -54,4 +54,8 @@ export interface ReleaseVerdictResponse {
   subspace?: string | null;
   tool?: string | null;
   verdict?: ReleaseVerdict | null;
+  // Present only on the degraded envelope the admin-dev proxy returns when
+  // coord is unreachable (200 with empty surfaces). The strip already renders
+  // "deploy status unavailable" on empty surfaces, so this is informational.
+  coord_error?: string | null;
 }

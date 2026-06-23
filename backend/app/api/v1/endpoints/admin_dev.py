@@ -304,6 +304,63 @@ async def get_prs(
     return envelope
 
 
+def _empty_release_verdict(detail: str) -> dict[str, Any]:
+    """A valid (empty) release-verdict envelope annotated with ``coord_error``.
+
+    Mirrors :func:`_empty_prs`'s degradation convention: the shape matches
+    coord's release-verdict contract (``{verdict: {surfaces: [...]}}``) so the
+    frontend type stays valid, and ``coord_error`` (an optional field the strip
+    surfaces) explains why the data is empty. Returned instead of re-raising a
+    coord-down 5xx so the deploy-status strip renders a "deploy status
+    unavailable" state rather than emitting a 5xx that fails the crawl gate.
+    """
+    return {"verdict": {"surfaces": []}, "coord_error": detail}
+
+
+@router.get("/admin-dev/release-verdict")
+async def get_release_verdict(
+    tenant_id: UUID | None = Depends(_capture_bearer_best_effort),
+    _admin: User = Depends(require_admin),  # superuser gate (hard, never weakened)
+) -> Any:
+    """Proxy coord's ``GET /coord/twin/release/verdict`` (per-surface deploy state).
+
+    Pure passthrough backing the always-visible deploy-status strip atop
+    ``/admin/coord/prs``: returns coord's release-verdict envelope verbatim —
+    the ``{verdict: {surfaces: [{components: {...}}]}}`` contract where each
+    surface's per-surface drift state lives in ``surfaces[i].components`` (coord
+    owns that shape; the web side computes nothing and renames nothing). The
+    verdict is fleet-wide (not tenant-scoped on the web side); the caller bearer
+    is forwarded so coord authorizes on the operator identity. ``tenant_id`` is
+    resolved best-effort only (it may be ``None`` when coord identity resolution
+    fails) and is used solely to trigger bearer-forwarding.
+
+    Mirrors ``get_prs``'s auth + degradation posture exactly: ``require_admin``
+    (superuser) is the hard web-side gate, the bearer is captured best-effort so
+    a coord-down identity resolution never 502s in the dependency, and
+    ``forward_bearer=True`` forwards the bearer even when the tenant is
+    unresolved. When coord is unreachable/degraded (connect-refused → 502,
+    timeout → 504, etc.) the endpoint returns an empty
+    ``{verdict: {surfaces: []}, coord_error}`` envelope rather than re-raising
+    the 5xx, so neither the Spec CI crawl gate (which runs without a live coord)
+    nor the dashboard ever sees a 5xx.
+
+    Like ``get_prs``, this is NOT cached: it reflects fast-moving per-surface
+    deploy state where stale data is misleading on a "is prod current?" strip.
+    """
+    try:
+        envelope = await _proxy_coord_get(
+            "/coord/twin/release/verdict",
+            tenant_id=tenant_id,
+            forward_bearer=True,
+        )
+    except HTTPException as exc:
+        if exc.status_code in _COORD_DOWN_STATUSES:
+            detail = exc.detail if isinstance(exc.detail, str) else "coord unavailable"
+            return _empty_release_verdict(detail)
+        raise
+    return envelope
+
+
 async def _cache_get(key: _CacheKey) -> dict[str, Any] | None:
     """Return a non-expired cached envelope for ``key`` or ``None``."""
     now = time.monotonic()

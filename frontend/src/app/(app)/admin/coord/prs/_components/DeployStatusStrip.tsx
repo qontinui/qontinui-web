@@ -7,10 +7,13 @@
  * surface-level drift state, short deployed sha, and lag — glanceable context
  * above the PRs tabs.
  *
- * Data: `GET /api/v1/digital-twin/subspace/release/raw` (web backend proxy of
- * coord `GET /coord/twin/release/verdict`). We read each surface's state from
- * `verdict.surfaces[i].components` — the per-surface block, NOT the top-level
- * envelope drift_class.
+ * Data: `GET /api/v1/admin-dev/release-verdict` (the admin-dev proxy of coord
+ * `GET /coord/twin/release/verdict`). That proxy degrades to a 200 empty
+ * envelope on coord-down so the crawl gate / page never see a 5xx — contrast
+ * the old digital-twin proxy (`/api/v1/digital-twin/subspace/release/raw`),
+ * which 502s when coord is unreachable and so failed the Spec CI crawl gate.
+ * We read each surface's state from `verdict.surfaces[i].components` — the
+ * per-surface block, NOT the top-level envelope drift_class.
  *
  * Fetch pattern intentionally mirrors the page (`page.tsx`): `httpClient.get`
  * from the service-factory inside a `useEffect`, with a light ~60s refetch and
@@ -31,7 +34,7 @@ import type {
   ReleaseVerdictResponse,
 } from "./release-verdict";
 
-const RELEASE_RAW_URL = "/api/v1/digital-twin/subspace/release/raw";
+const RELEASE_RAW_URL = "/api/v1/admin-dev/release-verdict";
 
 // Light refetch cadence — this is glanceable context, not the primary table.
 const REFRESH_MS = 60_000;
