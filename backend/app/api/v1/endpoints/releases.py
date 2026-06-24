@@ -36,6 +36,10 @@ RELEASES_PAGE_URL = f"https://github.com/{GITHUB_REPO}/releases/latest"
 # 60-req/hr unauthenticated limit even under sustained download-page traffic.
 _CACHE_TTL_SECONDS = 300
 
+# When GitHub is unreachable and we have no cache, we serve a degraded payload
+# but only cache it briefly, so the page recovers quickly once GitHub is back.
+_NEGATIVE_CACHE_TTL_SECONDS = 30
+
 # Default installer kind to hand out per platform when the caller doesn't
 # specify one. Windows favours the MSI; macOS the DMG; Linux the AppImage.
 _DEFAULT_KIND = {"windows": "msi", "macos": "dmg", "linux": "appimage"}
@@ -78,10 +82,31 @@ def _classify_asset(name: str) -> dict | None:
 _cache: tuple[float, dict] | None = None
 
 
+def _degraded_payload(reason: str) -> dict:
+    """A 200-able payload for when the latest release can't be resolved.
+
+    ``available`` is False and ``assets`` is empty; the page falls back to the
+    GitHub releases link. Used instead of a 5xx so a transient upstream outage
+    never makes the public download page surface a server error.
+    """
+    return {
+        "version": None,
+        "tag": None,
+        "name": None,
+        "published_at": None,
+        "html_url": RELEASES_PAGE_URL,
+        "prerelease": False,
+        "assets": [],
+        "available": False,
+        "reason": reason,
+    }
+
+
 async def _fetch_latest_release() -> dict:
     """Return the classified latest-release payload, using the TTL cache.
 
-    Raises ``HTTPException`` if GitHub is unreachable and nothing is cached.
+    Falls back to a degraded (``available: False``) payload rather than raising
+    if GitHub is unreachable and nothing is cached.
     """
     global _cache
 
@@ -103,13 +128,17 @@ async def _fetch_latest_release() -> dict:
             release = resp.json()
     except Exception as e:
         logger.warning("github_latest_release_fetch_failed", error=str(e))
-        # Serve stale cache if we have it rather than failing the page.
+        # Serve stale cache if we have it rather than degrading the page.
         if _cache is not None:
             return _cache[1]
-        raise HTTPException(
-            status_code=502,
-            detail="Unable to resolve the latest runner release from GitHub.",
-        ) from e
+        # GitHub unreachable and no cache: degrade to a 200 with no assets
+        # rather than a 5xx. A public download page (and any uptime crawler)
+        # must not surface a server error just because the upstream release API
+        # is briefly unavailable; the page falls back to the GitHub releases
+        # link. Negative-cache briefly so we retry GitHub soon.
+        degraded = _degraded_payload("github_unreachable")
+        _cache = (now + _NEGATIVE_CACHE_TTL_SECONDS, degraded)
+        return degraded
 
     assets: list[dict] = []
     for asset in release.get("assets", []):
@@ -136,6 +165,8 @@ async def _fetch_latest_release() -> dict:
         "html_url": release.get("html_url") or RELEASES_PAGE_URL,
         "prerelease": release.get("prerelease", False),
         "assets": assets,
+        "available": True,
+        "reason": None,
     }
 
     _cache = (now + _CACHE_TTL_SECONDS, payload)
@@ -186,6 +217,11 @@ async def download_latest_runner(
     URL is permanent and version-free.
     """
     payload = await _fetch_latest_release()
+
+    # GitHub unreachable: send the user to the releases page rather than erroring.
+    if not payload.get("available", True):
+        return RedirectResponse(url=payload["html_url"], status_code=302)
+
     asset = _select_asset(payload["assets"], platform, kind, arch)
 
     if asset is None or not asset.get("url"):

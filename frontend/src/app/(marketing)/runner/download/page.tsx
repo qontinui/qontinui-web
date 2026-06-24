@@ -29,13 +29,17 @@ interface ReleaseAsset {
 }
 
 interface LatestRelease {
-  version: string;
-  tag: string;
+  version: string | null;
+  tag: string | null;
   name: string | null;
   published_at: string | null;
   html_url: string;
   prerelease: boolean;
   assets: ReleaseAsset[];
+  // False when GitHub couldn't be reached; the page degrades to the GitHub
+  // releases link rather than showing a version.
+  available?: boolean;
+  reason?: string | null;
 }
 
 // Resolved dynamically against the latest GitHub release. The version is never
@@ -250,13 +254,13 @@ export default function DownloadPage() {
             Download Qontinui Runner
           </h1>
           <p className="text-lg text-muted-foreground mb-2">
-            {release ? (
+            {release?.available && release.version ? (
               <>
                 Latest version:{" "}
                 <span className="font-semibold">{release.version}</span>
                 {release.prerelease ? " (Beta)" : ""}
               </>
-            ) : loadError ? (
+            ) : loadError || release ? (
               "Browse all releases on GitHub below."
             ) : (
               "Loading latest version…"
