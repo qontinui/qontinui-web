@@ -39,6 +39,12 @@ export interface GateProgress {
   fraction: number | null;
   eta: string | null;
   eta_confidence: EtaConfidence;
+  /**
+   * When the coord sweep last computed this gate's progress (ISO-8601), or null
+   * if progress has never been computed / is not persisted. Drives the table's
+   * "as of Xs ago" freshness indicator.
+   */
+  computed_at?: string | null;
 }
 
 // ---- Gate row ------------------------------------------------------------

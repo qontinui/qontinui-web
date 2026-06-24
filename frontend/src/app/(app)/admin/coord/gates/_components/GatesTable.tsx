@@ -99,6 +99,27 @@ function progressVariant(
 
 // ---- progress cell -------------------------------------------------------
 
+/**
+ * "as of Xs ago" freshness sub-line, derived from `progress.computed_at` (when
+ * the coord sweep last computed this gate's progress). Renders nothing when the
+ * timestamp is null/absent (progress never computed / not persisted) so the
+ * cell never grows a dangling line. Reuses the stale tone for a stale gate.
+ */
+function ProgressFreshness({ gate }: { gate: GateOverviewRow }) {
+  const computedAt = gate.progress.computed_at ?? null;
+  if (!computedAt) return null;
+  const rel = formatRelative(computedAt);
+  if (rel === "—") return null;
+  return (
+    <div
+      className={`text-[11px] ${gate.stale ? "text-destructive" : "text-muted-foreground/70"}`}
+      title={`progress computed ${formatAbsolute(computedAt)}`}
+    >
+      as of {rel}
+    </div>
+  );
+}
+
 function ProgressCell({ gate }: { gate: GateOverviewRow }) {
   const { fraction, current, target, unit, basis } = gate.progress;
 
@@ -116,6 +137,7 @@ function ProgressCell({ gate }: { gate: GateOverviewRow }) {
         <div className="text-[11px] text-muted-foreground/70">
           {basis === "indeterminate" ? "indeterminate" : detail ?? basis}
         </div>
+        <ProgressFreshness gate={gate} />
       </div>
     );
   }
@@ -133,6 +155,7 @@ function ProgressCell({ gate }: { gate: GateOverviewRow }) {
         <span>{Math.round(pct)}%</span>
         {detail && <span className="truncate">{detail}</span>}
       </div>
+      <ProgressFreshness gate={gate} />
     </div>
   );
 }
