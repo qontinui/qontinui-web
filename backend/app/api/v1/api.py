@@ -84,6 +84,7 @@ from app.api.v1.endpoints import (
     rag_dashboard,
     recording_pipeline,
     recordings,
+    releases,
     render_logs,
     runner_chat,
     runner_chat_ws,
@@ -158,6 +159,7 @@ api_router.include_router(
 api_router.include_router(snapshots.router, prefix="/snapshots", tags=["snapshots"])
 api_router.include_router(background_removal.router, tags=["background-removal"])
 api_router.include_router(analytics.router, tags=["analytics"])
+api_router.include_router(releases.router, prefix="/releases", tags=["releases"])
 api_router.include_router(settings.router, prefix="/settings", tags=["settings"])
 api_router.include_router(automation.router, prefix="/automation", tags=["automation"])
 api_router.include_router(

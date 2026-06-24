@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import {
   Download,
   CheckCircle2,
@@ -15,20 +15,35 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
 type Platform = "windows" | "macos" | "linux" | "unknown";
+type AssetKind = "msi" | "exe" | "dmg" | "appimage" | "deb";
+type Arch = "x64" | "arm64" | "unknown";
 
-interface ReleaseInfo {
-  version: string;
-  date: string;
-  github_url: string;
+interface ReleaseAsset {
+  name: string;
+  url: string;
+  size: number | null;
+  content_type: string | null;
+  platform: Exclude<Platform, "unknown">;
+  kind: AssetKind;
+  arch: Arch;
 }
 
-// Latest release info - update this when releasing
-const LATEST_RELEASE: ReleaseInfo = {
-  version: "0.1.0",
-  date: "2025",
-  github_url:
-    "https://github.com/qontinui/qontinui-runner/releases/tag/v0.1.0",
-};
+interface LatestRelease {
+  version: string;
+  tag: string;
+  name: string | null;
+  published_at: string | null;
+  html_url: string;
+  prerelease: boolean;
+  assets: ReleaseAsset[];
+}
+
+// Resolved dynamically against the latest GitHub release. The version is never
+// hardcoded — the backend endpoint reads the GitHub Releases API and the
+// download buttons point at a version-free redirect.
+const LATEST_ENDPOINT = "/api/v1/releases/runner/latest";
+const DOWNLOAD_ENDPOINT = "/api/v1/releases/runner/download";
+const RELEASES_PAGE = "https://github.com/qontinui/qontinui-runner/releases";
 
 function detectPlatform(): Platform {
   if (typeof window === "undefined") return "unknown";
@@ -68,6 +83,57 @@ function getPlatformName(platform: Platform): string {
   }
 }
 
+function assetLabel(asset: ReleaseAsset): string {
+  const archSuffix =
+    asset.arch === "arm64"
+      ? " (Apple Silicon)"
+      : asset.arch === "x64" && asset.platform === "macos"
+        ? " (Intel)"
+        : "";
+  switch (asset.kind) {
+    case "msi":
+      return "Windows Installer (MSI)";
+    case "exe":
+      return "Windows Installer (EXE)";
+    case "dmg":
+      return `macOS Disk Image${archSuffix}`;
+    case "appimage":
+      return "Linux AppImage";
+    case "deb":
+      return "Linux .deb Package";
+    default:
+      return asset.name;
+  }
+}
+
+function assetTypeLabel(kind: AssetKind): string {
+  switch (kind) {
+    case "msi":
+      return "MSI Package";
+    case "exe":
+      return "NSIS Installer";
+    case "dmg":
+      return "Disk Image";
+    case "appimage":
+      return "AppImage";
+    case "deb":
+      return "Debian Package";
+    default:
+      return kind;
+  }
+}
+
+function formatSize(bytes: number | null): string {
+  if (!bytes || bytes <= 0) return "";
+  const mb = bytes / (1024 * 1024);
+  return `~${mb.toFixed(mb < 10 ? 1 : 0)} MB`;
+}
+
+const BUILD_FROM_SOURCE: Record<string, string> = {
+  macos: "https://github.com/qontinui/qontinui-runner#macos",
+  linux: "https://github.com/qontinui/qontinui-runner#linux",
+};
+
 const emptySubscribe = () => () => {};
 
 export default function DownloadPage() {
@@ -77,12 +143,42 @@ export default function DownloadPage() {
     () => "unknown" as Platform
   );
   const [downloading, setDownloading] = useState<string | null>(null);
+  const [release, setRelease] = useState<LatestRelease | null>(null);
+  const [loadError, setLoadError] = useState(false);
 
-  const handleDownload = async (
-    selectedPlatform: Platform,
-    filename: string
-  ) => {
-    setDownloading(filename);
+  useEffect(() => {
+    let cancelled = false;
+    fetch(LATEST_ENDPOINT)
+      .then((r) => {
+        if (!r.ok) throw new Error(`status ${r.status}`);
+        return r.json();
+      })
+      .then((data: LatestRelease) => {
+        if (!cancelled) setRelease(data);
+      })
+      .catch(() => {
+        if (!cancelled) setLoadError(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const assetsByPlatform = useMemo(() => {
+    const grouped: Record<Exclude<Platform, "unknown">, ReleaseAsset[]> = {
+      windows: [],
+      macos: [],
+      linux: [],
+    };
+    for (const asset of release?.assets ?? []) {
+      grouped[asset.platform].push(asset);
+    }
+    return grouped;
+  }, [release]);
+
+  const handleDownload = async (asset: ReleaseAsset) => {
+    const key = `${asset.platform}-${asset.kind}-${asset.arch}`;
+    setDownloading(key);
 
     // Collect client-side analytics data (privacy-friendly, no PII)
     const getUtmParams = () => {
@@ -110,12 +206,12 @@ export default function DownloadPage() {
 
     // Track download (privacy-friendly, anonymized on server)
     try {
-      await fetch("/api/analytics/download", {
+      await fetch("/api/v1/analytics/download", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          platform: selectedPlatform,
-          version: LATEST_RELEASE.version,
+          platform: asset.platform,
+          version: release?.version,
           timestamp: new Date().toISOString(),
           // Client-side data
           timezone: getTimezone(),
@@ -129,13 +225,21 @@ export default function DownloadPage() {
       console.error("Analytics error:", e);
     }
 
-    // Redirect to GitHub release download
-    const downloadUrl = `${LATEST_RELEASE.github_url.replace("/tag/", "/download/")}/${filename}`;
-    window.location.href = downloadUrl;
+    // Hand off to the version-free redirect endpoint, which 302s to the
+    // matching asset in the latest release.
+    const params = new URLSearchParams({ platform: asset.platform });
+    params.set("kind", asset.kind);
+    if (asset.arch !== "unknown") params.set("arch", asset.arch);
+    window.location.href = `${DOWNLOAD_ENDPOINT}?${params.toString()}`;
 
     // Reset downloading state after a delay
     setTimeout(() => setDownloading(null), 2000);
   };
+
+  const releaseUrl = release?.html_url ?? RELEASES_PAGE;
+  const detectedAssets =
+    platform !== "unknown" ? assetsByPlatform[platform] : [];
+  const recommended = detectedAssets[0];
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-muted to-background">
@@ -146,13 +250,28 @@ export default function DownloadPage() {
             Download Qontinui Runner
           </h1>
           <p className="text-lg text-muted-foreground mb-2">
-            Latest version:{" "}
-            <span className="font-semibold">{LATEST_RELEASE.version}</span>{" "}
-            (Beta)
+            {release ? (
+              <>
+                Latest version:{" "}
+                <span className="font-semibold">{release.version}</span>
+                {release.prerelease ? " (Beta)" : ""}
+              </>
+            ) : loadError ? (
+              "Browse all releases on GitHub below."
+            ) : (
+              "Loading latest version…"
+            )}
           </p>
-          <p className="text-sm text-muted-foreground">
-            Released {LATEST_RELEASE.date}
-          </p>
+          {release?.published_at && (
+            <p className="text-sm text-muted-foreground">
+              Released{" "}
+              {new Date(release.published_at).toLocaleDateString(undefined, {
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+              })}
+            </p>
+          )}
         </div>
       </section>
 
@@ -167,69 +286,54 @@ export default function DownloadPage() {
                   Detected Platform: {getPlatformName(platform)}
                 </h2>
               </div>
-              <p className="text-muted-foreground mb-4">
-                We&apos;ve detected you&apos;re using{" "}
-                {getPlatformName(platform)}. Download the recommended version
-                below.
-              </p>
-              {platform === "windows" && (
-                <Button
-                  size="lg"
-                  disabled={
-                    downloading === "Qontinui.Runner_0.1.0_x64_en-US.msi"
-                  }
-                  onClick={() =>
-                    handleDownload(
-                      "windows",
-                      "Qontinui.Runner_0.1.0_x64_en-US.msi"
-                    )
-                  }
-                  className="bg-primary hover:bg-primary/90"
-                >
-                  {downloading ===
-                  "Qontinui.Runner_0.1.0_x64_en-US.msi" ? (
-                    <>
-                      <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                      Starting Download...
-                    </>
-                  ) : (
-                    <>
-                      <Download className="mr-2 h-5 w-5" />
-                      Download for Windows (MSI)
-                    </>
+              {recommended ? (
+                <>
+                  <p className="text-muted-foreground mb-4">
+                    We&apos;ve detected you&apos;re using{" "}
+                    {getPlatformName(platform)}. Download the recommended
+                    version below.
+                  </p>
+                  <Button
+                    size="lg"
+                    disabled={
+                      downloading ===
+                      `${recommended.platform}-${recommended.kind}-${recommended.arch}`
+                    }
+                    onClick={() => handleDownload(recommended)}
+                    className="bg-primary hover:bg-primary/90"
+                  >
+                    {downloading ===
+                    `${recommended.platform}-${recommended.kind}-${recommended.arch}` ? (
+                      <>
+                        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                        Starting Download...
+                      </>
+                    ) : (
+                      <>
+                        <Download className="mr-2 h-5 w-5" />
+                        Download for {getPlatformName(platform)}
+                      </>
+                    )}
+                  </Button>
+                </>
+              ) : (
+                <div>
+                  <p className="text-muted-foreground mb-3 font-medium">
+                    {release
+                      ? `Pre-built ${getPlatformName(platform)} binaries aren't in the latest release yet.`
+                      : "Resolving the latest release…"}
+                  </p>
+                  {BUILD_FROM_SOURCE[platform] && (
+                    <a
+                      href={BUILD_FROM_SOURCE[platform]}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 bg-muted-foreground hover:bg-muted-foreground/90 text-background px-4 py-2 rounded-lg font-semibold transition-colors"
+                    >
+                      <Github className="w-4 h-4" />
+                      Build from source
+                    </a>
                   )}
-                </Button>
-              )}
-              {platform === "macos" && (
-                <div className="text-center">
-                  <p className="text-muted-foreground mb-3 font-medium">
-                    macOS builds coming soon!
-                  </p>
-                  <a
-                    href="https://github.com/qontinui/qontinui-runner#macos"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 bg-muted-foreground hover:bg-muted-foreground/90 text-background px-4 py-2 rounded-lg font-semibold transition-colors"
-                  >
-                    <Github className="w-4 h-4" />
-                    Build from source
-                  </a>
-                </div>
-              )}
-              {platform === "linux" && (
-                <div className="text-center">
-                  <p className="text-muted-foreground mb-3 font-medium">
-                    Linux builds coming soon!
-                  </p>
-                  <a
-                    href="https://github.com/qontinui/qontinui-runner#linux"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 bg-muted-foreground hover:bg-muted-foreground/90 text-background px-4 py-2 rounded-lg font-semibold transition-colors"
-                  >
-                    <Github className="w-4 h-4" />
-                    Build from source
-                  </a>
                 </div>
               )}
             </div>
@@ -260,101 +364,33 @@ export default function DownloadPage() {
       {/* Downloads */}
       <section className="container mx-auto px-4 pb-16">
         <div className="max-w-4xl mx-auto space-y-8">
-          {/* Windows */}
-          <DownloadSection
-            platform="Windows"
+          <PlatformDownloads
+            platform="windows"
             icon="🪟"
             currentPlatform={platform}
-            downloads={[
-              {
-                name: "Windows Installer (MSI)",
-                file: "Qontinui.Runner_0.1.0_x64_en-US.msi",
-                size: "~6 MB",
-                type: "MSI Package",
-                signed: false, // Update to true when signed
-                description:
-                  "Recommended - Standard Windows installer (Windows 10 or later)",
-                onDownload: () =>
-                  handleDownload(
-                    "windows",
-                    "Qontinui.Runner_0.1.0_x64_en-US.msi"
-                  ),
-                downloading:
-                  downloading === "Qontinui.Runner_0.1.0_x64_en-US.msi",
-              },
-              {
-                name: "Windows Installer (EXE)",
-                file: "Qontinui.Runner_0.1.0_x64-setup.exe",
-                size: "~4 MB",
-                type: "NSIS Installer",
-                signed: false,
-                description: "Alternative installer for Windows 10 or later",
-                onDownload: () =>
-                  handleDownload(
-                    "windows",
-                    "Qontinui.Runner_0.1.0_x64-setup.exe"
-                  ),
-                downloading:
-                  downloading === "Qontinui.Runner_0.1.0_x64-setup.exe",
-              },
-            ]}
+            assets={assetsByPlatform.windows}
+            loading={!release && !loadError}
+            downloading={downloading}
+            onDownload={handleDownload}
           />
-
-          {/* macOS */}
-          <div className="bg-card rounded-lg border border-border overflow-hidden opacity-60">
-            <div className="bg-muted px-6 py-4 border-b border-border">
-              <h2 className="text-2xl font-bold text-foreground flex items-center gap-3">
-                <span className="text-3xl">🍎</span>
-                macOS
-                <span className="text-sm font-normal bg-amber-500 text-white px-2 py-1 rounded">
-                  Coming Soon
-                </span>
-              </h2>
-            </div>
-            <div className="p-6">
-              <p className="text-muted-foreground mb-4">
-                Pre-built macOS binaries are not yet available. For now, please
-                build from source.
-              </p>
-              <a
-                href="https://github.com/qontinui/qontinui-runner#macos"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 bg-muted-foreground hover:bg-muted-foreground/90 text-background px-4 py-2 rounded-lg font-semibold transition-colors"
-              >
-                <Github className="w-4 h-4" />
-                Build Instructions
-              </a>
-            </div>
-          </div>
-
-          {/* Linux */}
-          <div className="bg-card rounded-lg border border-border overflow-hidden opacity-60">
-            <div className="bg-muted px-6 py-4 border-b border-border">
-              <h2 className="text-2xl font-bold text-foreground flex items-center gap-3">
-                <span className="text-3xl">🐧</span>
-                Linux
-                <span className="text-sm font-normal bg-amber-500 text-white px-2 py-1 rounded">
-                  Coming Soon
-                </span>
-              </h2>
-            </div>
-            <div className="p-6">
-              <p className="text-muted-foreground mb-4">
-                Pre-built Linux binaries are not yet available. For now, please
-                build from source.
-              </p>
-              <a
-                href="https://github.com/qontinui/qontinui-runner#linux"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 bg-muted-foreground hover:bg-muted-foreground/90 text-background px-4 py-2 rounded-lg font-semibold transition-colors"
-              >
-                <Github className="w-4 h-4" />
-                Build Instructions
-              </a>
-            </div>
-          </div>
+          <PlatformDownloads
+            platform="macos"
+            icon="🍎"
+            currentPlatform={platform}
+            assets={assetsByPlatform.macos}
+            loading={!release && !loadError}
+            downloading={downloading}
+            onDownload={handleDownload}
+          />
+          <PlatformDownloads
+            platform="linux"
+            icon="🐧"
+            currentPlatform={platform}
+            assets={assetsByPlatform.linux}
+            loading={!release && !loadError}
+            downloading={downloading}
+            onDownload={handleDownload}
+          />
         </div>
       </section>
 
@@ -373,7 +409,7 @@ export default function DownloadPage() {
               notes.
             </p>
             <a
-              href={LATEST_RELEASE.github_url}
+              href={releaseUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 bg-foreground hover:bg-foreground/90 text-background px-4 py-2 rounded-lg font-semibold transition-colors"
@@ -410,8 +446,10 @@ export default function DownloadPage() {
                 macOS & Linux
               </h3>
               <p className="text-muted-foreground mb-3">
-                Pre-built binaries for macOS and Linux are coming soon. For now,
-                please build from source:
+                On macOS, open the .dmg and drag Qontinui Runner to
+                Applications; first launch may require right-click → Open. On
+                Linux, mark the AppImage executable (chmod +x) and run it, or
+                install the .deb with your package manager.
               </p>
               <a
                 href="https://github.com/qontinui/qontinui-runner#installation"
@@ -514,89 +552,112 @@ export default function DownloadPage() {
   );
 }
 
-function DownloadSection({
+function PlatformDownloads({
   platform,
   icon,
   currentPlatform,
-  downloads,
+  assets,
+  loading,
+  downloading,
+  onDownload,
 }: {
-  platform: string;
+  platform: Exclude<Platform, "unknown">;
   icon: string;
   currentPlatform: Platform;
-  downloads: Array<{
-    name: string;
-    file: string;
-    size: string;
-    type: string;
-    signed: boolean;
-    description: string;
-    onDownload: () => void;
-    downloading: boolean;
-  }>;
+  assets: ReleaseAsset[];
+  loading: boolean;
+  downloading: string | null;
+  onDownload: (asset: ReleaseAsset) => void;
 }) {
-  const isCurrentPlatform = platform.toLowerCase() === currentPlatform;
+  const isCurrentPlatform = platform === currentPlatform;
+  const hasAssets = assets.length > 0;
 
   return (
     <div
-      className={`bg-card rounded-lg border ${isCurrentPlatform ? "border-primary shadow-lg" : "border-border"} overflow-hidden`}
+      className={`bg-card rounded-lg border ${isCurrentPlatform ? "border-primary shadow-lg" : "border-border"} overflow-hidden ${!hasAssets && !loading ? "opacity-60" : ""}`}
     >
       <div
         className={`${isCurrentPlatform ? "bg-primary/10" : "bg-muted"} px-6 py-4 border-b border-border`}
       >
         <h2 className="text-2xl font-bold text-foreground flex items-center gap-3">
           <span className="text-3xl">{icon}</span>
-          {platform}
+          {getPlatformName(platform)}
           {isCurrentPlatform && (
             <span className="text-sm font-normal bg-primary text-primary-foreground px-2 py-1 rounded">
               Your Platform
             </span>
           )}
+          {!hasAssets && !loading && (
+            <span className="text-sm font-normal bg-amber-500 text-white px-2 py-1 rounded">
+              Build from source
+            </span>
+          )}
         </h2>
       </div>
       <div className="p-6 space-y-4">
-        {downloads.map((download, idx) => (
-          <div
-            key={idx}
-            className="flex items-start justify-between gap-4 p-4 rounded-lg border border-border hover:border-primary/50 transition-colors"
-          >
-            <div className="flex-1">
-              <div className="flex items-center gap-2 mb-1">
-                <h3 className="font-semibold text-foreground">
-                  {download.name}
-                </h3>
-                {download.signed && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-brand-success/20 text-brand-success text-xs rounded-full">
-                    <CheckCircle2 className="w-3 h-3" />
-                    Signed
-                  </span>
-                )}
-              </div>
-              <p className="text-sm text-muted-foreground mb-2">
-                {download.description}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {download.type} • {download.size}
-              </p>
-            </div>
-            <Button
-              disabled={download.downloading}
-              onClick={download.onDownload}
-              className="flex-shrink-0 bg-primary hover:bg-primary/90"
-            >
-              {download.downloading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Downloading...
-                </>
-              ) : (
-                <>
-                  <Download className="mr-2 h-4 w-4" />
-                  Download
-                </>
-              )}
-            </Button>
+        {loading ? (
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Resolving latest release…
           </div>
-        ))}
+        ) : hasAssets ? (
+          assets.map((asset) => {
+            const key = `${asset.platform}-${asset.kind}-${asset.arch}`;
+            const size = formatSize(asset.size);
+            return (
+              <div
+                key={asset.name}
+                className="flex items-start justify-between gap-4 p-4 rounded-lg border border-border hover:border-primary/50 transition-colors"
+              >
+                <div className="flex-1">
+                  <h3 className="font-semibold text-foreground mb-1">
+                    {assetLabel(asset)}
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    {assetTypeLabel(asset.kind)}
+                    {size ? ` • ${size}` : ""}
+                  </p>
+                </div>
+                <Button
+                  disabled={downloading === key}
+                  onClick={() => onDownload(asset)}
+                  className="flex-shrink-0 bg-primary hover:bg-primary/90"
+                >
+                  {downloading === key ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Downloading...
+                    </>
+                  ) : (
+                    <>
+                      <Download className="mr-2 h-4 w-4" />
+                      Download
+                    </>
+                  )}
+                </Button>
+              </div>
+            );
+          })
+        ) : (
+          <div>
+            <p className="text-muted-foreground mb-4">
+              Pre-built {getPlatformName(platform)} binaries are not in the
+              latest release. For now, please build from source.
+            </p>
+            <a
+              href={
+                BUILD_FROM_SOURCE[platform] ??
+                "https://github.com/qontinui/qontinui-runner#installation"
+              }
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 bg-muted-foreground hover:bg-muted-foreground/90 text-background px-4 py-2 rounded-lg font-semibold transition-colors"
+            >
+              <Github className="w-4 h-4" />
+              Build Instructions
+            </a>
+          </div>
+        )}
       </div>
     </div>
   );
