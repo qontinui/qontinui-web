@@ -81318,6 +81318,102 @@
         ]
       }
     },
+    "/api/v1/releases/runner/download": {
+      "get": {
+        "description": "302-redirect to the best matching installer in the latest release.\n\nPublic, no auth. Used directly as the ``href`` for download buttons so the\nURL is permanent and version-free.",
+        "operationId": "api_v1_releases_runner_download_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "platform",
+            "required": true,
+            "schema": {
+              "pattern": "^(windows|macos|linux)$",
+              "title": "Platform",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^(msi|exe|dmg|appimage|deb)$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "arch",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^(x64|arm64)$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Arch"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download Latest Runner",
+        "tags": [
+          "releases"
+        ]
+      }
+    },
+    "/api/v1/releases/runner/latest": {
+      "get": {
+        "description": "Return metadata + classified installer assets for the latest release.\n\nPublic, no auth. The download page renders the version and per-platform\nbuttons from this payload instead of hardcoding a version.",
+        "operationId": "api_v1_releases_runner_latest_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Latest Runner Release",
+        "tags": [
+          "releases"
+        ]
+      }
+    },
     "/api/v1/remove-background": {
       "post": {
         "description": "Remove backgrounds from screenshots for State Discovery.\n\nDispatches the cv2-based work to the user's currently-connected\nqontinui-runner over the WS bridge. Behaviour:\n\n1. Accepts base64 encoded screenshots.\n2. Forwards the batch + config to the active runner.\n3. Returns RGBA images with transparent backgrounds.\n4. Provides analyser statistics about the removal.\n\n**Runner selection:**\n\n- If ``?runner_id=<uuid>`` is provided, that runner is used (must\n  belong to the current user).\n- Otherwise the user's most-recently-heartbeat-active connected\n  runner is selected.\n- If no runner is connected, returns 503 with the\n  ``no_runner_connected`` envelope.\n\nArgs:\n    request: Background removal request with screenshots and config.\n    runner_id: Optional explicit runner UUID; must belong to caller.\n\nReturns:\n    Masked screenshots with statistics.\n\nRaises:\n    HTTPException: 400 on empty input, 413 on >20 MB payload, 503\n        when no runner is available, 504 on runner timeout, 500 on\n        runner-side error.",
