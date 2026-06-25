@@ -53,8 +53,9 @@ export function useLandingPage() {
 
   const handleDownload = () => {
     if (platform === "windows") {
+      // Version-free redirect — resolves to the MSI in the latest release.
       window.location.href =
-        "https://github.com/qontinui/qontinui-runner/releases/tag/v1.0.0-beta.1";
+        "/api/v1/releases/runner/download?platform=windows&kind=msi";
     } else {
       router.push("/runner/download");
     }
