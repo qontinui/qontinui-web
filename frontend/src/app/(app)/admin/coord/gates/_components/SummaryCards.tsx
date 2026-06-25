@@ -55,7 +55,7 @@ export function SummaryCards({ overview }: { overview: DevOverview }) {
       className="space-y-3"
       data-testid="gates-summary-cards"
     >
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2 sm:gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-8 gap-2 sm:gap-3">
         <StatCard label="Open" value={c.open} testId="summary-open" />
         <StatCard
           label="Cleared today"
@@ -92,6 +92,12 @@ export function SummaryCards({ overview }: { overview: DevOverview }) {
           value={c.archived}
           testId="summary-archived"
           tone="muted"
+        />
+        <StatCard
+          label="Would-be-reaped (shadow)"
+          value={c.would_reap}
+          testId="summary-would-reap"
+          tone="warning"
         />
       </div>
 
