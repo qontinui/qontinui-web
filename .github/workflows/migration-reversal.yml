@@ -1,0 +1,137 @@
+name: migration reversal safety check
+
+# Ephemeral schema reversal gate (Plan 2026-06-20-coord-step4-non-gating-safety-nets).
+#
+# Proves migrations are reversible by testing the up→down→up cycle on a
+# freshly-provisioned Postgres database. Runs when alembic versions change
+# and validates:
+#   1. Upgrade to HEAD succeeds
+#   2. Downgrade by -1 succeeds (not all migrations are reversible)
+#   3. Upgrade back to HEAD succeeds
+#
+# A migration that breaks on downgrade (e.g. DROP COLUMN affecting constraints)
+# will fail this check, preventing the PR from merging. This is intentional —
+# reversible migrations are safer and required for deploy auto-rollback.
+
+on:
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "backend/alembic/versions/**"
+
+permissions:
+  contents: read
+
+jobs:
+  migration-reversal:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache poetry virtualenv
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pypoetry
+          key: poetry-cache-${{ runner.os }}-3.12-${{ hashFiles('backend/poetry.lock') }}
+
+      - name: Install poetry
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install poetry
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: poetry install --no-interaction --no-root
+        env:
+          POETRY_VIRTUALENVS_CREATE: true
+          POETRY_VIRTUALENVS_IN_PROJECT: false
+
+      - name: Upgrade migration to HEAD
+        id: upgrade_head
+        working-directory: backend
+        run: |
+          poetry run alembic upgrade head
+        env:
+          DATABASE_URL: "postgresql://test_user:test_password@localhost:5432/test_db"
+
+      - name: Get current head for downgrade
+        id: get_current_head
+        working-directory: backend
+        run: |
+          CURRENT=$(poetry run alembic current)
+          echo "current_head=$CURRENT" >> "$GITHUB_OUTPUT"
+          echo "Current head: $CURRENT"
+
+      - name: Downgrade by one revision
+        id: downgrade_one
+        working-directory: backend
+        run: |
+          poetry run alembic downgrade -1
+        env:
+          DATABASE_URL: "postgresql://test_user:test_password@localhost:5432/test_db"
+        continue-on-error: true
+
+      - name: Check downgrade result
+        if: steps.downgrade_one.outcome == 'failure'
+        run: |
+          echo "::error::Migration downgrade failed — this migration may not be reversible."
+          echo "::error::The PR introduced a migration that cannot be cleanly rolled back."
+          echo "::error::Check the migration file for destructive operations (DROP, column deletion, etc.)"
+          echo "::error::All migrations must be reversible for safe deploy auto-rollback."
+          exit 1
+
+      - name: Upgrade back to HEAD
+        id: upgrade_again
+        working-directory: backend
+        run: |
+          poetry run alembic upgrade head
+        env:
+          DATABASE_URL: "postgresql://test_user:test_password@localhost:5432/test_db"
+
+      - name: Verify final state
+        id: verify_final
+        working-directory: backend
+        run: |
+          FINAL=$(poetry run alembic current)
+          EXPECTED="${{ steps.get_current_head.outputs.current_head }}"
+          if [ "$FINAL" = "$EXPECTED" ]; then
+            echo "Final schema state matches expected HEAD"
+            exit 0
+          else
+            echo "::error::Final schema state ($FINAL) does not match expected HEAD ($EXPECTED)"
+            exit 1
+          fi
+        env:
+          DATABASE_URL: "postgresql://test_user:test_password@localhost:5432/test_db"
+
+      - name: Dump final schema for diagnostic (on failure)
+        if: failure()
+        working-directory: backend
+        run: |
+          echo "::group::Final schema state"
+          poetry run alembic current || echo "(alembic current failed)"
+          echo "::endgroup::"
+        env:
+          DATABASE_URL: "postgresql://test_user:test_password@localhost:5432/test_db"
+        continue-on-error: true
