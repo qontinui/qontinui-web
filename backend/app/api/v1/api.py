@@ -21,6 +21,7 @@ See: D:/qontinui-root/qontinui-cloud-control/  (private repo)
 from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
+    admin,
     admin_dev,
     agent_sessions,
     ai_prompts,
@@ -400,6 +401,8 @@ api_router.include_router(
 # path is /api/v1/admin-dev/overview (it must NOT inherit agent_sessions'
 # /admin prefix).
 api_router.include_router(admin_dev.router, tags=["admin-dev"])
+# Superuser admin operations (user creation, config, etc.)
+api_router.include_router(admin.router, tags=["admin"])
 
 # Cloud-control extension hook — no-op when no cloud-control package has
 # registered any route extensions. Cloud-control's

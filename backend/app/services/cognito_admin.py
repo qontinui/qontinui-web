@@ -318,3 +318,72 @@ def delete_federated_user(username: str) -> None:
         raise CognitoAdminError(f"AdminDeleteUser failed: {exc}") from exc
 
     logger.info("cognito_delete_user_ok", username=username)
+
+
+def create_user(email: str, name: str | None = None) -> dict[str, str]:
+    """Create a new user in the Cognito pool via AdminCreateUser.
+
+    Sets email as the username, marks email as verified, and sets the
+    temporary status to FORCE_CHANGE_PASSWORD. Sends no welcome email
+    (SUPPRESS) — the caller is responsible for notifying the user.
+
+    Returns a dict with:
+        - username: the email address (Cognito username)
+        - sub: the Cognito subject ID
+        - user_status: the user account status
+    """
+    if not email:
+        raise CognitoAdminError("email is required to create a user")
+
+    client = _get_client()
+    try:
+        resp = client.admin_create_user(
+            UserPoolId=_pool_id(),
+            Username=email,
+            UserAttributes=[
+                {"Name": "email", "Value": email},
+                {"Name": "email_verified", "Value": "true"},
+            ]
+            + (
+                [{"Name": "name", "Value": name}]
+                if name
+                else []
+            ),
+            TemporaryPassword="TempPass123!",
+            MessageAction="SUPPRESS",
+        )
+    except ClientError as exc:
+        message = str(exc)
+        logger.error(
+            "cognito_create_user_failed",
+            email=email,
+            error=message,
+        )
+        raise CognitoAdminError(f"AdminCreateUser failed: {exc}") from exc
+    except BotoCoreError as exc:
+        raise CognitoAdminError(f"AdminCreateUser failed: {exc}") from exc
+
+    user = resp.get("User") or {}
+    username = user.get("Username")
+    user_status = user.get("UserStatus", "")
+
+    # Extract the sub from UserAttributes
+    attrs = _attributes_to_dict(user.get("UserAttributes") or [])
+    sub = attrs.get("sub", "")
+
+    if not username or not sub:
+        raise CognitoAdminError(f"AdminCreateUser succeeded but response incomplete")
+
+    logger.info(
+        "cognito_create_user_ok",
+        email=email,
+        username=username,
+        sub=sub,
+        user_status=user_status,
+    )
+
+    return {
+        "username": username,
+        "sub": sub,
+        "user_status": user_status,
+    }
