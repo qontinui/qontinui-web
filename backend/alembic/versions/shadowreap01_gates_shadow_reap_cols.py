@@ -1,7 +1,7 @@
 """coord.gates — shadow-reap audit columns (gate-reaper Tier 4 SHADOW)
 
 Revision ID: shadowreap01
-Revises: trackd_drop_merge_escalations_meta
+Revises: coord_gates_progress_cols_01
 Create Date: 2026-06-25
 
 Adds two nullable shadow-reap audit columns + one partial "shadow would-reap"
@@ -37,10 +37,10 @@ earlier in this same linear chain). It is NOT added to any
 ``ALEMBIC_OWNED_TABLES`` list — the table already exists; this revision only
 ALTERs it.
 
-NOTE: both ``revision`` and ``down_revision`` are RESERVED via a coord
-migration-queue head-claim (reservation 252d7fd2-e564-4fb7-a435-0062dff68848,
-position 2 behind the in-flight ``trackd_drop_merge_escalations_meta``) — do
-NOT re-derive ``down_revision`` from a local ``alembic heads``.
+NOTE: ``down_revision`` is pinned to ``coord_gates_progress_cols_01`` — the real
+current single head on web ``origin/main``. The earlier reservation parent
+``trackd_drop_merge_escalations_meta`` was a phantom/expired slot that never
+landed on main, so re-pointing here is required to keep the chain single-head.
 """
 
 from collections.abc import Sequence
@@ -49,7 +49,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "shadowreap01"
-down_revision: str | Sequence[str] | None = "trackd_drop_merge_escalations_meta"
+down_revision: str | Sequence[str] | None = "coord_gates_progress_cols_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
