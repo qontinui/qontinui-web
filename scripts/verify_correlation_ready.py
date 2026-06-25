@@ -18,13 +18,11 @@ This gate runs on every PR that carries that footer. It asks coord
 PRs no longer gate the bundle; the answer flips to ready=true once
 they all leave the queue.
 
-Pairs with ``verify_alembic_claim.py``:
-
-* That one is single-revision, single-repo: "did you pre-claim the
-  alembic chain you're about to mutate?"
-* This one is cross-repo, multi-PR: "is the *bundle* mergeable yet?"
-
-Both are read-only; both surface a structured pass/fail to CI.
+This is the cross-repo, multi-PR gate: "is the *bundle* mergeable yet?"
+(The single-revision, single-repo alembic-chain reservation gate it once
+paired with — ``verify_alembic_claim.py`` — was retired when migration
+chain ordering moved to coord's land-time re-point engine.) Read-only;
+surfaces a structured pass/fail to CI.
 
 ## What this script does
 
