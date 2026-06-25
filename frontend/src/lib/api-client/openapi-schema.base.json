@@ -44896,6 +44896,18 @@
               "title": "Include Archived",
               "type": "boolean"
             }
+          },
+          {
+            "description": "Restrict to the Tier-4 SHADOW would-reap set (shadow_reap_signal IS NOT NULL) \u2014 the gates the reaper would reap if armed live, each carrying its cited abandonment signal. Omitted/false \u21d2 no shadow filter.",
+            "in": "query",
+            "name": "would_reap",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Restrict to the Tier-4 SHADOW would-reap set (shadow_reap_signal IS NOT NULL) \u2014 the gates the reaper would reap if armed live, each carrying its cited abandonment signal. Omitted/false \u21d2 no shadow filter.",
+              "title": "Would Reap",
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
