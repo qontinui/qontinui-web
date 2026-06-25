@@ -288,6 +288,23 @@ export function relativeTime(iso: string | null | undefined): string {
 }
 
 /**
+ * Format a stall age (seconds) as a compact human label, e.g. "45s", "12m",
+ * "3h", "2d". Used by the Phase 5 device-tile stalled badge, which receives
+ * the age as a precomputed `stall_age_secs` from coord (not a timestamp), so
+ * `relativeTime` doesn't apply.
+ */
+export function formatStallAge(secs: number | null | undefined): string {
+  if (secs == null || Number.isNaN(secs) || secs < 0) return "0s";
+  const s = Math.floor(secs);
+  if (s < 60) return `${s}s`;
+  const minutes = Math.floor(s / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
+}
+
+/**
  * Truncate a string to `maxLen` characters, appending an ellipsis if needed.
  */
 export function truncate(text: string, maxLen: number): string {
