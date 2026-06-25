@@ -7,9 +7,9 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
-import { Activity, RefreshCw, WifiOff } from "lucide-react";
-import { relativeTime } from "./utils";
-import type { DeviceStatus } from "./types";
+import { Activity, AlertTriangle, RefreshCw, WifiOff } from "lucide-react";
+import { formatStallAge, relativeTime } from "./utils";
+import type { DeviceStatus, StalledSession } from "./types";
 import type { UseDeviceStatusStreamResult } from "./useDeviceStatusStream";
 
 type Staleness = "fresh" | "warn" | "stale";
@@ -70,6 +70,72 @@ function focusMachineCard(hostname: string | null) {
   window.setTimeout(() => {
     card.classList.remove("ring-2", "ring-primary", "ring-offset-2");
   }, 1500);
+}
+
+/**
+ * Phase 5 (plan `2026-06-24-coord-session-progress-and-stall-detection`) —
+ * the per-device stalled-session indicator. Mirrors the page's warn/danger
+ * color vocabulary (yellow=warn / red=danger, see `rowTintClass` above):
+ *
+ * - `expected_unstarted` (a dispatched continuation that never started) is the
+ *   more severe "lost work" case → red, labeled "dispatched, never started".
+ * - an active-but-not-progressing stall → amber/yellow "stalled".
+ *
+ * The age comes precomputed from coord (`stall_age_secs`), so we format it with
+ * `formatStallAge` rather than `relativeTime` (which expects a timestamp). When
+ * more than one session is stalled on the device, the badge surfaces the
+ * most-stalled one plus a "+N" suffix. Renders nothing when the device has no
+ * stalled session (or coord predates Phase 5 and omits the field).
+ */
+function StalledBadge({
+  mostStalled,
+  count,
+}: {
+  mostStalled: StalledSession | null | undefined;
+  count: number | undefined;
+}) {
+  if (!mostStalled || !count || count < 1) return null;
+
+  const isUnstarted = mostStalled.kind === "expected_unstarted";
+  const age = formatStallAge(mostStalled.stall_age_secs);
+  const label = isUnstarted ? `never started ${age}` : `stalled ${age}`;
+  const extra = count > 1 ? ` +${count - 1}` : "";
+  const tip = isUnstarted
+    ? `Dispatched continuation never started (${age} ago)` +
+      (mostStalled.continuation_gate_id
+        ? ` — gate ${mostStalled.continuation_gate_id}`
+        : "") +
+      (mostStalled.plan_slug ? ` — plan ${mostStalled.plan_slug}` : "")
+    : `Session heartbeating but not progressing for ${age}` +
+      (mostStalled.correlation_topic
+        ? ` — topic ${mostStalled.correlation_topic}`
+        : "");
+
+  // Mirror the danger/warn tints used elsewhere on the page; keep the chip
+  // outline-styled like the sibling badges (header count / error badge).
+  const tone = isUnstarted
+    ? "border-red-500/50 bg-red-500/10 text-red-300"
+    : "border-yellow-500/50 bg-yellow-500/10 text-yellow-200";
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium tabular-nums ${tone}`}
+          data-ui-bridge-id="operations.device-status-stalled"
+          data-stall-kind={mostStalled.kind}
+          data-stall-count={count}
+        >
+          <AlertTriangle className="h-3 w-3" aria-hidden />
+          {label}
+          {extra}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="text-[11px] max-w-[18rem]">
+        {tip}
+      </TooltipContent>
+    </Tooltip>
+  );
 }
 
 /**
@@ -230,6 +296,10 @@ export function DeviceStatusTile({
                 </span>
 
                 <div className="flex items-center gap-3 text-xs text-muted-foreground shrink-0">
+                  <StalledBadge
+                    mostStalled={row.most_stalled_session}
+                    count={row.stalled_session_count}
+                  />
                   {row.free_text && (
                     <span
                       className="italic max-w-[14rem] truncate"

@@ -48,6 +48,52 @@ export interface DeviceStatus {
   tenant_id: string | null;
   /** RFC 3339. Drives the "<age>s ago" sub-line. */
   updated_at: string;
+  /**
+   * Phase 5 (plan `2026-06-24-coord-session-progress-and-stall-detection`) —
+   * count of stalled / dispatched-but-never-started sessions on this device,
+   * joined fail-open from `coord.sessions` on coord's `GET /coord/status`.
+   * Absent on a coord deploy that predates Phase 5 (defaults to no badge).
+   */
+  stalled_session_count?: number;
+  /**
+   * Phase 5 — the single most-stalled session on this device (largest
+   * `stall_age_secs`), driving the tile's stalled badge + age and the
+   * distinct "dispatched, never started" indicator
+   * (`kind === "expected_unstarted"`). Absent / null when the device has no
+   * stalled session or coord predates Phase 5.
+   */
+  most_stalled_session?: StalledSession | null;
+}
+
+/**
+ * Phase 5 — a stalled (or dispatched-but-never-started) session, mirroring
+ * coord's `StalledSessionSummary` (`sessions.rs`). Surfaced on the device tile.
+ *
+ * `kind` distinguishes the two stall shapes:
+ * - `"stalled"` — an `active` session that heartbeats but stopped advancing
+ *   `last_progress_at`.
+ * - `"expected_unstarted"` — a dispatched continuation whose durable child
+ *   session was never started; `continuation_gate_id` is the originating gate.
+ *
+ * Optional/loose tail on `kind` so a future coord variant the web hasn't been
+ * taught about still renders (as a generic stalled badge) rather than crashing.
+ */
+export interface StalledSession {
+  session_id: string;
+  device_id: string;
+  kind: "stalled" | "expected_unstarted" | string;
+  /** `coord.sessions.state` (`active` | `expected` | ...). */
+  state: string;
+  session_status?: string | null;
+  /** Age of the stall in seconds (since last progress, or since dispatch for
+   *  an expected-unstarted continuation). Drives the "stalled <age>" label. */
+  stall_age_secs: number;
+  last_progress_at?: string | null;
+  expected_at?: string | null;
+  /** For `expected_unstarted`: the originating gate id. */
+  continuation_gate_id?: string | null;
+  correlation_topic?: string | null;
+  plan_slug?: string | null;
 }
 
 /** Wire shape returned by `GET /api/v1/operations/device-status`. */
