@@ -2079,6 +2079,40 @@
         "title": "AnnotationSetUpdate",
         "type": "object"
       },
+      "ApplicationCreate": {
+        "description": "Create an application.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "slug"
+        ],
+        "title": "ApplicationCreate",
+        "type": "object"
+      },
       "ApplicationProfileCreate": {
         "description": "Request to create an application profile.",
         "properties": {
@@ -2253,6 +2287,96 @@
           }
         },
         "title": "ApplicationProfileUpdate",
+        "type": "object"
+      },
+      "ApplicationResponse": {
+        "description": "An application.",
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ApplicationResponse",
+        "type": "object"
+      },
+      "ApplicationUpdate": {
+        "description": "Partial update of an application.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "slug": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slug"
+          }
+        },
+        "title": "ApplicationUpdate",
         "type": "object"
       },
       "ApproveSkillRequest": {
@@ -7467,6 +7591,36 @@
           "median"
         ],
         "title": "ConfidenceStats",
+        "type": "object"
+      },
+      "ConfigEnvelope": {
+        "description": "General JSON config envelope: named sections of flat string maps.\n\nValidation invariants:\n\n* Every section is a flat ``dict[str, str]`` \u2014 nested / non-string\n  section values are rejected.\n* For the ``env_contract`` section every value is coerced to the\n  literal ``\"present\"``/``\"absent\"`` BEFORE persist (secret backstop):\n  a non-empty value becomes ``\"present\"``, an empty value ``\"absent\"``.\n  This guarantees secret VALUES never enter the store even if an agent\n  misbehaves.",
+        "properties": {
+          "captured_at": {
+            "format": "date-time",
+            "title": "Captured At",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "sections": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "title": "Sections",
+            "type": "object"
+          }
+        },
+        "required": [
+          "captured_at"
+        ],
+        "title": "ConfigEnvelope",
         "type": "object"
       },
       "ConflictChange": {
@@ -14192,6 +14346,285 @@
         "title": "EmbeddingResultsResponse",
         "type": "object"
       },
+      "EnrollRequest": {
+        "description": "Agent enroll request \u2014 consumes a one-time enrollment code.\n\n``machine_id`` is optional and, when supplied, must match the machine\nthe enrollment code belongs to (a sanity binding the agent can assert).\n``hostname`` lets the agent report/refresh its hostname at enroll time.",
+        "properties": {
+          "enrollment_code": {
+            "maxLength": 16,
+            "minLength": 1,
+            "title": "Enrollment Code",
+            "type": "string"
+          },
+          "hostname": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hostname"
+          },
+          "machine_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Machine Id"
+          }
+        },
+        "required": [
+          "enrollment_code"
+        ],
+        "title": "EnrollRequest",
+        "type": "object"
+      },
+      "EnrollResponse": {
+        "description": "Agent enroll response \u2014 plaintext machine key returned ONCE.",
+        "properties": {
+          "environment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Id"
+          },
+          "machine_id": {
+            "format": "uuid",
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "machine_key": {
+            "title": "Machine Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id",
+          "machine_key"
+        ],
+        "title": "EnrollResponse",
+        "type": "object"
+      },
+      "EnvironmentCreate": {
+        "description": "Create an environment, optionally bound to an application.",
+        "properties": {
+          "application_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Application Id"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "EnvironmentCreate",
+        "type": "object"
+      },
+      "EnvironmentDriftResponse": {
+        "description": "Environment-level drift rollup across all non-canonical machines.",
+        "properties": {
+          "canonical_machine_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canonical Machine Id"
+          },
+          "canonical_machine_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canonical Machine Name"
+          },
+          "environment_id": {
+            "format": "uuid",
+            "title": "Environment Id",
+            "type": "string"
+          },
+          "in_sync": {
+            "title": "In Sync",
+            "type": "boolean"
+          },
+          "reports": {
+            "items": {
+              "$ref": "#/components/schemas/MachineDriftReport"
+            },
+            "title": "Reports",
+            "type": "array"
+          },
+          "severity": {
+            "enum": [
+              "info",
+              "warning",
+              "critical"
+            ],
+            "title": "Severity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "environment_id",
+          "severity",
+          "in_sync"
+        ],
+        "title": "EnvironmentDriftResponse",
+        "type": "object"
+      },
+      "EnvironmentResponse": {
+        "description": "An environment, including its (single) canonical machine pointer.",
+        "properties": {
+          "application_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Application Id"
+          },
+          "canonical_machine_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canonical Machine Id"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "EnvironmentResponse",
+        "type": "object"
+      },
+      "EnvironmentUpdate": {
+        "description": "Partial update of an environment.",
+        "properties": {
+          "application_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Application Id"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "title": "EnvironmentUpdate",
+        "type": "object"
+      },
       "ErrorModel": {
         "properties": {
           "detail": {
@@ -20742,6 +21175,62 @@
         "title": "JobSummary",
         "type": "object"
       },
+      "KeyDelta": {
+        "description": "A single key-level difference between canonical and a target machine.",
+        "properties": {
+          "actual": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual"
+          },
+          "expected": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "info",
+              "warning",
+              "critical"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "added",
+              "removed",
+              "changed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "status",
+          "severity"
+        ],
+        "title": "KeyDelta",
+        "type": "object"
+      },
       "KnownIssueCreate": {
         "description": "Request to create a known issue.",
         "properties": {
@@ -22171,6 +22660,225 @@
         "title": "LockResponse",
         "type": "object"
       },
+      "MachineCreate": {
+        "description": "Register a machine. Creation also mints a one-time enrollment code.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "hostname": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hostname"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "MachineCreate",
+        "type": "object"
+      },
+      "MachineCreatedResponse": {
+        "description": "Returned on create / regenerate-enrollment.\n\nIncludes the one-time ``enrollment_code`` + its expiry. The agent must\nconsume the code before it expires; it is NOT retrievable afterwards.",
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "enrolled": {
+            "default": false,
+            "title": "Enrolled",
+            "type": "boolean"
+          },
+          "enrollment_code": {
+            "title": "Enrollment Code",
+            "type": "string"
+          },
+          "enrollment_expires_at": {
+            "title": "Enrollment Expires At",
+            "type": "string"
+          },
+          "hostname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hostname"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "key_prefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Prefix"
+          },
+          "last_seen_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seen At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "revoked": {
+            "default": false,
+            "title": "Revoked",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "created_at",
+          "updated_at",
+          "enrollment_code",
+          "enrollment_expires_at"
+        ],
+        "title": "MachineCreatedResponse",
+        "type": "object"
+      },
+      "MachineDriftReport": {
+        "description": "Drift of one target machine vs the canonical machine.",
+        "properties": {
+          "actual_schema_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Schema Version"
+          },
+          "expected_schema_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Schema Version"
+          },
+          "has_config": {
+            "default": true,
+            "title": "Has Config",
+            "type": "boolean"
+          },
+          "in_sync": {
+            "title": "In Sync",
+            "type": "boolean"
+          },
+          "machine_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Machine Id"
+          },
+          "machine_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Machine Name"
+          },
+          "schema_version_mismatch": {
+            "default": false,
+            "title": "Schema Version Mismatch",
+            "type": "boolean"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/SectionDrift"
+            },
+            "title": "Sections",
+            "type": "array"
+          },
+          "severity": {
+            "enum": [
+              "info",
+              "warning",
+              "critical"
+            ],
+            "title": "Severity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "severity",
+          "in_sync"
+        ],
+        "title": "MachineDriftReport",
+        "type": "object"
+      },
       "MachineRenameRequest": {
         "description": "Body for ``PATCH /fleet/machines/{hostname}``.\n\n``name`` is the desired friendly display name. A non-empty (after\ntrim) string upserts the name; an empty/whitespace-only string or\n``null`` clears it (reverting the machine to its raw hostname).",
         "properties": {
@@ -22187,6 +22895,133 @@
           }
         },
         "title": "MachineRenameRequest",
+        "type": "object"
+      },
+      "MachineResponse": {
+        "description": "A machine \u2014 NEVER exposes key/hash.\n\nOnly ``key_prefix`` + the derived boolean flags are surfaced.",
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "enrolled": {
+            "default": false,
+            "title": "Enrolled",
+            "type": "boolean"
+          },
+          "hostname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hostname"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "key_prefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Prefix"
+          },
+          "last_seen_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seen At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "revoked": {
+            "default": false,
+            "title": "Revoked",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "MachineResponse",
+        "type": "object"
+      },
+      "MachineUpdate": {
+        "description": "Partial update of a machine's descriptive fields.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "hostname": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hostname"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "title": "MachineUpdate",
         "type": "object"
       },
       "MacroCreate": {
@@ -31692,6 +32527,37 @@
         "title": "SearchResultItem",
         "type": "object"
       },
+      "SectionDrift": {
+        "description": "Per-section rollup of key deltas.",
+        "properties": {
+          "deltas": {
+            "items": {
+              "$ref": "#/components/schemas/KeyDelta"
+            },
+            "title": "Deltas",
+            "type": "array"
+          },
+          "section": {
+            "title": "Section",
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "info",
+              "warning",
+              "critical"
+            ],
+            "title": "Severity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "section",
+          "severity"
+        ],
+        "title": "SectionDrift",
+        "type": "object"
+      },
       "SecurityRecommendation": {
         "description": "Security recommendation for alerts.",
         "properties": {
@@ -31941,6 +32807,21 @@
           "total_events"
         ],
         "title": "SessionTimeline",
+        "type": "object"
+      },
+      "SetCanonicalRequest": {
+        "description": "Designate a machine as the canonical source of truth for an env.",
+        "properties": {
+          "machine_id": {
+            "format": "uuid",
+            "title": "Machine Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id"
+        ],
+        "title": "SetCanonicalRequest",
         "type": "object"
       },
       "ShareSkillRequest": {
@@ -54497,6 +55378,1044 @@
         "summary": "Get Confidence Histogram",
         "tags": [
           "training-datasets"
+        ]
+      }
+    },
+    "/api/v1/devenv/agent/enroll": {
+      "post": {
+        "description": "Consume a one-time enrollment code and mint a machine key.\n\n**No machine-key dependency** \u2014 the enrollment code IS the credential\n(the agent has no key yet). The code is consumed under a ``FOR UPDATE``\nrow lock so concurrent enroll attempts serialize and only the first\nsucceeds. The plaintext key is returned ONCE; only its hash + prefix\nare stored.\n\nReturns the machine's bound ``environment_id`` if exactly one\nenvironment exists for the owner (a convenience for single-environment\nsetups); otherwise ``None`` and the agent reports per-environment by id.",
+        "operationId": "api_v1_devenv_agent_enroll_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnrollRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enroll Agent",
+        "tags": [
+          "environments-agent"
+        ]
+      }
+    },
+    "/api/v1/devenv/agent/environments/{environment_id}/config": {
+      "put": {
+        "description": "Upsert the calling machine's config for an environment.\n\nThe environment must be owned by the machine's owner (else 404 \u2014 never\nleak existence). The :class:`ConfigEnvelope` validator has already\napplied the secret backstop (env_contract values coerced to\npresent/absent; nested non-string section values rejected) by the time\nthis body runs, so the stored config is secret-safe.",
+        "operationId": "api_v1_devenv_agent_environments_environment_id_config_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Environment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Machine-Key",
+            "required": true,
+            "schema": {
+              "title": "X-Machine-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigEnvelope"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Report Config Api V1 Devenv Agent Environments  Environment Id  Config Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Report Config",
+        "tags": [
+          "environments-agent"
+        ]
+      }
+    },
+    "/api/v1/devenv/applications": {
+      "get": {
+        "description": "List the owner's applications.",
+        "operationId": "api_v1_devenv_applications_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ApplicationResponse"
+                  },
+                  "title": "Response List Applications Api V1 Devenv Applications Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Applications",
+        "tags": [
+          "environments"
+        ]
+      },
+      "post": {
+        "description": "Create an application (slug unique per owner).",
+        "operationId": "api_v1_devenv_applications_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplicationCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Create Application",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/v1/devenv/applications/{application_id}": {
+      "delete": {
+        "description": "Delete an application.",
+        "operationId": "api_v1_devenv_applications_application_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "application_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Application Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Application",
+        "tags": [
+          "environments"
+        ]
+      },
+      "get": {
+        "description": "Get one application.",
+        "operationId": "api_v1_devenv_applications_application_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "application_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Application Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Application",
+        "tags": [
+          "environments"
+        ]
+      },
+      "patch": {
+        "description": "Partially update an application.",
+        "operationId": "api_v1_devenv_applications_application_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "application_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Application Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplicationUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update Application",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/v1/devenv/environments": {
+      "get": {
+        "description": "List the owner's environments.",
+        "operationId": "api_v1_devenv_environments_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/EnvironmentResponse"
+                  },
+                  "title": "Response List Environments Api V1 Devenv Environments Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Environments",
+        "tags": [
+          "environments"
+        ]
+      },
+      "post": {
+        "description": "Create an environment, optionally bound to an owned application.",
+        "operationId": "api_v1_devenv_environments_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnvironmentCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Create Environment",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/v1/devenv/environments/{environment_id}": {
+      "delete": {
+        "description": "Delete an environment.",
+        "operationId": "api_v1_devenv_environments_environment_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Environment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Environment",
+        "tags": [
+          "environments"
+        ]
+      },
+      "get": {
+        "description": "Get one environment.",
+        "operationId": "api_v1_devenv_environments_environment_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Environment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Environment",
+        "tags": [
+          "environments"
+        ]
+      },
+      "patch": {
+        "description": "Partially update an environment.",
+        "operationId": "api_v1_devenv_environments_environment_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Environment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnvironmentUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update Environment",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/v1/devenv/environments/{environment_id}/canonical": {
+      "put": {
+        "description": "Designate a machine as the canonical source of truth for an env.\n\nValidates the machine is owned by the caller AND has reported a config\nrow for this environment (a machine with no config can't be a useful\nsource of truth). Atomic single-column update.",
+        "operationId": "api_v1_devenv_environments_environment_id_canonical_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Environment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetCanonicalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Set Canonical Machine",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/v1/devenv/environments/{environment_id}/drift": {
+      "get": {
+        "description": "Drift of every non-canonical machine vs the canonical machine.\n\n422 when no canonical machine is set (drift is undefined without a\nsource of truth).",
+        "operationId": "api_v1_devenv_environments_environment_id_drift_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Environment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentDriftResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Environment Drift",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/v1/devenv/environments/{environment_id}/drift/{machine_id}": {
+      "get": {
+        "description": "Drift of a single target machine vs the canonical machine.",
+        "operationId": "api_v1_devenv_environments_environment_id_drift_machine_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Environment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "machine_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Machine Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MachineDriftReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Machine Drift",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/v1/devenv/machines": {
+      "get": {
+        "description": "List the owner's machines (never exposes key material).",
+        "operationId": "api_v1_devenv_machines_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MachineResponse"
+                  },
+                  "title": "Response List Machines Api V1 Devenv Machines Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Machines",
+        "tags": [
+          "environments"
+        ]
+      },
+      "post": {
+        "description": "Register a machine and mint its one-time enrollment code.",
+        "operationId": "api_v1_devenv_machines_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MachineCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MachineCreatedResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Create Machine",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/v1/devenv/machines/{machine_id}": {
+      "delete": {
+        "description": "Delete a machine.",
+        "operationId": "api_v1_devenv_machines_machine_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "machine_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Machine Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Machine",
+        "tags": [
+          "environments"
+        ]
+      },
+      "get": {
+        "description": "Get one machine.",
+        "operationId": "api_v1_devenv_machines_machine_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "machine_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Machine Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MachineResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Machine",
+        "tags": [
+          "environments"
+        ]
+      },
+      "patch": {
+        "description": "Partially update a machine's descriptive fields.",
+        "operationId": "api_v1_devenv_machines_machine_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "machine_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Machine Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MachineUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MachineResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update Machine",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/v1/devenv/machines/{machine_id}/regenerate-enrollment": {
+      "post": {
+        "description": "Mint a fresh one-time enrollment code for a machine.\n\nRe-enrolling a machine that already has a key rotates its credential:\nthe agent must re-enroll with the new code to obtain a new key.",
+        "operationId": "api_v1_devenv_machines_machine_id_regenerate_enrollment_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "machine_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Machine Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MachineCreatedResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Regenerate Enrollment",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/v1/devenv/machines/{machine_id}/revoke": {
+      "post": {
+        "description": "Revoke a machine's key \u2014 all future agent calls are rejected.",
+        "operationId": "api_v1_devenv_machines_machine_id_revoke_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "machine_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Machine Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MachineResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Revoke Machine",
+        "tags": [
+          "environments"
         ]
       }
     },
