@@ -23,7 +23,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Archive, Gauge, Pause, Play, RefreshCw } from "lucide-react";
+import { Archive, Gauge, Pause, Play, RefreshCw, Skull } from "lucide-react";
 import {
   adminDevService,
   type DevOverview,
@@ -31,6 +31,7 @@ import {
 import { SummaryCards } from "./_components/SummaryCards";
 import { GatesTable } from "./_components/GatesTable";
 import { RolloutPanel } from "./_components/RolloutPanel";
+import { ShadowReapGroups } from "./_components/ShadowReap";
 
 // Auto-refresh cadence. Slightly above the backend's ~30s cache TTL so a
 // poll usually lands a fresh server-side eval rather than a cache hit.
@@ -64,6 +65,10 @@ export default function CoordGatesPage() {
   // When on, the gate list page includes reaper-archived gates (live-only by
   // default). The `counts.archived` tile is always shown regardless.
   const [includeArchived, setIncludeArchived] = useState(false);
+  // When on, the gate list page is restricted to the Tier-4 SHADOW would-reap
+  // set (shadow_reap_signal IS NOT NULL) so the operator can audit per-class
+  // false-positive rates. The `counts.would_reap` tile is always shown.
+  const [wouldReap, setWouldReap] = useState(false);
 
   // Wall-clock of the last successful load, and a 1s ticker that drives the
   // "updated Xs ago" label without re-fetching.
@@ -81,6 +86,7 @@ export default function CoordGatesPage() {
       const data = await adminDevService.getOverview({
         refresh: isRefresh,
         includeArchived,
+        wouldReap,
       });
       setOverview(data);
       setError(null);
@@ -92,7 +98,7 @@ export default function CoordGatesPage() {
       setRefreshing(false);
       inFlight.current = false;
     }
-  }, [includeArchived]);
+  }, [includeArchived, wouldReap]);
 
   // Initial load.
   useEffect(() => {
@@ -160,6 +166,21 @@ export default function CoordGatesPage() {
           <Button
             variant="ghost"
             size="sm"
+            onClick={() => setWouldReap((v) => !v)}
+            data-testid="gates-would-reap-toggle"
+            aria-pressed={wouldReap}
+            title={
+              wouldReap
+                ? "Showing the SHADOW would-reap set — click to show all"
+                : "Show only the Tier-4 SHADOW would-be-reaped gates"
+            }
+          >
+            <Skull className="h-3.5 w-3.5 mr-1" />
+            {wouldReap ? "Would-reap: on" : "Would-reap"}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => setAutoRefresh((v) => !v)}
             data-testid="gates-autorefresh-toggle"
             aria-pressed={autoRefresh}
@@ -221,6 +242,8 @@ export default function CoordGatesPage() {
       ) : overview ? (
         <>
           <SummaryCards overview={overview} />
+
+          <ShadowReapGroups gates={overview.gates} />
 
           {overview.gates.length === 0 ? (
             <div
