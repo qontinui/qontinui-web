@@ -75,10 +75,10 @@ _COORD_DOWN_STATUSES = {502, 503, 504}
 # degraded envelope (so a transient outage can't pin a stale banner).
 _CACHE_TTL_SECONDS = 30.0
 
-# cache key (tenant_id, limit, verdict, include_archived) ->
-# (monotonic_expiry, cached_envelope). limit/verdict/include_archived are part
-# of the key so different views never serve each other's cached page.
-_CacheKey = tuple[UUID | None, int, str | None, bool]
+# cache key (tenant_id, limit, verdict, include_archived, would_reap) ->
+# (monotonic_expiry, cached_envelope). limit/verdict/include_archived/would_reap
+# are part of the key so different views never serve each other's cached page.
+_CacheKey = tuple[UUID | None, int, str | None, bool, bool]
 _overview_cache: dict[_CacheKey, tuple[float, dict[str, Any]]] = {}
 _cache_lock = asyncio.Lock()
 
@@ -165,6 +165,13 @@ async def get_dev_overview(
         description="Include reaper-archived (archived_at IS NOT NULL) gates in "
         "the page. Omitted/false ⇒ live gates only (the default hot path).",
     ),
+    would_reap: bool = Query(
+        default=False,
+        description="Restrict to the Tier-4 SHADOW would-reap set "
+        "(shadow_reap_signal IS NOT NULL) — the gates the reaper would reap if "
+        "armed live, each carrying its cited abandonment signal. Omitted/false "
+        "⇒ no shadow filter.",
+    ),
     tenant_id: UUID | None = Depends(_capture_bearer_best_effort),
     _admin: User = Depends(require_admin),  # superuser gate (hard, never weakened)
 ) -> Any:
@@ -191,7 +198,7 @@ async def get_dev_overview(
     coord outage too (not just the case where ``/admin/coord/me`` happened to
     succeed). The Spec CI crawl, which runs without a live coord, stays green.
     """
-    cache_key: _CacheKey = (tenant_id, limit, verdict, include_archived)
+    cache_key: _CacheKey = (tenant_id, limit, verdict, include_archived, would_reap)
     if not refresh:
         cached = await _cache_get(cache_key)
         if cached is not None:
@@ -205,6 +212,8 @@ async def get_dev_overview(
         params["verdict"] = verdict
     if include_archived:
         params["include_archived"] = 1
+    if would_reap:
+        params["would_reap"] = 1
 
     try:
         envelope = await _proxy_coord_get(
