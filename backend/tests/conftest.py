@@ -195,9 +195,7 @@ async def test_engine():
     # Create all tables at start of test session
     async with _test_engine.begin() as conn:
         for schema_name in sorted(declared_schemas):
-            await conn.execute(
-                _sa_text(f'CREATE SCHEMA IF NOT EXISTS "{schema_name}"')
-            )
+            await conn.execute(_sa_text(f'CREATE SCHEMA IF NOT EXISTS "{schema_name}"'))
 
         if vector_available:
             tables_to_create = None  # create everything
@@ -221,9 +219,7 @@ async def test_engine():
                             changed = True
                             break
             tables_to_create = [
-                t
-                for t in Base.metadata.sorted_tables
-                if t.key not in excluded
+                t for t in Base.metadata.sorted_tables if t.key not in excluded
             ]
 
         await conn.run_sync(Base.metadata.create_all, tables=tables_to_create)

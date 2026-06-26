@@ -93,7 +93,9 @@ def _schema_version(envelope: dict[str, Any]) -> int | None:
         return None
 
 
-def diff_envelopes(canonical: dict[str, Any], actual: dict[str, Any]) -> MachineDriftReport:
+def diff_envelopes(
+    canonical: dict[str, Any], actual: dict[str, Any]
+) -> MachineDriftReport:
     """Diff a target ``actual`` envelope against the ``canonical`` envelope.
 
     Section-by-section, key-by-key. Produces a :class:`MachineDriftReport`

@@ -155,9 +155,7 @@ async def update_application(
     return ApplicationResponse.model_validate(app)
 
 
-@router.delete(
-    "/applications/{application_id}", status_code=status.HTTP_204_NO_CONTENT
-)
+@router.delete("/applications/{application_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_application(
     application_id: UUID,
     db: AsyncSession = Depends(get_async_db),
@@ -189,9 +187,7 @@ async def create_machine(
     current_user: User = Depends(get_current_active_user_async),
 ) -> MachineCreatedResponse:
     """Register a machine and mint its one-time enrollment code."""
-    if await machine_repo.name_exists(
-        db, owner_id=current_user.id, name=payload.name
-    ):
+    if await machine_repo.name_exists(db, owner_id=current_user.id, name=payload.name):
         raise _conflict("machine_name_taken", "Machine name already in use.")
     machine = await machine_repo.create(
         db,
@@ -407,17 +403,13 @@ async def update_environment(
     ):
         raise _conflict("environment_name_taken", "Environment name already in use.")
     if "application_id" in fields:
-        await _resolve_application_or_404(
-            db, current_user.id, fields["application_id"]
-        )
+        await _resolve_application_or_404(db, current_user.id, fields["application_id"])
     env = await environment_repo.update(db, env=env, fields=fields)
     await db.commit()
     return EnvironmentResponse.model_validate(env)
 
 
-@router.delete(
-    "/environments/{environment_id}", status_code=status.HTTP_204_NO_CONTENT
-)
+@router.delete("/environments/{environment_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_environment(
     environment_id: UUID,
     db: AsyncSession = Depends(get_async_db),
@@ -556,9 +548,7 @@ async def get_environment_drift(
     return devenv_drift.rollup_environment(
         environment_id=env.id,
         canonical_machine_id=env.canonical_machine_id,
-        canonical_machine_name=(
-            canonical_machine.name if canonical_machine else None
-        ),
+        canonical_machine_name=(canonical_machine.name if canonical_machine else None),
         reports=reports,
     )
 

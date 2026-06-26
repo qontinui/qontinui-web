@@ -62,8 +62,7 @@ def generate_enrollment_code() -> str:
     credential.
     """
     return "".join(
-        secrets.choice(ENROLLMENT_CODE_ALPHABET)
-        for _ in range(ENROLLMENT_CODE_LENGTH)
+        secrets.choice(ENROLLMENT_CODE_ALPHABET) for _ in range(ENROLLMENT_CODE_LENGTH)
     )
 
 

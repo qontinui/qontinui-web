@@ -303,9 +303,7 @@ class TestDevenvEndToEnd:
     """The enroll → push → canonical → drift flow against real Postgres."""
 
     @pytest.mark.asyncio
-    async def test_full_flow(
-        self, async_db_session: AsyncSession, test_user
-    ) -> None:
+    async def test_full_flow(self, async_db_session: AsyncSession, test_user) -> None:
         app = _build_app(db_session=async_db_session, user=test_user)
 
         async with _client(app) as client:
@@ -323,9 +321,7 @@ class TestDevenvEndToEnd:
             assert r.status_code == 201, r.text
             env_id = r.json()["id"]
 
-            r = await client.post(
-                f"{API_PREFIX}/machines", json={"name": "machine-a"}
-            )
+            r = await client.post(f"{API_PREFIX}/machines", json={"name": "machine-a"})
             assert r.status_code == 201, r.text
             body_a = r.json()
             machine_a_id = body_a["id"]
@@ -334,9 +330,7 @@ class TestDevenvEndToEnd:
             assert code_a and "machine_key" not in body_a
             assert "key_hash" not in body_a
 
-            r = await client.post(
-                f"{API_PREFIX}/machines", json={"name": "machine-b"}
-            )
+            r = await client.post(f"{API_PREFIX}/machines", json={"name": "machine-b"})
             assert r.status_code == 201, r.text
             body_b = r.json()
             machine_b_id = body_b["id"]
@@ -409,10 +403,7 @@ class TestDevenvEndToEnd:
                 machine_id=UUID(machine_a_id),
             )
             assert row_a is not None
-            assert (
-                row_a.config["sections"]["env_contract"]["DATABASE_URL"]
-                == "present"
-            )
+            assert row_a.config["sections"]["env_contract"]["DATABASE_URL"] == "present"
             assert "topsecret" not in str(row_a.config)
 
             # 4. Set canonical to A.
@@ -564,9 +555,7 @@ class TestDevenvEndToEnd:
                 json={"name": "EnvRevoke", "description": None},
             )
             env_id = r.json()["id"]
-            r = await client.post(
-                f"{API_PREFIX}/machines", json={"name": "revoke-me"}
-            )
+            r = await client.post(f"{API_PREFIX}/machines", json={"name": "revoke-me"})
             body = r.json()
             machine_id = body["id"]
             code = body["enrollment_code"]
@@ -578,9 +567,7 @@ class TestDevenvEndToEnd:
             key = r.json()["machine_key"]
 
             # Revoke it.
-            r = await client.post(
-                f"{API_PREFIX}/machines/{machine_id}/revoke"
-            )
+            r = await client.post(f"{API_PREFIX}/machines/{machine_id}/revoke")
             assert r.status_code == 200, r.text
             assert r.json()["revoked"] is True
 
@@ -601,9 +588,7 @@ class TestDevenvEndToEnd:
         """Enrolling with a mismatched machine_id → 409."""
         app = _build_app(db_session=async_db_session, user=test_user)
         async with _client(app) as client:
-            r = await client.post(
-                f"{API_PREFIX}/machines", json={"name": "bind-check"}
-            )
+            r = await client.post(f"{API_PREFIX}/machines", json={"name": "bind-check"})
             code = r.json()["enrollment_code"]
 
             r = await client.post(
