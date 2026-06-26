@@ -4,6 +4,12 @@ from app.models.annotation import Annotation, AnnotationSet  # noqa
 from app.models.audit_log import AuditLog  # noqa
 from app.models.capture import CaptureDetectedElement  # noqa
 from app.models.clipboard import ClipboardEntry  # noqa
+from app.models.devenv import (
+    Application,  # noqa
+    Environment,  # noqa
+    Machine,  # noqa
+    MachineEnvironmentConfig,  # noqa
+)
 from app.models.device_session import DeviceSession  # noqa
 from app.models.error_monitor import ErrorMonitorEntry  # noqa
 from app.models.extraction import (
