@@ -1,11 +1,7 @@
 """coord.gates — shadow-reap audit columns (gate-reaper Tier 4 SHADOW)
 
 Revision ID: shadowreap01
-<<<<<<< HEAD
 Revises: devenv_01
-=======
-Revises: trackd_drop_merge_escalations_meta
->>>>>>> 6eb0c475 (feat(coord-gates): surface shadow would-reap audit annotations)
 Create Date: 2026-06-25
 
 Adds two nullable shadow-reap audit columns + one partial "shadow would-reap"
@@ -41,7 +37,6 @@ earlier in this same linear chain). It is NOT added to any
 ``ALEMBIC_OWNED_TABLES`` list — the table already exists; this revision only
 ALTERs it.
 
-<<<<<<< HEAD
 NOTE: ``down_revision`` is ``trackd_drop_merge_escalations_meta`` as assigned by
 the coord migration-reservation handshake — this migration is STACKED behind
 qontinui-web #648 (which reserved ``trackd_drop_merge_escalations_meta``, chaining
@@ -50,12 +45,6 @@ off ``coord_gates_progress_cols_01``). #648 must land first; until then the
 coord's merge train rebases + re-checks this PR once #648 merges). Do NOT re-point
 to ``coord_gates_progress_cols_01``: that would fork the chain once #648 lands and
 breaks ``verify-claim`` (the file parent must match the reservation parent).
-=======
-NOTE: both ``revision`` and ``down_revision`` are RESERVED via a coord
-migration-queue head-claim (reservation 252d7fd2-e564-4fb7-a435-0062dff68848,
-position 2 behind the in-flight ``trackd_drop_merge_escalations_meta``) — do
-NOT re-derive ``down_revision`` from a local ``alembic heads``.
->>>>>>> 6eb0c475 (feat(coord-gates): surface shadow would-reap audit annotations)
 """
 
 from collections.abc import Sequence
@@ -64,11 +53,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "shadowreap01"
-<<<<<<< HEAD
 down_revision: str | Sequence[str] | None = "devenv_01"
-=======
-down_revision: str | Sequence[str] | None = "trackd_drop_merge_escalations_meta"
->>>>>>> 6eb0c475 (feat(coord-gates): surface shadow would-reap audit annotations)
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
