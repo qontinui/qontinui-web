@@ -1,7 +1,7 @@
 """create devenv schema and digital-twin tables
 
 Revision ID: devenv_01
-Revises: d7e8f9a0b1c2
+Revises: trackd_drop_merge_escalations_meta
 Create Date: 2026-06-22
 
 Creates the ``devenv`` schema and its four user-scoped tables for the
@@ -23,7 +23,7 @@ from alembic import op
 
 # revision identifiers
 revision = "devenv_01"
-down_revision = "d7e8f9a0b1c2"
+down_revision = "trackd_drop_merge_escalations_meta"
 branch_labels = None
 depends_on = None
 
