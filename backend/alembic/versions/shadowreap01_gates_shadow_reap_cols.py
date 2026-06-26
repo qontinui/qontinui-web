@@ -1,7 +1,7 @@
 """coord.gates — shadow-reap audit columns (gate-reaper Tier 4 SHADOW)
 
 Revision ID: shadowreap01
-Revises: coord_gates_progress_cols_01
+Revises: trackd_drop_merge_escalations_meta
 Create Date: 2026-06-25
 
 Adds two nullable shadow-reap audit columns + one partial "shadow would-reap"
@@ -37,10 +37,14 @@ earlier in this same linear chain). It is NOT added to any
 ``ALEMBIC_OWNED_TABLES`` list — the table already exists; this revision only
 ALTERs it.
 
-NOTE: ``down_revision`` is pinned to ``coord_gates_progress_cols_01`` — the real
-current single head on web ``origin/main``. The earlier reservation parent
-``trackd_drop_merge_escalations_meta`` was a phantom/expired slot that never
-landed on main, so re-pointing here is required to keep the chain single-head.
+NOTE: ``down_revision`` is ``trackd_drop_merge_escalations_meta`` as assigned by
+the coord migration-reservation handshake — this migration is STACKED behind
+qontinui-web #648 (which reserved ``trackd_drop_merge_escalations_meta``, chaining
+off ``coord_gates_progress_cols_01``). #648 must land first; until then the
+``alembic-heads-pr`` gate reports two heads (expected for a stacked migration —
+coord's merge train rebases + re-checks this PR once #648 merges). Do NOT re-point
+to ``coord_gates_progress_cols_01``: that would fork the chain once #648 lands and
+breaks ``verify-claim`` (the file parent must match the reservation parent).
 """
 
 from collections.abc import Sequence
@@ -49,7 +53,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "shadowreap01"
-down_revision: str | Sequence[str] | None = "coord_gates_progress_cols_01"
+down_revision: str | Sequence[str] | None = "trackd_drop_merge_escalations_meta"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
