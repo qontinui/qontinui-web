@@ -93,87 +93,14 @@ jobs:
           # `commit_lineage`. Shallow (default depth-1) would leave it null.
           fetch-depth: 0
 
-      # ── Φ_Schema declared-side chain-head attestation ─────────────────────
-      # coord's schema observer can only see the ACTUAL side (the stamped
-      # alembic_version row) from inside ECS — the authored migration DAG is
-      # a designed blind spot it reports as drift_class `unknown` forever.
-      # This step is the producer half: compute the authored head(s) from the
-      # migration files (stdlib scan, no DB, no alembic install) and POST them
-      # to coord (bearer-gated, fail-closed server-side). Runs BEFORE the
-      # apply and best-effort: the attestation reflects the AUTHORED head
-      # as-merged on main regardless of apply outcome, so authored-not-applied
-      # shows up as coord's honest `pending` rather than being masked by
-      # attest-only-on-success. The nightly schedule re-attests (self-healing
-      # if a POST was ever missed). Any failure here warns and the migration
-      # proceeds — attestation observes, it does not gate.
-      - name: Attest declared alembic chain head to coord
-        continue-on-error: true
-        env:
-          COORD_INGEST_TOKEN: ${{ secrets.COORD_INGEST_TOKEN }}
-        run: |
-          set -uo pipefail
-          HEADS_LINE=$(python3 - <<'PY'
-          import os, re
-          revs, parents = set(), set()
-          d = "backend/alembic/versions"
-          for f in os.listdir(d):
-              if not f.endswith(".py"):
-                  continue
-              s = open(os.path.join(d, f), encoding="utf-8").read()
-              m = re.search(r"^revision(?::\s*str)?\s*=\s*[\"']([^\"']+)", s, re.M)
-              if m:
-                  revs.add(m.group(1))
-              # `[^=\n]` (NOT `[^=]`) so the assignment's `=` must be on the
-              # SAME line. A negated class matches newlines, so `[^=]*` let a
-              # docstring sentence starting "down_revision ..." greedily bridge
-              # across lines to the next `=`, capturing revision-ids mentioned in
-              # the prose (including the head itself) → heads=0 → silent skip →
-              # coord's pre-deploy drift gate wedged (2026-06-15 13h-outage root
-              # cause).
-              for dm in re.finditer(r"^down_revision[^=\n]*=\s*(.+)", s, re.M):
-                  for tok in re.findall(r"[\"']([^\"']+)[\"']", dm.group(1)):
-                      parents.add(tok)
-          heads = sorted(revs - parents)
-          print(f"{','.join(heads)} {len(heads)}")
-          PY
-          )
-          HEADS="${HEADS_LINE% *}"
-          COUNT="${HEADS_LINE##* }"
-          if [ -z "${HEADS:-}" ] || [ "${COUNT:-0}" = "0" ]; then
-            # LOUD, not silent: a missing/zero head leaves coord's chain-head
-            # attestation stale → coord_alembic_drift stuck Pending → EVERY coord
-            # deploy blocks at the pre-deploy drift gate (the 2026-06-15 13h
-            # outage). Surface it as an error annotation so it cannot hide.
-            echo "::error::could not compute the authored alembic head (HEADS='${HEADS:-}' COUNT='${COUNT:-0}') — chain-head attestation SKIPPED; coord deploys will wedge on alembic-drift until fixed"
-            exit 0
-          fi
-          echo "authored chain head(s): $HEADS (count=$COUNT)"
-          BODY=$(python3 -c "
-          import json, os, sys
-          print(json.dumps({
-              'repo': 'qontinui/qontinui-web',
-              'chain_head': sys.argv[1],
-              'head_count': int(sys.argv[2]),
-              'source_sha': os.environ.get('GITHUB_SHA'),
-          }))" "$HEADS" "$COUNT")
-          CODE=$(curl -s -o /tmp/attest_resp -w '%{http_code}' --max-time 20 \
-            -X POST "https://coord.qontinui.io/coord/schema/chain-head" \
-            -H "Authorization: Bearer $COORD_INGEST_TOKEN" \
-            -H 'Content-Type: application/json' \
-            -d "$BODY" || echo 000)
-          if [ "$CODE" = "200" ]; then
-            echo "attested: $(head -c 200 /tmp/attest_resp)"
-          else
-            echo "::warning::chain-head attestation returned $CODE (best-effort, migration proceeds): $(head -c 300 /tmp/attest_resp 2>/dev/null)"
-          fi
-          exit 0
-
-      # ── Φ_Schema authored-DAG snapshot (superset of chain-head) ───────────
-      # Phase 3 of the coord migration/drift/provenance plan. The chain-head
-      # step above POSTs only the head(s); coord now also wants the FULL
-      # authored DAG so it can render per-revision provenance (parents, the
-      # objects each revision touches, reversibility, merge points). Same
-      # stdlib-only scan, same bearer, same fail-open posture — observes, never
+      # ── Φ_Schema authored-DAG snapshot ────────────────────────────────────
+      # Phase 3 of the coord migration/drift/provenance plan, and now the SOLE
+      # declared-side report to coord (the old single chain-head attestation was
+      # retired — coord derives the declared head first-party from its mirror of
+      # web main, so a second-hand POST of just the head(s) is redundant). This
+      # POSTs the FULL authored DAG so coord can render per-revision provenance
+      # (parents, the objects each revision touches, reversibility, merge
+      # points). Stdlib-only scan, bearer-gated, fail-open — observes, never
       # gates. Upserts one row per revision into coord.migration_revisions.
       - name: Report alembic DAG snapshot to coord
         continue-on-error: true
