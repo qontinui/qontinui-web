@@ -17,7 +17,7 @@ This column enables the shepherd to:
 
 Columns added:
 
-* ``work_unit_id`` — UUID FK to ``coord.work_units(id)``. Nullable
+* ``work_unit_id`` — UUID FK to ``coord.work_units.id``. Nullable
   because pre-Phase-5 allocations have no work-unit; new shepherd
   spawns always populate it. Separately indexed for fast filtering
   by work-unit.
@@ -50,7 +50,7 @@ def upgrade() -> None:
         sa.Column(
             "work_unit_id",
             postgresql.UUID(as_uuid=True),
-            sa.ForeignKey("coord.work_units(id)", ondelete="SET NULL"),
+            sa.ForeignKey("coord.work_units.id", ondelete="SET NULL"),
             nullable=True,
         ),
         schema="coord",
