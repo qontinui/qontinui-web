@@ -26,6 +26,7 @@ import type {
   GateOverviewRow,
   ProgressBasis,
 } from "@/services/admin-dev-service";
+import { ShadowReapEvidence } from "./ShadowReap";
 
 // ---- formatting helpers --------------------------------------------------
 
@@ -313,6 +314,7 @@ export function GatesTable({ gates }: { gates: GateOverviewRow[] }) {
                       {g.title}
                     </div>
                     <GateAnchor gate={g} />
+                    <ShadowReapEvidence gate={g} />
                   </TableCell>
                   <TableCell className="max-w-[16rem]">
                     <div

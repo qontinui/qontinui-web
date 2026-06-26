@@ -67,6 +67,14 @@ export interface GateOverviewRow {
   predicate: Record<string, unknown>;
   verdict: string;
   verdict_reason: string | null;
+  /**
+   * Tier-4 SHADOW reaper audit: the cited abandonment signal the reaper would
+   * reap this OPEN gate on (non-null ⇔ a current shadow would-reap). Null on
+   * any gate the shadow cycle did not flag.
+   */
+  shadow_reap_signal: string | null;
+  /** When the most recent shadow cycle stamped `shadow_reap_signal` (ISO-8601). */
+  shadow_reap_at: string | null;
   registered_by: string | null;
   tenant_id: string;
   created_at: string;
@@ -132,6 +140,11 @@ export interface GateCounts {
   snoozed: number;
   /** Reaper-archived gates (archived_at IS NOT NULL), retained for audit. */
   archived: number;
+  /**
+   * Tier-4 SHADOW would-reap gates (shadow_reap_signal IS NOT NULL): OPEN gates
+   * the reaper would reap if armed live, each carrying its cited signal.
+   */
+  would_reap: number;
 }
 
 export type GateVerdict = "open" | "cleared" | "failed";
@@ -242,19 +255,22 @@ class AdminDevService {
    * poll benefits from the cache). `opts.verdict` filters server-side;
    * `opts.limit` caps the page (coord orders OPEN-first either way).
    * `opts.includeArchived` includes reaper-archived gates in the page
-   * (default: live gates only).
+   * (default: live gates only). `opts.wouldReap` restricts to the Tier-4
+   * SHADOW would-reap set (shadow_reap_signal IS NOT NULL).
    */
   async getOverview(opts?: {
     refresh?: boolean;
     verdict?: GateVerdict;
     limit?: number;
     includeArchived?: boolean;
+    wouldReap?: boolean;
   }): Promise<DevOverview> {
     const p = new URLSearchParams();
     if (opts?.refresh) p.set("refresh", "1");
     if (opts?.verdict) p.set("verdict", opts.verdict);
     if (opts?.limit) p.set("limit", String(opts.limit));
     if (opts?.includeArchived) p.set("include_archived", "1");
+    if (opts?.wouldReap) p.set("would_reap", "1");
     const qs = p.toString();
     return httpClient.get<DevOverview>(
       `${API}/overview${qs ? `?${qs}` : ""}`,
