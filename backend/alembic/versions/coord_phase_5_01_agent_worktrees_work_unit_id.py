@@ -1,7 +1,7 @@
 """coord phase 5 01 agent_worktrees work_unit_id
 
 Revision ID: coord_phase_5_01_agent_worktrees_work_unit_id
-Revises: z2a3b4c5d6e7
+Revises: shadowreap01
 Create Date: 2026-06-26
 
 Phase 5 of the shepherd-sweep refactor (unlandable PR lifecycle).
@@ -38,7 +38,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_phase_5_01_agent_worktrees_work_unit_id"
-down_revision: str = "z2a3b4c5d6e7"
+down_revision: str = "shadowreap01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
