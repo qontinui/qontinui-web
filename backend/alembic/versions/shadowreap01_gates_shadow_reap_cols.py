@@ -1,7 +1,7 @@
 """coord.gates — shadow-reap audit columns (gate-reaper Tier 4 SHADOW)
 
 Revision ID: shadowreap01
-Revises: trackd_drop_merge_escalations_meta
+Revises: devenv_01
 Create Date: 2026-06-25
 
 Adds two nullable shadow-reap audit columns + one partial "shadow would-reap"
@@ -53,7 +53,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "shadowreap01"
-down_revision: str | Sequence[str] | None = "trackd_drop_merge_escalations_meta"
+down_revision: str | Sequence[str] | None = "devenv_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
