@@ -121,6 +121,21 @@ export const devNavItems: NavItem[] = [
   },
 
   // ===========================================================================
+  // Environments — digital-twin management surface. Register applications +
+  // machines, define environments, designate a CANONICAL machine, and view
+  // per-machine config DRIFT vs canonical. User-JWT scoped (devenv API).
+  // ===========================================================================
+  {
+    id: "environments",
+    label: "Environments",
+    description: "Applications, machines, and config drift vs canonical",
+    icon: React.createElement(Server, { className: "size-5" }),
+    route: "/environments",
+    color: "#6366F1",
+    group: "Runners",
+  },
+
+  // ===========================================================================
   // AI mode tools (supplemental to shared navigation)
   // ===========================================================================
   {

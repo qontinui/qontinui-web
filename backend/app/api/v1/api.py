@@ -42,6 +42,8 @@ from app.api.v1.endpoints import (
     conflicts,
     constraints,
     custom_functions,
+    devenv,
+    devenv_agent,
     device_bridge_ws,
     devices,
     devices_ws,
@@ -210,6 +212,11 @@ api_router.include_router(operations.router, prefix="/operations", tags=["operat
 # Digital Twin Explorer (Phase 1) — coord-backed completeness matrix.
 api_router.include_router(
     digital_twin.router, prefix="/digital-twin", tags=["digital-twin"]
+)
+# Environments digital-twin — user-scoped management API + machine-key agent API.
+api_router.include_router(devenv.router, prefix="/devenv", tags=["environments"])
+api_router.include_router(
+    devenv_agent.router, prefix="/devenv", tags=["environments-agent"]
 )
 # Identity-contract I3-web — PR -> responsible qontinui user(s) resolver.
 api_router.include_router(
