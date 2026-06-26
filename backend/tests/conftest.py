@@ -160,9 +160,69 @@ async def test_engine():
         echo=False,
     )
 
+    # The models live in several named Postgres schemas (auth, project,
+    # coord, web, devenv, ...). The test DB is created from template0 and has
+    # none of them; `Base.metadata.create_all` does NOT create schemas, so
+    # table creation fails with InvalidSchemaNameError until the schemas
+    # exist. Derive the set of declared schemas from the metadata and create
+    # each (idempotently) before building the tables.
+    from sqlalchemy import text as _sa_text
+
+    declared_schemas = {
+        table.schema for table in Base.metadata.tables.values() if table.schema
+    }
+
+    # pgvector: a few project.* tables declare VECTOR(...) columns. Try to
+    # enable the extension in its OWN transaction first; a failed
+    # CREATE EXTENSION aborts the surrounding transaction, so it must not
+    # share the table-build transaction. If the server build doesn't ship
+    # pgvector (common on a vanilla Postgres test instance) skip ONLY the
+    # vector-dependent tables so the rest of the schema still builds. The
+    # features under test here don't use vector columns.
+    vector_available = True
+    try:
+        async with _test_engine.begin() as ext_conn:
+            await ext_conn.execute(_sa_text("CREATE EXTENSION IF NOT EXISTS vector"))
+    except Exception:  # noqa: BLE001 — best-effort; degrade gracefully
+        vector_available = False
+
+    def _has_vector_column(table) -> bool:
+        for col in table.columns:
+            if "vector" in type(col.type).__name__.lower():
+                return True
+        return False
+
     # Create all tables at start of test session
     async with _test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        for schema_name in sorted(declared_schemas):
+            await conn.execute(_sa_text(f'CREATE SCHEMA IF NOT EXISTS "{schema_name}"'))
+
+        if vector_available:
+            tables_to_create = None  # create everything
+        else:
+            # Exclude vector-column tables AND, transitively, any table whose
+            # FKs reference an excluded table (e.g. association tables like
+            # project.ui_bridge_state_domain_knowledge) — otherwise their
+            # CREATE TABLE fails on the missing referenced relation.
+            excluded = {
+                t.key for t in Base.metadata.tables.values() if _has_vector_column(t)
+            }
+            changed = True
+            while changed:
+                changed = False
+                for t in Base.metadata.tables.values():
+                    if t.key in excluded:
+                        continue
+                    for fk in t.foreign_keys:
+                        if fk.column.table.key in excluded:
+                            excluded.add(t.key)
+                            changed = True
+                            break
+            tables_to_create = [
+                t for t in Base.metadata.sorted_tables if t.key not in excluded
+            ]
+
+        await conn.run_sync(Base.metadata.create_all, tables=tables_to_create)
 
     yield _test_engine
 
