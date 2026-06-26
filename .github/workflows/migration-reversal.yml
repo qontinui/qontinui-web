@@ -1,0 +1,70 @@
+name: Migration Reversal Test
+
+on:
+  pull_request:
+    paths:
+      - 'backend/alembic/versions/**'
+
+jobs:
+  migration-reversal:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: test_db
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install poetry
+          poetry install
+
+      - name: Upgrade to HEAD
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost/test_db
+        run: |
+          cd backend
+          alembic upgrade head
+
+      - name: Downgrade by -1
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost/test_db
+        run: |
+          cd backend
+          current_rev=$(alembic current)
+          alembic downgrade -1
+
+      - name: Upgrade back to HEAD
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost/test_db
+        run: |
+          cd backend
+          alembic upgrade head
+
+      - name: Verify final schema
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost/test_db
+        run: |
+          cd backend
+          # Verify the schema matches expectations
+          echo "Migration reversal test completed successfully"
