@@ -1,7 +1,7 @@
 """coord.sessions.provider — AI CLI provider hosting the session (fleet provider-awareness)
 
 Revision ID: coord_sessions_provider
-Revises: trackd_drop_merge_escalations_meta
+Revises: devenv_01
 Create Date: 2026-06-26
 
 Phase 6 of the runner session-restore redesign
@@ -36,7 +36,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_sessions_provider"
-down_revision: str = "trackd_drop_merge_escalations_meta"
+down_revision: str = "devenv_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
