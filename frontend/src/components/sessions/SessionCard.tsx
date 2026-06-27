@@ -67,6 +67,35 @@ const KIND_LABEL: Record<string, string> = {
   debug: "Debug",
 };
 
+/** Display label for `coord.sessions.provider` (Phase 6). Unknown providers
+ * fall back to a title-cased raw value so a new provider still renders. */
+const PROVIDER_LABEL: Record<string, string> = {
+  claude: "Claude",
+  codex: "Codex",
+  gemini: "Gemini",
+};
+
+function providerLabel(provider: string): string {
+  return (
+    PROVIDER_LABEL[provider] ??
+    provider.charAt(0).toUpperCase() + provider.slice(1)
+  );
+}
+
+/** Per-provider chip color so claude vs codex are distinguishable at a glance. */
+function providerBadgeClass(provider: string): string {
+  switch (provider) {
+    case "claude":
+      return "border-orange-500/40 text-orange-300 bg-orange-500/5";
+    case "codex":
+      return "border-emerald-500/40 text-emerald-300 bg-emerald-500/5";
+    case "gemini":
+      return "border-sky-500/40 text-sky-300 bg-sky-500/5";
+    default:
+      return "border-border text-muted-foreground bg-muted/10";
+  }
+}
+
 function heartbeatBadgeClass(
   health: ReturnType<typeof classifyHeartbeat>
 ): string {
@@ -205,6 +234,16 @@ export function SessionCard({
               >
                 {kindLabel}
               </Badge>
+              {session.provider && (
+                <Badge
+                  variant="outline"
+                  className={`text-[10px] px-1.5 py-0 ${providerBadgeClass(session.provider)}`}
+                  data-ui-bridge-id="sessions.card-provider"
+                  data-provider={session.provider}
+                >
+                  {providerLabel(session.provider)}
+                </Badge>
+              )}
               {tenantLabel && (
                 <Badge
                   variant="outline"

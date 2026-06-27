@@ -48,6 +48,14 @@ export interface SessionRow {
   parent_session_id: string | null;
   repo: string | null;
   branch: string | null;
+  /**
+   * Which AI CLI hosts this session — `"claude"`, `"codex"`, … Mirrors
+   * `coord.sessions.provider` (Phase 6 of the session-restore redesign),
+   * propagated from the runner's `TerminalSessionRecord.provider`. `null` when
+   * the provider is unknown (legacy rows, plain shells before a CLI launches,
+   * or a coord that predates the field).
+   */
+  provider: string | null;
 }
 
 /** Wire shape from `GET /api/v1/operations/sessions`. */

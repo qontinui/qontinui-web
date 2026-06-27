@@ -379,6 +379,16 @@ export function SessionDetail({
               <Badge variant="outline" className="text-[10px]">
                 {session.session_kind}
               </Badge>
+              {session.provider && (
+                <Badge
+                  variant="outline"
+                  className="text-[10px] capitalize"
+                  data-ui-bridge-id="sessions.detail-provider"
+                  data-provider={session.provider}
+                >
+                  {session.provider}
+                </Badge>
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
