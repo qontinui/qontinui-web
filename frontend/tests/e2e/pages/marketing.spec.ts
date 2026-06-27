@@ -258,6 +258,57 @@ test.describe("Runner Page (/runner)", () => {
 });
 
 test.describe("Runner Download Page (/runner/download)", () => {
+  // The download page resolves its asset list dynamically from the
+  // GitHub-backed release endpoint (`/api/v1/releases/runner/latest`); the
+  // installer labels ("Windows Installer (MSI)" etc.) are rendered ONLY from
+  // real assets. In CI that endpoint can't reach GitHub and degrades to an
+  // empty asset list, so those labels were absent and the assertions below
+  // rotted (red on main since 2026-06-24). Stub the endpoint so the dynamic
+  // render is deterministic regardless of GitHub reachability. Windows-only
+  // assets are intentional: macOS/Linux then exercise the build-from-source
+  // fallback (no prebuilt binaries yet), matching the real release contents.
+  const RUNNER_RELEASE_STUB = {
+    version: "1.0.0-beta.1",
+    tag: "v1.0.0-beta.1",
+    name: "Qontinui Runner v1.0.0-beta.1",
+    published_at: "2026-06-01T00:00:00Z",
+    html_url:
+      "https://github.com/qontinui/qontinui-runner/releases/tag/v1.0.0-beta.1",
+    prerelease: true,
+    available: true,
+    reason: null,
+    assets: [
+      {
+        name: "Qontinui.Runner_1.0.0-beta.1_x64_en-US.msi",
+        url: "https://example.test/runner.msi",
+        size: 12_000_000,
+        content_type: "application/octet-stream",
+        platform: "windows",
+        kind: "msi",
+        arch: "x64",
+      },
+      {
+        name: "Qontinui.Runner_1.0.0-beta.1_x64-setup.exe",
+        url: "https://example.test/runner-setup.exe",
+        size: 11_000_000,
+        content_type: "application/octet-stream",
+        platform: "windows",
+        kind: "exe",
+        arch: "x64",
+      },
+    ],
+  };
+
+  test.beforeEach(async ({ page }) => {
+    await page.route("**/api/v1/releases/runner/latest", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(RUNNER_RELEASE_STUB),
+      })
+    );
+  });
+
   test("loads without 500 error", async ({ page }) => {
     await page.goto("/runner/download");
     await page.waitForLoadState("domcontentloaded");
@@ -320,13 +371,21 @@ test.describe("Runner Download Page (/runner/download)", () => {
     await expect(page.getByText(/Windows Installer \(EXE\)/i)).toBeVisible();
   });
 
-  test("shows macOS and Linux coming soon sections", async ({ page }) => {
+  test("shows build-from-source fallback for platforms without prebuilt assets", async ({
+    page,
+  }) => {
     await page.goto("/runner/download");
     await page.waitForLoadState("domcontentloaded");
 
-    // macOS and Linux sections should show "Coming Soon"
-    const comingSoonBadges = page.getByText("Coming Soon");
-    expect(await comingSoonBadges.count()).toBeGreaterThanOrEqual(2);
+    // The stubbed release ships Windows assets only, so macOS and Linux have no
+    // prebuilt binaries and render the "Build from source" state (the page no
+    // longer uses a static "Coming Soon" badge — assets are resolved
+    // dynamically from the release). These badges appear only after the stubbed
+    // release fetch resolves, so wait for the 2nd match (macOS + Linux) with a
+    // retrying visibility assertion before the one-shot count check.
+    const buildFromSource = page.getByText(/build from source/i);
+    await expect(buildFromSource.nth(1)).toBeVisible({ timeout: 10000 });
+    expect(await buildFromSource.count()).toBeGreaterThanOrEqual(2);
   });
 
   test("shows System Requirements section", async ({ page }) => {
