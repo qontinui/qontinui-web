@@ -58,7 +58,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_sessions_progress_status"
-down_revision: str | Sequence[str] | None = "presetsrc01_allow_preset_profile_source"
+down_revision: str | Sequence[str] | None = "tgha01_tenant_github_accounts"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
