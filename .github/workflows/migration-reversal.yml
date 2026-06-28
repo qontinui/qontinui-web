@@ -1,5 +1,13 @@
 name: Migration Reversal Test
 
+# S4.3 non-gating safety net (ADR 2026-06-18-review-moves-left): proves every new
+# alembic migration is REVERSIBLE (up → down → up on an ephemeral Postgres) so the
+# coord escalate-path gate on `alembic/versions/**` can be retired. Mirrors the
+# proven local-PG setup in backend-ci.yml (pgvector image, sibling path-deps,
+# named-schema creation, the env vars the model imports require) — env.py imports
+# all app models via `app.db.base_class import *`, so the same DB + SECRET_KEY +
+# schema scaffolding the test suite needs applies here too.
+
 on:
   pull_request:
     paths:
@@ -8,13 +16,17 @@ on:
 jobs:
   migration-reversal:
     runs-on: ubuntu-latest
-    
+
     services:
       postgres:
+        # pgvector image: models with a Vector column need the `vector` type, so
+        # `alembic upgrade head` (which imports every model) fails on stock pg16.
         image: pgvector/pgvector:pg16
+        # Creds must match the DATABASE_URL below.
         env:
-          POSTGRES_DB: test_db
-          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: qontinui_user
+          POSTGRES_PASSWORD: qontinui_dev_password
+          POSTGRES_DB: qontinui_test
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -24,18 +36,31 @@ jobs:
           - 5432:5432
 
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+      - uses: actions/checkout@v5
 
-      - uses: actions/checkout@v4
+      # qontinui (a path-dep) pulls torch — large enough to overflow runner disk.
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
         with:
-          repository: qontinui/qontinui-schemas
-          path: qontinui-schemas
-          token: ${{ secrets.GITHUB_TOKEN }}
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          swap-storage: false
+
+      # Backend's pyproject.toml has path-deps on sibling repos; actions/checkout
+      # refuses `path:` outside the workspace, so clone them to the parent dir
+      # (mirrors backend-ci.yml).
+      - name: Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)
+        run: |
+          cd "$GITHUB_WORKSPACE/.."
+          git clone --depth 1 https://github.com/qontinui/qontinui-schemas.git
+          git clone --depth 1 https://github.com/jspinak/qontinui.git
+          git clone --depth 1 https://github.com/qontinui/qontinui-cloud-control.git
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
@@ -45,32 +70,37 @@ jobs:
           pip install poetry
           poetry install
 
-      - name: Upgrade to HEAD
+      - name: Create named schemas + extension
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost/test_db
+          PGPASSWORD: qontinui_dev_password
         run: |
-          cd backend
-          alembic upgrade head
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+          psql -h localhost -U qontinui_user -d qontinui_test \
+            -c "CREATE SCHEMA IF NOT EXISTS project;" \
+            -c "CREATE SCHEMA IF NOT EXISTS auth;" \
+            -c "CREATE SCHEMA IF NOT EXISTS cloud;" \
+            -c "CREATE SCHEMA IF NOT EXISTS coord;" \
+            -c "CREATE SCHEMA IF NOT EXISTS strategy;" \
+            -c "CREATE SCHEMA IF NOT EXISTS web;" \
+            -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
-      - name: Downgrade by -1
+      # up → down -1 → up. The downgrade must cleanly reverse the newest
+      # migration (the one this PR adds) and the re-upgrade must re-apply it,
+      # proving reversibility. A non-reversible migration (empty/`pass` downgrade,
+      # or DDL the downgrade can't undo) fails here.
+      - name: Reversibility test (upgrade → downgrade -1 → upgrade)
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost/test_db
+          DATABASE_URL: postgresql://qontinui_user:qontinui_dev_password@localhost:5432/qontinui_test
+          SECRET_KEY: test-secret-key-for-testing-only-minimum-32-characters-long
+          ENVIRONMENT: development
+          TESTING: 1
         run: |
           cd backend
-          current_rev=$(alembic current)
-          alembic downgrade -1
-
-      - name: Upgrade back to HEAD
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost/test_db
-        run: |
-          cd backend
-          alembic upgrade head
-
-      - name: Verify final schema
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost/test_db
-        run: |
-          cd backend
-          # Verify the schema matches expectations
-          echo "Migration reversal test completed successfully"
+          set -euo pipefail
+          echo "== upgrade head =="
+          poetry run alembic upgrade head
+          echo "== downgrade -1 =="
+          poetry run alembic downgrade -1
+          echo "== upgrade head (re-apply) =="
+          poetry run alembic upgrade head
+          echo "Migration reversal test passed."

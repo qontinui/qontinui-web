@@ -41,7 +41,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "pr_unlandable_attempts_01_create_table"
-down_revision: str | Sequence[str] | None = "gateverdict_01_misconfigured"
+down_revision: str | Sequence[str] | None = "coord_sessions_expected_state"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
