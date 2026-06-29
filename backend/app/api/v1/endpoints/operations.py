@@ -89,6 +89,7 @@ from app.services.coord_device_status import (
     mint_device_status_token,
 )
 from app.services.coord_identity import (
+    CoordIdentity,
     get_coord_identity,
     get_coord_identity_for_token,
 )
@@ -217,23 +218,52 @@ async def require_coord_tenant_admin(
     settings-write route is not silently opened. Coord-side enforcement on
     the write route is a noted follow-up, not this PR.
     """
+    active = request.headers.get(ACTIVE_TENANT_HEADER)
     _caller_bearer.set(_extract_caller_token(request))
-    _caller_active_tenant.set(request.headers.get(ACTIVE_TENANT_HEADER))
+    _caller_active_tenant.set(active)
     identity = await get_coord_identity(request)
     if identity.home_tenant_id is None:
         raise HTTPException(status_code=403, detail="tenant_not_resolved")
-    # Admin is checked IN THE ACTIVE TENANT, not as a union across all of the
-    # operator's tenants. With the active-tenant header forwarded, coord's
-    # /me returns `roles` scoped to the selected tenant (its
-    # `apply_active_tenant_override` re-scopes the operator context), so
-    # `identity.roles` reflects the operator's role THERE — an operator who is
-    # Administrator of tenant A but only Developer of tenant B is correctly
-    # denied admin writes after switching to B. (`is_admin` remains a union
-    # and would wrongly pass.) qontinui superusers (staff) keep full access.
-    is_active_tenant_admin = "admin" in identity.roles
+    # Admin is checked IN THE EFFECTIVE TENANT — the active selection when the
+    # operator is a member of it, otherwise the home tenant — using the
+    # PER-TENANT roles from `identity.tenants`, NOT a union across every tenant.
+    # An operator who is Administrator of tenant A but only Developer of tenant
+    # B is correctly denied admin writes after switching to B. (`is_admin`
+    # remains a union and would wrongly pass.) This resolves web-side and does
+    # not depend on coord re-scoping the top-level `roles`; coord re-validates
+    # the override server-side too (defense-in-depth). qontinui superusers
+    # (staff) keep full access.
+    effective_roles = _effective_tenant_roles(identity, active)
+    is_active_tenant_admin = "admin" in effective_roles
     if not is_active_tenant_admin and not current_user.is_superuser:
         raise HTTPException(status_code=403, detail="not_coord_tenant_admin")
     return identity.home_tenant_id
+
+
+def _effective_tenant_roles(
+    identity: CoordIdentity, active_tenant: str | None
+) -> tuple[str, ...]:
+    """Roles the operator holds in the EFFECTIVE tenant.
+
+    The effective tenant is the active-switcher selection when the operator is
+    a member of it, otherwise the home tenant. Returns that tenant's per-tenant
+    ``roles`` from ``identity.tenants`` — never a union across all tenants. The
+    selection header carries the tenant id (matched against ``tenant_id``); a
+    slug is also accepted defensively. Falls back to the top-level
+    ``identity.roles`` only when the membership list lacks the effective tenant
+    (coord normally always includes home)."""
+    selection = (active_tenant or "").strip()
+    if selection:
+        for t in identity.tenants:
+            if str(t.tenant_id) == selection or t.slug == selection:
+                return t.roles
+    # No selection, or the selection is not a tenant the operator belongs to
+    # → fall back to the home tenant's per-tenant roles.
+    if identity.home_tenant_id is not None:
+        for t in identity.tenants:
+            if t.tenant_id == identity.home_tenant_id:
+                return t.roles
+    return identity.roles
 
 
 def _tenant_headers(tenant_id: UUID | None) -> dict[str, str]:

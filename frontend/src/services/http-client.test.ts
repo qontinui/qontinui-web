@@ -222,3 +222,83 @@ describe("HttpClient auth-rejection halt", () => {
     expect(onExpired).not.toHaveBeenCalled();
   });
 });
+
+describe("HttpClient X-Qontinui-Active-Tenant forwarding", () => {
+  const ACTIVE_TENANT_STORAGE_KEY = "qontinui.active_tenant_id";
+  const TENANT = "11111111-2222-3333-4444-555555555555";
+
+  /** Stub fetch to capture the outgoing headers of the first call. */
+  function captureFetchHeaders(): { current: Record<string, string> } {
+    const captured = { current: {} as Record<string, string> };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        captured.current = (init?.headers as Record<string, string>) ?? {};
+        return new Response(JSON.stringify({}), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
+    );
+    return captured;
+  }
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    localStorage.clear();
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  // Every coord-proxy prefix the dashboard talks to must carry the selection.
+  const SCOPED_URLS = [
+    "https://api.test/api/v1/operations/fleet",
+    "https://api.test/api/v1/admin-dev/overview",
+    "https://api.test/api/v1/admin/agent-sessions",
+  ];
+
+  for (const url of SCOPED_URLS) {
+    it(`attaches the active-tenant header on ${url}`, async () => {
+      localStorage.setItem(ACTIVE_TENANT_STORAGE_KEY, TENANT);
+      const captured = captureFetchHeaders();
+      const client = new HttpClient(makeTokenManager() as unknown as TokenManager);
+      await client.fetch(url);
+      expect(captured.current["X-Qontinui-Active-Tenant"]).toBe(TENANT);
+    });
+  }
+
+  it("omits the header when no tenant is selected", async () => {
+    const captured = captureFetchHeaders();
+    const client = new HttpClient(makeTokenManager() as unknown as TokenManager);
+    await client.fetch("https://api.test/api/v1/operations/fleet");
+    expect(captured.current["X-Qontinui-Active-Tenant"]).toBeUndefined();
+  });
+
+  it("does NOT attach the header on unrelated (non-proxy) URLs", async () => {
+    localStorage.setItem(ACTIVE_TENANT_STORAGE_KEY, TENANT);
+    const captured = captureFetchHeaders();
+    const client = new HttpClient(makeTokenManager() as unknown as TokenManager);
+    await client.fetch("https://api.test/api/v1/projects");
+    expect(captured.current["X-Qontinui-Active-Tenant"]).toBeUndefined();
+  });
+
+  it("does NOT attach the header on /constraints/ (runner proxy, not coord)", async () => {
+    localStorage.setItem(ACTIVE_TENANT_STORAGE_KEY, TENANT);
+    const captured = captureFetchHeaders();
+    const client = new HttpClient(makeTokenManager() as unknown as TokenManager);
+    await client.fetch("https://api.test/api/v1/constraints/active");
+    expect(captured.current["X-Qontinui-Active-Tenant"]).toBeUndefined();
+  });
+
+  it("does NOT attach the header on skipAuth requests", async () => {
+    localStorage.setItem(ACTIVE_TENANT_STORAGE_KEY, TENANT);
+    const captured = captureFetchHeaders();
+    const client = new HttpClient(makeTokenManager() as unknown as TokenManager);
+    await client.fetch("https://api.test/api/v1/operations/fleet", {
+      skipAuth: true,
+    });
+    expect(captured.current["X-Qontinui-Active-Tenant"]).toBeUndefined();
+  });
+});

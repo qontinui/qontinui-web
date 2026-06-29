@@ -15,6 +15,22 @@ const log = createLogger("HttpClient");
  */
 const ACTIVE_TENANT_STORAGE_KEY = "qontinui.active_tenant_id";
 
+/**
+ * URL prefixes whose backend handlers proxy to coord with the operator's
+ * active-tenant override honored. The header is attached only to these calls so
+ * we never leak the tenant selection onto unrelated requests. (`/constraints/`
+ * is deliberately excluded — it proxies to the local runner, not coord, and is
+ * not tenant-scoped.)
+ *
+ * NOTE: the agent-sessions panel mounts under `/api/v1/admin/agent-sessions`
+ * (the router's `/admin` prefix), not `/api/v1/agent-sessions`.
+ */
+const ACTIVE_TENANT_URL_PREFIXES = [
+  "/api/v1/operations/",
+  "/api/v1/admin-dev/",
+  "/api/v1/admin/agent-sessions",
+];
+
 function readActiveTenantId(): string | null {
   if (typeof window === "undefined") return null;
   try {
@@ -22,6 +38,10 @@ function readActiveTenantId(): string | null {
   } catch {
     return null;
   }
+}
+
+function isActiveTenantScopedUrl(url: string): boolean {
+  return ACTIVE_TENANT_URL_PREFIXES.some((prefix) => url.includes(prefix));
 }
 
 export interface HttpOptions extends RequestInit {
@@ -258,9 +278,10 @@ export class HttpClient {
 
     // Forward the dashboard tenant-switcher selection on coord-proxy calls so
     // the operator's coord context re-scopes to the chosen tenant (validated
-    // coord-side against their memberships). The backend reads this only on
-    // `/operations/*`, so scope the header to those calls.
-    if (!skipAuth && url.includes("/api/v1/operations/")) {
+    // coord-side against their memberships). Scoped to the tenant-aware proxy
+    // prefixes (operations / admin-dev / admin agent-sessions / constraints)
+    // so the header never leaks onto unrelated requests.
+    if (!skipAuth && isActiveTenantScopedUrl(url)) {
       const activeTenant = readActiveTenantId();
       if (activeTenant) {
         headers["X-Qontinui-Active-Tenant"] = activeTenant;
