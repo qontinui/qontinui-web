@@ -237,11 +237,32 @@ export interface DevOverview {
   counts: GateCounts;
   rollouts: RolloutOverview;
   /**
-   * Present (set by the web proxy) when coord was unreachable/degraded and
-   * the envelope is empty as a result — the page surfaces it as a banner
-   * rather than showing a misleading "0 gates". Absent on a healthy fetch.
+   * Present (set by the web proxy) when coord was unreachable/degraded — the
+   * page surfaces it. Absent on a healthy fetch. When `coord_reconnecting` is
+   * also set this is the stale-while-revalidate path (data IS present, served
+   * from the last-known-good cache); when it's set WITHOUT
+   * `coord_reconnecting` it's a cold-start outage (empty envelope, hard
+   * banner).
    */
   coord_error?: string;
+  /**
+   * Stale-while-revalidate marker (set by the web proxy on a coord-down read
+   * when it still held a recent successful envelope for this view). The
+   * `gates`/`counts`/`rollouts` carried here are the last-known-good data; the
+   * page renders a subtle "reconnecting" hint over them and auto-recovers,
+   * rather than blanking to the hard "unavailable" banner. Absent on a healthy
+   * fetch and on a cold-start outage.
+   */
+  coord_reconnecting?: boolean;
+  /** ISO-8601 wall-clock when the stale/reconnecting degrade was served. */
+  stale_since?: string;
+  /**
+   * ISO-8601 `generated_at` of the last-known-good data being served while
+   * reconnecting — drives the "showing data from Ns ago" staleness hint (the
+   * auto-poll keeps succeeding with stale data, so the plain "updated Xs ago"
+   * stamp would otherwise reset to "just now" and hide the staleness).
+   */
+  last_good_generated_at?: string;
 }
 
 class AdminDevService {
