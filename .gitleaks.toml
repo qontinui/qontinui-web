@@ -13,4 +13,9 @@ paths = [
 regexes = [
   '''(?i)(dummy|example|sample|test|placeholder|changeme|your[-_]?)[-_]?(secret|token|key|password)''',
   '''AKIAIOSFODNN7EXAMPLE''',
+  # Canonical non-secret dev/test DB password used across CI + conftest +
+  # docker-compose. Not a production credential; exempt repo-wide so PRs that
+  # touch CI/test DB config don't false-positive (gitleaks scans the commit
+  # range, so it trips on any commit that introduces this literal).
+  '''qontinui_dev_password''',
 ]
