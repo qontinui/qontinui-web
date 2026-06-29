@@ -76,6 +76,25 @@ _caller_bearer: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "agent_sessions_caller_bearer", default=None
 )
 
+# The dashboard tenant-switcher selection. Forwarded to coord as
+# ``X-Qontinui-Active-Tenant`` so coord re-scopes the operator's context to the
+# chosen tenant (membership-validated coord-side; absent/invalid → home tenant).
+# Mirrors operations.py ``_caller_active_tenant``. Captured per-route alongside
+# the bearer and forwarded by ``_coord_headers``.
+ACTIVE_TENANT_HEADER = "X-Qontinui-Active-Tenant"
+
+_caller_active_tenant: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "agent_sessions_caller_active_tenant", default=None
+)
+
+
+def _capture_caller_context(request: Request) -> None:
+    """Capture the caller's bearer + active-tenant selection into the
+    request-scoped ContextVars so ``_coord_headers`` can forward both to
+    coord. Called at the top of each proxying route."""
+    _caller_bearer.set(_extract_caller_token(request))
+    _caller_active_tenant.set(request.headers.get(ACTIVE_TENANT_HEADER))
+
 
 def _extract_caller_token(request: Request) -> str | None:
     """Pull the caller's bearer token from the ``access_token`` cookie or
@@ -101,6 +120,11 @@ def _coord_headers() -> dict[str, str]:
     token = _caller_bearer.get()
     if token:
         headers["Authorization"] = f"Bearer {token}"
+    # Forward the dashboard tenant-switcher selection so coord re-scopes the
+    # operator's context to the chosen tenant (membership-validated coord-side).
+    active = _caller_active_tenant.get()
+    if active:
+        headers[ACTIVE_TENANT_HEADER] = active
     return headers
 
 
@@ -172,7 +196,7 @@ async def list_agent_sessions(
     ``{"sessions": [...], "count": N}`` envelope verbatim — the shape the
     frontend expects.
     """
-    _caller_bearer.set(_extract_caller_token(request))
+    _capture_caller_context(request)
 
     params: dict[str, Any] = {"limit": limit, "live": live}
     if user_id is not None:
@@ -200,6 +224,6 @@ async def get_agent_session_lineage(
     unknown / soft-closed session yields an empty ``actions`` list). The
     payload passes through verbatim.
     """
-    _caller_bearer.set(_extract_caller_token(request))
+    _capture_caller_context(request)
 
     return await _proxy_coord_get(f"/coord/agent-sessions/{session_id}/lineage")
