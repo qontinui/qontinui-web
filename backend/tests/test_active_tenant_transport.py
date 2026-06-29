@@ -145,9 +145,7 @@ async def test_admin_granted_on_home_tenant_when_no_selection():
     with patch.object(
         operations, "get_coord_identity", new=AsyncMock(return_value=_identity())
     ):
-        result = await operations.require_coord_tenant_admin(
-            _request(None), _user()
-        )
+        result = await operations.require_coord_tenant_admin(_request(None), _user())
     assert result == _TENANT_A
 
 
