@@ -2,19 +2,41 @@ name: Migration Reversal Test
 
 # S4.3 non-gating safety net (ADR 2026-06-18-review-moves-left): proves every new
 # alembic migration is REVERSIBLE (up → down → up on an ephemeral Postgres) so the
-# coord escalate-path gate on `alembic/versions/**` can be retired. Mirrors the
-# proven local-PG setup in backend-ci.yml (pgvector image, sibling path-deps,
-# named-schema creation, the env vars the model imports require) — env.py imports
-# all app models via `app.db.base_class import *`, so the same DB + SECRET_KEY +
-# schema scaffolding the test suite needs applies here too.
+# coord escalate-path gate on `alembic/versions/**` can be retired.
+#
+# REQUIRED-CHECK SAFE: this runs on EVERY PR (no `paths:` filter) and always emits
+# the `Migration Reversal Gate` check, so it can be a required status check without
+# wedging PRs that don't touch migrations (the path-filtered-required-check footgun).
+# The expensive job (`reverse`) only runs when alembic/versions changed; the always-run
+# `gate` job is the one to mark required.
 
 on:
   pull_request:
-    paths:
-      - 'backend/alembic/versions/**'
 
 jobs:
-  migration-reversal:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      relevant: ${{ steps.detect.outputs.relevant }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Detect alembic migration changes
+        id: detect
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          if git diff --name-only "$base"...HEAD | grep -qE '^backend/alembic/versions/.*\.py$'; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            echo "Alembic migration changes detected — reversibility test will run."
+          else
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+            echo "No alembic migration changes — reversibility test not needed."
+          fi
+
+  reverse:
+    needs: detect
+    if: needs.detect.outputs.relevant == 'true'
     runs-on: ubuntu-latest
 
     services:
@@ -22,7 +44,6 @@ jobs:
         # pgvector image: models with a Vector column need the `vector` type, so
         # `alembic upgrade head` (which imports every model) fails on stock pg16.
         image: pgvector/pgvector:pg16
-        # Creds must match the DATABASE_URL below.
         env:
           POSTGRES_USER: qontinui_user
           POSTGRES_PASSWORD: qontinui_dev_password
@@ -84,10 +105,8 @@ jobs:
             -c "CREATE SCHEMA IF NOT EXISTS web;" \
             -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
-      # up → down -1 → up. The downgrade must cleanly reverse the newest
-      # migration (the one this PR adds) and the re-upgrade must re-apply it,
-      # proving reversibility. A non-reversible migration (empty/`pass` downgrade,
-      # or DDL the downgrade can't undo) fails here.
+      # up → down -1 → up. The downgrade must cleanly reverse the newest migration
+      # (the one this PR adds) and the re-upgrade must re-apply it.
       - name: Reversibility test (upgrade → downgrade -1 → upgrade)
         env:
           DATABASE_URL: postgresql://qontinui_user:qontinui_dev_password@localhost:5432/qontinui_test
@@ -104,3 +123,23 @@ jobs:
           echo "== upgrade head (re-apply) =="
           poetry run alembic upgrade head
           echo "Migration reversal test passed."
+
+  # Always-run aggregate — THIS is the required status check. Passes when migrations
+  # were untouched (reverse skipped) or when the reversal test succeeded; fails only
+  # on a genuine reversal failure. Never a phantom: it runs on every PR.
+  gate:
+    name: Migration Reversal Gate
+    needs: [detect, reverse]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Aggregate
+        run: |
+          relevant="${{ needs.detect.outputs.relevant }}"
+          result="${{ needs.reverse.result }}"
+          echo "relevant=$relevant reverse.result=$result"
+          if [ "$relevant" = "true" ] && [ "$result" != "success" ]; then
+            echo "::error::migration reversibility test did not pass (result=$result)"
+            exit 1
+          fi
+          echo "Migration Reversal Gate OK."
