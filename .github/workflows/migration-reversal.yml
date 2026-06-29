@@ -46,7 +46,7 @@ jobs:
         image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: qontinui_user
-          POSTGRES_PASSWORD: qontinui_dev_password
+          POSTGRES_PASSWORD: test_password
           POSTGRES_DB: qontinui_test
         options: >-
           --health-cmd pg_isready
@@ -93,7 +93,7 @@ jobs:
 
       - name: Create named schemas + extension
         env:
-          PGPASSWORD: qontinui_dev_password
+          PGPASSWORD: test_password
         run: |
           sudo apt-get update && sudo apt-get install -y postgresql-client
           psql -h localhost -U qontinui_user -d qontinui_test \
@@ -109,7 +109,7 @@ jobs:
       # (the one this PR adds) and the re-upgrade must re-apply it.
       - name: Reversibility test (upgrade → downgrade -1 → upgrade)
         env:
-          DATABASE_URL: postgresql://qontinui_user:qontinui_dev_password@localhost:5432/qontinui_test
+          DATABASE_URL: postgresql://qontinui_user:test_password@localhost:5432/qontinui_test
           SECRET_KEY: test-secret-key-for-testing-only-minimum-32-characters-long
           ENVIRONMENT: development
           TESTING: 1
