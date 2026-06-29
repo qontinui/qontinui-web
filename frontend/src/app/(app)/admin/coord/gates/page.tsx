@@ -18,6 +18,15 @@
  * its interval on unmount and never overlaps an in-flight request (an
  * in-flight ref gates re-entry). Auto-poll reads through the backend's ~30s
  * cache; manual Refresh passes `refresh:true` (`?refresh=1`) to bypass it.
+ *
+ * Deploy resilience (stale-while-revalidate): a coord rolling deploy causes a
+ * seconds-long leader failover during which a coord read can time out. The
+ * backend then serves the last-known-good envelope flagged `coord_reconnecting`
+ * (the reads aren't leader-gated, so the data is still valid). This page renders
+ * a subtle "reconnecting — showing data from Ns ago" hint OVER the live data
+ * (never the hard "unavailable" banner, which is reserved for a true cold-start
+ * outage) and polls faster (~5s) until a fresh success returns, so a deploy
+ * never blanks the page or requires a manual Refresh.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -36,6 +45,10 @@ import { ShadowReapGroups } from "./_components/ShadowReap";
 // Auto-refresh cadence. Slightly above the backend's ~30s cache TTL so a
 // poll usually lands a fresh server-side eval rather than a cache hit.
 const AUTO_REFRESH_MS = 45_000;
+// Faster cadence while the backend is serving stale-while-revalidate data
+// (`coord_reconnecting`): poll every ~5s so the page recovers promptly the
+// moment coord is back, then drops back to AUTO_REFRESH_MS on a fresh success.
+const RECONNECT_REFRESH_MS = 5_000;
 
 function generatedAtLabel(iso: string | null): string {
   if (!iso) return "";
@@ -44,16 +57,31 @@ function generatedAtLabel(iso: string | null): string {
   return d.toLocaleString();
 }
 
+// Bare "Xs ago" phrasing shared by the header stamp and the reconnecting hint.
+function agoPhrase(secs: number): string {
+  if (secs < 5) return "just now";
+  if (secs < 60) return `${secs}s ago`;
+  const mins = Math.floor(secs / 60);
+  const rem = secs % 60;
+  if (mins < 60) return rem ? `${mins}m ${rem}s ago` : `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  return `${hrs}h ${mins % 60}m ago`;
+}
+
 function relativeAgoLabel(at: number | null, now: number): string {
   if (at === null) return "";
   const secs = Math.max(0, Math.round((now - at) / 1000));
-  if (secs < 5) return "updated just now";
-  if (secs < 60) return `updated ${secs}s ago`;
-  const mins = Math.floor(secs / 60);
-  const rem = secs % 60;
-  if (mins < 60) return rem ? `updated ${mins}m ${rem}s ago` : `updated ${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  return `updated ${hrs}h ${mins % 60}m ago`;
+  return `updated ${agoPhrase(secs)}`;
+}
+
+// "Xs ago" for an ISO-8601 timestamp (the last-known-good `generated_at`),
+// used by the reconnecting hint so it reflects true data staleness rather
+// than the last (stale) poll's wall-clock.
+function isoAgoLabel(iso: string | null | undefined, now: number): string {
+  if (!iso) return "";
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return "";
+  return agoPhrase(Math.max(0, Math.round((now - t) / 1000)));
 }
 
 export default function CoordGatesPage() {
@@ -105,14 +133,19 @@ export default function CoordGatesPage() {
     load(false);
   }, [load]);
 
-  // Auto-refresh interval (cleaned up on unmount / toggle off).
+  // Auto-refresh interval (cleaned up on unmount / toggle off). While the
+  // backend is serving stale-while-revalidate data (`coord_reconnecting`),
+  // poll faster so the page recovers promptly once coord is back; a fresh
+  // success clears the flag and the effect re-runs at the normal cadence.
+  const reconnecting = overview?.coord_reconnecting === true;
   useEffect(() => {
     if (!autoRefresh) return;
+    const intervalMs = reconnecting ? RECONNECT_REFRESH_MS : AUTO_REFRESH_MS;
     const id = setInterval(() => {
       load(false);
-    }, AUTO_REFRESH_MS);
+    }, intervalMs);
     return () => clearInterval(id);
-  }, [autoRefresh, load]);
+  }, [autoRefresh, reconnecting, load]);
 
   // 1s ticker for the relative "updated Xs ago" stamp.
   useEffect(() => {
@@ -135,7 +168,7 @@ export default function CoordGatesPage() {
           </div>
         </div>
         <div className="ml-auto flex items-center gap-2 sm:gap-3">
-          {updatedAt !== null && (
+          {updatedAt !== null && !reconnecting && (
             <span
               className="text-xs text-muted-foreground hidden sm:inline tabular-nums"
               data-testid="gates-updated-ago"
@@ -222,8 +255,33 @@ export default function CoordGatesPage() {
         </div>
       )}
 
-      {/* ---- coord-unavailable banner (proxy degraded to an empty envelope) ---- */}
-      {overview?.coord_error && (
+      {/* ---- Reconnecting hint (stale-while-revalidate over live data) ---- */}
+      {/* A transient coord-down (e.g. a deploy's leader failover) while we hold
+          last-known-good data: show a subtle hint OVER the still-rendered gates
+          /rollout and auto-recover — never the hard banner below. */}
+      {overview?.coord_reconnecting && (
+        <div
+          className="flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-1.5 text-xs text-amber-700 dark:text-amber-400"
+          data-testid="gates-coord-reconnecting"
+          role="status"
+        >
+          <RefreshCw className="h-3.5 w-3.5 shrink-0 animate-spin" />
+          <span>
+            Reconnecting to coord — showing data from{" "}
+            {isoAgoLabel(
+              overview.last_good_generated_at ?? overview.generated_at,
+              now,
+            )}
+            . This recovers automatically.
+          </span>
+        </div>
+      )}
+
+      {/* ---- coord-unavailable banner (cold-start outage: empty envelope) ----
+          Only when there is NO last-known-good to fall back to; the
+          stale-while-revalidate path above sets `coord_reconnecting` and
+          suppresses this hard banner. */}
+      {overview?.coord_error && !overview.coord_reconnecting && (
         <div
           className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400"
           data-testid="gates-coord-unavailable"
