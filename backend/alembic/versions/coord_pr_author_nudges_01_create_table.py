@@ -1,7 +1,7 @@
 """coord.pr_author_nudges — stuck-PR author-nudge dedup ledger
 
 Revision ID: coord_pr_author_nudges_01
-Revises: config_yaml_overrides_01
+Revises: coord_work_unit_dispatches_01
 Create Date: 2026-06-29
 
 Backs the coord PR-merge orchestrator's stuck-PR author-nudge sweep
@@ -40,10 +40,13 @@ this one is OPTIONAL: the sweep is DARK behind ``COORD_PR_STUCK_AUTHOR_NUDGE_ENA
 ``require_table`` — the migration simply needs to APPLY before the flag is
 armed, with no coord-deploy-ordering constraint while the flag is off.
 
-Chains off ``config_yaml_overrides_01`` per coord's migration-reserve advisory
-(reservation 89bb70f8). If a sibling reservation lands first, coord's land-time
-re-point engine repoints this ``down_revision`` to the live head + the
-alembic-graph CI check is the fork backstop.
+Chains off ``coord_work_unit_dispatches_01`` — the live coord-chain alembic head
+on main. (The migration-reserve advisory `89bb70f8` initially suggested
+``config_yaml_overrides_01``, but that reservation orphaned: the sibling landed
+under a DIFFERENT revision id, ``cfgyaml01_config_yaml_overrides``, leaving
+``config_yaml_overrides_01`` a phantom that will never exist on main. Re-pointed
+to the real head; coord's land-time re-point + the alembic-graph CI check remain
+the fork backstop.)
 """
 
 from collections.abc import Sequence
@@ -54,7 +57,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_pr_author_nudges_01"
-down_revision: str | Sequence[str] | None = "config_yaml_overrides_01"
+down_revision: str | Sequence[str] | None = "coord_work_unit_dispatches_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
