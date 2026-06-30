@@ -152,9 +152,7 @@ def _empty_overview(detail: str) -> dict[str, Any]:
     }
 
 
-def _degraded_with_last_good(
-    detail: str, last_good: dict[str, Any]
-) -> dict[str, Any]:
+def _degraded_with_last_good(detail: str, last_good: dict[str, Any]) -> dict[str, Any]:
     """Serve the last-known-good envelope annotated as stale/reconnecting.
 
     Used on the coord-down path when we still hold a recent successful
