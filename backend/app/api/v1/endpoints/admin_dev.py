@@ -29,8 +29,22 @@ in-process TTL cache (:data:`_CACHE_TTL_SECONDS`) keyed by the resolved
 tenant_id (``None`` is its own key, so coord-down callers don't share with
 resolved ones) serves a fresh cached envelope when available. Only
 SUCCESSFUL coord envelopes are cached — degraded/``coord_error`` envelopes
-are never cached, so a transient outage cannot pin a stale banner. The
-frontend Refresh button passes ``?refresh=1`` to bypass the cache.
+are never cached. The frontend Refresh button passes ``?refresh=1`` to
+bypass the cache.
+
+Stale-while-revalidate (deploy resilience): a coord ECS rolling deploy
+causes a seconds-long leader failover during which a coord read can time
+out. Because the gate/rollout reads are NOT leader-gated (any caught-up
+replica serves them from Postgres), the data we just showed is still valid,
+so rather than blanking the page we retain the last successful envelope per
+view for a longer window (:data:`_LAST_GOOD_TTL_SECONDS`) and serve THAT —
+annotated ``coord_reconnecting``/``stale_since``/``last_good_generated_at`` —
+on a coord-down error. The frontend shows a subtle "reconnecting" hint over
+the live data and auto-recovers; the hard "unavailable" banner is reserved
+for a true cold start with no last-known-good. (This SWR applies only to the
+overview — the PR list and release-verdict are intentionally uncached and
+NOT SWR'd: stale merge-readiness / "is prod current?" state is misleading,
+not helpful.)
 
 The proxy plumbing comes from the shared :mod:`app.api.coord_proxy` module
 (re-export of the canonical helpers in
@@ -75,11 +89,37 @@ _COORD_DOWN_STATUSES = {502, 503, 504}
 # degraded envelope (so a transient outage can't pin a stale banner).
 _CACHE_TTL_SECONDS = 30.0
 
+# ---- Last-known-good (stale-while-revalidate) ----------------------------
+#
+# A coord ECS rolling deploy causes a seconds-long leader failover; during it
+# a single coord-read timeout used to blank the whole gates/rollout page with
+# a hard "coord unavailable — Retry with Refresh" banner. That is poor UX for
+# a transient: the reads are NOT leader-gated (any caught-up replica serves
+# them straight from Postgres — coord `src/api/gate_routes.rs::list_gates`),
+# so the data we showed a moment ago is still valid.
+#
+# So we retain the LAST successful envelope per cache key for a longer window
+# than the 30s freshness TTL, and on a coord-down error we serve THAT —
+# annotated as stale/reconnecting — instead of an empty banner. The frontend
+# renders a subtle "reconnecting — showing data from Ns ago" hint over the
+# live data and auto-recovers, so a deploy never produces a dead page. The
+# hard "unavailable" banner is reserved for a true cold start (no last-good
+# for this key yet).
+#
+# Ceiling: beyond ~10 min the data is too old to responsibly present as
+# "reconnecting", so we let it expire and fall back to the empty banner. This
+# is deliberately distinct from the 30s freshness window — last-good is only
+# consulted on the coord-down path, never served as if fresh.
+_LAST_GOOD_TTL_SECONDS = 600.0
+
 # cache key (tenant_id, limit, verdict, include_archived, would_reap) ->
 # (monotonic_expiry, cached_envelope). limit/verdict/include_archived/would_reap
 # are part of the key so different views never serve each other's cached page.
 _CacheKey = tuple[UUID | None, int, str | None, bool, bool]
 _overview_cache: dict[_CacheKey, tuple[float, dict[str, Any]]] = {}
+# Last-known-good store: same key, a longer (~10 min) monotonic expiry. Only
+# successful coord envelopes are ever stored here (written by `_cache_set`).
+_last_good_cache: dict[_CacheKey, tuple[float, dict[str, Any]]] = {}
 _cache_lock = asyncio.Lock()
 
 
@@ -108,6 +148,34 @@ def _empty_overview(detail: str) -> dict[str, Any]:
             "auto_merge": {"live": [], "shadow": [], "dry_run": []},
             "features": [],
         },
+        "coord_error": detail,
+    }
+
+
+def _degraded_with_last_good(detail: str, last_good: dict[str, Any]) -> dict[str, Any]:
+    """Serve the last-known-good envelope annotated as stale/reconnecting.
+
+    Used on the coord-down path when we still hold a recent successful
+    envelope for this view. Returns a *copy* of ``last_good`` (never mutates
+    the cached dict, which is shared) with three staleness markers added:
+
+    * ``coord_reconnecting`` — the page renders a subtle "reconnecting" hint
+      over the live data instead of the hard "unavailable" banner.
+    * ``last_good_generated_at`` — coord's ``generated_at`` from when the data
+      was actually produced, so the page can show a truthful "data from Ns
+      ago" without the auto-poll resetting an "updated just now" stamp.
+    * ``coord_error`` — kept (the reason) so telemetry and the cold-start
+      banner path stay consistent; the page branches on ``coord_reconnecting``
+      first, so a present-data degrade never shows the hard banner.
+
+    ``gates`` / ``counts`` / ``rollouts`` are carried through from
+    ``last_good`` unchanged — that is the whole point.
+    """
+    return {
+        **last_good,
+        "coord_reconnecting": True,
+        "stale_since": datetime.now(UTC).isoformat(),
+        "last_good_generated_at": last_good.get("generated_at"),
         "coord_error": detail,
     }
 
@@ -225,7 +293,14 @@ async def get_dev_overview(
     except HTTPException as exc:
         if exc.status_code in _COORD_DOWN_STATUSES:
             detail = exc.detail if isinstance(exc.detail, str) else "coord unavailable"
-            # Do NOT cache degraded envelopes.
+            # Stale-while-revalidate: if we still hold a recent successful
+            # envelope for this view, serve it annotated as reconnecting so a
+            # transient (a coord deploy's leader failover) never blanks the
+            # page. Only a true cold start (no last-good) falls back to the
+            # hard "unavailable" banner. Degraded envelopes are never cached.
+            last_good = await _last_good_get(cache_key)
+            if last_good is not None:
+                return _degraded_with_last_good(detail, last_good)
             return _empty_overview(detail)
         raise
 
@@ -386,7 +461,33 @@ async def _cache_get(key: _CacheKey) -> dict[str, Any] | None:
 
 
 async def _cache_set(key: _CacheKey, envelope: dict[str, Any]) -> None:
-    """Store ``envelope`` for ``key`` with a ~30s TTL."""
-    expiry = time.monotonic() + _CACHE_TTL_SECONDS
+    """Store a successful ``envelope`` for ``key``.
+
+    Writes both the ~30s freshness cache (the auto-poll fast path) and the
+    ~10min last-known-good store (consulted only on the coord-down path for
+    stale-while-revalidate). Callers must only pass a successful coord
+    envelope here — never a ``coord_error`` degraded one.
+    """
+    now = time.monotonic()
     async with _cache_lock:
-        _overview_cache[key] = (expiry, envelope)
+        _overview_cache[key] = (now + _CACHE_TTL_SECONDS, envelope)
+        _last_good_cache[key] = (now + _LAST_GOOD_TTL_SECONDS, envelope)
+
+
+async def _last_good_get(key: _CacheKey) -> dict[str, Any] | None:
+    """Return the last successful envelope for ``key`` if within the ceiling.
+
+    Consulted ONLY on the coord-down path. Returns ``None`` when there is no
+    last-known-good for this view, or it has aged past
+    :data:`_LAST_GOOD_TTL_SECONDS` (too old to present as "reconnecting").
+    """
+    now = time.monotonic()
+    async with _cache_lock:
+        entry = _last_good_cache.get(key)
+        if entry is None:
+            return None
+        expiry, envelope = entry
+        if expiry <= now:
+            _last_good_cache.pop(key, None)
+            return None
+        return envelope
