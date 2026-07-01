@@ -1764,10 +1764,10 @@ async def get_dev_action_detail(
 #
 # Routes (read-only unless noted):
 #
-# - GET    /operations/plans                            — list coord.plans
-# - GET    /operations/plans/{slug}                      — single plan
+# - GET    /operations/plans                            — list coord.work_units
+# - GET    /operations/plans/{slug}                      — single work-unit
 # - GET    /operations/plans/{slug}/history              — status history
-# - POST   /operations/plans/{slug}/transition           — set plan status
+# - POST   /operations/plans/{slug}/transition           — set work-unit status
 # - GET    /operations/trees/by-device/{device_id}       — primary trees
 # - GET    /operations/trees/contention                  — overlap view
 # - GET    /operations/alerts                            — full alert rollup
@@ -1787,7 +1787,15 @@ async def get_dev_action_detail(
 # - POST   /operations/memory/{name}/restore              — Wave-3c
 
 
-# ---- Plans (Phase 2 substrate — coord.plans is canonical per Q7) --------
+# ---- Plans (now backed by coord.work_units — the generic work-unit
+# primitive that GENERALIZES the retired coord.plans registry) ------------
+#
+# The operator UX is still "Plans" (operators author markdown plans), but
+# coord stores them as generic, slug-keyed work-units (``coord.work_units``
+# + ``coord.work_unit_status_history``). These web routes keep their
+# ``/plans*`` paths so the frontend API client doesn't churn; only the
+# coord UPSTREAM path moves to the operator-readable ``/coord/work-units*``
+# surface (operator TenantId/Cognito auth — same bearer forwarding).
 
 
 @router.get("/plans")
@@ -1796,14 +1804,18 @@ async def list_coord_plans(
     limit: int | None = Query(default=None, ge=1, le=500),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
-    """List entries from ``coord.plans`` via coord (tenant-scoped)."""
+    """List work-units from coord (tenant-scoped).
+
+    Proxies coord ``GET /coord/work-units``; the response envelope is
+    ``{"work_units": [...], "limit": N, "offset": N}``.
+    """
     params: dict[str, Any] = {}
     if status is not None:
         params["status"] = status
     if limit is not None:
         params["limit"] = limit
     return await _proxy_coord_get(
-        "/coord/plans", params=params or None, tenant_id=tenant_id
+        "/coord/work-units", params=params or None, tenant_id=tenant_id
     )
 
 
@@ -1812,8 +1824,12 @@ async def get_coord_plan(
     slug: str,
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
-    """Return a single plan from ``coord.plans`` (tenant-scoped)."""
-    return await _proxy_coord_get(f"/coord/plans/{slug}", tenant_id=tenant_id)
+    """Return a single work-unit from coord (tenant-scoped).
+
+    Proxies coord ``GET /coord/work-units/{slug}``; the response envelope
+    is ``{"work_unit": {...}, "recent_history": [...]}``.
+    """
+    return await _proxy_coord_get(f"/coord/work-units/{slug}", tenant_id=tenant_id)
 
 
 @router.get("/plans/{slug}/history")
@@ -1821,8 +1837,13 @@ async def get_coord_plan_history(
     slug: str,
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
-    """Return the status history timeline for a plan (tenant-scoped)."""
-    return await _proxy_coord_get(f"/coord/plans/{slug}/history", tenant_id=tenant_id)
+    """Return the status-transition history for a work-unit (tenant-scoped).
+
+    Proxies coord ``GET /coord/work-units/{slug}/history``.
+    """
+    return await _proxy_coord_get(
+        f"/coord/work-units/{slug}/history", tenant_id=tenant_id
+    )
 
 
 @router.post("/plans/{slug}/transition")
@@ -1831,13 +1852,37 @@ async def post_coord_plan_transition(
     body: dict[str, Any],
     tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
-    """Transition a plan to a new status (tenant-scoped).
+    """Transition a work-unit to a new status (tenant-scoped, admin-gated).
 
-    Body shape (coord): ``{"status": "<new_status>", "note": "<optional>"}``.
-    Audit trail lives in ``coord.plan_status_history``.
+    The dashboard sends ``{"status": "<new>", "note": "<optional>"}``. The
+    coord ``POST /coord/work-units/{slug}/operator-transition`` route expects
+    ``{"to_status": "<new>", "by_actor": "<who>", "reason": "<optional>"}``
+    (``to_status`` + ``by_actor`` both required, non-empty) — the SAME wire
+    shape the retired ``/coord/plans/{slug}/transition`` used. Remap the
+    operator-friendly body onto that contract here so the dashboard control
+    stays unchanged. ``by_actor`` is stamped with the operator marker (this
+    surface is an admin lever audited via the history ``by_actor`` column).
     """
+    to_status = body.get("status") or body.get("to_status")
+    # `by_actor` is sent for compatibility with the currently-deployed coord,
+    # whose operator-transition still requires a non-empty body actor. A coord
+    # follow-up (work-units audit-actor fix) derives the actor server-side from
+    # the authenticated operator and IGNORES this field; once that is deployed
+    # this line can be dropped.
+    transition_body: dict[str, Any] = {
+        "to_status": to_status,
+        "by_actor": body.get("by_actor") or "operator:web-admin",
+    }
+    note = body.get("note") if body.get("note") is not None else body.get("reason")
+    if note is not None:
+        transition_body["reason"] = note
+    from_status = body.get("from_status")
+    if from_status is not None:
+        transition_body["from_status"] = from_status
     return await _proxy_coord_post(
-        f"/coord/plans/{slug}/transition", body, tenant_id=tenant_id
+        f"/coord/work-units/{slug}/operator-transition",
+        transition_body,
+        tenant_id=tenant_id,
     )
 
 

@@ -1,21 +1,30 @@
 "use client";
 
 /**
- * /admin/coord/plans/[slug] — single plan view.
+ * /admin/coord/plans/[slug] — single work-unit view.
  *
- * Plan `2026-05-19-coordinator-production-readiness.md` Phase 2 (Wave 2).
+ * Plan `2026-05-19-coordinator-production-readiness.md` Phase 2 (Wave 2);
+ * repointed onto the generic work-unit primitive
+ * (`2026-06-18-coord-generic-work-unit-primitive`).
+ *
+ * The operator UX stays "Plans"; coord now stores plans as generic
+ * slug-keyed work-units. The web proxy serves the same
+ * `/api/v1/operations/plans/{slug}*` paths, now backed by coord
+ * `/coord/work-units/{slug}*`.
  *
  * Renders:
- *   - Plan metadata (slug / status / current_phase / shipped_at)
- *   - Markdown body
- *   - Status history timeline from `plan_status_history`
+ *   - Work-unit metadata (slug / status). The detail envelope is
+ *     `{work_unit: {...}, recent_history: [...]}`.
+ *   - Status history timeline from `coord.work_unit_status_history`
+ *     (rows: `{from_status?, to_status, transitioned_at, by_actor?, reason?}`)
  *   - Transition button — POST /api/v1/operations/plans/{slug}/transition
+ *
+ * Work-units have no markdown body / current_phase / shipped_at, so those
+ * plan-only surfaces are dropped.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -38,30 +47,40 @@ import {
 
 const API = "/api/v1/operations";
 
+// Work-unit lifecycle statuses. NB `ready`/`shipped` are coord-DERIVED on
+// the device write path, but the operator-transition route is a trusted
+// admin lever that may set any status, so they remain offered here.
 const TRANSITION_TARGETS = [
-  "drafted",
+  "draft",
   "vetted",
   "in_progress",
   "blocked",
+  "ready",
   "shipped",
-  "archived",
+  "superseded",
+  "obsolete",
 ];
 
-interface CoordPlanDetail {
+interface CoordWorkUnit {
   slug: string;
-  title?: string;
+  title?: string | null;
   status?: string;
-  current_phase?: string | null;
-  content?: string;
   updated_at?: string | null;
-  shipped_at?: string | null;
 }
 
+// coord `GET /coord/work-units/{slug}` envelope.
+interface CoordPlanDetailResponse {
+  work_unit?: CoordWorkUnit;
+  recent_history?: PlanHistoryEntry[];
+}
+
+// One `coord.work_unit_status_history` row.
 interface PlanHistoryEntry {
-  status: string;
+  from_status?: string | null;
+  to_status: string;
   transitioned_at: string;
-  actor?: string | null;
-  note?: string | null;
+  by_actor?: string | null;
+  reason?: string | null;
 }
 
 interface PlanHistoryResponse {
@@ -78,7 +97,7 @@ export default function CoordPlanDetailPage() {
     return Array.isArray(raw) ? raw[0] : raw;
   }, [params]);
 
-  const [plan, setPlan] = useState<CoordPlanDetail | null>(null);
+  const [plan, setPlan] = useState<CoordWorkUnit | null>(null);
   const [history, setHistory] = useState<PlanHistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -90,16 +109,19 @@ export default function CoordPlanDetailPage() {
   const fetchAll = useCallback(async () => {
     if (!slug) return;
     try {
-      const planBody = await httpClient.get<CoordPlanDetail>(
+      const planBody = await httpClient.get<CoordPlanDetailResponse>(
         `${API}/plans/${encodeURIComponent(slug)}`
       );
-      setPlan(planBody);
+      setPlan(planBody.work_unit ?? null);
       // History is best-effort — don't fail the whole page if it errors.
+      // The detail envelope already carries `recent_history`; seed from it,
+      // then refine with the full history endpoint.
+      setHistory(planBody.recent_history ?? []);
       try {
         const historyBody = await httpClient.get<PlanHistoryResponse>(
           `${API}/plans/${encodeURIComponent(slug)}/history`
         );
-        setHistory(historyBody.history ?? []);
+        setHistory(historyBody.history ?? planBody.recent_history ?? []);
       } catch {
         // ignore — history is supplementary
       }
@@ -180,13 +202,15 @@ export default function CoordPlanDetailPage() {
                     {plan.status}
                   </Badge>
                 )}
-                {plan.current_phase && (
-                  <Badge variant="secondary">
-                    phase: {plan.current_phase}
-                  </Badge>
-                )}
               </CardTitle>
             </CardHeader>
+            {plan.updated_at && (
+              <CardContent className="pt-0">
+                <p className="text-xs text-muted-foreground tabular-nums">
+                  updated {plan.updated_at}
+                </p>
+              </CardContent>
+            )}
           </Card>
 
           <CoordAdminOnly
@@ -276,15 +300,15 @@ export default function CoordPlanDetailPage() {
                       <span className="text-xs text-muted-foreground tabular-nums">
                         {h.transitioned_at}
                       </span>
-                      <Badge variant="outline">{h.status}</Badge>
-                      {h.actor && (
+                      <Badge variant="outline">{h.to_status}</Badge>
+                      {h.by_actor && (
                         <span className="text-xs text-muted-foreground">
-                          by {h.actor}
+                          by {h.by_actor}
                         </span>
                       )}
-                      {h.note && (
+                      {h.reason && (
                         <span className="text-xs text-muted-foreground italic">
-                          “{h.note}”
+                          “{h.reason}”
                         </span>
                       )}
                     </li>
@@ -294,20 +318,6 @@ export default function CoordPlanDetailPage() {
             </CardContent>
           </Card>
 
-          {plan.content && (
-            <Card data-testid="coord-plan-content">
-              <CardHeader>
-                <CardTitle className="text-base">Plan body</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="prose prose-sm max-w-none dark:prose-invert">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {plan.content}
-                  </ReactMarkdown>
-                </div>
-              </CardContent>
-            </Card>
-          )}
         </>
       ) : (
         <p className="text-sm text-muted-foreground italic">

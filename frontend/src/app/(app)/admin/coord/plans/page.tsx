@@ -1,12 +1,17 @@
 "use client";
 
 /**
- * /admin/coord/plans — list `coord.plans`, filter by status.
+ * /admin/coord/plans — list coord work-units, filter by status.
  *
- * Plan `2026-05-19-coordinator-production-readiness.md` Phase 2 (Wave 2).
+ * Plan `2026-05-19-coordinator-production-readiness.md` Phase 2 (Wave 2);
+ * repointed onto the generic work-unit primitive
+ * (`2026-06-18-coord-generic-work-unit-primitive`).
  *
- * `coord.plans` is the canonical plan registry per resolved decision Q7
- * — status-stamps live in columns, not in fragile markdown blockquotes.
+ * Operators still author markdown plans; coord now stores them as generic
+ * slug-keyed work-units (`coord.work_units`). The operator UX stays "Plans"
+ * — this is a data-source repoint, not a rename. The web proxy still serves
+ * `/api/v1/operations/plans*`; only the coord upstream moved to
+ * `/coord/work-units*`, whose list envelope is `{work_units: [...]}`.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -28,18 +33,28 @@ import { httpClient } from "@/services/service-factory";
 const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 10_000;
 
+// Work-unit lifecycle statuses (coord stores status as an opaque string;
+// these are the canonical lifecycle words the filter offers as a convenience
+// — an exact-match `status=` filter on the coord list).
 const STATUS_FILTERS = [
   { value: "any", label: "All statuses" },
-  { value: "drafted", label: "Drafted" },
+  { value: "draft", label: "Draft" },
   { value: "vetted", label: "Vetted" },
   { value: "in_progress", label: "In progress" },
   { value: "blocked", label: "Blocked" },
+  { value: "ready", label: "Ready" },
   { value: "shipped", label: "Shipped" },
-  { value: "archived", label: "Archived" },
+  { value: "superseded", label: "Superseded" },
+  { value: "obsolete", label: "Obsolete" },
 ];
 
 interface PlansListResponse {
+  // coord `/coord/work-units` returns rows under `work_units`. `plans` is
+  // kept for backwards-tolerance during the cutover (harmless if absent).
+  work_units?: CoordPlanRow[];
   plans?: CoordPlanRow[];
+  limit?: number;
+  offset?: number;
   count?: number;
 }
 
@@ -73,7 +88,7 @@ export default function CoordPlansListPage() {
     return () => clearInterval(id);
   }, [fetchData]);
 
-  const plans = data?.plans ?? [];
+  const plans = data?.work_units ?? data?.plans ?? [];
 
   return (
     <div className="p-3 sm:p-6 space-y-4" data-testid="coord-plans-page">
