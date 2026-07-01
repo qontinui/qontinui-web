@@ -49,6 +49,7 @@ from app.schemas.devenv import (
     MachineResponse,
     MachineUpdate,
     SetCanonicalRequest,
+    SetMachineEnvironmentRequest,
 )
 from app.services import devenv_drift
 
@@ -189,12 +190,19 @@ async def create_machine(
     """Register a machine and mint its one-time enrollment code."""
     if await machine_repo.name_exists(db, owner_id=current_user.id, name=payload.name):
         raise _conflict("machine_name_taken", "Machine name already in use.")
+    # Validate the optional environment binding is owned by the caller
+    # (cross-owner or missing ids resolve to 404, per the module convention).
+    if payload.environment_id is not None and not await environment_repo.get(
+        db, owner_id=current_user.id, env_id=payload.environment_id
+    ):
+        raise _not_found("environment")
     machine = await machine_repo.create(
         db,
         owner_id=current_user.id,
         name=payload.name,
         hostname=payload.hostname,
         description=payload.description,
+        environment_id=payload.environment_id,
     )
     devenv_machine_crud.mint_enrollment_code(machine)
     await db.flush()
@@ -313,6 +321,32 @@ async def revoke_machine(
     await devenv_machine_crud.revoke_machine(db, machine)
     await db.commit()
     await db.refresh(machine)
+    return MachineResponse.from_model(machine)
+
+
+@router.put("/machines/{machine_id}/environment", response_model=MachineResponse)
+async def set_machine_environment(
+    machine_id: UUID,
+    payload: SetMachineEnvironmentRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user_async),
+) -> MachineResponse:
+    """Bind (or unbind, with ``environment_id: null``) a machine to an
+    environment. Phase 2 P1: the explicit binding that enroll honors, so a
+    machine can join a chosen environment even when several exist."""
+    machine = await machine_repo.get(
+        db, owner_id=current_user.id, machine_id=machine_id
+    )
+    if machine is None:
+        raise _not_found("machine")
+    if payload.environment_id is not None and not await environment_repo.get(
+        db, owner_id=current_user.id, env_id=payload.environment_id
+    ):
+        raise _not_found("environment")
+    machine = await machine_repo.update(
+        db, machine=machine, fields={"environment_id": payload.environment_id}
+    )
+    await db.commit()
     return MachineResponse.from_model(machine)
 
 

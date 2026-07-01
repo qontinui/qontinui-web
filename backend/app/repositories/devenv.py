@@ -123,6 +123,7 @@ class MachineRepository:
         name: str,
         hostname: str | None,
         description: str | None,
+        environment_id: UUID | None = None,
     ) -> Machine:
         """Create a machine (key material is set later, at enroll time)."""
         machine = Machine(
@@ -130,6 +131,7 @@ class MachineRepository:
             name=name,
             hostname=hostname,
             description=description,
+            environment_id=environment_id,
         )
         db.add(machine)
         await db.flush()

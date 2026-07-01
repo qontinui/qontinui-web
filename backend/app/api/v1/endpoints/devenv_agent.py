@@ -141,12 +141,16 @@ async def enroll_agent(
         db, machine=machine, hostname=payload.hostname
     )
 
-    # Resolve the bound environment: if the owner has exactly one
-    # environment, bind to it; otherwise leave None.
-    environment_id: UUID | None = None
-    envs = await environment_repo.list(db, owner_id=machine.owner_user_id)
-    if len(envs) == 1:
-        environment_id = envs[0].id  # type: ignore[assignment]
+    # Resolve the bound environment. Phase 2 P1: an EXPLICIT binding on the
+    # machine (``machines.environment_id``) wins deterministically, so a
+    # machine joins its chosen environment even when the owner has several.
+    # Fall back to the v1 convenience — auto-bind iff exactly one environment
+    # exists — only for legacy/unbound machines.
+    environment_id: UUID | None = machine.environment_id
+    if environment_id is None:
+        envs = await environment_repo.list(db, owner_id=machine.owner_user_id)
+        if len(envs) == 1:
+            environment_id = envs[0].id  # type: ignore[assignment]
 
     await db.commit()
     logger.info(
