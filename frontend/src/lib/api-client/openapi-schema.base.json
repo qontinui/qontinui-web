@@ -22116,6 +22116,18 @@
             ],
             "title": "Description"
           },
+          "environment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Id"
+          },
           "hostname": {
             "anyOf": [
               {
@@ -22171,6 +22183,18 @@
           "enrollment_expires_at": {
             "title": "Enrollment Expires At",
             "type": "string"
+          },
+          "environment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Id"
           },
           "hostname": {
             "anyOf": [
@@ -22361,6 +22385,18 @@
             "default": false,
             "title": "Enrolled",
             "type": "boolean"
+          },
+          "environment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Id"
           },
           "hostname": {
             "anyOf": [
@@ -31881,6 +31917,25 @@
           "machine_id"
         ],
         "title": "SetCanonicalRequest",
+        "type": "object"
+      },
+      "SetMachineEnvironmentRequest": {
+        "description": "Bind (or unbind) a machine to an environment. ``None`` unbinds.",
+        "properties": {
+          "environment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Id"
+          }
+        },
+        "title": "SetMachineEnvironmentRequest",
         "type": "object"
       },
       "ShareSkillRequest": {
@@ -54157,6 +54212,65 @@
         ]
       }
     },
+    "/api/v1/devenv/machines/{machine_id}/environment": {
+      "put": {
+        "description": "Bind (or unbind, with ``environment_id: null``) a machine to an\nenvironment. Phase 2 P1: the explicit binding that enroll honors, so a\nmachine can join a chosen environment even when several exist.",
+        "operationId": "api_v1_devenv_machines_machine_id_environment_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "machine_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Machine Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetMachineEnvironmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MachineResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Set Machine Environment",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
     "/api/v1/devenv/machines/{machine_id}/regenerate-enrollment": {
       "post": {
         "description": "Mint a fresh one-time enrollment code for a machine.\n\nRe-enrolling a machine that already has a key rotates its credential:\nthe agent must re-enroll with the new code to obtain a new key.",
@@ -69435,7 +69549,7 @@
     },
     "/api/v1/operations/plans": {
       "get": {
-        "description": "List entries from ``coord.plans`` via coord (tenant-scoped).",
+        "description": "List work-units from coord (tenant-scoped).\n\nProxies coord ``GET /coord/work-units``; the response envelope is\n``{\"work_units\": [...], \"limit\": N, \"offset\": N}``.",
         "operationId": "api_v1_operations_plans_get",
         "parameters": [
           {
@@ -69510,7 +69624,7 @@
     },
     "/api/v1/operations/plans/{slug}": {
       "get": {
-        "description": "Return a single plan from ``coord.plans`` (tenant-scoped).",
+        "description": "Return a single work-unit from coord (tenant-scoped).\n\nProxies coord ``GET /coord/work-units/{slug}``; the response envelope\nis ``{\"work_unit\": {...}, \"recent_history\": [...]}``.",
         "operationId": "api_v1_operations_plans_slug_get",
         "parameters": [
           {
@@ -69558,7 +69672,7 @@
     },
     "/api/v1/operations/plans/{slug}/history": {
       "get": {
-        "description": "Return the status history timeline for a plan (tenant-scoped).",
+        "description": "Return the status-transition history for a work-unit (tenant-scoped).\n\nProxies coord ``GET /coord/work-units/{slug}/history``.",
         "operationId": "api_v1_operations_plans_slug_history_get",
         "parameters": [
           {
@@ -69606,7 +69720,7 @@
     },
     "/api/v1/operations/plans/{slug}/transition": {
       "post": {
-        "description": "Transition a plan to a new status (tenant-scoped).\n\nBody shape (coord): ``{\"status\": \"<new_status>\", \"note\": \"<optional>\"}``.\nAudit trail lives in ``coord.plan_status_history``.",
+        "description": "Transition a work-unit to a new status (tenant-scoped, admin-gated).\n\nThe dashboard sends ``{\"status\": \"<new>\", \"note\": \"<optional>\"}``. The\ncoord ``POST /coord/work-units/{slug}/operator-transition`` route expects\n``{\"to_status\": \"<new>\", \"by_actor\": \"<who>\", \"reason\": \"<optional>\"}``\n(``to_status`` + ``by_actor`` both required, non-empty) \u2014 the SAME wire\nshape the retired ``/coord/plans/{slug}/transition`` used. Remap the\noperator-friendly body onto that contract here so the dashboard control\nstays unchanged. ``by_actor`` is stamped with the operator marker (this\nsurface is an admin lever audited via the history ``by_actor`` column).",
         "operationId": "api_v1_operations_plans_slug_transition_post",
         "parameters": [
           {

@@ -53,7 +53,7 @@ def upgrade() -> None:
         UPDATE devenv.machines m
         SET environment_id = sub.environment_id
         FROM (
-            SELECT machine_id, MIN(environment_id) AS environment_id
+            SELECT machine_id, MIN(environment_id::text)::uuid AS environment_id
             FROM devenv.machine_environment_configs
             GROUP BY machine_id
             HAVING COUNT(DISTINCT environment_id) = 1
