@@ -21,7 +21,7 @@ from alembic import op
 
 # revision identifiers
 revision = "devenv_02_machine_env_binding"
-down_revision = "coord_specq_01_speculative_ci_status"
+down_revision = "coord_pr_events_resolutions_age_idx"
 branch_labels = None
 depends_on = None
 
