@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from uuid import UUID
 
-from sqlalchemy import DateTime, Enum, String, Text
+from sqlalchemy import DateTime, String, Text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -23,12 +23,17 @@ from app.db.base import Base
 
 
 class AppDeploymentFreshness(StrEnum):
-    """Deployment freshness state enumeration."""
+    """Deployment freshness states.
+
+    Must stay in lockstep with the DB CHECK constraint
+    ``app_deploy_state_freshness_check`` (alembic
+    ``app_deploy_state_tracking``) — widening this enum requires a
+    companion migration that widens the CHECK.
+    """
 
     FRESH = "fresh"  # deployed_sha == upstream HEAD
     BUILDING = "building"  # pull+build in progress
     FAILED = "failed"  # last build or restart failed
-    STALE = "stale"  # deployed_sha is behind upstream (not building)
 
 
 class AppDeployState(Base):
@@ -64,11 +69,14 @@ class AppDeployState(Base):
         nullable=True,
         doc="git commit SHA currently running (NULL if unknown or never deployed)",
     )
-    freshness: Mapped[AppDeploymentFreshness] = mapped_column(
-        Enum(AppDeploymentFreshness),
+    # Stored as TEXT + CHECK (see the alembic migration), NOT a PG enum type —
+    # `Enum(...)` here would demand a `appdeploymentfreshness` type the
+    # migration never creates.
+    freshness: Mapped[str] = mapped_column(
+        String(16),
         nullable=False,
-        default=AppDeploymentFreshness.FAILED,
-        doc="Deployment state: fresh, building, failed, stale",
+        default=AppDeploymentFreshness.FAILED.value,
+        doc="Deployment state: fresh, building, failed",
     )
     deployed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
