@@ -34,7 +34,11 @@ def upgrade() -> None:
         sa.Column(
             "environment_id",
             UUID(as_uuid=True),
-            sa.ForeignKey("devenv.environments.id", ondelete="SET NULL"),
+            sa.ForeignKey(
+                "devenv.environments.id",
+                ondelete="SET NULL",
+                name="fk_devenv_machine_environment",
+            ),
             nullable=True,
         ),
         schema=_SCHEMA,

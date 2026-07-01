@@ -120,9 +120,18 @@ class Machine(Base):
     # Phase 2 P1: explicit environment binding. NULL = unbound (enroll then
     # falls back to the single-environment auto-bind). ON DELETE SET NULL so
     # deleting an environment unbinds its machines rather than cascading.
+    # ``use_alter``: environments.canonical_machine_id already references
+    # machines, so this back-reference closes a machines<->environments cycle.
+    # use_alter emits the FK via a separate ALTER (create) / drops it first
+    # (drop), so SQLAlchemy metadata create_all/drop_all can order the tables.
     environment_id: Mapped[uuid.UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("devenv.environments.id", ondelete="SET NULL"),
+        ForeignKey(
+            "devenv.environments.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_devenv_machine_environment",
+        ),
         nullable=True,
     )
     enrollment_code: Mapped[str | None] = mapped_column(String(16), nullable=True)
