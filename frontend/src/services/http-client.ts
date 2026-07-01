@@ -172,6 +172,26 @@ export class HttpClient {
       ...fetchOptions
     } = options;
 
+    // Anonymous-visitor short-circuit. An auth-required request (`!skipAuth`)
+    // with NO session evidence (no access/refresh token, no `is_authenticated`
+    // marker) can only be rejected downstream — and, worse, the operations
+    // dashboard's several independent polling loops (merge-queue, pr-merge
+    // settings/suggestions, work-units, gates, …) keep their `setInterval`
+    // running on a non-ok response, so an anonymous viewer hammers the backend
+    // forever. For tenant-scoped coord-proxied routes each such tick reaches
+    // coord token-less and is logged there as a `no_operator_context` 403 —
+    // ~2500/hr of pure noise in prod. Return the SAME 401 the loops already
+    // swallow, but WITHOUT the network round-trip, so anonymous polls never
+    // touch the backend/coord. Authenticated users (`hadSession()` true, even
+    // with an expired token — that path still refreshes/redirects below) and
+    // public `skipAuth` requests are unaffected.
+    if (!skipAuth && !this.hadSession()) {
+      return new Response(null, {
+        status: 401,
+        statusText: "Unauthenticated (no session - request not sent)",
+      });
+    }
+
     // Override retry strategy max retries if specified
     if (maxRetries !== 3) {
       this.retryStrategy = new RetryStrategy({ maxRetries });

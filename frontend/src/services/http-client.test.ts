@@ -77,12 +77,17 @@ describe("HttpClient auth-rejection halt", () => {
     expect(onExpired).toHaveBeenCalledTimes(1);
   });
 
-  it("does NOT fire session-expired for a fully-anonymous visitor (no tokens, no marker)", async () => {
-    // An anonymous visitor on a public page (e.g. /login, /auth/callback)
-    // never had a session: no access token, no refresh token, and no
-    // is_authenticated marker. The 401/403 such public-page calls produce by
-    // design must be returned plainly, not treated as session expiry.
-    mockFetchOnce(403);
+  it("short-circuits an auth-required request for a fully-anonymous visitor (no network call, no session-expiry)", async () => {
+    // An anonymous visitor (no access token, no refresh token, no
+    // is_authenticated marker) can only be rejected on an auth-required
+    // (`!skipAuth`) endpoint. The operations dashboard's polling loops keep
+    // ticking on a non-ok response, so an anonymous viewer would otherwise
+    // hammer the backend forever — for tenant-scoped coord-proxied routes each
+    // tick is a `no_operator_context` 403 flood in coord (~2500/hr in prod).
+    // The client now returns a synthetic 401 WITHOUT the network round-trip,
+    // and — as before — does NOT treat it as session expiry.
+    const fetchSpy = vi.fn(async () => new Response("{}", { status: 403 }));
+    vi.stubGlobal("fetch", fetchSpy);
     const tm = makeTokenManager({
       getAccessToken: vi.fn(() => null),
       getRefreshToken: vi.fn(() => null),
@@ -94,9 +99,29 @@ describe("HttpClient auth-rejection halt", () => {
     client.setSessionExpiredHandler(onExpired);
 
     const r = await client.fetch("https://api.test/api/v1/operations/fleet");
-    expect(r.status).toBe(403);
+    expect(r.status).toBe(401);
+    expect(fetchSpy).not.toHaveBeenCalled(); // never reached the backend/coord
     expect(onExpired).not.toHaveBeenCalled();
     expect(tm.clearTokens).not.toHaveBeenCalled();
+  });
+
+  it("still sends a skipAuth (public) request for an anonymous visitor", async () => {
+    // Public endpoints (login, auth callback, health) pass `skipAuth` and must
+    // NOT be short-circuited — an anonymous visitor legitimately calls them.
+    const fetchSpy = vi.fn(async () => new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchSpy);
+    const tm = makeTokenManager({
+      getAccessToken: vi.fn(() => null),
+      getRefreshToken: vi.fn(() => null),
+      isAuthenticated: vi.fn(() => false),
+    });
+    const client = new HttpClient(tm as unknown as TokenManager);
+
+    const r = await client.fetch("https://api.test/api/v1/auth/config", {
+      skipAuth: true,
+    });
+    expect(r.status).toBe(200);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
   it("fires session-expired on a 403 with an expired access token (marker present) — #491 storm fix intact", async () => {
