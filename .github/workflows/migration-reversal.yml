@@ -116,6 +116,19 @@ jobs:
         run: |
           cd backend
           set -euo pipefail
+          # Defer multi-head chains to the alembic-heads-pr gate. A PR that is
+          # behind main with an un-repointed migration has >1 head, which makes
+          # `alembic upgrade head` ambiguous — that's a chain-consolidation
+          # problem (alembic-heads-pr's job), NOT a reversibility problem. Failing
+          # here would be a false positive that blocks an otherwise-reversible
+          # migration. A multi-head PR can't merge anyway (alembic-heads-pr is
+          # required), and once it re-points to a single head this test runs for
+          # real. So skip-and-pass on multi-head.
+          HEADS=$(poetry run alembic heads 2>/dev/null | grep -c '(head)' || echo 0)
+          if [ "$HEADS" -gt 1 ]; then
+            echo "Multiple alembic heads ($HEADS) — reversibility deferred to the alembic-heads-pr gate. Skipping (pass)."
+            exit 0
+          fi
           echo "== upgrade head =="
           poetry run alembic upgrade head
           echo "== downgrade -1 =="
