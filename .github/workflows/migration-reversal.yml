@@ -12,6 +12,8 @@ name: Migration Reversal Test
 
 on:
   pull_request:
+    paths:
+      - 'backend/alembic/versions/**'
 
 jobs:
   detect:
