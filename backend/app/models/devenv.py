@@ -118,12 +118,18 @@ class Machine(Base):
     hostname: Mapped[str | None] = mapped_column(String(255), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Phase 2 P1: explicit environment binding. NULL = unbound (enroll then
-    # falls back to the single-environment auto-bind). ON DELETE SET NULL so
-    # deleting an environment unbinds its machines rather than cascading.
+    # falls back to the single-environment auto-bind).
+    #
+    # NOT mapped as a ForeignKey in the ORM metadata (though devenv_02 DID add a
+    # DB-level FK with ON DELETE SET NULL, which is kept for prod integrity):
+    # environments.canonical_machine_id already references machines, so declaring
+    # the back-reference in metadata closes a machines<->environments cycle that
+    # `Base.metadata.sorted_tables` (the test harness's table ordering) cannot
+    # sort, breaking every devenv unit test. The DB FK still enforces integrity
+    # + nulls the binding on environment delete; the ORM just treats it as a
+    # plain column.
     environment_id: Mapped[uuid.UUID | None] = mapped_column(
-        PGUUID(as_uuid=True),
-        ForeignKey("devenv.environments.id", ondelete="SET NULL"),
-        nullable=True,
+        PGUUID(as_uuid=True), nullable=True
     )
     enrollment_code: Mapped[str | None] = mapped_column(String(16), nullable=True)
     enrollment_expires_at: Mapped[datetime | None] = mapped_column(
