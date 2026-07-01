@@ -48,6 +48,9 @@ const STATUS_FILTERS = [
 ];
 
 interface PlansListResponse {
+  // `/operations/plans` now proxies coord work-units (envelope
+  // `{work_units: [...]}`); `plans` kept for cutover tolerance.
+  work_units?: CoordPlanRow[];
   plans?: CoordPlanRow[];
 }
 
@@ -101,7 +104,7 @@ export default function CoordSpawnPage() {
     return () => clearInterval(id);
   }, [fetchData]);
 
-  const plans = useMemo(() => data?.plans ?? [], [data]);
+  const plans = useMemo(() => data?.work_units ?? data?.plans ?? [], [data]);
 
   return (
     <div className="p-6 space-y-4" data-testid="coord-spawn-page">

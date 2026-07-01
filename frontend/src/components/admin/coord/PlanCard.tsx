@@ -1,9 +1,13 @@
 "use client";
 
 /**
- * PlanCard — render a single `coord.plans` row in list views.
+ * PlanCard — render a single coord work-unit row in list views.
  *
- * Plan `2026-05-19-coordinator-production-readiness.md` Phase 2 (Wave 2).
+ * Plan `2026-05-19-coordinator-production-readiness.md` Phase 2 (Wave 2);
+ * the rows are now coord work-units (`coord.work_units`). The fields the
+ * card reads (slug / title / status / updated_at) are common to both; the
+ * plan-only `current_phase` / `shipped_at` are optional and simply absent
+ * for work-units.
  *
  * Wave 4 (Phase 4) adds the per-row cross-link button into the
  * /admin/coord/spawn flow — clicking it routes to the spawn page with
