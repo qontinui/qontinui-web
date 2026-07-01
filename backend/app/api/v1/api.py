@@ -61,6 +61,7 @@ from app.api.v1.endpoints import (
     feedback_scores,
     files_sharing,
     finding_categories,
+    fleet_dispatch,
     health,
     historical,
     identity_resolution,
@@ -335,6 +336,10 @@ api_router.include_router(
 # Workflow dispatch — user-triggered routing to server-mode runners
 api_router.include_router(
     workflow_dispatch.router, prefix="/workflows", tags=["workflow-dispatch"]
+)
+# Fleet-fresh P4 — freshness-aware test-host resolution
+api_router.include_router(
+    fleet_dispatch.router, prefix="/dispatch", tags=["fleet-dispatch"]
 )
 # Scheduled workflow runs (cron-driven dispatch via celery-beat / redbeat)
 api_router.include_router(

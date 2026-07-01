@@ -28,6 +28,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config.redis_config import get_redis
+from app.models.app_deploy_state import AppDeploymentFreshness, AppDeployState
 from app.models.device import Device
 from app.models.unified_workflow import UnifiedWorkflow
 from app.schemas.workflow_dispatch import WorkflowDispatchResponse
@@ -38,6 +39,7 @@ logger = structlog.get_logger(__name__)
 __all__ = [
     "HEALTHY_HEARTBEAT_WINDOW_SECONDS",
     "DispatchError",
+    "dispatch_to_fresh_host",
     "dispatch_workflow_to_runner",
 ]
 
@@ -112,6 +114,53 @@ async def _pick_auto_runner(db: AsyncSession, user_id: UUID) -> Device | None:
         if _is_healthy(device) and device.derived_status == "healthy":
             return device
     return None
+
+
+async def dispatch_to_fresh_host(
+    db: AsyncSession,
+    user_id: UUID,
+    app_id: str,
+    strategy: str = "best_effort",
+) -> Device | None:
+    """Resolve the healthiest owned device with a FRESH deployment of ``app_id``.
+
+    Fleet-fresh P4: joins ``coord.devices`` against ``project.app_deploy_state``
+    (written by the runner's auto-fresh engine) so tests land on a host whose
+    deployed build matches upstream HEAD.
+
+    Preference order mirrors :func:`_pick_auto_runner`:
+      1. WS-connected + derived_status healthy + fresh deployment.
+      2. Heartbeat-fresh + derived_status healthy + fresh deployment.
+      3. (``strategy="best_effort"`` only) any healthy owned runner via
+         :func:`_pick_auto_runner` — a stale host beats no host.
+
+    Returns ``None`` when nothing qualifies (``fresh_only``: no fresh host;
+    ``best_effort``: no healthy host at all).
+    """
+    query = (
+        select(Device)
+        .join(AppDeployState, AppDeployState.device_id == Device.device_id)
+        .where(
+            Device.user_id == user_id,
+            Device.capability_user_paired.is_(True),
+            AppDeployState.app_id == app_id,
+            AppDeployState.freshness == AppDeploymentFreshness.FRESH.value,
+        )
+        .order_by(
+            Device.ws_session_id.is_not(None).desc(),
+            AppDeployState.deployed_at.desc(),
+        )
+    )
+    result = await db.execute(query)
+    for device in result.scalars().all():
+        if device.ws_session_id is not None and device.derived_status == "healthy":
+            return device
+        if _is_healthy(device) and device.derived_status == "healthy":
+            return device
+
+    if strategy == "fresh_only":
+        return None
+    return await _pick_auto_runner(db, user_id)
 
 
 async def _get_runner_by_id(db: AsyncSession, runner_id: UUID) -> Device | None:
