@@ -157,6 +157,7 @@ class MachineCreatedResponse(MachineResponse):
             name=machine.name,
             hostname=machine.hostname,
             description=machine.description,
+            environment_id=machine.environment_id,
             key_prefix=machine.key_prefix,
             enrolled=machine.enrolled_at is not None,
             last_seen_at=machine.last_seen_at,
