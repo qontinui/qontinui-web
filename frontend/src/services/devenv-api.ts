@@ -66,6 +66,8 @@ export interface Machine {
   enrolled: boolean;
   last_seen_at: string | null;
   revoked: boolean;
+  /** Environment this machine is explicitly bound to, or null when unbound. */
+  environment_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -80,12 +82,14 @@ export interface MachineCreate {
   name: string;
   hostname?: string | null;
   description?: string | null;
+  environment_id?: string | null;
 }
 
 export interface MachineUpdate {
   name?: string;
   hostname?: string | null;
   description?: string | null;
+  environment_id?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -307,6 +311,24 @@ export function revokeMachine(id: string): Promise<Machine> {
   return request<Machine>(`/machines/${encodeURIComponent(id)}/revoke`, {
     method: "POST",
   });
+}
+
+/**
+ * Bind a machine to an environment (or unbind it with `environmentId: null`).
+ * Mirrors `PUT /machines/{id}/environment` — the explicit P1 binding that
+ * enrollment honors when several environments exist.
+ */
+export function setMachineEnvironment(
+  id: string,
+  environmentId: string | null
+): Promise<Machine> {
+  return request<Machine>(
+    `/machines/${encodeURIComponent(id)}/environment`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ environment_id: environmentId }),
+    }
+  );
 }
 
 // ---------------------------------------------------------------------------

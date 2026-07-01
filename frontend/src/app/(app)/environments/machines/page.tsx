@@ -28,13 +28,16 @@ import {
 } from "lucide-react";
 import { relativeTime } from "@/components/operations/utils";
 import { EnrollCodeModal } from "../_components/EnrollCodeModal";
+import { MachineEnvironmentSelector } from "../_components/MachineEnvironmentSelector";
 import {
   createMachine,
   deleteMachine,
   DevenvApiError,
+  listEnvironments,
   listMachines,
   regenerateEnrollment,
   revokeMachine,
+  type Environment,
   type Machine,
   type MachineCreated,
 } from "@/services/devenv-api";
@@ -47,6 +50,7 @@ function errMessage(err: unknown, fallback: string): string {
 
 export default function MachinesPage() {
   const [machines, setMachines] = useState<Machine[]>([]);
+  const [environments, setEnvironments] = useState<Environment[]>([]);
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
   const [hostname, setHostname] = useState("");
@@ -58,13 +62,23 @@ export default function MachinesPage() {
 
   const fetchMachines = useCallback(async () => {
     try {
-      const data = await listMachines();
-      setMachines(data);
+      const [machineData, envData] = await Promise.all([
+        listMachines(),
+        listEnvironments(),
+      ]);
+      setMachines(machineData);
+      setEnvironments(envData);
     } catch (err) {
       toast.error(errMessage(err, "Failed to load machines"));
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  const applyMachineUpdate = useCallback((updated: Machine) => {
+    setMachines((prev) =>
+      prev.map((m) => (m.id === updated.id ? updated : m))
+    );
   }, []);
 
   useEffect(() => {
@@ -279,6 +293,11 @@ export default function MachinesPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
+                    <MachineEnvironmentSelector
+                      machine={machine}
+                      environments={environments}
+                      onBound={applyMachineUpdate}
+                    />
                     <Button
                       variant="outline"
                       size="sm"
