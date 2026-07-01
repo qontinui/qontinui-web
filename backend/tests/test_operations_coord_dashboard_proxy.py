@@ -147,15 +147,18 @@ API_PREFIX = "/api/v1/operations"
 
 class TestPlansEndpoints:
     def test_list_plans(self, client: TestClient):
+        # The "Plans" dashboard now proxies coord's generic work-unit
+        # surface; the list envelope is `{work_units: [...]}`.
         coord_payload = {
-            "plans": [
+            "work_units": [
                 {
                     "slug": "2026-05-19-coordinator-production-readiness",
                     "status": "in_progress",
                     "title": "Coord production readiness",
                 }
             ],
-            "count": 1,
+            "limit": 100,
+            "offset": 0,
         }
         mock_resp = _mock_response(json_data=coord_payload)
         with _patch_httpx() as MockClient:
@@ -167,28 +170,36 @@ class TestPlansEndpoints:
         assert resp.status_code == 200
         assert resp.json() == coord_payload
         called_url = instance.get.call_args.args[0]
-        assert called_url.endswith("/coord/plans")
+        assert called_url.endswith("/coord/work-units")
         called_params = instance.get.call_args.kwargs.get("params", {})
         assert called_params.get("status") == "in_progress"
         _assert_tenant_header_forwarded(instance.get.call_args)
 
     def test_list_plans_no_filters(self, client: TestClient):
-        mock_resp = _mock_response(json_data={"plans": [], "count": 0})
+        mock_resp = _mock_response(
+            json_data={"work_units": [], "limit": 100, "offset": 0}
+        )
         with _patch_httpx() as MockClient:
             instance = AsyncMock()
             instance.get.return_value = mock_resp
             _configure_mock_client(MockClient, instance)
             resp = client.get(f"{API_PREFIX}/plans")
         assert resp.status_code == 200
+        called_url = instance.get.call_args.args[0]
+        assert called_url.endswith("/coord/work-units")
         called_params = instance.get.call_args.kwargs.get("params")
         assert called_params is None
         _assert_tenant_header_forwarded(instance.get.call_args)
 
     def test_get_single_plan(self, client: TestClient):
+        # Single-work-unit envelope: `{work_unit: {...}, recent_history: [...]}`.
         coord_payload = {
-            "slug": "my-plan",
-            "status": "shipped",
-            "content": "# My Plan\n...markdown body...",
+            "work_unit": {
+                "slug": "my-plan",
+                "status": "shipped",
+                "title": "My Plan",
+            },
+            "recent_history": [],
         }
         mock_resp = _mock_response(json_data=coord_payload)
         with _patch_httpx() as MockClient:
@@ -199,17 +210,21 @@ class TestPlansEndpoints:
         assert resp.status_code == 200
         assert resp.json() == coord_payload
         called_url = instance.get.call_args.args[0]
-        assert called_url.endswith("/coord/plans/my-plan")
+        assert called_url.endswith("/coord/work-units/my-plan")
         _assert_tenant_header_forwarded(instance.get.call_args)
 
     def test_get_plan_history(self, client: TestClient):
+        # Work-unit history rows: {from_status?, to_status, transitioned_at,
+        # by_actor?, reason?}.
         coord_payload = {
             "slug": "my-plan",
             "history": [
                 {
-                    "status": "drafted",
+                    "from_status": None,
+                    "to_status": "draft",
                     "transitioned_at": "2026-05-19T00:00:00Z",
-                    "actor": "operator",
+                    "by_actor": "operator:web-admin",
+                    "reason": None,
                 },
             ],
         }
@@ -221,10 +236,12 @@ class TestPlansEndpoints:
             resp = client.get(f"{API_PREFIX}/plans/my-plan/history")
         assert resp.status_code == 200
         assert resp.json() == coord_payload
+        called_url = instance.get.call_args.args[0]
+        assert called_url.endswith("/coord/work-units/my-plan/history")
         _assert_tenant_header_forwarded(instance.get.call_args)
 
     def test_post_plan_transition(self, client: TestClient):
-        coord_payload = {"slug": "my-plan", "status": "shipped"}
+        coord_payload = {"slug": "my-plan", "to_status": "shipped"}
         mock_resp = _mock_response(json_data=coord_payload)
         with _patch_httpx() as MockClient:
             instance = AsyncMock()
@@ -236,9 +253,18 @@ class TestPlansEndpoints:
             )
         assert resp.status_code == 200
         called_url = instance.post.call_args.args[0]
-        assert called_url.endswith("/coord/plans/my-plan/transition")
+        # Proxies coord's operator-transition route.
+        assert called_url.endswith("/coord/work-units/my-plan/operator-transition")
+        # The operator-friendly `{status, note}` body is remapped onto coord's
+        # `{to_status, by_actor, reason}` contract. `by_actor` is sent for
+        # compatibility with the deployed coord (a follow-up derives it
+        # server-side + ignores this field).
         called_body = instance.post.call_args.kwargs.get("json", {})
-        assert called_body.get("status") == "shipped"
+        assert called_body.get("to_status") == "shipped"
+        assert called_body.get("by_actor")  # non-empty (deployed coord requires it)
+        assert called_body.get("reason") == "wave-2 complete"
+        assert "status" not in called_body
+        assert "note" not in called_body
         _assert_tenant_header_forwarded(instance.post.call_args)
 
     def test_tenant_not_resolved_returns_403(self, unresolved_client: TestClient):
