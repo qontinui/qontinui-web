@@ -1,7 +1,7 @@
 """coord.helper_tasks + coord.helper_answers (helper-task queue broker)
 
 Revision ID: coord_helper_tasks_01
-Revises: coord_workunits_01_work_units
+Revises: resq_02_drop_reservation_lifecycle_cols
 Create Date: 2026-06-29
 
 Phase 1.2 of plan
@@ -34,13 +34,10 @@ degrades gracefully when they are absent.
 
 Collision-safe raw ``IF NOT EXISTS`` — see ``coord_singleauthored_01_gates``.
 
-NOTE on ``down_revision``: chained off ``coord_workunits_01_work_units``
-because alembic could not run in the authoring environment (Python 3.13
-import failure) to resolve the single live head, and the branch carries 40+
-open heads that merge migrations reconcile at land time. coord's land-time
-re-point engine re-anchors this to the live head on land and
-``alembic-graph-pr.yml`` gates forks, so the exact parent chosen here is
-not load-bearing.
+Chained off ``resq_02_drop_reservation_lifecycle_cols`` — the single live
+alembic head at authoring time — so the chain stays single-headed (the
+``alembic-heads-pr`` gate). coord's land-time re-point engine re-anchors this
+to the live head on land if another migration merges first.
 """
 
 from collections.abc import Sequence
@@ -49,7 +46,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_helper_tasks_01"
-down_revision: str | Sequence[str] | None = "coord_workunits_01_work_units"
+down_revision: str | Sequence[str] | None = "resq_02_drop_reservation_lifecycle_cols"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
