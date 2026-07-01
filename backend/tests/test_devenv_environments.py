@@ -745,3 +745,30 @@ class TestDevenvMachineEnvBinding:
             # Two envs exist, so the v1 heuristic would bind None — the explicit
             # binding wins.
             assert r.json()["environment_id"] == env2_id
+
+    @pytest.mark.asyncio
+    async def test_delete_environment_unbinds_machines(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """Deleting an environment nulls its machines' binding (app-level, since
+        there is no DB FK to SET NULL)."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/environments",
+                json={"name": "to-delete", "description": None},
+            )
+            env_id = r.json()["id"]
+            r = await client.post(
+                f"{API_PREFIX}/machines",
+                json={"name": "bound-then-orphaned", "environment_id": env_id},
+            )
+            machine_id = r.json()["id"]
+            assert r.json()["environment_id"] == env_id
+
+            r = await client.delete(f"{API_PREFIX}/environments/{env_id}")
+            assert r.status_code == 204, r.text
+
+            r = await client.get(f"{API_PREFIX}/machines/{machine_id}")
+            assert r.status_code == 200, r.text
+            assert r.json()["environment_id"] is None

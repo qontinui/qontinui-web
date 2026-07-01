@@ -118,21 +118,16 @@ class Machine(Base):
     hostname: Mapped[str | None] = mapped_column(String(255), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Phase 2 P1: explicit environment binding. NULL = unbound (enroll then
-    # falls back to the single-environment auto-bind). ON DELETE SET NULL so
-    # deleting an environment unbinds its machines rather than cascading.
-    # ``use_alter``: environments.canonical_machine_id already references
-    # machines, so this back-reference closes a machines<->environments cycle.
-    # use_alter emits the FK via a separate ALTER (create) / drops it first
-    # (drop), so SQLAlchemy metadata create_all/drop_all can order the tables.
+    # falls back to the single-environment auto-bind).
+    #
+    # Intentionally NOT a DB-level FK: environments.canonical_machine_id already
+    # references machines, so a machines->environments FK would close a cycle,
+    # and the metadata's `sorted_tables` (used by the test harness) cannot order
+    # a cyclic graph. Referential integrity is enforced at the application layer
+    # (bind validates env ownership; deleting an environment nulls the binding
+    # in `delete_environment`).
     environment_id: Mapped[uuid.UUID | None] = mapped_column(
-        PGUUID(as_uuid=True),
-        ForeignKey(
-            "devenv.environments.id",
-            ondelete="SET NULL",
-            use_alter=True,
-            name="fk_devenv_machine_environment",
-        ),
-        nullable=True,
+        PGUUID(as_uuid=True), nullable=True
     )
     enrollment_code: Mapped[str | None] = mapped_column(String(16), nullable=True)
     enrollment_expires_at: Mapped[datetime | None] = mapped_column(

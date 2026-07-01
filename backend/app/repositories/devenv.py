@@ -15,7 +15,7 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select, text
+from sqlalchemy import select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -187,6 +187,21 @@ class MachineRepository:
     async def delete(self, db: AsyncSession, *, machine: Machine) -> None:
         """Delete a machine."""
         await db.delete(machine)
+        await db.flush()
+
+    async def unbind_all_from_environment(
+        self, db: AsyncSession, *, environment_id: UUID
+    ) -> None:
+        """Null the environment binding for every machine in an environment.
+
+        Called when the environment is deleted: there is no DB-level FK to
+        ``ON DELETE SET NULL`` (the FK would cycle), so the app does it.
+        """
+        await db.execute(
+            update(Machine)
+            .where(Machine.environment_id == environment_id)
+            .values(environment_id=None)
+        )
         await db.flush()
 
 

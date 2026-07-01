@@ -455,6 +455,9 @@ async def delete_environment(
     )
     if env is None:
         raise _not_found("environment")
+    # No DB-level FK on machines.environment_id (would cycle), so unbind the
+    # environment's machines here before deleting it.
+    await machine_repo.unbind_all_from_environment(db, environment_id=env.id)
     await environment_repo.delete(db, env=env)
     await db.commit()
 

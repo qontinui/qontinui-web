@@ -1,10 +1,14 @@
 """devenv_02: explicit machine->environment binding
 
-Phase 2 P1. Adds ``devenv.machines.environment_id`` (nullable FK to
-``devenv.environments``, ``ON DELETE SET NULL``) so a machine binds to a
-CHOSEN environment rather than relying on the v1 "exactly one environment"
-auto-bind at enroll. Nullable: a machine may exist unbound, and an unbound
-machine still falls back to the single-environment auto-bind at enroll.
+Phase 2 P1. Adds ``devenv.machines.environment_id`` (nullable UUID) so a machine
+binds to a CHOSEN environment rather than relying on the v1 "exactly one
+environment" auto-bind at enroll. Nullable: a machine may exist unbound, and an
+unbound machine still falls back to the single-environment auto-bind at enroll.
+
+Deliberately NOT a DB-level FK: ``environments.canonical_machine_id`` already
+references ``machines``, so a back-reference would close a cycle that the
+metadata's ``sorted_tables`` (test harness) can't order. Referential integrity
+is enforced at the application layer.
 
 Backfills the column from each machine's existing config rows when the machine
 has configs pointing at exactly one environment (the common v1 case), so no
@@ -29,18 +33,12 @@ _SCHEMA = "devenv"
 
 
 def upgrade() -> None:
+    # Plain UUID column (no DB FK): a machines->environments FK would close a
+    # cycle with environments.canonical_machine_id. Integrity is enforced at the
+    # application layer (bind validates ownership; env-delete nulls the binding).
     op.add_column(
         "machines",
-        sa.Column(
-            "environment_id",
-            UUID(as_uuid=True),
-            sa.ForeignKey(
-                "devenv.environments.id",
-                ondelete="SET NULL",
-                name="fk_devenv_machine_environment",
-            ),
-            nullable=True,
-        ),
+        sa.Column("environment_id", UUID(as_uuid=True), nullable=True),
         schema=_SCHEMA,
     )
     op.create_index(
