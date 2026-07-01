@@ -79,6 +79,10 @@ class MachineCreate(BaseSchema):
     name: str = Field(min_length=1, max_length=200)
     hostname: str | None = Field(default=None, max_length=255)
     description: str | None = None
+    # Phase 2 P1: optionally bind the machine to a chosen environment at
+    # creation. When set, enroll binds config to THIS environment (no reliance
+    # on the single-environment auto-bind). Must be owned by the caller.
+    environment_id: UUID | None = None
 
 
 class MachineUpdate(BaseSchema):
@@ -87,6 +91,12 @@ class MachineUpdate(BaseSchema):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     hostname: str | None = Field(default=None, max_length=255)
     description: str | None = None
+
+
+class SetMachineEnvironmentRequest(BaseSchema):
+    """Bind (or unbind) a machine to an environment. ``None`` unbinds."""
+
+    environment_id: UUID | None = None
 
 
 class MachineResponse(BaseORMSchema):
@@ -101,6 +111,7 @@ class MachineResponse(BaseORMSchema):
     name: str
     hostname: str | None = None
     description: str | None = None
+    environment_id: UUID | None = None
     key_prefix: str | None = None
     enrolled: bool = False
     last_seen_at: IsoDatetime | None = None
@@ -116,6 +127,7 @@ class MachineResponse(BaseORMSchema):
             name=machine.name,
             hostname=machine.hostname,
             description=machine.description,
+            environment_id=machine.environment_id,
             key_prefix=machine.key_prefix,
             enrolled=machine.enrolled_at is not None,
             last_seen_at=machine.last_seen_at,

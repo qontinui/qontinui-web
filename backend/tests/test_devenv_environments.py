@@ -643,3 +643,105 @@ def _find_delta(section: dict, key: str) -> dict:
         if delta["key"] == key:
             return delta
     raise AssertionError(f"key {key!r} not in section {section['section']!r}")
+
+
+class TestDevenvMachineEnvBinding:
+    """Phase 2 P1 — explicit machine→environment binding."""
+
+    @pytest.mark.asyncio
+    async def test_create_machine_with_environment_binds(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/environments",
+                json={"name": "env-1", "description": None},
+            )
+            env_id = r.json()["id"]
+
+            r = await client.post(
+                f"{API_PREFIX}/machines",
+                json={"name": "bound-machine", "environment_id": env_id},
+            )
+            assert r.status_code == 201, r.text
+            assert r.json()["environment_id"] == env_id
+
+    @pytest.mark.asyncio
+    async def test_create_machine_with_foreign_environment_404(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines",
+                json={"name": "m", "environment_id": str(uuid4())},
+            )
+            assert r.status_code == 404, r.text
+            assert r.json()["detail"]["code"] == "environment_not_found"
+
+    @pytest.mark.asyncio
+    async def test_set_machine_environment_rebind_and_unbind(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/environments",
+                json={"name": "env-a", "description": None},
+            )
+            env_id = r.json()["id"]
+            r = await client.post(f"{API_PREFIX}/machines", json={"name": "rebind-me"})
+            machine_id = r.json()["id"]
+            assert r.json()["environment_id"] is None
+
+            # Bind.
+            r = await client.put(
+                f"{API_PREFIX}/machines/{machine_id}/environment",
+                json={"environment_id": env_id},
+            )
+            assert r.status_code == 200, r.text
+            assert r.json()["environment_id"] == env_id
+
+            # Unbind (null).
+            r = await client.put(
+                f"{API_PREFIX}/machines/{machine_id}/environment",
+                json={"environment_id": None},
+            )
+            assert r.status_code == 200, r.text
+            assert r.json()["environment_id"] is None
+
+    @pytest.mark.asyncio
+    async def test_enroll_honors_explicit_binding_over_multi_env(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """With MULTIPLE environments the v1 auto-bind returns None; an
+        explicit binding must still resolve deterministically at enroll."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/environments",
+                json={"name": "env-1", "description": None},
+            )
+            assert r.status_code == 201, r.text
+            r = await client.post(
+                f"{API_PREFIX}/environments",
+                json={"name": "env-2", "description": None},
+            )
+            env2_id = r.json()["id"]
+
+            r = await client.post(
+                f"{API_PREFIX}/machines",
+                json={"name": "explicit", "environment_id": env2_id},
+            )
+            machine_id = r.json()["id"]
+            code = r.json()["enrollment_code"]
+
+            r = await client.post(
+                f"{API_PREFIX}/agent/enroll",
+                json={"enrollment_code": code, "machine_id": machine_id},
+            )
+            assert r.status_code == 200, r.text
+            # Two envs exist, so the v1 heuristic would bind None — the explicit
+            # binding wins.
+            assert r.json()["environment_id"] == env2_id

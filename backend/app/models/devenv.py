@@ -100,6 +100,7 @@ class Machine(Base):
         Index("idx_devenv_machine_owner", "owner_user_id"),
         Index("idx_devenv_machine_key_hash", "key_hash"),
         Index("idx_devenv_machine_enrollment_code", "enrollment_code"),
+        Index("idx_devenv_machine_environment", "environment_id"),
         {"schema": _SCHEMA},
     )
 
@@ -116,6 +117,14 @@ class Machine(Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     hostname: Mapped[str | None] = mapped_column(String(255), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Phase 2 P1: explicit environment binding. NULL = unbound (enroll then
+    # falls back to the single-environment auto-bind). ON DELETE SET NULL so
+    # deleting an environment unbinds its machines rather than cascading.
+    environment_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("devenv.environments.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     enrollment_code: Mapped[str | None] = mapped_column(String(16), nullable=True)
     enrollment_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
