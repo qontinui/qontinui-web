@@ -31,6 +31,7 @@ import {
   CalendarClock,
   GitCommitHorizontal,
   Boxes,
+  ListChecks,
 } from "lucide-react";
 import type { NavItem } from "./types";
 
@@ -101,6 +102,19 @@ export const devNavItems: NavItem[] = [
     description: "Cron-style workflow dispatches",
     icon: React.createElement(CalendarClock, { className: "size-5" }),
     route: "/scheduled-runs",
+    color: "#0EA5E9",
+    group: "Automation",
+  },
+  // Regression Tests — condition groups (natural-language checks) run on demand
+  // or on a schedule against a target URL. Visible to any authenticated user;
+  // talks to the always-registered httpClient via the `/api/v1/conditions/*`
+  // backend proxy.
+  {
+    id: "conditions",
+    label: "Regression Tests",
+    description: "Condition groups run on demand or on a schedule",
+    icon: React.createElement(ListChecks, { className: "size-5" }),
+    route: "/conditions",
     color: "#0EA5E9",
     group: "Automation",
   },
