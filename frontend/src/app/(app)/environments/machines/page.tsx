@@ -18,6 +18,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
+  AlertTriangle,
   KeyRound,
   Loader2,
   Plus,
@@ -52,6 +53,7 @@ export default function MachinesPage() {
   const [machines, setMachines] = useState<Machine[]>([]);
   const [environments, setEnvironments] = useState<Environment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [hostname, setHostname] = useState("");
   const [description, setDescription] = useState("");
@@ -61,17 +63,36 @@ export default function MachinesPage() {
   );
 
   const fetchMachines = useCallback(async () => {
-    try {
-      const [machineData, envData] = await Promise.all([
-        listMachines(),
-        listEnvironments(),
-      ]);
-      setMachines(machineData);
-      setEnvironments(envData);
-    } catch (err) {
-      toast.error(errMessage(err, "Failed to load machines"));
-    } finally {
-      setLoading(false);
+    // The auth token can lag a first paint right after login (e.g. landing
+    // here via a `?next=` deep link). A one-shot fetch that lands in that
+    // window would strand the page on a misleading empty state, so retry a
+    // few times with backoff before surfacing the error — the same race the
+    // polling operations dashboards mask by simply fetching again next tick.
+    const MAX_ATTEMPTS = 4;
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      try {
+        const [machineData, envData] = await Promise.all([
+          listMachines(),
+          listEnvironments(),
+        ]);
+        setMachines(machineData);
+        setEnvironments(envData);
+        setLoadError(null);
+        setLoading(false);
+        return;
+      } catch (err) {
+        if (attempt === MAX_ATTEMPTS - 1) {
+          // Exhausted retries: a failed load must NOT masquerade as an empty
+          // tenant. Record the error so the UI offers a retry instead of the
+          // misleading "no machines yet" empty state.
+          const message = errMessage(err, "Failed to load machines");
+          setLoadError(message);
+          setLoading(false);
+          toast.error(message);
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 600 * 2 ** attempt));
+      }
     }
   }, []);
 
@@ -248,7 +269,27 @@ export default function MachinesPage() {
           </div>
         </div>
         <div className="p-4">
-          {machines.length === 0 ? (
+          {loadError && machines.length === 0 ? (
+            <div className="text-center py-12">
+              <AlertTriangle className="size-10 mx-auto mb-3 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">
+                Couldn&apos;t load machines.
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">{loadError}</p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-4"
+                onClick={() => {
+                  setLoading(true);
+                  fetchMachines();
+                }}
+              >
+                <RefreshCw className="size-4" />
+                Retry
+              </Button>
+            </div>
+          ) : machines.length === 0 ? (
             <div className="text-center py-12">
               <Server className="size-10 mx-auto mb-3 text-muted-foreground" />
               <p className="text-sm text-muted-foreground">

@@ -3,23 +3,24 @@
 //
 // Typed fetch wrappers for the `/api/v1/devenv` surface (applications,
 // machines, environments, drift). Mirrors the pydantic schemas in
-// `backend/app/schemas/devenv.py`. All requests use cookie-based auth
-// (`credentials: "include"`) + `cache: "no-store"`, matching the existing
-// settings/repos page pattern.
+// `backend/app/schemas/devenv.py`.
+//
+// Requests go through the shared `httpClient`, so they carry the
+// `Authorization: Bearer` token in prod's remote/Bearer-only auth mode (a raw
+// cookie-only fetch sends NO credential the remote backend accepts → a
+// permanent 401, which on a one-shot page load looks like an empty tenant).
+// `httpClient` also brings the 401-refresh / session-expiry handling and the
+// 429/5xx retry every other authed service already relies on.
 // ============================================================================
 
 import { ApiConfig } from "@/services/api-config";
+import { httpClient } from "@/services/service-factory";
 
 /** Base URL for the devenv surface. */
 export const DEVENV_API = `${ApiConfig.API_BASE_URL}/api/v1/devenv`;
 
 /** Drift poll cadence (ms) — matches the fleet/dev-action 10s cadence. */
 export const DRIFT_POLL_MS = 10_000;
-
-const FETCH_OPTS: RequestInit = {
-  credentials: "include",
-  cache: "no-store",
-};
 
 // ---------------------------------------------------------------------------
 // Severity / status literals
@@ -211,13 +212,13 @@ async function request<T>(
   path: string,
   init?: RequestInit
 ): Promise<T> {
-  const res = await fetch(`${DEVENV_API}${path}`, {
-    ...FETCH_OPTS,
+  // `httpClient.fetch` attaches the Bearer token (+ credentials, CSRF, and the
+  // 401-refresh / 429-5xx retry). We keep the raw Response so the devenv error
+  // envelope (`{detail:{code,message}}` → DevenvApiError) is preserved rather
+  // than swallowed by httpClient's throw-on-non-ok helpers.
+  const res = await httpClient.fetch(`${DEVENV_API}${path}`, {
+    cache: "no-store",
     ...init,
-    headers: {
-      ...(init?.body ? { "Content-Type": "application/json" } : {}),
-      ...init?.headers,
-    },
   });
   if (!res.ok) {
     throw await parseError(res);
