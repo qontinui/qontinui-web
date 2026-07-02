@@ -2,15 +2,18 @@
 
 import type React from "react";
 import { useState } from "react";
+import { toast } from "sonner";
 import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
   CircleAlert,
+  ClipboardCopy,
   Server,
   TriangleAlert,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import type {
   EnvironmentDrift,
   KeyDelta,
@@ -18,6 +21,8 @@ import type {
   SectionDrift,
   Severity,
 } from "@/services/devenv-api";
+import { CopyCanonicalButton } from "./CopyCanonicalDialog";
+import { buildRemediation, remediationToManifest } from "./copy-canonical";
 
 type BadgeVariant = React.ComponentProps<typeof Badge>["variant"];
 
@@ -76,20 +81,57 @@ interface DriftMatrixProps {
  * (status + expected vs actual), colored by severity.
  */
 export function DriftMatrix({ drift }: DriftMatrixProps) {
+  const canonical = drift.canonical_machine_name ?? "canonical";
+  // Machines with a copyable (additive) remediation vs canonical. A report can
+  // be "not in sync" yet have nothing to copy (only extra keys), so key off the
+  // remediation, not report.in_sync.
+  const copyable = drift.reports
+    .map((report) => ({ report, rem: buildRemediation(report) }))
+    .filter(({ rem }) => !rem.inSync);
+
+  const copyAllDrifted = async () => {
+    const manifest = copyable
+      .map(
+        ({ rem }) => `# ===== ${rem.machineName} =====\n${remediationToManifest(rem)}`
+      )
+      .join("\n");
+    try {
+      await navigator.clipboard.writeText(manifest);
+      toast.success(
+        `Copied remediation for ${copyable.length} machine${
+          copyable.length === 1 ? "" : "s"
+        }`
+      );
+    } catch {
+      toast.error("Failed to copy — copy per-machine instead");
+    }
+  };
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <span className="text-sm font-medium">Overall</span>
-        <Badge variant={severityVariant(drift.severity, drift.in_sync)}>
-          {drift.in_sync ? "in sync" : drift.severity}
-        </Badge>
-        <span className="text-xs text-muted-foreground">
-          {drift.reports.length}{" "}
-          {drift.reports.length === 1 ? "machine" : "machines"} compared vs{" "}
-          <span className="font-medium">
-            {drift.canonical_machine_name ?? "canonical"}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-sm font-medium">Overall</span>
+          <Badge variant={severityVariant(drift.severity, drift.in_sync)}>
+            {drift.in_sync ? "in sync" : drift.severity}
+          </Badge>
+          <span className="text-xs text-muted-foreground truncate">
+            {drift.reports.length}{" "}
+            {drift.reports.length === 1 ? "machine" : "machines"} compared vs{" "}
+            <span className="font-medium">{canonical}</span>
           </span>
-        </span>
+        </div>
+        {copyable.length > 0 && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            onClick={copyAllDrifted}
+          >
+            <ClipboardCopy className="size-4" />
+            Copy all drifted ({copyable.length})
+          </Button>
+        )}
       </div>
 
       {drift.reports.length === 0 ? (
@@ -106,6 +148,7 @@ export function DriftMatrix({ drift }: DriftMatrixProps) {
             <MachineDriftCard
               key={report.machine_id ?? report.machine_name ?? "unknown"}
               report={report}
+              canonicalName={drift.canonical_machine_name}
             />
           ))}
         </div>
@@ -114,7 +157,13 @@ export function DriftMatrix({ drift }: DriftMatrixProps) {
   );
 }
 
-function MachineDriftCard({ report }: { report: MachineDriftReport }) {
+function MachineDriftCard({
+  report,
+  canonicalName,
+}: {
+  report: MachineDriftReport;
+  canonicalName: string | null;
+}) {
   return (
     <div className="rounded-lg border border-border">
       <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
@@ -167,6 +216,15 @@ function MachineDriftCard({ report }: { report: MachineDriftReport }) {
           report.sections.map((section) => (
             <SectionRow key={section.section} section={section} />
           ))
+        )}
+
+        {report.has_config && (
+          <div className="pt-1">
+            <CopyCanonicalButton
+              report={report}
+              canonicalName={canonicalName}
+            />
+          </div>
         )}
       </div>
     </div>
