@@ -75,13 +75,17 @@ async def dispatch_status(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_active_user_async),
 ) -> DispatchStatusResponse:
-    """Count owned fresh hosts for ``app_id`` (dashboard / preflight check)."""
+    """Count owned healthy fresh hosts for ``app_id`` (dashboard / preflight)."""
     count_result = await db.execute(
         select(func.count())
         .select_from(AppDeployState)
         .join(Device, Device.device_id == AppDeployState.device_id)
         .where(
             Device.user_id == current_user.id,
+            # Health filter matches the resolver's bar: a fresh deployment on
+            # an unhealthy device is not dispatchable and must not inflate
+            # the preflight count.
+            Device.derived_status == "healthy",
             AppDeployState.app_id == app_id,
             AppDeployState.freshness == AppDeploymentFreshness.FRESH.value,
         )

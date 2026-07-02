@@ -54,7 +54,20 @@ def upgrade() -> None:
         """
     )
 
-    # Freshness constraint (fresh/building/failed)
+    # The runner ALSO self-heals this table (pg/mod.rs, mirror DDL) — a
+    # runner that booted before this migration owns the existing table, so
+    # every ALTER below must be idempotent against that variant.
+    op.execute(
+        "ALTER TABLE project.app_deploy_state "
+        "ADD COLUMN IF NOT EXISTS deployed_at TIMESTAMPTZ NOT NULL DEFAULT now()"
+    )
+
+    # Freshness constraint (fresh/building/failed) — DROP-then-ADD, the
+    # collision-safe convention (PG has no ADD CONSTRAINT IF NOT EXISTS).
+    op.execute(
+        "ALTER TABLE project.app_deploy_state "
+        "DROP CONSTRAINT IF EXISTS app_deploy_state_freshness_check"
+    )
     op.execute(
         """
         ALTER TABLE project.app_deploy_state ADD CONSTRAINT
