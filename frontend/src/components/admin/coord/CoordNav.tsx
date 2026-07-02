@@ -30,6 +30,7 @@ import {
   Scale,
   ScrollText,
   ShieldCheck,
+  Stethoscope,
   UserCog,
   Users,
   Workflow,
@@ -158,6 +159,16 @@ const PRIMARY_TABS: NavItem[] = [
     label: "Onboarding",
     icon: Plug,
     testId: "coord-nav-onboarding",
+  },
+  {
+    // Zero-touch onboarding status (P4) — per-repo doctor checklist. Also
+    // the GitHub App's post-install Setup URL target (accepts ?repo=…).
+    // Distinct path (not /onboarding/status) so the Onboarding tab's
+    // startsWith active-match doesn't double-highlight.
+    href: "/admin/coord/onboarding-status",
+    label: "Onboarding Status",
+    icon: Stethoscope,
+    testId: "coord-nav-onboarding-status",
   },
   {
     href: "/admin/coord/merge-settings",
