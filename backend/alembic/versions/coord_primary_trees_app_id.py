@@ -1,7 +1,7 @@
 """Add app_id to coord.primary_trees for fleet-fresh test-target routing.
 
 Revision ID: coord_primary_trees_app_id_r0
-Revises: devenv_02_machine_env_binding
+Revises: devenv_03_coord_device_bridge
 Create Date: 2026-07-01 01:00:00.000000
 
 """
@@ -14,7 +14,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_primary_trees_app_id_r0"
-down_revision: str | None = "devenv_02_machine_env_binding"
+down_revision: str | None = "devenv_03_coord_device_bridge"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
