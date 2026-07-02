@@ -70159,6 +70159,56 @@
         ]
       }
     },
+    "/api/v1/operations/pr-merge/onboarding/doctor": {
+      "get": {
+        "description": "Zero-touch onboarding checklist for one repo (tenant-scoped).\n\nProxies coord's onboarding doctor (path in\n:data:`COORD_ONBOARDING_DOCTOR_PATH`). Response envelope (frozen\ncontract, P4 zero-touch onboarding):\n\n``{\"repo\": \"owner/name\", \"checks\": [{\"id\", \"label\", \"status\",\n\"detail\", \"remediation\"}], \"summary\": {\"pass\", \"warn\", \"fail\",\n\"skip\", \"ready_to_land\"}}``\n\nwith the fixed 8-check vocabulary ``tenant_mapped / repo_enrolled /\nprofile_present / rollout_state / config_yaml / bootstrap_pr /\nci_workflow / ruleset_bypass`` and ``status`` in\n``pass|warn|fail|skip``. Backs the ``/admin/coord/onboarding-status``\npage (the GitHub App's post-install Setup URL target). Operator\nbearer forwarded; coord scopes by the bearer's tenant.",
+        "operationId": "api_v1_operations_pr_merge_onboarding_doctor_get",
+        "parameters": [
+          {
+            "description": "Repository as owner/name.",
+            "in": "query",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "description": "Repository as owner/name.",
+              "title": "Repo",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Pr Merge Onboarding Doctor Api V1 Operations Pr Merge Onboarding Doctor Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Pr Merge Onboarding Doctor",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/pr-merge/onboarding/precondition-status": {
       "get": {
         "description": "Return ``{paired, claude_code_available, ready}`` for the calling\ntenant. Drives the onboarding wizard's polling loop on step 2 (the\n\"Sign into Claude Code on your device\" verification step).",
