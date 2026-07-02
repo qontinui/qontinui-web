@@ -12701,6 +12701,40 @@
         "title": "DispatchDeviceResponse",
         "type": "object"
       },
+      "DispatchStatusResponse": {
+        "description": "Dispatch diagnostics for an app (dashboard / debugging).",
+        "properties": {
+          "app_id": {
+            "title": "App Id",
+            "type": "string"
+          },
+          "can_dispatch_fresh": {
+            "title": "Can Dispatch Fresh",
+            "type": "boolean"
+          },
+          "fresh_hosts_count": {
+            "description": "Owned healthy hosts with fresh deployment",
+            "title": "Fresh Hosts Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "app_id",
+          "fresh_hosts_count",
+          "can_dispatch_fresh"
+        ],
+        "title": "DispatchStatusResponse",
+        "type": "object"
+      },
+      "DispatchStrategyEnum": {
+        "description": "Fresh-host selection strategy.",
+        "enum": [
+          "fresh_only",
+          "best_effort"
+        ],
+        "title": "DispatchStrategyEnum",
+        "type": "string"
+      },
       "DisplayNode": {
         "description": "Display node structure used by the frontend.\n\nExtended version of TreeNode with tree rendering properties.\nThis is NOT persisted - it's constructed from TreeNode data for UI display.",
         "properties": {
@@ -18655,6 +18689,52 @@
           }
         },
         "title": "ForkSkillRequest",
+        "type": "object"
+      },
+      "FreshHostResponse": {
+        "description": "A resolved test host for an app.",
+        "properties": {
+          "device_id": {
+            "description": "Selected runner device",
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "device_name": {
+            "description": "Device display name",
+            "title": "Device Name",
+            "type": "string"
+          },
+          "freshness_status": {
+            "description": "'fresh' (deployed_sha == upstream HEAD) or 'fallback' (best_effort landed on a non-fresh healthy host)",
+            "title": "Freshness Status",
+            "type": "string"
+          },
+          "hostname": {
+            "description": "Device hostname",
+            "title": "Hostname",
+            "type": "string"
+          },
+          "port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Runner HTTP port (if published)",
+            "title": "Port"
+          }
+        },
+        "required": [
+          "device_id",
+          "device_name",
+          "hostname",
+          "freshness_status"
+        ],
+        "title": "FreshHostResponse",
         "type": "object"
       },
       "FunctionStats": {
@@ -56645,6 +56725,111 @@
         "summary": "Reject a discovery",
         "tags": [
           "discoveries"
+        ]
+      }
+    },
+    "/api/v1/dispatch/fresh-host": {
+      "post": {
+        "description": "Resolve a test host for ``app_id``.\n\n``fresh_only`` \u2192 503 when no fresh host qualifies. ``best_effort`` \u2192\nfalls back to any healthy owned runner; 503 only when none exists.",
+        "operationId": "api_v1_dispatch_fresh_host_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "strategy",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/DispatchStrategyEnum",
+              "default": "best_effort"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FreshHostResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Resolve Fresh Host",
+        "tags": [
+          "fleet-dispatch"
+        ]
+      }
+    },
+    "/api/v1/dispatch/status/{app_id}": {
+      "get": {
+        "description": "Count owned healthy fresh hosts for ``app_id`` (dashboard / preflight).",
+        "operationId": "api_v1_dispatch_status_app_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DispatchStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Dispatch Status",
+        "tags": [
+          "fleet-dispatch"
         ]
       }
     },
