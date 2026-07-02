@@ -76,7 +76,9 @@ class OrganizationResponse(OrganizationBase, BaseORMSchema):
 class TeamMemberBase(BaseSchema):
     """Base team member schema."""
 
-    role: str = Field(..., description="Member role: owner, admin, member, viewer")
+    role: str = Field(
+        ..., description="Member role: owner, admin, member, viewer, helper"
+    )
 
 
 class TeamMemberCreate(TeamMemberBase):
@@ -115,13 +117,29 @@ class TeamMemberResponse(TeamMemberBase, BaseORMSchema):
 # ============================================================================
 
 
+# Roles an invitation may carry. Ownership is not invitable; `helper` is the
+# portal-only role (ranks below viewer — see app.models.organization.TeamRole).
+INVITABLE_ROLES = frozenset({"admin", "member", "viewer", "helper"})
+
+
 class InvitationBase(BaseSchema):
     """Base invitation schema."""
 
     email: EmailStr = Field(..., description="Email address to invite")
     role: str = Field(
-        default="member", description="Role to assign: admin, member, viewer"
+        default="member",
+        description="Role to assign: admin, member, viewer, helper",
     )
+
+    @field_validator("role")
+    @classmethod
+    def _validate_role(cls, v: str) -> str:
+        role = v.strip().lower()
+        if role not in INVITABLE_ROLES:
+            raise ValueError(
+                f"role must be one of {sorted(INVITABLE_ROLES)}, got {v!r}"
+            )
+        return role
 
 
 class InvitationCreate(InvitationBase):

@@ -104,6 +104,7 @@ async def check_organization_membership(
     try:
         # Map string to TeamRole enum
         role_map = {
+            "helper": TeamRole.HELPER,
             "viewer": TeamRole.VIEWER,
             "member": TeamRole.MEMBER,
             "admin": TeamRole.ADMIN,
