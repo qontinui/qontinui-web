@@ -16,6 +16,7 @@ new ``runners`` table.
 import asyncio
 import contextvars
 import json
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -1108,6 +1109,55 @@ async def post_pr_merge_onboarding_accept(
     return await _proxy_coord_post(
         "/pr-merge/onboarding/accept",
         body,
+        tenant_id=tenant_id,
+    )
+
+
+# ---- Zero-touch onboarding doctor (P4 status page) ------------------------
+#
+# Coord's upstream path for the onboarding-doctor read. Kept in ONE constant
+# so a coord-side path choice (`/coord/onboarding/doctor` was the alternate
+# spelling under discussion) is a one-line fix here.
+COORD_ONBOARDING_DOCTOR_PATH = "/pr-merge/onboarding/doctor"
+
+# `owner/name` — exactly one slash, both segments non-empty and drawn from
+# GitHub's slug alphabet. Rejects path traversal / query smuggling before the
+# value rides coord's query string.
+_OWNER_REPO_RE = re.compile(
+    r"^[A-Za-z0-9](?:[A-Za-z0-9._-]*)/[A-Za-z0-9](?:[A-Za-z0-9._-]*)$"
+)
+
+
+@router.get("/pr-merge/onboarding/doctor")
+async def get_pr_merge_onboarding_doctor(
+    repo: str = Query(..., description="Repository as owner/name."),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Zero-touch onboarding checklist for one repo (tenant-scoped).
+
+    Proxies coord's onboarding doctor (path in
+    :data:`COORD_ONBOARDING_DOCTOR_PATH`). Response envelope (frozen
+    contract, P4 zero-touch onboarding):
+
+    ``{"repo": "owner/name", "checks": [{"id", "label", "status",
+    "detail", "remediation"}], "summary": {"pass", "warn", "fail",
+    "skip", "ready_to_land"}}``
+
+    with the fixed 8-check vocabulary ``tenant_mapped / repo_enrolled /
+    profile_present / rollout_state / config_yaml / bootstrap_pr /
+    ci_workflow / ruleset_bypass`` and ``status`` in
+    ``pass|warn|fail|skip``. Backs the ``/admin/coord/onboarding-status``
+    page (the GitHub App's post-install Setup URL target). Operator
+    bearer forwarded; coord scopes by the bearer's tenant.
+    """
+    if not _OWNER_REPO_RE.match(repo):
+        raise HTTPException(
+            status_code=422,
+            detail="repo must be in owner/name form",
+        )
+    return await _proxy_coord_get(
+        COORD_ONBOARDING_DOCTOR_PATH,
+        params={"repo": repo},
         tenant_id=tenant_id,
     )
 
