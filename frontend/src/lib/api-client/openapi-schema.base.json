@@ -70437,7 +70437,7 @@
     },
     "/api/v1/operations/pr-merge/onboarding/precondition-status": {
       "get": {
-        "description": "Return ``{paired, claude_code_available, ready}`` for the calling\ntenant. Drives the onboarding wizard's polling loop on step 2 (the\n\"Sign into Claude Code on your device\" verification step).",
+        "description": "Return ``{paired, claude_code_available, ready, paired_elsewhere}``\nfor the calling tenant. Drives the onboarding wizard's polling loop on\nstep 2 (the \"Sign into Claude Code on your device\" verification step).\n\n``X-Qontinui-User-Id`` is forwarded (same attribution header as the\npair paths in ``devices.py``) so coord can compute\n``paired_elsewhere`` \u2014 devices the CALLING USER has paired to a\nDIFFERENT tenant, which a re-pair here would silently steal. Older\ncoord ignores the header and omits the field; the wizard treats a\nmissing ``paired_elsewhere`` as ``[]`` (plan\n2026-07-02-multi-tenant-device-pairing-reconsideration Phase 1b).",
         "operationId": "api_v1_operations_pr_merge_onboarding_precondition_status_get",
         "responses": {
           "200": {

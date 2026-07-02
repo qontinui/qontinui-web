@@ -666,6 +666,7 @@ async def _proxy_coord_get(
     params: dict[str, Any] | None = None,
     tenant_id: UUID | None = None,
     forward_bearer: bool = False,
+    headers: dict[str, str] | None = None,
 ) -> Any:
     """Proxy a GET request to coord and return the JSON body.
 
@@ -699,15 +700,25 @@ async def _proxy_coord_get(
     best-effort ``tenant_id`` (possibly ``None``). Default False preserves
     the prior behavior exactly: no bearer is forwarded unless a tenant was
     resolved.
+
+    ``headers`` — extra request headers merged ON TOP of the bearer/tenant
+    headers (extra keys win on collision). Used by the onboarding
+    precondition proxy to forward ``X-Qontinui-User-Id`` so coord can
+    compute the caller's ``paired_elsewhere`` device list (plan
+    2026-07-02-multi-tenant-device-pairing-reconsideration Phase 1b).
+    Default ``None`` puts nothing extra on the wire.
     """
     url = f"{settings.COORD_URL}{path}"
+    request_headers: dict[str, str] | None
     if tenant_id is not None or forward_bearer:
-        headers = _tenant_headers(tenant_id)
+        request_headers = _tenant_headers(tenant_id)
     else:
-        headers = None
+        request_headers = None
+    if headers:
+        request_headers = {**(request_headers or {}), **headers}
     async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
         try:
-            resp = await client.get(url, params=params, headers=headers)
+            resp = await client.get(url, params=params, headers=request_headers)
         except httpx.ConnectError:
             raise HTTPException(
                 status_code=502,
@@ -1034,14 +1045,24 @@ async def get_pr_merge_decisions(
 @router.get("/pr-merge/onboarding/precondition-status")
 async def get_pr_merge_onboarding_precondition(
     tenant_id: UUID = Depends(get_tenant_id),
+    current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
-    """Return ``{paired, claude_code_available, ready}`` for the calling
-    tenant. Drives the onboarding wizard's polling loop on step 2 (the
-    "Sign into Claude Code on your device" verification step).
+    """Return ``{paired, claude_code_available, ready, paired_elsewhere}``
+    for the calling tenant. Drives the onboarding wizard's polling loop on
+    step 2 (the "Sign into Claude Code on your device" verification step).
+
+    ``X-Qontinui-User-Id`` is forwarded (same attribution header as the
+    pair paths in ``devices.py``) so coord can compute
+    ``paired_elsewhere`` — devices the CALLING USER has paired to a
+    DIFFERENT tenant, which a re-pair here would silently steal. Older
+    coord ignores the header and omits the field; the wizard treats a
+    missing ``paired_elsewhere`` as ``[]`` (plan
+    2026-07-02-multi-tenant-device-pairing-reconsideration Phase 1b).
     """
     return await _proxy_coord_get(
         "/pr-merge/onboarding/precondition-status",
         tenant_id=tenant_id,
+        headers={"X-Qontinui-User-Id": str(current_user.id)},
     )
 
 
