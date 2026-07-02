@@ -39,6 +39,7 @@ from app.api.v1.endpoints import (
     code_packages,
     collaboration,
     collaboration_ws,
+    conditions,
     conflicts,
     constraints,
     custom_functions,
@@ -216,6 +217,8 @@ api_router.include_router(operations.router, prefix="/operations", tags=["operat
 api_router.include_router(
     helper_tasks.router, prefix="/helper-tasks", tags=["helper-tasks"]
 )
+# Condition groups (regression tests) — tenant-user coord proxy.
+api_router.include_router(conditions.router, prefix="/conditions", tags=["conditions"])
 # Digital Twin Explorer (Phase 1) — coord-backed completeness matrix.
 api_router.include_router(
     digital_twin.router, prefix="/digital-twin", tags=["digital-twin"]
