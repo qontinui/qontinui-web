@@ -94,8 +94,8 @@ const PLATFORM_META: PlatformMeta[] = [
     instructions: [
       "Download the appropriate package for your distribution",
       "For AppImage: chmod +x and run directly",
-      "For .deb: sudo dpkg -i <file>.deb",
-      "Log in with your Qontinui account",
+      "For .deb: sudo dpkg -i qontinui-runner_amd64.deb",
+      "For .rpm: sudo rpm -i qontinui-runner_amd64.rpm",
     ],
   },
 ];
