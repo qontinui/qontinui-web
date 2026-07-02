@@ -698,3 +698,111 @@ class TestMemoryMutationEndpoints:
             )
         assert resp.status_code == 200
         _assert_tenant_header_forwarded(instance.post.call_args)
+
+
+# ---------------------------------------------------------------------------
+# Zero-touch onboarding doctor (P4 status page)
+# ---------------------------------------------------------------------------
+
+
+class TestOnboardingDoctorEndpoint:
+    """`GET /pr-merge/onboarding/doctor?repo=owner/name` — proxies coord's
+    onboarding-doctor checklist (frozen P4 contract: 8 fixed check ids +
+    a `{pass, warn, fail, skip, ready_to_land}` summary)."""
+
+    def test_doctor_happy_path(self, client: TestClient):
+        coord_payload = {
+            "repo": "qontinui/qontinui-web",
+            "checks": [
+                {
+                    "id": "tenant_mapped",
+                    "label": "Installation mapped to a tenant",
+                    "status": "pass",
+                    "detail": "tenant 1111...5555",
+                    "remediation": None,
+                },
+                {
+                    "id": "ruleset_bypass",
+                    "label": "Merge-queue bypass configured",
+                    "status": "fail",
+                    "detail": "app not in bypass_actors",
+                    "remediation": "Add the app to the ruleset bypass list.",
+                },
+            ],
+            "summary": {
+                "pass": 1,
+                "warn": 0,
+                "fail": 1,
+                "skip": 0,
+                "ready_to_land": False,
+            },
+        }
+        mock_resp = _mock_response(json_data=coord_payload)
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = mock_resp
+            _configure_mock_client(MockClient, instance)
+            resp = client.get(
+                f"{API_PREFIX}/pr-merge/onboarding/doctor?repo=qontinui/qontinui-web"
+            )
+        assert resp.status_code == 200
+        assert resp.json() == coord_payload
+        called_url = instance.get.call_args.args[0]
+        # Upstream path lives in ONE constant (operations.py
+        # COORD_ONBOARDING_DOCTOR_PATH) so a coord-side rename is a
+        # one-line fix; assert against the constant, not a literal.
+        from app.api.v1.endpoints.operations import COORD_ONBOARDING_DOCTOR_PATH
+
+        assert called_url.endswith(COORD_ONBOARDING_DOCTOR_PATH)
+        called_params = instance.get.call_args.kwargs.get("params")
+        assert called_params == {"repo": "qontinui/qontinui-web"}
+        _assert_tenant_header_forwarded(instance.get.call_args)
+
+    def test_doctor_rejects_malformed_repo(self, client: TestClient):
+        """Not owner/name shaped → 422 without ever calling coord."""
+        for bad in ("qontinui", "a/b/c", "/name", "owner/", "owner/na me"):
+            with _patch_httpx() as MockClient:
+                instance = AsyncMock()
+                _configure_mock_client(MockClient, instance)
+                resp = client.get(
+                    f"{API_PREFIX}/pr-merge/onboarding/doctor",
+                    params={"repo": bad},
+                )
+            assert resp.status_code == 422, bad
+            instance.get.assert_not_called()
+
+    def test_doctor_requires_repo_param(self, client: TestClient):
+        resp = client.get(f"{API_PREFIX}/pr-merge/onboarding/doctor")
+        assert resp.status_code == 422
+
+    def test_doctor_coord_error_passthrough(self, client: TestClient):
+        """Coord's error status code is passed through, not remapped."""
+        mock_resp = _mock_response(status_code=404, text="unknown repo")
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = mock_resp
+            _configure_mock_client(MockClient, instance)
+            resp = client.get(
+                f"{API_PREFIX}/pr-merge/onboarding/doctor",
+                params={"repo": "qontinui/nope"},
+            )
+        assert resp.status_code == 404
+
+    def test_doctor_coord_unreachable_returns_502(self, client: TestClient):
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.side_effect = httpx.ConnectError("refused")
+            _configure_mock_client(MockClient, instance)
+            resp = client.get(
+                f"{API_PREFIX}/pr-merge/onboarding/doctor",
+                params={"repo": "qontinui/qontinui-web"},
+            )
+        assert resp.status_code == 502
+
+    def test_doctor_tenant_not_resolved(self, unresolved_client: TestClient):
+        resp = unresolved_client.get(
+            f"{API_PREFIX}/pr-merge/onboarding/doctor",
+            params={"repo": "qontinui/qontinui-web"},
+        )
+        assert resp.status_code == 403
+        assert resp.json()["detail"] == "tenant_not_resolved"
