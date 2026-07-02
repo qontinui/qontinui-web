@@ -77,7 +77,8 @@ async def provision_coord_helper_role(request: Request) -> str:
       but the grant was rejected (the expected non-admin path; see module
       docstring for the documented gap).
     - ``"identity_unresolved"`` / ``"no_bearer"`` / ``"coord_unreachable"`` /
-      ``"grant_failed_<status>"`` — degraded paths, all non-fatal.
+      ``"grant_request_failed"`` / ``"grant_failed_<status>"`` — degraded
+      paths, all non-fatal.
 
     Never raises.
     """
@@ -118,6 +119,9 @@ async def provision_coord_helper_role(request: Request) -> str:
     except (httpx.ConnectError, httpx.TimeoutException) as exc:
         logger.warning("coord_helper_provisioning_coord_unreachable", error=str(exc))
         return "coord_unreachable"
+    except Exception as exc:  # defensive — module contract: never raises
+        logger.warning("coord_helper_provisioning_grant_request_failed", error=str(exc))
+        return "grant_request_failed"
 
     if resp.status_code < 400:
         logger.info(

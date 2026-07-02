@@ -96,6 +96,9 @@ export function InviteDialog({
                 <SelectItem value="viewer">
                   Viewer - View-only access
                 </SelectItem>
+                <SelectItem value="helper">
+                  Helper - Answers quick review questions only
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>

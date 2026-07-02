@@ -14,6 +14,19 @@ Tenant isolation and role gating are coord's job (``require_helper_or_operator``
 resolves the tenant via :func:`get_tenant_id` (which also captures the bearer
 for forwarding).
 
+Tenant scoping: coord defaults to the caller's HOME tenant. Like the
+operations proxies, these routes honor the ``X-Qontinui-Active-Tenant``
+override (captured by :func:`get_tenant_id`, forwarded by
+``_tenant_headers``, membership-validated coord-side), so a caller who IS a
+coord member of the task's tenant can point the portal at it.
+
+PHASE-1 LIMITATION (documented gap): an EXTERNAL invited helper's coord home
+tenant is their personal one, and coord has no cross-tenant membership grant
+for helpers yet — so the override cannot resolve for them and they see an
+empty queue. Full external-helper visibility requires coord-side tenant
+membership for helpers. Owner-testing (an owner answering tasks in their own
+tenant) is unaffected.
+
 Degraded modes surfaced to the portal:
 
 - coord 503 (``helper_task_queue_unavailable`` — tables not migrated) and
@@ -28,7 +41,7 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -47,6 +60,24 @@ router = APIRouter()
 # coord's explicit not-migrated signal; 502/504 are the web proxy's
 # coord-unreachable/timeout mappings.
 _UNAVAILABLE_STATUSES = frozenset({502, 503, 504})
+
+# Tenant-resolution failures that must degrade rather than error: 502/504
+# (coord unreachable/timeout) plus 403 (``tenant_not_resolved`` — the caller
+# is not a linked coord tenant member, e.g. a brand-new helper). Resolution
+# happens INSIDE the handlers (not as a route dependency) precisely so these
+# can be caught — ``Depends(get_tenant_id)`` would raise before any handler
+# try/except runs.
+_DEGRADABLE_TENANT_STATUSES = frozenset({403, 502, 504})
+
+
+async def _resolve_tenant(request: Request, current_user: UserModel) -> UUID:
+    """Call the ``get_tenant_id`` dependency function directly.
+
+    Side effects (bearer + active-tenant capture into the proxy ContextVars)
+    still run; the only difference from ``Depends(get_tenant_id)`` is that
+    failures surface inside the handler where they can be degraded.
+    """
+    return await get_tenant_id(request, current_user)
 
 
 class HelperAnswerRequest(BaseModel):
@@ -70,15 +101,28 @@ class HelperAnswerRequest(BaseModel):
 
 @router.get("")
 async def list_helper_tasks(
-    tenant_id: UUID = Depends(get_tenant_id),
+    request: Request,
+    current_user: UserModel = Depends(get_current_active_user_async),
 ) -> dict[str, Any]:
     """List the caller's-tenant open helper tasks (the portal work queue).
 
     Proxies coord ``GET /coord/helper-tasks?status=open`` → a bare array of
     ``HelperTask`` (camelCase wire shape). Wrapped here as ``{"tasks": [...],
     "available": true}`` so queue-unavailable degrades to the same shape with
-    ``available: false`` instead of an error status.
+    ``available: false`` instead of an error status. Tenant resolution runs
+    in-handler so coord-unreachable / tenant-not-resolved degrade the same
+    way instead of erroring out of the dependency.
     """
+    try:
+        tenant_id = await _resolve_tenant(request, current_user)
+    except HTTPException as exc:
+        if exc.status_code in _DEGRADABLE_TENANT_STATUSES:
+            logger.info(
+                "helper_tasks_tenant_unresolved_degraded",
+                status_code=exc.status_code,
+            )
+            return {"tasks": [], "available": False}
+        raise
     try:
         tasks = await _proxy_coord_get(
             "/coord/helper-tasks",
@@ -103,7 +147,8 @@ async def list_helper_tasks(
 async def submit_helper_answer(
     task_id: UUID,
     body: HelperAnswerRequest,
-    tenant_id: UUID = Depends(get_tenant_id),
+    request: Request,
+    current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
     """Submit the caller's verdict for a task.
 
@@ -111,7 +156,23 @@ async def submit_helper_answer(
     created ``HelperAnswer``. Coord enforces tenant isolation (404 when the
     task is not in the caller's tenant) and records the answer against the
     authenticated operator — never an argument-supplied identity.
+
+    Unlike the list read, tenant-resolution failure here stays an ERROR (a
+    verdict must never be silently dropped) — but normalized to the same 503
+    ``helper_task_queue_unavailable`` detail the portal already understands.
     """
+    try:
+        tenant_id = await _resolve_tenant(request, current_user)
+    except HTTPException as exc:
+        if exc.status_code in _DEGRADABLE_TENANT_STATUSES:
+            logger.info(
+                "helper_answer_tenant_unresolved",
+                status_code=exc.status_code,
+            )
+            raise HTTPException(
+                status_code=503, detail="helper_task_queue_unavailable"
+            ) from exc
+        raise
     try:
         answer, status_code = await _proxy_coord_post(
             f"/coord/helper-tasks/{task_id}/answer",
