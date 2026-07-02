@@ -24024,6 +24024,25 @@
         "title": "NotifyWhenGreenResponse",
         "type": "object"
       },
+      "OnboardingClaimRequest": {
+        "description": "Body for ``POST /pr-merge/onboarding/claim``.\n\n``code`` \u2014 the short-lived GitHub OAuth code from the Setup-URL redirect.\n``installation_id`` \u2014 the GitHub App installation id from the same\nredirect. Both are echoed verbatim to coord's claim endpoint.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "installation_id": {
+            "title": "Installation Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "installation_id"
+        ],
+        "title": "OnboardingClaimRequest",
+        "type": "object"
+      },
       "OrganizationCreate": {
         "description": "Schema for creating a new organization.",
         "properties": {
@@ -70316,6 +70335,51 @@
           }
         ],
         "summary": "Get Pr Merge Onboarding Audit Status",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/pr-merge/onboarding/claim": {
+      "post": {
+        "description": "Self-serve onboarding: exchange the GitHub OAuth code + bind/enroll.\n\nProxies coord's ``POST /coord/onboarding/github-accounts/claim`` (coord\nPR #901). Reuses the doctor proxy's auth exactly: ``get_tenant_id``\nresolves the operator and captures the caller's bearer, which\n``_tenant_headers`` forwards to coord so coord binds the GitHub account\nto the operator's own Cognito tenant.\n\nUnlike the raising ``_proxy_coord_post`` helper (which collapses a coord\n4xx/5xx into an ``HTTPException`` whose body is a stringified ``detail``),\nthis handler passes coord's status code AND JSON body through verbatim so\nthe onboarding-status page can render a status-specific message:\n``400 code_exchange_failed`` / ``403 installation_not_administered`` /\n``409 account_already_bound`` / ``500 oauth_not_configured``. httpx\ntransport errors mirror the shared helpers (ConnectError \u2192 502,\nTimeoutException \u2192 504).",
+        "operationId": "api_v1_operations_pr_merge_onboarding_claim_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OnboardingClaimRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Pr Merge Onboarding Claim",
         "tags": [
           "operations"
         ]
