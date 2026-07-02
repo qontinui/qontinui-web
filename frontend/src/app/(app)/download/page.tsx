@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,50 +14,62 @@ import {
   CheckCircle2,
   AlertCircle,
   HardDrive,
+  Loader2,
 } from "lucide-react";
 
 type Platform = "windows" | "macos" | "linux";
 
-interface DownloadOption {
+// Asset + release shapes returned by the backend, which resolves "latest"
+// dynamically against the GitHub Releases API. The runner release pipeline
+// version-stamps every asset filename (e.g. `Qontinui.Runner_1.0.1_x64-setup.exe`),
+// so GitHub's `/releases/latest/download/<file>` permalink can't be hardcoded —
+// the version changes every release. We read the live asset list instead.
+interface ReleaseAsset {
+  name: string;
+  url: string;
+  size?: number;
+  content_type?: string;
+  platform: Platform;
+  kind: "msi" | "exe" | "dmg" | "appimage" | "deb";
+  arch: "x64" | "arm64" | "unknown";
+}
+
+interface LatestRelease {
+  version: string | null;
+  tag: string | null;
+  name: string | null;
+  published_at: string | null;
+  html_url: string;
+  prerelease: boolean;
+  assets: ReleaseAsset[];
+  // False when GitHub couldn't be reached; the page degrades to the GitHub
+  // releases link rather than showing stale/absent versions.
+  available: boolean;
+  reason: string | null;
+}
+
+const LATEST_ENDPOINT = "/api/v1/releases/runner/latest";
+const RELEASES_PAGE = "https://github.com/qontinui/qontinui-runner/releases";
+
+interface PlatformMeta {
   platform: Platform;
   name: string;
   icon: React.ReactNode;
   description: string;
-  files: {
-    name: string;
-    label: string;
-    url: string;
-    size?: string;
-    recommended?: boolean;
-  }[];
   instructions: string[];
 }
 
-const GITHUB_RELEASES_BASE =
-  "https://github.com/qontinui/qontinui-runner/releases/latest/download";
-
-const downloadOptions: DownloadOption[] = [
+// Static per-platform presentation. Download files are resolved dynamically
+// from the latest release, not hardcoded here.
+const PLATFORM_META: PlatformMeta[] = [
   {
     platform: "windows",
     name: "Windows",
     icon: <Monitor className="w-8 h-8" />,
     description: "Windows 10/11 (64-bit)",
-    files: [
-      {
-        name: "qontinui-runner_x64-setup.exe",
-        label: "Installer (.exe)",
-        url: `${GITHUB_RELEASES_BASE}/qontinui-runner_x64-setup.exe`,
-        recommended: true,
-      },
-      {
-        name: "qontinui-runner_x64_en-US.msi",
-        label: "MSI Package",
-        url: `${GITHUB_RELEASES_BASE}/qontinui-runner_x64_en-US.msi`,
-      },
-    ],
     instructions: [
-      "Download the installer (.exe recommended)",
-      "Run the installer and follow the prompts",
+      "Download the installer (.exe)",
+      "Run the installer — Windows SmartScreen may warn (unsigned): click \"More info\" → \"Run anyway\"",
       "Launch Qontinui Runner from the Start Menu",
       "Log in with your Qontinui account",
     ],
@@ -67,26 +79,8 @@ const downloadOptions: DownloadOption[] = [
     name: "macOS",
     icon: <Apple className="w-8 h-8" />,
     description: "macOS 11+ (Intel & Apple Silicon)",
-    files: [
-      {
-        name: "qontinui-runner_universal.dmg",
-        label: "Universal DMG",
-        url: `${GITHUB_RELEASES_BASE}/qontinui-runner_universal.dmg`,
-        recommended: true,
-      },
-      {
-        name: "qontinui-runner_aarch64.dmg",
-        label: "Apple Silicon (M1/M2)",
-        url: `${GITHUB_RELEASES_BASE}/qontinui-runner_aarch64.dmg`,
-      },
-      {
-        name: "qontinui-runner_x64.dmg",
-        label: "Intel Mac",
-        url: `${GITHUB_RELEASES_BASE}/qontinui-runner_x64.dmg`,
-      },
-    ],
     instructions: [
-      "Download the DMG file (Universal recommended)",
+      "Download the DMG file",
       "Open the DMG and drag Qontinui Runner to Applications",
       "Right-click the app and select 'Open' (first time only)",
       "Log in with your Qontinui account",
@@ -97,32 +91,48 @@ const downloadOptions: DownloadOption[] = [
     name: "Linux",
     icon: <HardDrive className="w-8 h-8" />,
     description: "Ubuntu 20.04+, Debian 10+, Fedora 34+",
-    files: [
-      {
-        name: "qontinui-runner_amd64.AppImage",
-        label: "AppImage (Universal)",
-        url: `${GITHUB_RELEASES_BASE}/qontinui-runner_amd64.AppImage`,
-        recommended: true,
-      },
-      {
-        name: "qontinui-runner_amd64.deb",
-        label: "Debian/Ubuntu (.deb)",
-        url: `${GITHUB_RELEASES_BASE}/qontinui-runner_amd64.deb`,
-      },
-      {
-        name: "qontinui-runner_amd64.rpm",
-        label: "Fedora/RHEL (.rpm)",
-        url: `${GITHUB_RELEASES_BASE}/qontinui-runner_amd64.rpm`,
-      },
-    ],
     instructions: [
       "Download the appropriate package for your distribution",
       "For AppImage: chmod +x and run directly",
-      "For .deb: sudo dpkg -i qontinui-runner_amd64.deb",
-      "For .rpm: sudo rpm -i qontinui-runner_amd64.rpm",
+      "For .deb: sudo dpkg -i <file>.deb",
+      "Log in with your Qontinui account",
     ],
   },
 ];
+
+// Human label + recommendation for an asset, derived from its kind/arch.
+function assetLabel(asset: ReleaseAsset): string {
+  switch (asset.kind) {
+    case "exe":
+      return "Installer (.exe)";
+    case "msi":
+      return "MSI Package";
+    case "dmg":
+      if (asset.arch === "arm64") return "Apple Silicon (.dmg)";
+      if (asset.arch === "x64") return "Intel (.dmg)";
+      return "Universal (.dmg)";
+    case "appimage":
+      return "AppImage (Universal)";
+    case "deb":
+      return "Debian/Ubuntu (.deb)";
+    default:
+      return asset.name;
+  }
+}
+
+// The recommended installer kind per platform (matches the release pipeline:
+// Windows ships NSIS .exe; macOS .dmg; Linux .appimage).
+const RECOMMENDED_KIND: Record<Platform, ReleaseAsset["kind"]> = {
+  windows: "exe",
+  macos: "dmg",
+  linux: "appimage",
+};
+
+function formatSize(bytes?: number): string | undefined {
+  if (!bytes) return undefined;
+  const mb = bytes / (1024 * 1024);
+  return `${mb.toFixed(1)} MB`;
+}
 
 function detectPlatform(): Platform {
   if (typeof window === "undefined") return "windows";
@@ -136,9 +146,9 @@ function detectPlatform(): Platform {
 
 export default function DownloadPage() {
   const [detectedPlatform, setDetectedPlatform] = useState<Platform>("windows");
-  const [selectedPlatform, setSelectedPlatform] = useState<Platform | null>(
-    null
-  );
+  const [selectedPlatform, setSelectedPlatform] = useState<Platform>("windows");
+  const [release, setRelease] = useState<LatestRelease | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const platform = detectPlatform();
@@ -146,21 +156,66 @@ export default function DownloadPage() {
     setSelectedPlatform(platform);
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetch(LATEST_ENDPOINT)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`${r.status}`))))
+      .then((data: LatestRelease) => {
+        if (!cancelled) setRelease(data);
+      })
+      .catch(() => {
+        if (!cancelled) setRelease(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const currentMeta = PLATFORM_META.find(
+    (opt) => opt.platform === selectedPlatform
+  )!;
+
+  // Assets for the selected platform, recommended kind first.
+  const currentAssets = useMemo(() => {
+    const assets = (release?.assets ?? []).filter(
+      (a) => a.platform === selectedPlatform
+    );
+    const recommended = RECOMMENDED_KIND[selectedPlatform];
+    return [...assets].sort((a, b) => {
+      if (a.kind === recommended && b.kind !== recommended) return -1;
+      if (b.kind === recommended && a.kind !== recommended) return 1;
+      return 0;
+    });
+  }, [release, selectedPlatform]);
+
+  const versionLabel = release?.available && release.version
+    ? `v${release.version}`
+    : null;
+
   const handleDownload = (url: string) => {
     window.open(url, "_blank", "noopener,noreferrer");
   };
-
-  const currentOption = downloadOptions.find(
-    (opt) => opt.platform === selectedPlatform
-  );
 
   return (
     <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
       {/* Header */}
       <header className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
-        <h1 className="text-lg font-semibold">Download Runner</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-lg font-semibold">Download Runner</h1>
+          {versionLabel && (
+            <Badge
+              variant="outline"
+              className="text-xs border-primary/50 text-primary"
+            >
+              {versionLabel}
+            </Badge>
+          )}
+        </div>
         <span className="text-sm text-muted-foreground">
-          Desktop runner for visual automation and workflow execution
+          Desktop app for AI-assisted development
         </span>
       </header>
 
@@ -168,7 +223,7 @@ export default function DownloadPage() {
       <main className="flex-1 overflow-y-auto p-6">
         {/* Platform Selector */}
         <div className="flex justify-center gap-4 mb-8">
-          {downloadOptions.map((option) => (
+          {PLATFORM_META.map((option) => (
             <button
               key={option.platform}
               onClick={() => setSelectedPlatform(option.platform)}
@@ -193,145 +248,181 @@ export default function DownloadPage() {
         </div>
 
         {/* Download Options for Selected Platform */}
-        {currentOption && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Download Files */}
-            <Card className="bg-background border-border">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-3">
-                  <Download className="w-5 h-5 text-primary" />
-                  Download for {currentOption.name}
-                </CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  {currentOption.description}
-                </p>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {currentOption.files.map((file) => (
-                  <div
-                    key={file.name}
-                    className={`flex items-center justify-between p-4 rounded-lg border transition-all ${
-                      file.recommended
-                        ? "bg-primary/5 border-primary/30 hover:border-primary/50"
-                        : "bg-background border-border hover:border-border"
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                          file.recommended ? "bg-primary/20" : "bg-muted"
-                        }`}
-                      >
-                        <Download
-                          className={`w-5 h-5 ${file.recommended ? "text-primary" : "text-muted-foreground"}`}
-                        />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">{file.label}</span>
-                          {file.recommended && (
-                            <Badge className="bg-primary/20 text-primary border-primary/30 text-xs">
-                              Recommended
-                            </Badge>
-                          )}
-                        </div>
-                        <p className="text-sm text-muted-foreground">
-                          {file.name}
-                        </p>
-                      </div>
-                    </div>
-                    <Button
-                      onClick={() => handleDownload(file.url)}
-                      size="sm"
-                      className={
-                        file.recommended
-                          ? "bg-primary hover:bg-primary/80 text-primary-foreground"
-                          : "bg-muted hover:bg-muted/80"
-                      }
-                    >
-                      <Download className="w-4 h-4 mr-1" />
-                      Download
-                    </Button>
-                  </div>
-                ))}
-
-                <div className="pt-4 border-t border-border">
-                  <Link
-                    href="https://github.com/qontinui/qontinui-runner/releases"
-                    target="_blank"
-                    className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                    View all releases on GitHub
-                  </Link>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Download Files */}
+          <Card className="bg-background border-border">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-3">
+                <Download className="w-5 h-5 text-primary" />
+                Download for {currentMeta.name}
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                {currentMeta.description}
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {loading ? (
+                <div className="flex items-center gap-2 p-4 text-muted-foreground">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Resolving the latest release…
                 </div>
-              </CardContent>
-            </Card>
-
-            {/* Installation Instructions */}
-            <Card className="bg-background border-border">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-3">
-                  <CheckCircle2 className="w-5 h-5 text-green-500" />
-                  Installation Instructions
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ol className="space-y-4">
-                  {currentOption.instructions.map((instruction, index) => (
-                    <li key={index} className="flex gap-3">
-                      <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-bold text-sm">
-                        {index + 1}
+              ) : currentAssets.length > 0 ? (
+                currentAssets.map((asset) => {
+                  const recommended =
+                    asset.kind === RECOMMENDED_KIND[selectedPlatform];
+                  const size = formatSize(asset.size);
+                  return (
+                    <div
+                      key={asset.name}
+                      className={`flex items-center justify-between p-4 rounded-lg border transition-all ${
+                        recommended
+                          ? "bg-primary/5 border-primary/30 hover:border-primary/50"
+                          : "bg-background border-border hover:border-border"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                            recommended ? "bg-primary/20" : "bg-muted"
+                          }`}
+                        >
+                          <Download
+                            className={`w-5 h-5 ${recommended ? "text-primary" : "text-muted-foreground"}`}
+                          />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">
+                              {assetLabel(asset)}
+                            </span>
+                            {recommended && (
+                              <Badge className="bg-primary/20 text-primary border-primary/30 text-xs">
+                                Recommended
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-sm text-muted-foreground">
+                            {asset.name}
+                            {size ? ` · ${size}` : ""}
+                          </p>
+                        </div>
                       </div>
-                      <span className="text-muted-foreground pt-0.5">
-                        {instruction}
-                      </span>
-                    </li>
-                  ))}
-                </ol>
-
-                {currentOption.platform === "macos" && (
-                  <div className="mt-6 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-                    <div className="flex items-start gap-3">
-                      <AlertCircle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
-                      <div>
-                        <p className="font-medium text-yellow-400 mb-1">
-                          macOS Security Note
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          Since the app is not signed with an Apple Developer
-                          certificate, you&apos;ll need to right-click and
-                          select &quot;Open&quot; the first time you launch it.
-                          This is a one-time requirement.
-                        </p>
-                      </div>
+                      <Button
+                        onClick={() => handleDownload(asset.url)}
+                        size="sm"
+                        className={
+                          recommended
+                            ? "bg-primary hover:bg-primary/80 text-primary-foreground"
+                            : "bg-muted hover:bg-muted/80"
+                        }
+                      >
+                        <Download className="w-4 h-4 mr-1" />
+                        Download
+                      </Button>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="p-4 rounded-lg border border-border bg-muted/40">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-muted-foreground flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-medium mb-1">
+                        No {currentMeta.name} installer in the latest release
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Prebuilt installers currently ship for Windows. For{" "}
+                        {currentMeta.name}, build from source — see the{" "}
+                        <Link
+                          href={RELEASES_PAGE}
+                          target="_blank"
+                          className="text-primary hover:underline"
+                        >
+                          releases page
+                        </Link>
+                        .
+                      </p>
                     </div>
                   </div>
-                )}
+                </div>
+              )}
 
-                {currentOption.platform === "linux" && (
-                  <div className="mt-6 p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-                    <div className="flex items-start gap-3">
-                      <AlertCircle className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
-                      <div>
-                        <p className="font-medium text-blue-400 mb-1">
-                          Linux Dependencies
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          The runner requires WebKitGTK. On Ubuntu/Debian,
-                          install with:{" "}
-                          <code className="bg-muted px-1 rounded">
-                            sudo apt install libwebkit2gtk-4.1-0
-                          </code>
-                        </p>
-                      </div>
+              <div className="pt-4 border-t border-border">
+                <Link
+                  href={RELEASES_PAGE}
+                  target="_blank"
+                  className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  View all releases on GitHub
+                </Link>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Installation Instructions */}
+          <Card className="bg-background border-border">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-3">
+                <CheckCircle2 className="w-5 h-5 text-green-500" />
+                Installation Instructions
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ol className="space-y-4">
+                {currentMeta.instructions.map((instruction, index) => (
+                  <li key={index} className="flex gap-3">
+                    <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-bold text-sm">
+                      {index + 1}
+                    </div>
+                    <span className="text-muted-foreground pt-0.5">
+                      {instruction}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+
+              {currentMeta.platform === "macos" && (
+                <div className="mt-6 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-medium text-yellow-400 mb-1">
+                        macOS Security Note
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Since the app is not signed with an Apple Developer
+                        certificate, you&apos;ll need to right-click and select
+                        &quot;Open&quot; the first time you launch it. This is a
+                        one-time requirement.
+                      </p>
                     </div>
                   </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        )}
+                </div>
+              )}
+
+              {currentMeta.platform === "linux" && (
+                <div className="mt-6 p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-medium text-blue-400 mb-1">
+                        Linux Dependencies
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        The runner requires WebKitGTK. On Ubuntu/Debian, install
+                        with:{" "}
+                        <code className="bg-muted px-1 rounded">
+                          sudo apt install libwebkit2gtk-4.1-0
+                        </code>
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
 
         {/* System Requirements */}
         <Card className="mt-6 bg-background border-border">
