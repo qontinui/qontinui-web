@@ -73,6 +73,24 @@ class OrganizationResponse(OrganizationBase, BaseORMSchema):
 # ============================================================================
 
 
+# Roles assignable via invitations and member create/update. Ownership is not
+# settable through these paths; `helper` is the portal-only role (ranks below
+# viewer — see app.models.organization.TeamRole).
+INVITABLE_ROLES = frozenset({"admin", "member", "viewer", "helper"})
+
+
+def _validate_assignable_role(v: str) -> str:
+    """Normalize + allowlist a role on INPUT schemas only.
+
+    Response schemas must never re-run this: legacy rows may hold roles
+    outside the allowlist (e.g. ``owner``) and still need to serialize.
+    """
+    role = v.strip().lower()
+    if role not in INVITABLE_ROLES:
+        raise ValueError(f"role must be one of {sorted(INVITABLE_ROLES)}, got {v!r}")
+    return role
+
+
 class TeamMemberBase(BaseSchema):
     """Base team member schema."""
 
@@ -86,12 +104,24 @@ class TeamMemberCreate(TeamMemberBase):
 
     user_id: UUID = Field(..., description="ID of user to add")
 
+    @field_validator("role")
+    @classmethod
+    def _validate_role(cls, v: str) -> str:
+        return _validate_assignable_role(v)
+
 
 class TeamMemberUpdate(BaseSchema):
     """Schema for updating team member."""
 
     role: str | None = Field(None, description="New role for member")
     permissions: dict[str, Any] | None = Field(None, description="Custom permissions")
+
+    @field_validator("role")
+    @classmethod
+    def _validate_role(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return _validate_assignable_role(v)
 
 
 class TeamMemberResponse(TeamMemberBase, BaseORMSchema):
@@ -117,11 +147,6 @@ class TeamMemberResponse(TeamMemberBase, BaseORMSchema):
 # ============================================================================
 
 
-# Roles an invitation may carry. Ownership is not invitable; `helper` is the
-# portal-only role (ranks below viewer — see app.models.organization.TeamRole).
-INVITABLE_ROLES = frozenset({"admin", "member", "viewer", "helper"})
-
-
 class InvitationBase(BaseSchema):
     """Base invitation schema."""
 
@@ -131,21 +156,19 @@ class InvitationBase(BaseSchema):
         description="Role to assign: admin, member, viewer, helper",
     )
 
+
+class InvitationCreate(InvitationBase):
+    """Schema for creating an invitation.
+
+    The role allowlist is enforced HERE (the input schema) rather than on
+    ``InvitationBase`` so ``InvitationResponse`` never re-validates stored
+    rows — legacy roles must still serialize.
+    """
+
     @field_validator("role")
     @classmethod
     def _validate_role(cls, v: str) -> str:
-        role = v.strip().lower()
-        if role not in INVITABLE_ROLES:
-            raise ValueError(
-                f"role must be one of {sorted(INVITABLE_ROLES)}, got {v!r}"
-            )
-        return role
-
-
-class InvitationCreate(InvitationBase):
-    """Schema for creating an invitation."""
-
-    pass
+        return _validate_assignable_role(v)
 
 
 class InvitationResponse(InvitationBase, BaseORMSchema):

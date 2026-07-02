@@ -13,7 +13,12 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.organization import PermissionLevel, ProjectAccessControl, TeamMember
+from app.models.organization import (
+    PermissionLevel,
+    ProjectAccessControl,
+    TeamMember,
+    TeamRole,
+)
 from app.models.project import Project
 from app.services.permissions.helpers import check_permission_level
 
@@ -153,6 +158,9 @@ async def get_user_permission_level(
                 and_(
                     TeamMember.organization_id == ProjectAccessControl.organization_id,
                     TeamMember.user_id == user_id,
+                    # HELPER is the portal-only role (ranks below VIEWER) —
+                    # it must NOT satisfy org-shared project grants.
+                    TeamMember.role != TeamRole.HELPER.value,
                 ),
             )
             .where(
@@ -281,6 +289,9 @@ async def get_user_accessible_projects(
                         TeamMember.organization_id
                         == ProjectAccessControl.organization_id,
                         TeamMember.user_id == user_id,
+                        # HELPER is the portal-only role (ranks below VIEWER)
+                        # — it must NOT satisfy org-shared project grants.
+                        TeamMember.role != TeamRole.HELPER.value,
                     ),
                 )
                 .where(

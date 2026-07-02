@@ -13,9 +13,15 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
-import { fetchHelperTasks, submitHelperAnswer } from "./api";
+import {
+  errorStatus,
+  fetchHelperStatus,
+  fetchHelperTasks,
+  submitHelperAnswer,
+} from "./api";
 import { humanizeReason } from "./humanize";
 import type { HelperTask, HelperVerdict } from "./types";
 
@@ -77,11 +83,33 @@ export function HelperPortal() {
   const [selectedReasons, setSelectedReasons] = useState<string[]>([]);
   const [freeText, setFreeText] = useState("");
   const [sendError, setSendError] = useState(false);
+  // Overrides the default "Thank you" line — used when a task turned out to
+  // be already handled (404/409) and we advance without recording an answer.
+  const [thanksNote, setThanksNote] = useState<string | null>(null);
+  // /help is a bookmark-magnet from when it was the docs page — show
+  // non-helper visitors a quiet way to the developer docs. Hidden for
+  // helper-only users (the docs are not for them); shown on status errors
+  // so a docs-seeker is never stranded.
+  const [showDocsLink, setShowDocsLink] = useState(false);
 
   const current = queue[0];
 
   useEffect(() => {
     setHelpedToday(readHelpedToday());
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchHelperStatus()
+      .then((status) => {
+        if (!cancelled) setShowDocsLink(!status.is_helper_only);
+      })
+      .catch(() => {
+        if (!cancelled) setShowDocsLink(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const loadQueue = useCallback(async () => {
@@ -126,8 +154,17 @@ export function HelperPortal() {
           reasons,
           free_text: trimmed.length > 0 ? trimmed : null,
         });
-      } catch {
-        // The tap must never be silently dropped — surface a friendly retry.
+      } catch (err) {
+        const status = errorStatus(err);
+        if (status === 404 || status === 409) {
+          // Permanent: the task is gone or already answered — retrying can
+          // never succeed. Say so briefly and move on to the next one.
+          setThanksNote("This one’s already been handled — moving on!");
+          setPhase("thanks");
+          window.setTimeout(advance, THANKS_MS);
+          return;
+        }
+        // Transient — the tap must never be silently dropped; offer retry.
         setSendError(true);
         setPhase(verdict === "reject" ? "reject" : "error");
         return;
@@ -135,6 +172,7 @@ export function HelperPortal() {
       const next = helpedToday + 1;
       setHelpedToday(next);
       writeHelpedToday(next);
+      setThanksNote(null);
       setPhase("thanks");
       window.setTimeout(advance, THANKS_MS);
     },
@@ -216,10 +254,14 @@ export function HelperPortal() {
           <div className="mx-auto max-w-xl text-center">
             <div className="mb-6 text-6xl">🙌</div>
             <h1 className="text-3xl font-bold sm:text-4xl">
-              Thank you —{" "}
-              {remainingAfterCurrent === 0
-                ? "that was the last one!"
-                : `${remainingAfterCurrent} left`}
+              {thanksNote ?? (
+                <>
+                  Thank you —{" "}
+                  {remainingAfterCurrent === 0
+                    ? "that was the last one!"
+                    : `${remainingAfterCurrent} left`}
+                </>
+              )}
             </h1>
           </div>
         ) : null}
@@ -372,6 +414,18 @@ export function HelperPortal() {
           </div>
         ) : null}
       </main>
+
+      {showDocsLink ? (
+        <footer className="px-5 pb-4 text-center text-sm text-muted-foreground">
+          Looking for the developer docs?{" "}
+          <Link
+            href="/help/docs"
+            className="underline underline-offset-4 hover:text-foreground"
+          >
+            Go to the docs
+          </Link>
+        </footer>
+      ) : null}
     </div>
   );
 }

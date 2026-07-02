@@ -85,6 +85,9 @@ export function EditRoleDialog({
                 Member - Can edit and collaborate
               </SelectItem>
               <SelectItem value="viewer">Viewer - View-only access</SelectItem>
+              <SelectItem value="helper">
+                Helper - Answers quick review questions only
+              </SelectItem>
             </SelectContent>
           </Select>
         </div>

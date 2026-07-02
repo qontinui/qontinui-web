@@ -16,6 +16,20 @@ import type {
 
 const HELPER_TASKS_API = "/api/v1/helper-tasks";
 
+/**
+ * Best-effort HTTP status from an `httpClient` error.
+ *
+ * `HttpClient`'s verb helpers throw plain `Error`s shaped
+ * `"<METHOD> <url> failed: <status> - <body>"` — there is no structured
+ * status field to read, so parse it back out. Returns null when the error
+ * is not one of those (network failure, abort, ...).
+ */
+export function errorStatus(err: unknown): number | null {
+  if (!(err instanceof Error)) return null;
+  const match = /\bfailed: (\d{3}) -/.exec(err.message);
+  return match ? Number(match[1]) : null;
+}
+
 /** Fetch the caller's-tenant open helper tasks (the portal work queue). */
 export async function fetchHelperTasks(): Promise<HelperTasksResponse> {
   return httpClient.get<HelperTasksResponse>(HELPER_TASKS_API);
