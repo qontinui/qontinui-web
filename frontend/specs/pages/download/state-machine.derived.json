@@ -37,7 +37,7 @@
     {
       "id": "download-platform-selector",
       "name": "Platform selector",
-      "description": "The three OS tab buttons that switch the download card. All three render regardless of detection; the detected platform (Linux in CI) carries a 'Detected' badge that folds into its button id. Also asserts the recommended download button and the GitHub releases link.",
+      "description": "The three OS tab buttons that switch the download card. All three render regardless of detection; the detected platform (Linux in CI) carries a 'Detected' badge that folds into its button id. Download files are resolved dynamically from the latest GitHub release, so a per-file download button only renders for platforms with a prebuilt installer (currently Windows); the CI-selected Linux platform shows a 'build from source' fallback instead. Asserts the three tabs and the GitHub releases link.",
       "assertions": [
         {
           "id": "download-platform-selector-elem-0",
@@ -79,21 +79,6 @@
             "type": "search",
             "criteria": { "id": "button-linux-detected-2" },
             "label": "Linux tab (detected)"
-          },
-          "source": "ai-generated",
-          "reviewed": false,
-          "enabled": true
-        },
-        {
-          "id": "download-platform-selector-elem-3",
-          "description": "Recommended download button for the selected platform is present.",
-          "category": "element-presence",
-          "severity": "warning",
-          "assertionType": "exists",
-          "target": {
-            "type": "search",
-            "criteria": { "id": "button-download" },
-            "label": "Download button"
           },
           "source": "ai-generated",
           "reviewed": false,
