@@ -70,6 +70,13 @@ interface AgentSession {
   last_seen: string | null;
   label: string | null;
   closed_at: string | null;
+  /**
+   * Display name (`label ?? derived_name`) — session-identity-registry
+   * enrichment added by the web backend proxy. Optional/nullable so the
+   * dashboard degrades cleanly against a pre-registry backend.
+   */
+  name?: string | null;
+  derived_name?: string | null;
 }
 
 interface SessionsResponse {
@@ -323,7 +330,7 @@ function SessionsTable({
                 <TableHead>session id</TableHead>
                 <TableHead>user</TableHead>
                 <TableHead>device</TableHead>
-                <TableHead>label</TableHead>
+                <TableHead>name</TableHead>
                 <TableHead>first seen</TableHead>
                 <TableHead>last seen</TableHead>
                 <TableHead className="w-[80px]">status</TableHead>
@@ -359,7 +366,12 @@ function SessionsTable({
                         {shortId(s.device_id)}
                       </TableCell>
                       <TableCell className="text-xs">
-                        {s.label ?? <span className="text-muted-foreground">—</span>}
+                        {/* name = label ?? derived_name (backend enrichment);
+                            fall back to the label-only rendering for
+                            pre-registry backends. */}
+                        {s.name ?? s.label ?? (
+                          <span className="text-muted-foreground">—</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
                         {relativeTime(s.first_seen)}

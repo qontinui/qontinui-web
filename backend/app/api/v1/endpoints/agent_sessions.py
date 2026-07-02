@@ -4,10 +4,15 @@ Side D / Phase 4 of plan
 ``D:/qontinui-root/plans/coord-agent-session-id-tracking.md`` — the
 ``/admin/agent-sessions`` panel backend.
 
-Two read-only endpoints exposing the agent-session lineage data:
+Three read-only endpoints exposing the agent-session lineage data:
 
 * ``GET /api/v1/admin/agent-sessions`` — list sessions with
-  live/user/since/limit filters.
+  live/user/since/limit filters plus the session-identity-registry
+  filters (q/status/device_id/repo).
+
+* ``GET /api/v1/admin/agent-sessions/{key}`` — resolve a session by
+  UUID or name to its full identity card(s)
+  (``{"resolved": [...], "count": N}``).
 
 * ``GET /api/v1/admin/agent-sessions/{session_id}/lineage`` — the
   per-session action timeline.
@@ -30,7 +35,8 @@ from __future__ import annotations
 
 import contextvars
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
+from urllib.parse import quote
 from uuid import UUID
 
 import httpx
@@ -223,18 +229,42 @@ async def list_agent_sessions(
         le=_LIST_MAX_LIMIT,
         description=f"Max rows to return (capped at {_LIST_MAX_LIMIT}).",
     ),
+    q: str | None = Query(
+        None,
+        description=(
+            "Full-text topic search over session activity (coord-side). "
+            "Pre-migration coord DBs degrade to name-only matching and "
+            "flag the response with top-level `search_degraded: true`."
+        ),
+    ),
+    status: Literal["live", "stale", "closed"] | None = Query(
+        None,
+        description="Derived session status filter (live | stale | closed).",
+    ),
+    device_id: UUID | None = Query(
+        None,
+        description="If set, filter to sessions from this coord device.",
+    ),
+    repo: str | None = Query(
+        None,
+        description="If set, filter to sessions whose activity touches this repo.",
+    ),
     _admin: User = Depends(require_admin),
 ) -> Any:
     """List agent sessions via coord's ``GET /coord/agent-sessions``.
 
-    Forwards the ``live`` / ``user_id`` / ``since`` / ``limit`` filters as
-    query params. ``limit`` (1..500) and the RFC3339 ``since`` are
-    validated by FastAPI before forwarding. Returns coord's
-    ``{"sessions": [...], "count": N}`` envelope with each session row
-    enriched by ``derived_name`` (coord passthrough, ``None`` until the
-    companion coord PR deploys) and a computed ``name`` (``label`` if
-    set, else ``derived_name``) — see :func:`_with_name_fields`. All
-    other fields pass through verbatim.
+    Forwards the ``live`` / ``user_id`` / ``since`` / ``limit`` filters
+    plus the session-identity-registry filters (``q`` / ``status`` /
+    ``device_id`` / ``repo``, coord PR #894) as query params. ``limit``
+    (1..500), the RFC3339 ``since``, the ``status`` vocabulary, and the
+    UUID ``device_id`` are validated by FastAPI before forwarding.
+    Returns coord's ``{"sessions": [...], "count": N}`` envelope with
+    each session row enriched by ``derived_name`` (coord passthrough,
+    ``None`` until the companion coord PR deploys) and a computed
+    ``name`` (``label`` if set, else ``derived_name``) — see
+    :func:`_with_name_fields`. All other fields — including the new
+    per-row ``summary`` / ``status`` and the top-level
+    ``search_degraded`` marker — pass through verbatim.
     """
     _capture_caller_context(request)
 
@@ -243,9 +273,40 @@ async def list_agent_sessions(
         params["user_id"] = str(user_id)
     if since is not None:
         params["since"] = since.isoformat()
+    if q is not None:
+        params["q"] = q
+    if status is not None:
+        params["status"] = status
+    if device_id is not None:
+        params["device_id"] = str(device_id)
+    if repo is not None:
+        params["repo"] = repo
 
     payload = await _proxy_coord_get("/coord/agent-sessions", params=params)
     return _with_name_fields(payload)
+
+
+# ---- GET /admin/agent-sessions/{key} --------------------------------------
+
+
+@router.get("/agent-sessions/{key}")
+async def resolve_agent_session(
+    request: Request,
+    key: str,
+    _admin: User = Depends(require_admin),
+) -> Any:
+    """Resolve a session by UUID **or** name via coord's
+    ``GET /coord/agent-sessions/:id`` resolver (coord PR #894).
+
+    Names can be ambiguous, so coord returns ``{"resolved": [card, ...],
+    "count": N}`` newest-first and 404s only on zero matches. The
+    envelope — full cards with ``machine`` / ``summary`` /
+    ``working_on`` — passes through verbatim, including coord's 404
+    (via :func:`_proxy_coord_get`'s ``>= 400`` re-raise).
+    """
+    _capture_caller_context(request)
+
+    return await _proxy_coord_get(f"/coord/agent-sessions/{quote(key, safe='')}")
 
 
 # ---- GET /admin/agent-sessions/{id}/lineage ------------------------------

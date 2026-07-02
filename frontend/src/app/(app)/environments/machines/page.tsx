@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,6 +19,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
+  Activity,
   AlertTriangle,
   KeyRound,
   Loader2,
@@ -330,6 +332,15 @@ export default function MachinesPage() {
                         <span>
                           last seen {relativeTime(machine.last_seen_at)}
                         </span>
+                        {machine.coord_device_id && (
+                          <Link
+                            href={`/environments/sessions?device=${encodeURIComponent(machine.coord_device_id)}`}
+                            className="inline-flex items-center gap-1 text-primary hover:underline"
+                          >
+                            <Activity className="size-3" />
+                            sessions
+                          </Link>
+                        )}
                       </div>
                     </div>
                   </div>

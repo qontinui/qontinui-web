@@ -13949,8 +13949,20 @@
         "type": "object"
       },
       "EnrollRequest": {
-        "description": "Agent enroll request \u2014 consumes a one-time enrollment code.\n\n``machine_id`` is optional and, when supplied, must match the machine\nthe enrollment code belongs to (a sanity binding the agent can assert).\n``hostname`` lets the agent report/refresh its hostname at enroll time.",
+        "description": "Agent enroll request \u2014 consumes a one-time enrollment code.\n\n``machine_id`` is optional and, when supplied, must match the machine\nthe enrollment code belongs to (a sanity binding the agent can assert).\n``hostname`` lets the agent report/refresh its hostname at enroll time.\n``coord_device_id`` is the agent's device id in coord's registry\n(``coord.devices.device_id``) \u2014 persisted as the P3 devenv\u2194coord\nbridge when supplied.",
         "properties": {
+          "coord_device_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coord Device Id"
+          },
           "enrollment_code": {
             "maxLength": 16,
             "minLength": 1,
@@ -22156,6 +22168,18 @@
       "MachineCreatedResponse": {
         "description": "Returned on create / regenerate-enrollment.\n\nIncludes the one-time ``enrollment_code`` + its expiry. The agent must\nconsume the code before it expires; it is NOT retrievable afterwards.",
         "properties": {
+          "coord_device_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coord Device Id"
+          },
           "created_at": {
             "title": "Created At",
             "type": "string"
@@ -22366,6 +22390,18 @@
       "MachineResponse": {
         "description": "A machine \u2014 NEVER exposes key/hash.\n\nOnly ``key_prefix`` + the derived boolean flags are surfaced.",
         "properties": {
+          "coord_device_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coord Device Id"
+          },
           "created_at": {
             "title": "Created At",
             "type": "string"
@@ -45960,7 +45996,7 @@
     },
     "/api/v1/admin/agent-sessions": {
       "get": {
-        "description": "List agent sessions via coord's ``GET /coord/agent-sessions``.\n\nForwards the ``live`` / ``user_id`` / ``since`` / ``limit`` filters as\nquery params. ``limit`` (1..500) and the RFC3339 ``since`` are\nvalidated by FastAPI before forwarding. Returns coord's\n``{\"sessions\": [...], \"count\": N}`` envelope verbatim \u2014 the shape the\nfrontend expects.",
+        "description": "List agent sessions via coord's ``GET /coord/agent-sessions``.\n\nForwards the ``live`` / ``user_id`` / ``since`` / ``limit`` filters\nplus the session-identity-registry filters (``q`` / ``status`` /\n``device_id`` / ``repo``, coord PR #894) as query params. ``limit``\n(1..500), the RFC3339 ``since``, the ``status`` vocabulary, and the\nUUID ``device_id`` are validated by FastAPI before forwarding.\nReturns coord's ``{\"sessions\": [...], \"count\": N}`` envelope with\neach session row enriched by ``derived_name`` (coord passthrough,\n``None`` until the companion coord PR deploys) and a computed\n``name`` (``label`` if set, else ``derived_name``) \u2014 see\n:func:`_with_name_fields`. All other fields \u2014 including the new\nper-row ``summary`` / ``status`` and the top-level\n``search_degraded`` marker \u2014 pass through verbatim.",
         "operationId": "api_v1_admin_agent_sessions_get",
         "parameters": [
           {
@@ -46026,6 +46062,84 @@
               "title": "Limit",
               "type": "integer"
             }
+          },
+          {
+            "description": "Full-text topic search over session activity (coord-side). Pre-migration coord DBs degrade to name-only matching and flag the response with top-level `search_degraded: true`.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Full-text topic search over session activity (coord-side). Pre-migration coord DBs degrade to name-only matching and flag the response with top-level `search_degraded: true`.",
+              "title": "Q"
+            }
+          },
+          {
+            "description": "Derived session status filter (live | stale | closed).",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "live",
+                    "stale",
+                    "closed"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Derived session status filter (live | stale | closed).",
+              "title": "Status"
+            }
+          },
+          {
+            "description": "If set, filter to sessions from this coord device.",
+            "in": "query",
+            "name": "device_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "If set, filter to sessions from this coord device.",
+              "title": "Device Id"
+            }
+          },
+          {
+            "description": "If set, filter to sessions whose activity touches this repo.",
+            "in": "query",
+            "name": "repo",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "If set, filter to sessions whose activity touches this repo.",
+              "title": "Repo"
+            }
           }
         ],
         "responses": {
@@ -46056,6 +46170,54 @@
           }
         ],
         "summary": "List Agent Sessions",
+        "tags": [
+          "admin-agent-sessions"
+        ]
+      }
+    },
+    "/api/v1/admin/agent-sessions/{key}": {
+      "get": {
+        "description": "Resolve a session by UUID **or** name via coord's\n``GET /coord/agent-sessions/:id`` resolver (coord PR #894).\n\nNames can be ambiguous, so coord returns ``{\"resolved\": [card, ...],\n\"count\": N}`` newest-first and 404s only on zero matches. The\nenvelope \u2014 full cards with ``machine`` / ``summary`` /\n``working_on`` \u2014 passes through verbatim, including coord's 404\n(via :func:`_proxy_coord_get`'s ``>= 400`` re-raise).",
+        "operationId": "api_v1_admin_agent_sessions_key_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Resolve Agent Session Api V1 Admin Agent Sessions  Key  Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Resolve Agent Session",
         "tags": [
           "admin-agent-sessions"
         ]
