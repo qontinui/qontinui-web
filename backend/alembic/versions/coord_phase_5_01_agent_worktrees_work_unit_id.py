@@ -50,7 +50,7 @@ def upgrade() -> None:
         sa.Column(
             "work_unit_id",
             postgresql.UUID(as_uuid=True),
-            sa.ForeignKey("coord.work_units(id)", ondelete="SET NULL"),
+            sa.ForeignKey("coord.work_units.id", ondelete="SET NULL"),
             nullable=True,
         ),
         schema="coord",
