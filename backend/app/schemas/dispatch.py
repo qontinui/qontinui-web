@@ -31,5 +31,7 @@ class DispatchStatusResponse(BaseModel):
     """Dispatch diagnostics for an app (dashboard / debugging)."""
 
     app_id: str
-    fresh_hosts_count: int = Field(..., description="Owned healthy hosts with fresh deployment")
+    fresh_hosts_count: int = Field(
+        ..., description="Owned healthy hosts with fresh deployment"
+    )
     can_dispatch_fresh: bool
