@@ -69,6 +69,12 @@ export interface Machine {
   revoked: boolean;
   /** Environment this machine is explicitly bound to, or null when unbound. */
   environment_id: string | null;
+  /**
+   * Bridge to coord's device registry (`coord.devices.device_id`), or null
+   * when unbridged. Soft pointer — set at agent enroll or by the
+   * unambiguous-hostname backfill. Optional: older backends omit it.
+   */
+  coord_device_id?: string | null;
   created_at: string;
   updated_at: string;
 }

@@ -159,6 +159,43 @@ async def _proxy_coord_get(
     return resp.json()
 
 
+# ---- Name enrichment -------------------------------------------------------
+
+
+def _with_name_fields(payload: Any) -> Any:
+    """Enrich coord's ``{sessions, count}`` envelope with name fields.
+
+    Plan ``2026-07-02-digital-twin-session-identity-registry``: each
+    session row gains
+
+    * ``derived_name`` — passed through from coord when present (the
+      coord-side derivation ships in the companion coord PR); ``None``
+      when coord has not yet deployed the column, and
+    * ``name`` — the display name: ``label`` when set, else
+      ``derived_name``.
+
+    Fail-soft by construction: this endpoint proxies coord's envelope
+    (it does NOT read coord's PG), so an older coord that doesn't emit
+    ``derived_name`` yields ``derived_name=None`` / ``name=label`` —
+    merge order between this PR and the coord PR is free. All existing
+    fields pass through unchanged; unexpected shapes are returned
+    verbatim.
+    """
+    if not isinstance(payload, dict):
+        return payload
+    sessions = payload.get("sessions")
+    if not isinstance(sessions, list):
+        return payload
+    for row in sessions:
+        if not isinstance(row, dict):
+            continue
+        derived = row.get("derived_name")
+        row["derived_name"] = derived
+        label = row.get("label")
+        row["name"] = label if label else derived
+    return payload
+
+
 # ---- GET /admin/agent-sessions -------------------------------------------
 
 
@@ -193,8 +230,11 @@ async def list_agent_sessions(
     Forwards the ``live`` / ``user_id`` / ``since`` / ``limit`` filters as
     query params. ``limit`` (1..500) and the RFC3339 ``since`` are
     validated by FastAPI before forwarding. Returns coord's
-    ``{"sessions": [...], "count": N}`` envelope verbatim — the shape the
-    frontend expects.
+    ``{"sessions": [...], "count": N}`` envelope with each session row
+    enriched by ``derived_name`` (coord passthrough, ``None`` until the
+    companion coord PR deploys) and a computed ``name`` (``label`` if
+    set, else ``derived_name``) — see :func:`_with_name_fields`. All
+    other fields pass through verbatim.
     """
     _capture_caller_context(request)
 
@@ -204,7 +244,8 @@ async def list_agent_sessions(
     if since is not None:
         params["since"] = since.isoformat()
 
-    return await _proxy_coord_get("/coord/agent-sessions", params=params)
+    payload = await _proxy_coord_get("/coord/agent-sessions", params=params)
+    return _with_name_fields(payload)
 
 
 # ---- GET /admin/agent-sessions/{id}/lineage ------------------------------

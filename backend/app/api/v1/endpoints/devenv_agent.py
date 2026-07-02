@@ -138,7 +138,10 @@ async def enroll_agent(
             },
         )
     plaintext = await devenv_machine_crud.consume_enrollment(
-        db, machine=machine, hostname=payload.hostname
+        db,
+        machine=machine,
+        hostname=payload.hostname,
+        coord_device_id=payload.coord_device_id,
     )
 
     # Resolve the bound environment. Phase 2 P1: an EXPLICIT binding on the
@@ -157,6 +160,9 @@ async def enroll_agent(
         "devenv_agent_enrolled",
         machine_id=str(machine.id),
         bound_environment_id=str(environment_id) if environment_id else None,
+        coord_device_id=(
+            str(payload.coord_device_id) if payload.coord_device_id else None
+        ),
     )
     return EnrollResponse(
         machine_id=machine.id,  # type: ignore[arg-type]

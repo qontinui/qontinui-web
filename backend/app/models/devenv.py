@@ -101,6 +101,7 @@ class Machine(Base):
         Index("idx_devenv_machine_key_hash", "key_hash"),
         Index("idx_devenv_machine_enrollment_code", "enrollment_code"),
         Index("idx_devenv_machine_environment", "environment_id"),
+        Index("idx_devenv_machine_coord_device", "coord_device_id"),
         {"schema": _SCHEMA},
     )
 
@@ -129,6 +130,14 @@ class Machine(Base):
     # + nulls the binding on environment delete; the ORM just treats it as a
     # plain column.
     environment_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), nullable=True
+    )
+    # P3 bridge to coord's device registry (``coord.devices.device_id``).
+    # Deliberately NOT a FK (cross-surface soft pointer; coord devices may be
+    # reaped/re-enrolled without devenv knowing — see devenv_03 migration).
+    # Populated at agent enroll (the agent asserts its coord device id) or by
+    # the unambiguous-hostname backfill.
+    coord_device_id: Mapped[uuid.UUID | None] = mapped_column(
         PGUUID(as_uuid=True), nullable=True
     )
     enrollment_code: Mapped[str | None] = mapped_column(String(16), nullable=True)

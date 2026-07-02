@@ -112,6 +112,8 @@ class MachineResponse(BaseORMSchema):
     hostname: str | None = None
     description: str | None = None
     environment_id: UUID | None = None
+    # P3 bridge to coord's device registry (soft pointer, not a FK).
+    coord_device_id: UUID | None = None
     key_prefix: str | None = None
     enrolled: bool = False
     last_seen_at: IsoDatetime | None = None
@@ -128,6 +130,7 @@ class MachineResponse(BaseORMSchema):
             hostname=machine.hostname,
             description=machine.description,
             environment_id=machine.environment_id,
+            coord_device_id=machine.coord_device_id,
             key_prefix=machine.key_prefix,
             enrolled=machine.enrolled_at is not None,
             last_seen_at=machine.last_seen_at,
@@ -158,6 +161,7 @@ class MachineCreatedResponse(MachineResponse):
             hostname=machine.hostname,
             description=machine.description,
             environment_id=machine.environment_id,
+            coord_device_id=machine.coord_device_id,
             key_prefix=machine.key_prefix,
             enrolled=machine.enrolled_at is not None,
             last_seen_at=machine.last_seen_at,
@@ -219,11 +223,15 @@ class EnrollRequest(BaseSchema):
     ``machine_id`` is optional and, when supplied, must match the machine
     the enrollment code belongs to (a sanity binding the agent can assert).
     ``hostname`` lets the agent report/refresh its hostname at enroll time.
+    ``coord_device_id`` is the agent's device id in coord's registry
+    (``coord.devices.device_id``) — persisted as the P3 devenv↔coord
+    bridge when supplied.
     """
 
     enrollment_code: str = Field(min_length=1, max_length=16)
     machine_id: UUID | None = None
     hostname: str | None = Field(default=None, max_length=255)
+    coord_device_id: UUID | None = None
 
 
 class EnrollResponse(BaseSchema):

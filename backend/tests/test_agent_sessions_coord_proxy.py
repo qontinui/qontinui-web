@@ -86,10 +86,61 @@ class TestListAgentSessionsProxy:
             client = TestClient(app)
             resp = client.get("/api/v1/admin/agent-sessions")
         assert resp.status_code == 200
-        # The web layer returns coord's envelope verbatim.
-        assert resp.json() == coord_payload
+        # The web layer returns coord's envelope with only the two name
+        # fields added (session-identity-registry enrichment); every
+        # coord-supplied field passes through verbatim.
+        body = resp.json()
+        assert body["count"] == 1
+        (row,) = body["sessions"]
+        for key, value in coord_payload["sessions"][0].items():
+            assert row[key] == value
+        # Old-coord payload (no derived_name) → derived_name None,
+        # name falls back to label.
+        assert row["derived_name"] is None
+        assert row["name"] == "ufix-2026-05-18"
+        assert set(row) == set(coord_payload["sessions"][0]) | {
+            "derived_name",
+            "name",
+        }
         # Called the right coord path.
         assert mock_get.call_args.args[0] == "/coord/agent-sessions"
+
+    def test_name_fields_enrichment(self):
+        """derived_name passes through; name = label if set else derived_name."""
+        coord_payload = {
+            "sessions": [
+                # label wins over derived_name.
+                {
+                    "id": str(uuid4()),
+                    "label": "operator-label",
+                    "derived_name": "fix-web-enroll-bridge",
+                },
+                # No label → name falls back to derived_name.
+                {
+                    "id": str(uuid4()),
+                    "label": None,
+                    "derived_name": "fix-web-enroll-bridge",
+                },
+                # Neither → both None.
+                {"id": str(uuid4()), "label": None},
+            ],
+            "count": 3,
+        }
+        app = _build_app()
+        with patch(
+            "app.api.v1.endpoints.agent_sessions._proxy_coord_get",
+            new=AsyncMock(return_value=coord_payload),
+        ):
+            client = TestClient(app)
+            resp = client.get("/api/v1/admin/agent-sessions")
+        assert resp.status_code == 200
+        labeled, derived_only, bare = resp.json()["sessions"]
+        assert labeled["name"] == "operator-label"
+        assert labeled["derived_name"] == "fix-web-enroll-bridge"
+        assert derived_only["name"] == "fix-web-enroll-bridge"
+        assert derived_only["derived_name"] == "fix-web-enroll-bridge"
+        assert bare["name"] is None
+        assert bare["derived_name"] is None
 
     def test_forwards_all_filters_as_query_params(self):
         uid = uuid4()

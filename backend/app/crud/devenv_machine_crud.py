@@ -165,6 +165,7 @@ async def consume_enrollment(
     *,
     machine: Machine,
     hostname: str | None = None,
+    coord_device_id: UUID | None = None,
 ) -> str:
     """Consume the enrollment code on a locked machine, minting a key.
 
@@ -173,6 +174,11 @@ async def consume_enrollment(
     the **plaintext** key for one-time delivery to the agent. The caller
     must have obtained ``machine`` from :func:`get_enrollable_machine`
     (which holds the row lock) within the same transaction.
+
+    ``coord_device_id``, when supplied, is persisted as the machine's
+    bridge to coord's device registry (P3 — a soft pointer, not a FK).
+    ``None`` leaves any existing bridge untouched (a re-enroll that
+    omits the id must not sever an established bridge).
     """
     plaintext, key_hash, key_prefix = generate_machine_key()
     now = datetime.now(UTC)
@@ -185,6 +191,8 @@ async def consume_enrollment(
     machine.enrollment_expires_at = None
     if hostname is not None:
         machine.hostname = hostname
+    if coord_device_id is not None:
+        machine.coord_device_id = coord_device_id
     await db.flush()
     logger.info(
         "devenv_machine_enrolled",
