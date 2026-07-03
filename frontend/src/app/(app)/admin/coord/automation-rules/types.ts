@@ -88,6 +88,13 @@ export interface PolicyUpdate {
   priority?: number;
   enabled?: boolean;
   rationale?: string;
+  /**
+   * The §8 autonomy dial. Settable ONLY via PATCH (coord#920) — create takes the
+   * shadow-safe default. Graduating a question-scoring rule to `auto_decide` is
+   * what makes it actually auto-answer (`acted=true`); `guidance_only` /
+   * `always_escalate` keep it in shadow.
+   */
+  autonomy_level?: "always_escalate" | "guidance_only" | "auto_decide";
 }
 
 /**

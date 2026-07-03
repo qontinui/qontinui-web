@@ -98,6 +98,7 @@ function deriveInitial(rule: PolicyRow | null): {
   promptText: string;
   options: PolicyOption[];
   surface: string;
+  autoAnswer: boolean;
 } {
   if (!rule) {
     return {
@@ -111,6 +112,7 @@ function deriveInitial(rule: PolicyRow | null): {
       promptText: "",
       options: [{ id: "", label: "" }],
       surface: DEFAULT_SCORING_SURFACE,
+      autoAnswer: false,
     };
   }
 
@@ -166,6 +168,7 @@ function deriveInitial(rule: PolicyRow | null): {
     promptText,
     options,
     surface,
+    autoAnswer: rule.autonomy_level === "auto_decide",
   };
 }
 
@@ -189,6 +192,9 @@ export function RuleEditorDialog({
     { id: "", label: "" },
   ]);
   const [surface, setSurface] = useState(DEFAULT_SCORING_SURFACE);
+  // Whether a question-scoring rule is graduated to auto-answer (autonomy_level
+  // === "auto_decide"). Read from the existing row; settable only on edit (PATCH).
+  const [autoAnswer, setAutoAnswer] = useState(false);
 
   // Reset the whole form whenever the dialog opens (for the active rule, or blank).
   useEffect(() => {
@@ -204,6 +210,7 @@ export function RuleEditorDialog({
     setPromptText(init.promptText);
     setOptions(init.options);
     setSurface(init.surface);
+    setAutoAnswer(init.autoAnswer);
   }, [open, rule]);
 
   const isTerminal = trigger === "terminal_auto_response";
@@ -272,11 +279,32 @@ export function RuleEditorDialog({
     const action = buildAction();
     let ok: boolean;
     if (rule) {
+      // Autonomy graduation is only meaningful for a question-scoring rule, and
+      // is settable only via PATCH (coord#920). Confirm before turning it ON —
+      // it lets coord auto-answer agent questions without operator review.
+      const isQuestionScoring = !isTerminal && resolution === "scoring";
+      if (
+        isQuestionScoring &&
+        autoAnswer &&
+        rule.autonomy_level !== "auto_decide" &&
+        !window.confirm(
+          "Enable auto-answer? coord will auto-answer matching agent questions " +
+            "with the composed winning option, without operator review. " +
+            "Leave off to keep the rule in shadow mode (recorded, not acted)."
+        )
+      ) {
+        return;
+      }
       ok = await onUpdate(rule.policy_id, {
         name,
         kind: trigger,
         condition,
         action,
+        ...(isQuestionScoring
+          ? {
+              autonomy_level: autoAnswer ? "auto_decide" : "guidance_only",
+            }
+          : {}),
       });
     } else {
       ok = await onCreate({ name, kind: trigger, condition, action });
@@ -440,7 +468,8 @@ export function RuleEditorDialog({
                   placeholder="e.g. agent_question"
                 />
                 <p className="text-xs text-muted-foreground">
-                  The priority-set surface the coord judge scores against.
+                  The priority-set surface whose priorities the option scores are
+                  composed against.
                 </p>
               </div>
               <div className="space-y-2">
@@ -486,6 +515,35 @@ export function RuleEditorDialog({
                   Add option
                 </Button>
               </div>
+
+              {/* Autonomy graduation — question-scoring rules only. Settable via
+                  PATCH (coord#920); create is shadow-default. */}
+              {!isTerminal &&
+                (rule ? (
+                  <div className="space-y-2 rounded-md border border-border bg-muted/30 p-3">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="rule-auto-answer">
+                        Auto-answer matching questions
+                      </Label>
+                      <Switch
+                        id="rule-auto-answer"
+                        checked={autoAnswer}
+                        onCheckedChange={setAutoAnswer}
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {autoAnswer
+                        ? "coord auto-answers matching agent questions with the composed winning option — no operator review."
+                        : "Shadow mode: resolutions are recorded but not acted on. Turn on to graduate this rule to auto-answer."}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    New rules start in{" "}
+                    <span className="font-medium">shadow mode</span>. Create the
+                    rule first, then edit it to enable auto-answer.
+                  </p>
+                ))}
             </div>
           )}
 
