@@ -206,31 +206,52 @@ async def test_non_member_selection_falls_back_to_home_tenant():
 
 
 # ---------------------------------------------------------------------------
-# admin_dev._capture_bearer_best_effort captures + keys by the selection
+# admin_dev._capture_bearer_best_effort captures + keys by the VALIDATED
+# effective tenant
 # ---------------------------------------------------------------------------
 #
-# Regression guard for the gap where /admin-dev/* proxied to coord WITHOUT the
-# active-tenant header (the ContextVar was never set on this surface), so the
-# gates dashboard always showed the home tenant regardless of the switcher.
+# Regression guards for two bugs:
+# 1. /admin-dev/* proxied to coord WITHOUT the active-tenant header (the
+#    ContextVar was never set on this surface), so the gates dashboard always
+#    showed the home tenant regardless of the switcher.
+# 2. The shared overview cache must never be keyed by the RAW header: coord
+#    serves HOME-tenant data for a non-member selection, so a raw-header key
+#    would poison the cache entry other operators legitimately read for that
+#    tenant.
 
 
 @pytest.mark.asyncio
-async def test_admin_dev_captures_selection_and_skips_identity_call():
+async def test_admin_dev_captures_selection_and_returns_member_tenant_key():
     from app.api.v1.endpoints import admin_dev, operations
 
-    identity_mock = AsyncMock(return_value=_identity())
-    with patch.object(admin_dev, "get_coord_identity", new=identity_mock):
+    with patch.object(
+        admin_dev, "get_coord_identity", new=AsyncMock(return_value=_identity())
+    ):
         key = await admin_dev._capture_bearer_best_effort(_request(str(_TENANT_B)))
 
-    # The selection is the cache key AND lands in the ContextVar that
-    # operations._tenant_headers forwards to coord.
+    # The member-validated selection is the cache key AND lands in the
+    # ContextVar that operations._tenant_headers forwards to coord.
     assert key == str(_TENANT_B)
     assert operations._caller_active_tenant.get() == str(_TENANT_B)
     assert operations._caller_bearer.get() == "cognito-token"
     headers = operations._tenant_headers(None)
     assert headers[ACTIVE_TENANT_HEADER] == str(_TENANT_B)
-    # No coord round-trip is needed when a selection is present.
-    identity_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_admin_dev_non_member_selection_keys_by_home_tenant():
+    """Coord keeps HOME data for a non-member selection — the cache key must
+    match what coord actually serves, never the raw header."""
+    from app.api.v1.endpoints import admin_dev, operations
+
+    with patch.object(
+        admin_dev, "get_coord_identity", new=AsyncMock(return_value=_identity())
+    ):
+        key = await admin_dev._capture_bearer_best_effort(_request(str(_TENANT_C)))
+
+    assert key == str(_TENANT_A)  # home, NOT the raw non-member selection
+    # The header is still forwarded verbatim — coord re-validates it.
+    assert operations._caller_active_tenant.get() == str(_TENANT_C)
 
 
 @pytest.mark.asyncio
