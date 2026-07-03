@@ -19095,6 +19095,42 @@
         "title": "HeartbeatBody",
         "type": "object"
       },
+      "HelperAnswerRequest": {
+        "description": "Body forwarded to coord ``POST /coord/helper-tasks/:id/answer``.\n\n``verdict`` values are coord's snake_case ``HelperVerdict`` enum\n(``approve`` / ``reject`` / ``not_sure`` for a spot-check; ``choice_a`` /\n``choice_b`` / ``choice_same`` for a compare). Coord validates the enum \u2014\nthe web layer only enforces shape.",
+        "properties": {
+          "free_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional free-text note (when the schema allows it)",
+            "title": "Free Text"
+          },
+          "reasons": {
+            "description": "Preset reason codes selected on a reject",
+            "items": {
+              "type": "string"
+            },
+            "title": "Reasons",
+            "type": "array"
+          },
+          "verdict": {
+            "description": "Helper verdict",
+            "minLength": 1,
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "verdict"
+        ],
+        "title": "HelperAnswerRequest",
+        "type": "object"
+      },
       "HistoricalResultResponse": {
         "description": "Response for historical result.",
         "properties": {
@@ -20051,7 +20087,7 @@
         "type": "object"
       },
       "InvitationCreate": {
-        "description": "Schema for creating an invitation.",
+        "description": "Schema for creating an invitation.\n\nThe role allowlist is enforced HERE (the input schema) rather than on\n``InvitationBase`` so ``InvitationResponse`` never re-validates stored\nrows \u2014 legacy roles must still serialize.",
         "properties": {
           "email": {
             "description": "Email address to invite",
@@ -20061,7 +20097,7 @@
           },
           "role": {
             "default": "member",
-            "description": "Role to assign: admin, member, viewer",
+            "description": "Role to assign: admin, member, viewer, helper",
             "title": "Role",
             "type": "string"
           }
@@ -20170,7 +20206,7 @@
           },
           "role": {
             "default": "member",
-            "description": "Role to assign: admin, member, viewer",
+            "description": "Role to assign: admin, member, viewer, helper",
             "title": "Role",
             "type": "string"
           },
@@ -37004,7 +37040,7 @@
         "description": "Schema for adding a team member.",
         "properties": {
           "role": {
-            "description": "Member role: owner, admin, member, viewer",
+            "description": "Member role: owner, admin, member, viewer, helper",
             "title": "Role",
             "type": "string"
           },
@@ -37104,7 +37140,7 @@
             "type": "object"
           },
           "role": {
-            "description": "Member role: owner, admin, member, viewer",
+            "description": "Member role: owner, admin, member, viewer, helper",
             "title": "Role",
             "type": "string"
           },
@@ -61461,6 +61497,123 @@
         ]
       }
     },
+    "/api/v1/helper-tasks": {
+      "get": {
+        "description": "List the caller's-tenant open helper tasks (the portal work queue).\n\nProxies coord ``GET /coord/helper-tasks?status=open`` \u2192 a bare array of\n``HelperTask`` (camelCase wire shape). Wrapped here as ``{\"tasks\": [...],\n\"available\": true}`` so queue-unavailable degrades to the same shape with\n``available: false`` instead of an error status. Tenant resolution runs\nin-handler so coord-unreachable / tenant-not-resolved degrade the same\nway instead of erroring out of the dependency.",
+        "operationId": "api_v1_helper_tasks_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Helper Tasks Api V1 Helper Tasks Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Helper Tasks",
+        "tags": [
+          "helper-tasks"
+        ]
+      }
+    },
+    "/api/v1/helper-tasks/status": {
+      "get": {
+        "description": "The caller's helper standing, for the frontend's /help routing.\n\n``is_helper_only`` is true when the user holds at least one HELPER\nmembership and no non-helper role in any *shared* (non-personal)\norganization \u2014 the signal the frontend uses to lock the session to the\n/help portal. Personal-organization ownership (auto-created at signup)\nis deliberately ignored: every user owns one, so it carries no signal.\nSuperusers are never helper-only.",
+        "operationId": "api_v1_helper_tasks_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Helper Status Api V1 Helper Tasks Status Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Helper Status",
+        "tags": [
+          "helper-tasks"
+        ]
+      }
+    },
+    "/api/v1/helper-tasks/{task_id}/answer": {
+      "post": {
+        "description": "Submit the caller's verdict for a task.\n\nProxies coord ``POST /coord/helper-tasks/:id/answer`` \u2192 201 with the\ncreated ``HelperAnswer``. Coord enforces tenant isolation (404 when the\ntask is not in the caller's tenant) and records the answer against the\nauthenticated operator \u2014 never an argument-supplied identity.\n\nUnlike the list read, tenant-resolution failure here stays an ERROR (a\nverdict must never be silently dropped) \u2014 but normalized to the same 503\n``helper_task_queue_unavailable`` detail the portal already understands.",
+        "operationId": "api_v1_helper_tasks_task_id_answer_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HelperAnswerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Submit Helper Answer Api V1 Helper Tasks  Task Id  Answer Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Submit Helper Answer",
+        "tags": [
+          "helper-tasks"
+        ]
+      }
+    },
     "/api/v1/identity/responsible-users/{repo}/{pr_number}": {
       "get": {
         "description": "Resolve the responsible qontinui user(s) for ``(repo, pr_number)``.\n\nComposes (in priority order) the PR's GitHub author -> linked user, the\nresolving agent's device-owner user, and a tenant-member fallback \u2014 so\nthe result is always non-empty.",
@@ -72188,7 +72341,7 @@
     },
     "/api/v1/organizations/invitations/accept": {
       "post": {
-        "description": "Accept an invitation by token.",
+        "description": "Accept an invitation by token.\n\nAccepting a HELPER invite additionally attempts a best-effort coord\n``helper`` operator-role provisioning (helper-task-queue plan \u00a79.4) \u2014\nsee ``app.services.coord_helper_provisioning`` for what can and cannot\nsucceed today. Provisioning never blocks acceptance.",
         "operationId": "api_v1_organizations_invitations_accept_post",
         "requestBody": {
           "content": {
