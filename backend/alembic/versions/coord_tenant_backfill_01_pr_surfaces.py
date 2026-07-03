@@ -48,7 +48,7 @@ attribution) without restoring any prior behavior.
 from alembic import op
 
 revision: str = "coord_tenant_backfill_01"
-down_revision: str | None = "coord_test_targets"
+down_revision: str | None = "devenv_04_device_machine_credentials"
 branch_labels = None
 depends_on = None
 
