@@ -74,6 +74,7 @@ from app.models.execution_tree_event import (
 )
 from app.models.extraction import ExtractionAnnotation, ExtractionSession
 from app.models.feedback_score import FeedbackScore
+from app.models.design_policy import DesignPolicy
 from app.models.finding_category_config import FindingCategoryConfig
 from app.models.known_issue import KnownIssue
 from app.models.machine_display_name import MachineDisplayName
@@ -288,6 +289,8 @@ __all__ = [
     "DetectedIssue",
     # Finding Category Configs
     "FindingCategoryConfig",
+    # Design/UX Policies
+    "DesignPolicy",
     # Discoveries
     "Discovery",
     # State Discovery
