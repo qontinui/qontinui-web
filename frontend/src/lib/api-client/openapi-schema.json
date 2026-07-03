@@ -13153,6 +13153,92 @@
         "title": "DispatchDeviceResponse",
         "type": "object"
       },
+      "DispatchEnrollRequest": {
+        "description": "Create a machine + dispatch an enroll directive to a paired runner.\n\nExtends :class:`MachineCreate` with the coord device to dispatch to. The\nserver mints the machine + one-time code, then asks coord to publish an\nenroll directive to that device's runner \u2014 no terminal, no copy-paste.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "environment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Id"
+          },
+          "hostname": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hostname"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "target_device_id": {
+            "format": "uuid",
+            "title": "Target Device Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "target_device_id"
+        ],
+        "title": "DispatchEnrollRequest",
+        "type": "object"
+      },
+      "DispatchEnrollResponse": {
+        "description": "Result of a dispatched enroll.\n\n``machine`` carries the created machine + its one-time code, so the UI can\nfall back to the copy-paste command when the runner is offline / the\ndispatch did not land. ``dispatched`` is True when coord accepted the\ndirective.",
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "dispatched": {
+            "title": "Dispatched",
+            "type": "boolean"
+          },
+          "machine": {
+            "$ref": "#/components/schemas/MachineCreatedResponse"
+          }
+        },
+        "required": [
+          "machine",
+          "dispatched"
+        ],
+        "title": "DispatchEnrollResponse",
+        "type": "object"
+      },
       "DispatchStatusResponse": {
         "description": "Dispatch diagnostics for an app (dashboard / debugging).",
         "properties": {
@@ -19707,6 +19793,42 @@
         "title": "HeartbeatBody",
         "type": "object"
       },
+      "HelperAnswerRequest": {
+        "description": "Body forwarded to coord ``POST /coord/helper-tasks/:id/answer``.\n\n``verdict`` values are coord's snake_case ``HelperVerdict`` enum\n(``approve`` / ``reject`` / ``not_sure`` for a spot-check; ``choice_a`` /\n``choice_b`` / ``choice_same`` for a compare). Coord validates the enum \u2014\nthe web layer only enforces shape.",
+        "properties": {
+          "free_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional free-text note (when the schema allows it)",
+            "title": "Free Text"
+          },
+          "reasons": {
+            "description": "Preset reason codes selected on a reject",
+            "items": {
+              "type": "string"
+            },
+            "title": "Reasons",
+            "type": "array"
+          },
+          "verdict": {
+            "description": "Helper verdict",
+            "minLength": 1,
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "verdict"
+        ],
+        "title": "HelperAnswerRequest",
+        "type": "object"
+      },
       "HistoricalResultResponse": {
         "description": "Response for historical result.",
         "properties": {
@@ -20663,7 +20785,7 @@
         "type": "object"
       },
       "InvitationCreate": {
-        "description": "Schema for creating an invitation.",
+        "description": "Schema for creating an invitation.\n\nThe role allowlist is enforced HERE (the input schema) rather than on\n``InvitationBase`` so ``InvitationResponse`` never re-validates stored\nrows \u2014 legacy roles must still serialize.",
         "properties": {
           "email": {
             "description": "Email address to invite",
@@ -20673,7 +20795,7 @@
           },
           "role": {
             "default": "member",
-            "description": "Role to assign: admin, member, viewer",
+            "description": "Role to assign: admin, member, viewer, helper",
             "title": "Role",
             "type": "string"
           }
@@ -20782,7 +20904,7 @@
           },
           "role": {
             "default": "member",
-            "description": "Role to assign: admin, member, viewer",
+            "description": "Role to assign: admin, member, viewer, helper",
             "title": "Role",
             "type": "string"
           },
@@ -38155,7 +38277,7 @@
         "description": "Schema for adding a team member.",
         "properties": {
           "role": {
-            "description": "Member role: owner, admin, member, viewer",
+            "description": "Member role: owner, admin, member, viewer, helper",
             "title": "Role",
             "type": "string"
           },
@@ -38255,7 +38377,7 @@
             "type": "object"
           },
           "role": {
-            "description": "Member role: owner, admin, member, viewer",
+            "description": "Member role: owner, admin, member, viewer, helper",
             "title": "Role",
             "type": "string"
           },
@@ -56557,6 +56679,53 @@
         ]
       }
     },
+    "/api/v1/devenv/machines/dispatch-enroll": {
+      "post": {
+        "description": "Create a machine + dispatch an enroll directive to a paired runner.\n\nPhase 3 (dispatched self-enroll): the operator picks an already-paired\ncoord device in the dashboard; the server mints the machine + one-time\ncode, binds it to the chosen device, then asks coord to publish an enroll\ndirective to that device's runner. The runner enrolls itself \u2014 no terminal,\nno copy-paste.\n\nThe machine + code are ALWAYS created and returned, even if the dispatch is\nrejected (device offline / unknown), so the UI can fall back to the\ncopy-paste command (Phase 1(b)). Coord's admin-gated route resolves the\noperator from the forwarded Cognito bearer.",
+        "operationId": "api_v1_devenv_machines_dispatch_enroll_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DispatchEnrollRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DispatchEnrollResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Dispatch Enroll",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
     "/api/v1/devenv/machines/{machine_id}": {
       "delete": {
         "description": "Delete a machine.",
@@ -63790,6 +63959,123 @@
         "summary": "Readiness Probe",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/api/v1/helper-tasks": {
+      "get": {
+        "description": "List the caller's-tenant open helper tasks (the portal work queue).\n\nProxies coord ``GET /coord/helper-tasks?status=open`` \u2192 a bare array of\n``HelperTask`` (camelCase wire shape). Wrapped here as ``{\"tasks\": [...],\n\"available\": true}`` so queue-unavailable degrades to the same shape with\n``available: false`` instead of an error status. Tenant resolution runs\nin-handler so coord-unreachable / tenant-not-resolved degrade the same\nway instead of erroring out of the dependency.",
+        "operationId": "api_v1_helper_tasks_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Helper Tasks Api V1 Helper Tasks Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Helper Tasks",
+        "tags": [
+          "helper-tasks"
+        ]
+      }
+    },
+    "/api/v1/helper-tasks/status": {
+      "get": {
+        "description": "The caller's helper standing, for the frontend's /help routing.\n\n``is_helper_only`` is true when the user holds at least one HELPER\nmembership and no non-helper role in any *shared* (non-personal)\norganization \u2014 the signal the frontend uses to lock the session to the\n/help portal. Personal-organization ownership (auto-created at signup)\nis deliberately ignored: every user owns one, so it carries no signal.\nSuperusers are never helper-only.",
+        "operationId": "api_v1_helper_tasks_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Helper Status Api V1 Helper Tasks Status Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Helper Status",
+        "tags": [
+          "helper-tasks"
+        ]
+      }
+    },
+    "/api/v1/helper-tasks/{task_id}/answer": {
+      "post": {
+        "description": "Submit the caller's verdict for a task.\n\nProxies coord ``POST /coord/helper-tasks/:id/answer`` \u2192 201 with the\ncreated ``HelperAnswer``. Coord enforces tenant isolation (404 when the\ntask is not in the caller's tenant) and records the answer against the\nauthenticated operator \u2014 never an argument-supplied identity.\n\nUnlike the list read, tenant-resolution failure here stays an ERROR (a\nverdict must never be silently dropped) \u2014 but normalized to the same 503\n``helper_task_queue_unavailable`` detail the portal already understands.",
+        "operationId": "api_v1_helper_tasks_task_id_answer_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HelperAnswerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Submit Helper Answer Api V1 Helper Tasks  Task Id  Answer Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Submit Helper Answer",
+        "tags": [
+          "helper-tasks"
         ]
       }
     },

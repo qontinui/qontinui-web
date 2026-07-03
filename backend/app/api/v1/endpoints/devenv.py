@@ -291,7 +291,9 @@ async def dispatch_enroll(
         # Coord unreachable/timeout — the machine is valid; surface a soft
         # failure so the UI offers the copy-paste fallback.
         detail = exc.detail if isinstance(exc.detail, str) else "coord dispatch failed"
-        return DispatchEnrollResponse(machine=created, dispatched=False, detail=str(detail))
+        return DispatchEnrollResponse(
+            machine=created, dispatched=False, detail=str(detail)
+        )
 
     if resp.status_code >= 400:
         return DispatchEnrollResponse(
