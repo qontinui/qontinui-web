@@ -34,7 +34,7 @@ REFRESH_TOKEN_EXPIRE_DAYS=7
 DATABASE_URL=postgresql://user:password@localhost/qontinui_db
 
 # CORS Origins (Update with your domain)
-BACKEND_CORS_ORIGINS=["https://qontinui.com","https://app.qontinui.com"]
+BACKEND_CORS_ORIGINS=["https://qontinui.com","https://qontinui.io"]
 
 # Rate Limiting
 RATE_LIMIT_ENABLED=true
@@ -48,7 +48,7 @@ RELOAD=false
 DEBUG=false
 
 # Frontend URL
-FRONTEND_URL=https://app.qontinui.com
+FRONTEND_URL=https://qontinui.io
 
 # Admin User (Optional - remove after first setup)
 # FIRST_SUPERUSER_EMAIL=admin@qontinui.com
