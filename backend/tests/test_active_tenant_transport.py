@@ -203,3 +203,63 @@ async def test_non_member_selection_falls_back_to_home_tenant():
             _request(str(_TENANT_C)), _user()
         )
     assert result == _TENANT_A
+
+
+# ---------------------------------------------------------------------------
+# admin_dev._capture_bearer_best_effort captures + keys by the selection
+# ---------------------------------------------------------------------------
+#
+# Regression guard for the gap where /admin-dev/* proxied to coord WITHOUT the
+# active-tenant header (the ContextVar was never set on this surface), so the
+# gates dashboard always showed the home tenant regardless of the switcher.
+
+
+@pytest.mark.asyncio
+async def test_admin_dev_captures_selection_and_skips_identity_call():
+    from app.api.v1.endpoints import admin_dev, operations
+
+    identity_mock = AsyncMock(return_value=_identity())
+    with patch.object(admin_dev, "get_coord_identity", new=identity_mock):
+        key = await admin_dev._capture_bearer_best_effort(_request(str(_TENANT_B)))
+
+    # The selection is the cache key AND lands in the ContextVar that
+    # operations._tenant_headers forwards to coord.
+    assert key == str(_TENANT_B)
+    assert operations._caller_active_tenant.get() == str(_TENANT_B)
+    assert operations._caller_bearer.get() == "cognito-token"
+    headers = operations._tenant_headers(None)
+    assert headers[ACTIVE_TENANT_HEADER] == str(_TENANT_B)
+    # No coord round-trip is needed when a selection is present.
+    identity_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_admin_dev_falls_back_to_home_tenant_key_without_selection():
+    from app.api.v1.endpoints import admin_dev, operations
+
+    with patch.object(
+        admin_dev, "get_coord_identity", new=AsyncMock(return_value=_identity())
+    ):
+        key = await admin_dev._capture_bearer_best_effort(_request(None))
+
+    assert key == str(_TENANT_A)
+    assert operations._caller_active_tenant.get() is None
+    headers = operations._tenant_headers(None)
+    assert ACTIVE_TENANT_HEADER not in headers
+
+
+@pytest.mark.asyncio
+async def test_admin_dev_coord_down_still_captures_headers():
+    from app.api.v1.endpoints import admin_dev, operations
+
+    with patch.object(
+        admin_dev,
+        "get_coord_identity",
+        new=AsyncMock(side_effect=HTTPException(status_code=502, detail="down")),
+    ):
+        key = await admin_dev._capture_bearer_best_effort(_request(None))
+
+    # Identity resolution failed → None cache key, but the bearer capture
+    # already happened so the proxy still forwards it.
+    assert key is None
+    assert operations._caller_bearer.get() == "cognito-token"
