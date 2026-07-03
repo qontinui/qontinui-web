@@ -200,14 +200,21 @@ async def _capture_bearer_best_effort(request: Request) -> str | None:
 
     * The bearer + selection captures are unconditional and run first, so
       the forwarded headers survive even if identity resolution fails.
-    * The returned key is the switcher selection when present (no coord
-      round-trip needed — a non-member selection keeps home-tenant data
-      coord-side, which then just lives under its own cache key). Without a
-      selection, the home tenant is resolved best-effort: a coord-down
-      failure (502/504) or an unresolved-operator 403 is swallowed and
-      ``None`` is returned. The handler then forwards the bearer regardless
-      (``forward_bearer=True``), and the overview's own degradation surfaces
-      the banner.
+    * The returned key is the VALIDATED effective tenant: the switcher
+      selection when the operator is a member of it (matched against
+      ``identity.tenants``, mirroring coord's
+      ``auth::apply_active_tenant_override`` membership gate and
+      ``_effective_tenant_roles``), else the home tenant. The raw header
+      must NEVER key the shared cache: coord silently serves HOME-tenant
+      data for a non-member selection, so a raw-header key would let one
+      operator's home envelope be served to a different operator who
+      legitimately selected that tenant (cross-tenant cache poisoning).
+    * On a coord-down failure (502/504) or an unresolved-operator 403 the
+      error is swallowed and ``None`` is returned — the handler treats
+      ``None`` as "identity unknown: bypass the shared cache entirely"
+      (no read, no write, no last-known-good) while still forwarding the
+      bearer (``forward_bearer=True``) so the overview's own degradation
+      surfaces the banner.
 
     This is NOT an auth gate — ``require_admin`` (superuser) remains the hard
     web-side gate on the handler and is unaffected.
@@ -215,19 +222,23 @@ async def _capture_bearer_best_effort(request: Request) -> str | None:
     _caller_bearer.set(_extract_caller_token(request))
     selection = (request.headers.get(ACTIVE_TENANT_HEADER) or "").strip() or None
     _caller_active_tenant.set(selection)
-    if selection is not None:
-        return selection
     try:
         identity = await get_coord_identity(request)
     except HTTPException:
         # coord unreachable (502/504), unresolved operator (403), or any
-        # other coord-side error — a missing tenant key is tolerable (it
-        # only keys the cache). Forward the bearer anyway and let the
-        # proxy's degradation handle a true outage.
+        # other coord-side error — identity unknown, so the caller must
+        # not touch the shared cache. Forward the bearer anyway and let
+        # the proxy's degradation handle a true outage.
         return None
     if identity.home_tenant_id is None:
         return None
-    return str(identity.home_tenant_id)
+    effective = identity.home_tenant_id
+    if selection:
+        for t in identity.tenants:
+            if str(t.tenant_id) == selection or t.slug == selection:
+                effective = t.tenant_id
+                break
+    return str(effective)
 
 
 @router.get("/admin-dev/overview")
@@ -271,11 +282,11 @@ async def get_dev_overview(
     tenant-switcher selection (``X-Qontinui-Active-Tenant``) are forwarded,
     so coord authorizes on the operator identity and scopes the overview to
     the selected tenant (coord's ``/coord/dev-overview`` filters every gate/
-    rollout query by the effective tenant). ``tenant_key`` is the effective
-    tenant (selection, else best-effort home tenant, else ``None`` when
-    coord identity resolution fails) and is used solely as the cache key —
-    two tenant selections never share a cache entry, and coord-down callers
-    (key ``None``) never share one with resolved ones.
+    rollout query by the effective tenant). ``tenant_key`` is the VALIDATED
+    effective tenant (membership-checked selection, else home tenant) and is
+    used solely as the cache key — two tenants never share a cache entry.
+    ``None`` (identity resolution failed) bypasses the shared cache
+    entirely, never sharing an entry with anyone.
 
     Caching: a fresh successful envelope is served from a ~30s in-process
     cache; ``?refresh=1`` bypasses it (the frontend Refresh button passes
@@ -289,8 +300,13 @@ async def get_dev_overview(
     coord outage too (not just the case where ``/admin/coord/me`` happened to
     succeed). The Spec CI crawl, which runs without a live coord, stays green.
     """
+    # ``tenant_key is None`` = identity unknown (coord-down / unresolved
+    # operator): bypass the SHARED cache entirely — reading or writing it
+    # without a validated tenant would let one operator's envelope be
+    # served to another (cross-tenant cache poisoning).
+    use_cache = tenant_key is not None
     cache_key: _CacheKey = (tenant_key, limit, verdict, include_archived, would_reap)
-    if not refresh:
+    if not refresh and use_cache:
         cached = await _cache_get(cache_key)
         if cached is not None:
             return cached
@@ -320,14 +336,16 @@ async def get_dev_overview(
             # transient (a coord deploy's leader failover) never blanks the
             # page. Only a true cold start (no last-good) falls back to the
             # hard "unavailable" banner. Degraded envelopes are never cached.
-            last_good = await _last_good_get(cache_key)
+            # Identity-unknown callers skip last-good too (shared store).
+            last_good = await _last_good_get(cache_key) if use_cache else None
             if last_good is not None:
                 return _degraded_with_last_good(detail, last_good)
             return _empty_overview(detail)
         raise
 
-    # Only cache a successful coord envelope (never a degraded one).
-    if isinstance(envelope, dict) and "coord_error" not in envelope:
+    # Only cache a successful coord envelope (never a degraded one), and
+    # only under a validated tenant key.
+    if use_cache and isinstance(envelope, dict) and "coord_error" not in envelope:
         await _cache_set(cache_key, envelope)
     return envelope
 
