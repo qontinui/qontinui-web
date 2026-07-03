@@ -795,9 +795,7 @@ class TestDispatchEnroll:
             captured["body"] = json_body
             return httpx.Response(200, json={"dispatched": True})
 
-        monkeypatch.setattr(
-            "app.api.v1.endpoints.devenv.post_to_coord", _fake_post
-        )
+        monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _fake_post)
         device_id = str(uuid4())
         async with _client(app) as client:
             r = await client.post(
@@ -827,9 +825,7 @@ class TestDispatchEnroll:
         async def _fake_post(path, *, headers, json_body, log_event, **kw):
             return httpx.Response(400, json={"error": "unknown device"})
 
-        monkeypatch.setattr(
-            "app.api.v1.endpoints.devenv.post_to_coord", _fake_post
-        )
+        monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _fake_post)
         async with _client(app) as client:
             r = await client.post(
                 f"{API_PREFIX}/machines/dispatch-enroll",
