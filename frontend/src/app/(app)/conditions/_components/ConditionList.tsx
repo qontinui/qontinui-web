@@ -38,6 +38,8 @@ interface ConditionListProps {
   onAdd: (groupId: string, data: ConditionCreate) => Promise<Condition | null>;
   onUpdate: (conditionId: string, data: ConditionUpdate) => Promise<boolean>;
   onDelete: (conditionId: string) => Promise<boolean>;
+  /** Renumber the group's conditions to the given top-to-bottom order. */
+  onReorder: (groupId: string, orderedIds: string[]) => Promise<boolean>;
 }
 
 /**
@@ -45,10 +47,9 @@ interface ConditionListProps {
  * toggle, up/down reorder, a "Move to…" control (PATCH `group_id`), delete, and
  * an add-condition input at the bottom.
  *
- * Reorder note: the backend owns `position` semantics; up/down PATCHes this
- * item's `position` to the neighbor's current position and reloads, so the
- * server re-normalizes ordering. Conditions are rendered in the order the
- * detail endpoint returns them.
+ * Reorder: up/down swaps the item with its neighbor and sends the full ordered
+ * id list to the backend, which renumbers `position` 0..n atomically. Conditions
+ * are rendered in the order the detail endpoint returns them.
  */
 export function ConditionList({
   groupId,
@@ -58,9 +59,27 @@ export function ConditionList({
   onAdd,
   onUpdate,
   onDelete,
+  onReorder,
 }: ConditionListProps) {
   const [newText, setNewText] = useState("");
   const otherGroups = allGroups.filter((g) => g.group_id !== groupId);
+
+  // Swap the condition at `index` with its neighbor in `direction` (-1 up,
+  // +1 down) and persist the full new order; the backend renumbers positions.
+  const handleMove = async (index: number, direction: -1 | 1) => {
+    const target = index + direction;
+    if (saving || target < 0 || target >= conditions.length) return;
+    const reordered = [...conditions];
+    const a = reordered[index];
+    const b = reordered[target];
+    if (!a || !b) return;
+    reordered[index] = b;
+    reordered[target] = a;
+    await onReorder(
+      groupId,
+      reordered.map((c) => c.condition_id)
+    );
+  };
 
   const handleAdd = async () => {
     const text = newText.trim();
@@ -84,8 +103,8 @@ export function ConditionList({
               condition={condition}
               isFirst={index === 0}
               isLast={index === conditions.length - 1}
-              prevPosition={conditions[index - 1]?.position}
-              nextPosition={conditions[index + 1]?.position}
+              onMoveUp={() => void handleMove(index, -1)}
+              onMoveDown={() => void handleMove(index, 1)}
               otherGroups={otherGroups}
               saving={saving}
               onUpdate={onUpdate}
@@ -124,8 +143,8 @@ interface ConditionRowProps {
   condition: Condition;
   isFirst: boolean;
   isLast: boolean;
-  prevPosition: number | undefined;
-  nextPosition: number | undefined;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
   otherGroups: ConditionGroup[];
   saving: boolean;
   onUpdate: (conditionId: string, data: ConditionUpdate) => Promise<boolean>;
@@ -136,8 +155,8 @@ function ConditionRow({
   condition,
   isFirst,
   isLast,
-  prevPosition,
-  nextPosition,
+  onMoveUp,
+  onMoveDown,
   otherGroups,
   saving,
   onUpdate,
@@ -168,11 +187,8 @@ function ConditionRow({
         <button
           type="button"
           className="text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30"
-          disabled={isFirst || saving || prevPosition === undefined}
-          onClick={() =>
-            prevPosition !== undefined &&
-            void onUpdate(condition.condition_id, { position: prevPosition })
-          }
+          disabled={isFirst || saving}
+          onClick={onMoveUp}
           aria-label="Move up"
           title="Move up"
         >
@@ -181,11 +197,8 @@ function ConditionRow({
         <button
           type="button"
           className="text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30"
-          disabled={isLast || saving || nextPosition === undefined}
-          onClick={() =>
-            nextPosition !== undefined &&
-            void onUpdate(condition.condition_id, { position: nextPosition })
-          }
+          disabled={isLast || saving}
+          onClick={onMoveDown}
           aria-label="Move down"
           title="Move down"
         >

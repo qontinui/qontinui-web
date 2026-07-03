@@ -136,6 +136,25 @@ async def add_condition(
     )
 
 
+@router.post("/groups/{group_id}/reorder")
+async def reorder_conditions(
+    group_id: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Renumber a group's conditions to the given order.
+
+    Body: ``{"condition_ids": [...]}`` (the desired top-to-bottom order, which
+    must be exactly the group's current conditions). Proxies coord's
+    ``POST /coord/condition-groups/{group_id}/reorder``.
+    """
+    return await _proxy_coord_post(
+        f"/coord/condition-groups/{group_id}/reorder",
+        body,
+        tenant_id=tenant_id,
+    )
+
+
 @router.patch("/items/{condition_id}")
 async def update_condition(
     condition_id: str,
