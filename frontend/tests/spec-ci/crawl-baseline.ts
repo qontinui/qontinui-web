@@ -180,6 +180,21 @@ export const PER_ROUTE_WAIVERS: Readonly<Record<string, PerRouteWaiver>> = {
       "coord-backed /admin/coord/* dashboard with no IR spec. Route-scoped " +
       "because exactly one crawl route owns this endpoint.",
   },
+  "/conditions": {
+    serverPatterns: ["/api/v1/conditions/"],
+    class: "ci-env",
+    note:
+      "CI-ENV-UNAVOIDABLE (hermetic lane). /api/v1/conditions/* is the backend " +
+      "proxy for the Regression Tests page: get_tenant_id resolves the home " +
+      "tenant via coord (GET /admin/coord/me) and forwards to coord's " +
+      "/coord/condition-groups. No coord runs in the hermetic Spec CI stack, so " +
+      "the tenant-resolution dependency 502s before data loads. Unlike the " +
+      "superuser-gated /admin/coord/* pages (whose gate stops the crawler before " +
+      "the fetch), /conditions is a regular-user page, so the authenticated " +
+      "crawler reaches the coord-backed fetch. Same class as the " +
+      "/api/v1/operations/ global waiver. Route-scoped because exactly one crawl " +
+      "route owns this endpoint.",
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -195,7 +210,9 @@ export interface CrawlWaiverResult {
   navFailWaived: boolean;
 }
 
-const globalServerMatchers = compilePatterns(GLOBAL_SERVER_WAIVERS.map((w) => w.pattern));
+const globalServerMatchers = compilePatterns(
+  GLOBAL_SERVER_WAIVERS.map((w) => w.pattern)
+);
 
 /**
  * Whether a same-origin 5xx URL falls in a GLOBAL waiver class. Exported for
@@ -216,19 +233,19 @@ export function isGloballyWaivedServerUrl(url: string): boolean {
 export function applyCrawlWaivers(
   routePath: string,
   consoleErrors: ConsoleErrorEntry[],
-  serverErrors: ServerErrorEntry[],
+  serverErrors: ServerErrorEntry[]
 ): CrawlWaiverResult {
   const waiver = PER_ROUTE_WAIVERS[routePath];
   const routeConsole = compilePatterns(waiver?.consolePatterns ?? []);
   const routeServer = compilePatterns(waiver?.serverPatterns ?? []);
 
   const unwaivedConsole = consoleErrors.filter(
-    (e) => !routeConsole.some((rx) => rx.test(e.text)),
+    (e) => !routeConsole.some((rx) => rx.test(e.text))
   );
   const unwaivedServer = serverErrors.filter(
     (e) =>
       !globalServerMatchers.some((rx) => rx.test(e.url)) &&
-      !routeServer.some((rx) => rx.test(e.url)),
+      !routeServer.some((rx) => rx.test(e.url))
   );
 
   return {
