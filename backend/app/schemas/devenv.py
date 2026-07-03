@@ -173,6 +173,31 @@ class MachineCreatedResponse(MachineResponse):
         )
 
 
+class DispatchEnrollRequest(MachineCreate):
+    """Create a machine + dispatch an enroll directive to a paired runner.
+
+    Extends :class:`MachineCreate` with the coord device to dispatch to. The
+    server mints the machine + one-time code, then asks coord to publish an
+    enroll directive to that device's runner — no terminal, no copy-paste.
+    """
+
+    target_device_id: UUID
+
+
+class DispatchEnrollResponse(BaseSchema):
+    """Result of a dispatched enroll.
+
+    ``machine`` carries the created machine + its one-time code, so the UI can
+    fall back to the copy-paste command when the runner is offline / the
+    dispatch did not land. ``dispatched`` is True when coord accepted the
+    directive.
+    """
+
+    machine: MachineCreatedResponse
+    dispatched: bool
+    detail: str | None = None
+
+
 # ---------------------------------------------------------------------------
 # Environments
 # ---------------------------------------------------------------------------
