@@ -55,6 +55,7 @@ export function GroupList() {
     addCondition,
     updateCondition,
     deleteCondition,
+    reorderConditions,
     runGroup,
     listRuns,
     getRun,
@@ -136,6 +137,15 @@ export function GroupList() {
       return ok;
     },
     [deleteCondition, expandedId, reloadDetail]
+  );
+
+  const wrappedReorderConditions = useCallback<typeof reorderConditions>(
+    async (groupId, conditionIds) => {
+      const ok = await reorderConditions(groupId, conditionIds);
+      if (ok && expandedId !== null) await reloadDetail(expandedId);
+      return ok;
+    },
+    [reorderConditions, expandedId, reloadDetail]
   );
 
   if (loading) {
@@ -293,6 +303,7 @@ export function GroupList() {
                           onAdd={wrappedAddCondition}
                           onUpdate={wrappedUpdateCondition}
                           onDelete={wrappedDeleteCondition}
+                          onReorder={wrappedReorderConditions}
                         />
                       )}
                     </div>

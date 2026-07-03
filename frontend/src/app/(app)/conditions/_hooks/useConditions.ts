@@ -190,6 +190,31 @@ export function useConditions() {
     }
   };
 
+  /**
+   * Renumber a group's conditions to `conditionIds` order (top to bottom).
+   * The backend requires the exact current set and renumbers `position` 0..n
+   * atomically — no toast on success (reorder is a quiet, frequent action).
+   */
+  const reorderConditions = async (
+    groupId: string,
+    conditionIds: string[]
+  ): Promise<boolean> => {
+    try {
+      setSaving(true);
+      await httpClient.post(
+        `${API}/groups/${encodeURIComponent(groupId)}/reorder`,
+        { condition_ids: conditionIds }
+      );
+      await loadGroups();
+      return true;
+    } catch (err) {
+      toast.error(errMsg(err, "Failed to reorder conditions"));
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
   // --- Runs ----------------------------------------------------------------
 
   const runGroup = async (
@@ -258,6 +283,7 @@ export function useConditions() {
     addCondition,
     updateCondition,
     deleteCondition,
+    reorderConditions,
     runGroup,
     listRuns,
     getRun,
