@@ -53,6 +53,7 @@ from app.api.v1.endpoints import (
     element_annotations,
     error_monitor,
     evaluation,
+    design_policies,
     events,
     execution,
     export,
@@ -331,6 +332,12 @@ api_router.include_router(
     finding_categories.router,
     prefix="/finding-categories",
     tags=["finding-categories"],
+)
+# Design/UX policies (tenant-scoped, auto-seeded, tool-agnostic source of truth)
+api_router.include_router(
+    design_policies.router,
+    prefix="/design-policies",
+    tags=["design-policies"],
 )
 # Workflow step types, GUI action types, and phases (per-user, auto-seeded)
 api_router.include_router(
