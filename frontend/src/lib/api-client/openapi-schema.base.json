@@ -51781,6 +51781,620 @@
         ]
       }
     },
+    "/api/v1/conditions/groups": {
+      "get": {
+        "description": "List the calling tenant's condition groups.\n\nProxies coord's ``GET /coord/condition-groups``. Tenant-scoped: coord\nresolves the tenant from the forwarded operator bearer.",
+        "operationId": "api_v1_conditions_groups_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response List Condition Groups Api V1 Conditions Groups Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Condition Groups",
+        "tags": [
+          "conditions"
+        ]
+      },
+      "post": {
+        "description": "Create a condition group.\n\nProxies coord's ``POST /coord/condition-groups`` with the request body\nforwarded verbatim.",
+        "operationId": "api_v1_conditions_groups_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Create Condition Group Api V1 Conditions Groups Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Create Condition Group",
+        "tags": [
+          "conditions"
+        ]
+      }
+    },
+    "/api/v1/conditions/groups/{group_id}": {
+      "delete": {
+        "description": "Delete a condition group.\n\nProxies coord's ``DELETE /coord/condition-groups/{group_id}``.",
+        "operationId": "api_v1_conditions_groups_group_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Delete Condition Group Api V1 Conditions Groups  Group Id  Delete"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Condition Group",
+        "tags": [
+          "conditions"
+        ]
+      },
+      "get": {
+        "description": "Return a single condition group (with its conditions).\n\nProxies coord's ``GET /coord/condition-groups/{group_id}``.",
+        "operationId": "api_v1_conditions_groups_group_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Condition Group Api V1 Conditions Groups  Group Id  Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Condition Group",
+        "tags": [
+          "conditions"
+        ]
+      },
+      "patch": {
+        "description": "Update a condition group's fields.\n\nProxies coord's ``PATCH /coord/condition-groups/{group_id}``.",
+        "operationId": "api_v1_conditions_groups_group_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Update Condition Group Api V1 Conditions Groups  Group Id  Patch"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update Condition Group",
+        "tags": [
+          "conditions"
+        ]
+      }
+    },
+    "/api/v1/conditions/groups/{group_id}/conditions": {
+      "post": {
+        "description": "Add a condition to a group.\n\nProxies coord's ``POST /coord/condition-groups/{group_id}/conditions``.",
+        "operationId": "api_v1_conditions_groups_group_id_conditions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Add Condition Api V1 Conditions Groups  Group Id  Conditions Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Add Condition",
+        "tags": [
+          "conditions"
+        ]
+      }
+    },
+    "/api/v1/conditions/groups/{group_id}/reorder": {
+      "post": {
+        "description": "Renumber a group's conditions to the given order.\n\nBody: ``{\"condition_ids\": [...]}`` (the desired top-to-bottom order, which\nmust be exactly the group's current conditions). Proxies coord's\n``POST /coord/condition-groups/{group_id}/reorder``.",
+        "operationId": "api_v1_conditions_groups_group_id_reorder_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Reorder Conditions Api V1 Conditions Groups  Group Id  Reorder Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Reorder Conditions",
+        "tags": [
+          "conditions"
+        ]
+      }
+    },
+    "/api/v1/conditions/groups/{group_id}/run": {
+      "post": {
+        "description": "Trigger a regression run of a condition group.\n\nProxies coord's ``POST /coord/condition-groups/{group_id}/run``. The\nbody is optional (run options); an empty object is forwarded when the\ncaller sends none.",
+        "operationId": "api_v1_conditions_groups_group_id_run_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Run Condition Group Api V1 Conditions Groups  Group Id  Run Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Run Condition Group",
+        "tags": [
+          "conditions"
+        ]
+      }
+    },
+    "/api/v1/conditions/groups/{group_id}/runs": {
+      "get": {
+        "description": "List past runs for a condition group.\n\nProxies coord's ``GET /coord/condition-groups/{group_id}/runs``.",
+        "operationId": "api_v1_conditions_groups_group_id_runs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response List Condition Group Runs Api V1 Conditions Groups  Group Id  Runs Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Condition Group Runs",
+        "tags": [
+          "conditions"
+        ]
+      }
+    },
+    "/api/v1/conditions/items/{condition_id}": {
+      "delete": {
+        "description": "Delete a single condition.\n\nProxies coord's ``DELETE /coord/conditions/{condition_id}``.",
+        "operationId": "api_v1_conditions_items_condition_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "condition_id",
+            "required": true,
+            "schema": {
+              "title": "Condition Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Delete Condition Api V1 Conditions Items  Condition Id  Delete"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Condition",
+        "tags": [
+          "conditions"
+        ]
+      },
+      "patch": {
+        "description": "Update a single condition.\n\nProxies coord's ``PATCH /coord/conditions/{condition_id}``.",
+        "operationId": "api_v1_conditions_items_condition_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "condition_id",
+            "required": true,
+            "schema": {
+              "title": "Condition Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Update Condition Api V1 Conditions Items  Condition Id  Patch"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update Condition",
+        "tags": [
+          "conditions"
+        ]
+      }
+    },
+    "/api/v1/conditions/runs/{run_id}": {
+      "get": {
+        "description": "Return a single condition run's detail/results.\n\nProxies coord's ``GET /coord/condition-runs/{run_id}``.",
+        "operationId": "api_v1_conditions_runs_run_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Condition Run Api V1 Conditions Runs  Run Id  Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Condition Run",
+        "tags": [
+          "conditions"
+        ]
+      }
+    },
     "/api/v1/conflicts": {
       "get": {
         "description": "List conflicts.\n\nReturns conflicts that the current user is involved in or has access to.",
