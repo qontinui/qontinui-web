@@ -12755,6 +12755,92 @@
         "title": "DispatchDeviceResponse",
         "type": "object"
       },
+      "DispatchEnrollRequest": {
+        "description": "Create a machine + dispatch an enroll directive to a paired runner.\n\nExtends :class:`MachineCreate` with the coord device to dispatch to. The\nserver mints the machine + one-time code, then asks coord to publish an\nenroll directive to that device's runner \u2014 no terminal, no copy-paste.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "environment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Id"
+          },
+          "hostname": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hostname"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "target_device_id": {
+            "format": "uuid",
+            "title": "Target Device Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "target_device_id"
+        ],
+        "title": "DispatchEnrollRequest",
+        "type": "object"
+      },
+      "DispatchEnrollResponse": {
+        "description": "Result of a dispatched enroll.\n\n``machine`` carries the created machine + its one-time code, so the UI can\nfall back to the copy-paste command when the runner is offline / the\ndispatch did not land. ``dispatched`` is True when coord accepted the\ndirective.",
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "dispatched": {
+            "title": "Dispatched",
+            "type": "boolean"
+          },
+          "machine": {
+            "$ref": "#/components/schemas/MachineCreatedResponse"
+          }
+        },
+        "required": [
+          "machine",
+          "dispatched"
+        ],
+        "title": "DispatchEnrollResponse",
+        "type": "object"
+      },
       "DispatchStatusResponse": {
         "description": "Dispatch diagnostics for an app (dashboard / debugging).",
         "properties": {
@@ -54424,6 +54510,53 @@
           }
         ],
         "summary": "Create Machine",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/v1/devenv/machines/dispatch-enroll": {
+      "post": {
+        "description": "Create a machine + dispatch an enroll directive to a paired runner.\n\nPhase 3 (dispatched self-enroll): the operator picks an already-paired\ncoord device in the dashboard; the server mints the machine + one-time\ncode, binds it to the chosen device, then asks coord to publish an enroll\ndirective to that device's runner. The runner enrolls itself \u2014 no terminal,\nno copy-paste.\n\nThe machine + code are ALWAYS created and returned, even if the dispatch is\nrejected (device offline / unknown), so the UI can fall back to the\ncopy-paste command (Phase 1(b)). Coord's admin-gated route resolves the\noperator from the forwarded Cognito bearer.",
+        "operationId": "api_v1_devenv_machines_dispatch_enroll_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DispatchEnrollRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DispatchEnrollResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Dispatch Enroll",
         "tags": [
           "environments"
         ]
