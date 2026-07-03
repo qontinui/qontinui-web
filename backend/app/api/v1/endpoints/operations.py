@@ -267,6 +267,26 @@ def _effective_tenant_roles(
     return identity.roles
 
 
+def _effective_tenant_id(
+    identity: CoordIdentity, active_tenant: str | None
+) -> UUID | None:
+    """The operator's EFFECTIVE tenant id: the active-switcher selection when
+    the operator is a member of it (matched against ``identity.tenants`` by
+    id, or slug defensively), else the home tenant.
+
+    The WS bridges use this: a browser ``WebSocket`` cannot send the
+    ``X-Qontinui-Active-Tenant`` header, so the selection rides a query
+    param and is membership-validated here — mirroring coord's
+    ``auth::apply_active_tenant_override`` (non-member selection degrades
+    to home, never widens)."""
+    selection = (active_tenant or "").strip()
+    if selection:
+        for t in identity.tenants:
+            if str(t.tenant_id) == selection or t.slug == selection:
+                return t.tenant_id
+    return identity.home_tenant_id
+
+
 def _tenant_headers(tenant_id: UUID | None) -> dict[str, str]:
     """Build the request-headers dict forwarded to coord.
 
@@ -2966,11 +2986,19 @@ async def websocket_device_status(
         return
 
     # --- Tenant resolution + token mint ----------------------------------
-    # Source the home tenant from coord's `/admin/coord/me` over the HTTP
-    # boundary (forwarding the WS-auth bearer), not a cross-schema read.
+    # Source identity from coord's `/admin/coord/me` over the HTTP boundary
+    # (forwarding the WS-auth bearer), then resolve the EFFECTIVE tenant:
+    # the dashboard tenant-switcher selection rides the `active_tenant`
+    # query param (a browser WebSocket cannot send custom headers) and is
+    # membership-validated by `_effective_tenant_id`; a non-member or
+    # absent selection degrades to the home tenant, never widens. This
+    # keeps the live stream consistent with the REST seed, which forwards
+    # X-Qontinui-Active-Tenant to coord.
     try:
         identity = await get_coord_identity_for_token(token)
-        tenant_id = identity.home_tenant_id
+        tenant_id = _effective_tenant_id(
+            identity, websocket.query_params.get("active_tenant")
+        )
         if tenant_id is None:
             raise HTTPException(status_code=403, detail="tenant_not_resolved")
     except HTTPException as http_exc:
@@ -3290,11 +3318,19 @@ async def websocket_ci_status(
         return
 
     # --- Tenant resolution + token mint ----------------------------------
-    # Source the home tenant from coord's `/admin/coord/me` over the HTTP
-    # boundary (forwarding the WS-auth bearer), not a cross-schema read.
+    # Source identity from coord's `/admin/coord/me` over the HTTP boundary
+    # (forwarding the WS-auth bearer), then resolve the EFFECTIVE tenant:
+    # the dashboard tenant-switcher selection rides the `active_tenant`
+    # query param (a browser WebSocket cannot send custom headers) and is
+    # membership-validated by `_effective_tenant_id`; a non-member or
+    # absent selection degrades to the home tenant, never widens. This
+    # keeps the live stream consistent with the REST seed, which forwards
+    # X-Qontinui-Active-Tenant to coord.
     try:
         identity = await get_coord_identity_for_token(token)
-        tenant_id = identity.home_tenant_id
+        tenant_id = _effective_tenant_id(
+            identity, websocket.query_params.get("active_tenant")
+        )
         if tenant_id is None:
             raise HTTPException(status_code=403, detail="tenant_not_resolved")
     except HTTPException as http_exc:

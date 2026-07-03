@@ -269,6 +269,33 @@ async def test_admin_dev_falls_back_to_home_tenant_key_without_selection():
     assert ACTIVE_TENANT_HEADER not in headers
 
 
+# ---------------------------------------------------------------------------
+# _effective_tenant_id — the WS bridges' membership-validated selection
+# ---------------------------------------------------------------------------
+#
+# A browser WebSocket cannot send X-Qontinui-Active-Tenant, so the WS
+# handlers read an `active_tenant` query param and resolve it through this
+# helper: member selection wins, anything else degrades to home.
+
+
+def test_effective_tenant_id_member_selection_wins():
+    from app.api.v1.endpoints.operations import _effective_tenant_id
+
+    assert _effective_tenant_id(_identity(), str(_TENANT_B)) == _TENANT_B
+
+
+def test_effective_tenant_id_non_member_selection_degrades_to_home():
+    from app.api.v1.endpoints.operations import _effective_tenant_id
+
+    assert _effective_tenant_id(_identity(), str(_TENANT_C)) == _TENANT_A
+
+
+def test_effective_tenant_id_no_selection_is_home():
+    from app.api.v1.endpoints.operations import _effective_tenant_id
+
+    assert _effective_tenant_id(_identity(), None) == _TENANT_A
+
+
 @pytest.mark.asyncio
 async def test_admin_dev_coord_down_still_captures_headers():
     from app.api.v1.endpoints import admin_dev, operations
