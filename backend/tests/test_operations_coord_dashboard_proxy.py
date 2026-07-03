@@ -24,7 +24,7 @@ Wave-2 endpoint resolves ``current_user → tenant_id`` via
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import httpx
 import pytest
@@ -35,6 +35,12 @@ from fastapi.testclient import TestClient
 # fixture; tests assert the X-Qontinui-Tenant-Id header carries it.
 _FIXTURE_TENANT_ID = UUID("11111111-2222-3333-4444-555555555555")
 TENANT_HEADER = "X-Qontinui-Tenant-Id"
+
+# Stable user id for the mocked authenticated user; the onboarding
+# precondition proxy forwards it as X-Qontinui-User-Id (Phase 1b of plan
+# 2026-07-02-multi-tenant-device-pairing-reconsideration).
+_FIXTURE_USER_ID = UUID("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+USER_ID_HEADER = "X-Qontinui-User-Id"
 
 
 def _build_test_app(*, resolves_tenant: bool = True) -> FastAPI:
@@ -63,7 +69,7 @@ def _build_test_app(*, resolves_tenant: bool = True) -> FastAPI:
 
     test_app = FastAPI()
     mock_user = MagicMock()
-    mock_user.id = uuid4()
+    mock_user.id = _FIXTURE_USER_ID
     mock_user.email = "tenant.user@example.com"
     mock_user.is_active = True
     mock_user.is_verified = True
@@ -803,6 +809,85 @@ class TestOnboardingDoctorEndpoint:
         resp = unresolved_client.get(
             f"{API_PREFIX}/pr-merge/onboarding/doctor",
             params={"repo": "qontinui/qontinui-web"},
+        )
+        assert resp.status_code == 403
+        assert resp.json()["detail"] == "tenant_not_resolved"
+
+
+# ---------------------------------------------------------------------------
+# Onboarding precondition-status (wizard poll — paired_elsewhere forwarding)
+# ---------------------------------------------------------------------------
+
+
+class TestOnboardingPreconditionEndpoint:
+    """`GET /pr-merge/onboarding/precondition-status` — proxies coord's
+    wizard-poll endpoint. Phase 1b of plan
+    ``2026-07-02-multi-tenant-device-pairing-reconsideration``: the proxy
+    must forward ``X-Qontinui-User-Id`` (same attribution header as the
+    pair paths, see ``test_devices_pair_cli_bearer.py``) so coord can
+    compute ``paired_elsewhere`` for the calling user."""
+
+    def test_forwards_user_id_header_and_passes_body_through(self, client: TestClient):
+        coord_payload = {
+            "paired": False,
+            "claude_code_available": False,
+            "ready": False,
+            "paired_elsewhere": [
+                {
+                    "hostname": "spaceship",
+                    "name": "spaceship-runner",
+                    "last_seen_at": "2026-07-01T12:00:00Z",
+                }
+            ],
+        }
+        mock_resp = _mock_response(json_data=coord_payload)
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = mock_resp
+            _configure_mock_client(MockClient, instance)
+            resp = client.get(f"{API_PREFIX}/pr-merge/onboarding/precondition-status")
+        assert resp.status_code == 200
+        assert resp.json() == coord_payload
+        called_url = instance.get.call_args.args[0]
+        assert called_url.endswith("/pr-merge/onboarding/precondition-status")
+        # Header assertions (mirrors test_devices_pair_cli_bearer.py): the
+        # user-attribution header carries the caller's id; the retired
+        # tenant email-bridge header stays off the wire.
+        headers = instance.get.call_args.kwargs["headers"]
+        assert headers[USER_ID_HEADER] == str(_FIXTURE_USER_ID)
+        _assert_tenant_header_forwarded(instance.get.call_args)
+
+    def test_older_coord_body_without_paired_elsewhere_passes_through(
+        self, client: TestClient
+    ):
+        """Older coord omits ``paired_elsewhere`` — the proxy must not
+        synthesize it (the frontend normalizes missing → [])."""
+        coord_payload = {
+            "paired": True,
+            "claude_code_available": True,
+            "ready": True,
+        }
+        mock_resp = _mock_response(json_data=coord_payload)
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = mock_resp
+            _configure_mock_client(MockClient, instance)
+            resp = client.get(f"{API_PREFIX}/pr-merge/onboarding/precondition-status")
+        assert resp.status_code == 200
+        assert resp.json() == coord_payload
+        assert "paired_elsewhere" not in resp.json()
+
+    def test_coord_unreachable_returns_502(self, client: TestClient):
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.side_effect = httpx.ConnectError("refused")
+            _configure_mock_client(MockClient, instance)
+            resp = client.get(f"{API_PREFIX}/pr-merge/onboarding/precondition-status")
+        assert resp.status_code == 502
+
+    def test_tenant_not_resolved(self, unresolved_client: TestClient):
+        resp = unresolved_client.get(
+            f"{API_PREFIX}/pr-merge/onboarding/precondition-status"
         )
         assert resp.status_code == 403
         assert resp.json()["detail"] == "tenant_not_resolved"

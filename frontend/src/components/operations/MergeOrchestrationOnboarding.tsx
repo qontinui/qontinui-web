@@ -46,10 +46,24 @@ const AUDIT_POLL_CAP_MS = 8 * 60_000;
 // Wire types (mirrors coord's pr_merge::onboarding_routes shapes)
 // ----------------------------------------------------------------------------
 
+// A device the calling USER has paired to a DIFFERENT tenant. Coord computes
+// this from the forwarded X-Qontinui-User-Id header (plan
+// 2026-07-02-multi-tenant-device-pairing-reconsideration Phase 1b). Older
+// coord omits the field entirely — the poll site normalizes missing → [].
+interface PairedElsewhereDevice {
+  hostname: string;
+  name: string | null;
+  last_seen_at: string | null;
+}
+
 interface PreconditionStatus {
   paired: boolean;
   claude_code_available: boolean;
   ready: boolean;
+  // One runner device serves one tenant at a time: non-empty means pairing
+  // here will UNPAIR these devices from their current tenant. Optional so
+  // the wizard degrades to today's behavior against older coord.
+  paired_elsewhere?: PairedElsewhereDevice[];
 }
 
 interface PairStartResponse {
@@ -103,15 +117,28 @@ interface AuditStatusResponse {
 // Step 1 — Pair a device
 // ----------------------------------------------------------------------------
 
-function PairDeviceStep({
+export function PairDeviceStep({
   onPaired,
+  pairedElsewhere,
 }: {
   onPaired: () => void;
+  // Devices the calling user has paired to a DIFFERENT tenant. Non-empty
+  // means pairing here steals the device — we require an explicit inline
+  // confirmation before starting. Absent/empty (older coord) degrades to
+  // the plain one-click flow.
+  pairedElsewhere?: PairedElsewhereDevice[];
 }) {
   const [pairCode, setPairCode] = useState<string | null>(null);
   const [redirectUrl, setRedirectUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Two-step confirm when a device is paired elsewhere: the first "Start
+  // pairing" click only ARMS the confirmation ("Pair anyway" / "Cancel");
+  // pair-start is called exclusively from the explicit confirm button.
+  const [confirmArmed, setConfirmArmed] = useState(false);
+
+  const elsewhere = pairedElsewhere ?? [];
+  const needsConfirm = elsewhere.length > 0;
 
   const startPairing = useCallback(async () => {
     setBusy(true);
@@ -150,18 +177,75 @@ function PairDeviceStep({
       <p className="text-sm">
         Pair a device running the Qontinui runner with Claude Code installed.
         On your device, run <code>qontinui_profile device pair</code> and paste
-        the pair code below.
+        the pair code below. One runner device serves one tenant at a time —
+        pairing a device for a new tenant moves it: the device is unpaired
+        from its current tenant.
       </p>
       {error && (
         <p className="text-xs text-red-300 flex items-center gap-1">
           <AlertTriangle className="h-3 w-3" /> {error}
         </p>
       )}
+      {needsConfirm && !pairCode && (
+        <div
+          className="border border-amber-500/40 bg-amber-500/10 rounded-md p-3 space-y-1"
+          data-testid="paired-elsewhere-warning"
+        >
+          {elsewhere.map((d) => (
+            <p
+              key={d.hostname}
+              className="text-xs text-amber-200 flex items-start gap-1"
+            >
+              <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
+              <span>
+                Device &lsquo;
+                <span className="font-mono">{d.hostname}</span>
+                &rsquo; is currently paired to a different tenant. Pairing it
+                here will unpair it there.
+                {d.last_seen_at && (
+                  <span className="text-amber-200/70">
+                    {" "}
+                    (last seen {new Date(d.last_seen_at).toLocaleString()})
+                  </span>
+                )}
+              </span>
+            </p>
+          ))}
+        </div>
+      )}
       {!pairCode ? (
-        <Button onClick={startPairing} disabled={busy} size="sm">
-          {busy && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
-          Start pairing
-        </Button>
+        needsConfirm && confirmArmed ? (
+          <div className="flex gap-2 items-center">
+            <Button
+              onClick={startPairing}
+              disabled={busy}
+              size="sm"
+              variant="destructive"
+              data-testid="pair-anyway-button"
+            >
+              {busy && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
+              Pair anyway
+            </Button>
+            <Button
+              onClick={() => setConfirmArmed(false)}
+              disabled={busy}
+              size="sm"
+              variant="outline"
+            >
+              Cancel
+            </Button>
+          </div>
+        ) : (
+          <Button
+            onClick={needsConfirm ? () => setConfirmArmed(true) : startPairing}
+            disabled={busy}
+            size="sm"
+            data-testid="start-pairing-button"
+          >
+            {busy && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
+            Start pairing
+          </Button>
+        )
       ) : (
         <div className="space-y-2">
           <Label className="text-xs">Pair code (valid for 5 minutes)</Label>
@@ -198,7 +282,7 @@ function PairDeviceStep({
 // Step 2 — Sign into Claude Code (poll precondition)
 // ----------------------------------------------------------------------------
 
-function ClaudeCodeStep({
+export function ClaudeCodeStep({
   status,
   onReady,
 }: {
@@ -211,6 +295,10 @@ function ClaudeCodeStep({
       onReady();
     }
   }, [status, onReady]);
+
+  // Not paired for THIS tenant but the user has device(s) paired to a
+  // different tenant → say so instead of the ambiguous bare "waiting".
+  const pairedElsewhere = (status?.paired_elsewhere ?? []).length > 0;
 
   return (
     <div className="space-y-3">
@@ -229,7 +317,11 @@ function ClaudeCodeStep({
           <span data-testid="paired-indicator">
             Device paired:{" "}
             <span className="font-mono">
-              {status?.paired ? "yes" : "waiting"}
+              {status?.paired
+                ? "yes"
+                : pairedElsewhere
+                  ? "paired to a different tenant"
+                  : "waiting"}
             </span>
           </span>
         </div>
@@ -690,13 +782,16 @@ export function MergeOrchestrationOnboarding() {
             paired: false,
             claude_code_available: false,
             ready: false,
+            paired_elsewhere: [],
           });
           return;
         }
         throw new Error(`HTTP ${res.status}`);
       }
       const data = (await res.json()) as PreconditionStatus;
-      setStatus(data);
+      // Older coord omits paired_elsewhere entirely — normalize missing to
+      // [] here so every consumer can treat the field as always-present.
+      setStatus({ ...data, paired_elsewhere: data.paired_elsewhere ?? [] });
       setPollErr(null);
     } catch (err) {
       log.warn("precondition poll failed", err);
@@ -747,7 +842,12 @@ export function MergeOrchestrationOnboarding() {
             available to all tenant members — a Developer pairs their own
             runner. Step 3 (repo audit) WRITES coord.tenant_repos, a
             tenant-config action, so it is admin-gated. */}
-        {step === 1 && <PairDeviceStep onPaired={() => pollStatus()} />}
+        {step === 1 && (
+          <PairDeviceStep
+            onPaired={() => pollStatus()}
+            pairedElsewhere={status?.paired_elsewhere}
+          />
+        )}
         {step === 2 && (
           <ClaudeCodeStep status={status} onReady={() => setStep(3)} />
         )}
