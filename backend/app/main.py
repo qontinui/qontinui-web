@@ -91,7 +91,6 @@ if settings.ENVIRONMENT == "production":
         "api.qontinui.io",
         "qontinui.com",
         "www.qontinui.com",
-        "app.qontinui.com",
     ]
 
     app.add_middleware(
