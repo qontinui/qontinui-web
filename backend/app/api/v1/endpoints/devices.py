@@ -25,7 +25,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from qontinui_schemas.common import utc_now
 from qontinui_schemas.generated.per_type.runner import (
     Runner as RunnerWire,
@@ -46,11 +46,15 @@ from app.api.deps import (
 from app.config.redis_config import get_redis
 from app.crud import device_connection as device_connection_crud
 from app.crud import device_crud
+from app.crud import device_machine_credential_crud as dmk_crud
+from app.models.devenv import DeviceMachineCredential
 from app.models.device import Device
 from app.models.user import User as UserModel
 from app.schemas.device import (
     DeviceConnectionResponse,
     DeviceIdentityResponse,
+    DeviceMachineCredentialExchangeResponse,
+    DeviceMachineCredentialMintResponse,
     DispatchDeviceRequest,
     DispatchDeviceResponse,
     PairCliRequest,
@@ -62,7 +66,7 @@ from app.services import coord_device
 from app.services.coord_identity import get_coord_identity
 from app.services.coord_proxy import post_to_coord
 from app.services.runner_websocket_manager import get_runner_websocket_manager
-from app.services.strategy import strategy_client
+from app.services.strategy import StrategyDisabledError, strategy_client
 from app.services.workflow_dispatcher import HEALTHY_HEARTBEAT_WINDOW_SECONDS
 
 logger = structlog.get_logger(__name__)
@@ -88,6 +92,72 @@ def _extract_caller_token(request: Request) -> str | None:
         if token:
             return token
     return None
+
+
+# ---------------------------------------------------------------------------
+# Device-machine-key (`dmk_`) authentication dependency — 4b cold-start
+#
+# Mirrors ``devenv_agent.get_authenticated_machine`` (the ``mk_`` header dep)
+# for a **device**-bound key sent as ``X-Device-Machine-Key: dmk_<token>``.
+# Resolves the credential from its sha256 hash with NO user JWT — the key is
+# the credential. The endpoint additionally asserts the credential's
+# ``device_id`` matches the path (anti-forgery); this dep only proves the key
+# itself is valid, non-revoked, and unexpired.
+# ---------------------------------------------------------------------------
+
+
+async def get_authenticated_device_credential(
+    x_device_machine_key: str = Header(alias="X-Device-Machine-Key"),
+    db: AsyncSession = Depends(get_async_db),
+) -> DeviceMachineCredential:
+    """Resolve + authenticate a device from its ``X-Device-Machine-Key``.
+
+    * Rejects keys without the ``dmk_`` prefix => 401.
+    * Looks up by sha256 hash; unknown => 401.
+    * Rejects a revoked credential => 403.
+    * Rejects an expired credential => 403.
+
+    The caller's device identity is whatever owns the matched credential; no
+    user session is required (this is the >30-day-offline recovery path).
+    """
+    if not x_device_machine_key or not x_device_machine_key.startswith(
+        dmk_crud.DEVICE_MACHINE_KEY_PREFIX
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "code": "invalid_device_machine_key",
+                "message": "Missing or malformed device machine key.",
+            },
+        )
+    cred = await dmk_crud.get_by_key(db, x_device_machine_key)
+    if cred is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "code": "invalid_device_machine_key",
+                "message": "Device machine key not recognized.",
+            },
+        )
+    if cred.revoked_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "device_machine_key_revoked",
+                "message": "This device machine key has been revoked.",
+            },
+        )
+    if not dmk_crud.is_usable(cred):
+        # Not revoked (handled above) => the only remaining unusable state is
+        # an expired credential.
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "device_machine_key_expired",
+                "message": "This device machine key has expired.",
+            },
+        )
+    return cred
 
 
 # ---------------------------------------------------------------------------
@@ -517,6 +587,7 @@ async def pair_confirm(
 async def pair_cli(
     *,
     request: Request,
+    db: AsyncSession = Depends(get_async_db),
     current_user: UserModel = Depends(get_current_active_user_async),
     payload: PairCliRequest,
 ) -> Any:
@@ -620,15 +691,43 @@ async def pair_cli(
             detail="Coord pair-cli returned malformed device_id.",
         ) from exc
 
+    # Auto-mint a device machine key (``dmk_``) for this device+owner so
+    # every paired runner receives one out-of-box (zero extra setup) and can
+    # recover a device JWT after a >30-day outage with no user session (4b).
+    # Best-effort: a mint failure must NEVER fail the pairing — the runner
+    # simply won't have the cold-start credential and falls back to the
+    # interactive re-login path. Additive field; existing consumers ignore it.
+    device_machine_key: str | None = None
+    try:
+        tenant_raw = coord_body.get("tenant_id")
+        tenant_id = UUID(str(tenant_raw)) if tenant_raw else None
+        device_machine_key, _cred = await dmk_crud.mint(
+            db,
+            device_id=device_uuid,
+            owner_user_id=current_user.id,
+            tenant_id=tenant_id,
+        )
+        await db.commit()
+    except Exception as exc:  # noqa: BLE001 — never break pairing on mint
+        device_machine_key = None
+        logger.warning(
+            "pair_cli_dmk_automint_failed",
+            user_id=str(current_user.id),
+            device_id=str(device_uuid),
+            error=str(exc),
+        )
+
     logger.info(
         "pair_cli_completed",
         user_id=str(current_user.id),
         device_id=str(device_uuid),
+        dmk_minted=device_machine_key is not None,
     )
     return PairCliResponse(
         device_id=device_uuid,
         token=str(coord_token),
         user_id=current_user.id,
+        device_machine_key=device_machine_key,
     )
 
 
@@ -745,3 +844,174 @@ async def dispatch_to_device(
         dispatched_at=utc_now(),
         transport="ws",
     )
+
+
+# ---------------------------------------------------------------------------
+# Device machine key (`dmk_`) — mint (user bearer) + exchange (dmk_ auth)
+#
+# The >30-day-offline cold-start recovery path (4b): a long-lived,
+# device-bound machine key the runner exchanges for a device JWT with NO user
+# session. Mint is user-authenticated (owner mints/rotates their device's
+# key); exchange is authenticated by the key itself and rides web's trusted
+# service token to coord's service-mint.
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{device_id}/machine-credential/mint",
+    response_model=DeviceMachineCredentialMintResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def mint_device_machine_credential(
+    *,
+    request: Request,
+    device_id: UUID,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> Any:
+    """Mint (or rotate) the calling user's device machine key for a device.
+
+    **User-bearer authenticated.** The caller MUST own ``device_id`` — this is
+    verified over coord's ownership boundary (``GET /coord/devices/:id/owned``,
+    the same check the single-device reads use); a non-owner gets 403. The
+    device's ``tenant_id`` is resolved server-side from the owned coord row
+    (never client-asserted). Returns the plaintext ``dmk_`` ONCE.
+    """
+    try:
+        row = await coord_device.get_owned_device(
+            request, device_id, str(current_user.id)
+        )
+    except HTTPException as exc:
+        # coord returns 404 for a device the caller doesn't own; surface it as
+        # a 403 (the caller is authenticated, just not the owner). Transport
+        # errors (502/504) propagate unchanged.
+        if exc.status_code == status.HTTP_404_NOT_FOUND:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "code": "device_not_owned",
+                    "message": "You do not own this device.",
+                },
+            ) from exc
+        raise
+
+    tenant_raw = row.get("tenant_id")
+    tenant_id = UUID(str(tenant_raw)) if tenant_raw else None
+
+    plaintext, cred = await dmk_crud.mint(
+        db,
+        device_id=device_id,
+        owner_user_id=current_user.id,
+        tenant_id=tenant_id,
+    )
+    await db.commit()
+
+    logger.info(
+        "device_machine_credential_minted",
+        user_id=str(current_user.id),
+        device_id=str(device_id),
+        dmk_prefix=cred.dmk_prefix,
+    )
+    return DeviceMachineCredentialMintResponse(
+        device_id=device_id,
+        device_machine_key=plaintext,
+        prefix=cred.dmk_prefix,
+        expires_at=cred.expires_at,
+    )
+
+
+@router.post(
+    "/{device_id}/machine-credential/exchange",
+    response_model=DeviceMachineCredentialExchangeResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def exchange_device_machine_credential(
+    *,
+    device_id: UUID,
+    db: AsyncSession = Depends(get_async_db),
+    cred: DeviceMachineCredential = Depends(get_authenticated_device_credential),
+) -> Any:
+    """Exchange a valid ``dmk_`` for a fresh device JWT — no user session.
+
+    Authenticated by the ``X-Device-Machine-Key`` header (the
+    :func:`get_authenticated_device_credential` dep already rejected an
+    unknown / revoked / expired key). The credential's ``device_id`` MUST
+    match the path (anti-forgery — a key for device A cannot mint a JWT for
+    device B => 403). On success ``last_used_at`` is bumped and the TTL slid
+    forward (sliding session), then web calls coord's service-mint with its
+    trusted service token; coord resolves the device's owner/tenant itself.
+
+    503 when the coord service bridge is disabled (``COORD_ADMIN_SECRET``
+    unset). A coord 4xx propagates as the matching client error.
+    """
+    if cred.device_id != device_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "device_mismatch",
+                "message": "Device machine key does not match this device.",
+            },
+        )
+
+    # Fail fast + honest 503 before doing any work when coord is disabled.
+    if not strategy_client.enabled:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Coord integration disabled (COORD_ADMIN_SECRET unset); "
+                "device machine-key exchange unavailable."
+            ),
+        )
+
+    # Bump usage + slide the TTL (an actively-recovering runner never lapses).
+    await dmk_crud.bump_last_used(db, cred)
+    await db.commit()
+
+    acting_user_id = str(cred.owner_user_id) if cred.owner_user_id else str(device_id)
+    try:
+        coord_status, coord_body = await strategy_client.mint_device_token(
+            acting_user_id, str(device_id)
+        )
+    except StrategyDisabledError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Coord integration disabled (COORD_ADMIN_SECRET unset); "
+                "device machine-key exchange unavailable."
+            ),
+        ) from exc
+
+    if coord_status not in (200, 201):
+        logger.warning(
+            "device_machine_credential_exchange_coord_rejected",
+            device_id=str(device_id),
+            status=coord_status,
+        )
+        # Propagate a coord client error (4xx) verbatim; treat everything
+        # else (5xx / transport) as a bad-gateway upstream failure.
+        if 400 <= coord_status < 500:
+            raise HTTPException(
+                status_code=coord_status,
+                detail={
+                    "code": "coord_mint_rejected",
+                    "message": "Coord rejected the device-token mint.",
+                },
+            )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"coord_status": coord_status},
+        )
+
+    token = coord_body.get("token") if isinstance(coord_body, dict) else None
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Coord service-mint response missing token.",
+        )
+
+    logger.info(
+        "device_machine_credential_exchanged",
+        device_id=str(device_id),
+        dmk_prefix=cred.dmk_prefix,
+    )
+    return DeviceMachineCredentialExchangeResponse(token=str(token))

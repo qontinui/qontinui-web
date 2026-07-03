@@ -156,3 +156,46 @@ class PairCliResponse(BaseModel):
     user_id: UUID = Field(
         ..., description="Calling user's UUID, echoed for the runner's decoder."
     )
+    device_machine_key: str | None = Field(
+        default=None,
+        description=(
+            "Long-lived device machine key (``dmk_<token>``) auto-minted at "
+            "pairing so a runner offline past its Cognito refresh window can "
+            "still exchange for a device JWT with no user session (4b "
+            "cold-start recovery). Returned ONCE — the plaintext is "
+            "unrecoverable thereafter. ``None`` when auto-mint is unavailable "
+            "(the runner falls back to the interactive re-login path)."
+        ),
+    )
+
+
+class DeviceMachineCredentialMintResponse(BaseModel):
+    """Response body for ``POST /api/v1/devices/{id}/machine-credential/mint``.
+
+    Delivers the freshly minted plaintext ``dmk_`` key exactly ONCE (only its
+    hash + prefix are persisted; the plaintext is unrecoverable after this
+    response). The ``prefix`` is a non-secret display fragment the owner can
+    use to recognize the key; ``expires_at`` is when the key lapses (renewed
+    opportunistically on each successful exchange).
+    """
+
+    device_id: UUID
+    device_machine_key: str = Field(
+        ..., description="Plaintext ``dmk_`` key — returned ONCE, never again."
+    )
+    prefix: str = Field(..., description="Non-secret display prefix (first 14 chars).")
+    expires_at: IsoDatetime | None = Field(
+        default=None, description="When the key lapses (UTC), or null if none."
+    )
+
+
+class DeviceMachineCredentialExchangeResponse(BaseModel):
+    """Response body for ``POST /api/v1/devices/{id}/machine-credential/exchange``.
+
+    The device JWT minted by coord (via web's trusted service token) in
+    exchange for a valid ``dmk_``. Shape mirrors the ``token`` the runner
+    already stores from the pairing flow, so the runner reuses its existing
+    device-JWT handling.
+    """
+
+    token: str = Field(..., description="Coord-issued device-token JWT.")

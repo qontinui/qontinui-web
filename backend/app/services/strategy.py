@@ -213,6 +213,29 @@ class StrategyClient:
             body = {"error": resp.text[:500]}
         return resp.status_code, body
 
+    # -- device machine-key exchange (4b cold-start recovery) ------------
+
+    async def mint_device_token(
+        self, acting_user_id: str, device_id: str
+    ) -> tuple[int, object]:
+        """Mint a device JWT for ``device_id`` via coord's service-mint.
+
+        Rides web's trusted service identity: coord's
+        ``POST /coord/devices/{device_id}/service-mint`` accepts our service
+        bearer and resolves the device's owner/tenant server-side from
+        ``coord.devices`` (web never asserts them). Used by the ``dmk_``
+        exchange endpoint after web has verified the credential.
+
+        Returns ``(status_code, body)``; raises :class:`StrategyDisabledError`
+        (via ``_ensure_token``) when the feature is off (COORD_ADMIN_SECRET
+        unset) so the caller can surface a 503.
+        """
+        return await self._post(
+            f"/coord/devices/{device_id}/service-mint",
+            acting_user_id,
+            json_body=None,
+        )
+
     async def list_docs(self, acting_user_id: str) -> tuple[int, object]:
         return await self._get("/strategy/docs", acting_user_id)
 
