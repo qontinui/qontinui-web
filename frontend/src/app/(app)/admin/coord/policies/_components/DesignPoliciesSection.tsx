@@ -12,6 +12,7 @@
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -123,7 +124,7 @@ export function DesignPoliciesSection() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<DesignPolicy | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
-  const [deleteTarget, setDeleteTarget] = useState<DesignPolicy | null>(null);
+  const [confirmTarget, setConfirmTarget] = useState<DesignPolicy | null>(null);
   const [resetOpen, setResetOpen] = useState(false);
 
   const openCreate = () => {
@@ -262,7 +263,7 @@ export function DesignPoliciesSection() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => setDeleteTarget(p)}
+                        onClick={() => setConfirmTarget(p)}
                         disabled={p.is_built_in}
                         title={
                           p.is_built_in
@@ -435,26 +436,28 @@ export function DesignPoliciesSection() {
 
       {/* Delete confirm */}
       <AlertDialog
-        open={deleteTarget !== null}
-        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        open={confirmTarget !== null}
+        onOpenChange={(open) => !open && setConfirmTarget(null)}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete policy?</AlertDialogTitle>
             <AlertDialogDescription>
-              &ldquo;{deleteTarget?.name}&rdquo; will be permanently removed for
+              &ldquo;{confirmTarget?.name}&rdquo; will be permanently removed for
               this tenant.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={async () => {
-                if (deleteTarget) await remove(deleteTarget.id);
-                setDeleteTarget(null);
-              }}
-            >
-              Delete
+            <AlertDialogAction asChild>
+              <DestructiveButton
+                onClick={async () => {
+                  if (confirmTarget) await remove(confirmTarget.id);
+                  setConfirmTarget(null);
+                }}
+              >
+                Delete
+              </DestructiveButton>
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -472,13 +475,15 @@ export function DesignPoliciesSection() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={async () => {
-                await reset();
-                setResetOpen(false);
-              }}
-            >
-              Reset
+            <AlertDialogAction asChild>
+              <DestructiveButton
+                onClick={async () => {
+                  await reset();
+                  setResetOpen(false);
+                }}
+              >
+                Reset
+              </DestructiveButton>
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
