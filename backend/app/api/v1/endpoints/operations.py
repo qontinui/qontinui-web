@@ -666,6 +666,7 @@ async def _proxy_coord_get(
     params: dict[str, Any] | None = None,
     tenant_id: UUID | None = None,
     forward_bearer: bool = False,
+    headers: dict[str, str] | None = None,
 ) -> Any:
     """Proxy a GET request to coord and return the JSON body.
 
@@ -699,15 +700,25 @@ async def _proxy_coord_get(
     best-effort ``tenant_id`` (possibly ``None``). Default False preserves
     the prior behavior exactly: no bearer is forwarded unless a tenant was
     resolved.
+
+    ``headers`` — extra request headers merged ON TOP of the bearer/tenant
+    headers (extra keys win on collision). Used by the onboarding
+    precondition proxy to forward ``X-Qontinui-User-Id`` so coord can
+    compute the caller's ``paired_elsewhere`` device list (plan
+    2026-07-02-multi-tenant-device-pairing-reconsideration Phase 1b).
+    Default ``None`` puts nothing extra on the wire.
     """
     url = f"{settings.COORD_URL}{path}"
+    request_headers: dict[str, str] | None
     if tenant_id is not None or forward_bearer:
-        headers = _tenant_headers(tenant_id)
+        request_headers = _tenant_headers(tenant_id)
     else:
-        headers = None
+        request_headers = None
+    if headers:
+        request_headers = {**(request_headers or {}), **headers}
     async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
         try:
-            resp = await client.get(url, params=params, headers=headers)
+            resp = await client.get(url, params=params, headers=request_headers)
         except httpx.ConnectError:
             raise HTTPException(
                 status_code=502,
@@ -1034,14 +1045,24 @@ async def get_pr_merge_decisions(
 @router.get("/pr-merge/onboarding/precondition-status")
 async def get_pr_merge_onboarding_precondition(
     tenant_id: UUID = Depends(get_tenant_id),
+    current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
-    """Return ``{paired, claude_code_available, ready}`` for the calling
-    tenant. Drives the onboarding wizard's polling loop on step 2 (the
-    "Sign into Claude Code on your device" verification step).
+    """Return ``{paired, claude_code_available, ready, paired_elsewhere}``
+    for the calling tenant. Drives the onboarding wizard's polling loop on
+    step 2 (the "Sign into Claude Code on your device" verification step).
+
+    ``X-Qontinui-User-Id`` is forwarded (same attribution header as the
+    pair paths in ``devices.py``) so coord can compute
+    ``paired_elsewhere`` — devices the CALLING USER has paired to a
+    DIFFERENT tenant, which a re-pair here would silently steal. Older
+    coord ignores the header and omits the field; the wizard treats a
+    missing ``paired_elsewhere`` as ``[]`` (plan
+    2026-07-02-multi-tenant-device-pairing-reconsideration Phase 1b).
     """
     return await _proxy_coord_get(
         "/pr-merge/onboarding/precondition-status",
         tenant_id=tenant_id,
+        headers={"X-Qontinui-User-Id": str(current_user.id)},
     )
 
 
@@ -1160,6 +1181,86 @@ async def get_pr_merge_onboarding_doctor(
         params={"repo": repo},
         tenant_id=tenant_id,
     )
+
+
+# ---- Zero-touch onboarding claim (Setup-URL OAuth code exchange) ----------
+#
+# The browser is redirected here post-install by GitHub's App Setup URL with
+# ``?code=&installation_id=&setup_action=install``. The onboarding-status page
+# POSTs the ``code`` + ``installation_id`` to this proxy, which forwards to
+# coord's ``POST /coord/onboarding/github-accounts/claim`` (coord PR #901).
+# Coord runs the GitHub OAuth code-exchange, verifies the operator administers
+# the installation's org, binds the account to the operator's Cognito tenant,
+# and enrolls the installation's repos. Coord returns
+# ``{ok, account_login, installation_id, tenant_id, enrolled}`` on success.
+#
+# This proxy uses the SAME operator auth + tenant/bearer propagation as the
+# doctor GET above (``get_tenant_id`` → bearer forwarded via ``_tenant_headers``)
+# so coord scopes the bind to the operator's own tenant. It PASSES coord's
+# status code + JSON body straight through — a 403 ``installation_not_
+# administered`` / 409 ``account_already_bound`` / 400 ``code_exchange_failed``
+# / 500 ``oauth_not_configured`` must surface to the browser with its own
+# status so the page can render the right message, NOT be collapsed to 500.
+COORD_ONBOARDING_CLAIM_PATH = "/coord/onboarding/github-accounts/claim"
+
+
+class OnboardingClaimRequest(BaseModel):
+    """Body for ``POST /pr-merge/onboarding/claim``.
+
+    ``code`` — the short-lived GitHub OAuth code from the Setup-URL redirect.
+    ``installation_id`` — the GitHub App installation id from the same
+    redirect. Both are echoed verbatim to coord's claim endpoint.
+    """
+
+    code: str
+    installation_id: int
+
+
+@router.post("/pr-merge/onboarding/claim")
+async def post_pr_merge_onboarding_claim(
+    body: OnboardingClaimRequest,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Self-serve onboarding: exchange the GitHub OAuth code + bind/enroll.
+
+    Proxies coord's ``POST /coord/onboarding/github-accounts/claim`` (coord
+    PR #901). Reuses the doctor proxy's auth exactly: ``get_tenant_id``
+    resolves the operator and captures the caller's bearer, which
+    ``_tenant_headers`` forwards to coord so coord binds the GitHub account
+    to the operator's own Cognito tenant.
+
+    Unlike the raising ``_proxy_coord_post`` helper (which collapses a coord
+    4xx/5xx into an ``HTTPException`` whose body is a stringified ``detail``),
+    this handler passes coord's status code AND JSON body through verbatim so
+    the onboarding-status page can render a status-specific message:
+    ``400 code_exchange_failed`` / ``403 installation_not_administered`` /
+    ``409 account_already_bound`` / ``500 oauth_not_configured``. httpx
+    transport errors mirror the shared helpers (ConnectError → 502,
+    TimeoutException → 504).
+    """
+    url = f"{settings.COORD_URL}{COORD_ONBOARDING_CLAIM_PATH}"
+    headers = _tenant_headers(tenant_id)
+    payload = {"code": body.code, "installation_id": body.installation_id}
+    async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
+        try:
+            resp = await client.post(url, json=payload, headers=headers)
+        except httpx.ConnectError:
+            raise HTTPException(
+                status_code=502,
+                detail="coord is not reachable",
+            )
+        except httpx.TimeoutException:
+            raise HTTPException(
+                status_code=504,
+                detail="timeout waiting for coord",
+            )
+    # Pass coord's status code + JSON body straight through. Fall back to a
+    # wrapped raw body if coord ever returns a non-JSON payload.
+    try:
+        content = resp.json()
+    except ValueError:
+        content = {"detail": resp.text}
+    return JSONResponse(content=content, status_code=resp.status_code)
 
 
 # ---- Coord device pairing — Step 1 of the onboarding wizard -------------
