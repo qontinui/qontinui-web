@@ -11781,6 +11781,60 @@
         "title": "DeviceIdentityResponse",
         "type": "object"
       },
+      "DeviceMachineCredentialExchangeResponse": {
+        "description": "Response body for ``POST /api/v1/devices/{id}/machine-credential/exchange``.\n\nThe device JWT minted by coord (via web's trusted service token) in\nexchange for a valid ``dmk_``. Shape mirrors the ``token`` the runner\nalready stores from the pairing flow, so the runner reuses its existing\ndevice-JWT handling.",
+        "properties": {
+          "token": {
+            "description": "Coord-issued device-token JWT.",
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "DeviceMachineCredentialExchangeResponse",
+        "type": "object"
+      },
+      "DeviceMachineCredentialMintResponse": {
+        "description": "Response body for ``POST /api/v1/devices/{id}/machine-credential/mint``.\n\nDelivers the freshly minted plaintext ``dmk_`` key exactly ONCE (only its\nhash + prefix are persisted; the plaintext is unrecoverable after this\nresponse). The ``prefix`` is a non-secret display fragment the owner can\nuse to recognize the key; ``expires_at`` is when the key lapses (renewed\nopportunistically on each successful exchange).",
+        "properties": {
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "device_machine_key": {
+            "description": "Plaintext ``dmk_`` key \u2014 returned ONCE, never again.",
+            "title": "Device Machine Key",
+            "type": "string"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the key lapses (UTC), or null if none.",
+            "title": "Expires At"
+          },
+          "prefix": {
+            "description": "Non-secret display prefix (first 14 chars).",
+            "title": "Prefix",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "device_machine_key",
+          "prefix"
+        ],
+        "title": "DeviceMachineCredentialMintResponse",
+        "type": "object"
+      },
       "DeviceSessionSummary": {
         "description": "Simplified device session schema for user-facing API.\n\nHides sensitive information like device fingerprint.",
         "properties": {
@@ -25876,6 +25930,18 @@
             "format": "uuid",
             "title": "Device Id",
             "type": "string"
+          },
+          "device_machine_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Long-lived device machine key (``dmk_<token>``) auto-minted at pairing so a runner offline past its Cognito refresh window can still exchange for a device JWT with no user session (4b cold-start recovery). Returned ONCE \u2014 the plaintext is unrecoverable thereafter. ``None`` when auto-mint is unavailable (the runner falls back to the interactive re-login path).",
+            "title": "Device Machine Key"
           },
           "token": {
             "description": "Coord-issued device-token JWT.",
@@ -58038,6 +58104,108 @@
           }
         ],
         "summary": "Dispatch To Device",
+        "tags": [
+          "devices"
+        ]
+      }
+    },
+    "/api/v1/devices/{device_id}/machine-credential/exchange": {
+      "post": {
+        "description": "Exchange a valid ``dmk_`` for a fresh device JWT \u2014 no user session.\n\nAuthenticated by the ``X-Device-Machine-Key`` header (the\n:func:`get_authenticated_device_credential` dep already rejected an\nunknown / revoked / expired key). The credential's ``device_id`` MUST\nmatch the path (anti-forgery \u2014 a key for device A cannot mint a JWT for\ndevice B => 403). On success ``last_used_at`` is bumped and the TTL slid\nforward (sliding session), then web calls coord's service-mint with its\ntrusted service token; coord resolves the device's owner/tenant itself.\n\n503 when the coord service bridge is disabled (``COORD_ADMIN_SECRET``\nunset). A coord 4xx propagates as the matching client error.",
+        "operationId": "api_v1_devices_device_id_machine_credential_exchange_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Device Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Device-Machine-Key",
+            "required": true,
+            "schema": {
+              "title": "X-Device-Machine-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceMachineCredentialExchangeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Exchange Device Machine Credential",
+        "tags": [
+          "devices"
+        ]
+      }
+    },
+    "/api/v1/devices/{device_id}/machine-credential/mint": {
+      "post": {
+        "description": "Mint (or rotate) the calling user's device machine key for a device.\n\n**User-bearer authenticated.** The caller MUST own ``device_id`` \u2014 this is\nverified over coord's ownership boundary (``GET /coord/devices/:id/owned``,\nthe same check the single-device reads use); a non-owner gets 403. The\ndevice's ``tenant_id`` is resolved server-side from the owned coord row\n(never client-asserted). Returns the plaintext ``dmk_`` ONCE.",
+        "operationId": "api_v1_devices_device_id_machine_credential_mint_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Device Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceMachineCredentialMintResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Mint Device Machine Credential",
         "tags": [
           "devices"
         ]
