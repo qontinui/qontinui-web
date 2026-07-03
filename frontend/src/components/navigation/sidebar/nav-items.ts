@@ -31,6 +31,7 @@ import {
   CalendarClock,
   GitCommitHorizontal,
   Boxes,
+  Download,
 } from "lucide-react";
 import type { NavItem } from "./types";
 
@@ -61,6 +62,20 @@ export const devNavItems: NavItem[] = [
     description: "Online runners, session history, and auth tokens",
     icon: React.createElement(Server, { className: "size-5" }),
     route: "/runners",
+    color: "#10B981",
+    group: "Coordination",
+  },
+
+  // Download the Qontinui Runner desktop app. Points at the in-app /download
+  // page (resolves the latest release dynamically). The public marketing
+  // header links /runner/download; the app shell had no download entry until
+  // this item, so a logged-in user could not reach the installer from the menu.
+  {
+    id: "download-runner",
+    label: "Download Runner",
+    description: "Download the Qontinui Runner desktop app",
+    icon: React.createElement(Download, { className: "size-5" }),
+    route: "/download",
     color: "#10B981",
     group: "Coordination",
   },
