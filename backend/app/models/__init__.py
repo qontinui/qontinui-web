@@ -46,6 +46,7 @@ from app.models.collaboration import (
 )
 from app.models.coverage_snapshot import CoverageSnapshot
 from app.models.custom_function import CustomFunction
+from app.models.design_policy import DesignPolicy
 from app.models.detected_issue import DetectedIssue
 from app.models.device import Device
 from app.models.device_connection import DeviceConnection
@@ -74,7 +75,6 @@ from app.models.execution_tree_event import (
 )
 from app.models.extraction import ExtractionAnnotation, ExtractionSession
 from app.models.feedback_score import FeedbackScore
-from app.models.design_policy import DesignPolicy
 from app.models.finding_category_config import FindingCategoryConfig
 from app.models.known_issue import KnownIssue
 from app.models.machine_display_name import MachineDisplayName

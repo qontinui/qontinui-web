@@ -10962,6 +10962,308 @@
         "title": "DeficiencyUpdate",
         "type": "object"
       },
+      "DesignPolicyCreate": {
+        "description": "Schema for creating a design policy.",
+        "properties": {
+          "applies_to": {
+            "default": "",
+            "maxLength": 255,
+            "title": "Applies To",
+            "type": "string"
+          },
+          "category": {
+            "default": "",
+            "maxLength": 50,
+            "title": "Category",
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "enforcement": {
+            "default": "",
+            "title": "Enforcement",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 255,
+            "title": "Name",
+            "type": "string"
+          },
+          "principle": {
+            "default": "",
+            "title": "Principle",
+            "type": "string"
+          },
+          "rationale": {
+            "default": "",
+            "title": "Rationale",
+            "type": "string"
+          },
+          "severity": {
+            "default": "info",
+            "enum": [
+              "info",
+              "warning",
+              "error"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "slug": {
+            "maxLength": 100,
+            "title": "Slug",
+            "type": "string"
+          },
+          "sort_order": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Sort Order",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "slug",
+          "name"
+        ],
+        "title": "DesignPolicyCreate",
+        "type": "object"
+      },
+      "DesignPolicyListResponse": {
+        "description": "List response for design policies.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DesignPolicyResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "count"
+        ],
+        "title": "DesignPolicyListResponse",
+        "type": "object"
+      },
+      "DesignPolicyResponse": {
+        "description": "Response schema for a design policy.",
+        "properties": {
+          "applies_to": {
+            "default": "",
+            "maxLength": 255,
+            "title": "Applies To",
+            "type": "string"
+          },
+          "category": {
+            "default": "",
+            "maxLength": 50,
+            "title": "Category",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "enforcement": {
+            "default": "",
+            "title": "Enforcement",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_built_in": {
+            "title": "Is Built In",
+            "type": "boolean"
+          },
+          "name": {
+            "maxLength": 255,
+            "title": "Name",
+            "type": "string"
+          },
+          "principle": {
+            "default": "",
+            "title": "Principle",
+            "type": "string"
+          },
+          "rationale": {
+            "default": "",
+            "title": "Rationale",
+            "type": "string"
+          },
+          "severity": {
+            "default": "info",
+            "enum": [
+              "info",
+              "warning",
+              "error"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "slug": {
+            "maxLength": 100,
+            "title": "Slug",
+            "type": "string"
+          },
+          "sort_order": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Sort Order",
+            "type": "integer"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "name",
+          "id",
+          "tenant_id",
+          "is_built_in",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "DesignPolicyResponse",
+        "type": "object"
+      },
+      "DesignPolicyUpdate": {
+        "description": "Schema for updating a design policy (all fields optional).",
+        "properties": {
+          "applies_to": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applies To"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "enforcement": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enforcement"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "principle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Principle"
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rationale"
+          },
+          "severity": {
+            "anyOf": [
+              {
+                "enum": [
+                  "info",
+                  "warning",
+                  "error"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Severity"
+          },
+          "sort_order": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort Order"
+          }
+        },
+        "title": "DesignPolicyUpdate",
+        "type": "object"
+      },
       "DetectedIssueCreate": {
         "description": "Schema for creating a detected issue.",
         "properties": {
@@ -53530,6 +53832,199 @@
         "summary": "Get Confidence Histogram",
         "tags": [
           "training-datasets"
+        ]
+      }
+    },
+    "/api/v1/design-policies/": {
+      "get": {
+        "operationId": "api_v1_design_policies_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesignPolicyListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List design policies for the caller's tenant",
+        "tags": [
+          "design-policies"
+        ]
+      },
+      "post": {
+        "operationId": "api_v1_design_policies_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DesignPolicyCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesignPolicyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Create a custom design policy",
+        "tags": [
+          "design-policies"
+        ]
+      }
+    },
+    "/api/v1/design-policies/reset": {
+      "post": {
+        "operationId": "api_v1_design_policies_reset_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesignPolicyListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Reset design policies to the built-in defaults",
+        "tags": [
+          "design-policies"
+        ]
+      }
+    },
+    "/api/v1/design-policies/{policy_id}": {
+      "delete": {
+        "operationId": "api_v1_design_policies_policy_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "policy_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Policy Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete a custom design policy",
+        "tags": [
+          "design-policies"
+        ]
+      },
+      "put": {
+        "operationId": "api_v1_design_policies_policy_id_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "policy_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Policy Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DesignPolicyUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesignPolicyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update a design policy",
+        "tags": [
+          "design-policies"
         ]
       }
     },
