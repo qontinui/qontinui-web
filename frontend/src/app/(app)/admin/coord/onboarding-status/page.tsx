@@ -25,6 +25,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { OnboardingDoctor } from "@/components/operations/OnboardingDoctor";
 import { OPERATIONS_API } from "@/components/operations/utils";
@@ -159,6 +160,20 @@ export default function OnboardingStatusPage() {
 
   return (
     <div className="p-3 sm:p-6 space-y-3" data-testid="coord-onboarding-status-page">
+      {/* Bare status/doctor visits (no claim params) get a subtle pointer back
+          to the primary self-serve entry point. Hidden during/after a claim so
+          it never competes with the claim result. */}
+      {phase === null && (
+        <p className="text-xs text-muted-foreground">
+          <Link
+            href="/admin/coord/onboarding"
+            className="underline underline-offset-4 hover:text-foreground"
+          >
+            New here? Connect your GitHub organization →
+          </Link>
+        </p>
+      )}
+
       {phase === "claiming" && (
         <Card data-testid="onboarding-claim-claiming">
           <CardContent className="flex items-center gap-2 py-6 text-sm">

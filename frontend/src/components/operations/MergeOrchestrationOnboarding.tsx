@@ -16,7 +16,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -819,7 +825,13 @@ export function MergeOrchestrationOnboarding() {
   return (
     <Card className="mb-4" data-testid="merge-onboarding-card">
       <CardHeader className="pb-3">
-        <CardTitle className="text-base">Merge Orchestrator onboarding</CardTitle>
+        <CardTitle className="text-base">Pair an autonomous-dev runner</CardTitle>
+        <CardDescription>
+          Optional — for AI-driven development. Pair a device running the
+          Qontinui runner so it can audit repos and drive automated changes.
+          Connecting your GitHub repositories for merge orchestration is handled
+          above and no longer requires this.
+        </CardDescription>
       </CardHeader>
       <CardContent>
         {pollErr && (
