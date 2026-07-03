@@ -48,15 +48,38 @@ interface RuleEditorDialogProps {
 }
 
 /**
- * Validate a regex pattern with the browser engine (JS `RegExp`). NOTE: coord
- * re-validates with the Rust `regex` crate on CRUD (which rejects lookaround /
- * backrefs JS allows) and returns 422 — surfaced as a toast — so this is a
- * fast client-side hint, not the authority.
+ * Validate a regex pattern against the RUST `regex` dialect that actually runs
+ * the rule (coord validates on CRUD → 422; the runner matches with the same
+ * engine). This is a best-effort client hint aligned to Rust rather than raw
+ * JS `RegExp`, which is a different dialect in both directions:
+ *  - Inline flags like `(?i)` / `(?im)` are VALID in Rust but *throw* in JS
+ *    `RegExp` — so we strip a leading bare-flag group before the JS syntax
+ *    check to avoid false-rejecting valid patterns (the exact case that tripped
+ *    up authoring — use the case-insensitive toggle OR a leading `(?i)`).
+ *  - Lookaround (`(?=)`, `(?!)`, `(?<=)`, `(?<!)`) and backreferences (`\1`,
+ *    `\k<name>`) are accepted by JS but REJECTED by Rust `regex` — we flag them
+ *    up front, since coord would 422 them on save.
+ * coord's 422 remains the authority; this just steers authors correctly. See
+ * qontinui-web#635.
  */
 function regexError(pattern: string): string | null {
   if (!pattern) return null;
+
+  // Constructs JS `RegExp` accepts but the Rust `regex` engine rejects — coord
+  // would 422 these, so surface them as errors here rather than passing them.
+  if (/\(\?<?[=!]/.test(pattern)) {
+    return "Lookaround ((?=), (?!), (?<=), (?<!)) isn't supported by the rule engine (Rust regex).";
+  }
+  if (/\\[1-9]/.test(pattern) || /\\k<[^>]+>/.test(pattern)) {
+    return "Backreferences (\\1, \\k<name>) aren't supported by the rule engine (Rust regex).";
+  }
+
+  // Rust accepts a leading inline-flag group (`(?i)`, `(?im)`, …) that JS
+  // `RegExp` rejects; strip it before the JS syntax check so valid patterns
+  // aren't false-flagged. (Rust flags: i, m, s, x, u, U.)
+  const forSyntaxCheck = pattern.replace(/^\(\?[imsxuU]+\)/, "");
   try {
-    void new RegExp(pattern);
+    void new RegExp(forSyntaxCheck);
     return null;
   } catch (err) {
     return err instanceof Error ? err.message : "Invalid regular expression";

@@ -602,6 +602,38 @@ class TestDevenvEndToEnd:
             assert r.json()["detail"]["code"] == "machine_id_mismatch"
 
     @pytest.mark.asyncio
+    async def test_enroll_persists_coord_device_id(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """Enrolling with a coord_device_id persists the P3 coord bridge."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        coord_device_id = str(uuid4())
+        async with _client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines", json={"name": "coord-bridged"}
+            )
+            assert r.status_code == 201, r.text
+            body = r.json()
+            machine_id = body["id"]
+            # Unbridged at create.
+            assert body["coord_device_id"] is None
+
+            r = await client.post(
+                f"{API_PREFIX}/agent/enroll",
+                json={
+                    "enrollment_code": body["enrollment_code"],
+                    "machine_id": machine_id,
+                    "coord_device_id": coord_device_id,
+                },
+            )
+            assert r.status_code == 200, r.text
+
+            # The owner read surface exposes the persisted bridge.
+            r = await client.get(f"{API_PREFIX}/machines/{machine_id}")
+            assert r.status_code == 200, r.text
+            assert r.json()["coord_device_id"] == coord_device_id
+
+    @pytest.mark.asyncio
     async def test_cross_owner_isolation(
         self, async_db_session: AsyncSession, test_user, second_user
     ) -> None:
@@ -745,3 +777,67 @@ class TestDevenvMachineEnvBinding:
             # Two envs exist, so the v1 heuristic would bind None — the explicit
             # binding wins.
             assert r.json()["environment_id"] == env2_id
+
+
+class TestDispatchEnroll:
+    """Phase 3 — POST /machines/dispatch-enroll creates a machine, binds it to
+    the chosen coord device, and dispatches an enroll directive via coord."""
+
+    @pytest.mark.asyncio
+    async def test_dispatch_success(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+
+        async def _fake_post(path, *, headers, json_body, log_event, **kw):
+            captured["path"] = path
+            captured["body"] = json_body
+            return httpx.Response(200, json={"dispatched": True})
+
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.post_to_coord", _fake_post
+        )
+        device_id = str(uuid4())
+        async with _client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines/dispatch-enroll",
+                json={"name": "dispatch-me", "target_device_id": device_id},
+            )
+        assert r.status_code == 201, r.text
+        body = r.json()
+        assert body["dispatched"] is True
+        machine = body["machine"]
+        # Machine created with a one-time code, bound to the chosen device.
+        assert machine["enrollment_code"]
+        assert machine["coord_device_id"] == device_id
+        assert "machine_key" not in machine and "key_hash" not in machine
+        # Coord received the correct directive.
+        assert captured["path"] == "/devenv/enroll-dispatch"
+        assert captured["body"]["target_device_id"] == device_id
+        assert captured["body"]["enrollment_code"] == machine["enrollment_code"]
+        assert captured["body"]["machine_id"] == machine["id"]
+
+    @pytest.mark.asyncio
+    async def test_dispatch_rejection_still_creates_machine(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        app = _build_app(db_session=async_db_session, user=test_user)
+
+        async def _fake_post(path, *, headers, json_body, log_event, **kw):
+            return httpx.Response(400, json={"error": "unknown device"})
+
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.post_to_coord", _fake_post
+        )
+        async with _client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines/dispatch-enroll",
+                json={"name": "offline-box", "target_device_id": str(uuid4())},
+            )
+        # The machine + code are still created (copy-paste fallback), dispatch soft-fails.
+        assert r.status_code == 201, r.text
+        body = r.json()
+        assert body["dispatched"] is False
+        assert body["detail"]
+        assert body["machine"]["enrollment_code"]

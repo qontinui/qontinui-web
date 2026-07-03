@@ -101,6 +101,7 @@ class Machine(Base):
         Index("idx_devenv_machine_key_hash", "key_hash"),
         Index("idx_devenv_machine_enrollment_code", "enrollment_code"),
         Index("idx_devenv_machine_environment", "environment_id"),
+        Index("idx_devenv_machine_coord_device", "coord_device_id"),
         {"schema": _SCHEMA},
     )
 
@@ -129,6 +130,14 @@ class Machine(Base):
     # + nulls the binding on environment delete; the ORM just treats it as a
     # plain column.
     environment_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), nullable=True
+    )
+    # P3 bridge to coord's device registry (``coord.devices.device_id``).
+    # Deliberately NOT a FK (cross-surface soft pointer; coord devices may be
+    # reaped/re-enrolled without devenv knowing — see devenv_03 migration).
+    # Populated at agent enroll (the agent asserts its coord device id) or by
+    # the unambiguous-hostname backfill.
+    coord_device_id: Mapped[uuid.UUID | None] = mapped_column(
         PGUUID(as_uuid=True), nullable=True
     )
     enrollment_code: Mapped[str | None] = mapped_column(String(16), nullable=True)
@@ -267,4 +276,68 @@ class MachineEnvironmentConfig(Base):
         return (
             f"<MachineEnvironmentConfig(env={self.environment_id}, "
             f"machine={self.machine_id})>"
+        )
+
+
+class DeviceMachineCredential(Base):
+    """A device-bound machine key (``devenv.device_machine_credentials``).
+
+    A long-lived, hash-at-rest bearer credential (``dmk_<token>``) a paired
+    runner can exchange for a device JWT with NO user session — the >30-day
+    cold-start recovery path (4b). Mirrors the ``devenv.machines`` ``mk_``
+    idiom: only the sha256 ``dmk_hash`` + a short ``dmk_prefix`` are stored;
+    the plaintext is returned to the runner exactly ONCE at mint time.
+
+    ``device_id`` is a **soft, cross-schema reference** to
+    ``coord.devices.device_id`` — deliberately NOT a FK (coord devices may
+    be reaped/re-enrolled without devenv knowing; also avoids a cross-schema
+    FK that ``coord-db-tests`` would reject). Device existence is validated
+    in application code. UNIQUE on ``device_id`` => one active dmk_ per
+    device; re-mint UPSERTs the row.
+    """
+
+    __tablename__ = "device_machine_credentials"
+    __table_args__ = (
+        UniqueConstraint("device_id", name="uq_devenv_dmk_device_id"),
+        Index("idx_devenv_dmk_hash", "dmk_hash"),
+        Index("idx_devenv_dmk_owner_device", "owner_user_id", "device_id"),
+        {"schema": _SCHEMA},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    # Soft pointer to coord.devices.device_id (NOT a FK — see class docstring).
+    device_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    owner_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    dmk_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    dmk_prefix: Mapped[str] = mapped_column(String(16), nullable=False)
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), nullable=True
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    def __repr__(self) -> str:
+        """Return repr; never includes key material."""
+        return (
+            f"<DeviceMachineCredential(id={self.id}, "
+            f"device_id={self.device_id}, "
+            f"revoked={self.revoked_at is not None})>"
         )

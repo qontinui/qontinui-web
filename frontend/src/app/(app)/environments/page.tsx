@@ -36,6 +36,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Activity,
   AppWindow,
   Boxes,
   ChevronRight,
@@ -167,6 +168,12 @@ export default function EnvironmentsPage() {
             <Link href="/environments/applications">
               <AppWindow className="size-4" />
               Applications
+            </Link>
+          </Button>
+          <Button variant="outline" size="sm" asChild>
+            <Link href="/environments/sessions">
+              <Activity className="size-4" />
+              Sessions
             </Link>
           </Button>
           <Button

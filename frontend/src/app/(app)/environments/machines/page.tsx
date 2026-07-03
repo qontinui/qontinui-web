@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,6 +19,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
+  Activity,
   AlertTriangle,
   KeyRound,
   Loader2,
@@ -29,6 +31,7 @@ import {
 } from "lucide-react";
 import { relativeTime } from "@/components/operations/utils";
 import { EnrollCodeModal } from "../_components/EnrollCodeModal";
+import { DispatchMachineModal } from "../_components/DispatchMachineModal";
 import { MachineEnvironmentSelector } from "../_components/MachineEnvironmentSelector";
 import {
   createMachine,
@@ -61,6 +64,7 @@ export default function MachinesPage() {
   const [enrollMachine, setEnrollMachine] = useState<MachineCreated | null>(
     null
   );
+  const [dispatchOpen, setDispatchOpen] = useState(false);
 
   const fetchMachines = useCallback(async () => {
     // The auth token can lag a first paint right after login (e.g. landing
@@ -177,6 +181,16 @@ export default function MachinesPage() {
         machine={enrollMachine}
         onClose={() => setEnrollMachine(null)}
       />
+      <DispatchMachineModal
+        open={dispatchOpen}
+        environments={environments}
+        onClose={() => setDispatchOpen(false)}
+        onDispatched={() => {
+          setLoading(true);
+          fetchMachines();
+        }}
+        onFallback={(machine) => setEnrollMachine(machine)}
+      />
 
       <div className="flex items-center justify-between">
         <div>
@@ -188,17 +202,26 @@ export default function MachinesPage() {
             Register machines and manage their enrollment credentials
           </p>
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => {
-            setLoading(true);
-            fetchMachines();
-          }}
-          className="text-muted-foreground hover:text-foreground"
-        >
-          <RefreshCw className="size-4" />
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="brand-primary"
+            size="sm"
+            onClick={() => setDispatchOpen(true)}
+          >
+            Enroll a paired machine
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setLoading(true);
+              fetchMachines();
+            }}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <RefreshCw className="size-4" />
+          </Button>
+        </div>
       </div>
 
       {/* Add machine form */}
@@ -330,6 +353,15 @@ export default function MachinesPage() {
                         <span>
                           last seen {relativeTime(machine.last_seen_at)}
                         </span>
+                        {machine.coord_device_id && (
+                          <Link
+                            href={`/environments/sessions?device=${encodeURIComponent(machine.coord_device_id)}`}
+                            className="inline-flex items-center gap-1 text-primary hover:underline"
+                          >
+                            <Activity className="size-3" />
+                            sessions
+                          </Link>
+                        )}
                       </div>
                     </div>
                   </div>

@@ -86,10 +86,61 @@ class TestListAgentSessionsProxy:
             client = TestClient(app)
             resp = client.get("/api/v1/admin/agent-sessions")
         assert resp.status_code == 200
-        # The web layer returns coord's envelope verbatim.
-        assert resp.json() == coord_payload
+        # The web layer returns coord's envelope with only the two name
+        # fields added (session-identity-registry enrichment); every
+        # coord-supplied field passes through verbatim.
+        body = resp.json()
+        assert body["count"] == 1
+        (row,) = body["sessions"]
+        for key, value in coord_payload["sessions"][0].items():
+            assert row[key] == value
+        # Old-coord payload (no derived_name) → derived_name None,
+        # name falls back to label.
+        assert row["derived_name"] is None
+        assert row["name"] == "ufix-2026-05-18"
+        assert set(row) == set(coord_payload["sessions"][0]) | {
+            "derived_name",
+            "name",
+        }
         # Called the right coord path.
         assert mock_get.call_args.args[0] == "/coord/agent-sessions"
+
+    def test_name_fields_enrichment(self):
+        """derived_name passes through; name = label if set else derived_name."""
+        coord_payload = {
+            "sessions": [
+                # label wins over derived_name.
+                {
+                    "id": str(uuid4()),
+                    "label": "operator-label",
+                    "derived_name": "fix-web-enroll-bridge",
+                },
+                # No label → name falls back to derived_name.
+                {
+                    "id": str(uuid4()),
+                    "label": None,
+                    "derived_name": "fix-web-enroll-bridge",
+                },
+                # Neither → both None.
+                {"id": str(uuid4()), "label": None},
+            ],
+            "count": 3,
+        }
+        app = _build_app()
+        with patch(
+            "app.api.v1.endpoints.agent_sessions._proxy_coord_get",
+            new=AsyncMock(return_value=coord_payload),
+        ):
+            client = TestClient(app)
+            resp = client.get("/api/v1/admin/agent-sessions")
+        assert resp.status_code == 200
+        labeled, derived_only, bare = resp.json()["sessions"]
+        assert labeled["name"] == "operator-label"
+        assert labeled["derived_name"] == "fix-web-enroll-bridge"
+        assert derived_only["name"] == "fix-web-enroll-bridge"
+        assert derived_only["derived_name"] == "fix-web-enroll-bridge"
+        assert bare["name"] is None
+        assert bare["derived_name"] is None
 
     def test_forwards_all_filters_as_query_params(self):
         uid = uuid4()
@@ -122,6 +173,105 @@ class TestListAgentSessionsProxy:
         assert p["user_id"] == str(uid)
         assert p["limit"] == 42
         assert p["since"].startswith("2026-05-18T00:00:00")
+
+    def test_forwards_identity_registry_filters(self):
+        """q / status / device_id / repo (coord PR #894) forward to coord."""
+        did = uuid4()
+        app = _build_app()
+        captured: dict[str, Any] = {}
+
+        async def fake_proxy(path, *, params=None):  # noqa: ANN001
+            captured["path"] = path
+            captured["params"] = params
+            return {"sessions": [], "count": 0}
+
+        with patch(
+            "app.api.v1.endpoints.agent_sessions._proxy_coord_get",
+            new=fake_proxy,
+        ):
+            client = TestClient(app)
+            resp = client.get(
+                "/api/v1/admin/agent-sessions",
+                params={
+                    "q": "enroll bridge",
+                    "status": "stale",
+                    "device_id": str(did),
+                    "repo": "qontinui/qontinui-web",
+                },
+            )
+        assert resp.status_code == 200
+        p = captured["params"]
+        assert p["q"] == "enroll bridge"
+        assert p["status"] == "stale"
+        assert p["device_id"] == str(did)
+        assert p["repo"] == "qontinui/qontinui-web"
+
+    def test_identity_registry_filters_omitted_when_unset(self):
+        """Unset new filters are NOT forwarded (old coords reject unknowns)."""
+        app = _build_app()
+        captured: dict[str, Any] = {}
+
+        async def fake_proxy(path, *, params=None):  # noqa: ANN001
+            captured["params"] = params
+            return {"sessions": [], "count": 0}
+
+        with patch(
+            "app.api.v1.endpoints.agent_sessions._proxy_coord_get",
+            new=fake_proxy,
+        ):
+            client = TestClient(app)
+            resp = client.get("/api/v1/admin/agent-sessions")
+        assert resp.status_code == 200
+        for key in ("q", "status", "device_id", "repo"):
+            assert key not in captured["params"]
+
+    def test_invalid_status_is_422_no_coord_call(self):
+        app = _build_app()
+        mock = AsyncMock(return_value={"sessions": [], "count": 0})
+        with patch("app.api.v1.endpoints.agent_sessions._proxy_coord_get", new=mock):
+            client = TestClient(app)
+            resp = client.get("/api/v1/admin/agent-sessions?status=zombie")
+        assert resp.status_code == 422
+        mock.assert_not_awaited()
+
+    def test_invalid_device_id_is_422_no_coord_call(self):
+        app = _build_app()
+        mock = AsyncMock(return_value={"sessions": [], "count": 0})
+        with patch("app.api.v1.endpoints.agent_sessions._proxy_coord_get", new=mock):
+            client = TestClient(app)
+            resp = client.get("/api/v1/admin/agent-sessions?device_id=not-a-uuid")
+        assert resp.status_code == 422
+        mock.assert_not_awaited()
+
+    def test_new_row_fields_and_search_degraded_pass_through(self):
+        """summary/status per-row + top-level search_degraded pass verbatim."""
+        coord_payload = {
+            "sessions": [
+                {
+                    "id": str(uuid4()),
+                    "label": None,
+                    "derived_name": "proud-nimbus-rooster",
+                    "summary": "P4 twin sessions UI in qontinui-web",
+                    "status": "live",
+                }
+            ],
+            "count": 1,
+            "search_degraded": True,
+        }
+        app = _build_app()
+        with patch(
+            "app.api.v1.endpoints.agent_sessions._proxy_coord_get",
+            new=AsyncMock(return_value=coord_payload),
+        ):
+            client = TestClient(app)
+            resp = client.get("/api/v1/admin/agent-sessions?q=twin")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["search_degraded"] is True
+        (row,) = body["sessions"]
+        assert row["summary"] == "P4 twin sessions UI in qontinui-web"
+        assert row["status"] == "live"
+        assert row["name"] == "proud-nimbus-rooster"
 
     def test_default_limit_forwarded_is_100(self):
         app = _build_app()
@@ -197,6 +347,131 @@ class TestListAgentSessionsProxy:
         ):
             client = TestClient(test_app)
             resp = client.get("/api/v1/admin/agent-sessions")
+        assert resp.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# GET /admin/agent-sessions/{key}  → coord GET /coord/agent-sessions/:id
+# ---------------------------------------------------------------------------
+
+
+class TestResolveAgentSessionProxy:
+    def test_passes_through_resolver_envelope(self):
+        sid = str(uuid4())
+        card = {
+            "id": sid,
+            "name": "proud-nimbus-rooster",
+            "label": None,
+            "derived_name": "proud-nimbus-rooster",
+            "user_id": None,
+            "device_id": str(uuid4()),
+            "first_seen": "2026-07-01T12:00:00+00:00",
+            "last_seen": "2026-07-02T12:00:00+00:00",
+            "closed_at": None,
+            "status": "live",
+            "machine": {
+                "id": str(uuid4()),
+                "name": "spaceship",
+                "hostname": "spaceship.local",
+                "environment": {"id": str(uuid4()), "name": "dev"},
+            },
+            "summary": "P4 twin sessions UI",
+            "working_on": {
+                "session": {
+                    "intent_purpose": "P4 twin sessions UI",
+                    "plan_slug": "2026-07-02-digital-twin-session-identity-registry",
+                    "correlation_topic": None,
+                    "repo": "qontinui/qontinui-web",
+                    "branch": "feat/session-identity-registry",
+                    "provider": "claude",
+                    "session_kind": "terminal_claude",
+                    "state": "active",
+                },
+                "commits": [
+                    {
+                        "repo": "qontinui/qontinui-web",
+                        "sha": "0761235feb5715f7e7919b4c2790058033ca623b",
+                        "branch": "feat/session-identity-registry",
+                        "occurred_at": "2026-07-02T11:00:00+00:00",
+                    }
+                ],
+                "lineage": [
+                    {
+                        "kind": "agent_worktree",
+                        "handle": "qontinui-web-wt-session-identity",
+                        "occurred_at": "2026-07-02T10:00:00+00:00",
+                    }
+                ],
+            },
+        }
+        coord_payload = {"resolved": [card], "count": 1}
+        app = _build_app()
+        with patch(
+            "app.api.v1.endpoints.agent_sessions._proxy_coord_get",
+            new=AsyncMock(return_value=coord_payload),
+        ) as mock_get:
+            client = TestClient(app)
+            resp = client.get(f"/api/v1/admin/agent-sessions/{sid}")
+        assert resp.status_code == 200
+        # Envelope verbatim — no web-side reshaping of the cards.
+        assert resp.json() == coord_payload
+        assert mock_get.call_args.args[0] == f"/coord/agent-sessions/{sid}"
+
+    def test_resolves_by_name(self):
+        """The key may be a derived/operator name, not just a UUID."""
+        app = _build_app()
+        coord_payload = {"resolved": [{"id": str(uuid4())}], "count": 1}
+        with patch(
+            "app.api.v1.endpoints.agent_sessions._proxy_coord_get",
+            new=AsyncMock(return_value=coord_payload),
+        ) as mock_get:
+            client = TestClient(app)
+            resp = client.get("/api/v1/admin/agent-sessions/proud-nimbus-rooster")
+        assert resp.status_code == 200
+        assert resp.json() == coord_payload
+        assert (
+            mock_get.call_args.args[0] == "/coord/agent-sessions/proud-nimbus-rooster"
+        )
+
+    def test_key_is_url_quoted(self):
+        """Reserved characters in the key can't rewrite the coord path."""
+        app = _build_app()
+        with patch(
+            "app.api.v1.endpoints.agent_sessions._proxy_coord_get",
+            new=AsyncMock(return_value={"resolved": [], "count": 0}),
+        ) as mock_get:
+            client = TestClient(app)
+            resp = client.get("/api/v1/admin/agent-sessions/a%3Fb%23c")
+        assert resp.status_code == 200
+        assert mock_get.call_args.args[0] == "/coord/agent-sessions/a%3Fb%23c"
+
+    def test_coord_404_propagates(self):
+        app = _build_app()
+        with patch(
+            "app.api.v1.endpoints.agent_sessions._proxy_coord_get",
+            new=AsyncMock(
+                side_effect=HTTPException(status_code=404, detail="no such session")
+            ),
+        ):
+            client = TestClient(app)
+            resp = client.get("/api/v1/admin/agent-sessions/no-such-name")
+        assert resp.status_code == 404
+
+    def test_unauth_blocked(self):
+        from app.api.deps import get_current_user_async
+        from app.api.v1.endpoints.agent_sessions import router
+
+        test_app = FastAPI()
+        non_admin = MagicMock()
+        non_admin.is_superuser = False
+        test_app.dependency_overrides[get_current_user_async] = lambda: non_admin
+        test_app.include_router(router, prefix="/api/v1/admin")
+        with patch(
+            "app.api.v1.endpoints.agent_sessions._proxy_coord_get",
+            new=AsyncMock(return_value={"resolved": [], "count": 0}),
+        ):
+            client = TestClient(test_app)
+            resp = client.get("/api/v1/admin/agent-sessions/some-name")
         assert resp.status_code == 403
 
 
