@@ -291,6 +291,33 @@ export function createMachine(payload: MachineCreate): Promise<MachineCreated> {
   });
 }
 
+/** Create a machine + dispatch an enroll directive to a paired coord device. */
+export interface DispatchEnrollRequest extends MachineCreate {
+  /** The paired coord device (runner) to dispatch the enroll directive to. */
+  target_device_id: string;
+}
+
+/**
+ * Result of a dispatched enroll. `machine` always carries the created machine +
+ * its one-time code (so the UI can fall back to the copy-paste command when the
+ * runner is offline / the dispatch did not land). `dispatched` is true when
+ * coord accepted the directive.
+ */
+export interface DispatchEnrollResponse {
+  machine: MachineCreated;
+  dispatched: boolean;
+  detail: string | null;
+}
+
+export function dispatchEnroll(
+  payload: DispatchEnrollRequest
+): Promise<DispatchEnrollResponse> {
+  return request<DispatchEnrollResponse>("/machines/dispatch-enroll", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export function updateMachine(
   id: string,
   payload: MachineUpdate
