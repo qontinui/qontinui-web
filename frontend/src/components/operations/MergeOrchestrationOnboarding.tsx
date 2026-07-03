@@ -20,7 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Info, Loader2 } from "lucide-react";
 import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
 import {
@@ -48,7 +48,8 @@ const AUDIT_POLL_CAP_MS = 8 * 60_000;
 
 // A device the calling USER has paired to a DIFFERENT tenant. Coord computes
 // this from the forwarded X-Qontinui-User-Id header (plan
-// 2026-07-02-multi-tenant-device-pairing-reconsideration Phase 1b). Older
+// 2026-07-02-multi-tenant-device-pairing-reconsideration Phase 1b; the entry
+// may repeat per binding once coord reads coord.tenant_devices). Older
 // coord omits the field entirely — the poll site normalizes missing → [].
 interface PairedElsewhereDevice {
   hostname: string;
@@ -60,9 +61,11 @@ interface PreconditionStatus {
   paired: boolean;
   claude_code_available: boolean;
   ready: boolean;
-  // One runner device serves one tenant at a time: non-empty means pairing
-  // here will UNPAIR these devices from their current tenant. Optional so
-  // the wizard degrades to today's behavior against older coord.
+  // Pairing is ADDITIVE m:n (plan
+  // 2026-07-02-session-scoped-multi-tenant-device-binding Phase 3/9):
+  // non-empty means these devices also serve OTHER tenants — purely
+  // informational, pairing here adds a binding and leaves the existing
+  // ones untouched. Optional so the wizard degrades against older coord.
   paired_elsewhere?: PairedElsewhereDevice[];
 }
 
@@ -122,23 +125,29 @@ export function PairDeviceStep({
   pairedElsewhere,
 }: {
   onPaired: () => void;
-  // Devices the calling user has paired to a DIFFERENT tenant. Non-empty
-  // means pairing here steals the device — we require an explicit inline
-  // confirmation before starting. Absent/empty (older coord) degrades to
-  // the plain one-click flow.
+  // Devices the calling user has paired to a DIFFERENT tenant. Pairing is
+  // additive (m:n) — non-empty renders a purely informational note; the
+  // pair flow itself is the same one-click flow either way.
   pairedElsewhere?: PairedElsewhereDevice[];
 }) {
   const [pairCode, setPairCode] = useState<string | null>(null);
   const [redirectUrl, setRedirectUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  // Two-step confirm when a device is paired elsewhere: the first "Start
-  // pairing" click only ARMS the confirmation ("Pair anyway" / "Cancel");
-  // pair-start is called exclusively from the explicit confirm button.
-  const [confirmArmed, setConfirmArmed] = useState(false);
 
   const elsewhere = pairedElsewhere ?? [];
-  const needsConfirm = elsewhere.length > 0;
+  // One informational line per device; an entry per binding means a device
+  // can appear N times — collapse to (hostname → binding count).
+  const byHost = new Map<string, { device: PairedElsewhereDevice; count: number }>();
+  for (const d of elsewhere) {
+    const cur = byHost.get(d.hostname);
+    if (cur) {
+      cur.count += 1;
+    } else {
+      byHost.set(d.hostname, { device: d, count: 1 });
+    }
+  }
+  const elsewhereByHost = [...byHost.values()];
 
   const startPairing = useCallback(async () => {
     setBusy(true);
@@ -177,33 +186,34 @@ export function PairDeviceStep({
       <p className="text-sm">
         Pair a device running the Qontinui runner with Claude Code installed.
         On your device, run <code>qontinui_profile device pair</code> and paste
-        the pair code below. One runner device serves one tenant at a time —
-        pairing a device for a new tenant moves it: the device is unpaired
-        from its current tenant.
+        the pair code below. A runner device can serve multiple tenants at
+        once — pairing for a new tenant adds a binding; the device&apos;s
+        existing tenant pairings are unaffected.
       </p>
       {error && (
         <p className="text-xs text-red-300 flex items-center gap-1">
           <AlertTriangle className="h-3 w-3" /> {error}
         </p>
       )}
-      {needsConfirm && !pairCode && (
+      {elsewhereByHost.length > 0 && !pairCode && (
         <div
-          className="border border-amber-500/40 bg-amber-500/10 rounded-md p-3 space-y-1"
-          data-testid="paired-elsewhere-warning"
+          className="border border-blue-500/40 bg-blue-500/10 rounded-md p-3 space-y-1"
+          data-testid="paired-elsewhere-info"
         >
-          {elsewhere.map((d) => (
+          {elsewhereByHost.map(({ device: d, count }) => (
             <p
               key={d.hostname}
-              className="text-xs text-amber-200 flex items-start gap-1"
+              className="text-xs text-blue-200 flex items-start gap-1"
             >
-              <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
+              <Info className="h-3 w-3 mt-0.5 shrink-0" />
               <span>
                 Device &lsquo;
                 <span className="font-mono">{d.hostname}</span>
-                &rsquo; is currently paired to a different tenant. Pairing it
-                here will unpair it there.
+                &rsquo; also serves {count} other tenant{count === 1 ? "" : "s"}.
+                Pairing here adds this tenant — existing pairings are
+                unaffected.
                 {d.last_seen_at && (
-                  <span className="text-amber-200/70">
+                  <span className="text-blue-200/70">
                     {" "}
                     (last seen {new Date(d.last_seen_at).toLocaleString()})
                   </span>
@@ -214,38 +224,15 @@ export function PairDeviceStep({
         </div>
       )}
       {!pairCode ? (
-        needsConfirm && confirmArmed ? (
-          <div className="flex gap-2 items-center">
-            <Button
-              onClick={startPairing}
-              disabled={busy}
-              size="sm"
-              variant="destructive"
-              data-testid="pair-anyway-button"
-            >
-              {busy && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
-              Pair anyway
-            </Button>
-            <Button
-              onClick={() => setConfirmArmed(false)}
-              disabled={busy}
-              size="sm"
-              variant="outline"
-            >
-              Cancel
-            </Button>
-          </div>
-        ) : (
-          <Button
-            onClick={needsConfirm ? () => setConfirmArmed(true) : startPairing}
-            disabled={busy}
-            size="sm"
-            data-testid="start-pairing-button"
-          >
-            {busy && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
-            Start pairing
-          </Button>
-        )
+        <Button
+          onClick={startPairing}
+          disabled={busy}
+          size="sm"
+          data-testid="start-pairing-button"
+        >
+          {busy && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
+          Start pairing
+        </Button>
       ) : (
         <div className="space-y-2">
           <Label className="text-xs">Pair code (valid for 5 minutes)</Label>
@@ -296,8 +283,9 @@ export function ClaudeCodeStep({
     }
   }, [status, onReady]);
 
-  // Not paired for THIS tenant but the user has device(s) paired to a
-  // different tenant → say so instead of the ambiguous bare "waiting".
+  // Not paired for THIS tenant but the user has device(s) paired to other
+  // tenant(s) → say so instead of the ambiguous bare "waiting". Pairing is
+  // additive, so the fix is simply to pair here too.
   const pairedElsewhere = (status?.paired_elsewhere ?? []).length > 0;
 
   return (
@@ -320,7 +308,7 @@ export function ClaudeCodeStep({
               {status?.paired
                 ? "yes"
                 : pairedElsewhere
-                  ? "paired to a different tenant"
+                  ? "paired elsewhere — pair here to add"
                   : "waiting"}
             </span>
           </span>
