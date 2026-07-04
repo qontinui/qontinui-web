@@ -928,6 +928,66 @@ async def get_pr_merge_repos(
     return await _proxy_coord_get("/pr-merge/repos", tenant_id=tenant_id)
 
 
+# ---- Runner "clone from GitHub" — reuse the tenant's GitHub App install ----
+#
+# The runner's setup wizard lets a user clone one of their GitHub repos during
+# onboarding, reusing the GitHub App connection they already made (NOT a local
+# `gh` login or a pasted PAT). Both endpoints are thin proxies to new coord
+# routes (coord owns the App private key); ``get_tenant_id`` resolves the
+# operator from the runner's forwarded Cognito bearer and coord scopes to that
+# tenant's bound installation(s).
+
+
+class CloneCredentialRequest(BaseModel):
+    """Body for ``POST /operations/github/clone-credential`` — the ``owner/name``
+    of the repo the runner wants a scoped clone token for."""
+
+    repo: str
+
+
+@router.get("/github/repos")
+async def get_github_installation_repos(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """List repositories the caller's connected GitHub App installation(s) can
+    access, for the runner setup-wizard clone picker. Proxies coord
+    ``GET /coord/onboarding/installations/repositories``. Returns
+    ``{connected: bool, repos: [...]}`` — ``connected: false`` (with an empty
+    list) when the tenant hasn't installed the GitHub App yet, so the runner can
+    show a "connect your GitHub org" CTA instead of an error."""
+    return await _proxy_coord_get(
+        "/coord/onboarding/installations/repositories", tenant_id=tenant_id
+    )
+
+
+@router.post("/github/clone-credential")
+async def post_github_clone_credential(
+    body: CloneCredentialRequest,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Mint a repo-scoped, short-TTL, contents:read clone token for a single
+    repo. Proxies coord ``POST /coord/onboarding/installations/clone-credential``.
+
+    Passes coord's status + JSON body through verbatim (like the onboarding
+    claim proxy) so the runner sees a clean ``403 repo_owner_not_connected`` when
+    the repo's owner isn't a GitHub account connected to the caller's workspace.
+    """
+    url = f"{settings.COORD_URL}/coord/onboarding/installations/clone-credential"
+    headers = _tenant_headers(tenant_id)
+    async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
+        try:
+            resp = await client.post(url, json={"repo": body.repo}, headers=headers)
+        except httpx.ConnectError:
+            raise HTTPException(status_code=502, detail="coord is not reachable")
+        except httpx.TimeoutException:
+            raise HTTPException(status_code=504, detail="timeout waiting for coord")
+    try:
+        content = resp.json()
+    except ValueError:
+        content = {"detail": resp.text}
+    return JSONResponse(content=content, status_code=resp.status_code)
+
+
 @router.get("/pr-merge/repos/{repo:path}/profile")
 async def get_pr_merge_repo_profile(
     repo: str,

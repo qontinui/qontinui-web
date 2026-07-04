@@ -5944,6 +5944,20 @@
         "title": "ClipboardPushRequest",
         "type": "object"
       },
+      "CloneCredentialRequest": {
+        "description": "Body for ``POST /operations/github/clone-credential`` \u2014 the ``owner/name``\nof the repo the runner wants a scoped clone token for.",
+        "properties": {
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "title": "CloneCredentialRequest",
+        "type": "object"
+      },
       "CodeExecutionRequest": {
         "description": "Request to execute Python code.",
         "properties": {
@@ -70194,6 +70208,78 @@
           }
         ],
         "summary": "Get Git Ops List",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/github/clone-credential": {
+      "post": {
+        "description": "Mint a repo-scoped, short-TTL, contents:read clone token for a single\nrepo. Proxies coord ``POST /coord/onboarding/installations/clone-credential``.\n\nPasses coord's status + JSON body through verbatim (like the onboarding\nclaim proxy) so the runner sees a clean ``403 repo_owner_not_connected`` when\nthe repo's owner isn't a GitHub account connected to the caller's workspace.",
+        "operationId": "api_v1_operations_github_clone_credential_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloneCredentialRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Github Clone Credential",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/github/repos": {
+      "get": {
+        "description": "List repositories the caller's connected GitHub App installation(s) can\naccess, for the runner setup-wizard clone picker. Proxies coord\n``GET /coord/onboarding/installations/repositories``. Returns\n``{connected: bool, repos: [...]}`` \u2014 ``connected: false`` (with an empty\nlist) when the tenant hasn't installed the GitHub App yet, so the runner can\nshow a \"connect your GitHub org\" CTA instead of an error.",
+        "operationId": "api_v1_operations_github_repos_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Github Installation Repos Api V1 Operations Github Repos Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Github Installation Repos",
         "tags": [
           "operations"
         ]
