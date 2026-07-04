@@ -12,6 +12,8 @@ from app.models.action_execution import (
 from app.models.ai_prompt import AIPromptTemplate, PromptSequence
 from app.models.analytics_event import AnalyticsEvent
 from app.models.annotation import Annotation, AnnotationSet
+from app.models.app_deploy_state import AppDeployState
+from app.models.app_registry import App
 from app.models.application_profile import ApplicationProfile
 from app.models.audit_log import AuditLog
 from app.models.automation import AutomationInputEvent
@@ -168,6 +170,7 @@ from app.models.test_deficiency import (
 from app.models.test_notification_preferences import TestNotificationPreferences
 from app.models.test_result import TestResult, TestResultStatus
 from app.models.test_screenshot import TestScreenshot, TestScreenshotType
+from app.models.test_target import TestTarget
 from app.models.training_dataset import (
     AnnotationSource,
     DatasetSource,
@@ -467,6 +470,10 @@ __all__ = [
     # Template Capture (click-to-template)
     "TemplateCandidate",
     "ApplicationProfile",
+    # Fleet-fresh test-target routing (project.apps / app_deploy_state / coord.test_targets)
+    "App",
+    "AppDeployState",
+    "TestTarget",
     # State Machine Builder Configs
     "StateMachineConfig",
     # Workflow Step Type Configs
