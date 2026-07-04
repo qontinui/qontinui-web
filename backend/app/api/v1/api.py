@@ -84,6 +84,7 @@ from app.api.v1.endpoints import (
     project_screenshots,
     project_sync,
     projects,
+    prompt_injections,
     prompt_versions,
     public,
     push_devices,
@@ -414,6 +415,11 @@ api_router.include_router(strategy.router, prefix="/strategy", tags=["strategy"]
 # coord.agent_sessions + per-session lineage timeline.
 api_router.include_router(
     agent_sessions.router, prefix="/admin", tags=["admin-agent-sessions"]
+)
+# Prompt-injection audit log — Phase 4 of the Unified Coord Prompt-Injection
+# Audit Log plan. Proxies coord GET /coord/prompt-injections[/{id}].
+api_router.include_router(
+    prompt_injections.router, prefix="/admin", tags=["admin-prompt-injections"]
 )
 # Superuser gates & rollout dashboard — proxies coord GET /coord/dev-overview.
 # NOTE: no prefix — the route already starts with /admin-dev, so the final
