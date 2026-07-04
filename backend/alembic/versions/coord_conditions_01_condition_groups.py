@@ -54,7 +54,7 @@ from alembic import op
 # re-point is authoritative and will correct this if the head drifts before
 # land.
 revision: str = "coord_conditions_01_condition_groups"
-down_revision: str | Sequence[str] | None = "coord_test_targets"
+down_revision: str | Sequence[str] | None = "devenv_04_device_machine_credentials"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
