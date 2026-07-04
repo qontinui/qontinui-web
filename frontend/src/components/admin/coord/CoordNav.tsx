@@ -51,6 +51,7 @@ import {
   History as HistoryIcon,
   Inbox,
   KeyRound,
+  MessageSquare,
   NotebookText,
   Package,
   Plug,
@@ -160,6 +161,12 @@ const GROUPS: NavGroup[] = [
         label: "Agents",
         icon: ScrollText,
         testId: "coord-nav-agents",
+      },
+      {
+        href: "/admin/coord/prompt-injections",
+        label: "Prompt Log",
+        icon: MessageSquare,
+        testId: "coord-nav-prompt-injections",
       },
       {
         href: "/admin/coord/history",
