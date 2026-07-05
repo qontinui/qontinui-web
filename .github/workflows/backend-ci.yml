@@ -81,8 +81,25 @@ jobs:
         # ./backend (one level deeper than the repo root the clone sits beside).
         run: poetry run pip install -e ../../qontinui-cloud-control
 
-      - name: Run ruff (linting)
-        run: poetry run ruff check .
+      # T1 correctness gate (blocking): Pyflakes (F), bugbear (B),
+      # comprehensions (C4), isort (I) and pyupgrade (UP). F/B catch real
+      # bugs (undefined names, unused imports, mutable defaults); I/C4/UP are
+      # fully auto-fixable and already kept clean by the pre-commit `ruff
+      # --fix` hook on changed files, so they never wedge an unrelated PR —
+      # keeping them blocking is a cheap backstop for pre-commit bypasses.
+      - name: Run ruff — correctness (blocking)
+        run: poetry run ruff check --select F,B,C4,I,UP .
+
+      # T3 style (advisory): the pycodestyle E/W family. Its auto-fixable
+      # members are rewritten on changed files by the pre-commit `ruff --fix`
+      # hook (T2); its NON-auto-fixable cosmetic members (E722 bare-except,
+      # E731 lambda-assign, E741 ambiguous-name, …) must not hard-block a
+      # clean PR over a pre-existing/unrelated style nit in an untouched file.
+      # Surfaced here as a non-blocking warning instead.
+      # Plan 2026-07-05-lint-tiers-and-diff-scoped-gates.
+      - name: Run ruff — style (advisory)
+        continue-on-error: true
+        run: poetry run ruff check --select E,W .
 
       - name: Run ruff format (formatting)
         run: poetry run ruff format --check .
