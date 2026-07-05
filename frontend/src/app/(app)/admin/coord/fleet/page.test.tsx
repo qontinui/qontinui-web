@@ -28,6 +28,7 @@ vi.mock("@/services/service-factory", () => ({
 vi.mock("@/components/operations", () => ({
   DevActionsTile: () => null,
   FleetOverview: () => null,
+  FleetTestTargetsPanel: () => null,
   MergeTrain: () => null,
   MergeDependencyGraph: () => null,
   CiStatusPanel: () => null,
