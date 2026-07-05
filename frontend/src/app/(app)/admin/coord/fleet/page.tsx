@@ -22,6 +22,7 @@ import {
   CiStatusPanel,
   DevActionsTile,
   FleetOverview,
+  FleetTestTargetsPanel,
   GatesPanel,
   LandedFeaturesPanel,
   MergeDependencyGraph,
@@ -198,6 +199,7 @@ export default function CoordFleetPage() {
     >
       <HealthSummaryCard />
       <FleetOverview />
+      <FleetTestTargetsPanel />
 
       {/* Dev Actions + Migration Queue paired side-by-side: two narrow
           ledger/queue lists. Full-width stacked on mobile, two columns on

@@ -2,6 +2,7 @@ export { CiStatusPanel } from "./CiStatusPanel";
 export { CollapsiblePanel } from "./CollapsiblePanel";
 export { GatesPanel } from "./GatesPanel";
 export { FleetOverview } from "./FleetOverview";
+export { FleetTestTargetsPanel } from "./FleetTestTargetsPanel";
 export { LandedFeaturesPanel } from "./LandedFeaturesPanel";
 export { MachineCard } from "./MachineCard";
 export { DeviceStatusTile } from "./DeviceStatusTile";
