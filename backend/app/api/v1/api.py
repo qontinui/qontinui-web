@@ -352,9 +352,7 @@ api_router.include_router(
     fleet_dispatch.router, prefix="/dispatch", tags=["fleet-dispatch"]
 )
 # Fleet-fresh P5 — app config editor + test-host designation (coord.test_targets)
-api_router.include_router(
-    fleet_targets.router, prefix="/fleet", tags=["fleet-targets"]
-)
+api_router.include_router(fleet_targets.router, prefix="/fleet", tags=["fleet-targets"])
 # Scheduled workflow runs (cron-driven dispatch via celery-beat / redbeat)
 api_router.include_router(
     scheduled_runs.router,
