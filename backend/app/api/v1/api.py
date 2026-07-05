@@ -63,6 +63,7 @@ from app.api.v1.endpoints import (
     files_sharing,
     finding_categories,
     fleet_dispatch,
+    fleet_targets,
     health,
     helper_tasks,
     historical,
@@ -349,6 +350,10 @@ api_router.include_router(
 # Fleet-fresh P4 — freshness-aware test-host resolution
 api_router.include_router(
     fleet_dispatch.router, prefix="/dispatch", tags=["fleet-dispatch"]
+)
+# Fleet-fresh P5 — app config editor + test-host designation (coord.test_targets)
+api_router.include_router(
+    fleet_targets.router, prefix="/fleet", tags=["fleet-targets"]
 )
 # Scheduled workflow runs (cron-driven dispatch via celery-beat / redbeat)
 api_router.include_router(
