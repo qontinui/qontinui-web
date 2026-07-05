@@ -165,7 +165,11 @@ export function EnrollCodeModal({ machine, onClose }: EnrollCodeModalProps) {
             <p className="text-xs text-muted-foreground">
               Paste into a terminal on the machine you&apos;re enrolling. The
               first line binds it to this environment; the second pushes its
-              first secret-free config snapshot so the drift view populates.
+              first secret-free config snapshot so the drift view populates. The{" "}
+              <span className="font-mono">qontinui_profile</span> helper ships
+              with the Qontinui Runner &mdash; no build from source. If that
+              machine already runs the runner, you can enroll from its Settings
+              without a terminal.
             </p>
           </div>
         </div>
