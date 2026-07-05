@@ -71584,6 +71584,33 @@
         ]
       }
     },
+    "/api/v1/operations/pr-merge/onboarding/accounts": {
+      "get": {
+        "description": "List the GitHub accounts connected to the caller's tenant (+ enrolled repos).\n\nProxies coord's ``GET /coord/onboarding/github-accounts`` (TenantId-gated).\nResponse envelope (coord-owned):\n\n``{\"accounts\": [{\"account_login\", \"account_type\", \"installation_id\",\n\"repos\": [{\"repo\", \"rollout_state\", \"profile_source\"}]}]}``\n\n(``repos`` may be ``[]`` for a freshly-connected org; ``rollout_state`` /\n``profile_source`` may be null.) Reuses the onboarding-doctor proxy's auth\nexactly: ``get_tenant_id`` resolves the operator and captures the caller's\nbearer, which ``_tenant_headers`` forwards so coord scopes the read to the\noperator's own tenant. ``_proxy_coord_get`` passes coord's status code\nthrough (a coord 4xx/5xx re-raises as an ``HTTPException`` with the same\nstatus).",
+        "operationId": "api_v1_operations_pr_merge_onboarding_accounts_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Pr Merge Onboarding Accounts Api V1 Operations Pr Merge Onboarding Accounts Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Pr Merge Onboarding Accounts",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/pr-merge/onboarding/audit": {
       "post": {
         "description": "Dispatch the repo-auditor subagent for the named repo (async).\n\nCoord now fire-and-forgets the auditor and immediately returns\n``202 {agent_id, repo, status: \"running\"}`` \u2014 the browser polls\n``/pr-merge/onboarding/audit-status`` for the STARTER_PROFILE instead of\nblocking the connection for the audit's (multi-minute) duration. On a\nprecondition miss (no audit-capable device) coord returns 409 with body\n``{\"error\": \"no_audit_capable_device\", \"next_step\": \"pair_device\"}`` \u2014\nthe dashboard surfaces this as a redirect back to the pairing wizard.\n\nThe proxy MUST pass coord's status code through: a bare JSON return would\nbe wrapped by FastAPI as ``200``, hiding the 202/running contract from\nthe browser. ``return_status=True`` surfaces ``(body, status)`` so we can\necho coord's 202 verbatim. Uses the default 5s timeout (the POST is now\nfast \u2014 the slow audit work happens off-connection).",
