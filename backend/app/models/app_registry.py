@@ -34,7 +34,7 @@ class App(Base):
         String,
         primary_key=True,
         nullable=False,
-        doc="Slug-style app id (matches coord.test_targets.app_id).",
+        doc="Slug-style app id (matches the test_targets designation app_id).",
     )
     repo_root: Mapped[str] = mapped_column(Text, nullable=False)
     ui_bridge_url: Mapped[str] = mapped_column(Text, nullable=False)
