@@ -1,7 +1,7 @@
 """coord device_status re-key — PK (device_id) → (device_id, tenant_id)
 
 Revision ID: coord_device_status_mt_pk
-Revises: coord_agent_sessions_derived_name
+Revises: coord_tenant_devices_mn
 Create Date: 2026-07-03
 
 Phase 7 (web half) of the session-scoped multi-tenant device-binding
@@ -84,7 +84,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_device_status_mt_pk"
-down_revision: str = "coord_agent_sessions_derived_name"
+down_revision: str = "coord_tenant_devices_mn"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
