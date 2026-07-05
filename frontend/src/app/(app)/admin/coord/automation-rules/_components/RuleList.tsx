@@ -14,7 +14,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { MessageSquare, Pencil, Plus, Terminal, Trash2 } from "lucide-react";
+import {
+  MessageSquare,
+  Pencil,
+  Plus,
+  RotateCcw,
+  Terminal,
+  Trash2,
+} from "lucide-react";
 import { useAutomationRules } from "../_hooks/useAutomationRules";
 import { RuleEditorDialog } from "./RuleEditorDialog";
 import type { PolicyAction, PolicyCondition, PolicyRow } from "../types";
@@ -43,8 +50,16 @@ function actionSummary(row: PolicyRow): string {
 }
 
 export function RuleList() {
-  const { rules, loading, saving, createRule, updateRule, deleteRule } =
-    useAutomationRules();
+  const {
+    rules,
+    loading,
+    saving,
+    createRule,
+    updateRule,
+    deleteRule,
+    overrideRule,
+    revertOverride,
+  } = useAutomationRules();
 
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<PolicyRow | null>(null);
@@ -93,11 +108,22 @@ export function RuleList() {
               key={rule.policy_id}
               rule={rule}
               saving={saving}
-              onToggle={(enabled) =>
-                void updateRule(rule.policy_id, { enabled })
-              }
+              onToggle={(enabled) => {
+                if (rule.built_in) {
+                  if (!rule.system_rule_id) return;
+                  // Toggling a built-in doesn't PATCH the system-owned row.
+                  // OFF → override with {disabled:true}; ON → revert to built-in.
+                  if (enabled) void revertOverride(rule.system_rule_id);
+                  else void overrideRule(rule.system_rule_id, { disabled: true });
+                } else {
+                  void updateRule(rule.policy_id, { enabled });
+                }
+              }}
               onEdit={() => openEdit(rule)}
               onDelete={() => setDeleteTarget(rule)}
+              onRevert={() => {
+                if (rule.system_rule_id) void revertOverride(rule.system_rule_id);
+              }}
             />
           ))}
         </div>
@@ -110,6 +136,7 @@ export function RuleList() {
         saving={saving}
         onCreate={createRule}
         onUpdate={updateRule}
+        onOverride={overrideRule}
       />
 
       <AlertDialog
@@ -150,11 +177,26 @@ interface RuleRowProps {
   onToggle: (enabled: boolean) => void;
   onEdit: () => void;
   onDelete: () => void;
+  onRevert: () => void;
 }
 
-function RuleRow({ rule, saving, onToggle, onEdit, onDelete }: RuleRowProps) {
+function RuleRow({
+  rule,
+  saving,
+  onToggle,
+  onEdit,
+  onDelete,
+  onRevert,
+}: RuleRowProps) {
   const isTerminal = rule.kind === "terminal_auto_response";
   const KindIcon = isTerminal ? Terminal : MessageSquare;
+
+  const builtIn = rule.built_in;
+  // A built-in is "on" for this tenant unless the tenant has disabled it.
+  const switchChecked = builtIn ? rule.override_state !== "disabled" : rule.enabled;
+  const isCustomized = builtIn && rule.override_state === "customized";
+  const isDisabled = builtIn && rule.override_state === "disabled";
+
   return (
     <div className="group flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-3">
       <KindIcon
@@ -168,37 +210,78 @@ function RuleRow({ rule, saving, onToggle, onEdit, onDelete }: RuleRowProps) {
           <span className="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
             {isTerminal ? "Terminal" : "Question"}
           </span>
+          {builtIn && (
+            <span
+              className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary"
+              title="Built-in — applies to everyone. Turn it off here for just your workspace, or make your own version."
+            >
+              Built-in
+            </span>
+          )}
+          {isDisabled && (
+            <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              Disabled
+            </span>
+          )}
+          {isCustomized && (
+            <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              Customized
+            </span>
+          )}
         </div>
         <code className="block truncate text-xs text-muted-foreground">
           {conditionSummary(rule)} {actionSummary(rule)}
         </code>
+        {builtIn && (
+          <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+            Built-in — applies to everyone. Turn it off here for just your
+            workspace, or make your own version.
+          </p>
+        )}
       </div>
 
       <Switch
-        checked={rule.enabled}
+        checked={switchChecked}
         disabled={saving}
         onCheckedChange={onToggle}
-        aria-label="Enabled"
+        aria-label={builtIn ? "Enabled for my workspace" : "Enabled"}
       />
+
+      {/* Revert-to-built-in — only when this tenant has customized the built-in. */}
+      {isCustomized && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 w-8 p-0"
+          onClick={onRevert}
+          disabled={saving}
+          title="Revert to built-in"
+        >
+          <RotateCcw className="size-4" />
+        </Button>
+      )}
 
       <Button
         variant="ghost"
         size="sm"
         className="h-8 w-8 p-0"
         onClick={onEdit}
-        title="Edit rule"
+        title={builtIn ? "Customize for your workspace" : "Edit rule"}
       >
         <Pencil className="size-4" />
       </Button>
 
-      <DestructiveButton
-        size="sm"
-        className="h-8 w-8 p-0"
-        onClick={onDelete}
-        title="Delete rule"
-      >
-        <Trash2 className="size-4" />
-      </DestructiveButton>
+      {/* A tenant can't delete a built-in — only disable/customize/revert. */}
+      {!builtIn && (
+        <DestructiveButton
+          size="sm"
+          className="h-8 w-8 p-0"
+          onClick={onDelete}
+          title="Delete rule"
+        >
+          <Trash2 className="size-4" />
+        </DestructiveButton>
+      )}
     </div>
   );
 }

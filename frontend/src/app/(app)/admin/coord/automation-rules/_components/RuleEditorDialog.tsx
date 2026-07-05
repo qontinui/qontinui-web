@@ -45,6 +45,12 @@ interface RuleEditorDialogProps {
   saving: boolean;
   onCreate: (data: PolicyCreate) => Promise<boolean>;
   onUpdate: (id: string, data: PolicyUpdate) => Promise<boolean>;
+  /**
+   * Save path for a SYSTEM built-in rule: instead of PATCHing the (system-owned,
+   * un-editable) row, upsert this tenant's customized override. Wired only when
+   * the edited `rule` is a built-in; normal rows keep the create/update path.
+   */
+  onOverride?: (systemRuleId: string, data: PolicyCreate) => Promise<boolean>;
 }
 
 /**
@@ -179,6 +185,7 @@ export function RuleEditorDialog({
   saving,
   onCreate,
   onUpdate,
+  onOverride,
 }: RuleEditorDialogProps) {
   const [name, setName] = useState("");
   const [trigger, setTrigger] = useState<RuleKind>("terminal_auto_response");
@@ -278,7 +285,16 @@ export function RuleEditorDialog({
     const condition = buildCondition();
     const action = buildAction();
     let ok: boolean;
-    if (rule) {
+    if (rule && rule.built_in && rule.system_rule_id && onOverride) {
+      // Editing a system built-in: don't PATCH the system-owned row (coord 403s
+      // it). Upsert THIS tenant's customized override with a full policy body.
+      ok = await onOverride(rule.system_rule_id, {
+        name,
+        kind: trigger,
+        condition,
+        action,
+      });
+    } else if (rule) {
       // Autonomy graduation is only meaningful for a question-scoring rule, and
       // is settable only via PATCH (coord#920). Confirm before turning it ON —
       // it lets coord auto-answer agent questions without operator review.
@@ -328,11 +344,17 @@ export function RuleEditorDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{rule ? "Edit Rule" : "New Rule"}</DialogTitle>
+          <DialogTitle>
+            {rule?.built_in
+              ? "Customize built-in"
+              : rule
+                ? "Edit Rule"
+                : "New Rule"}
+          </DialogTitle>
           <DialogDescription>
-            An automation rule fires when its trigger condition matches and
-            applies the chosen resolution. Rules are tenant-scoped and served to
-            the fleet by coord.
+            {rule?.built_in
+              ? "Make your own version of this built-in. It replaces the built-in for just your workspace — everyone else keeps the original. You can revert to the built-in anytime."
+              : "An automation rule fires when its trigger condition matches and applies the chosen resolution. Rules are tenant-scoped and served to the fleet by coord."}
           </DialogDescription>
         </DialogHeader>
 
@@ -559,7 +581,11 @@ export function RuleEditorDialog({
           </Button>
           <Button onClick={handleSubmit} disabled={!canSubmit}>
             {saving && <Loader2 className="size-4 animate-spin" />}
-            {rule ? "Save Changes" : "Create Rule"}
+            {rule?.built_in
+              ? "Save for my workspace"
+              : rule
+                ? "Save Changes"
+                : "Create Rule"}
           </Button>
         </DialogFooter>
       </DialogContent>

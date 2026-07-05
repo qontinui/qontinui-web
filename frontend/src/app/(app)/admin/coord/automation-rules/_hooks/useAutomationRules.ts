@@ -112,6 +112,59 @@ export function useAutomationRules() {
     }
   };
 
+  /**
+   * Upsert THIS tenant's override of a system built-in rule. `body` is either
+   * `{ disabled }` (turn the built-in off/on for this tenant) or a full
+   * customized policy body (replace it with the tenant's own version). Targets
+   * `PUT /coord/policies/system/:systemRuleId/override`.
+   */
+  const overrideRule = async (
+    systemRuleId: string,
+    body: { disabled: boolean } | PolicyCreate
+  ): Promise<boolean> => {
+    try {
+      setSaving(true);
+      await httpClient.put(
+        `${API}/coord/policies/system/${encodeURIComponent(systemRuleId)}/override`,
+        body
+      );
+      toast.success("Built-in updated for your workspace");
+      await loadRules();
+      return true;
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to update built-in"
+      );
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  /**
+   * Revert THIS tenant's override of a system built-in rule (disable OR
+   * customize) back to the built-in default. Targets
+   * `DELETE /coord/policies/system/:systemRuleId/override`.
+   */
+  const revertOverride = async (systemRuleId: string): Promise<boolean> => {
+    try {
+      setSaving(true);
+      await httpClient.delete(
+        `${API}/coord/policies/system/${encodeURIComponent(systemRuleId)}/override`
+      );
+      toast.success("Reverted to built-in");
+      await loadRules();
+      return true;
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to revert to built-in"
+      );
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return {
     rules,
     loading,
@@ -120,5 +173,7 @@ export function useAutomationRules() {
     createRule,
     updateRule,
     deleteRule,
+    overrideRule,
+    revertOverride,
   };
 }
