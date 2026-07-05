@@ -1295,9 +1295,7 @@ async def get_pr_merge_onboarding_accounts(
     through (a coord 4xx/5xx re-raises as an ``HTTPException`` with the same
     status).
     """
-    return await _proxy_coord_get(
-        COORD_ONBOARDING_ACCOUNTS_PATH, tenant_id=tenant_id
-    )
+    return await _proxy_coord_get(COORD_ONBOARDING_ACCOUNTS_PATH, tenant_id=tenant_id)
 
 
 # ---- Zero-touch onboarding claim (Setup-URL OAuth code exchange) ----------
