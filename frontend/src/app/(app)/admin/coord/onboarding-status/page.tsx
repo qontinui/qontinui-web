@@ -27,6 +27,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { ConnectedOrgs } from "@/components/operations/ConnectedOrgs";
 import { OnboardingDoctor } from "@/components/operations/OnboardingDoctor";
 import { OPERATIONS_API } from "@/components/operations/utils";
 import { Badge } from "@/components/ui/badge";
@@ -97,6 +98,7 @@ export default function OnboardingStatusPage() {
   const searchParams = useSearchParams();
   const code = searchParams?.get("code") ?? null;
   const installationIdRaw = searchParams?.get("installation_id") ?? null;
+  const repo = searchParams?.get("repo") ?? null;
   // Only the OAuth-redirect shape (code + installation_id) triggers a claim;
   // the `?repo=` status-view path and bare visits fall through to the doctor.
   const hasClaimParams = !!code && !!installationIdRaw;
@@ -174,6 +176,12 @@ export default function OnboardingStatusPage() {
         </p>
       )}
 
+      {/* Bare visit (no claim in flight/done, no `?repo=` deep-link): the
+          account-level "Connected organizations" summary. A connected org with
+          zero enrolled repos reads as success here (closing the empty-org
+          dead-end); each repo links to `?repo=` which loads the doctor below. */}
+      {phase === null && !repo && <ConnectedOrgs />}
+
       {phase === "claiming" && (
         <Card data-testid="onboarding-claim-claiming">
           <CardContent className="flex items-center gap-2 py-6 text-sm">
@@ -225,7 +233,7 @@ export default function OnboardingStatusPage() {
         post-claim follow-up in success/error. It is hidden only WHILE the
         claim POST is in flight so the operator sees a single clear state.
       */}
-      {phase !== "claiming" && <OnboardingDoctor />}
+      {phase !== "claiming" && <OnboardingDoctor key={repo ?? "bare"} />}
     </div>
   );
 }

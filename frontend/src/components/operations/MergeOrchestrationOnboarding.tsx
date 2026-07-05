@@ -581,6 +581,12 @@ function AuditStep({ ready }: AuditStepProps) {
   if (!auditResult || !editedProfile) {
     return (
       <div className="space-y-2">
+        <p className="text-xs text-muted-foreground">
+          Optional. Your repositories are already enrolled with starter
+          (dry-run) profiles when you install the GitHub App. This runs a deeper
+          audit on your paired device to generate a tailored merge profile that
+          replaces the starter one for a repo.
+        </p>
         <Label htmlFor="repo-input" className="text-xs">
           Repo to audit (owner/name)
         </Label>
@@ -847,7 +853,7 @@ export function MergeOrchestrationOnboarding() {
             Sign into Claude Code
           </StepBadge>
           <StepBadge n={3} active={step === 3} done={false}>
-            Audit first repo
+            Refine repo profile
           </StepBadge>
         </div>
         {/* Steps 1 + 2 (pair your own device, sign into Claude Code) are
@@ -866,7 +872,7 @@ export function MergeOrchestrationOnboarding() {
         {step === 3 && (
           <CoordAdminOnly
             fallback={
-              <ReadOnlyNotice label="Repo onboarding (the audit + accept step) is administrator only. Your device is paired and ready." />
+              <ReadOnlyNotice label="Refining a repo's merge profile (the device audit) is administrator only. Your device is paired and ready." />
             }
           >
             <AuditStep ready={status?.ready ?? false} />

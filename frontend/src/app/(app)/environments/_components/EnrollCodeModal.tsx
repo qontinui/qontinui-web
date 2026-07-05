@@ -48,8 +48,12 @@ export function EnrollCodeModal({ machine, onClose }: EnrollCodeModalProps) {
   // Two lines: `env enroll` binds this machine to the environment via the
   // one-time code; `env capture` pushes its first (secret-free) config snapshot
   // so the drift view populates without a second manual step.
+  //
+  // The installed runner binary itself handles the `env` subcommands (a pre-GUI
+  // CLI mode — qontinui-runner Phase 1a), so this references `qontinui-runner`,
+  // which is present on every paired box — no separate `qontinui_profile` build.
   const enrollCommand = machine
-    ? `qontinui_profile env enroll --code ${machine.enrollment_code} --backend ${resolveBackendBase()}\nqontinui_profile env capture`
+    ? `qontinui-runner env enroll --code ${machine.enrollment_code} --backend ${resolveBackendBase()}\nqontinui-runner env capture`
     : "";
 
   const handleCopy = async () => {
