@@ -1,7 +1,7 @@
 """coord policy_rules tenant override — per-tenant override of a system built-in rule
 
 Revision ID: coord_policy_rules_tenant_override
-Revises: coord_tenant_backfill_01
+Revises: coord_p4_03_drop_plans
 Create Date: 2026-07-05
 
 Why
@@ -38,7 +38,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_policy_rules_tenant_override"
-down_revision: str = "coord_tenant_backfill_01"
+down_revision: str = "coord_p4_03_drop_plans"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
