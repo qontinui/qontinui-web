@@ -47,8 +47,13 @@ posture). coord reads/writes BEST-EFFORT (graceful degradation, NOT in the boot
 ``require_table`` gate) so coord + this migration land in either order without a
 boot-gate crash-loop.
 
-Chains off ``coord_consistent_snapshots_01`` (reserved head, assigned via
-``coord_migration_reserve`` — position 7 in the stack).
+Chains off ``coord_tenant_backfill_01`` (the live single head of the coord
+alembic chain on main). Originally reserved to stack behind
+``coord_consistent_snapshots_01`` (qontinui-web#713), but that predecessor
+went stale (open, red, BEHIND since 2026-07-03) and the two migrations are
+semantically independent (distinct tables), so this re-points onto the
+current head to land on its own merits. If #713 later revives it re-points
+onto this migration (or coord auto-rebase reconciles the fork).
 """
 
 from collections.abc import Sequence
@@ -58,7 +63,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_prompt_injection_events"
-down_revision: str | Sequence[str] | None = "coord_consistent_snapshots_01"
+down_revision: str | Sequence[str] | None = "coord_tenant_backfill_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
