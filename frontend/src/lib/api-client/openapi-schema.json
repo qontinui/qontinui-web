@@ -71105,6 +71105,112 @@
         ]
       }
     },
+    "/api/v1/operations/coord/policies/system/{system_rule_id}/override": {
+      "delete": {
+        "description": "Revert this tenant's override of a system built-in rule. Tenant-admin only.",
+        "operationId": "api_v1_operations_coord_policies_system_system_rule_id_override_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "system_rule_id",
+            "required": true,
+            "schema": {
+              "title": "System Rule Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Delete Coord Policy Override Api V1 Operations Coord Policies System  System Rule Id  Override Delete"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Coord Policy Override",
+        "tags": [
+          "operations"
+        ]
+      },
+      "put": {
+        "description": "Upsert this tenant's override of a system built-in rule (disable or\ncustomize). Tenant-admin only.\n\nBody is either ``{\"disabled\": true|false}`` (toggle the built-in for this\ntenant) or a full customized policy body (``name``/``kind``/``condition``/\n``action`` + optional ``priority``/``rationale``). Coord derives the tenant\nfrom the bearer and returns its 4xx (validation, not-a-built-in) verbatim.",
+        "operationId": "api_v1_operations_coord_policies_system_system_rule_id_override_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "system_rule_id",
+            "required": true,
+            "schema": {
+              "title": "System Rule Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Put Coord Policy Override Api V1 Operations Coord Policies System  System Rule Id  Override Put"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Put Coord Policy Override",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/policies/{policy_id}": {
       "delete": {
         "description": "Delete an automation policy. Tenant-admin only.",
