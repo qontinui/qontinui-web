@@ -1,7 +1,7 @@
 """coord tenant_devices — m:n tenant<->device binding table + backfill
 
 Revision ID: coord_tenant_devices_mn
-Revises: coord_consistent_snapshots_01
+Revises: coord_p4_03_drop_plans
 Create Date: 2026-07-02
 
 Phase 2 of the session-scoped multi-tenant device-binding rollout
@@ -42,7 +42,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_tenant_devices_mn"
-down_revision: str = "coord_consistent_snapshots_01"
+down_revision: str = "coord_p4_03_drop_plans"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
