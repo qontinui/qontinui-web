@@ -203,3 +203,111 @@ async def test_non_member_selection_falls_back_to_home_tenant():
             _request(str(_TENANT_C)), _user()
         )
     assert result == _TENANT_A
+
+
+# ---------------------------------------------------------------------------
+# admin_dev._capture_bearer_best_effort captures + keys by the VALIDATED
+# effective tenant
+# ---------------------------------------------------------------------------
+#
+# Regression guards for two bugs:
+# 1. /admin-dev/* proxied to coord WITHOUT the active-tenant header (the
+#    ContextVar was never set on this surface), so the gates dashboard always
+#    showed the home tenant regardless of the switcher.
+# 2. The shared overview cache must never be keyed by the RAW header: coord
+#    serves HOME-tenant data for a non-member selection, so a raw-header key
+#    would poison the cache entry other operators legitimately read for that
+#    tenant.
+
+
+@pytest.mark.asyncio
+async def test_admin_dev_captures_selection_and_returns_member_tenant_key():
+    from app.api.v1.endpoints import admin_dev, operations
+
+    with patch.object(
+        admin_dev, "get_coord_identity", new=AsyncMock(return_value=_identity())
+    ):
+        key = await admin_dev._capture_bearer_best_effort(_request(str(_TENANT_B)))
+
+    # The member-validated selection is the cache key AND lands in the
+    # ContextVar that operations._tenant_headers forwards to coord.
+    assert key == str(_TENANT_B)
+    assert operations._caller_active_tenant.get() == str(_TENANT_B)
+    assert operations._caller_bearer.get() == "cognito-token"
+    headers = operations._tenant_headers(None)
+    assert headers[ACTIVE_TENANT_HEADER] == str(_TENANT_B)
+
+
+@pytest.mark.asyncio
+async def test_admin_dev_non_member_selection_keys_by_home_tenant():
+    """Coord keeps HOME data for a non-member selection — the cache key must
+    match what coord actually serves, never the raw header."""
+    from app.api.v1.endpoints import admin_dev, operations
+
+    with patch.object(
+        admin_dev, "get_coord_identity", new=AsyncMock(return_value=_identity())
+    ):
+        key = await admin_dev._capture_bearer_best_effort(_request(str(_TENANT_C)))
+
+    assert key == str(_TENANT_A)  # home, NOT the raw non-member selection
+    # The header is still forwarded verbatim — coord re-validates it.
+    assert operations._caller_active_tenant.get() == str(_TENANT_C)
+
+
+@pytest.mark.asyncio
+async def test_admin_dev_falls_back_to_home_tenant_key_without_selection():
+    from app.api.v1.endpoints import admin_dev, operations
+
+    with patch.object(
+        admin_dev, "get_coord_identity", new=AsyncMock(return_value=_identity())
+    ):
+        key = await admin_dev._capture_bearer_best_effort(_request(None))
+
+    assert key == str(_TENANT_A)
+    assert operations._caller_active_tenant.get() is None
+    headers = operations._tenant_headers(None)
+    assert ACTIVE_TENANT_HEADER not in headers
+
+
+# ---------------------------------------------------------------------------
+# _effective_tenant_id — the WS bridges' membership-validated selection
+# ---------------------------------------------------------------------------
+#
+# A browser WebSocket cannot send X-Qontinui-Active-Tenant, so the WS
+# handlers read an `active_tenant` query param and resolve it through this
+# helper: member selection wins, anything else degrades to home.
+
+
+def test_effective_tenant_id_member_selection_wins():
+    from app.api.v1.endpoints.operations import _effective_tenant_id
+
+    assert _effective_tenant_id(_identity(), str(_TENANT_B)) == _TENANT_B
+
+
+def test_effective_tenant_id_non_member_selection_degrades_to_home():
+    from app.api.v1.endpoints.operations import _effective_tenant_id
+
+    assert _effective_tenant_id(_identity(), str(_TENANT_C)) == _TENANT_A
+
+
+def test_effective_tenant_id_no_selection_is_home():
+    from app.api.v1.endpoints.operations import _effective_tenant_id
+
+    assert _effective_tenant_id(_identity(), None) == _TENANT_A
+
+
+@pytest.mark.asyncio
+async def test_admin_dev_coord_down_still_captures_headers():
+    from app.api.v1.endpoints import admin_dev, operations
+
+    with patch.object(
+        admin_dev,
+        "get_coord_identity",
+        new=AsyncMock(side_effect=HTTPException(status_code=502, detail="down")),
+    ):
+        key = await admin_dev._capture_bearer_best_effort(_request(None))
+
+    # Identity resolution failed → None cache key, but the bearer capture
+    # already happened so the proxy still forwards it.
+    assert key is None
+    assert operations._caller_bearer.get() == "cognito-token"

@@ -34,7 +34,25 @@ export function deviceStatusWsUrl(token: string): string {
   } else {
     wsBase = "ws://" + OPERATIONS_API;
   }
-  return `${wsBase}/device-status/ws?token=${encodeURIComponent(token)}`;
+  return `${wsBase}/device-status/ws?token=${encodeURIComponent(token)}${activeTenantWsParam()}`;
+}
+
+/**
+ * The dashboard tenant-switcher selection as a WS query param. A browser
+ * WebSocket cannot send the `X-Qontinui-Active-Tenant` header the REST
+ * calls use (HttpClient attaches it from the same localStorage key), so
+ * the WS bridges read `active_tenant` from the query string instead. The
+ * backend membership-validates it (`_effective_tenant_id`) — a stale or
+ * non-member selection degrades to the home tenant server-side.
+ */
+function activeTenantWsParam(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    const active = window.localStorage.getItem("qontinui.active_tenant_id");
+    return active ? `&active_tenant=${encodeURIComponent(active)}` : "";
+  } catch {
+    return "";
+  }
 }
 
 /**
@@ -67,7 +85,7 @@ export function ciStatusWsUrl(token: string): string {
   } else {
     wsBase = "ws://" + OPERATIONS_API;
   }
-  return `${wsBase}/ci-status/ws?token=${encodeURIComponent(token)}`;
+  return `${wsBase}/ci-status/ws?token=${encodeURIComponent(token)}${activeTenantWsParam()}`;
 }
 
 /**

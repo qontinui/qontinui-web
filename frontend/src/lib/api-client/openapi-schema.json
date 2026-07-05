@@ -6269,6 +6269,20 @@
         "title": "ClipboardPushRequest",
         "type": "object"
       },
+      "CloneCredentialRequest": {
+        "description": "Body for ``POST /operations/github/clone-credential`` \u2014 the ``owner/name``\nof the repo the runner wants a scoped clone token for.",
+        "properties": {
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "title": "CloneCredentialRequest",
+        "type": "object"
+      },
       "CodeExecutionRequest": {
         "description": "Request to execute Python code.",
         "properties": {
@@ -47288,7 +47302,7 @@
     },
     "/api/v1/admin-dev/overview": {
       "get": {
-        "description": "Proxy coord's ``GET /coord/dev-overview`` (gates + rollout overview).\n\nReturns coord's JSON envelope verbatim \u2014 the\n``{generated_at, gates, rollouts}`` contract the frontend\n``admin-dev-service`` types against. The overview is fleet-wide (not\ntenant-scoped on the web side); the caller bearer is forwarded so coord\nauthorizes on the operator identity. ``tenant_id`` is resolved\nbest-effort only (it may be ``None`` when coord identity resolution\nfails) and is used solely as the cache key \u2014 coord-down callers (key\n``None``) never share a cache entry with resolved ones.\n\nCaching: a fresh successful envelope is served from a ~30s in-process\ncache; ``?refresh=1`` bypasses it (the frontend Refresh button passes\nit). Degraded ``coord_error`` envelopes are never cached.\n\nWhen coord is unreachable/degraded (connect-refused \u2192 502, timeout \u2192\n504, etc.) the endpoint returns an empty envelope annotated with\n``coord_error`` rather than re-raising the 5xx, so the dashboard renders\na clear \"coord unavailable\" state instead of a broken page. Because\nidentity resolution no longer hard-fails the request, this covers a TOTAL\ncoord outage too (not just the case where ``/admin/coord/me`` happened to\nsucceed). The Spec CI crawl, which runs without a live coord, stays green.",
+        "description": "Proxy coord's ``GET /coord/dev-overview`` (gates + rollout overview).\n\nReturns coord's JSON envelope verbatim \u2014 the\n``{generated_at, gates, rollouts}`` contract the frontend\n``admin-dev-service`` types against. The caller bearer AND the dashboard\ntenant-switcher selection (``X-Qontinui-Active-Tenant``) are forwarded,\nso coord authorizes on the operator identity and scopes the overview to\nthe selected tenant (coord's ``/coord/dev-overview`` filters every gate/\nrollout query by the effective tenant). ``tenant_key`` is the VALIDATED\neffective tenant (membership-checked selection, else home tenant) and is\nused solely as the cache key \u2014 two tenants never share a cache entry.\n``None`` (identity resolution failed) bypasses the shared cache\nentirely, never sharing an entry with anyone.\n\nCaching: a fresh successful envelope is served from a ~30s in-process\ncache; ``?refresh=1`` bypasses it (the frontend Refresh button passes\nit). Degraded ``coord_error`` envelopes are never cached.\n\nWhen coord is unreachable/degraded (connect-refused \u2192 502, timeout \u2192\n504, etc.) the endpoint returns an empty envelope annotated with\n``coord_error`` rather than re-raising the 5xx, so the dashboard renders\na clear \"coord unavailable\" state instead of a broken page. Because\nidentity resolution no longer hard-fails the request, this covers a TOTAL\ncoord outage too (not just the case where ``/admin/coord/me`` happened to\nsucceed). The Spec CI crawl, which runs without a live coord, stays green.",
         "operationId": "api_v1_admin_dev_overview_get",
         "parameters": [
           {
@@ -47396,7 +47410,7 @@
     },
     "/api/v1/admin-dev/prs": {
       "get": {
-        "description": "Proxy coord's ``GET /pr-merge/prs`` (open PRs + merge status).\n\nPure passthrough: returns coord's JSON envelope verbatim \u2014 the\n``{prs, total}`` contract where each PR is already enriched coord-side\nwith a typed ``merge_status`` + ``blocking_summary`` (coord owns that\nshape; the web side computes nothing and renames nothing). The list is\nfleet-wide (not tenant-scoped on the web side); the caller bearer is\nforwarded so coord authorizes on the operator identity. ``tenant_id`` is\nresolved best-effort only (it may be ``None`` when coord identity\nresolution fails) and is used solely to trigger bearer-forwarding.\n\nMirrors ``get_dev_overview``'s auth + degradation posture exactly:\n``require_admin`` (superuser) is the hard web-side gate, the bearer is\ncaptured best-effort so a coord-down identity resolution never 502s in\nthe dependency, and ``forward_bearer=True`` forwards the bearer even when\nthe tenant is unresolved. When coord is unreachable/degraded\n(connect-refused \u2192 502, timeout \u2192 504, etc.) the endpoint returns an\nempty ``{prs, total, coord_error}`` envelope rather than re-raising the\n5xx, so the dashboard renders a clear \"coord unavailable\" state.\n\nUnlike the overview, this list is NOT cached: it reflects fast-moving PR\n+ CI state where stale data is misleading on a merge-readiness dashboard.",
+        "description": "Proxy coord's ``GET /pr-merge/prs`` (open PRs + merge status).\n\nPure passthrough: returns coord's JSON envelope verbatim \u2014 the\n``{prs, total}`` contract where each PR is already enriched coord-side\nwith a typed ``merge_status`` + ``blocking_summary`` (coord owns that\nshape; the web side computes nothing and renames nothing). The caller\nbearer and the tenant-switcher selection are forwarded so coord\nauthorizes on the operator identity and scopes the list to the\neffective tenant; the dependency is retained purely for those\nheader captures.\n\nMirrors ``get_dev_overview``'s auth + degradation posture exactly:\n``require_admin`` (superuser) is the hard web-side gate, the bearer is\ncaptured best-effort so a coord-down identity resolution never 502s in\nthe dependency, and ``forward_bearer=True`` forwards the bearer even when\nthe tenant is unresolved. When coord is unreachable/degraded\n(connect-refused \u2192 502, timeout \u2192 504, etc.) the endpoint returns an\nempty ``{prs, total, coord_error}`` envelope rather than re-raising the\n5xx, so the dashboard renders a clear \"coord unavailable\" state.\n\nUnlike the overview, this list is NOT cached: it reflects fast-moving PR\n+ CI state where stale data is misleading on a merge-readiness dashboard.",
         "operationId": "api_v1_admin_dev_prs_get",
         "parameters": [
           {
@@ -47448,7 +47462,7 @@
     },
     "/api/v1/admin-dev/release-verdict": {
       "get": {
-        "description": "Proxy coord's ``GET /coord/twin/release/verdict`` (per-surface deploy state).\n\nPure passthrough backing the always-visible deploy-status strip atop\n``/admin/coord/prs``: returns coord's release-verdict envelope verbatim \u2014\nthe ``{verdict: {surfaces: [{components: {...}}]}}`` contract where each\nsurface's per-surface drift state lives in ``surfaces[i].components`` (coord\nowns that shape; the web side computes nothing and renames nothing). The\nverdict is fleet-wide (not tenant-scoped on the web side); the caller bearer\nis forwarded so coord authorizes on the operator identity. ``tenant_id`` is\nresolved best-effort only (it may be ``None`` when coord identity resolution\nfails) and is used solely to trigger bearer-forwarding.\n\nMirrors ``get_prs``'s auth + degradation posture exactly: ``require_admin``\n(superuser) is the hard web-side gate, the bearer is captured best-effort so\na coord-down identity resolution never 502s in the dependency, and\n``forward_bearer=True`` forwards the bearer even when the tenant is\nunresolved. When coord is unreachable/degraded (connect-refused \u2192 502,\ntimeout \u2192 504, etc.) the endpoint returns an empty\n``{verdict: {surfaces: []}, coord_error}`` envelope rather than re-raising\nthe 5xx, so neither the Spec CI crawl gate (which runs without a live coord)\nnor the dashboard ever sees a 5xx.\n\nLike ``get_prs``, this is NOT cached: it reflects fast-moving per-surface\ndeploy state where stale data is misleading on a \"is prod current?\" strip.",
+        "description": "Proxy coord's ``GET /coord/twin/release/verdict`` (per-surface deploy state).\n\nPure passthrough backing the always-visible deploy-status strip atop\n``/admin/coord/prs``: returns coord's release-verdict envelope verbatim \u2014\nthe ``{verdict: {surfaces: [{components: {...}}]}}`` contract where each\nsurface's per-surface drift state lives in ``surfaces[i].components`` (coord\nowns that shape; the web side computes nothing and renames nothing). The\nverdict is fleet-wide (deploy surfaces are not per-tenant); the caller\nbearer + tenant-switcher selection are forwarded so coord authorizes on\nthe operator identity; the dependency is retained purely for those\nheader captures.\n\nMirrors ``get_prs``'s auth + degradation posture exactly: ``require_admin``\n(superuser) is the hard web-side gate, the bearer is captured best-effort so\na coord-down identity resolution never 502s in the dependency, and\n``forward_bearer=True`` forwards the bearer even when the tenant is\nunresolved. When coord is unreachable/degraded (connect-refused \u2192 502,\ntimeout \u2192 504, etc.) the endpoint returns an empty\n``{verdict: {surfaces: []}, coord_error}`` envelope rather than re-raising\nthe 5xx, so neither the Spec CI crawl gate (which runs without a live coord)\nnor the dashboard ever sees a 5xx.\n\nLike ``get_prs``, this is NOT cached: it reflects fast-moving per-surface\ndeploy state where stale data is misleading on a \"is prod current?\" strip.",
         "operationId": "api_v1_admin_dev_release_verdict_get",
         "responses": {
           "200": {
@@ -72358,6 +72372,78 @@
           }
         ],
         "summary": "Get Git Ops List",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/github/clone-credential": {
+      "post": {
+        "description": "Mint a repo-scoped, short-TTL, contents:read clone token for a single\nrepo. Proxies coord ``POST /coord/onboarding/installations/clone-credential``.\n\nPasses coord's status + JSON body through verbatim (like the onboarding\nclaim proxy) so the runner sees a clean ``403 repo_owner_not_connected`` when\nthe repo's owner isn't a GitHub account connected to the caller's workspace.",
+        "operationId": "api_v1_operations_github_clone_credential_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloneCredentialRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Github Clone Credential",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/github/repos": {
+      "get": {
+        "description": "List repositories the caller's connected GitHub App installation(s) can\naccess, for the runner setup-wizard clone picker. Proxies coord\n``GET /coord/onboarding/installations/repositories``. Returns\n``{connected: bool, repos: [...]}`` \u2014 ``connected: false`` (with an empty\nlist) when the tenant hasn't installed the GitHub App yet, so the runner can\nshow a \"connect your GitHub org\" CTA instead of an error.",
+        "operationId": "api_v1_operations_github_repos_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Github Installation Repos Api V1 Operations Github Repos Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Github Installation Repos",
         "tags": [
           "operations"
         ]
