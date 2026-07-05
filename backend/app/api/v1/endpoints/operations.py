@@ -1263,6 +1263,43 @@ async def get_pr_merge_onboarding_doctor(
     )
 
 
+# ---- Zero-touch onboarding: connected GitHub accounts summary -------------
+#
+# The account-level read backing the onboarding-status page's "Connected
+# organizations" summary (the bare visit — no ``?code``, no ``?repo``). Coord
+# returns every GitHub account bound to the operator's tenant with its enrolled
+# repos (``rollout_state`` + ``profile_source`` per repo), so a freshly-connected
+# org with an empty ``repos`` list reads as success ("connected · no repositories
+# enrolled yet") rather than a dead end. Kept in one constant so a coord-side
+# path change is a one-line fix here.
+COORD_ONBOARDING_ACCOUNTS_PATH = "/coord/onboarding/github-accounts"
+
+
+@router.get("/pr-merge/onboarding/accounts")
+async def get_pr_merge_onboarding_accounts(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """List the GitHub accounts connected to the caller's tenant (+ enrolled repos).
+
+    Proxies coord's ``GET /coord/onboarding/github-accounts`` (TenantId-gated).
+    Response envelope (coord-owned):
+
+    ``{"accounts": [{"account_login", "account_type", "installation_id",
+    "repos": [{"repo", "rollout_state", "profile_source"}]}]}``
+
+    (``repos`` may be ``[]`` for a freshly-connected org; ``rollout_state`` /
+    ``profile_source`` may be null.) Reuses the onboarding-doctor proxy's auth
+    exactly: ``get_tenant_id`` resolves the operator and captures the caller's
+    bearer, which ``_tenant_headers`` forwards so coord scopes the read to the
+    operator's own tenant. ``_proxy_coord_get`` passes coord's status code
+    through (a coord 4xx/5xx re-raises as an ``HTTPException`` with the same
+    status).
+    """
+    return await _proxy_coord_get(
+        COORD_ONBOARDING_ACCOUNTS_PATH, tenant_id=tenant_id
+    )
+
+
 # ---- Zero-touch onboarding claim (Setup-URL OAuth code exchange) ----------
 #
 # The browser is redirected here post-install by GitHub's App Setup URL with
