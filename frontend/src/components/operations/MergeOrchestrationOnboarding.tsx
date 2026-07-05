@@ -16,7 +16,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -563,6 +569,12 @@ function AuditStep({ ready }: AuditStepProps) {
   if (!auditResult || !editedProfile) {
     return (
       <div className="space-y-2">
+        <p className="text-xs text-muted-foreground">
+          Optional. Your repositories are already enrolled with starter
+          (dry-run) profiles when you install the GitHub App. This runs a deeper
+          audit on your paired device to generate a tailored merge profile that
+          replaces the starter one for a repo.
+        </p>
         <Label htmlFor="repo-input" className="text-xs">
           Repo to audit (owner/name)
         </Label>
@@ -807,7 +819,13 @@ export function MergeOrchestrationOnboarding() {
   return (
     <Card className="mb-4" data-testid="merge-onboarding-card">
       <CardHeader className="pb-3">
-        <CardTitle className="text-base">Merge Orchestrator onboarding</CardTitle>
+        <CardTitle className="text-base">Pair an autonomous-dev runner</CardTitle>
+        <CardDescription>
+          Optional — for AI-driven development. Pair a device running the
+          Qontinui runner so it can audit repos and drive automated changes.
+          Connecting your GitHub repositories for merge orchestration is handled
+          above and no longer requires this.
+        </CardDescription>
       </CardHeader>
       <CardContent>
         {pollErr && (
@@ -823,7 +841,7 @@ export function MergeOrchestrationOnboarding() {
             Sign into Claude Code
           </StepBadge>
           <StepBadge n={3} active={step === 3} done={false}>
-            Audit first repo
+            Refine repo profile
           </StepBadge>
         </div>
         {/* Steps 1 + 2 (pair your own device, sign into Claude Code) are
@@ -842,7 +860,7 @@ export function MergeOrchestrationOnboarding() {
         {step === 3 && (
           <CoordAdminOnly
             fallback={
-              <ReadOnlyNotice label="Repo onboarding (the audit + accept step) is administrator only. Your device is paired and ready." />
+              <ReadOnlyNotice label="Refining a repo's merge profile (the device audit) is administrator only. Your device is paired and ready." />
             }
           >
             <AuditStep ready={status?.ready ?? false} />

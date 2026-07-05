@@ -267,6 +267,26 @@ def _effective_tenant_roles(
     return identity.roles
 
 
+def _effective_tenant_id(
+    identity: CoordIdentity, active_tenant: str | None
+) -> UUID | None:
+    """The operator's EFFECTIVE tenant id: the active-switcher selection when
+    the operator is a member of it (matched against ``identity.tenants`` by
+    id, or slug defensively), else the home tenant.
+
+    The WS bridges use this: a browser ``WebSocket`` cannot send the
+    ``X-Qontinui-Active-Tenant`` header, so the selection rides a query
+    param and is membership-validated here — mirroring coord's
+    ``auth::apply_active_tenant_override`` (non-member selection degrades
+    to home, never widens)."""
+    selection = (active_tenant or "").strip()
+    if selection:
+        for t in identity.tenants:
+            if str(t.tenant_id) == selection or t.slug == selection:
+                return t.tenant_id
+    return identity.home_tenant_id
+
+
 def _tenant_headers(tenant_id: UUID | None) -> dict[str, str]:
     """Build the request-headers dict forwarded to coord.
 
@@ -908,6 +928,66 @@ async def get_pr_merge_repos(
     return await _proxy_coord_get("/pr-merge/repos", tenant_id=tenant_id)
 
 
+# ---- Runner "clone from GitHub" — reuse the tenant's GitHub App install ----
+#
+# The runner's setup wizard lets a user clone one of their GitHub repos during
+# onboarding, reusing the GitHub App connection they already made (NOT a local
+# `gh` login or a pasted PAT). Both endpoints are thin proxies to new coord
+# routes (coord owns the App private key); ``get_tenant_id`` resolves the
+# operator from the runner's forwarded Cognito bearer and coord scopes to that
+# tenant's bound installation(s).
+
+
+class CloneCredentialRequest(BaseModel):
+    """Body for ``POST /operations/github/clone-credential`` — the ``owner/name``
+    of the repo the runner wants a scoped clone token for."""
+
+    repo: str
+
+
+@router.get("/github/repos")
+async def get_github_installation_repos(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """List repositories the caller's connected GitHub App installation(s) can
+    access, for the runner setup-wizard clone picker. Proxies coord
+    ``GET /coord/onboarding/installations/repositories``. Returns
+    ``{connected: bool, repos: [...]}`` — ``connected: false`` (with an empty
+    list) when the tenant hasn't installed the GitHub App yet, so the runner can
+    show a "connect your GitHub org" CTA instead of an error."""
+    return await _proxy_coord_get(
+        "/coord/onboarding/installations/repositories", tenant_id=tenant_id
+    )
+
+
+@router.post("/github/clone-credential")
+async def post_github_clone_credential(
+    body: CloneCredentialRequest,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Mint a repo-scoped, short-TTL, contents:read clone token for a single
+    repo. Proxies coord ``POST /coord/onboarding/installations/clone-credential``.
+
+    Passes coord's status + JSON body through verbatim (like the onboarding
+    claim proxy) so the runner sees a clean ``403 repo_owner_not_connected`` when
+    the repo's owner isn't a GitHub account connected to the caller's workspace.
+    """
+    url = f"{settings.COORD_URL}/coord/onboarding/installations/clone-credential"
+    headers = _tenant_headers(tenant_id)
+    async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
+        try:
+            resp = await client.post(url, json={"repo": body.repo}, headers=headers)
+        except httpx.ConnectError:
+            raise HTTPException(status_code=502, detail="coord is not reachable")
+        except httpx.TimeoutException:
+            raise HTTPException(status_code=504, detail="timeout waiting for coord")
+    try:
+        content = resp.json()
+    except ValueError:
+        content = {"detail": resp.text}
+    return JSONResponse(content=content, status_code=resp.status_code)
+
+
 @router.get("/pr-merge/repos/{repo:path}/profile")
 async def get_pr_merge_repo_profile(
     repo: str,
@@ -1181,6 +1261,41 @@ async def get_pr_merge_onboarding_doctor(
         params={"repo": repo},
         tenant_id=tenant_id,
     )
+
+
+# ---- Zero-touch onboarding: connected GitHub accounts summary -------------
+#
+# The account-level read backing the onboarding-status page's "Connected
+# organizations" summary (the bare visit — no ``?code``, no ``?repo``). Coord
+# returns every GitHub account bound to the operator's tenant with its enrolled
+# repos (``rollout_state`` + ``profile_source`` per repo), so a freshly-connected
+# org with an empty ``repos`` list reads as success ("connected · no repositories
+# enrolled yet") rather than a dead end. Kept in one constant so a coord-side
+# path change is a one-line fix here.
+COORD_ONBOARDING_ACCOUNTS_PATH = "/coord/onboarding/github-accounts"
+
+
+@router.get("/pr-merge/onboarding/accounts")
+async def get_pr_merge_onboarding_accounts(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """List the GitHub accounts connected to the caller's tenant (+ enrolled repos).
+
+    Proxies coord's ``GET /coord/onboarding/github-accounts`` (TenantId-gated).
+    Response envelope (coord-owned):
+
+    ``{"accounts": [{"account_login", "account_type", "installation_id",
+    "repos": [{"repo", "rollout_state", "profile_source"}]}]}``
+
+    (``repos`` may be ``[]`` for a freshly-connected org; ``rollout_state`` /
+    ``profile_source`` may be null.) Reuses the onboarding-doctor proxy's auth
+    exactly: ``get_tenant_id`` resolves the operator and captures the caller's
+    bearer, which ``_tenant_headers`` forwards so coord scopes the read to the
+    operator's own tenant. ``_proxy_coord_get`` passes coord's status code
+    through (a coord 4xx/5xx re-raises as an ``HTTPException`` with the same
+    status).
+    """
+    return await _proxy_coord_get(COORD_ONBOARDING_ACCOUNTS_PATH, tenant_id=tenant_id)
 
 
 # ---- Zero-touch onboarding claim (Setup-URL OAuth code exchange) ----------
@@ -2966,11 +3081,19 @@ async def websocket_device_status(
         return
 
     # --- Tenant resolution + token mint ----------------------------------
-    # Source the home tenant from coord's `/admin/coord/me` over the HTTP
-    # boundary (forwarding the WS-auth bearer), not a cross-schema read.
+    # Source identity from coord's `/admin/coord/me` over the HTTP boundary
+    # (forwarding the WS-auth bearer), then resolve the EFFECTIVE tenant:
+    # the dashboard tenant-switcher selection rides the `active_tenant`
+    # query param (a browser WebSocket cannot send custom headers) and is
+    # membership-validated by `_effective_tenant_id`; a non-member or
+    # absent selection degrades to the home tenant, never widens. This
+    # keeps the live stream consistent with the REST seed, which forwards
+    # X-Qontinui-Active-Tenant to coord.
     try:
         identity = await get_coord_identity_for_token(token)
-        tenant_id = identity.home_tenant_id
+        tenant_id = _effective_tenant_id(
+            identity, websocket.query_params.get("active_tenant")
+        )
         if tenant_id is None:
             raise HTTPException(status_code=403, detail="tenant_not_resolved")
     except HTTPException as http_exc:
@@ -3290,11 +3413,19 @@ async def websocket_ci_status(
         return
 
     # --- Tenant resolution + token mint ----------------------------------
-    # Source the home tenant from coord's `/admin/coord/me` over the HTTP
-    # boundary (forwarding the WS-auth bearer), not a cross-schema read.
+    # Source identity from coord's `/admin/coord/me` over the HTTP boundary
+    # (forwarding the WS-auth bearer), then resolve the EFFECTIVE tenant:
+    # the dashboard tenant-switcher selection rides the `active_tenant`
+    # query param (a browser WebSocket cannot send custom headers) and is
+    # membership-validated by `_effective_tenant_id`; a non-member or
+    # absent selection degrades to the home tenant, never widens. This
+    # keeps the live stream consistent with the REST seed, which forwards
+    # X-Qontinui-Active-Tenant to coord.
     try:
         identity = await get_coord_identity_for_token(token)
-        tenant_id = identity.home_tenant_id
+        tenant_id = _effective_tenant_id(
+            identity, websocket.query_params.get("active_tenant")
+        )
         if tenant_id is None:
             raise HTTPException(status_code=403, detail="tenant_not_resolved")
     except HTTPException as http_exc:

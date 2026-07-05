@@ -23,18 +23,24 @@ here without touching importers.
 """
 
 from app.api.v1.endpoints.operations import (
+    ACTIVE_TENANT_HEADER,
+    _caller_active_tenant,
     _caller_bearer,
     _extract_caller_token,
     _proxy_coord_get,
+    _proxy_coord_post,
     _tenant_headers,
     get_tenant_id,
     require_coord_tenant_admin,
 )
 
 __all__ = [
+    "ACTIVE_TENANT_HEADER",
+    "_caller_active_tenant",
     "_caller_bearer",
     "_extract_caller_token",
     "_proxy_coord_get",
+    "_proxy_coord_post",
     "_tenant_headers",
     "get_tenant_id",
     "require_coord_tenant_admin",

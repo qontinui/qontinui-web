@@ -6269,6 +6269,20 @@
         "title": "ClipboardPushRequest",
         "type": "object"
       },
+      "CloneCredentialRequest": {
+        "description": "Body for ``POST /operations/github/clone-credential`` \u2014 the ``owner/name``\nof the repo the runner wants a scoped clone token for.",
+        "properties": {
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "title": "CloneCredentialRequest",
+        "type": "object"
+      },
       "CodeExecutionRequest": {
         "description": "Request to execute Python code.",
         "properties": {
@@ -13153,6 +13167,92 @@
         "title": "DispatchDeviceResponse",
         "type": "object"
       },
+      "DispatchEnrollRequest": {
+        "description": "Create a machine + dispatch an enroll directive to a paired runner.\n\nExtends :class:`MachineCreate` with the coord device to dispatch to. The\nserver mints the machine + one-time code, then asks coord to publish an\nenroll directive to that device's runner \u2014 no terminal, no copy-paste.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "environment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Id"
+          },
+          "hostname": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hostname"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "target_device_id": {
+            "format": "uuid",
+            "title": "Target Device Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "target_device_id"
+        ],
+        "title": "DispatchEnrollRequest",
+        "type": "object"
+      },
+      "DispatchEnrollResponse": {
+        "description": "Result of a dispatched enroll.\n\n``machine`` carries the created machine + its one-time code, so the UI can\nfall back to the copy-paste command when the runner is offline / the\ndispatch did not land. ``dispatched`` is True when coord accepted the\ndirective.",
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "dispatched": {
+            "title": "Dispatched",
+            "type": "boolean"
+          },
+          "machine": {
+            "$ref": "#/components/schemas/MachineCreatedResponse"
+          }
+        },
+        "required": [
+          "machine",
+          "dispatched"
+        ],
+        "title": "DispatchEnrollResponse",
+        "type": "object"
+      },
       "DispatchStatusResponse": {
         "description": "Dispatch diagnostics for an app (dashboard / debugging).",
         "properties": {
@@ -19707,6 +19807,42 @@
         "title": "HeartbeatBody",
         "type": "object"
       },
+      "HelperAnswerRequest": {
+        "description": "Body forwarded to coord ``POST /coord/helper-tasks/:id/answer``.\n\n``verdict`` values are coord's snake_case ``HelperVerdict`` enum\n(``approve`` / ``reject`` / ``not_sure`` for a spot-check; ``choice_a`` /\n``choice_b`` / ``choice_same`` for a compare). Coord validates the enum \u2014\nthe web layer only enforces shape.",
+        "properties": {
+          "free_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional free-text note (when the schema allows it)",
+            "title": "Free Text"
+          },
+          "reasons": {
+            "description": "Preset reason codes selected on a reject",
+            "items": {
+              "type": "string"
+            },
+            "title": "Reasons",
+            "type": "array"
+          },
+          "verdict": {
+            "description": "Helper verdict",
+            "minLength": 1,
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "verdict"
+        ],
+        "title": "HelperAnswerRequest",
+        "type": "object"
+      },
       "HistoricalResultResponse": {
         "description": "Response for historical result.",
         "properties": {
@@ -20663,7 +20799,7 @@
         "type": "object"
       },
       "InvitationCreate": {
-        "description": "Schema for creating an invitation.",
+        "description": "Schema for creating an invitation.\n\nThe role allowlist is enforced HERE (the input schema) rather than on\n``InvitationBase`` so ``InvitationResponse`` never re-validates stored\nrows \u2014 legacy roles must still serialize.",
         "properties": {
           "email": {
             "description": "Email address to invite",
@@ -20673,7 +20809,7 @@
           },
           "role": {
             "default": "member",
-            "description": "Role to assign: admin, member, viewer",
+            "description": "Role to assign: admin, member, viewer, helper",
             "title": "Role",
             "type": "string"
           }
@@ -20782,7 +20918,7 @@
           },
           "role": {
             "default": "member",
-            "description": "Role to assign: admin, member, viewer",
+            "description": "Role to assign: admin, member, viewer, helper",
             "title": "Role",
             "type": "string"
           },
@@ -38155,7 +38291,7 @@
         "description": "Schema for adding a team member.",
         "properties": {
           "role": {
-            "description": "Member role: owner, admin, member, viewer",
+            "description": "Member role: owner, admin, member, viewer, helper",
             "title": "Role",
             "type": "string"
           },
@@ -38255,7 +38391,7 @@
             "type": "object"
           },
           "role": {
-            "description": "Member role: owner, admin, member, viewer",
+            "description": "Member role: owner, admin, member, viewer, helper",
             "title": "Role",
             "type": "string"
           },
@@ -47166,7 +47302,7 @@
     },
     "/api/v1/admin-dev/overview": {
       "get": {
-        "description": "Proxy coord's ``GET /coord/dev-overview`` (gates + rollout overview).\n\nReturns coord's JSON envelope verbatim \u2014 the\n``{generated_at, gates, rollouts}`` contract the frontend\n``admin-dev-service`` types against. The overview is fleet-wide (not\ntenant-scoped on the web side); the caller bearer is forwarded so coord\nauthorizes on the operator identity. ``tenant_id`` is resolved\nbest-effort only (it may be ``None`` when coord identity resolution\nfails) and is used solely as the cache key \u2014 coord-down callers (key\n``None``) never share a cache entry with resolved ones.\n\nCaching: a fresh successful envelope is served from a ~30s in-process\ncache; ``?refresh=1`` bypasses it (the frontend Refresh button passes\nit). Degraded ``coord_error`` envelopes are never cached.\n\nWhen coord is unreachable/degraded (connect-refused \u2192 502, timeout \u2192\n504, etc.) the endpoint returns an empty envelope annotated with\n``coord_error`` rather than re-raising the 5xx, so the dashboard renders\na clear \"coord unavailable\" state instead of a broken page. Because\nidentity resolution no longer hard-fails the request, this covers a TOTAL\ncoord outage too (not just the case where ``/admin/coord/me`` happened to\nsucceed). The Spec CI crawl, which runs without a live coord, stays green.",
+        "description": "Proxy coord's ``GET /coord/dev-overview`` (gates + rollout overview).\n\nReturns coord's JSON envelope verbatim \u2014 the\n``{generated_at, gates, rollouts}`` contract the frontend\n``admin-dev-service`` types against. The caller bearer AND the dashboard\ntenant-switcher selection (``X-Qontinui-Active-Tenant``) are forwarded,\nso coord authorizes on the operator identity and scopes the overview to\nthe selected tenant (coord's ``/coord/dev-overview`` filters every gate/\nrollout query by the effective tenant). ``tenant_key`` is the VALIDATED\neffective tenant (membership-checked selection, else home tenant) and is\nused solely as the cache key \u2014 two tenants never share a cache entry.\n``None`` (identity resolution failed) bypasses the shared cache\nentirely, never sharing an entry with anyone.\n\nCaching: a fresh successful envelope is served from a ~30s in-process\ncache; ``?refresh=1`` bypasses it (the frontend Refresh button passes\nit). Degraded ``coord_error`` envelopes are never cached.\n\nWhen coord is unreachable/degraded (connect-refused \u2192 502, timeout \u2192\n504, etc.) the endpoint returns an empty envelope annotated with\n``coord_error`` rather than re-raising the 5xx, so the dashboard renders\na clear \"coord unavailable\" state instead of a broken page. Because\nidentity resolution no longer hard-fails the request, this covers a TOTAL\ncoord outage too (not just the case where ``/admin/coord/me`` happened to\nsucceed). The Spec CI crawl, which runs without a live coord, stays green.",
         "operationId": "api_v1_admin_dev_overview_get",
         "parameters": [
           {
@@ -47274,7 +47410,7 @@
     },
     "/api/v1/admin-dev/prs": {
       "get": {
-        "description": "Proxy coord's ``GET /pr-merge/prs`` (open PRs + merge status).\n\nPure passthrough: returns coord's JSON envelope verbatim \u2014 the\n``{prs, total}`` contract where each PR is already enriched coord-side\nwith a typed ``merge_status`` + ``blocking_summary`` (coord owns that\nshape; the web side computes nothing and renames nothing). The list is\nfleet-wide (not tenant-scoped on the web side); the caller bearer is\nforwarded so coord authorizes on the operator identity. ``tenant_id`` is\nresolved best-effort only (it may be ``None`` when coord identity\nresolution fails) and is used solely to trigger bearer-forwarding.\n\nMirrors ``get_dev_overview``'s auth + degradation posture exactly:\n``require_admin`` (superuser) is the hard web-side gate, the bearer is\ncaptured best-effort so a coord-down identity resolution never 502s in\nthe dependency, and ``forward_bearer=True`` forwards the bearer even when\nthe tenant is unresolved. When coord is unreachable/degraded\n(connect-refused \u2192 502, timeout \u2192 504, etc.) the endpoint returns an\nempty ``{prs, total, coord_error}`` envelope rather than re-raising the\n5xx, so the dashboard renders a clear \"coord unavailable\" state.\n\nUnlike the overview, this list is NOT cached: it reflects fast-moving PR\n+ CI state where stale data is misleading on a merge-readiness dashboard.",
+        "description": "Proxy coord's ``GET /pr-merge/prs`` (open PRs + merge status).\n\nPure passthrough: returns coord's JSON envelope verbatim \u2014 the\n``{prs, total}`` contract where each PR is already enriched coord-side\nwith a typed ``merge_status`` + ``blocking_summary`` (coord owns that\nshape; the web side computes nothing and renames nothing). The caller\nbearer and the tenant-switcher selection are forwarded so coord\nauthorizes on the operator identity and scopes the list to the\neffective tenant; the dependency is retained purely for those\nheader captures.\n\nMirrors ``get_dev_overview``'s auth + degradation posture exactly:\n``require_admin`` (superuser) is the hard web-side gate, the bearer is\ncaptured best-effort so a coord-down identity resolution never 502s in\nthe dependency, and ``forward_bearer=True`` forwards the bearer even when\nthe tenant is unresolved. When coord is unreachable/degraded\n(connect-refused \u2192 502, timeout \u2192 504, etc.) the endpoint returns an\nempty ``{prs, total, coord_error}`` envelope rather than re-raising the\n5xx, so the dashboard renders a clear \"coord unavailable\" state.\n\nUnlike the overview, this list is NOT cached: it reflects fast-moving PR\n+ CI state where stale data is misleading on a merge-readiness dashboard.",
         "operationId": "api_v1_admin_dev_prs_get",
         "parameters": [
           {
@@ -47326,7 +47462,7 @@
     },
     "/api/v1/admin-dev/release-verdict": {
       "get": {
-        "description": "Proxy coord's ``GET /coord/twin/release/verdict`` (per-surface deploy state).\n\nPure passthrough backing the always-visible deploy-status strip atop\n``/admin/coord/prs``: returns coord's release-verdict envelope verbatim \u2014\nthe ``{verdict: {surfaces: [{components: {...}}]}}`` contract where each\nsurface's per-surface drift state lives in ``surfaces[i].components`` (coord\nowns that shape; the web side computes nothing and renames nothing). The\nverdict is fleet-wide (not tenant-scoped on the web side); the caller bearer\nis forwarded so coord authorizes on the operator identity. ``tenant_id`` is\nresolved best-effort only (it may be ``None`` when coord identity resolution\nfails) and is used solely to trigger bearer-forwarding.\n\nMirrors ``get_prs``'s auth + degradation posture exactly: ``require_admin``\n(superuser) is the hard web-side gate, the bearer is captured best-effort so\na coord-down identity resolution never 502s in the dependency, and\n``forward_bearer=True`` forwards the bearer even when the tenant is\nunresolved. When coord is unreachable/degraded (connect-refused \u2192 502,\ntimeout \u2192 504, etc.) the endpoint returns an empty\n``{verdict: {surfaces: []}, coord_error}`` envelope rather than re-raising\nthe 5xx, so neither the Spec CI crawl gate (which runs without a live coord)\nnor the dashboard ever sees a 5xx.\n\nLike ``get_prs``, this is NOT cached: it reflects fast-moving per-surface\ndeploy state where stale data is misleading on a \"is prod current?\" strip.",
+        "description": "Proxy coord's ``GET /coord/twin/release/verdict`` (per-surface deploy state).\n\nPure passthrough backing the always-visible deploy-status strip atop\n``/admin/coord/prs``: returns coord's release-verdict envelope verbatim \u2014\nthe ``{verdict: {surfaces: [{components: {...}}]}}`` contract where each\nsurface's per-surface drift state lives in ``surfaces[i].components`` (coord\nowns that shape; the web side computes nothing and renames nothing). The\nverdict is fleet-wide (deploy surfaces are not per-tenant); the caller\nbearer + tenant-switcher selection are forwarded so coord authorizes on\nthe operator identity; the dependency is retained purely for those\nheader captures.\n\nMirrors ``get_prs``'s auth + degradation posture exactly: ``require_admin``\n(superuser) is the hard web-side gate, the bearer is captured best-effort so\na coord-down identity resolution never 502s in the dependency, and\n``forward_bearer=True`` forwards the bearer even when the tenant is\nunresolved. When coord is unreachable/degraded (connect-refused \u2192 502,\ntimeout \u2192 504, etc.) the endpoint returns an empty\n``{verdict: {surfaces: []}, coord_error}`` envelope rather than re-raising\nthe 5xx, so neither the Spec CI crawl gate (which runs without a live coord)\nnor the dashboard ever sees a 5xx.\n\nLike ``get_prs``, this is NOT cached: it reflects fast-moving per-surface\ndeploy state where stale data is misleading on a \"is prod current?\" strip.",
         "operationId": "api_v1_admin_dev_release_verdict_get",
         "responses": {
           "200": {
@@ -53823,6 +53959,620 @@
         ]
       }
     },
+    "/api/v1/conditions/groups": {
+      "get": {
+        "description": "List the calling tenant's condition groups.\n\nProxies coord's ``GET /coord/condition-groups``. Tenant-scoped: coord\nresolves the tenant from the forwarded operator bearer.",
+        "operationId": "api_v1_conditions_groups_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response List Condition Groups Api V1 Conditions Groups Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Condition Groups",
+        "tags": [
+          "conditions"
+        ]
+      },
+      "post": {
+        "description": "Create a condition group.\n\nProxies coord's ``POST /coord/condition-groups`` with the request body\nforwarded verbatim.",
+        "operationId": "api_v1_conditions_groups_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Create Condition Group Api V1 Conditions Groups Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Create Condition Group",
+        "tags": [
+          "conditions"
+        ]
+      }
+    },
+    "/api/v1/conditions/groups/{group_id}": {
+      "delete": {
+        "description": "Delete a condition group.\n\nProxies coord's ``DELETE /coord/condition-groups/{group_id}``.",
+        "operationId": "api_v1_conditions_groups_group_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Delete Condition Group Api V1 Conditions Groups  Group Id  Delete"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Condition Group",
+        "tags": [
+          "conditions"
+        ]
+      },
+      "get": {
+        "description": "Return a single condition group (with its conditions).\n\nProxies coord's ``GET /coord/condition-groups/{group_id}``.",
+        "operationId": "api_v1_conditions_groups_group_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Condition Group Api V1 Conditions Groups  Group Id  Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Condition Group",
+        "tags": [
+          "conditions"
+        ]
+      },
+      "patch": {
+        "description": "Update a condition group's fields.\n\nProxies coord's ``PATCH /coord/condition-groups/{group_id}``.",
+        "operationId": "api_v1_conditions_groups_group_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Update Condition Group Api V1 Conditions Groups  Group Id  Patch"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update Condition Group",
+        "tags": [
+          "conditions"
+        ]
+      }
+    },
+    "/api/v1/conditions/groups/{group_id}/conditions": {
+      "post": {
+        "description": "Add a condition to a group.\n\nProxies coord's ``POST /coord/condition-groups/{group_id}/conditions``.",
+        "operationId": "api_v1_conditions_groups_group_id_conditions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Add Condition Api V1 Conditions Groups  Group Id  Conditions Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Add Condition",
+        "tags": [
+          "conditions"
+        ]
+      }
+    },
+    "/api/v1/conditions/groups/{group_id}/reorder": {
+      "post": {
+        "description": "Renumber a group's conditions to the given order.\n\nBody: ``{\"condition_ids\": [...]}`` (the desired top-to-bottom order, which\nmust be exactly the group's current conditions). Proxies coord's\n``POST /coord/condition-groups/{group_id}/reorder``.",
+        "operationId": "api_v1_conditions_groups_group_id_reorder_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Reorder Conditions Api V1 Conditions Groups  Group Id  Reorder Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Reorder Conditions",
+        "tags": [
+          "conditions"
+        ]
+      }
+    },
+    "/api/v1/conditions/groups/{group_id}/run": {
+      "post": {
+        "description": "Trigger a regression run of a condition group.\n\nProxies coord's ``POST /coord/condition-groups/{group_id}/run``. The\nbody is optional (run options); an empty object is forwarded when the\ncaller sends none.",
+        "operationId": "api_v1_conditions_groups_group_id_run_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Run Condition Group Api V1 Conditions Groups  Group Id  Run Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Run Condition Group",
+        "tags": [
+          "conditions"
+        ]
+      }
+    },
+    "/api/v1/conditions/groups/{group_id}/runs": {
+      "get": {
+        "description": "List past runs for a condition group.\n\nProxies coord's ``GET /coord/condition-groups/{group_id}/runs``.",
+        "operationId": "api_v1_conditions_groups_group_id_runs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response List Condition Group Runs Api V1 Conditions Groups  Group Id  Runs Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Condition Group Runs",
+        "tags": [
+          "conditions"
+        ]
+      }
+    },
+    "/api/v1/conditions/items/{condition_id}": {
+      "delete": {
+        "description": "Delete a single condition.\n\nProxies coord's ``DELETE /coord/conditions/{condition_id}``.",
+        "operationId": "api_v1_conditions_items_condition_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "condition_id",
+            "required": true,
+            "schema": {
+              "title": "Condition Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Delete Condition Api V1 Conditions Items  Condition Id  Delete"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Condition",
+        "tags": [
+          "conditions"
+        ]
+      },
+      "patch": {
+        "description": "Update a single condition.\n\nProxies coord's ``PATCH /coord/conditions/{condition_id}``.",
+        "operationId": "api_v1_conditions_items_condition_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "condition_id",
+            "required": true,
+            "schema": {
+              "title": "Condition Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Update Condition Api V1 Conditions Items  Condition Id  Patch"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update Condition",
+        "tags": [
+          "conditions"
+        ]
+      }
+    },
+    "/api/v1/conditions/runs/{run_id}": {
+      "get": {
+        "description": "Return a single condition run's detail/results.\n\nProxies coord's ``GET /coord/condition-runs/{run_id}``.",
+        "operationId": "api_v1_conditions_runs_run_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Condition Run Api V1 Conditions Runs  Run Id  Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Condition Run",
+        "tags": [
+          "conditions"
+        ]
+      }
+    },
     "/api/v1/conflicts": {
       "get": {
         "description": "List conflicts.\n\nReturns conflicts that the current user is involved in or has access to.",
@@ -56552,6 +57302,53 @@
           }
         ],
         "summary": "Create Machine",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/v1/devenv/machines/dispatch-enroll": {
+      "post": {
+        "description": "Create a machine + dispatch an enroll directive to a paired runner.\n\nPhase 3 (dispatched self-enroll): the operator picks an already-paired\ncoord device in the dashboard; the server mints the machine + one-time\ncode, binds it to the chosen device, then asks coord to publish an enroll\ndirective to that device's runner. The runner enrolls itself \u2014 no terminal,\nno copy-paste.\n\nThe machine + code are ALWAYS created and returned, even if the dispatch is\nrejected (device offline / unknown), so the UI can fall back to the\ncopy-paste command (Phase 1(b)). Coord's admin-gated route resolves the\noperator from the forwarded Cognito bearer.",
+        "operationId": "api_v1_devenv_machines_dispatch_enroll_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DispatchEnrollRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DispatchEnrollResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Dispatch Enroll",
         "tags": [
           "environments"
         ]
@@ -63790,6 +64587,123 @@
         "summary": "Readiness Probe",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/api/v1/helper-tasks": {
+      "get": {
+        "description": "List the caller's-tenant open helper tasks (the portal work queue).\n\nProxies coord ``GET /coord/helper-tasks?status=open`` \u2192 a bare array of\n``HelperTask`` (camelCase wire shape). Wrapped here as ``{\"tasks\": [...],\n\"available\": true}`` so queue-unavailable degrades to the same shape with\n``available: false`` instead of an error status. Tenant resolution runs\nin-handler so coord-unreachable / tenant-not-resolved degrade the same\nway instead of erroring out of the dependency.",
+        "operationId": "api_v1_helper_tasks_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Helper Tasks Api V1 Helper Tasks Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Helper Tasks",
+        "tags": [
+          "helper-tasks"
+        ]
+      }
+    },
+    "/api/v1/helper-tasks/status": {
+      "get": {
+        "description": "The caller's helper standing, for the frontend's /help routing.\n\n``is_helper_only`` is true when the user holds at least one HELPER\nmembership and no non-helper role in any *shared* (non-personal)\norganization \u2014 the signal the frontend uses to lock the session to the\n/help portal. Personal-organization ownership (auto-created at signup)\nis deliberately ignored: every user owns one, so it carries no signal.\nSuperusers are never helper-only.",
+        "operationId": "api_v1_helper_tasks_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Helper Status Api V1 Helper Tasks Status Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Helper Status",
+        "tags": [
+          "helper-tasks"
+        ]
+      }
+    },
+    "/api/v1/helper-tasks/{task_id}/answer": {
+      "post": {
+        "description": "Submit the caller's verdict for a task.\n\nProxies coord ``POST /coord/helper-tasks/:id/answer`` \u2192 201 with the\ncreated ``HelperAnswer``. Coord enforces tenant isolation (404 when the\ntask is not in the caller's tenant) and records the answer against the\nauthenticated operator \u2014 never an argument-supplied identity.\n\nUnlike the list read, tenant-resolution failure here stays an ERROR (a\nverdict must never be silently dropped) \u2014 but normalized to the same 503\n``helper_task_queue_unavailable`` detail the portal already understands.",
+        "operationId": "api_v1_helper_tasks_task_id_answer_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HelperAnswerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Submit Helper Answer Api V1 Helper Tasks  Task Id  Answer Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Submit Helper Answer",
+        "tags": [
+          "helper-tasks"
         ]
       }
     },
@@ -71463,6 +72377,78 @@
         ]
       }
     },
+    "/api/v1/operations/github/clone-credential": {
+      "post": {
+        "description": "Mint a repo-scoped, short-TTL, contents:read clone token for a single\nrepo. Proxies coord ``POST /coord/onboarding/installations/clone-credential``.\n\nPasses coord's status + JSON body through verbatim (like the onboarding\nclaim proxy) so the runner sees a clean ``403 repo_owner_not_connected`` when\nthe repo's owner isn't a GitHub account connected to the caller's workspace.",
+        "operationId": "api_v1_operations_github_clone_credential_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloneCredentialRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Github Clone Credential",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/github/repos": {
+      "get": {
+        "description": "List repositories the caller's connected GitHub App installation(s) can\naccess, for the runner setup-wizard clone picker. Proxies coord\n``GET /coord/onboarding/installations/repositories``. Returns\n``{connected: bool, repos: [...]}`` \u2014 ``connected: false`` (with an empty\nlist) when the tenant hasn't installed the GitHub App yet, so the runner can\nshow a \"connect your GitHub org\" CTA instead of an error.",
+        "operationId": "api_v1_operations_github_repos_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Github Installation Repos Api V1 Operations Github Repos Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Github Installation Repos",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/heartbeat": {
       "post": {
         "description": "Receive heartbeat from a runner (cross-machine beacon).",
@@ -72757,6 +73743,33 @@
           }
         ],
         "summary": "Post Pr Merge Onboarding Accept",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/pr-merge/onboarding/accounts": {
+      "get": {
+        "description": "List the GitHub accounts connected to the caller's tenant (+ enrolled repos).\n\nProxies coord's ``GET /coord/onboarding/github-accounts`` (TenantId-gated).\nResponse envelope (coord-owned):\n\n``{\"accounts\": [{\"account_login\", \"account_type\", \"installation_id\",\n\"repos\": [{\"repo\", \"rollout_state\", \"profile_source\"}]}]}``\n\n(``repos`` may be ``[]`` for a freshly-connected org; ``rollout_state`` /\n``profile_source`` may be null.) Reuses the onboarding-doctor proxy's auth\nexactly: ``get_tenant_id`` resolves the operator and captures the caller's\nbearer, which ``_tenant_headers`` forwards so coord scopes the read to the\noperator's own tenant. ``_proxy_coord_get`` passes coord's status code\nthrough (a coord 4xx/5xx re-raises as an ``HTTPException`` with the same\nstatus).",
+        "operationId": "api_v1_operations_pr_merge_onboarding_accounts_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Pr Merge Onboarding Accounts Api V1 Operations Pr Merge Onboarding Accounts Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Pr Merge Onboarding Accounts",
         "tags": [
           "operations"
         ]

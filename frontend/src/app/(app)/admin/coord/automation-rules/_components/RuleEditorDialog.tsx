@@ -48,15 +48,38 @@ interface RuleEditorDialogProps {
 }
 
 /**
- * Validate a regex pattern with the browser engine (JS `RegExp`). NOTE: coord
- * re-validates with the Rust `regex` crate on CRUD (which rejects lookaround /
- * backrefs JS allows) and returns 422 — surfaced as a toast — so this is a
- * fast client-side hint, not the authority.
+ * Validate a regex pattern against the RUST `regex` dialect that actually runs
+ * the rule (coord validates on CRUD → 422; the runner matches with the same
+ * engine). This is a best-effort client hint aligned to Rust rather than raw
+ * JS `RegExp`, which is a different dialect in both directions:
+ *  - Inline flags like `(?i)` / `(?im)` are VALID in Rust but *throw* in JS
+ *    `RegExp` — so we strip a leading bare-flag group before the JS syntax
+ *    check to avoid false-rejecting valid patterns (the exact case that tripped
+ *    up authoring — use the case-insensitive toggle OR a leading `(?i)`).
+ *  - Lookaround (`(?=)`, `(?!)`, `(?<=)`, `(?<!)`) and backreferences (`\1`,
+ *    `\k<name>`) are accepted by JS but REJECTED by Rust `regex` — we flag them
+ *    up front, since coord would 422 them on save.
+ * coord's 422 remains the authority; this just steers authors correctly. See
+ * qontinui-web#635.
  */
 function regexError(pattern: string): string | null {
   if (!pattern) return null;
+
+  // Constructs JS `RegExp` accepts but the Rust `regex` engine rejects — coord
+  // would 422 these, so surface them as errors here rather than passing them.
+  if (/\(\?<?[=!]/.test(pattern)) {
+    return "Lookaround ((?=), (?!), (?<=), (?<!)) isn't supported by the rule engine (Rust regex).";
+  }
+  if (/\\[1-9]/.test(pattern) || /\\k<[^>]+>/.test(pattern)) {
+    return "Backreferences (\\1, \\k<name>) aren't supported by the rule engine (Rust regex).";
+  }
+
+  // Rust accepts a leading inline-flag group (`(?i)`, `(?im)`, …) that JS
+  // `RegExp` rejects; strip it before the JS syntax check so valid patterns
+  // aren't false-flagged. (Rust flags: i, m, s, x, u, U.)
+  const forSyntaxCheck = pattern.replace(/^\(\?[imsxuU]+\)/, "");
   try {
-    void new RegExp(pattern);
+    void new RegExp(forSyntaxCheck);
     return null;
   } catch (err) {
     return err instanceof Error ? err.message : "Invalid regular expression";
@@ -75,6 +98,7 @@ function deriveInitial(rule: PolicyRow | null): {
   promptText: string;
   options: PolicyOption[];
   surface: string;
+  autoAnswer: boolean;
 } {
   if (!rule) {
     return {
@@ -88,6 +112,7 @@ function deriveInitial(rule: PolicyRow | null): {
       promptText: "",
       options: [{ id: "", label: "" }],
       surface: DEFAULT_SCORING_SURFACE,
+      autoAnswer: false,
     };
   }
 
@@ -143,6 +168,7 @@ function deriveInitial(rule: PolicyRow | null): {
     promptText,
     options,
     surface,
+    autoAnswer: rule.autonomy_level === "auto_decide",
   };
 }
 
@@ -166,6 +192,9 @@ export function RuleEditorDialog({
     { id: "", label: "" },
   ]);
   const [surface, setSurface] = useState(DEFAULT_SCORING_SURFACE);
+  // Whether a question-scoring rule is graduated to auto-answer (autonomy_level
+  // === "auto_decide"). Read from the existing row; settable only on edit (PATCH).
+  const [autoAnswer, setAutoAnswer] = useState(false);
 
   // Reset the whole form whenever the dialog opens (for the active rule, or blank).
   useEffect(() => {
@@ -181,6 +210,7 @@ export function RuleEditorDialog({
     setPromptText(init.promptText);
     setOptions(init.options);
     setSurface(init.surface);
+    setAutoAnswer(init.autoAnswer);
   }, [open, rule]);
 
   const isTerminal = trigger === "terminal_auto_response";
@@ -249,11 +279,32 @@ export function RuleEditorDialog({
     const action = buildAction();
     let ok: boolean;
     if (rule) {
+      // Autonomy graduation is only meaningful for a question-scoring rule, and
+      // is settable only via PATCH (coord#920). Confirm before turning it ON —
+      // it lets coord auto-answer agent questions without operator review.
+      const isQuestionScoring = !isTerminal && resolution === "scoring";
+      if (
+        isQuestionScoring &&
+        autoAnswer &&
+        rule.autonomy_level !== "auto_decide" &&
+        !window.confirm(
+          "Enable auto-answer? coord will auto-answer matching agent questions " +
+            "with the composed winning option, without operator review. " +
+            "Leave off to keep the rule in shadow mode (recorded, not acted)."
+        )
+      ) {
+        return;
+      }
       ok = await onUpdate(rule.policy_id, {
         name,
         kind: trigger,
         condition,
         action,
+        ...(isQuestionScoring
+          ? {
+              autonomy_level: autoAnswer ? "auto_decide" : "guidance_only",
+            }
+          : {}),
       });
     } else {
       ok = await onCreate({ name, kind: trigger, condition, action });
@@ -417,7 +468,8 @@ export function RuleEditorDialog({
                   placeholder="e.g. agent_question"
                 />
                 <p className="text-xs text-muted-foreground">
-                  The priority-set surface the coord judge scores against.
+                  The priority-set surface whose priorities the option scores are
+                  composed against.
                 </p>
               </div>
               <div className="space-y-2">
@@ -463,6 +515,35 @@ export function RuleEditorDialog({
                   Add option
                 </Button>
               </div>
+
+              {/* Autonomy graduation — question-scoring rules only. Settable via
+                  PATCH (coord#920); create is shadow-default. */}
+              {!isTerminal &&
+                (rule ? (
+                  <div className="space-y-2 rounded-md border border-border bg-muted/30 p-3">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="rule-auto-answer">
+                        Auto-answer matching questions
+                      </Label>
+                      <Switch
+                        id="rule-auto-answer"
+                        checked={autoAnswer}
+                        onCheckedChange={setAutoAnswer}
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {autoAnswer
+                        ? "coord auto-answers matching agent questions with the composed winning option — no operator review."
+                        : "Shadow mode: resolutions are recorded but not acted on. Turn on to graduate this rule to auto-answer."}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    New rules start in{" "}
+                    <span className="font-medium">shadow mode</span>. Create the
+                    rule first, then edit it to enable auto-answer.
+                  </p>
+                ))}
             </div>
           )}
 

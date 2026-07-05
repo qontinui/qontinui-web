@@ -39,6 +39,7 @@ from app.api.v1.endpoints import (
     code_packages,
     collaboration,
     collaboration_ws,
+    conditions,
     conflicts,
     constraints,
     custom_functions,
@@ -63,6 +64,7 @@ from app.api.v1.endpoints import (
     finding_categories,
     fleet_dispatch,
     health,
+    helper_tasks,
     historical,
     identity_resolution,
     images,
@@ -210,6 +212,13 @@ api_router.include_router(
 api_router.include_router(runner_wake.router, prefix="/device", tags=["device-wake"])
 # Operations — fleet aggregation + cross-machine Claude session monitoring.
 api_router.include_router(operations.router, prefix="/operations", tags=["operations"])
+# Helper-task portal proxy — coord-brokered human-judgment micro-tasks
+# (helper-task-queue plan Phase 1.4). Any authenticated user, incl. helpers.
+api_router.include_router(
+    helper_tasks.router, prefix="/helper-tasks", tags=["helper-tasks"]
+)
+# Condition groups (regression tests) — tenant-user coord proxy.
+api_router.include_router(conditions.router, prefix="/conditions", tags=["conditions"])
 # Digital Twin Explorer (Phase 1) — coord-backed completeness matrix.
 api_router.include_router(
     digital_twin.router, prefix="/digital-twin", tags=["digital-twin"]
