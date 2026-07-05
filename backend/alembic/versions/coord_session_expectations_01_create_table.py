@@ -1,7 +1,7 @@
 """coord.session_expectations (subagent stall watchdog — expectation ledger)
 
 Revision ID: coord_session_expectations_01
-Revises: coord_device_status_mt_pk
+Revises: coord_consistent_snapshots_01
 Create Date: 2026-07-03
 
 PR-4a (D1, plan §3) of plan
@@ -58,14 +58,17 @@ Idempotency: ``CREATE TABLE/INDEX IF NOT EXISTS`` (``coord_session_messages``
 posture), so coord + this migration land in either order without a boot-gate
 crash-loop.
 
-NOTE (stacked reservation): ``down_revision`` is the ASSIGNED parent
-``coord_device_status_mt_pk`` from the coord migration reserve queue
-(reservation ``ec1ea4fc-4867-42c0-956d-85ae927525d2``). That parent is NOT on
-main yet (in-flight multi-tenant sibling PR), so the alembic-heads check may
-stay red until the sibling lands — do not re-point; coord's land-time
-re-point is the fork-prevention authority.
+NOTE (re-pointed 2026-07-05): originally reserved with the ASSIGNED parent
+``coord_device_status_mt_pk`` (reservation
+``ec1ea4fc-4867-42c0-956d-85ae927525d2``), a stacked reservation behind the
+in-flight multi-tenant sibling (web#730). That parent has NOT landed and this
+ledger has NO data dependency on the device-status change, while the coord
+consumer of ``coord.session_expectations`` is already on main and awaiting
+this table. Re-pointed to current main head ``coord_consistent_snapshots_01``
+to decouple and land now; the multi-tenant sibling re-points its own chain at
+its land time (coord's land-time re-point is the fork-prevention authority).
 
-Chains off ``coord_device_status_mt_pk``.
+Chains off ``coord_consistent_snapshots_01``.
 """
 
 from collections.abc import Sequence
@@ -75,7 +78,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_session_expectations_01"
-down_revision: str | Sequence[str] | None = "coord_device_status_mt_pk"
+down_revision: str | Sequence[str] | None = "coord_consistent_snapshots_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
