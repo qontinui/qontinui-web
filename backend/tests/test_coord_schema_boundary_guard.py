@@ -101,6 +101,12 @@ WRITE_PATH_FOLLOWUP: frozenset[str] = frozenset(
         # Cross-schema FK target → `coord.device_connections.id` on the
         # web-owned `software_test_run` table (device-write follow-up).
         "models/software_test_run.py",
+        # `{"schema": "coord"}` binding on the `TestTarget` ORM model — the
+        # fleet-fresh P5 test-host designation write path to `coord.test_targets`
+        # (same shared-Postgres posture as `Device` against `coord.devices`;
+        # a later plan moves this designation write onto coord HTTP and drains
+        # this entry).
+        "models/test_target.py",
     }
 )
 # NOTE: files that mention `coord.*` only in DOCSTRINGS/comments (e.g.
