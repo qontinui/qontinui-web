@@ -1295,13 +1295,7 @@ async def get_pr_merge_onboarding_accounts(
     through (a coord 4xx/5xx re-raises as an ``HTTPException`` with the same
     status).
     """
-<<<<<<< HEAD
     return await _proxy_coord_get(COORD_ONBOARDING_ACCOUNTS_PATH, tenant_id=tenant_id)
-=======
-    return await _proxy_coord_get(
-        COORD_ONBOARDING_ACCOUNTS_PATH, tenant_id=tenant_id
-    )
->>>>>>> 9985bd23 (feat(onboarding): connected-orgs summary + accounts proxy; reframe wizard step 3 as optional refine)
 
 
 # ---- Zero-touch onboarding claim (Setup-URL OAuth code exchange) ----------

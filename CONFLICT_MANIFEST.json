@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "base_sha": "02d416b62c0d07a86d360ad0a754427cfa828b52",
+  "ours_sha": "1229cdfef359ac074a4f6435bccc3549fd5f7608",
+  "theirs_sha": "02d416b62c0d07a86d360ad0a754427cfa828b52",
+  "entries": [
+    {
+      "path": "backend/app/api/v1/endpoints/operations.py",
+      "base_oid": "ce318167b4a970dd22b3687afc86184f7e0ee26e",
+      "ours_oid": "844f5327fcc32304cf02c54ab2a8d4d69aeee68c",
+      "theirs_oid": "5b5012ac0d7323c00cc094ebf2606000dc68252c",
+      "base_path": "backend/app/api/v1/endpoints/operations.py.base",
+      "ours_path": "backend/app/api/v1/endpoints/operations.py.ours",
+      "theirs_path": "backend/app/api/v1/endpoints/operations.py.theirs",
+      "hunks": [
+        "<<<<<<< HEAD\n    return await _proxy_coord_get(COORD_ONBOARDING_ACCOUNTS_PATH, tenant_id=tenant_id)\n=======\n    return await _proxy_coord_get(\n        COORD_ONBOARDING_ACCOUNTS_PATH, tenant_id=tenant_id\n    )\n>>>>>>> 9985bd23 (feat(onboarding): connected-orgs summary + accounts proxy; reframe wizard step 3 as optional refine)\n"
+      ]
+    }
+  ]
+}
