@@ -19018,6 +19018,21 @@
           "hostname": {
             "title": "Hostname",
             "type": "string"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
           }
         },
         "required": [
@@ -19026,7 +19041,8 @@
           "device_name",
           "hostname",
           "freshness",
-          "deployed_at"
+          "deployed_at",
+          "updated_at"
         ],
         "title": "FreshnessRow",
         "type": "object"
