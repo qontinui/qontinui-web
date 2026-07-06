@@ -131,6 +131,8 @@ async def list_freshness(
                 freshness=state.freshness,
                 deployed_sha=state.deployed_sha,
                 deployed_at=state.deployed_at,
+                last_error=state.last_error,
+                updated_at=state.updated_at,
             )
         )
     return rows
