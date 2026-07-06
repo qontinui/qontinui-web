@@ -2079,6 +2079,95 @@
         "title": "AnnotationSetUpdate",
         "type": "object"
       },
+      "AppConfig": {
+        "description": "Registered app + its fleet-fresh config (``project.apps``).",
+        "properties": {
+          "app_id": {
+            "title": "App Id",
+            "type": "string"
+          },
+          "build_command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Build Command"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "repo_root": {
+            "title": "Repo Root",
+            "type": "string"
+          },
+          "start_command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Command"
+          },
+          "update_strategy": {
+            "$ref": "#/components/schemas/UpdateStrategyEnum"
+          }
+        },
+        "required": [
+          "app_id",
+          "display_name",
+          "repo_root",
+          "update_strategy"
+        ],
+        "title": "AppConfig",
+        "type": "object"
+      },
+      "AppConfigUpdate": {
+        "description": "Partial update of an app's fleet-fresh config.\n\nOnly the fields the operator edits from the fleet UI. ``None`` leaves a\nfield unchanged (build/start commands can be cleared by sending an empty\nstring).",
+        "properties": {
+          "build_command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Build Command"
+          },
+          "start_command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Command"
+          },
+          "update_strategy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpdateStrategyEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "AppConfigUpdate",
+        "type": "object"
+      },
       "ApplicationCreate": {
         "description": "Create an application.",
         "properties": {
@@ -19287,6 +19376,57 @@
           "freshness_status"
         ],
         "title": "FreshHostResponse",
+        "type": "object"
+      },
+      "FreshnessRow": {
+        "description": "Per-(device, app) deployment freshness (``project.app_deploy_state``).",
+        "properties": {
+          "app_id": {
+            "title": "App Id",
+            "type": "string"
+          },
+          "deployed_at": {
+            "title": "Deployed At",
+            "type": "string"
+          },
+          "deployed_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deployed Sha"
+          },
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "device_name": {
+            "title": "Device Name",
+            "type": "string"
+          },
+          "freshness": {
+            "title": "Freshness",
+            "type": "string"
+          },
+          "hostname": {
+            "title": "Hostname",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "app_id",
+          "device_name",
+          "hostname",
+          "freshness",
+          "deployed_at"
+        ],
+        "title": "FreshnessRow",
         "type": "object"
       },
       "FunctionStats": {
@@ -39768,6 +39908,102 @@
         "title": "TestRunResultResponse",
         "type": "object"
       },
+      "TestTargetDesignation": {
+        "description": "Body for designating a device as a test host for an app.",
+        "properties": {
+          "auto_fresh": {
+            "default": false,
+            "description": "When true, the runner keeps this device's build of the app current (auto-pull + optional rebuild).",
+            "title": "Auto Fresh",
+            "type": "boolean"
+          }
+        },
+        "title": "TestTargetDesignation",
+        "type": "object"
+      },
+      "TestTargetRow": {
+        "description": "A designated (device, app) test host, joined with device + freshness.",
+        "properties": {
+          "app_id": {
+            "title": "App Id",
+            "type": "string"
+          },
+          "auto_fresh": {
+            "title": "Auto Fresh",
+            "type": "boolean"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "deployed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deployed At"
+          },
+          "deployed_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deployed Sha"
+          },
+          "derived_status": {
+            "title": "Derived Status",
+            "type": "string"
+          },
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "device_name": {
+            "title": "Device Name",
+            "type": "string"
+          },
+          "freshness": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Freshness"
+          },
+          "hostname": {
+            "title": "Hostname",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "app_id",
+          "auto_fresh",
+          "device_name",
+          "hostname",
+          "derived_status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "TestTargetRow",
+        "type": "object"
+      },
       "TestingSettingsSchema": {
         "description": "Test execution settings schema.",
         "properties": {
@@ -42800,6 +43036,15 @@
         ],
         "title": "UnreadCountResponse",
         "type": "object"
+      },
+      "UpdateStrategyEnum": {
+        "description": "How the runner keeps a designated host's build of an app current.",
+        "enum": [
+          "pull_only",
+          "pull_build"
+        ],
+        "title": "UpdateStrategyEnum",
+        "type": "string"
       },
       "UploadResponse": {
         "description": "Response after upload",
@@ -64527,6 +64772,330 @@
         "summary": "Update a finding category",
         "tags": [
           "finding-categories"
+        ]
+      }
+    },
+    "/api/v1/fleet/apps": {
+      "get": {
+        "description": "List registered apps + their fleet-fresh config.\n\n``project.apps`` is not user-partitioned (it is the runner-local app\nregistry mirrored on shared Postgres), so this returns every registered\napp \u2014 the fleet UI is an operator surface.",
+        "operationId": "api_v1_fleet_apps_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AppConfig"
+                  },
+                  "title": "Response List Apps Api V1 Fleet Apps Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Apps",
+        "tags": [
+          "fleet-targets"
+        ]
+      }
+    },
+    "/api/v1/fleet/apps/{app_id}": {
+      "patch": {
+        "description": "Edit an app's update strategy + build/start commands.\n\nFields left ``None`` are unchanged. ``build_command`` / ``start_command``\ncan be cleared by sending an empty string.",
+        "operationId": "api_v1_fleet_apps_app_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppConfigUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppConfig"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update App Config",
+        "tags": [
+          "fleet-targets"
+        ]
+      }
+    },
+    "/api/v1/fleet/freshness": {
+      "get": {
+        "description": "Per-(device, app) deployment freshness across the caller's devices.\n\nSourced from ``project.app_deploy_state`` (the P4-landed freshness store\nthe runner's auto-fresh engine writes). Optionally filtered to one app.",
+        "operationId": "api_v1_fleet_freshness_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "app_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "App Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FreshnessRow"
+                  },
+                  "title": "Response List Freshness Api V1 Fleet Freshness Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Freshness",
+        "tags": [
+          "fleet-targets"
+        ]
+      }
+    },
+    "/api/v1/fleet/test-targets": {
+      "get": {
+        "description": "List test-host designations for the caller's devices.\n\nJoins ``coord.test_targets`` \u2192 ``coord.devices`` (owned by the caller)\nand left-joins ``project.app_deploy_state`` so each row carries the\ndevice's current freshness for the app. Optionally filtered to one app.",
+        "operationId": "api_v1_fleet_test_targets_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "app_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "App Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TestTargetRow"
+                  },
+                  "title": "Response List Test Targets Api V1 Fleet Test Targets Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Test Targets",
+        "tags": [
+          "fleet-targets"
+        ]
+      }
+    },
+    "/api/v1/fleet/test-targets/{device_id}/{app_id}": {
+      "delete": {
+        "description": "Remove a test-host designation (idempotent \u2014 204 even if absent).",
+        "operationId": "api_v1_fleet_test_targets_device_id_app_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Device Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Undesignate Test Target",
+        "tags": [
+          "fleet-targets"
+        ]
+      },
+      "put": {
+        "description": "Designate ``device_id`` as a test host for ``app_id`` (upsert).\n\nWrites ``coord.test_targets`` stamped with the caller's coord home\ntenant. Idempotent \u2014 re-designating updates ``auto_fresh``. The device\nmust be owned by the caller and the app must be registered.",
+        "operationId": "api_v1_fleet_test_targets_device_id_app_id_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Device Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestTargetDesignation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestTargetRow"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Designate Test Target",
+        "tags": [
+          "fleet-targets"
         ]
       }
     },
