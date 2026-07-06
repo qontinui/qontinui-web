@@ -87,3 +87,7 @@ class FreshnessRow(BaseModel):
     freshness: str
     deployed_sha: str | None = None
     deployed_at: IsoDatetime
+    # Error message from the runner's auto-fresh engine when
+    # ``freshness == 'failed'`` — surfaced as a tooltip in the fleet UI.
+    last_error: str | None = None
+    updated_at: IsoDatetime
