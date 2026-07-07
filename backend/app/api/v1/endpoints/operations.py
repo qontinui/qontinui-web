@@ -4317,20 +4317,31 @@ async def delete_priority_set(
 # auto-response store (deleted in Phase 5a). Coord owns the kind→storage
 # mapping; the UI sends the typed ``kind`` and coord persists it.
 #
-# Same auth posture as the priority-sets proxy above: EVERY route gated by
-# ``require_coord_tenant_admin`` (coord's ``/admin/coord/me`` ``is_admin`` is
-# the source of truth; the web-side gate keeps the surface from being silently
-# opened). ``require_coord_tenant_admin`` captures the caller's bearer so
-# ``_proxy_coord_*`` forwards only the bearer (coord derives the tenant).
-# Coord 4xx error bodies pass through verbatim via the ``_proxy_coord_*``
-# helpers.
+# Auth posture is READ/WRITE split for policies and composition-rules: the GET
+# (list) reads are gated by ``get_tenant_id`` (any authenticated tenant member,
+# tenant-scoped) because coord's GET routes gate on tenant MEMBERSHIP only
+# (their ``TenantId`` extractor), not the admin role — so the console read view
+# is visible to developers. The POST/PATCH/DELETE writes stay on
+# ``require_coord_tenant_admin`` (coord's ``/admin/coord/me`` ``is_admin`` is the
+# source of truth; the web-side gate keeps the write surface from being silently
+# opened, and coord re-checks ``caller_is_admin`` on every write). Both
+# dependencies capture the caller's bearer so ``_proxy_coord_*`` forwards only
+# the bearer (coord derives the tenant). Coord 4xx error bodies pass through
+# verbatim via the ``_proxy_coord_*`` helpers.
 
 
 @router.get("/coord/policies")
 async def list_coord_policies(
-    tenant_id: UUID = Depends(require_coord_tenant_admin),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
-    """List the tenant's automation policies (rules). Tenant-admin only."""
+    """List the tenant's automation policies (rules).
+
+    Read-only, any authenticated tenant member (``get_tenant_id``, NOT
+    ``require_coord_tenant_admin``): coord's ``GET /coord/policies`` gates on
+    tenant MEMBERSHIP only (its ``TenantId`` extractor), not the admin role,
+    and scopes the list to the caller's tenant — so the console's read view is
+    visible to developers. Writes below stay admin-gated.
+    """
     return await _proxy_coord_get("/coord/policies", tenant_id=tenant_id)
 
 
@@ -4373,9 +4384,16 @@ async def delete_coord_policy(
 
 @router.get("/coord/composition-rules")
 async def list_composition_rules(
-    tenant_id: UUID = Depends(require_coord_tenant_admin),
+    tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
-    """List the tenant's composition rules. Tenant-admin only."""
+    """List the tenant's composition rules.
+
+    Read-only, any authenticated tenant member (``get_tenant_id``, NOT
+    ``require_coord_tenant_admin``): coord's ``GET /coord/composition-rules``
+    gates on tenant MEMBERSHIP only (its ``TenantId`` extractor), not the admin
+    role, and scopes the list to the caller's tenant — so the automation-rules
+    read view is visible to developers. Writes below stay admin-gated.
+    """
     return await _proxy_coord_get("/coord/composition-rules", tenant_id=tenant_id)
 
 

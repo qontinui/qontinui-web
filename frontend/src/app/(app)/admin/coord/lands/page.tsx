@@ -25,7 +25,7 @@
  * poll — re-run via the Preview button.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -45,6 +45,7 @@ import {
   LandPrecisionPanel,
   type PrecisionResponse,
 } from "@/components/admin/coord/LandPrecisionPanel";
+import { useTenantDefaultRepo } from "@/components/operations/useTenantDefaultRepo";
 
 const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 30_000;
@@ -85,6 +86,21 @@ export default function CoordLandsPage() {
   // ---- Preview state ----
   const [repoInput, setRepoInput] = useState("");
   const [prInput, setPrInput] = useState("");
+
+  // Pre-fill the preview repo with the ACTIVE tenant's first registered repo
+  // (never a hardcoded operator repo). Convenience only — the preview still
+  // requires an explicit PR number + Preview click, so seeding fires no fetch.
+  // The recent-lands filter below stays empty so it shows ALL of the tenant's
+  // lands by default (tenant-scoped server-side).
+  const { defaultRepo } = useTenantDefaultRepo();
+  const seededRepoRef = useRef(false);
+  useEffect(() => {
+    if (seededRepoRef.current || repoInput) return;
+    if (defaultRepo) {
+      seededRepoRef.current = true;
+      setRepoInput(defaultRepo);
+    }
+  }, [defaultRepo, repoInput]);
   const [preview, setPreview] = useState<LandPreviewResponse | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
