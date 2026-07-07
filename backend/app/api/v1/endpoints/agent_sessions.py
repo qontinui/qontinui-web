@@ -26,9 +26,16 @@ to coord's HTTP API (``GET /coord/agent-sessions`` and
 scopes the read. This keeps the web→coord boundary clean — coord owns
 its tables; web is a presentation/authz layer over coord's HTTP API.
 
-Auth: ``require_admin`` (superuser flag). The web side continues to
-enforce admin; it just changed the data source from cross-schema SQL
-to a coord HTTP call.
+Auth: ANY AUTHENTICATED TENANT MEMBER (``get_current_active_user_async`` —
+authn only). These reads are tenant-scoped by coord: ``get_agent_sessions_list``
+filters ``coord.agent_sessions`` to the caller's effective tenant via the
+session's device (``coord.devices.tenant_id``), and the ``:id`` resolver +
+``:id/lineage`` routes apply the same per-session ownership guard, so a
+developer never sees another tenant's sessions. (Previously ``require_admin`` —
+that superuser gate was the only leak-prevention while coord was unscoped; it
+was relaxed once coord gained tenant scoping so the console's "any member may
+VIEW" design holds.) The caller's Cognito bearer + active-tenant selection are
+forwarded so coord authorizes and scopes the read.
 """
 
 from __future__ import annotations
@@ -43,7 +50,7 @@ import httpx
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
-from app.api.admin_deps import require_admin
+from app.api.deps import get_current_active_user_async
 from app.core.config import settings
 from app.models.user import User
 
@@ -71,11 +78,11 @@ _COORD_TIMEOUT = httpx.Timeout(5.0)
 #
 # Replicates the web→coord call pattern from
 # ``app.api.v1.endpoints.operations`` (``_caller_bearer`` ContextVar +
-# ``_extract_caller_token`` + ``_proxy_coord_get``). These routes are
-# ``require_admin``-gated rather than ``get_tenant_id``-gated, so they
-# don't go through operations.py's bearer-capturing dependency — we
-# capture the caller's bearer here (per-route ``Request`` param) so it
-# can be forwarded to coord for token-based authorization.
+# ``_extract_caller_token`` + ``_proxy_coord_get``). These routes gate on
+# authn only (``get_current_active_user_async``) and don't go through
+# operations.py's bearer-capturing dependency — we capture the caller's
+# bearer + active-tenant here (per-route ``Request`` param) so coord can
+# authorize and TENANT-SCOPE the read on the forwarded token.
 
 
 _caller_bearer: contextvars.ContextVar[str | None] = contextvars.ContextVar(
@@ -249,7 +256,7 @@ async def list_agent_sessions(
         None,
         description="If set, filter to sessions whose activity touches this repo.",
     ),
-    _admin: User = Depends(require_admin),
+    _user: User = Depends(get_current_active_user_async),  # any authenticated tenant member
 ) -> Any:
     """List agent sessions via coord's ``GET /coord/agent-sessions``.
 
@@ -293,7 +300,7 @@ async def list_agent_sessions(
 async def resolve_agent_session(
     request: Request,
     key: str,
-    _admin: User = Depends(require_admin),
+    _user: User = Depends(get_current_active_user_async),  # any authenticated tenant member
 ) -> Any:
     """Resolve a session by UUID **or** name via coord's
     ``GET /coord/agent-sessions/:id`` resolver (coord PR #894).
@@ -316,7 +323,7 @@ async def resolve_agent_session(
 async def get_agent_session_lineage(
     request: Request,
     session_id: UUID,
-    _admin: User = Depends(require_admin),
+    _user: User = Depends(get_current_active_user_async),  # any authenticated tenant member
 ) -> Any:
     """Return the per-session action timeline via coord's
     ``GET /coord/agent-sessions/:id/lineage``.

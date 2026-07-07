@@ -8,8 +8,9 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { ExternalLink, Layers, RefreshCw } from "lucide-react";
-import { MIGRATIONS_DEFAULT_REPO, relativeTime } from "./utils";
+import { relativeTime } from "./utils";
 import { useMigrationQueueStream } from "./useMigrationQueueStream";
+import { useTenantDefaultRepo } from "./useTenantDefaultRepo";
 import { CollapsiblePanel } from "./CollapsiblePanel";
 import type { MigrationReservation } from "./types";
 
@@ -241,8 +242,24 @@ function TerminalRow({ res }: { res: MigrationReservation }) {
 export function MigrationQueueTile() {
   // `repo` is the committed selection driving the fetch; `repoInput` is the
   // in-progress text. Committing on submit/blur avoids a fetch per keystroke.
-  const [repo, setRepo] = useState(MIGRATIONS_DEFAULT_REPO);
-  const [repoInput, setRepoInput] = useState(MIGRATIONS_DEFAULT_REPO);
+  // Both start empty and are seeded from the ACTIVE tenant's first registered
+  // repo once it resolves — never a hardcoded operator repo. The stream hook
+  // treats an empty repo as a settled-empty queue (no doomed fetch).
+  const [repo, setRepo] = useState("");
+  const [repoInput, setRepoInput] = useState("");
+  // True once the user has typed/committed a repo themselves, so a late tenant
+  // default resolution never clobbers their choice.
+  const [userPicked, setUserPicked] = useState(false);
+  const { defaultRepo, loading: defaultRepoLoading } = useTenantDefaultRepo();
+
+  // Seed from the tenant default exactly once, and only while the user hasn't
+  // made their own selection.
+  useEffect(() => {
+    if (!userPicked && !repo && defaultRepo) {
+      setRepo(defaultRepo);
+      setRepoInput(defaultRepo);
+    }
+  }, [defaultRepo, userPicked, repo]);
 
   const { live, recentTerminal, seeded, error, refetch } =
     useMigrationQueueStream(repo);
@@ -256,6 +273,7 @@ export function MigrationQueueTile() {
 
   const commitRepo = useCallback(() => {
     const next = repoInput.trim();
+    setUserPicked(true);
     if (next && next !== repo) setRepo(next);
   }, [repoInput, repo]);
 
@@ -314,7 +332,13 @@ export function MigrationQueueTile() {
         </>
       }
     >
-      {!seeded && liveRows.length === 0 ? (
+      {!repo ? (
+        <p className="text-xs text-muted-foreground italic px-2 py-3">
+          {defaultRepoLoading
+            ? "Loading migration queue…"
+            : "No repository selected. Enter an owner/repo above to view its migration queue."}
+        </p>
+      ) : !seeded && liveRows.length === 0 ? (
         <p className="text-xs text-muted-foreground italic px-2 py-3">
           Loading migration queue&hellip;
         </p>
