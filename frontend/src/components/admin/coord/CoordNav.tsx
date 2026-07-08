@@ -50,6 +50,7 @@ import {
   History as HistoryIcon,
   Inbox,
   KeyRound,
+  NotebookText,
   Plug,
   Rocket,
   Scale,
@@ -194,6 +195,12 @@ const GROUPS: NavGroup[] = [
         label: "Automation Rules",
         icon: Workflow,
         testId: "coord-nav-automation-rules",
+      },
+      {
+        href: "/admin/coord/policy-documents",
+        label: "Policy Documents",
+        icon: NotebookText,
+        testId: "coord-nav-policy-documents",
       },
       {
         href: "/admin/coord/merge-settings",
