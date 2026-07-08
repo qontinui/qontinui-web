@@ -98,6 +98,17 @@ class TestDiffEnvelopes:
         assert delta.severity == "warning"
         assert report.severity == "warning"
 
+    def test_claude_accounts_change_is_warning(self) -> None:
+        """A changed value in the ``claude_accounts`` section → warning (not info)."""
+        canonical = _envelope({"claude_accounts": {"selection_mode": "all"}})
+        actual = _envelope({"claude_accounts": {"selection_mode": "single"}})
+        report = devenv_drift.diff_envelopes(canonical, actual)
+
+        delta = _delta(_section(report, "claude_accounts"), "selection_mode")
+        assert delta.status == "changed"
+        assert delta.severity == "warning"
+        assert report.severity == "warning"
+
     def test_added_key_status_added(self) -> None:
         """A key on the target but not canonical → added."""
         canonical = _envelope({"services": {"redis": "6379"}})
