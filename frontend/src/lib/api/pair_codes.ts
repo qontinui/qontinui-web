@@ -10,6 +10,11 @@
  * `runner_tokens.ts`.
  */
 
+import { httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
+
+const API = `${ApiConfig.API_BASE_URL}/api/v1`;
+
 export interface PairCodeMintResponse {
   code: string;
   expiresAt: string;
@@ -34,17 +39,21 @@ async function handleResponse<T>(
 /**
  * Mint a fresh single-use pair code (5-minute TTL).
  *
- * Backend: `POST /api/v1/devices/pair-codes`. The tenant is resolved
- * server-side from the auth cookie; no body is required. The code uses
- * the 32-char unambiguous alphabet (no `0`, `O`, `1`, `I`) so an
- * operator can read it off the screen and type it into the runner
- * without confusing similar-looking characters.
+ * Backend: `POST /api/v1/devices/pair-codes`. Goes through the shared
+ * `httpClient` so the Cognito bearer is attached (the app authenticates
+ * API calls with `Authorization: Bearer`, NOT a session cookie — a bare
+ * `fetch` here yielded `no_auth_token_found` → 401). The client also
+ * forwards the dashboard tenant-switcher selection as
+ * `X-Qontinui-Active-Tenant` (see `ACTIVE_TENANT_URL_PREFIXES`), so a
+ * multi-tenant operator mints the code for the tenant they've switched to
+ * — coord validates that membership and burns it into the code. No body
+ * is required. The code uses the 32-char unambiguous alphabet (no `0`,
+ * `O`, `1`, `I`) so an operator can read it off the screen and type it
+ * into the runner without confusing similar-looking characters.
  */
 export async function mintPairCode(): Promise<PairCodeMintResponse> {
-  const response = await fetch(`/api/v1/devices/pair-codes`, {
+  const response = await httpClient.fetch(`${API}/devices/pair-codes`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
     body: JSON.stringify({}),
   });
   const raw = await handleResponse<{ code: string; expires_at: string }>(
