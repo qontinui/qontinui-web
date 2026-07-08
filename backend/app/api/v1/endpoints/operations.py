@@ -1325,10 +1325,14 @@ class OnboardingClaimRequest(BaseModel):
     ``code`` — the short-lived GitHub OAuth code from the Setup-URL redirect.
     ``installation_id`` — the GitHub App installation id from the same
     redirect. Both are echoed verbatim to coord's claim endpoint.
+    ``bind_only`` — when true, coord binds the account WITHOUT enrolling its
+    repos (no bootstrap PRs); for the clone-only path. Defaults false =
+    bind + enroll (today's behavior).
     """
 
     code: str
     installation_id: int
+    bind_only: bool = False
 
 
 @router.post("/pr-merge/onboarding/claim")
@@ -1355,7 +1359,11 @@ async def post_pr_merge_onboarding_claim(
     """
     url = f"{settings.COORD_URL}{COORD_ONBOARDING_CLAIM_PATH}"
     headers = _tenant_headers(tenant_id)
-    payload = {"code": body.code, "installation_id": body.installation_id}
+    payload = {
+        "code": body.code,
+        "installation_id": body.installation_id,
+        "bind_only": body.bind_only,
+    }
     async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
         try:
             resp = await client.post(url, json=payload, headers=headers)

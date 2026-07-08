@@ -24451,8 +24451,13 @@
         "type": "object"
       },
       "OnboardingClaimRequest": {
-        "description": "Body for ``POST /pr-merge/onboarding/claim``.\n\n``code`` \u2014 the short-lived GitHub OAuth code from the Setup-URL redirect.\n``installation_id`` \u2014 the GitHub App installation id from the same\nredirect. Both are echoed verbatim to coord's claim endpoint.",
+        "description": "Body for ``POST /pr-merge/onboarding/claim``.\n\n``code`` \u2014 the short-lived GitHub OAuth code from the Setup-URL redirect.\n``installation_id`` \u2014 the GitHub App installation id from the same\nredirect. Both are echoed verbatim to coord's claim endpoint.\n``bind_only`` \u2014 when true, coord binds the account WITHOUT enrolling its\nrepos (no bootstrap PRs); for the clone-only path. Defaults false =\nbind + enroll (today's behavior).",
         "properties": {
+          "bind_only": {
+            "default": false,
+            "title": "Bind Only",
+            "type": "boolean"
+          },
           "code": {
             "title": "Code",
             "type": "string"
