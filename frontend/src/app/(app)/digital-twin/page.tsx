@@ -5,6 +5,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Boxes } from "lucide-react";
 import { CoverageMatrix } from "./_components/CoverageMatrix";
+import { TwinCatalog } from "./_components/TwinCatalog";
 import { AskTheTwin } from "./_components/AskTheTwin";
 import { DeliveryVerdictCard } from "./_components/DeliveryVerdictCard";
 import { UiBridgePanel } from "./_components/UiBridgePanel";
@@ -60,7 +61,10 @@ export default function DigitalTwinPage() {
         </div>
       </header>
 
-      <Tabs defaultValue="completeness" className="flex min-h-0 flex-1 flex-col">
+      <Tabs
+        defaultValue="completeness"
+        className="flex min-h-0 flex-1 flex-col"
+      >
         <TabsList className="mx-6 mt-3 w-fit shrink-0">
           <TabsTrigger ref={tabCompletenessRef} value="completeness">
             Completeness
@@ -77,6 +81,7 @@ export default function DigitalTwinPage() {
           <TabsContent value="completeness" className="mt-0">
             <div className="space-y-6 px-6 py-4">
               <CoverageMatrix />
+              <TwinCatalog />
               <AskTheTwin />
             </div>
           </TabsContent>
