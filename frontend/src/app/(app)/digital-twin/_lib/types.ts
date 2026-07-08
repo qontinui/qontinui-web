@@ -211,4 +211,6 @@ export interface TwinCatalogEntry {
 export interface TwinCatalogResponse {
   entries: TwinCatalogEntry[];
   total: number;
+  /** Set (with an empty `entries`) when coord was unreachable — degraded read. */
+  coord_error?: string;
 }
