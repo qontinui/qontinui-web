@@ -10,7 +10,8 @@ hard "unavailable" banner. The hard banner is reserved for a true cold start
 (no last-known-good yet).
 
 Mirrors the testing pattern in ``test_operations_gates_proxy.py``: a minimal
-FastAPI app mounting the admin-dev router, with the superuser gate and the
+FastAPI app mounting the admin-dev router, with the member-auth gate
+(``get_current_active_user_async`` — any authenticated tenant member) and the
 best-effort bearer dependency overridden, and ``_proxy_coord_get`` patched so
 no live coord is needed.
 """
@@ -25,7 +26,7 @@ from fastapi.testclient import TestClient
 
 def _build_test_app() -> FastAPI:
     """Minimal app mounting the admin-dev router with auth deps overridden."""
-    from app.api.admin_deps import require_admin
+    from app.api.deps import get_current_active_user_async
     from app.api.v1.endpoints.admin_dev import _capture_bearer_best_effort
     from app.api.v1.endpoints.admin_dev import router as admin_dev_router
 
@@ -33,7 +34,7 @@ def _build_test_app() -> FastAPI:
     mock_user = MagicMock()
     mock_user.id = uuid4()
     mock_user.is_active = True
-    app.dependency_overrides[require_admin] = lambda: mock_user
+    app.dependency_overrides[get_current_active_user_async] = lambda: mock_user
     # Pin the resolved effective tenant to a stable key so a single cache
     # key is exercised across calls. (``None`` — identity unknown — now
     # BYPASSES the shared cache entirely, so SWR must be tested under a
@@ -47,7 +48,7 @@ def _build_test_app() -> FastAPI:
 
 def _build_identity_unknown_app() -> FastAPI:
     """Same app but with identity resolution failed (tenant key ``None``)."""
-    from app.api.admin_deps import require_admin
+    from app.api.deps import get_current_active_user_async
     from app.api.v1.endpoints.admin_dev import _capture_bearer_best_effort
     from app.api.v1.endpoints.admin_dev import router as admin_dev_router
 
@@ -55,7 +56,7 @@ def _build_identity_unknown_app() -> FastAPI:
     mock_user = MagicMock()
     mock_user.id = uuid4()
     mock_user.is_active = True
-    app.dependency_overrides[require_admin] = lambda: mock_user
+    app.dependency_overrides[get_current_active_user_async] = lambda: mock_user
     app.dependency_overrides[_capture_bearer_best_effort] = lambda: None
     app.include_router(admin_dev_router, prefix="/api/v1")
     return app

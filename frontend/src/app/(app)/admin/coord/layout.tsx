@@ -20,6 +20,7 @@
 import { Activity } from "lucide-react";
 import CoordNav from "@/components/admin/coord/CoordNav";
 import { CoordTenantSwitcher } from "@/components/admin/coord/CoordTenantSwitcher";
+import RedMainBanner from "@/components/admin/coord/RedMainBanner";
 
 export default function CoordLayout({
   children,
@@ -52,6 +53,12 @@ export default function CoordLayout({
       </header>
 
       <CoordNav />
+
+      {/* Red-main outage banner (plan 2026-07-06-coord-red-main-…, Phase 1
+          D2): one persistent, non-dismissable row per repo whose main CI is
+          red, driven solely by the coord `red_main:<repo>` alert rows.
+          Mounted in the layout so it shows on EVERY coord console page. */}
+      <RedMainBanner />
 
       <main className="flex-1 overflow-y-auto">{children}</main>
     </div>
