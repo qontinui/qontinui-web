@@ -38,13 +38,22 @@ function actionSummary(row: PolicyRow): string {
     if (action.type === "auto_answer") return `→ ${action.response}`;
     if (action.type === "resolve_by_scoring")
       return `→ score ${action.options.length} option(s) on ${action.surface}`;
+    if (action.type === "meta_answer")
+      return "→ decision-delegation meta-answer";
   }
   return "";
 }
 
 export function RuleList() {
-  const { rules, loading, saving, createRule, updateRule, deleteRule } =
-    useAutomationRules();
+  const {
+    rules,
+    loading,
+    saving,
+    createRule,
+    updateRule,
+    restoreDefault,
+    deleteRule,
+  } = useAutomationRules();
 
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<PolicyRow | null>(null);
@@ -110,6 +119,7 @@ export function RuleList() {
         saving={saving}
         onCreate={createRule}
         onUpdate={updateRule}
+        onRestore={restoreDefault}
       />
 
       <AlertDialog
@@ -157,10 +167,7 @@ function RuleRow({ rule, saving, onToggle, onEdit, onDelete }: RuleRowProps) {
   const KindIcon = isTerminal ? Terminal : MessageSquare;
   return (
     <div className="group flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-3">
-      <KindIcon
-        className="size-4 shrink-0 text-muted-foreground"
-        aria-hidden
-      />
+      <KindIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
