@@ -39,11 +39,18 @@ import {
   adminDevService,
   type PrListResponse,
 } from "@/services/admin-dev-service";
-import { PrsTable } from "./_components/PrsTable";
+import { PrsTable, isMergeStateRecalibrating } from "./_components/PrsTable";
 import { DeployStatusStrip } from "./_components/DeployStatusStrip";
 
 // Auto-refresh cadence — matches the gates dashboard.
 const AUTO_REFRESH_MS = 45_000;
+
+// When any row is "Recalibrating" (GitHub's UNKNOWN merge state), poll on this
+// much tighter cadence with a FORCED refresh (`?refresh=1`) so coord re-reads
+// GitHub and the state settles ASAP — but bounded, so a genuinely stuck
+// mergeability calc can't turn into an infinite hammer on the GitHub API.
+const RECALIBRATE_POLL_MS = 8_000;
+const RECALIBRATE_MAX_TRIES = 6;
 
 // "Recently merged" lookback window (hours) → coord `include_merged`.
 const MERGED_LOOKBACK_HOURS = 24;
@@ -78,6 +85,10 @@ export default function CoordPrsPage() {
 
   // Guards against overlapping fetches (a slow request + a fired interval).
   const inFlight = useRef(false);
+
+  // Bounded-retry counter for the fast "recalibration" poll. Reset to 0 the
+  // moment no row is recalibrating (a fresh UNKNOWN episode gets its own budget).
+  const recalibrateTries = useRef(0);
 
   const load = useCallback(
     async (isRefresh: boolean) => {
@@ -128,6 +139,31 @@ export default function CoordPrsPage() {
     return () => clearInterval(id);
   }, []);
 
+  // How many visible rows are in the transient "Recalibrating" (UNKNOWN) state.
+  const recalibratingCount = data
+    ? data.prs.filter((p) => isMergeStateRecalibrating(p)).length
+    : 0;
+
+  // Fast forced-refresh poll while anything is recalibrating. The normal 45s
+  // auto-refresh reads coord's cache (`load(false)`), which stays UNKNOWN when
+  // coord itself is stale — only a forced `load(true)` (`?refresh=1`) makes
+  // coord re-read GitHub and settle the state. Runs regardless of the
+  // auto-refresh pause (it targets a transient, self-terminating condition) and
+  // is capped at RECALIBRATE_MAX_TRIES so a genuinely stuck calc can't hammer
+  // GitHub. `updatedAt` in the deps re-arms the timer after each load lands.
+  useEffect(() => {
+    if (recalibratingCount === 0) {
+      recalibrateTries.current = 0;
+      return;
+    }
+    if (recalibrateTries.current >= RECALIBRATE_MAX_TRIES) return;
+    const id = setTimeout(() => {
+      recalibrateTries.current += 1;
+      load(true);
+    }, RECALIBRATE_POLL_MS);
+    return () => clearTimeout(id);
+  }, [recalibratingCount, updatedAt, load]);
+
   return (
     <div className="p-3 sm:p-6 space-y-4" data-testid="coord-prs-page">
       {/* ---- Sub-header (layout owns the top console header) ---- */}
@@ -150,6 +186,16 @@ export default function CoordPrsPage() {
               data-testid="prs-updated-ago"
             >
               {relativeAgoLabel(updatedAt, now)}
+            </span>
+          )}
+          {recalibratingCount > 0 && (
+            <span
+              className="inline-flex items-center gap-1 text-xs text-info"
+              data-testid="prs-recalibrating"
+              title={`${recalibratingCount} PR${recalibratingCount === 1 ? "" : "s"} recalibrating — forcing a GitHub re-read until the merge state settles`}
+            >
+              <RefreshCw className="h-3 w-3 animate-spin" />
+              {recalibratingCount} recalibrating
             </span>
           )}
           <Button

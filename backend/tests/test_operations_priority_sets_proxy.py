@@ -3,13 +3,16 @@
 These endpoints (under ``/api/v1/operations/coord/priority-sets*`` and
 ``/api/v1/operations/coord/composition-rules*``) forward CRUD to coord so
 the tenant-settings UI can manage priority sets / composition rules without
-the browser hitting coord cross-origin. Every route is tenant-admin gated
-(``require_coord_tenant_admin``).
+the browser hitting coord cross-origin. Priority-set routes are all
+tenant-admin gated (``require_coord_tenant_admin``); the composition-rules
+GET (list) read is any-member gated (``get_tenant_id``) while its writes stay
+tenant-admin gated — coord scopes the read by tenant membership, not the
+admin role.
 
 Mirrors ``test_operations_merge_proxy.py``: a minimal FastAPI app + mocked
-``httpx.AsyncClient`` so no live coord is needed. The admin gate is
-overridden via ``dependency_overrides`` so the proxy path doesn't hit a real
-coord ``/admin/coord/me``.
+``httpx.AsyncClient`` so no live coord is needed. Both the admin gate and the
+member gate are overridden via ``dependency_overrides`` so the proxy path
+doesn't hit a real coord ``/admin/coord/me``.
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -24,7 +27,10 @@ from fastapi.testclient import TestClient
 def _build_test_app(*, authenticated: bool = True) -> FastAPI:
     """Build a minimal FastAPI app exposing the operations router."""
     from app.api.deps import get_current_active_user_async
-    from app.api.v1.endpoints.operations import require_coord_tenant_admin
+    from app.api.v1.endpoints.operations import (
+        get_tenant_id,
+        require_coord_tenant_admin,
+    )
     from app.api.v1.endpoints.operations import router as operations_router
 
     test_app = FastAPI()
@@ -35,11 +41,14 @@ def _build_test_app(*, authenticated: bool = True) -> FastAPI:
         mock_user.is_active = True
         mock_user.is_verified = True
         test_app.dependency_overrides[get_current_active_user_async] = lambda: mock_user
-        # The priority-set / composition-rule proxies are gated by
-        # ``require_coord_tenant_admin`` (resolves home tenant + asserts
-        # coord ``is_admin``). Override it so the proxy path doesn't hit a
-        # real coord ``/admin/coord/me``.
+        # The priority-set proxies and the composition-rule/policy WRITES are
+        # gated by ``require_coord_tenant_admin`` (resolves home tenant +
+        # asserts coord ``is_admin``); the composition-rule/policy GET reads
+        # are gated by ``get_tenant_id`` (resolves home tenant, membership
+        # only). Override both so the proxy path doesn't hit a real coord
+        # ``/admin/coord/me``.
         test_app.dependency_overrides[require_coord_tenant_admin] = lambda: uuid4()
+        test_app.dependency_overrides[get_tenant_id] = lambda: uuid4()
     test_app.include_router(operations_router, prefix="/api/v1/operations")
     return test_app
 

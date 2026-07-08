@@ -15,7 +15,8 @@ is needed, and assert:
   through untouched,
 * web-side query validation (limit floor/cap, RFC3339 since, UUID
   session_id) still runs before the coord call,
-* the ``require_admin`` gate is preserved,
+* any authenticated tenant member may read (coord tenant-scopes the
+  result); the endpoints no longer require superuser,
 * coord 502/504/4xx mapping is honored.
 
 Supersedes ``test_agent_sessions_endpoints.py`` (which exercised the
@@ -44,14 +45,30 @@ def _admin_user() -> MagicMock:
     return u
 
 
+def _member_user() -> MagicMock:
+    """A non-superuser authenticated tenant member (developer)."""
+    u = MagicMock()
+    u.id = uuid4()
+    u.email = "dev@example.com"
+    u.is_active = True
+    u.is_verified = True
+    u.is_superuser = False
+    return u
+
+
 def _build_app(*, authenticated: bool = True) -> FastAPI:
-    """Mount the agent_sessions router with require_admin overridden."""
-    from app.api.admin_deps import require_admin
+    """Mount the agent_sessions router with the authn dependency overridden.
+
+    These reads are now viewable by ANY authenticated tenant member (coord
+    tenant-scopes them), so the override supplies an ordinary member — not a
+    superuser — to prove the console works for a developer.
+    """
+    from app.api.deps import get_current_active_user_async
     from app.api.v1.endpoints.agent_sessions import router
 
     test_app = FastAPI()
     if authenticated:
-        test_app.dependency_overrides[require_admin] = _admin_user
+        test_app.dependency_overrides[get_current_active_user_async] = _member_user
     test_app.include_router(router, prefix="/api/v1/admin")
     return test_app
 
@@ -332,14 +349,14 @@ class TestListAgentSessionsProxy:
             resp = client.get("/api/v1/admin/agent-sessions")
         assert resp.status_code == 502
 
-    def test_unauth_blocked(self):
-        from app.api.deps import get_current_user_async
+    def test_non_admin_member_allowed(self):
+        """A non-superuser tenant member may list sessions — coord scopes the
+        result to their tenant (the console is a read-only member view)."""
+        from app.api.deps import get_current_active_user_async
         from app.api.v1.endpoints.agent_sessions import router
 
         test_app = FastAPI()
-        non_admin = MagicMock()
-        non_admin.is_superuser = False
-        test_app.dependency_overrides[get_current_user_async] = lambda: non_admin
+        test_app.dependency_overrides[get_current_active_user_async] = _member_user
         test_app.include_router(router, prefix="/api/v1/admin")
         with patch(
             "app.api.v1.endpoints.agent_sessions._proxy_coord_get",
@@ -347,7 +364,8 @@ class TestListAgentSessionsProxy:
         ):
             client = TestClient(test_app)
             resp = client.get("/api/v1/admin/agent-sessions")
-        assert resp.status_code == 403
+        assert resp.status_code == 200
+        assert resp.json() == {"sessions": [], "count": 0}
 
 
 # ---------------------------------------------------------------------------
@@ -457,14 +475,14 @@ class TestResolveAgentSessionProxy:
             resp = client.get("/api/v1/admin/agent-sessions/no-such-name")
         assert resp.status_code == 404
 
-    def test_unauth_blocked(self):
-        from app.api.deps import get_current_user_async
+    def test_non_admin_member_allowed(self):
+        """A non-superuser tenant member may resolve a session — coord
+        tenant-scopes the resolver to their own tenant's sessions."""
+        from app.api.deps import get_current_active_user_async
         from app.api.v1.endpoints.agent_sessions import router
 
         test_app = FastAPI()
-        non_admin = MagicMock()
-        non_admin.is_superuser = False
-        test_app.dependency_overrides[get_current_user_async] = lambda: non_admin
+        test_app.dependency_overrides[get_current_active_user_async] = _member_user
         test_app.include_router(router, prefix="/api/v1/admin")
         with patch(
             "app.api.v1.endpoints.agent_sessions._proxy_coord_get",
@@ -472,7 +490,8 @@ class TestResolveAgentSessionProxy:
         ):
             client = TestClient(test_app)
             resp = client.get("/api/v1/admin/agent-sessions/some-name")
-        assert resp.status_code == 403
+        assert resp.status_code == 200
+        assert resp.json() == {"resolved": [], "count": 0}
 
 
 # ---------------------------------------------------------------------------

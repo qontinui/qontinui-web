@@ -24,7 +24,11 @@ interface ChatWebSocketReturn {
   sessionState: AiSessionState;
   messages: AiMessage[];
   streamingContent: string;
-  createSession: (taskName?: string) => boolean;
+  createSession: (
+    taskName?: string,
+    initialPrompt?: string,
+    displayText?: string,
+  ) => boolean;
   sendMessage: (content: string) => void;
   interruptSession: (taskRunId: string) => void;
   closeSession: (taskRunId: string) => void;
@@ -324,10 +328,34 @@ export function useChatWebSocket({
   }, []);
 
   const createSession = useCallback(
-    (taskName?: string): boolean => {
+    (
+      taskName?: string,
+      initialPrompt?: string,
+      displayText?: string,
+    ): boolean => {
+      // One-shot: when `initialPrompt` is supplied it becomes the session's FIRST
+      // turn (the runner reads `params.prompt`), so the session answers it
+      // directly — no separate wait-for-ready → sendMessage handshake. Render the
+      // human-facing `displayText` (e.g. the raw question, without the preamble)
+      // immediately so the conversation shows what was asked.
+      if (displayText) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "user",
+            content: displayText,
+            timestamp: new Date().toISOString(),
+          },
+        ]);
+        streamingBufferRef.current = "";
+        setStreamingContent("");
+      }
       return sendWs({
         type: "chat_create",
-        params: { task_name: taskName || "New Chat" },
+        params: {
+          task_name: taskName || "New Chat",
+          ...(initialPrompt ? { prompt: initialPrompt } : {}),
+        },
       });
     },
     [sendWs]

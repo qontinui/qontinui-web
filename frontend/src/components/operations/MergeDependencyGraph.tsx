@@ -22,7 +22,7 @@
  * comment in MergeTrain.tsx for the wiring.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dagre from "dagre";
 import {
   Background,
@@ -62,6 +62,7 @@ import { AlertTriangle, GitBranch, RefreshCw } from "lucide-react";
 import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_API } from "./utils";
+import { useTenantDefaultRepo } from "./useTenantDefaultRepo";
 import { CollapsiblePanel } from "./CollapsiblePanel";
 
 const log = createLogger("MergeDependencyGraph");
@@ -258,6 +259,22 @@ export function MergeDependencyGraph({
   const [graph, setGraph] = useState<GraphResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
+
+  // Seed the repo input from the ACTIVE tenant's first registered repo when
+  // no explicit `initialRepo` was supplied — never a hardcoded operator repo.
+  // This only pre-fills the input; the graph still requires a PR number + an
+  // explicit "Load graph" click (or `initialRepo`+`initialPr` props) to fetch,
+  // so seeding never triggers a request against a repo the tenant doesn't own.
+  const { defaultRepo } = useTenantDefaultRepo();
+  const seededRepoRef = useRef(false);
+  useEffect(() => {
+    if (seededRepoRef.current) return;
+    if (initialRepo || repo) return;
+    if (defaultRepo) {
+      seededRepoRef.current = true;
+      setRepo(defaultRepo);
+    }
+  }, [defaultRepo, initialRepo, repo]);
 
   const fetchGraph = useCallback(async () => {
     const prNum = Number(prInput);
