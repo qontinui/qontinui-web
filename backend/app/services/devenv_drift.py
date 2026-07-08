@@ -53,6 +53,7 @@ _SECTION_BASE_SEVERITY: dict[str, SeverityT] = {
     "versions": "critical",
     "services": "warning",
     "env_contract": "warning",
+    "claude_accounts": "warning",
 }
 
 
