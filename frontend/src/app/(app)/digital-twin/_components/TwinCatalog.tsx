@@ -49,6 +49,11 @@ export function TwinCatalog() {
           Couldn&apos;t load the catalog
           {error instanceof Error ? `: ${error.message}` : "."}
         </div>
+      ) : data?.coord_error ? (
+        <div className="rounded-lg border border-dashed border-border py-8 text-center text-sm text-muted-foreground">
+          Coord is unavailable — catalog can&apos;t be read right now (
+          {data.coord_error}).
+        </div>
       ) : !data || data.entries.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border py-8 text-center text-sm text-muted-foreground">
           No queryable surfaces reported.

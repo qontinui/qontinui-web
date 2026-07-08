@@ -30,6 +30,10 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.api.deps import get_current_active_user_async
+from app.api.v1.endpoints.admin_dev import (
+    _COORD_DOWN_STATUSES,
+    _capture_bearer_best_effort,
+)
 from app.api.v1.endpoints.operations import (
     _caller_bearer,
     _extract_caller_token,
@@ -255,19 +259,30 @@ async def get_twin_subspace_raw(
 
 @router.get("/catalog")
 async def get_twin_catalog(
+    _tenant_key: str | None = Depends(_capture_bearer_best_effort),
     _user=Depends(get_current_active_user_async),
 ) -> Any:
     """The coord-owned queryable-surface catalog — the single-source index of the
     fleet-wide ``coord_query_*`` twin observers (agent Q&A meta-answer Phase 2).
 
-    Fleet-global static metadata (coord's ``GET /coord/twin/catalog`` takes no
-    tenant scope and no auth), so this is a thin authenticated passthrough: the
-    web gate requires a logged-in operator, and coord serves the same static
-    catalog to everyone (no tenant resolved → never 403s a member whose home
-    tenant is unresolved, no bearer needed on the wire). Returns
+    The catalog content is fleet-global static metadata, but coord's
+    ``GET /coord/twin/catalog`` is auth-gated via ``TenantId`` (read-auth
+    contract), so the operator bearer is forwarded (``forward_bearer=True``).
+    The bearer capture is best-effort (never raises) rather than a hard
+    ``get_tenant_id`` dependency, mirroring ``get_release_verdict``'s posture:
+    when coord is unreachable (connect-refused → 502, timeout → 504, etc.) the
+    endpoint returns an empty ``{entries: [], total: 0, coord_error}`` envelope
+    rather than re-raising the 5xx, so neither the Spec CI crawl gate (which
+    runs without a live coord) nor the dashboard ever sees a 5xx. Returns
     ``{entries: [...], total: N}``.
     """
-    return await _proxy_coord_get("/coord/twin/catalog")
+    try:
+        return await _proxy_coord_get("/coord/twin/catalog", forward_bearer=True)
+    except HTTPException as exc:
+        if exc.status_code in _COORD_DOWN_STATUSES:
+            detail = exc.detail if isinstance(exc.detail, str) else "coord unavailable"
+            return {"entries": [], "total": 0, "coord_error": detail}
+        raise
 
 
 @router.get("/delivery/verdict")
