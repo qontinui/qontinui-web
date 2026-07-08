@@ -184,3 +184,31 @@ export interface DeliveryVerdictResponse {
   tool: string;
   verdict: DriftVerdict;
 }
+
+/**
+ * One entry of the coord-owned queryable-surface catalog (coord
+ * `twin_catalog::TwinCatalogEntry`). The authoritative, fleet-global index of
+ * the `coord_query_*` twin observers — the same surface list the agent Q&A
+ * meta-answer expands into its `{{twin-catalog}}` token. Distinct from the
+ * checked-in taxonomy manifest (which additionally carries the research-roadmap
+ * denominator: tier / research_status / observer_module).
+ */
+export interface TwinCatalogEntry {
+  /** Stable catalog id (the twin subspace). */
+  id: string;
+  description: string;
+  /** The MCP tool that queries it (e.g. `coord_query_migration_state`). */
+  query_tool: string;
+  /** The tool's salient parameters (empty for a no-arg snapshot). */
+  params: string[];
+  /** `"snapshot"` (no-arg census) or `"parameterized"` (point query). */
+  kind: "snapshot" | "parameterized";
+  /** Availability — `"live"` for a wired observer. */
+  status: string;
+}
+
+/** The body of GET /api/v1/digital-twin/catalog (coord `/coord/twin/catalog`). */
+export interface TwinCatalogResponse {
+  entries: TwinCatalogEntry[];
+  total: number;
+}

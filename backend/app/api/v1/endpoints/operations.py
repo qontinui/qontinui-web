@@ -4532,6 +4532,81 @@ async def delete_coord_policy(
     )
 
 
+@router.post("/coord/policies/{policy_id}/restore-default")
+async def restore_coord_policy_default(
+    policy_id: str,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Re-seed a policy rule's action/payload from its ``default_source`` code
+    default (agent Q&A meta-answer). Tenant-admin only.
+
+    Only rows carrying a ``default_source`` (e.g. the catch-all meta-answer rule
+    stamped ``agent_meta_answer/v1``) can be restored; coord 4xx (no default,
+    unknown rule) passes through. No request body — coord derives the default
+    from the row's own ``default_source``.
+    """
+    return await _proxy_coord_post(
+        f"/coord/policies/{policy_id}/restore-default", {}, tenant_id=tenant_id
+    )
+
+
+# Agent Q&A meta-answer (plan: agent Q&A single decision-delegation meta-answer)
+# — Phase 1 editable policy documents. Coord owns the ``coord.policy_documents``
+# store (the canonical policy prose the meta-answer template composes in via
+# ``{{policy:<handle>}}`` tokens). Same READ/WRITE auth split as ``/coord/policies``
+# above: GET reads gate on tenant MEMBERSHIP (``get_tenant_id``) so the console
+# read view is visible to developers; PATCH/restore writes stay on
+# ``require_coord_tenant_admin`` (coord re-checks admin on every write). Coord 4xx
+# error bodies pass through verbatim via the ``_proxy_coord_*`` helpers.
+
+
+@router.get("/coord/policy-documents")
+async def list_policy_documents(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """List the tenant's policy documents. Any authenticated tenant member."""
+    return await _proxy_coord_get("/coord/policy-documents", tenant_id=tenant_id)
+
+
+@router.get("/coord/policy-documents/{handle}")
+async def get_policy_document(
+    handle: str,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Fetch one policy document by handle. Any authenticated tenant member."""
+    return await _proxy_coord_get(
+        f"/coord/policy-documents/{handle}", tenant_id=tenant_id
+    )
+
+
+@router.patch("/coord/policy-documents/{handle}")
+async def update_policy_document(
+    handle: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Edit a policy document's title/body. Body forwarded verbatim
+    (``{title?, body?, updated_by?}``). Tenant-admin only."""
+    return await _proxy_coord_patch(
+        f"/coord/policy-documents/{handle}", body, tenant_id=tenant_id
+    )
+
+
+@router.post("/coord/policy-documents/{handle}/restore-default")
+async def restore_policy_document_default(
+    handle: str,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Re-seed a policy document's body from the code default. Tenant-admin only.
+
+    Only documents carrying a ``default_source`` can be restored; coord 4xx (no
+    default, unknown handle) passes through. No request body.
+    """
+    return await _proxy_coord_post(
+        f"/coord/policy-documents/{handle}/restore-default", {}, tenant_id=tenant_id
+    )
+
+
 @router.get("/coord/composition-rules")
 async def list_composition_rules(
     tenant_id: UUID = Depends(get_tenant_id),
