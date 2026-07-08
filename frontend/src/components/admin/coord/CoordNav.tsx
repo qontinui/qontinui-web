@@ -25,6 +25,7 @@ import {
   GitPullRequest,
   History as HistoryIcon,
   Inbox,
+  NotebookText,
   Plug,
   Rocket,
   Scale,
@@ -166,6 +167,12 @@ const PRIMARY_TABS: NavItem[] = [
     label: "Automation Rules",
     icon: Workflow,
     testId: "coord-nav-automation-rules",
+  },
+  {
+    href: "/admin/coord/policy-documents",
+    label: "Policy Documents",
+    icon: NotebookText,
+    testId: "coord-nav-policy-documents",
   },
   {
     href: "/admin/coord/pull-decisions",

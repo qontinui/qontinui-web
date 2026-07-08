@@ -253,6 +253,23 @@ async def get_twin_subspace_raw(
     )
 
 
+@router.get("/catalog")
+async def get_twin_catalog(
+    _user=Depends(get_current_active_user_async),
+) -> Any:
+    """The coord-owned queryable-surface catalog — the single-source index of the
+    fleet-wide ``coord_query_*`` twin observers (agent Q&A meta-answer Phase 2).
+
+    Fleet-global static metadata (coord's ``GET /coord/twin/catalog`` takes no
+    tenant scope and no auth), so this is a thin authenticated passthrough: the
+    web gate requires a logged-in operator, and coord serves the same static
+    catalog to everyone (no tenant resolved → never 403s a member whose home
+    tenant is unresolved, no bearer needed on the wire). Returns
+    ``{entries: [...], total: N}``.
+    """
+    return await _proxy_coord_get("/coord/twin/catalog")
+
+
 @router.get("/delivery/verdict")
 async def get_delivery_verdict(
     plan_slug: str | None = None,

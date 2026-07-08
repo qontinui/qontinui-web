@@ -32,8 +32,14 @@ export const DEFAULT_BACKOFF: BackoffConfig = {
 /** Trigger discriminator the UI offers. Maps 1:1 to a coord `PolicyKind`. */
 export type RuleKind = "terminal_auto_response" | "question_auto_answer";
 
-/** Resolution strategy discriminator (drives the action sub-form). */
-export type ResolutionKind = "fixed" | "scoring";
+/**
+ * Resolution strategy discriminator (drives the action sub-form).
+ *  - `fixed`   → `submit_prompt` (terminal) / `auto_answer` (question)
+ *  - `scoring` → `resolve_by_scoring`
+ *  - `meta`    → `meta_answer` (the standing decision-delegation catch-all;
+ *    edited as a token template)
+ */
+export type ResolutionKind = "fixed" | "scoring" | "meta";
 
 /** A single scored option for a `resolve_by_scoring` action. */
 export interface PolicyOption {
@@ -67,7 +73,14 @@ export type PolicyCondition =
 export type PolicyAction =
   | { type: "submit_prompt"; text: string }
   | { type: "resolve_by_scoring"; options: PolicyOption[]; surface: string }
-  | { type: "auto_answer"; response: string };
+  | { type: "auto_answer"; response: string }
+  /**
+   * Agent Q&A meta-answer: the standing decision-delegation catch-all. The
+   * `template` carries `{{policy:<handle>}}` / `{{twin-catalog}}` tokens coord
+   * expands per tenant at answer time (coord `PolicyAction::MetaAnswer`,
+   * serializes to `{"type":"meta_answer","template":"..."}`).
+   */
+  | { type: "meta_answer"; template: string };
 
 /** `POST /coord/policies` body (coord `CreatePolicyRequest`). */
 export interface PolicyCreate {
@@ -118,6 +131,13 @@ export interface PolicyRow {
   priority: number;
   enabled: boolean;
   rationale: string | null;
+  /**
+   * The code constant this row was seeded from (e.g. `agent_meta_answer/v1`),
+   * naming the canonical default the restore-default route re-seeds from. `null`
+   * for hand-authored rows — the Restore-to-default control is shown only when
+   * this is non-null (coord `EffectivePolicy.default_source`).
+   */
+  default_source: string | null;
   expires_at: string | null;
   created_at: string;
   created_by: string;
