@@ -39,8 +39,8 @@ def _build_test_app() -> FastAPI:
     # key is exercised across calls. (``None`` — identity unknown — now
     # BYPASSES the shared cache entirely, so SWR must be tested under a
     # validated tenant key; see test_identity_unknown_never_caches.)
-    app.dependency_overrides[_capture_bearer_best_effort] = (
-        lambda: "11111111-1111-1111-1111-111111111111"
+    app.dependency_overrides[_capture_bearer_best_effort] = lambda: (
+        "11111111-1111-1111-1111-111111111111"
     )
     app.include_router(admin_dev_router, prefix="/api/v1")
     return app
