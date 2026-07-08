@@ -256,7 +256,9 @@ async def list_agent_sessions(
         None,
         description="If set, filter to sessions whose activity touches this repo.",
     ),
-    _user: User = Depends(get_current_active_user_async),  # any authenticated tenant member
+    _user: User = Depends(
+        get_current_active_user_async
+    ),  # any authenticated tenant member
 ) -> Any:
     """List agent sessions via coord's ``GET /coord/agent-sessions``.
 
@@ -300,7 +302,9 @@ async def list_agent_sessions(
 async def resolve_agent_session(
     request: Request,
     key: str,
-    _user: User = Depends(get_current_active_user_async),  # any authenticated tenant member
+    _user: User = Depends(
+        get_current_active_user_async
+    ),  # any authenticated tenant member
 ) -> Any:
     """Resolve a session by UUID **or** name via coord's
     ``GET /coord/agent-sessions/:id`` resolver (coord PR #894).
@@ -323,7 +327,9 @@ async def resolve_agent_session(
 async def get_agent_session_lineage(
     request: Request,
     session_id: UUID,
-    _user: User = Depends(get_current_active_user_async),  # any authenticated tenant member
+    _user: User = Depends(
+        get_current_active_user_async
+    ),  # any authenticated tenant member
 ) -> Any:
     """Return the per-session action timeline via coord's
     ``GET /coord/agent-sessions/:id/lineage``.

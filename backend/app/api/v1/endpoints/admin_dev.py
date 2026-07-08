@@ -285,7 +285,9 @@ async def get_dev_overview(
         "⇒ no shadow filter.",
     ),
     tenant_key: str | None = Depends(_capture_bearer_best_effort),
-    _user: User = Depends(get_current_active_user_async),  # any authenticated tenant member
+    _user: User = Depends(
+        get_current_active_user_async
+    ),  # any authenticated tenant member
 ) -> Any:
     """Proxy coord's ``GET /coord/dev-overview`` (gates + rollout overview).
 
@@ -392,7 +394,9 @@ async def get_prs(
         "before then.",
     ),
     _tenant_key: str | None = Depends(_capture_bearer_best_effort),
-    _user: User = Depends(get_current_active_user_async),  # any authenticated tenant member
+    _user: User = Depends(
+        get_current_active_user_async
+    ),  # any authenticated tenant member
 ) -> Any:
     """Proxy coord's ``GET /pr-merge/prs`` (open PRs + merge status).
 
@@ -458,7 +462,9 @@ def _empty_release_verdict(detail: str) -> dict[str, Any]:
 @router.get("/admin-dev/release-verdict")
 async def get_release_verdict(
     _tenant_key: str | None = Depends(_capture_bearer_best_effort),
-    _admin: User = Depends(require_admin),  # operator-only: verdict is fleet-wide, not tenant-scoped
+    _admin: User = Depends(
+        require_admin
+    ),  # operator-only: verdict is fleet-wide, not tenant-scoped
 ) -> Any:
     """Proxy coord's ``GET /coord/twin/release/verdict`` (per-surface deploy state).
 
