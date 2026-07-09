@@ -158,8 +158,11 @@ export function SessionDetail({
   const [agentStatuses, setAgentStatuses] = useState<AgentStatus[]>([]);
   const [lineageActions, setLineageActions] = useState<LineageAction[]>([]);
   const [coordLoading, setCoordLoading] = useState(true);
-  const [repoRegistration, setRepoRegistration] = useState<RegisteredRepo | null>(null);
-  const [repoIsCoordinated, setRepoIsCoordinated] = useState<boolean | null>(null);
+  const [repoRegistration, setRepoRegistration] =
+    useState<RegisteredRepo | null>(null);
+  const [repoIsCoordinated, setRepoIsCoordinated] = useState<boolean | null>(
+    null
+  );
 
   const dashboardMachineId = useMemo(() => getDashboardMachineId(), []);
 
@@ -439,7 +442,8 @@ export function SessionDetail({
                       )}
                       {repoRegistration?.last_reconciled_at && (
                         <span className="text-[10px] text-muted-foreground">
-                          Reconciled {relativeTime(repoRegistration.last_reconciled_at)}
+                          Reconciled{" "}
+                          {relativeTime(repoRegistration.last_reconciled_at)}
                         </span>
                       )}
                     </div>
@@ -668,7 +672,8 @@ export function SessionDetail({
       <HandoffModal
         open={handoffOpen}
         onOpenChange={setHandoffOpen}
-        session={session}
+        sessionId={session.id}
+        currentDeviceId={session.device_id}
         candidates={handoffTargets}
         onSucceeded={() => {
           void getSession(session.id)
@@ -743,13 +748,19 @@ function CoordinationCard({
           <Globe className="h-4 w-4 text-muted-foreground" />
           Coordination
           {claims.length > 0 && (
-            <Badge variant="outline" className="text-[10px] gap-1 border-purple-500/40 text-purple-300">
+            <Badge
+              variant="outline"
+              className="text-[10px] gap-1 border-purple-500/40 text-purple-300"
+            >
               <Lock className="h-2.5 w-2.5" />
               {claims.length} {claims.length === 1 ? "claim" : "claims"}
             </Badge>
           )}
           {primaryAgent?.blocked_on && (
-            <Badge variant="outline" className="text-[10px] gap-1 border-red-500/40 text-red-300">
+            <Badge
+              variant="outline"
+              className="text-[10px] gap-1 border-red-500/40 text-red-300"
+            >
               <Ban className="h-2.5 w-2.5" />
               blocked
             </Badge>
@@ -782,10 +793,15 @@ function CoordinationCard({
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <FileText className="h-3 w-3 text-purple-400 shrink-0" />
-                    <span className="font-mono truncate">{claim.resource_key}</span>
+                    <span className="font-mono truncate">
+                      {claim.resource_key}
+                    </span>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] px-1.5 py-0"
+                    >
                       {claim.kind}
                     </Badge>
                     <span className="text-[10px] text-muted-foreground">
@@ -813,22 +829,29 @@ function CoordinationCard({
               {primaryAgent.blocked_on && (
                 <div className="text-xs">
                   <span className="text-muted-foreground">Blocked on: </span>
-                  <span className="text-red-300 font-mono">{primaryAgent.blocked_on}</span>
-                </div>
-              )}
-              {primaryAgent.intent_globs && primaryAgent.intent_globs.length > 0 && (
-                <div className="text-xs">
-                  <span className="text-muted-foreground">Intent globs: </span>
-                  <span className="font-mono">
-                    {primaryAgent.intent_globs.join(", ")}
+                  <span className="text-red-300 font-mono">
+                    {primaryAgent.blocked_on}
                   </span>
                 </div>
               )}
+              {primaryAgent.intent_globs &&
+                primaryAgent.intent_globs.length > 0 && (
+                  <div className="text-xs">
+                    <span className="text-muted-foreground">
+                      Intent globs:{" "}
+                    </span>
+                    <span className="font-mono">
+                      {primaryAgent.intent_globs.join(", ")}
+                    </span>
+                  </div>
+                )}
               {primaryAgent.correlation_topic && (
                 <div className="text-xs">
                   <div className="flex items-center gap-1.5 mb-1">
                     <Link2 className="h-3 w-3 text-cyan-400" />
-                    <span className="text-muted-foreground">Correlation topic: </span>
+                    <span className="text-muted-foreground">
+                      Correlation topic:{" "}
+                    </span>
                     <Badge
                       variant="outline"
                       className="text-[10px] px-1.5 py-0 border-cyan-500/40 text-cyan-300"
