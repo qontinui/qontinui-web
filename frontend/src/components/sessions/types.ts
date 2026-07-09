@@ -149,6 +149,46 @@ export interface OutputChunkFrame extends OutputChunk {
   device_id?: string;
 }
 
+// ---- Restore capability (cross-machine resume) ---------------------------
+
+/**
+ * `restore_tier` vocabulary on a `restore-record` event payload — plan
+ * `2026-07-09-runner-session-history-cloud-sync` Phase 4 (mirrors the
+ * runner restore registry's capability tiers). `full` resumes the AI
+ * conversation via the provider's authoritative session id;
+ * `terminal_only` restores terminal + cwd + launch command but starts a
+ * fresh conversation.
+ */
+export type RestoreTier = "full" | "terminal_only";
+
+/**
+ * Payload of a `coord.session_events` row with
+ * `event_kind='restore-record'` — the runner's mirror of one
+ * restore-registry record. All fields optional/defensive: the emitter is
+ * shipping in parallel and older events may predate a field.
+ */
+export interface RestoreRecordPayload {
+  provider?: string | null;
+  authoritative_session_id?: string | null;
+  cwd?: string | null;
+  launch_command?: string | null;
+  restore_tier?: RestoreTier | string | null;
+  machine_id?: string | null;
+  [key: string]: unknown;
+}
+
+/**
+ * Wire shape from `GET /api/v1/operations/sessions/:id/restore-record`.
+ * The backend reduces coord's events replay to the highest-seq
+ * `restore-record` + `handoff_request` rows; either is null when the
+ * session has none in the replay window.
+ */
+export interface SessionRestoreRecordResponse {
+  session_id: string;
+  restore_record: SessionEventRow | null;
+  handoff_request: SessionEventRow | null;
+}
+
 /** A registered canonical repo from `GET /api/v1/operations/repos`. */
 export interface RegisteredRepo {
   repo: string;

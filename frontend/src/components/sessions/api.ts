@@ -27,6 +27,7 @@ import type {
   SessionClaimsResponse,
   SessionEventRow,
   SessionListResponse,
+  SessionRestoreRecordResponse,
   SessionRow,
   TenantListResponse,
 } from "./types";
@@ -184,6 +185,25 @@ export async function handoffSession(
     throw new SessionsApiError(`POST ${url} failed: ${res.status}`, res.status);
   }
   return await res.json();
+}
+
+/**
+ * Fetch the session's latest `restore-record` (+ `handoff_request`)
+ * events — plan `2026-07-09-runner-session-history-cloud-sync` Phase 4.
+ * The web backend reduces coord's events replay (SSE) to the two rows
+ * the resume UI needs; both fields are null when the session has no
+ * such event in coord's 100-row replay window.
+ */
+export async function getSessionRestoreRecord(
+  id: string,
+  signal?: AbortSignal
+): Promise<SessionRestoreRecordResponse> {
+  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(id)}/restore-record`;
+  const res = await httpClient.fetch(url, { signal });
+  if (!res.ok) {
+    throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
+  }
+  return (await res.json()) as SessionRestoreRecordResponse;
 }
 
 export async function getSessionClaims(

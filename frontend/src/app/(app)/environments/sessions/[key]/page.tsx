@@ -31,6 +31,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { relativeTime } from "@/components/operations/utils";
 import { LiveTailPane } from "@/components/sessions/LiveTailPane";
+import { ResumePanel } from "@/components/sessions/ResumePanel";
 import { TranscriptPane } from "@/components/sessions/TranscriptPane";
 import {
   AgentSessionsApiError,
@@ -141,6 +142,16 @@ function SessionCardView({ card }: { card: SessionCard }) {
             </span>
           )}
         </div>
+
+        {/* Restore capability + "Resume here…" (plan
+            `2026-07-09-runner-session-history-cloud-sync`, Phase 4).
+            Reads the session's newest `restore-record` event and offers
+            the Phase-7 handoff toward a picked target device. */}
+        <ResumePanel
+          sessionId={card.id}
+          sessionClosed={card.status === "closed"}
+          currentDeviceId={card.device_id}
+        />
 
         {/* Working-on summary */}
         {card.summary && <p className="text-sm">{card.summary}</p>}
