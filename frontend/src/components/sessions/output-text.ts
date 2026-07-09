@@ -16,7 +16,13 @@
  */
 export const MAX_RENDER_CHARS = 2 * 1024 * 1024;
 
-/** Decode a base64 chunk payload to raw bytes. */
+/**
+ * Decode a base64 chunk payload to raw bytes.
+ *
+ * Throws (`atob` raises `InvalidCharacterError`) on malformed base64 —
+ * callers treat a per-chunk decode failure as non-fatal: skip the chunk,
+ * count it, and surface a "corrupt chunks skipped" notice.
+ */
 export function decodeBase64Bytes(payloadB64: string): Uint8Array {
   const binary = atob(payloadB64);
   const bytes = new Uint8Array(binary.length);

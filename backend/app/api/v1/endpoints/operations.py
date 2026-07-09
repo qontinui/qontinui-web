@@ -3857,10 +3857,13 @@ async def get_coord_session_restore_record(
         ):
             latest[kind] = row
 
-    # Idle window between SSE lines. The replay burst arrives immediately
-    # after connect; once lines stop for this long the replay is over
+    # Two-tier idle windows. The FIRST line can lag behind connect (coord
+    # queries the replay rows before emitting anything), so it gets a
+    # generous deadline; once lines are flowing, the replay burst is
+    # back-to-back, so a short inter-line gap means the replay is over
     # (a live-tailing stream emits nothing until a new event or the 15s
     # keep-alive ping).
+    first_line_timeout_s = 5.0
     idle_timeout_s = 1.0
 
     try:
@@ -3877,13 +3880,20 @@ async def get_coord_session_restore_record(
                 lines = upstream.aiter_lines()
                 event_name = ""
                 data_lines: list[str] = []
+                received_any_line = False
                 while True:
                     try:
                         line = await asyncio.wait_for(
-                            anext(lines), timeout=idle_timeout_s
+                            anext(lines),
+                            timeout=(
+                                idle_timeout_s
+                                if received_any_line
+                                else first_line_timeout_s
+                            ),
                         )
                     except (TimeoutError, StopAsyncIteration):
                         break
+                    received_any_line = True
                     if line.startswith(":"):
                         continue  # SSE keep-alive comment
                     if line == "":

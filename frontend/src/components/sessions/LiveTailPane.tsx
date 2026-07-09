@@ -30,7 +30,7 @@ import {
   SessionsApiError,
   subscribeSessionOutput,
 } from "./api";
-import { chunkStream, type OutputStream } from "./types";
+import { chunkStream, type OutputChunkFrame, type OutputStream } from "./types";
 import { capTail, decodeBase64Bytes, stripAnsi } from "./output-text";
 
 interface LiveTailPaneProps {
@@ -59,6 +59,7 @@ export function LiveTailPane({ sessionId, sessionClosed }: LiveTailPaneProps) {
   const [status, setStatus] = useState<TailStatus>("loading");
   const [text, setText] = useState("");
   const [truncated, setTruncated] = useState(false);
+  const [corruptChunks, setCorruptChunks] = useState(0);
 
   const scrollRef = useRef<HTMLPreElement | null>(null);
   // Auto-scroll stays engaged while the reader is at (or near) the
@@ -74,11 +75,14 @@ export function LiveTailPane({ sessionId, sessionClosed }: LiveTailPaneProps) {
     setStatus("loading");
     setText("");
     setTruncated(false);
+    setCorruptChunks(0);
     stickyRef.current = true;
 
     const seenOffsets = new Set<number>();
     // Streaming UTF-8 decoder so a multi-byte character split across
-    // two chunks decodes correctly.
+    // two chunks decodes correctly. The decoder carries mid-sequence
+    // state, so bytes MUST flow through it in chunk order: all bootstrap
+    // chunks first, then live chunks (buffered until bootstrap settles).
     const decoder = new TextDecoder("utf-8", { fatal: false });
 
     const appendBytes = (bytes: Uint8Array) => {
@@ -89,6 +93,45 @@ export function LiveTailPane({ sessionId, sessionClosed }: LiveTailPaneProps) {
         if (capped.truncated) setTruncated(true);
         return capped.text;
       });
+    };
+
+    // Malformed base64 is non-fatal: skip the chunk, count it, and let
+    // the pane surface a "corrupt chunks skipped" notice.
+    const decodeChunkPayload = (payloadB64: string): Uint8Array | null => {
+      try {
+        return decodeBase64Bytes(payloadB64);
+      } catch {
+        setCorruptChunks((n) => n + 1);
+        return null;
+      }
+    };
+
+    // Live chunks that arrive while the warm bootstrap is in flight are
+    // buffered here and flushed (in chunk_offset order) once the
+    // bootstrap settles, so the shared streaming decoder never sees the
+    // two phases interleaved out of order.
+    let bootstrapSettled = false;
+    const pendingLive: OutputChunkFrame[] = [];
+
+    const processLiveChunk = (chunk: OutputChunkFrame) => {
+      if (seenOffsets.has(chunk.chunk_offset)) return;
+      seenOffsets.add(chunk.chunk_offset);
+      const bytes = decodeChunkPayload(chunk.payload_b64);
+      if (bytes) appendBytes(bytes);
+      setStatus((s) =>
+        s === "loading" || s === "unavailable" ? "tailing" : s
+      );
+    };
+
+    const settleBootstrap = () => {
+      if (bootstrapSettled || cancelled) return;
+      bootstrapSettled = true;
+      const buffered = pendingLive
+        .splice(0, pendingLive.length)
+        .sort((a, b) => a.chunk_offset - b.chunk_offset);
+      for (const chunk of buffered) {
+        processLiveChunk(chunk);
+      }
     };
 
     // 1. Bootstrap from the warm history. Subscribe to the live tail
@@ -109,7 +152,8 @@ export function LiveTailPane({ sessionId, sessionClosed }: LiveTailPaneProps) {
         for (const chunk of ordered) {
           if (seenOffsets.has(chunk.chunk_offset)) continue;
           seenOffsets.add(chunk.chunk_offset);
-          appendBytes(decodeBase64Bytes(chunk.payload_b64));
+          const bytes = decodeChunkPayload(chunk.payload_b64);
+          if (bytes) appendBytes(bytes);
         }
         setStatus((s) => (s === "loading" ? "tailing" : s));
       } catch (err) {
@@ -129,6 +173,10 @@ export function LiveTailPane({ sessionId, sessionClosed }: LiveTailPaneProps) {
         // History unavailable (older coord, transient error) — keep
         // live-tailing; a live chunk promotes the status back.
         setStatus("unavailable");
+      } finally {
+        // Whatever the bootstrap outcome, release the buffered live
+        // chunks (offset-ordered) through the decoder and go live.
+        settleBootstrap();
       }
     })();
 
@@ -139,12 +187,11 @@ export function LiveTailPane({ sessionId, sessionClosed }: LiveTailPaneProps) {
       onChunk: (chunk) => {
         if (cancelled) return;
         if (chunkStream(chunk) !== stream) return;
-        if (seenOffsets.has(chunk.chunk_offset)) return;
-        seenOffsets.add(chunk.chunk_offset);
-        appendBytes(decodeBase64Bytes(chunk.payload_b64));
-        setStatus((s) =>
-          s === "loading" || s === "unavailable" ? "tailing" : s
-        );
+        if (!bootstrapSettled) {
+          pendingLive.push(chunk);
+          return;
+        }
+        processLiveChunk(chunk);
       },
       onError: (err) => {
         if (cancelled) return;
@@ -248,6 +295,12 @@ export function LiveTailPane({ sessionId, sessionClosed }: LiveTailPaneProps) {
           {truncated && (
             <p className="text-[11px] text-muted-foreground">
               Scrollback truncated — showing the most recent ~2 MB.
+            </p>
+          )}
+          {corruptChunks > 0 && (
+            <p className="text-[11px] text-muted-foreground">
+              {corruptChunks} corrupt chunk{corruptChunks === 1 ? "" : "s"}{" "}
+              skipped.
             </p>
           )}
           <pre
