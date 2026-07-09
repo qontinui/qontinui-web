@@ -3700,15 +3700,24 @@ async def get_coord_session_output(
         default=None,
         description="`warm` (default) | `cold` — passthrough to coord.",
     ),
+    stream: str | None = Query(
+        default=None,
+        description=(
+            "`pty` (default) | `transcript` — output stream selector, "
+            "passthrough to coord (plan "
+            "`2026-07-09-runner-session-history-cloud-sync` Phase 2)."
+        ),
+    ),
     limit: int | None = Query(
         default=None,
         description="Max warm-tier chunks to return (warm tier only).",
     ),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
-    """Fetch a session's recorded PTY output (Phase 8 read-only pane).
+    """Fetch a session's recorded output (Phase 8 read-only pane).
 
-    Bridges to coord's ``GET /sessions/:id/output[?tier=warm|cold][&limit=N]``.
+    Bridges to coord's
+    ``GET /sessions/:id/output[?tier=warm|cold][&stream=pty|transcript][&limit=N]``.
     The response envelope is::
 
         {
@@ -3732,6 +3741,8 @@ async def get_coord_session_output(
     params: dict[str, Any] = {}
     if tier is not None:
         params["tier"] = tier
+    if stream is not None:
+        params["stream"] = stream
     if limit is not None:
         params["limit"] = limit
     return await _proxy_coord_get(
