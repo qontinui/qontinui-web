@@ -21,6 +21,7 @@ import type {
   LineageResponse,
   OutputChunkFrame,
   OutputHistoryResponse,
+  OutputStream,
   RegisteredRepo,
   RegisteredReposResponse,
   SessionClaimsResponse,
@@ -84,6 +85,12 @@ export type OutputTier = "warm" | "cold";
 export interface GetSessionOutputOptions {
   /** `warm` (default) recent scrollback | `cold` archived full history. */
   tier?: OutputTier;
+  /**
+   * `pty` (default) terminal bytes | `transcript` AI conversation JSONL.
+   * Plan `2026-07-09-runner-session-history-cloud-sync` Phase 2 — omitted
+   * for `pty` so requests stay compatible with a pre-`stream` coord.
+   */
+  stream?: OutputStream;
   /** Max warm-tier chunks to fetch. Coord clamps to [1, 65536]; default 4096. */
   limit?: number;
   signal?: AbortSignal;
@@ -106,6 +113,7 @@ export async function getSessionOutput(
 ): Promise<OutputHistoryResponse> {
   const params = new URLSearchParams();
   if (opts.tier) params.set("tier", opts.tier);
+  if (opts.stream) params.set("stream", opts.stream);
   if (opts.limit !== undefined) params.set("limit", String(opts.limit));
 
   const qs = params.toString();
@@ -251,7 +259,10 @@ export async function listRegisteredRepos(
       const url = `${OPERATIONS_API}/repos`;
       const res = await httpClient.fetch(url, { signal });
       if (!res.ok) {
-        throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
+        throw new SessionsApiError(
+          `GET ${url} failed: ${res.status}`,
+          res.status
+        );
       }
       const data = (await res.json()) as RegisteredReposResponse;
       const repos = data.repos ?? [];

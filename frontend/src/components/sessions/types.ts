@@ -96,6 +96,28 @@ export interface SessionEventRow {
 export interface OutputChunk {
   chunk_offset: number;
   payload_b64: string;
+  /**
+   * Which output stream the chunk belongs to — `"pty"` (terminal bytes)
+   * or `"transcript"` (AI conversation JSONL). Plan
+   * `2026-07-09-runner-session-history-cloud-sync` Phase 2 adds the
+   * discriminator; absent/null on chunks from a pre-`stream` coord,
+   * which are always PTY output.
+   */
+  stream?: OutputStream | string | null;
+}
+
+/**
+ * Output stream selector for `GET /sessions/:id/output?stream=…` and the
+ * `stream` field on output chunks. `pty` is the wire default.
+ */
+export type OutputStream = "pty" | "transcript";
+
+/**
+ * Normalize a chunk's `stream` field: chunks written before the `stream`
+ * column existed (or by a coord that predates it) are PTY output.
+ */
+export function chunkStream(chunk: OutputChunk): OutputStream | string {
+  return chunk.stream ?? "pty";
 }
 
 /**
