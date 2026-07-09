@@ -14,7 +14,11 @@
  * JSON is parsed for readable message content where possible, with a raw
  * fallback so nothing is silently dropped.
  *
- * Rendered content is capped (~2 MB, tail kept) with a truncation notice.
+ * Decoding is bounded: only the newest suffix of chunks within ~2x the
+ * render cap is decoded (memory stays proportional to what renders, not
+ * to the transcript size), malformed base64 chunks are skipped with a
+ * notice, and rendered content is capped (~2 MB, tail kept) with a
+ * truncation notice.
  */
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
@@ -26,6 +30,7 @@ import type { OutputChunk } from "./types";
 import {
   capTail,
   decodeBase64Bytes,
+  MAX_RENDER_CHARS,
   parseTranscriptText,
   type TranscriptLine,
 } from "./output-text";
@@ -48,20 +53,77 @@ type PaneState =
       lines: TranscriptLine[];
       tier: string;
       truncated: boolean;
+      /** Chunks whose base64 payload failed to decode (skipped). */
+      corruptChunks: number;
     };
 
-/** Decode + concatenate chunks (oldest→newest) into one UTF-8 string. */
-function chunksToText(chunks: OutputChunk[]): string {
+/**
+ * Warm-tier fetch cap. Matches coord's read default (clamps to
+ * [1, 65536]); with the render cap at ~2 MB, 4096 chunks is comfortably
+ * more history than the pane will ever render.
+ */
+const WARM_LIMIT = 4096;
+
+/**
+ * Decode budget in raw bytes. `MAX_RENDER_CHARS` is a UTF-16 code-unit
+ * cap; 2x gives worst-case UTF-8 margin so the decoded suffix always
+ * covers the render window without decoding an unbounded transcript.
+ */
+const MAX_DECODE_BYTES = 2 * MAX_RENDER_CHARS;
+
+interface DecodedChunks {
+  /** Decoded UTF-8 text, oldest→newest. */
+  text: string;
+  /** True when older chunks were skipped to stay within the byte budget. */
+  truncated: boolean;
+  /** Chunks whose base64 payload failed to decode (skipped, non-fatal). */
+  corruptChunks: number;
+}
+
+/**
+ * Decode + concatenate chunks (oldest→newest) into one UTF-8 string,
+ * bounded: walks the ordered chunks newest→oldest accumulating decoded
+ * byte length until {@link MAX_DECODE_BYTES}, decodes only that suffix
+ * (memory stays proportional to the render cap, not the transcript),
+ * and reports when older chunks were skipped. Malformed base64 payloads
+ * are skipped and counted rather than throwing.
+ */
+function chunksToText(chunks: OutputChunk[]): DecodedChunks {
   const ordered = [...chunks].sort((a, b) => a.chunk_offset - b.chunk_offset);
-  const buffers = ordered.map((c) => decodeBase64Bytes(c.payload_b64));
-  const total = buffers.reduce((n, b) => n + b.length, 0);
+  // Newest→oldest walk keeps the tail — the part capTail would keep.
+  const kept: Uint8Array[] = [];
+  let total = 0;
+  let corrupt = 0;
+  let skipped = false;
+  for (let i = ordered.length - 1; i >= 0; i--) {
+    if (total >= MAX_DECODE_BYTES) {
+      skipped = true;
+      break;
+    }
+    const chunk = ordered[i];
+    if (!chunk) continue;
+    let bytes: Uint8Array;
+    try {
+      bytes = decodeBase64Bytes(chunk.payload_b64);
+    } catch {
+      corrupt += 1;
+      continue;
+    }
+    kept.push(bytes);
+    total += bytes.length;
+  }
+  kept.reverse(); // back to oldest→newest for rendering
   const merged = new Uint8Array(total);
   let at = 0;
-  for (const b of buffers) {
+  for (const b of kept) {
     merged.set(b, at);
     at += b.length;
   }
-  return new TextDecoder("utf-8", { fatal: false }).decode(merged);
+  return {
+    text: new TextDecoder("utf-8", { fatal: false }).decode(merged),
+    truncated: skipped,
+    corruptChunks: corrupt,
+  };
 }
 
 export function TranscriptPane({
@@ -78,6 +140,7 @@ export function TranscriptPane({
         let history = await getSessionOutput(sessionId, {
           tier: "warm",
           stream: "transcript",
+          limit: WARM_LIMIT,
           signal,
         });
         if (history.chunks.length === 0 && sessionClosed) {
@@ -102,12 +165,14 @@ export function TranscriptPane({
           setState({ phase: "empty" });
           return;
         }
-        const { text, truncated } = capTail(chunksToText(history.chunks));
+        const decoded = chunksToText(history.chunks);
+        const { text, truncated } = capTail(decoded.text);
         setState({
           phase: "ready",
           lines: parseTranscriptText(text),
           tier,
-          truncated,
+          truncated: truncated || decoded.truncated,
+          corruptChunks: decoded.corruptChunks,
         });
       } catch (err) {
         if (
@@ -215,6 +280,12 @@ export function TranscriptPane({
           {state.truncated && (
             <p className="text-[11px] text-muted-foreground">
               Transcript truncated — showing the most recent ~2 MB.
+            </p>
+          )}
+          {state.corruptChunks > 0 && (
+            <p className="text-[11px] text-muted-foreground">
+              {state.corruptChunks} corrupt chunk
+              {state.corruptChunks === 1 ? "" : "s"} skipped.
             </p>
           )}
           <div

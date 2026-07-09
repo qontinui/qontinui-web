@@ -405,15 +405,35 @@ function parseFrame(frame: string, handlers: SessionEventStreamHandlers): void {
   }
   if (dataLines.length === 0) return;
   const payload = dataLines.join("\n");
+  let parsed: SessionEventRow;
   try {
-    const parsed = JSON.parse(payload) as SessionEventRow;
-    handlers.onEvent(parsed);
+    parsed = JSON.parse(payload) as SessionEventRow;
   } catch (err) {
     handlers.onError?.(
       new Error(
         `failed to parse SSE frame: ${err instanceof Error ? err.message : String(err)}`
       )
     );
+    return;
+  }
+  dispatchToHandler(() => handlers.onEvent(parsed), handlers.onError);
+}
+
+/**
+ * Invoke a subscriber handler, isolating its exceptions from the SSE
+ * reader loop: a throwing handler must not terminate the stream. Errors
+ * route to the subscriber's non-fatal `onError` channel — except
+ * `AbortError`, whose silent-cancellation semantics are preserved.
+ */
+function dispatchToHandler(
+  invoke: () => void,
+  onError: ((err: unknown) => void) | undefined
+): void {
+  try {
+    invoke();
+  } catch (err) {
+    if ((err as { name?: string })?.name === "AbortError") return;
+    onError?.(err);
   }
 }
 
@@ -522,7 +542,8 @@ function parseOutputFrame(
     return;
   }
   if (isOutputChunkFrame(parsed)) {
-    handlers.onChunk(parsed);
+    // Isolated so a chunk-handler exception can't kill the reader loop.
+    dispatchToHandler(() => handlers.onChunk(parsed), handlers.onError);
   }
   // Non-output frames (started/heartbeat/closed/claim_stolen/…) are not
   // this subscriber's concern.
