@@ -7,7 +7,11 @@ federated memories participate in the tenant's hybrid retrieval:
 
 * ``kind='reference'``, ``scope='tenant'``, ``title = memory name``,
 * ``source = {"bridge": "coord.memories", "memory_name": ..., "version": ...}``,
-* ``content_hash`` over the memory content (re-runs dedup naturally),
+* title + content pass through :func:`redact_text` BEFORE
+  hashing/embedding/insert (same server-side pass as the API write
+  path — bridged content must never land secrets in the store),
+* ``content_hash`` over the REDACTED memory content (re-runs dedup
+  naturally, and dedup keys match API-written rows),
 * embedded via the standard embedder.
 
 Sync semantics per run:
@@ -38,7 +42,6 @@ have no tenant store to land in.
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 from datetime import UTC, datetime
 from typing import Any
@@ -50,6 +53,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.celery_app import celery_app
 from app.services import memory_store as store
 from app.services.memory_embedder import ensure_embedding_dims, get_embedder
+from app.services.memory_redaction import log_redactions, redact_text
 
 logger = structlog.get_logger(__name__)
 
@@ -105,10 +109,26 @@ async def bridge_sync_once(
         ordered = [name for name in names if name in contents]
         if not ordered:
             continue
-        embeddings = get_embedder().embed_texts([contents[name][1] for name in ordered])
+        # Redact BEFORE hashing/embedding/insert — same pass as the API
+        # write path, so bridged coord.memories content never lands
+        # secrets in coord.memory_records, and the content_hash is over
+        # the REDACTED text (dedup keys match API-written rows).
+        redaction_counts: dict[str, int] = {}
+        redacted: dict[str, tuple[int, str, str]] = {}
+        for name in ordered:
+            version, content = contents[name]
+            rt = redact_text(name)
+            rc = redact_text(content)
+            for counts in (rt.counts, rc.counts):
+                for cls, n in counts.items():
+                    redaction_counts[cls] = redaction_counts.get(cls, 0) + n
+            redacted[name] = (version, rt.text, rc.text)
+        log_redactions("memory_bridge", redaction_counts)
+
+        embeddings = get_embedder().embed_texts([redacted[name][2] for name in ordered])
         ensure_embedding_dims(embeddings)
         for name, embedding in zip(ordered, embeddings, strict=True):
-            version, content = contents[name]
+            version, title, content = redacted[name]
             bridge_source = _bridge_source(name, version)
             memory_id, deduped = await store.insert_record(
                 session,
@@ -116,7 +136,7 @@ async def bridge_sync_once(
                 scope="tenant",
                 scope_ref=None,
                 kind="reference",
-                title=name,
+                title=title,
                 content=content,
                 content_hash=_content_hash(content),
                 embedding=embedding,
@@ -159,15 +179,10 @@ async def bridge_sync_once(
     }
 
 
-async def _async_bridge_sync() -> dict[str, int]:
+async def _async_bridge_sync(
+    session_maker: async_sessionmaker[AsyncSession],
+) -> dict[str, int]:
     """Async core for the beat task (throwaway committed session)."""
-    # Lazy import to avoid a module-load-time DB engine handshake in
-    # tests that never trigger the Celery path.
-    from app.db.session import async_engine
-
-    session_maker = async_sessionmaker(
-        async_engine, class_=AsyncSession, expire_on_commit=False
-    )
     async with session_maker() as session:
         result = await bridge_sync_once(session)
         await session.commit()
@@ -182,6 +197,14 @@ async def _async_bridge_sync() -> dict[str, int]:
     retry_kwargs={"max_retries": 3},
 )
 def run_memory_bridge_sync(self: Any) -> dict[str, int]:
-    """15-minute beat: mirror coord.memories_latest into memory_records."""
-    result: dict[str, int] = asyncio.run(_async_bridge_sync())
-    return result
+    """15-minute beat: mirror coord.memories_latest into memory_records.
+
+    Runs on a per-invocation NullPool engine in a fresh event loop —
+    never the shared pooled ``async_engine``, whose asyncpg connections
+    poison across closed ``asyncio.run`` loops.
+    """
+    # Lazy import to avoid a module-load-time DB engine handshake in
+    # tests that never trigger the Celery path.
+    from app.db.session import run_db_task_in_fresh_loop
+
+    return run_db_task_in_fresh_loop(_async_bridge_sync)

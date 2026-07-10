@@ -163,10 +163,27 @@ def upgrade() -> None:
             source             JSONB NOT NULL DEFAULT '{}',
             is_tombstone       BOOLEAN NOT NULL DEFAULT false,
             created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
-            updated_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
-            CONSTRAINT memory_records_tenant_content_hash_key
-                UNIQUE (tenant_id, content_hash)
+            updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
         )
+        """
+    )
+
+    # Dedup key — LIVE rows only. A partial unique index (not a table
+    # constraint) so that tombstoned / superseded / validity-ended rows
+    # release their content_hash: deleting or superseding a memory frees
+    # its content for a fresh write instead of permanently swallowing
+    # identical re-writes behind an ``ON CONFLICT DO NOTHING`` (which
+    # would ack ``deduped=true`` against a row retrieval can never
+    # return). ``insert_record`` / ``insert_records_batch`` target this
+    # index's predicate in their ON CONFLICT clauses.
+    op.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS
+            uq_memory_records_tenant_content_hash_live
+            ON coord.memory_records (tenant_id, content_hash)
+            WHERE is_tombstone = false
+              AND superseded_by IS NULL
+              AND valid_until IS NULL
         """
     )
 
@@ -252,9 +269,10 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Reverse: drop the two quota columns, then the two tables.
 
-    Indexes drop with their tables. ``coord.memory_records`` has no
-    inbound FKs from other tables (the self-FK drops with it), so plain
-    DROPs suffice.
+    Indexes drop with their tables (the live-dedup partial unique index
+    is dropped explicitly first for symmetry with its explicit CREATE).
+    ``coord.memory_records`` has no inbound FKs from other tables (the
+    self-FK drops with it), so plain DROPs suffice.
     """
     op.execute(
         """
@@ -263,5 +281,6 @@ def downgrade() -> None:
             DROP COLUMN IF EXISTS memory_quota_bytes
         """
     )
+    op.execute("DROP INDEX IF EXISTS coord.uq_memory_records_tenant_content_hash_live")
     op.execute("DROP TABLE IF EXISTS coord.memory_observations")
     op.execute("DROP TABLE IF EXISTS coord.memory_records")

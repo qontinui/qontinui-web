@@ -108,10 +108,25 @@ _SETUP_SQL = [
         source             JSONB NOT NULL DEFAULT '{}',
         is_tombstone       BOOLEAN NOT NULL DEFAULT false,
         created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
-        updated_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
-        CONSTRAINT memory_records_tenant_content_hash_key
-            UNIQUE (tenant_id, content_hash)
+        updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
     )
+    """,
+    # Legacy shape from an older run of this suite against a persistent
+    # test DB — the table-level UNIQUE was replaced by the partial index.
+    """
+    ALTER TABLE coord.memory_records
+        DROP CONSTRAINT IF EXISTS memory_records_tenant_content_hash_key
+    """,
+    # Live-row dedup key — mirrors the migration's partial unique index:
+    # dead rows (tombstoned / superseded / validity-ended) release their
+    # content_hash for a fresh write.
+    """
+    CREATE UNIQUE INDEX IF NOT EXISTS
+        uq_memory_records_tenant_content_hash_live
+        ON coord.memory_records (tenant_id, content_hash)
+        WHERE is_tombstone = false
+          AND superseded_by IS NULL
+          AND valid_until IS NULL
     """,
     """
     CREATE TABLE IF NOT EXISTS coord.tenant_policies (
@@ -270,6 +285,106 @@ class TestHashDedup:
         stats = mc.client.get("/api/v1/memory/stats").json()
         assert stats["row_count"] == 1
 
+    def test_batch_mixed_new_dup_and_intra_dup_preserves_order(
+        self, mc: MemoryClient
+    ) -> None:
+        """Set-based batch insert: request order + dedup flags survive a
+        mix of new rows, a pre-existing duplicate, and an intra-batch
+        duplicate (first occurrence wins)."""
+        pre = mc.client.post(
+            "/api/v1/memory/records",
+            json={"records": [_record("previously stored heron fact")]},
+        )
+        pre_id = pre.json()["records"][0]["memory_id"]
+
+        resp = mc.client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    _record("brand new ibis fact"),
+                    _record("previously stored heron fact"),
+                    _record("brand new ibis fact"),
+                    _record("brand new jackdaw fact"),
+                ]
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        records = body["records"]
+        assert [r["deduped"] for r in records] == [False, True, True, False]
+        assert records[1]["memory_id"] == pre_id
+        assert records[2]["memory_id"] == records[0]["memory_id"]
+        assert records[3]["memory_id"] != records[0]["memory_id"]
+        assert body["deduped_count"] == 2
+        stats = mc.client.get("/api/v1/memory/stats").json()
+        assert stats["row_count"] == 3
+
+
+# ---------------------------------------------------------------------------
+# Liveness dedup — dead rows release their content_hash (partial index)
+# ---------------------------------------------------------------------------
+
+
+class TestLivenessDedup:
+    def test_tombstoned_content_can_be_rewritten(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """write → tombstone → identical re-write is a NEW live row, not a
+        silent ``deduped=true`` ack against unretrievable content."""
+        first = mc.client.post(
+            "/api/v1/memory/records",
+            json={"records": [_record("the phoenix rises from its ashes")]},
+        )
+        old_id = first.json()["records"][0]["memory_id"]
+        assert mc.client.delete(f"/api/v1/memory/records/{old_id}").status_code == 204
+
+        second = mc.client.post(
+            "/api/v1/memory/records",
+            json={"records": [_record("the phoenix rises from its ashes")]},
+        )
+        assert second.status_code == 200
+        (rec,) = second.json()["records"]
+        assert rec["deduped"] is False
+        assert rec["memory_id"] != old_id
+
+        # The re-written content is retrievable again.
+        hits = mc.client.post(
+            "/api/v1/memory/query", json={"query_text": "phoenix rises ashes"}
+        ).json()["hits"]
+        assert [h["memory_id"] for h in hits] == [rec["memory_id"]]
+        # Two physical rows (tombstone + live), one live.
+        count = _scalar(
+            db,
+            "SELECT count(*) FROM coord.memory_records WHERE tenant_id = :t",
+            t=mc.tenant_id,
+        )
+        assert count == 2
+
+    def test_superseded_original_content_can_be_rewritten(
+        self, mc: MemoryClient
+    ) -> None:
+        """write A → supersede with B → re-write of A's content succeeds
+        as a fresh live row (the superseded row released its hash)."""
+        first = mc.client.post(
+            "/api/v1/memory/records",
+            json={"records": [_record("the griffin guards the gold")]},
+        )
+        old_id = first.json()["records"][0]["memory_id"]
+        superseded = mc.client.post(
+            f"/api/v1/memory/records/{old_id}/supersede",
+            json={"title": "note", "content": "the griffin abandoned the gold"},
+        )
+        assert superseded.status_code == 200
+
+        rewrite = mc.client.post(
+            "/api/v1/memory/records",
+            json={"records": [_record("the griffin guards the gold")]},
+        )
+        assert rewrite.status_code == 200
+        (rec,) = rewrite.json()["records"]
+        assert rec["deduped"] is False
+        assert rec["memory_id"] != old_id
+
 
 # ---------------------------------------------------------------------------
 # Quota
@@ -329,6 +444,53 @@ class TestQuota:
         stats = mc.client.get("/api/v1/memory/stats").json()
         assert stats["quota_bytes"] == 256 * 1024 * 1024
         assert stats["quota_rows"] == 500_000
+
+    def test_tombstone_frees_usage_in_stats(self, mc: MemoryClient) -> None:
+        """Deleted (tombstoned) rows stop counting against usage."""
+        write = mc.client.post(
+            "/api/v1/memory/records",
+            json={"records": [_record("short-lived pelican note")]},
+        )
+        memory_id = write.json()["records"][0]["memory_id"]
+        stats = mc.client.get("/api/v1/memory/stats").json()
+        assert stats["row_count"] == 1
+        assert stats["bytes"] > 0
+
+        assert (
+            mc.client.delete(f"/api/v1/memory/records/{memory_id}").status_code == 204
+        )
+        stats = mc.client.get("/api/v1/memory/stats").json()
+        assert stats["row_count"] == 0
+        assert stats["bytes"] == 0
+
+    def test_delete_frees_row_quota_for_new_writes(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """Row quota is a LIVE-row budget: delete → the slot is reusable."""
+        _exec(
+            db,
+            [
+                "INSERT INTO coord.tenant_policies "
+                "(tenant_id, memory_quota_bytes, memory_row_quota) "
+                "VALUES (:t, 1000000, 1)"
+            ],
+            t=mc.tenant_id,
+        )
+        first = mc.client.post(
+            "/api/v1/memory/records", json={"records": [_record("row one")]}
+        )
+        assert first.status_code == 200
+        memory_id = first.json()["records"][0]["memory_id"]
+        over = mc.client.post(
+            "/api/v1/memory/records", json={"records": [_record("row two")]}
+        )
+        assert over.status_code == 429
+
+        mc.client.delete(f"/api/v1/memory/records/{memory_id}")
+        retry = mc.client.post(
+            "/api/v1/memory/records", json={"records": [_record("row two")]}
+        )
+        assert retry.status_code == 200
 
 
 # ---------------------------------------------------------------------------

@@ -33,7 +33,8 @@ from typing import Any, cast
 from uuid import UUID
 
 import structlog
-from sqlalchemy import CursorResult, bindparam, text
+from sqlalchemy import CursorResult, Float, Text, bindparam, text
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.memory_embedder import EMBEDDING_MODEL_TAG
@@ -60,6 +61,17 @@ ARM_LIMIT = 50
 # AND supplies the matching ``scope_ref``.
 NARROW_SCOPES = ("agent", "session")
 
+# The liveness predicate of the ``uq_memory_records_tenant_content_hash_live``
+# partial unique index (see the ``coord_memory_records`` migration): only
+# LIVE rows participate in content-hash dedup, so tombstoning / superseding /
+# ending a row's validity frees its content_hash for a fresh write. Every
+# dedup lookup and every ON CONFLICT target in this module MUST use exactly
+# this predicate — a broader check would resurrect the swallowed-re-write
+# data-loss bug this index exists to prevent.
+_LIVE_DEDUP_PREDICATE = (
+    "is_tombstone = false AND superseded_by IS NULL AND valid_until IS NULL"
+)
+
 
 def format_pgvector(vector: list[float]) -> str:
     """Render a vector as pgvector's text literal (``[v1,v2,...]``)."""
@@ -79,6 +91,12 @@ class TenantMemoryUsage:
 async def get_usage(session: AsyncSession, tenant_id: UUID) -> TenantMemoryUsage:
     """Rows/bytes used by ``tenant_id`` plus its effective quotas.
 
+    Only non-tombstone rows count against quota (a delete frees quota
+    immediately); superseded / decay-invalidated rows still count until
+    the physical prune — they remain retrievable-storage lineage. Bytes
+    are ``octet_length(content)``. Both definitions match the coord
+    twin-census observer, so quota posture and census never disagree.
+
     Quotas COALESCE against the migration defaults over a LEFT JOIN, so
     a tenant without a ``coord.tenant_policies`` row gets the defaults —
     matching how coord treats missing policy rows.
@@ -90,10 +108,12 @@ async def get_usage(session: AsyncSession, tenant_id: UUID) -> TenantMemoryUsage
                 SELECT
                     (SELECT count(*)
                        FROM coord.memory_records r
-                      WHERE r.tenant_id = :tenant_id) AS row_count,
+                      WHERE r.tenant_id = :tenant_id
+                        AND r.is_tombstone = false) AS row_count,
                     (SELECT COALESCE(sum(octet_length(r.content)), 0)
                        FROM coord.memory_records r
-                      WHERE r.tenant_id = :tenant_id) AS bytes,
+                      WHERE r.tenant_id = :tenant_id
+                        AND r.is_tombstone = false) AS bytes,
                     COALESCE(p.memory_quota_bytes, :default_quota_bytes)
                         AS quota_bytes,
                     COALESCE(p.memory_row_quota, :default_row_quota)
@@ -155,16 +175,20 @@ async def insert_record(
     source: dict[str, Any],
     consolidated_from: list[UUID] | None = None,
 ) -> tuple[UUID, bool]:
-    """Insert one record, deduping on ``(tenant_id, content_hash)``.
+    """Insert one record, deduping on ``(tenant_id, content_hash)``
+    against LIVE rows only.
 
-    Returns ``(memory_id, deduped)`` — on conflict the EXISTING row's id
-    is returned with ``deduped=True``. ``consolidated_from`` carries the
+    The conflict target is the ``uq_memory_records_tenant_content_hash_live``
+    partial unique index, so tombstoned / superseded / validity-ended
+    rows never swallow a re-write of identical content. Returns
+    ``(memory_id, deduped)`` — on conflict the EXISTING live row's id is
+    returned with ``deduped=True``. ``consolidated_from`` carries the
     member lineage of a synthesized ``mental_model`` row (Phase 4).
     """
     inserted = (
         await session.execute(
             text(
-                """
+                f"""
                 INSERT INTO coord.memory_records
                     (tenant_id, scope, scope_ref, kind, title, content,
                      content_hash, embedding, embedding_model, importance,
@@ -174,7 +198,9 @@ async def insert_record(
                      :content_hash, CAST(:embedding AS vector),
                      :embedding_model, :importance, CAST(:source AS jsonb),
                      CAST(:consolidated_from AS uuid[]))
-                ON CONFLICT (tenant_id, content_hash) DO NOTHING
+                ON CONFLICT (tenant_id, content_hash)
+                    WHERE {_LIVE_DEDUP_PREDICATE}
+                    DO NOTHING
                 RETURNING memory_id
                 """
             ),
@@ -200,9 +226,10 @@ async def insert_record(
     existing = (
         await session.execute(
             text(
-                """
+                f"""
                 SELECT memory_id FROM coord.memory_records
                 WHERE tenant_id = :tenant_id AND content_hash = :content_hash
+                  AND {_LIVE_DEDUP_PREDICATE}
                 """
             ),
             {"tenant_id": tenant_id, "content_hash": content_hash},
@@ -211,17 +238,138 @@ async def insert_record(
     return UUID(str(existing)), True
 
 
+@dataclass(frozen=True)
+class MemoryRecordInsert:
+    """One record in a set-based :func:`insert_records_batch` call."""
+
+    scope: str
+    scope_ref: str | None
+    kind: str
+    title: str
+    content: str
+    content_hash: str
+    embedding: list[float]
+    importance: float
+    source: dict[str, Any]
+
+
+async def insert_records_batch(
+    session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    items: list[MemoryRecordInsert],
+) -> list[tuple[UUID, bool]]:
+    """Set-based multi-row insert with the same live-row dedup semantics
+    as :func:`insert_record`, in ONE round-trip (plus one dedup lookup
+    when any row conflicted).
+
+    Callers must pre-dedupe intra-batch: each item's ``content_hash``
+    must be unique within ``items`` (the write endpoint keeps the first
+    occurrence and reports later intra-batch duplicates itself).
+
+    Returns ``(memory_id, deduped)`` per item, in item order — conflicts
+    against an existing LIVE row report that row's id with
+    ``deduped=True``, exactly like :func:`insert_record`.
+    """
+    if not items:
+        return []
+    stmt = text(
+        f"""
+        INSERT INTO coord.memory_records
+            (tenant_id, scope, scope_ref, kind, title, content,
+             content_hash, embedding, embedding_model, importance, source)
+        SELECT :tenant_id, u.scope, u.scope_ref, u.kind, u.title,
+               u.content, u.content_hash, CAST(u.embedding AS vector),
+               :embedding_model, u.importance, CAST(u.source AS jsonb)
+        FROM unnest(
+                 CAST(:scopes AS text[]),
+                 CAST(:scope_refs AS text[]),
+                 CAST(:kinds AS text[]),
+                 CAST(:titles AS text[]),
+                 CAST(:contents AS text[]),
+                 CAST(:content_hashes AS text[]),
+                 CAST(:embeddings AS text[]),
+                 CAST(:importances AS float8[]),
+                 CAST(:sources AS text[])
+             ) AS u(scope, scope_ref, kind, title, content, content_hash,
+                    embedding, importance, source)
+        ON CONFLICT (tenant_id, content_hash)
+            WHERE {_LIVE_DEDUP_PREDICATE}
+            DO NOTHING
+        RETURNING memory_id, content_hash
+        """
+    ).bindparams(
+        bindparam("scopes", type_=ARRAY(Text())),
+        bindparam("scope_refs", type_=ARRAY(Text())),
+        bindparam("kinds", type_=ARRAY(Text())),
+        bindparam("titles", type_=ARRAY(Text())),
+        bindparam("contents", type_=ARRAY(Text())),
+        bindparam("content_hashes", type_=ARRAY(Text())),
+        bindparam("embeddings", type_=ARRAY(Text())),
+        bindparam("importances", type_=ARRAY(Float())),
+        bindparam("sources", type_=ARRAY(Text())),
+    )
+    rows = await session.execute(
+        stmt,
+        {
+            "tenant_id": tenant_id,
+            "embedding_model": EMBEDDING_MODEL_TAG,
+            "scopes": [i.scope for i in items],
+            "scope_refs": [i.scope_ref for i in items],
+            "kinds": [i.kind for i in items],
+            "titles": [i.title for i in items],
+            "contents": [i.content for i in items],
+            "content_hashes": [i.content_hash for i in items],
+            "embeddings": [format_pgvector(i.embedding) for i in items],
+            "importances": [i.importance for i in items],
+            "sources": [json.dumps(i.source) for i in items],
+        },
+    )
+    inserted: dict[str, UUID] = {
+        str(r.content_hash): UUID(str(r.memory_id)) for r in rows
+    }
+
+    conflicted = [i.content_hash for i in items if i.content_hash not in inserted]
+    existing: dict[str, UUID] = {}
+    if conflicted:
+        lookup = text(
+            f"""
+            SELECT memory_id, content_hash FROM coord.memory_records
+            WHERE tenant_id = :tenant_id AND content_hash IN :hashes
+              AND {_LIVE_DEDUP_PREDICATE}
+            """
+        ).bindparams(bindparam("hashes", expanding=True))
+        found = await session.execute(
+            lookup, {"tenant_id": tenant_id, "hashes": conflicted}
+        )
+        existing = {str(r.content_hash): UUID(str(r.memory_id)) for r in found}
+
+    results: list[tuple[UUID, bool]] = []
+    for item in items:
+        new_id = inserted.get(item.content_hash)
+        if new_id is not None:
+            results.append((new_id, False))
+        else:
+            # Same invariant as insert_record's scalar_one: a conflict
+            # means a live row with this hash exists.
+            results.append((existing[item.content_hash], True))
+    return results
+
+
 async def existing_hashes(
     session: AsyncSession, tenant_id: UUID, hashes: list[str]
 ) -> set[str]:
-    """Which of ``hashes`` already exist for this tenant (pre-embed
-    dedup check, so known-duplicate contents are never re-embedded)."""
+    """Which of ``hashes`` already exist as LIVE rows for this tenant
+    (pre-embed dedup check, so known-duplicate contents are never
+    re-embedded). Dead rows (tombstoned / superseded / validity-ended)
+    don't count — their content is re-writable."""
     if not hashes:
         return set()
     stmt = text(
-        """
+        f"""
         SELECT content_hash FROM coord.memory_records
         WHERE tenant_id = :tenant_id AND content_hash IN :hashes
+          AND {_LIVE_DEDUP_PREDICATE}
         """
     ).bindparams(bindparam("hashes", expanding=True))
     rows = await session.execute(stmt, {"tenant_id": tenant_id, "hashes": hashes})
@@ -231,13 +379,14 @@ async def existing_hashes(
 async def find_by_hash(
     session: AsyncSession, tenant_id: UUID, content_hash: str
 ) -> UUID | None:
-    """The tenant's record id carrying ``content_hash``, if any."""
+    """The tenant's LIVE record id carrying ``content_hash``, if any."""
     found = (
         await session.execute(
             text(
-                """
+                f"""
                 SELECT memory_id FROM coord.memory_records
                 WHERE tenant_id = :tenant_id AND content_hash = :content_hash
+                  AND {_LIVE_DEDUP_PREDICATE}
                 """
             ),
             {"tenant_id": tenant_id, "content_hash": content_hash},
@@ -575,7 +724,11 @@ async def decay_prune(session: AsyncSession, *, now: datetime, grace_days: int) 
     (user-set) ``valid_until`` and no terminal marker are never pruned.
 
     Inbound ``superseded_by`` references from surviving rows are NULLed
-    first so the self-FK never blocks the delete.
+    in the same statement so the self-FK never blocks the delete.
+
+    One CTE-based statement: victims are derived in SQL, never
+    materialized into bind lists (a large sweep would otherwise expand
+    thousands of ``IN (...)`` binds three times over).
     """
     prune_predicate = """
         valid_until IS NOT NULL
@@ -585,41 +738,29 @@ async def decay_prune(session: AsyncSession, *, now: datetime, grace_days: int) 
              OR superseded_by IS NOT NULL
              OR jsonb_exists(source, 'decayed_at'))
     """
-    victim_rows = await session.execute(
+    # The UPDATE and DELETE target disjoint row sets (cleared explicitly
+    # excludes victims), and the self-FK's deferred check runs after the
+    # whole statement — by which point every surviving inbound reference
+    # has been NULLed.
+    result = await session.execute(
         text(
             f"""
-            SELECT memory_id FROM coord.memory_records
-            WHERE {prune_predicate}
+            WITH victims AS (
+                SELECT memory_id FROM coord.memory_records
+                WHERE {prune_predicate}
+            ),
+            cleared AS (
+                UPDATE coord.memory_records
+                SET superseded_by = NULL, updated_at = :now
+                WHERE superseded_by IN (SELECT memory_id FROM victims)
+                  AND memory_id NOT IN (SELECT memory_id FROM victims)
+            )
+            DELETE FROM coord.memory_records
+            WHERE memory_id IN (SELECT memory_id FROM victims)
             """
         ),
         {"now": now, "grace_days": grace_days},
     )
-    victims = [UUID(str(r.memory_id)) for r in victim_rows]
-    if not victims:
-        return 0
-
-    clear_refs = text(
-        """
-        UPDATE coord.memory_records
-        SET superseded_by = NULL, updated_at = :now
-        WHERE superseded_by IN :victims_a
-          AND memory_id NOT IN :victims_b
-        """
-    ).bindparams(
-        bindparam("victims_a", expanding=True),
-        bindparam("victims_b", expanding=True),
-    )
-    await session.execute(
-        clear_refs, {"now": now, "victims_a": victims, "victims_b": victims}
-    )
-
-    delete_stmt = text(
-        """
-        DELETE FROM coord.memory_records
-        WHERE memory_id IN :victims
-        """
-    ).bindparams(bindparam("victims", expanding=True))
-    result = await session.execute(delete_stmt, {"victims": victims})
     return int(cast("CursorResult[Any]", result).rowcount or 0)
 
 
