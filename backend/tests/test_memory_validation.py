@@ -126,13 +126,16 @@ def test_write_path_rejects_wrong_dim_embedder_before_insert(
         ),
     )
     insert = AsyncMock()
+    insert_batch = AsyncMock()
     monkeypatch.setattr(memory_store, "insert_record", insert)
+    monkeypatch.setattr(memory_store, "insert_records_batch", insert_batch)
 
     client = _build_client()
     resp = client.post("/api/v1/memory/records", json={"records": [_record()]})
     assert resp.status_code == 500
     assert "384" in resp.json()["detail"]
     insert.assert_not_awaited()
+    insert_batch.assert_not_awaited()
 
 
 def test_write_path_maps_unavailable_embedder_to_503(
@@ -156,9 +159,12 @@ def test_write_path_maps_unavailable_embedder_to_503(
         ),
     )
     insert = AsyncMock()
+    insert_batch = AsyncMock()
     monkeypatch.setattr(memory_store, "insert_record", insert)
+    monkeypatch.setattr(memory_store, "insert_records_batch", insert_batch)
 
     client = _build_client()
     resp = client.post("/api/v1/memory/records", json={"records": [_record()]})
     assert resp.status_code == 503
     insert.assert_not_awaited()
+    insert_batch.assert_not_awaited()

@@ -12,6 +12,7 @@ NULL-tenant skip.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from collections.abc import Awaitable, Callable, Generator
 from datetime import UTC, datetime
 from typing import Any
@@ -274,6 +275,34 @@ class TestBridgeTombstone:
         # Idempotent afterwards.
         stats = _sync(db)
         assert stats == {"upserted": 0, "superseded": 0, "tombstoned": 0}
+
+
+class TestBridgeRedaction:
+    def test_planted_secret_is_redacted_before_storage(self, db: AsyncEngine) -> None:
+        """Bridged coord.memories content passes through redact_text —
+        the secret never lands in coord.memory_records, and the stored
+        content_hash covers the REDACTED text (dedup keys line up with
+        API-written rows)."""
+        tenant = uuid4()
+        _write_memory(
+            db,
+            tenant,
+            "ops_creds_note",
+            1,
+            "the deploy key AKIAIOSFODNN7EXAMPLE was rotated yesterday",
+        )
+        stats = _sync(db)
+        assert stats["upserted"] == 1
+
+        (bridged,) = _bridged(db, tenant)
+        content = _record_field(db, bridged["memory_id"], "content")
+        assert "AKIAIOSFODNN7EXAMPLE" not in content
+        assert "[REDACTED:aws_key]" in content
+        stored_hash = _record_field(db, bridged["memory_id"], "content_hash")
+        assert stored_hash == hashlib.sha256(str(content).encode("utf-8")).hexdigest()
+
+        # Converged: the next run is a no-op (the version stamp matches).
+        assert _sync(db) == {"upserted": 0, "superseded": 0, "tombstoned": 0}
 
 
 class TestBridgeSkips:

@@ -36,6 +36,7 @@ No credential → 401. Credential valid but no tenant resolvable → 403.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -212,13 +213,18 @@ async def get_memory_tenant(
 # --------------------------------------------------------------------------
 
 
-def _embed_batch(texts: list[str]) -> list[list[float]]:
+def _embed_batch_sync(texts: list[str]) -> list[list[float]]:
     """One embedder batch, with typed failures mapped to HTTP statuses.
 
     * embedder/model unavailable → 503 (never silently store NULL
       embeddings — NULL-embedding rows are a watched drift class),
     * wrong dimensionality or wrong count → 500 (checked BEFORE any
       insert reaches the ``vector(384)`` column).
+
+    Synchronous (the fastembed ONNX embedder is sync, and its first call
+    downloads/loads the model) — endpoints must reach it through
+    :func:`_embed_batch` so it runs on a worker thread, never on the
+    event loop.
     """
     try:
         embeddings = get_embedder().embed_texts(texts)
@@ -244,6 +250,17 @@ def _embed_batch(texts: list[str]) -> list[list[float]]:
     return embeddings
 
 
+async def _embed_batch(texts: list[str]) -> list[list[float]]:
+    """:func:`_embed_batch_sync` offloaded to a worker thread.
+
+    The embedder call (including the implicit first-use model
+    download/load inside ``get_embedder``) blocks; running it in-loop
+    would stall every request on the backend. Only the embed call moves
+    off-loop — DB work stays on the event loop.
+    """
+    return await asyncio.to_thread(_embed_batch_sync, texts)
+
+
 def _content_hash(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
@@ -263,7 +280,8 @@ async def write_records(
 
     Server-side pipeline per batch: redact → hash → quota check (BEFORE
     insert; 429 on exceed) → embed the non-deduplicated contents in one
-    fastembed batch → dedup-insert on ``(tenant_id, content_hash)``.
+    fastembed batch (on a worker thread) → ONE set-based insert deduping
+    on ``(tenant_id, content_hash)`` against live rows only.
     """
     # 1. Redact (server-side pass; log counts only, never the secrets).
     redaction_counts: dict[str, int] = {}
@@ -319,38 +337,73 @@ async def write_records(
             },
         )
 
-    # 4. Embed all new contents in ONE fastembed batch.
+    # 4. Embed all new contents in ONE fastembed batch (off-loop).
     new_hashes = list(new_by_hash)
-    embeddings = _embed_batch([new_by_hash[h] for h in new_hashes])
+    embeddings = await _embed_batch([new_by_hash[h] for h in new_hashes])
     embedding_by_hash = dict(zip(new_hashes, embeddings, strict=True))
 
-    # 5. Insert (dedup via ON CONFLICT DO NOTHING), in request order.
+    # 5. Insert every genuinely-new unique content in ONE set-based
+    # statement (dedup via the live-row partial-index ON CONFLICT).
+    # Intra-batch duplicates were collapsed in step 3 to their FIRST
+    # occurrence — that record's scope/kind/title/importance/source win;
+    # later occurrences report ``deduped=True`` onto the same row.
+    first_index: dict[str, int] = {}
+    for i, h in enumerate(hashes):
+        first_index.setdefault(h, i)
+    batch_items = [
+        store.MemoryRecordInsert(
+            scope=payload.records[first_index[h]].scope,
+            scope_ref=payload.records[first_index[h]].scope_ref,
+            kind=payload.records[first_index[h]].kind,
+            title=titles[first_index[h]],
+            content=contents[first_index[h]],
+            content_hash=h,
+            embedding=embedding_by_hash[h],
+            importance=payload.records[first_index[h]].importance,
+            source=payload.records[first_index[h]].source,
+        )
+        for h in new_hashes
+    ]
+    batch_results = await store.insert_records_batch(
+        db, tenant_id=principal.tenant_id, items=batch_items
+    )
+    outcome_by_hash: dict[str, tuple[UUID, bool]] = dict(
+        zip(new_hashes, batch_results, strict=True)
+    )
+
+    # 6. Per-record responses, in request order.
     results: list[WriteRecordResult] = []
     for i, rec in enumerate(payload.records):
         h = hashes[i]
-        embedding = embedding_by_hash.get(h)
-        if embedding is None:
-            # Known-duplicate content (pre-existing row): report it.
+        outcome = outcome_by_hash.get(h)
+        if outcome is None:
+            # Known-duplicate content (pre-existing live row): report it.
             existing_id = await store.find_by_hash(db, principal.tenant_id, h)
             if existing_id is not None:
                 results.append(WriteRecordResult(memory_id=existing_id, deduped=True))
                 continue
-            # Vanishingly rare race (row hard-deleted between the hash
+            # Vanishingly rare race (row invalidated between the hash
             # pre-check and now): embed this one record and insert it.
-            embedding = _embed_batch([contents[i]])[0]
-        memory_id, deduped = await store.insert_record(
-            db,
-            tenant_id=principal.tenant_id,
-            scope=rec.scope,
-            scope_ref=rec.scope_ref,
-            kind=rec.kind,
-            title=titles[i],
-            content=contents[i],
-            content_hash=h,
-            embedding=embedding,
-            importance=rec.importance,
-            source=rec.source,
-        )
+            embedding = (await _embed_batch([contents[i]]))[0]
+            memory_id, deduped = await store.insert_record(
+                db,
+                tenant_id=principal.tenant_id,
+                scope=rec.scope,
+                scope_ref=rec.scope_ref,
+                kind=rec.kind,
+                title=titles[i],
+                content=contents[i],
+                content_hash=h,
+                embedding=embedding,
+                importance=rec.importance,
+                source=rec.source,
+            )
+            # Later intra-batch occurrences dedup onto this row.
+            outcome_by_hash[h] = (memory_id, True)
+            results.append(WriteRecordResult(memory_id=memory_id, deduped=deduped))
+            continue
+        memory_id, db_deduped = outcome
+        deduped = db_deduped or i != first_index[h]
         results.append(WriteRecordResult(memory_id=memory_id, deduped=deduped))
 
     return WriteRecordsResponse(
@@ -378,7 +431,7 @@ async def query_records(
     )
     kinds: list[str] | None = list(payload.kinds) if payload.kinds else None
 
-    query_embedding = _embed_batch([payload.query_text])[0]
+    query_embedding = (await _embed_batch([payload.query_text]))[0]
 
     filter_kwargs: dict[str, Any] = {
         "tenant_id": principal.tenant_id,
@@ -454,7 +507,7 @@ async def supersede_record(
     log_redactions("memory_supersede", combined)
 
     content_hash = _content_hash(rc.text)
-    embedding = _embed_batch([rc.text])[0]
+    embedding = (await _embed_batch([rc.text]))[0]
 
     new_id, deduped = await store.insert_record(
         db,
