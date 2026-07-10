@@ -57,6 +57,12 @@ radon = "^6.0.1"
 qontinui-schemas = {path = "../../qontinui-schemas", develop = true}
 opencv-python-headless = "^4.8"
 pgvector = "^0.4.2"
+# Tenant agentic memory (plan 2026-07-10): ONNX embedder for
+# coord.memory_records — sentence-transformers/all-MiniLM-L6-v2 via
+# Qdrant's fastembed wrapper. Deliberately NOT torch/sentence-transformers:
+# fastembed runs the same model on onnxruntime at a fraction of the
+# install weight. See app/services/memory_embedder.py.
+fastembed = "^0.8"
 geoip2 = "^5.2.0"
 celery-redbeat = "^2.2"
 croniter = "^6"
