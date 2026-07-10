@@ -23369,6 +23369,298 @@
         "title": "MatchLocation",
         "type": "object"
       },
+      "MemoryQueryHit": {
+        "description": "One fused retrieval hit.",
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "cosine_similarity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cosine Similarity"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "fts_rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fts Rank"
+          },
+          "importance": {
+            "title": "Importance",
+            "type": "number"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "memory_id": {
+            "format": "uuid",
+            "title": "Memory Id",
+            "type": "string"
+          },
+          "rrf_score": {
+            "title": "Rrf Score",
+            "type": "number"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "source": {
+            "additionalProperties": true,
+            "title": "Source",
+            "type": "object"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "vector_rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vector Rank"
+          }
+        },
+        "required": [
+          "memory_id",
+          "title",
+          "content",
+          "kind",
+          "scope",
+          "importance",
+          "created_at",
+          "source",
+          "rrf_score"
+        ],
+        "title": "MemoryQueryHit",
+        "type": "object"
+      },
+      "MemoryQueryRequest": {
+        "description": "``POST /memory/query`` body \u2014 hybrid RRF retrieval parameters.",
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "kinds": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "observation",
+                    "fact",
+                    "mental_model",
+                    "episode",
+                    "feedback",
+                    "reference",
+                    "rule"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kinds"
+          },
+          "limit": {
+            "default": 8,
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "min_importance": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Importance"
+          },
+          "query_text": {
+            "maxLength": 8192,
+            "minLength": 1,
+            "title": "Query Text",
+            "type": "string"
+          },
+          "scope_ref": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Ref"
+          },
+          "scopes": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "tenant",
+                    "runner",
+                    "agent",
+                    "session"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scopes"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          }
+        },
+        "required": [
+          "query_text"
+        ],
+        "title": "MemoryQueryRequest",
+        "type": "object"
+      },
+      "MemoryQueryResponse": {
+        "properties": {
+          "hits": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryQueryHit"
+            },
+            "title": "Hits",
+            "type": "array"
+          }
+        },
+        "required": [
+          "hits"
+        ],
+        "title": "MemoryQueryResponse",
+        "type": "object"
+      },
+      "MemoryRecordIn": {
+        "description": "One record in a batch write.",
+        "properties": {
+          "content": {
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "importance": {
+            "default": 0.5,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Importance",
+            "type": "number"
+          },
+          "kind": {
+            "enum": [
+              "observation",
+              "fact",
+              "mental_model",
+              "episode",
+              "feedback",
+              "reference",
+              "rule"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "scope": {
+            "default": "tenant",
+            "enum": [
+              "tenant",
+              "runner",
+              "agent",
+              "session"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "scope_ref": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Ref"
+          },
+          "source": {
+            "additionalProperties": true,
+            "title": "Source",
+            "type": "object"
+          },
+          "title": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "content",
+          "kind"
+        ],
+        "title": "MemoryRecordIn",
+        "type": "object"
+      },
       "MemoryRestoreRequest": {
         "description": "`POST /coord/memory/:name/restore` body.",
         "properties": {
@@ -23403,6 +23695,45 @@
           "version"
         ],
         "title": "MemoryRestoreRequest",
+        "type": "object"
+      },
+      "MemoryStatsResponse": {
+        "description": "``GET /memory/stats`` \u2014 usage + quota posture for the tenant.",
+        "properties": {
+          "bytes": {
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "embedding_coverage": {
+            "title": "Embedding Coverage",
+            "type": "number"
+          },
+          "quota_bytes": {
+            "title": "Quota Bytes",
+            "type": "integer"
+          },
+          "quota_rows": {
+            "title": "Quota Rows",
+            "type": "integer"
+          },
+          "quota_utilization": {
+            "title": "Quota Utilization",
+            "type": "number"
+          },
+          "row_count": {
+            "title": "Row Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "row_count",
+          "bytes",
+          "embedding_coverage",
+          "quota_bytes",
+          "quota_rows",
+          "quota_utilization"
+        ],
+        "title": "MemoryStatsResponse",
         "type": "object"
       },
       "MemoryUpsertRequest": {
@@ -35557,6 +35888,127 @@
         "title": "StorageQuotaResponse",
         "type": "object"
       },
+      "SupersedeRequest": {
+        "description": "``POST /memory/records/{id}/supersede`` body.\n\n``title``/``content`` are the replacement; every omitted field is\ninherited from the record being superseded.",
+        "properties": {
+          "content": {
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "importance": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Importance"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "observation",
+                  "fact",
+                  "mental_model",
+                  "episode",
+                  "feedback",
+                  "reference",
+                  "rule"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "tenant",
+                  "runner",
+                  "agent",
+                  "session"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope"
+          },
+          "scope_ref": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Ref"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "title": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "content"
+        ],
+        "title": "SupersedeRequest",
+        "type": "object"
+      },
+      "SupersedeResponse": {
+        "properties": {
+          "deduped": {
+            "title": "Deduped",
+            "type": "boolean"
+          },
+          "memory_id": {
+            "format": "uuid",
+            "title": "Memory Id",
+            "type": "string"
+          },
+          "superseded_memory_id": {
+            "format": "uuid",
+            "title": "Superseded Memory Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "memory_id",
+          "superseded_memory_id",
+          "deduped"
+        ],
+        "title": "SupersedeResponse",
+        "type": "object"
+      },
       "SyncLockReleaseRequest": {
         "description": "Request to release a sync lock.",
         "properties": {
@@ -44804,6 +45256,66 @@
           "toml"
         ],
         "title": "WriteConfigRequest",
+        "type": "object"
+      },
+      "WriteRecordResult": {
+        "description": "Per-record outcome, in request order.",
+        "properties": {
+          "deduped": {
+            "title": "Deduped",
+            "type": "boolean"
+          },
+          "memory_id": {
+            "format": "uuid",
+            "title": "Memory Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "memory_id",
+          "deduped"
+        ],
+        "title": "WriteRecordResult",
+        "type": "object"
+      },
+      "WriteRecordsRequest": {
+        "description": "``POST /memory/records`` body \u2014 a batch of at most 100 records.",
+        "properties": {
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryRecordIn"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Records",
+            "type": "array"
+          }
+        },
+        "required": [
+          "records"
+        ],
+        "title": "WriteRecordsRequest",
+        "type": "object"
+      },
+      "WriteRecordsResponse": {
+        "properties": {
+          "deduped_count": {
+            "title": "Deduped Count",
+            "type": "integer"
+          },
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/WriteRecordResult"
+            },
+            "title": "Records",
+            "type": "array"
+          }
+        },
+        "required": [
+          "records",
+          "deduped_count"
+        ],
+        "title": "WriteRecordsResponse",
         "type": "object"
       },
       "_CreateGroupBody": {
@@ -66394,6 +66906,243 @@
         "summary": "Update Shell Command",
         "tags": [
           "library"
+        ]
+      }
+    },
+    "/api/v1/memory/query": {
+      "post": {
+        "description": "Hybrid retrieval: pgvector cosine + websearch FTS, RRF-fused.\n\nBoth arms are tenant-bound and validity-filtered (tombstones out,\n``valid_from``/``valid_until`` against now() or ``as_of``).\n``agent``/``session``-scoped rows are only visible when the request\nnames those scopes AND supplies the matching ``scope_ref``.",
+        "operationId": "api_v1_memory_query_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryQueryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryQueryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Query Records",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/memory/records": {
+      "post": {
+        "description": "Batch-write memory records (\u2264100 per request).\n\nServer-side pipeline per batch: redact \u2192 hash \u2192 quota check (BEFORE\ninsert; 429 on exceed) \u2192 embed the non-deduplicated contents in one\nfastembed batch (on a worker thread) \u2192 ONE set-based insert deduping\non ``(tenant_id, content_hash)`` against live rows only.",
+        "operationId": "api_v1_memory_records_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WriteRecordsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriteRecordsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Write Records",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/memory/records/{memory_id}": {
+      "delete": {
+        "description": "Tombstone a record (``is_tombstone = true, valid_until = now()``).\n\n404 for records that don't exist in the caller's tenant.",
+        "operationId": "api_v1_memory_records_memory_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "memory_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Memory Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Record",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/memory/records/{memory_id}/supersede": {
+      "post": {
+        "description": "Replace a record: insert the successor, end the old row's validity.\n\n404 for records that don't exist in the caller's tenant (including\ncross-tenant ids \u2014 never disclosed).",
+        "operationId": "api_v1_memory_records_memory_id_supersede_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "memory_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Memory Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupersedeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupersedeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Supersede Record",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/memory/stats": {
+      "get": {
+        "description": "Usage + quota posture for the caller's tenant.",
+        "operationId": "api_v1_memory_stats_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryStatsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Memory Stats",
+        "tags": [
+          "memory"
         ]
       }
     },
