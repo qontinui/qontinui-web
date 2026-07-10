@@ -76436,7 +76436,7 @@
     },
     "/api/v1/operations/sessions/{session_id}/output": {
       "get": {
-        "description": "Fetch a session's recorded PTY output (Phase 8 read-only pane).\n\nBridges to coord's ``GET /sessions/:id/output[?tier=warm|cold][&limit=N]``.\nThe response envelope is::\n\n    {\n      \"session_id\": \"<uuid>\",\n      \"tier\": \"warm\" | \"cold\",\n      \"chunks\": [ { \"chunk_offset\": <i64>, \"payload_b64\": \"<base64>\" }, ... ],\n      \"count\": <int>\n    }\n\nEach chunk's ``payload_b64`` decodes to raw PTY bytes (already redacted\nrunner-side when the session opted into redaction). The dashboard fetches\nthe ``warm`` tier for the xterm bootstrap window then live-tails the\n``/sessions/:id/events`` SSE stream (``output_chunk`` frames carry the\nsame ``chunk_offset`` + ``payload_b64`` shape), de-duping by\n``chunk_offset``.\n\nGated on coord serving the Phase 8 output endpoints (PR #130). Until\nthose are deployed, coord returns an error for this path and the pane\nrenders its empty / unavailable state.",
+        "description": "Fetch a session's recorded output (Phase 8 read-only pane).\n\nBridges to coord's\n``GET /sessions/:id/output[?tier=warm|cold][&stream=pty|transcript][&limit=N]``.\nThe response envelope is::\n\n    {\n      \"session_id\": \"<uuid>\",\n      \"tier\": \"warm\" | \"cold\",\n      \"chunks\": [ { \"chunk_offset\": <i64>, \"payload_b64\": \"<base64>\" }, ... ],\n      \"count\": <int>\n    }\n\nEach chunk's ``payload_b64`` decodes to raw PTY bytes (already redacted\nrunner-side when the session opted into redaction). The dashboard fetches\nthe ``warm`` tier for the xterm bootstrap window then live-tails the\n``/sessions/:id/events`` SSE stream (``output_chunk`` frames carry the\nsame ``chunk_offset`` + ``payload_b64`` shape), de-duping by\n``chunk_offset``.\n\nGated on coord serving the Phase 8 output endpoints (PR #130). Until\nthose are deployed, coord returns an error for this path and the pane\nrenders its empty / unavailable state.",
         "operationId": "api_v1_operations_sessions_session_id_output_get",
         "parameters": [
           {
@@ -76465,6 +76465,24 @@
               ],
               "description": "`warm` (default) | `cold` \u2014 passthrough to coord.",
               "title": "Tier"
+            }
+          },
+          {
+            "description": "`pty` (default) | `transcript` \u2014 output stream selector, passthrough to coord (plan `2026-07-09-runner-session-history-cloud-sync` Phase 2).",
+            "in": "query",
+            "name": "stream",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "`pty` (default) | `transcript` \u2014 output stream selector, passthrough to coord (plan `2026-07-09-runner-session-history-cloud-sync` Phase 2).",
+              "title": "Stream"
             }
           },
           {
@@ -76514,6 +76532,55 @@
           }
         ],
         "summary": "Get Coord Session Output",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/sessions/{session_id}/restore-record": {
+      "get": {
+        "description": "Return the session's latest ``restore-record`` event (plus the\nlatest ``handoff_request``), derived from coord's events read.\n\nPhase 4 of plan ``2026-07-09-runner-session-history-cloud-sync``:\nrunners mirror each restore-registry record to coord as a\n``coord.session_events`` row with ``event_kind='restore-record'`` and\npayload ``{provider, authoritative_session_id, cwd, launch_command,\nrestore_tier, machine_id}``. The newest such event tells the dashboard\nhow resumable the session is (``restore_tier``: ``full`` restores the\nconversation via the provider's authoritative id; ``terminal_only``\nrestores terminal+cwd+command with a fresh conversation).\n\nCoord exposes session events ONLY as the SSE stream\n(``GET /sessions/:id/events`` \u2014 replay of the last 100 rows tagged\n``event: replay``, then a JetStream live-tail tagged ``event: live``).\nThere is no JSON events read to pass through, so this endpoint\nconsumes just the replay phase of that stream and reduces it: it\nkeeps the highest-``seq`` ``restore-record`` and ``handoff_request``\nrows, stopping at the first ``live`` frame or after a short idle gap\n(the replay is emitted in one eager burst at connect; coord's\nkeep-alive ping cadence is 15s, well above the idle window).\n\nHonesty note: the replay window is coord's last 100 events. A session\nwhose restore-record was pushed out of that window reads as \"no\nrestore-record\" here \u2014 the same answer a resuming runner would get\nfrom the same surface.\n\nResponse::\n\n    {\n      \"session_id\": \"<uuid>\",\n      \"restore_record\":  <SessionEventRow | null>,\n      \"handoff_request\": <SessionEventRow | null>\n    }",
+        "operationId": "api_v1_operations_sessions_session_id_restore_record_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Coord Session Restore Record Api V1 Operations Sessions  Session Id  Restore Record Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Coord Session Restore Record",
         "tags": [
           "operations"
         ]
