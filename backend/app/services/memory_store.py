@@ -26,9 +26,11 @@ agree on seeded rows.
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, cast
 from uuid import UUID
 
@@ -37,14 +39,22 @@ from sqlalchemy import CursorResult, Float, Text, bindparam, text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.memory_embedder import EMBEDDING_MODEL_TAG
+from app.services.memory_embedder import (
+    EMBEDDING_MODEL_TAG,
+    ensure_embedding_dims,
+    get_embedder,
+)
 from app.services.memory_lifecycle import (
     DECAY_ACCESS_CAP,
     DECAY_BASE_HORIZON_DAYS,
+    SYNTHESIS_IMPORTANCE_BONUS,
     ClusterItem,
     DupCandidate,
     MergeDecision,
+    member_set_hash,
+    synthesized_title,
 )
+from app.services.memory_redaction import log_redactions, redact_text
 
 logger = structlog.get_logger(__name__)
 
@@ -76,6 +86,11 @@ _LIVE_DEDUP_PREDICATE = (
 def format_pgvector(vector: list[float]) -> str:
     """Render a vector as pgvector's text literal (``[v1,v2,...]``)."""
     return "[" + ",".join(repr(float(v)) for v in vector) + "]"
+
+
+def _content_hash(content: str) -> str:
+    """sha256 hex over stored content (same rule as the write API)."""
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -783,6 +798,110 @@ async def list_tenants_with_live_records(
     return [UUID(str(r.tenant_id)) for r in rows]
 
 
+# A canonical UUID text shape — used to guard ``scope_ref::uuid`` casts so a
+# malformed (non-UUID) scope_ref never reaches the cast and aborts the sweep.
+_UUID_TEXT_RE = (
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}"
+    r"-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
+
+
+async def expire_closed_session_records(session: AsyncSession, *, now: datetime) -> int:
+    """Expire ``scope='session'`` rows 7 days after their session closed.
+
+    Two set-based UPDATEs, both idempotent (a second run is a no-op) and
+    both defended against a malformed ``scope_ref``:
+
+    1. **Closed-session rows.** Live (``is_tombstone=false`` &&
+       ``superseded_by IS NULL``) ``scope='session'`` rows whose
+       ``scope_ref`` names a ``coord.sessions`` row in ``state='closed'``
+       get ``valid_until = closed_at + 7 days`` — but only when that
+       tightens (or first sets) their validity, so re-running changes
+       nothing.
+    2. **Orphan rows.** Live ``scope='session'`` rows older than 24h
+       whose ``scope_ref`` matches NO ``coord.sessions`` row (including
+       non-UUID scope_refs) get ``valid_until = created_at + 7 days``.
+       A session id that never existed must not grant a row immortality.
+
+    The ``scope_ref::uuid`` cast is only ever reached for rows whose
+    ``scope_ref`` matches :data:`_UUID_TEXT_RE`: pass 1 filters + casts
+    inside a MATERIALIZED CTE (the regex WHERE runs before the projected
+    cast, and MATERIALIZED forbids the planner from inlining/reordering);
+    pass 2 wraps the cast in a ``CASE`` so a non-matching scope_ref
+    yields NULL (no session match) instead of a cast error.
+
+    Returns the total number of rows expired across both passes.
+    """
+    closed = await session.execute(
+        text(
+            f"""
+            WITH candidates AS MATERIALIZED (
+                SELECT r.memory_id,
+                       r.valid_until,
+                       r.scope_ref::uuid AS session_uuid
+                FROM coord.memory_records r
+                WHERE r.scope = 'session'
+                  AND r.is_tombstone = false
+                  AND r.superseded_by IS NULL
+                  AND r.scope_ref ~ '{_UUID_TEXT_RE}'
+            )
+            UPDATE coord.memory_records r
+            SET valid_until = s.closed_at + interval '7 days',
+                updated_at = CAST(:now AS timestamptz)
+            FROM candidates c
+            JOIN coord.sessions s ON s.id = c.session_uuid
+            WHERE r.memory_id = c.memory_id
+              AND s.state = 'closed'
+              AND s.closed_at IS NOT NULL
+              AND (
+                    c.valid_until IS NULL
+                    OR c.valid_until > s.closed_at + interval '7 days'
+                  )
+            """
+        ),
+        {"now": now},
+    )
+    closed_count = int(cast("CursorResult[Any]", closed).rowcount or 0)
+
+    orphans = await session.execute(
+        text(
+            f"""
+            UPDATE coord.memory_records r
+            SET valid_until = r.created_at + interval '7 days',
+                updated_at = CAST(:now AS timestamptz)
+            WHERE r.scope = 'session'
+              AND r.is_tombstone = false
+              AND r.superseded_by IS NULL
+              AND r.created_at < CAST(:now AS timestamptz) - interval '24 hours'
+              AND (
+                    r.valid_until IS NULL
+                    OR r.valid_until > r.created_at + interval '7 days'
+                  )
+              AND NOT EXISTS (
+                    SELECT 1
+                    FROM coord.sessions s
+                    WHERE s.id = CASE
+                        WHEN r.scope_ref ~ '{_UUID_TEXT_RE}'
+                        THEN r.scope_ref::uuid
+                        ELSE NULL
+                    END
+                  )
+            """
+        ),
+        {"now": now},
+    )
+    orphan_count = int(cast("CursorResult[Any]", orphans).rowcount or 0)
+
+    total = closed_count + orphan_count
+    if total:
+        logger.info(
+            "memory_session_expiry_completed",
+            closed_expired=closed_count,
+            orphans_expired=orphan_count,
+        )
+    return total
+
+
 async def find_near_duplicate_pairs(
     session: AsyncSession,
     tenant_id: UUID,
@@ -1152,3 +1271,411 @@ async def merge_record_source(
             "now": now,
         },
     )
+
+
+# ===========================================================================
+# Phase 2 (v1.1) — runner-paid synthesis jobs (coord.memory_synthesis_jobs)
+# ===========================================================================
+#
+# The backend has no LLM client, so it can CLUSTER but not SYNTHESIZE.
+# Consolidation enqueues one job per episode cluster; a runner claims it,
+# calls its own warm LLM, and posts the synthesized text back. The
+# backend then embeds (local model) + inserts the mental_model row and
+# supersedes the cluster members. Every ``coord.*`` SQL literal for this
+# flow lives here alongside the memory_records SQL.
+
+# A claimed job that has sat this long without a result is presumed dead
+# and requeued by the reaper (its runner crashed / lost its lease).
+SYNTHESIS_CLAIM_STALE_MINUTES = 30
+
+# After this many failed attempts a job is abandoned (status='failed')
+# rather than requeued again.
+SYNTHESIS_MAX_ATTEMPTS = 3
+
+
+class SynthesisJobNotClaimedError(Exception):
+    """A result/failure was posted for a job not in ``'claimed'`` status.
+
+    The synthesis contract is claim → result: a runner posts back only for
+    a job it holds a live claim on. A job that is ``pending`` (never
+    claimed, or requeued to the queue by the reaper), ``done`` (already
+    applied), or ``failed`` (abandoned) must not be re-terminated — applying
+    a requeued/done job again would double-insert a mental_model and
+    re-supersede members. The result endpoint maps this to HTTP 409.
+    """
+
+    def __init__(self, status: str) -> None:
+        super().__init__(f"synthesis job is '{status}', not 'claimed'")
+        self.status = status
+
+
+@dataclass(frozen=True)
+class SynthesisClusterInput:
+    """One cluster to enqueue for runner synthesis."""
+
+    member_ids: list[UUID]
+    member_texts: list[str]
+
+
+@dataclass(frozen=True)
+class ClaimedSynthesisJob:
+    """A job handed to a runner: only what the runner needs to synthesize."""
+
+    job_id: UUID
+    member_ids: list[UUID]
+    member_texts: list[str]
+
+
+def _parse_member_texts(raw: Any) -> list[str]:
+    """member_texts JSONB → list[str] (asyncpg may hand back str or list)."""
+    if isinstance(raw, str):
+        raw = json.loads(raw)
+    return [str(t) for t in raw]
+
+
+async def enqueue_synthesis_jobs(
+    session: AsyncSession,
+    tenant_id: UUID,
+    clusters: list[SynthesisClusterInput],
+) -> int:
+    """Insert one pending job per cluster, deduped by ``member_set_hash``.
+
+    A cluster whose member set already has a live (pending / claimed /
+    done) job is skipped via ``ON CONFLICT DO NOTHING`` against the
+    ``uq_memory_synthesis_jobs_live_member_set`` partial unique index —
+    so re-running consolidation before the runner drains the queue never
+    piles up duplicate jobs for the same cluster. A ``failed`` job does
+    NOT block re-enqueue (it is outside the partial index), so a cluster
+    can be retried after a permanent failure. Returns the number of jobs
+    actually inserted.
+    """
+    inserted = 0
+    for cluster in clusters:
+        result = await session.execute(
+            text(
+                """
+                INSERT INTO coord.memory_synthesis_jobs
+                    (tenant_id, member_ids, member_texts, member_set_hash)
+                VALUES
+                    (:tenant_id, CAST(:member_ids AS uuid[]),
+                     CAST(:member_texts AS jsonb), :member_set_hash)
+                ON CONFLICT (tenant_id, member_set_hash)
+                    WHERE status IN ('pending', 'claimed', 'done')
+                    DO NOTHING
+                RETURNING job_id
+                """
+            ),
+            {
+                "tenant_id": tenant_id,
+                "member_ids": [str(m) for m in cluster.member_ids],
+                "member_texts": json.dumps(cluster.member_texts),
+                "member_set_hash": member_set_hash(cluster.member_ids),
+            },
+        )
+        if result.scalar_one_or_none() is not None:
+            inserted += 1
+    return inserted
+
+
+async def claim_synthesis_jobs(
+    session: AsyncSession,
+    tenant_id: UUID,
+    *,
+    limit: int,
+    worker: str,
+) -> list[ClaimedSynthesisJob]:
+    """Atomically claim up to ``limit`` pending jobs for this tenant.
+
+    ``FOR UPDATE SKIP LOCKED`` is mandatory: two runners polling the same
+    tenant concurrently must split the queue, never double-claim a row.
+    The claimed rows flip to ``status='claimed'`` stamped with
+    ``claimed_by`` / ``claimed_at`` and are returned oldest-first.
+    """
+    rows = await session.execute(
+        text(
+            """
+            UPDATE coord.memory_synthesis_jobs
+            SET status = 'claimed',
+                claimed_by = :worker,
+                claimed_at = now()
+            WHERE job_id IN (
+                SELECT job_id
+                FROM coord.memory_synthesis_jobs
+                WHERE tenant_id = :tenant_id AND status = 'pending'
+                ORDER BY created_at
+                FOR UPDATE SKIP LOCKED
+                LIMIT :limit
+            )
+            RETURNING job_id, member_ids, member_texts
+            """
+        ),
+        {"tenant_id": tenant_id, "worker": worker, "limit": limit},
+    )
+    claimed: list[ClaimedSynthesisJob] = []
+    for r in rows.mappings():
+        claimed.append(
+            ClaimedSynthesisJob(
+                job_id=UUID(str(r["job_id"])),
+                member_ids=[UUID(str(m)) for m in r["member_ids"]],
+                member_texts=_parse_member_texts(r["member_texts"]),
+            )
+        )
+    return claimed
+
+
+async def record_synthesis_result(
+    session: AsyncSession,
+    tenant_id: UUID,
+    job_id: UUID,
+    result_text: str,
+    *,
+    now: datetime | None = None,
+) -> UUID | None:
+    """Apply a runner's synthesis result: insert the mental_model, mark done.
+
+    One atomic transaction (the caller commits): load + lock the job,
+    redact the runner-supplied text, read the members' max importance,
+    embed the redacted text with the LOCAL model, insert the
+    ``mental_model`` row (``consolidated_from`` = members,
+    ``importance`` = min(max_member + 0.1, 1.0),
+    ``source.synthesis_job`` = job id), supersede the member rows, and
+    flip the job to ``done``. Returns the new ``mental_model`` memory id,
+    or ``None`` when the job does not exist for this tenant (→ 404). Raises
+    :class:`SynthesisJobNotClaimedError` when the job exists but is not in
+    ``'claimed'`` status (→ 409) — a result may only be applied to a job a
+    runner holds a live claim on, so a requeued/done/failed job is never
+    (re-)applied. The ``FOR UPDATE`` row lock serializes concurrent posts:
+    the first sees ``'claimed'`` and applies; the second then sees
+    ``'done'`` and 409s.
+
+    Redaction runs BEFORE hashing/embedding/insert so a runner can never
+    smuggle a secret into the store through the synthesized text.
+    """
+    now = now or datetime.now(UTC)
+
+    job = (
+        (
+            await session.execute(
+                text(
+                    """
+                SELECT member_ids, status
+                FROM coord.memory_synthesis_jobs
+                WHERE tenant_id = :tenant_id AND job_id = :job_id
+                FOR UPDATE
+                """
+                ),
+                {"tenant_id": tenant_id, "job_id": job_id},
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    if job is None:
+        return None
+    if str(job["status"]) != "claimed":
+        raise SynthesisJobNotClaimedError(str(job["status"]))
+    member_ids = [UUID(str(m)) for m in job["member_ids"]]
+
+    redaction = redact_text(result_text)
+    log_redactions("memory_synthesis_result", redaction.counts)
+    redacted = redaction.text
+
+    max_importance = float(
+        (
+            await session.execute(
+                text(
+                    """
+                    SELECT COALESCE(MAX(importance), 0.5) AS max_importance
+                    FROM coord.memory_records
+                    WHERE tenant_id = :tenant_id
+                      AND memory_id = ANY(CAST(:member_ids AS uuid[]))
+                    """
+                ),
+                {
+                    "tenant_id": tenant_id,
+                    "member_ids": [str(m) for m in member_ids],
+                },
+            )
+        ).scalar_one()
+    )
+    importance = min(max_importance + SYNTHESIS_IMPORTANCE_BONUS, 1.0)
+
+    # Embed off the event loop — the fastembed ONNX call blocks (and may
+    # load the model on first use); DB work stays on the loop.
+    embedding = await asyncio.to_thread(get_embedder().embed_texts, [redacted])
+    ensure_embedding_dims(embedding)
+
+    new_id, _deduped = await insert_record(
+        session,
+        tenant_id=tenant_id,
+        scope="tenant",
+        scope_ref=None,
+        kind="mental_model",
+        title=synthesized_title(redacted),
+        content=redacted,
+        content_hash=_content_hash(redacted),
+        embedding=embedding[0],
+        importance=importance,
+        source={"synthesis_job": str(job_id)},
+        consolidated_from=member_ids,
+    )
+
+    await supersede_many(
+        session,
+        tenant_id,
+        [m for m in member_ids if m != new_id],
+        new_id,
+        now=now,
+    )
+
+    await session.execute(
+        text(
+            """
+            UPDATE coord.memory_synthesis_jobs
+            SET status = 'done',
+                finished_at = CAST(:now AS timestamptz),
+                result_text = :result_text
+            WHERE tenant_id = :tenant_id AND job_id = :job_id
+            """
+        ),
+        {
+            "tenant_id": tenant_id,
+            "job_id": job_id,
+            "now": now,
+            "result_text": redacted,
+        },
+    )
+    return new_id
+
+
+async def record_synthesis_failure(
+    session: AsyncSession,
+    tenant_id: UUID,
+    job_id: UUID,
+    reason: str,
+) -> bool:
+    """Mark a CLAIMED job ``failed`` with the runner-supplied reason.
+
+    Returns False when the job does not exist for this tenant (→ 404), and
+    raises :class:`SynthesisJobNotClaimedError` when it exists but is not in
+    ``'claimed'`` status (→ 409): a runner may only fail a job it holds a
+    live claim on, so a requeued/abandoned/already-terminal job is never
+    re-terminated. The ``reason`` is stored in ``result_text`` (the job is
+    terminal; no mental_model row is produced). The ``FOR UPDATE`` lock
+    keeps the status check and the flip atomic against a concurrent post.
+    """
+    status_row = (
+        await session.execute(
+            text(
+                """
+                SELECT status FROM coord.memory_synthesis_jobs
+                WHERE tenant_id = :tenant_id AND job_id = :job_id
+                FOR UPDATE
+                """
+            ),
+            {"tenant_id": tenant_id, "job_id": job_id},
+        )
+    ).scalar_one_or_none()
+    if status_row is None:
+        return False
+    if str(status_row) != "claimed":
+        raise SynthesisJobNotClaimedError(str(status_row))
+    await session.execute(
+        text(
+            """
+            UPDATE coord.memory_synthesis_jobs
+            SET status = 'failed',
+                finished_at = now(),
+                result_text = :reason
+            WHERE tenant_id = :tenant_id AND job_id = :job_id
+            """
+        ),
+        {"tenant_id": tenant_id, "job_id": job_id, "reason": reason},
+    )
+    return True
+
+
+async def reap_stale_synthesis_claims(
+    session: AsyncSession, *, now: datetime
+) -> dict[str, int]:
+    """Requeue (or fail) claims a dead runner never finished.
+
+    Any ``claimed`` job whose ``claimed_at`` is older than
+    :data:`SYNTHESIS_CLAIM_STALE_MINUTES` has its ``attempt`` bumped and
+    is returned to ``pending`` — unless that pushes ``attempt`` past
+    :data:`SYNTHESIS_MAX_ATTEMPTS`, in which case it is abandoned
+    (``failed``). ``SKIP LOCKED`` so a live claim being finished right
+    now is never disturbed. Returns ``{"requeued": n, "failed": m}``.
+    """
+    rows = await session.execute(
+        text(
+            """
+            WITH stale AS (
+                SELECT job_id
+                FROM coord.memory_synthesis_jobs
+                WHERE status = 'claimed'
+                  AND claimed_at
+                      < CAST(:now AS timestamptz)
+                        - make_interval(mins => :stale_minutes)
+                FOR UPDATE SKIP LOCKED
+            )
+            UPDATE coord.memory_synthesis_jobs j
+            SET attempt = j.attempt + 1,
+                status = CASE
+                    WHEN j.attempt + 1 > :max_attempts THEN 'failed'
+                    ELSE 'pending'
+                END,
+                claimed_by = NULL,
+                claimed_at = NULL,
+                finished_at = CASE
+                    WHEN j.attempt + 1 > :max_attempts
+                    THEN CAST(:now AS timestamptz)
+                    ELSE j.finished_at
+                END,
+                result_text = CASE
+                    WHEN j.attempt + 1 > :max_attempts
+                    THEN 'abandoned after ' || (j.attempt + 1) || ' attempts'
+                    ELSE j.result_text
+                END
+            FROM stale
+            WHERE j.job_id = stale.job_id
+            RETURNING j.status
+            """
+        ),
+        {
+            "now": now,
+            "stale_minutes": SYNTHESIS_CLAIM_STALE_MINUTES,
+            "max_attempts": SYNTHESIS_MAX_ATTEMPTS,
+        },
+    )
+    requeued = 0
+    failed = 0
+    for r in rows:
+        if r.status == "failed":
+            failed += 1
+        else:
+            requeued += 1
+    if requeued or failed:
+        logger.info("memory_synthesis_reap_completed", requeued=requeued, failed=failed)
+    return {"requeued": requeued, "failed": failed}
+
+
+async def synthesis_job_counts(
+    session: AsyncSession, tenant_id: UUID
+) -> dict[str, int]:
+    """Per-status synthesis-job counts for one tenant (backlog visibility)."""
+    rows = await session.execute(
+        text(
+            """
+            SELECT status, count(*) AS n
+            FROM coord.memory_synthesis_jobs
+            WHERE tenant_id = :tenant_id
+            GROUP BY status
+            """
+        ),
+        {"tenant_id": tenant_id},
+    )
+    counts = {"pending": 0, "claimed": 0, "done": 0, "failed": 0}
+    for r in rows:
+        counts[str(r.status)] = int(r.n)
+    return counts

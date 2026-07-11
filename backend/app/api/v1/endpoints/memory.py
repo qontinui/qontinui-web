@@ -12,6 +12,11 @@ Endpoints (mounted under ``/api/v1/memory``):
   old row's validity.
 * ``DELETE /records/{id}``               — tombstone.
 * ``GET /stats``                         — usage/quota posture.
+* ``POST /synthesis-jobs/claim``         — a runner claims pending
+  clustering jobs (backend clusters, runner synthesizes).
+* ``POST /synthesis-jobs/{id}/result``   — the runner posts the
+  synthesized model (success) or a failure reason back; success embeds
+  + inserts the ``mental_model`` row and supersedes the members.
 
 Auth (fail-closed): the tenant comes EXCLUSIVELY from the server-side
 principal resolved by :func:`get_memory_tenant` — never from the request
@@ -57,12 +62,17 @@ from app.api.deps import (
 )
 from app.models.user import User
 from app.schemas.memory import (
+    ClaimSynthesisJobsRequest,
+    ClaimSynthesisJobsResponse,
     MemoryQueryHit,
     MemoryQueryRequest,
     MemoryQueryResponse,
     MemoryStatsResponse,
     SupersedeRequest,
     SupersedeResponse,
+    SynthesisJobOut,
+    SynthesisResultRequest,
+    SynthesisResultResponse,
     WriteRecordResult,
     WriteRecordsRequest,
     WriteRecordsResponse,
@@ -571,6 +581,7 @@ async def memory_stats(
     """Usage + quota posture for the caller's tenant."""
     usage = await store.get_usage(db, principal.tenant_id)
     coverage = await store.embedding_coverage(db, principal.tenant_id)
+    job_counts = await store.synthesis_job_counts(db, principal.tenant_id)
     utilization = max(
         usage.bytes / usage.quota_bytes if usage.quota_bytes > 0 else 0.0,
         usage.row_count / usage.quota_rows if usage.quota_rows > 0 else 0.0,
@@ -582,4 +593,103 @@ async def memory_stats(
         quota_bytes=usage.quota_bytes,
         quota_rows=usage.quota_rows,
         quota_utilization=utilization,
+        synthesis_jobs_pending=job_counts["pending"],
+        synthesis_jobs_claimed=job_counts["claimed"],
+        synthesis_jobs_done=job_counts["done"],
+        synthesis_jobs_failed=job_counts["failed"],
     )
+
+
+# --------------------------------------------------------------------------
+# Synthesis jobs (v1.1) — backend clusters, runner synthesizes, backend applies
+# --------------------------------------------------------------------------
+
+
+@router.post("/synthesis-jobs/claim", response_model=ClaimSynthesisJobsResponse)
+async def claim_synthesis_jobs(
+    payload: ClaimSynthesisJobsRequest,
+    principal: MemoryPrincipal = Depends(get_memory_tenant),
+    db: AsyncSession = Depends(get_async_db),
+) -> ClaimSynthesisJobsResponse:
+    """A runner claims up to ``limit`` pending synthesis jobs (tenant-bound).
+
+    Concurrent claims on the same tenant split the queue via
+    ``FOR UPDATE SKIP LOCKED`` — no job is ever handed to two runners.
+    The response carries only ``job_id`` + ``member_texts`` per job: the
+    runner distills the texts with its own LLM and posts the result to
+    ``/synthesis-jobs/{job_id}/result``.
+    """
+    worker = str(principal.device_id) if principal.device_id else principal.actor
+    jobs = await store.claim_synthesis_jobs(
+        db, principal.tenant_id, limit=payload.limit, worker=worker
+    )
+    return ClaimSynthesisJobsResponse(
+        jobs=[
+            SynthesisJobOut(job_id=job.job_id, member_texts=job.member_texts)
+            for job in jobs
+        ]
+    )
+
+
+@router.post("/synthesis-jobs/{job_id}/result", response_model=SynthesisResultResponse)
+async def submit_synthesis_result(
+    job_id: UUID,
+    payload: SynthesisResultRequest,
+    principal: MemoryPrincipal = Depends(get_memory_tenant),
+    db: AsyncSession = Depends(get_async_db),
+) -> SynthesisResultResponse:
+    """The runner posts a synthesized model (success) or a failure reason.
+
+    Success (``result_text``): the text is redacted, embedded with the
+    LOCAL model, inserted as a ``mental_model`` row (``consolidated_from``
+    = the cluster members, importance = best member + 0.1), and the
+    member rows are superseded — all in one transaction → ``applied``.
+    Failure (``failure``): the job is marked failed → ``recorded``.
+    404 when the job is not in the caller's tenant (never disclosed); 409
+    when the job exists but is not in ``'claimed'`` status (already applied,
+    requeued by the reaper, or abandoned) — a runner may only post back for
+    a job it holds a live claim on.
+    """
+    if payload.failure is not None:
+        try:
+            ok = await store.record_synthesis_failure(
+                db, principal.tenant_id, job_id, payload.failure
+            )
+        except store.SynthesisJobNotClaimedError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+            ) from exc
+        if not ok:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="synthesis job not found",
+            )
+        return SynthesisResultResponse(status="recorded")
+
+    # Success path — result_text is guaranteed present by the schema
+    # validator (exactly one of result_text / failure).
+    assert payload.result_text is not None
+    try:
+        new_id = await store.record_synthesis_result(
+            db, principal.tenant_id, job_id, payload.result_text
+        )
+    except store.SynthesisJobNotClaimedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from exc
+    except MemoryEmbedderUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"memory embedder unavailable: {exc}",
+        ) from exc
+    except MemoryEmbeddingDimensionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+    if new_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="synthesis job not found",
+        )
+    return SynthesisResultResponse(status="applied")

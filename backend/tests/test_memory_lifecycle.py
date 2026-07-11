@@ -15,13 +15,11 @@ from app.services.memory_lifecycle import (
     DECAY_SCORE_THRESHOLD,
     ClusterItem,
     DupCandidate,
-    NullMemorySynthesizer,
     cosine_similarity,
-    get_synthesizer,
     greedy_clusters,
+    member_set_hash,
     resolve_merges,
     retention_score,
-    set_synthesizer,
     synthesized_title,
 )
 
@@ -184,28 +182,19 @@ class TestCosineSimilarity:
         assert cosine_similarity([0.0, 0.0], [1.0, 0.0]) == 0.0
 
 
-class TestSynthesisSeam:
-    def test_null_synthesizer_returns_none(self) -> None:
-        assert NullMemorySynthesizer().synthesize(["a", "b"]) is None
+class TestMemberSetHash:
+    def test_order_independent(self) -> None:
+        a, b, c = uuid4(), uuid4(), uuid4()
+        assert member_set_hash([a, b, c]) == member_set_hash([c, a, b])
 
-    def test_default_synthesizer_is_the_degrade_path(self) -> None:
-        set_synthesizer(None)
-        try:
-            assert isinstance(get_synthesizer(), NullMemorySynthesizer)
-        finally:
-            set_synthesizer(None)
+    def test_distinct_sets_differ(self) -> None:
+        a, b, c = uuid4(), uuid4(), uuid4()
+        assert member_set_hash([a, b]) != member_set_hash([a, b, c])
 
-    def test_injection_round_trip(self) -> None:
-        class Fixed:
-            def synthesize(self, cluster_texts: list[str]) -> str | None:
-                return "fixed"
-
-        fixed = Fixed()
-        set_synthesizer(fixed)
-        try:
-            assert get_synthesizer() is fixed
-        finally:
-            set_synthesizer(None)
+    def test_stable_hex(self) -> None:
+        h = member_set_hash([uuid4()])
+        assert len(h) == 64
+        int(h, 16)  # sha256 hex digest parses as hex
 
 
 class TestSynthesizedTitle:

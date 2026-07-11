@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import math
 from collections.abc import AsyncGenerator, Generator
 from typing import Any
@@ -135,6 +136,49 @@ _SETUP_SQL = [
         memory_row_quota   BIGINT NOT NULL DEFAULT 500000
     )
     """,
+    # Minimal coord.sessions (sans the tenants/devices FKs the isolated
+    # test DB doesn't carry) — only the columns the session-close expiry
+    # sweep touches: id / state / closed_at / started_at.
+    """
+    CREATE TABLE IF NOT EXISTS coord.sessions (
+        id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_id   UUID NOT NULL,
+        state       TEXT NOT NULL DEFAULT 'active'
+            CHECK (state IN ('active', 'pending_resolution', 'stale', 'closed')),
+        closed_at   TIMESTAMPTZ,
+        started_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+    """,
+    # Mirrors alembic/versions/coord_memory_synthesis_jobs.py (sans the
+    # tenants FK).
+    """
+    CREATE TABLE IF NOT EXISTS coord.memory_synthesis_jobs (
+        job_id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_id       UUID NOT NULL,
+        member_ids      UUID[] NOT NULL,
+        member_texts    JSONB NOT NULL,
+        status          TEXT NOT NULL DEFAULT 'pending'
+            CHECK (status IN ('pending', 'claimed', 'done', 'failed')),
+        claimed_by      TEXT,
+        claimed_at      TIMESTAMPTZ,
+        finished_at     TIMESTAMPTZ,
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+        result_text     TEXT,
+        attempt         INTEGER NOT NULL DEFAULT 0,
+        member_set_hash TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_memory_synthesis_jobs_pending
+        ON coord.memory_synthesis_jobs (tenant_id, created_at)
+        WHERE status = 'pending'
+    """,
+    """
+    CREATE UNIQUE INDEX IF NOT EXISTS
+        uq_memory_synthesis_jobs_live_member_set
+        ON coord.memory_synthesis_jobs (tenant_id, member_set_hash)
+        WHERE status IN ('pending', 'claimed', 'done')
+    """,
 ]
 
 
@@ -180,8 +224,10 @@ def db(memory_engine: AsyncEngine) -> Generator[AsyncEngine, None, None]:
     _exec(
         memory_engine,
         [
+            "DELETE FROM coord.memory_synthesis_jobs",
             "DELETE FROM coord.memory_records",
             "DELETE FROM coord.tenant_policies",
+            "DELETE FROM coord.sessions",
         ],
     )
     yield memory_engine
@@ -774,3 +820,125 @@ class TestStorageEffects:
         assert stats["bytes"] > 0
         assert stats["embedding_coverage"] == 1.0
         assert 0 < stats["quota_utilization"] < 1
+        # Synthesis-job backlog fields (v1.1) present, zeroed when idle.
+        assert stats["synthesis_jobs_pending"] == 0
+        assert stats["synthesis_jobs_done"] == 0
+
+
+class TestSynthesisEndpoints:
+    """The claim/result wire contract a runner poller builds against."""
+
+    @staticmethod
+    def _seed_job(engine: AsyncEngine, tenant: UUID, texts: list[str]) -> UUID:
+        job_id = uuid4()
+        _exec(
+            engine,
+            [
+                """
+                INSERT INTO coord.memory_synthesis_jobs
+                    (job_id, tenant_id, member_ids, member_texts,
+                     member_set_hash)
+                VALUES
+                    (:job_id, :tenant, CAST(:member_ids AS uuid[]),
+                     CAST(:member_texts AS jsonb), :hash)
+                """
+            ],
+            job_id=job_id,
+            tenant=tenant,
+            member_ids=[str(uuid4())],
+            member_texts=json.dumps(texts),
+            hash=f"h-{job_id}",
+        )
+        return job_id
+
+    def test_claim_returns_job_id_and_member_texts(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        job_id = self._seed_job(db, mc.tenant_id, ["alpha", "beta"])
+        resp = mc.client.post("/api/v1/memory/synthesis-jobs/claim", json={"limit": 4})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body["jobs"]) == 1
+        assert body["jobs"][0]["job_id"] == str(job_id)
+        assert body["jobs"][0]["member_texts"] == ["alpha", "beta"]
+
+    def test_result_success_applies(self, mc: MemoryClient, db: AsyncEngine) -> None:
+        job_id = self._seed_job(db, mc.tenant_id, ["one", "two"])
+        # A result is only accepted for a job the runner holds a claim on.
+        mc.client.post("/api/v1/memory/synthesis-jobs/claim", json={"limit": 4})
+        resp = mc.client.post(
+            f"/api/v1/memory/synthesis-jobs/{job_id}/result",
+            json={"result_text": "a distilled mental model"},
+        )
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "applied"}
+        assert (
+            _scalar(
+                db,
+                "SELECT status FROM coord.memory_synthesis_jobs WHERE job_id = :j",
+                j=job_id,
+            )
+            == "done"
+        )
+
+    def test_result_failure_records(self, mc: MemoryClient, db: AsyncEngine) -> None:
+        job_id = self._seed_job(db, mc.tenant_id, ["x"])
+        mc.client.post("/api/v1/memory/synthesis-jobs/claim", json={"limit": 4})
+        resp = mc.client.post(
+            f"/api/v1/memory/synthesis-jobs/{job_id}/result",
+            json={"failure": "could not synthesize"},
+        )
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "recorded"}
+
+    def test_result_on_unclaimed_job_is_409(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        # Posting a result for a job that was never claimed (or was requeued
+        # by the reaper) is rejected — the runner must hold a live claim.
+        job_id = self._seed_job(db, mc.tenant_id, ["a", "b"])
+        resp = mc.client.post(
+            f"/api/v1/memory/synthesis-jobs/{job_id}/result",
+            json={"result_text": "text"},
+        )
+        assert resp.status_code == 409
+
+    def test_foreign_tenant_job_cannot_be_claimed_or_resulted(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        # A job belonging to a different tenant is invisible to claim and
+        # its id is never resolvable on the result path (404, not 409 —
+        # existence is not disclosed across the tenant boundary).
+        foreign_job = self._seed_job(db, uuid4(), ["secret", "cluster"])
+        claimed = mc.client.post(
+            "/api/v1/memory/synthesis-jobs/claim", json={"limit": 4}
+        ).json()["jobs"]
+        assert all(j["job_id"] != str(foreign_job) for j in claimed)
+
+        resp = mc.client.post(
+            f"/api/v1/memory/synthesis-jobs/{foreign_job}/result",
+            json={"result_text": "text"},
+        )
+        assert resp.status_code == 404
+        # Untouched in its own tenant.
+        assert (
+            _scalar(
+                db,
+                "SELECT status FROM coord.memory_synthesis_jobs WHERE job_id = :j",
+                j=foreign_job,
+            )
+            == "pending"
+        )
+
+    def test_result_requires_exactly_one_field(self, mc: MemoryClient) -> None:
+        resp = mc.client.post(
+            f"/api/v1/memory/synthesis-jobs/{uuid4()}/result", json={}
+        )
+        assert resp.status_code == 422
+
+    def test_result_unknown_job_is_404(self, mc: MemoryClient) -> None:
+        resp = mc.client.post(
+            f"/api/v1/memory/synthesis-jobs/{uuid4()}/result",
+            json={"result_text": "text"},
+        )
+        assert resp.status_code == 404

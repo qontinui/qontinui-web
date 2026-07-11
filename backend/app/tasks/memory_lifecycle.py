@@ -7,13 +7,17 @@ sweeps over ``coord.memory_records``:
   rows scoring below threshold become retrieval-invisible
   (``valid_until = now()``), and a second sweep physically prunes rows
   that have been invisible past a 90-day grace period AND carry a
-  terminal marker (tombstone / superseded / decay-stamped).
+  terminal marker (tombstone / superseded / decay-stamped). The same
+  daily pass also runs the session-close expiry sweep (expire
+  ``scope='session'`` rows 7 days after their session closed) and the
+  synthesis-job reaper (requeue/fail claims a dead runner abandoned).
 * **Consolidation** (weekly, per tenant): near-duplicate merge via a
-  bounded pgvector self-join, then LLM synthesis of episode clusters
-  into ``mental_model`` rows through the injectable
-  :class:`~app.services.memory_lifecycle.MemorySynthesizer` seam (the
-  default degrades to a logged skip — this backend ships no LLM
-  client).
+  bounded pgvector self-join, then ENQUEUE of episode clusters as
+  ``coord.memory_synthesis_jobs`` rows. This backend ships no LLM
+  client, so synthesis itself is offloaded to a runner: it claims a job,
+  calls its own warm LLM, and posts the result back to
+  ``POST /api/v1/memory/synthesis-jobs/{id}/result``, which embeds
+  (local model) + inserts the ``mental_model`` row.
 * **Reindex** (daily, cheap no-op when clean): re-embeds rows whose
   ``embedding_model`` differs from the deployed tag or whose embedding
   is NULL (heals the Bug-1b drift class), in batches of 100.
@@ -34,7 +38,6 @@ static ``beat_schedule`` config alongside its dynamic entries).
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any
@@ -61,20 +64,15 @@ from app.services.memory_lifecycle import (
     NEAR_DUP_WINDOW_DAYS,
     REINDEX_BATCH_SIZE,
     REINDEX_MAX_BATCHES,
-    SYNTHESIS_IMPORTANCE_BONUS,
-    MemorySynthesizer,
-    get_synthesizer,
     greedy_clusters,
     resolve_merges,
-    synthesized_title,
 )
 
 logger = structlog.get_logger(__name__)
 
-
-def _content_hash(content: str) -> str:
-    """sha256 hex over the stored content (same rule as the write API)."""
-    return hashlib.sha256(content.encode("utf-8")).hexdigest()
+# Only enqueue synthesis for clusters that actually have something to
+# distill (a single-member "cluster" has nothing to synthesize).
+_MIN_SYNTHESIS_CLUSTER = 2
 
 
 # ---------------------------------------------------------------------------
@@ -85,7 +83,15 @@ def _content_hash(content: str) -> str:
 async def decay_once(
     session: AsyncSession, *, now: datetime | None = None
 ) -> dict[str, int]:
-    """One decay pass: invalidate below-threshold rows, prune past grace."""
+    """One daily maintenance pass over the memory substrate.
+
+    Bundles the three cheap set-based sweeps that must run at least
+    daily: Ebbinghaus decay (invalidate below-threshold rows + prune past
+    the grace window), the session-close expiry sweep (expire
+    ``scope='session'`` rows 7 days after their session closed, plus
+    orphan cleanup), and the synthesis-job reaper (requeue/fail claims a
+    dead runner abandoned).
+    """
     now = now or datetime.now(UTC)
     invalidated = await store.decay_invalidate(
         session, now=now, threshold=DECAY_SCORE_THRESHOLD
@@ -93,26 +99,44 @@ async def decay_once(
     pruned = await store.decay_prune(
         session, now=now, grace_days=DECAY_PRUNE_GRACE_DAYS
     )
-    logger.info("memory_decay_completed", invalidated=invalidated, pruned=pruned)
-    return {"invalidated": invalidated, "pruned": pruned}
+    session_expired = await store.expire_closed_session_records(session, now=now)
+    reaped = await store.reap_stale_synthesis_claims(session, now=now)
+    logger.info(
+        "memory_decay_completed",
+        invalidated=invalidated,
+        pruned=pruned,
+        session_expired=session_expired,
+        synthesis_requeued=reaped["requeued"],
+        synthesis_failed=reaped["failed"],
+    )
+    return {
+        "invalidated": invalidated,
+        "pruned": pruned,
+        "session_expired": session_expired,
+        "synthesis_requeued": reaped["requeued"],
+        "synthesis_failed": reaped["failed"],
+    }
 
 
 async def consolidate_tenant(
     session: AsyncSession,
     tenant_id: UUID,
     *,
-    synthesizer: MemorySynthesizer | None = None,
     now: datetime | None = None,
 ) -> dict[str, int]:
-    """One tenant's consolidation pass: near-dup merge, then synthesis.
+    """One tenant's consolidation pass: near-dup merge, then enqueue synthesis.
 
     Near-dup merge is fully mechanical (set-based pgvector self-join +
-    greedy pair resolution). Synthesis runs only when the injected
-    :class:`MemorySynthesizer` returns text — the default returns None
-    (no LLM client in this backend), leaving merge fully functional.
+    greedy pair resolution) and stays in-process. Synthesis is NOT done
+    here — this backend has no LLM client. Instead each episode cluster
+    is enqueued as a ``coord.memory_synthesis_jobs`` row for a runner to
+    synthesize with its own warm LLM and post back (the runner's result
+    is what finally creates the ``mental_model`` row, via
+    ``memory_store.record_synthesis_result``). Enqueue is deduped by
+    member-set hash, so re-running before the runner drains the queue is
+    a no-op for already-queued clusters.
     """
     now = now or datetime.now(UTC)
-    synthesizer = synthesizer or get_synthesizer()
 
     # -- a. near-duplicate merge -------------------------------------
     pairs = await store.find_near_duplicate_pairs(
@@ -127,10 +151,9 @@ async def consolidate_tenant(
     for decision in decisions:
         await store.apply_merge(session, tenant_id, decision, now=now)
 
-    # -- b. LLM synthesis of episode clusters ------------------------
+    # -- b. cluster episodes + enqueue synthesis jobs ----------------
     # Candidates are fetched AFTER the merge pass in the same session,
     # so rows superseded by a merge above are already excluded.
-    synthesized = 0
     candidates = await store.fetch_cluster_candidates(
         session, tenant_id, now=now, limit=CLUSTER_CANDIDATE_LIMIT
     )
@@ -140,46 +163,15 @@ async def consolidate_tenant(
         similarity=CLUSTER_SIMILARITY,
         min_size=CLUSTER_MIN_SIZE,
     )
-    for live_members in clusters:
-        cluster_texts = [str(by_id[m]["content"]) for m in live_members]
-        synthesis = synthesizer.synthesize(cluster_texts)
-        if synthesis is None:
-            logger.info(
-                "memory_synthesis_skipped",
-                tenant_id=str(tenant_id),
-                cluster_size=len(live_members),
-            )
-            continue
-
-        embedding = get_embedder().embed_texts([synthesis])
-        ensure_embedding_dims(embedding)
-        importance = min(
-            1.0,
-            max(float(by_id[m]["importance"]) for m in live_members)
-            + SYNTHESIS_IMPORTANCE_BONUS,
+    cluster_inputs = [
+        store.SynthesisClusterInput(
+            member_ids=list(members),
+            member_texts=[str(by_id[m]["content"]) for m in members],
         )
-        new_id, _deduped = await store.insert_record(
-            session,
-            tenant_id=tenant_id,
-            scope="tenant",
-            scope_ref=None,
-            kind="mental_model",
-            title=synthesized_title(synthesis),
-            content=synthesis,
-            content_hash=_content_hash(synthesis),
-            embedding=embedding[0],
-            importance=importance,
-            source={"consolidation_run": now.isoformat()},
-            consolidated_from=live_members,
-        )
-        await store.supersede_many(
-            session,
-            tenant_id,
-            [m for m in live_members if m != new_id],
-            new_id,
-            now=now,
-        )
-        synthesized += 1
+        for members in clusters
+        if len(members) >= _MIN_SYNTHESIS_CLUSTER
+    ]
+    enqueued = await store.enqueue_synthesis_jobs(session, tenant_id, cluster_inputs)
 
     logger.info(
         "memory_consolidation_completed",
@@ -187,13 +179,13 @@ async def consolidate_tenant(
         candidate_pairs=len(pairs),
         merges=len(decisions),
         clusters=len(clusters),
-        synthesized=synthesized,
+        enqueued=enqueued,
     )
     return {
         "candidate_pairs": len(pairs),
         "merges": len(decisions),
         "clusters": len(clusters),
-        "synthesized": synthesized,
+        "enqueued": enqueued,
     }
 
 
@@ -275,7 +267,7 @@ async def _async_consolidate_all(
         "tenants": 0,
         "merges": 0,
         "clusters": 0,
-        "synthesized": 0,
+        "enqueued": 0,
     }
     async with session_maker() as session:
         tenants = await store.list_tenants_with_live_records(session, now=now)
@@ -286,7 +278,7 @@ async def _async_consolidate_all(
         totals["tenants"] += 1
         totals["merges"] += stats["merges"]
         totals["clusters"] += stats["clusters"]
-        totals["synthesized"] += stats["synthesized"]
+        totals["enqueued"] += stats["enqueued"]
     logger.info("memory_consolidation_run_completed", **totals)
     return dict(totals)
 

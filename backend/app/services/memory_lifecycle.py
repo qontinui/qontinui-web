@@ -12,23 +12,24 @@ unit-testable in isolation (see ``tests/test_memory_lifecycle.py``):
 * :func:`resolve_merges` — greedy near-duplicate pair resolution
   (survivor selection + importance/access folding) over the candidate
   pairs the pgvector self-join returns.
-* :func:`greedy_clusters` — the episode-cluster builder feeding LLM
+* :func:`greedy_clusters` — the episode-cluster builder feeding
   synthesis (seed = oldest unclustered, members by cosine similarity).
-* :class:`MemorySynthesizer` — the injectable synthesis seam. The
-  default is :class:`NullMemorySynthesizer`: this backend ships no LLM
-  client (no anthropic/openai SDK in its dependency set), so synthesis
-  degrades to a logged no-op while near-dup merge stays fully
-  functional. Swap in a real implementation via
-  :func:`set_synthesizer` when the backend grows an LLM client.
+* :func:`member_set_hash` — the order-independent dedupe key for a
+  cluster's member set. Synthesis is no longer performed in-process:
+  this backend ships no LLM client, so consolidation now ENQUEUES a
+  ``coord.memory_synthesis_jobs`` row per cluster (see
+  ``memory_store.enqueue_synthesis_jobs``) for a runner to synthesize
+  with its own warm LLM and post the result back. ``member_set_hash``
+  is the stable key that keeps a cluster from being enqueued twice while
+  a job for it is still pending/claimed/done.
 """
 
 from __future__ import annotations
 
+import hashlib
 import math
-import threading
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Protocol
 from uuid import UUID
 
 import structlog
@@ -237,55 +238,20 @@ def greedy_clusters(
 
 
 # ---------------------------------------------------------------------------
-# Synthesis seam
+# Synthesis job dedupe key
 # ---------------------------------------------------------------------------
 
 
-class MemorySynthesizer(Protocol):
-    """Anything that can distill a cluster of memory texts into one."""
+def member_set_hash(member_ids: list[UUID]) -> str:
+    """Stable, order-independent hash of a cluster's member set.
 
-    def synthesize(self, cluster_texts: list[str]) -> str | None:
-        """Return the synthesized mental-model text, or None to skip."""
-        ...
-
-
-class NullMemorySynthesizer:
-    """Degrade-path synthesizer: always skips (returns None).
-
-    This backend has no LLM client dependency (no anthropic/openai SDK
-    in its dependency set), so cluster synthesis is a logged no-op until
-    one is wired in via :func:`set_synthesizer`. Near-dup merge — the
-    other half of consolidation — is unaffected.
+    Used as the ``coord.memory_synthesis_jobs.member_set_hash`` dedupe
+    key: the same set of member ids always hashes identically regardless
+    of order, so a cluster with a live (pending/claimed/done) job is
+    never enqueued twice. sha256 hex over the comma-joined sorted ids.
     """
-
-    def synthesize(self, cluster_texts: list[str]) -> str | None:
-        logger.info(
-            "memory_synthesis_skipped_no_llm_client",
-            cluster_size=len(cluster_texts),
-        )
-        return None
-
-
-_synthesizer: MemorySynthesizer | None = None
-_synthesizer_lock = threading.Lock()
-
-
-def get_synthesizer() -> MemorySynthesizer:
-    """Process-wide synthesizer (defaults to the null degrade path)."""
-    global _synthesizer
-    if _synthesizer is not None:
-        return _synthesizer
-    with _synthesizer_lock:
-        if _synthesizer is None:
-            _synthesizer = NullMemorySynthesizer()
-        return _synthesizer
-
-
-def set_synthesizer(synthesizer: MemorySynthesizer | None) -> None:
-    """Replace (or clear, with ``None``) the process-wide synthesizer."""
-    global _synthesizer
-    with _synthesizer_lock:
-        _synthesizer = synthesizer
+    joined = ",".join(sorted(str(m) for m in member_ids))
+    return hashlib.sha256(joined.encode("utf-8")).hexdigest()
 
 
 def synthesized_title(text: str, *, max_len: int = 120) -> str:

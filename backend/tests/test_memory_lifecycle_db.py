@@ -24,6 +24,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -35,7 +36,7 @@ from sqlalchemy.pool import NullPool
 from app.services import memory_embedder
 from app.services import memory_store as store
 from app.services.memory_embedder import EMBEDDING_DIM, EMBEDDING_MODEL_TAG
-from app.services.memory_lifecycle import retention_score, set_synthesizer
+from app.services.memory_lifecycle import member_set_hash, retention_score
 from app.tasks.memory_lifecycle import consolidate_tenant, decay_once, reindex_once
 from tests.conftest import TEST_DATABASE_URL
 from tests.test_memory_api_db import _SETUP_SQL, HashingStubEmbedder, _exec, _scalar
@@ -67,8 +68,10 @@ def db(memory_engine: AsyncEngine) -> Generator[AsyncEngine, None, None]:
     _exec(
         memory_engine,
         [
+            "DELETE FROM coord.memory_synthesis_jobs",
             "DELETE FROM coord.memory_records",
             "DELETE FROM coord.tenant_policies",
+            "DELETE FROM coord.sessions",
         ],
     )
     yield memory_engine
@@ -398,18 +401,8 @@ class TestNearDupMerge:
 
 
 # ---------------------------------------------------------------------------
-# Consolidation — synthesis pipeline
+# Consolidation — synthesis-job enqueue (backend clusters, runner synthesizes)
 # ---------------------------------------------------------------------------
-
-
-class StubSynthesizer:
-    def __init__(self, result: str | None) -> None:
-        self.result = result
-        self.calls: list[list[str]] = []
-
-    def synthesize(self, cluster_texts: list[str]) -> str | None:
-        self.calls.append(cluster_texts)
-        return self.result
 
 
 def _seed_episode_cluster(db: AsyncEngine, tenant: UUID) -> list[UUID]:
@@ -428,73 +421,65 @@ def _seed_episode_cluster(db: AsyncEngine, tenant: UUID) -> list[UUID]:
     ]
 
 
-class TestSynthesisPipeline:
-    def test_cluster_synthesized_into_mental_model(self, db: AsyncEngine) -> None:
+def _job_rows(db: AsyncEngine, tenant: UUID) -> list[dict[str, Any]]:
+    async def _go() -> list[dict[str, Any]]:
+        async with db.connect() as conn:
+            rows = await conn.execute(
+                text(
+                    "SELECT job_id, member_ids, member_texts, status, "
+                    "member_set_hash FROM coord.memory_synthesis_jobs "
+                    "WHERE tenant_id = :t"
+                ),
+                {"t": tenant},
+            )
+            return [dict(r) for r in rows.mappings()]
+
+    return asyncio.run(_go())
+
+
+class TestConsolidationEnqueue:
+    def test_cluster_enqueues_one_pending_job(self, db: AsyncEngine) -> None:
         tenant = uuid4()
         members = _seed_episode_cluster(db, tenant)
-        synth = StubSynthesizer("Distilled insight\nfrom five episodes")
 
-        stats = _run(
-            db,
-            lambda s: consolidate_tenant(s, tenant, synthesizer=synth, now=NOW),
-        )
+        stats = _run(db, lambda s: consolidate_tenant(s, tenant, now=NOW))
         assert stats["clusters"] == 1
-        assert stats["synthesized"] == 1
-        assert len(synth.calls) == 1
-        assert len(synth.calls[0]) == 5
+        assert stats["enqueued"] == 1
 
-        new_id = _scalar(
-            db,
-            "SELECT memory_id FROM coord.memory_records "
-            "WHERE tenant_id = :t AND kind = 'mental_model'",
-            t=tenant,
+        jobs = _job_rows(db, tenant)
+        assert len(jobs) == 1
+        job = jobs[0]
+        assert job["status"] == "pending"
+        assert {UUID(str(m)) for m in job["member_ids"]} == set(members)
+        assert len(job["member_texts"]) == 5
+        assert job["member_set_hash"] == member_set_hash(members)
+
+        # Synthesis is deferred to the runner: no mental_model yet, and
+        # the members are still live (not superseded).
+        assert (
+            _scalar(
+                db,
+                "SELECT count(*) FROM coord.memory_records "
+                "WHERE tenant_id = :t AND kind = 'mental_model'",
+                t=tenant,
+            )
+            == 0
         )
-        assert new_id is not None
-        new_uuid = UUID(str(new_id))
-        assert _row(db, new_uuid, "title") == "Distilled insight"
-        assert float(_row(db, new_uuid, "importance")) == pytest.approx(0.7, abs=1e-6)
-        assert _row(db, new_uuid, "source->>'consolidation_run'") is not None
-        consolidated_from = _row(db, new_uuid, "consolidated_from")
-        assert {UUID(str(u)) for u in consolidated_from} == set(members)
-        assert _row(db, new_uuid, "embedding") is not None
-
-        for member in members:
-            assert _row(db, member, "superseded_by") == new_uuid
-            assert _row(db, member, "valid_until") is not None
-
-    def test_none_synthesis_leaves_members_untouched(self, db: AsyncEngine) -> None:
-        tenant = uuid4()
-        members = _seed_episode_cluster(db, tenant)
-        synth = StubSynthesizer(None)
-
-        stats = _run(
-            db,
-            lambda s: consolidate_tenant(s, tenant, synthesizer=synth, now=NOW),
-        )
-        assert stats["clusters"] == 1
-        assert stats["synthesized"] == 0
-
-        count = _scalar(
-            db,
-            "SELECT count(*) FROM coord.memory_records "
-            "WHERE tenant_id = :t AND kind = 'mental_model'",
-            t=tenant,
-        )
-        assert count == 0
         for member in members:
             assert _row(db, member, "superseded_by") is None
             assert _row(db, member, "valid_until") is None
 
-    def test_default_synthesizer_degrades_to_skip(self, db: AsyncEngine) -> None:
+    def test_reconsolidation_is_deduped(self, db: AsyncEngine) -> None:
         tenant = uuid4()
         _seed_episode_cluster(db, tenant)
-        set_synthesizer(None)  # force the Null default
-        try:
-            stats = _run(db, lambda s: consolidate_tenant(s, tenant, now=NOW))
-        finally:
-            set_synthesizer(None)
-        assert stats["clusters"] == 1
-        assert stats["synthesized"] == 0
+
+        first = _run(db, lambda s: consolidate_tenant(s, tenant, now=NOW))
+        assert first["enqueued"] == 1
+        second = _run(db, lambda s: consolidate_tenant(s, tenant, now=NOW))
+        # Same cluster, live job already present → member_set_hash dedupe.
+        assert second["clusters"] == 1
+        assert second["enqueued"] == 0
+        assert len(_job_rows(db, tenant)) == 1
 
 
 # ---------------------------------------------------------------------------

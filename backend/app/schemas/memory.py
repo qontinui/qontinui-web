@@ -14,7 +14,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # Mirror the migration's CHECK constraints.
 MemoryKind = Literal[
@@ -35,6 +35,10 @@ MAX_CONTENT_BYTES = 32 * 1024
 # Query limits.
 DEFAULT_QUERY_LIMIT = 8
 MAX_QUERY_LIMIT = 50
+
+# Synthesis-job claim: default + hard cap on jobs handed out per claim.
+DEFAULT_SYNTHESIS_CLAIM_LIMIT = 4
+MAX_SYNTHESIS_CLAIM_LIMIT = 4
 
 
 class MemoryRecordIn(BaseModel):
@@ -158,3 +162,63 @@ class MemoryStatsResponse(BaseModel):
     quota_bytes: int
     quota_rows: int
     quota_utilization: float
+    # Synthesis-job backlog (runner-paid consolidation, v1.1).
+    synthesis_jobs_pending: int = 0
+    synthesis_jobs_claimed: int = 0
+    synthesis_jobs_done: int = 0
+    synthesis_jobs_failed: int = 0
+
+
+# --------------------------------------------------------------------------
+# Synthesis jobs (v1.1) — backend clusters, runner synthesizes, backend applies
+# --------------------------------------------------------------------------
+
+
+class ClaimSynthesisJobsRequest(BaseModel):
+    """``POST /memory/synthesis-jobs/claim`` body."""
+
+    limit: int = Field(
+        default=DEFAULT_SYNTHESIS_CLAIM_LIMIT, ge=1, le=MAX_SYNTHESIS_CLAIM_LIMIT
+    )
+
+
+class SynthesisJobOut(BaseModel):
+    """One claimed job — exactly what the runner needs to synthesize.
+
+    The runner distills ``member_texts`` into a single mental-model text
+    and posts it back to ``/synthesis-jobs/{job_id}/result``; it never
+    reads the memory store directly.
+    """
+
+    job_id: UUID
+    member_texts: list[str]
+
+
+class ClaimSynthesisJobsResponse(BaseModel):
+    jobs: list[SynthesisJobOut]
+
+
+class SynthesisResultRequest(BaseModel):
+    """``POST /memory/synthesis-jobs/{job_id}/result`` body.
+
+    Exactly one of ``result_text`` (success — the synthesized model) or
+    ``failure`` (the runner could not synthesize; the reason) must be
+    set.
+    """
+
+    result_text: str | None = Field(default=None, min_length=1)
+    failure: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def _exactly_one(self) -> SynthesisResultRequest:
+        if (self.result_text is None) == (self.failure is None):
+            raise ValueError(
+                "provide exactly one of 'result_text' (success) or 'failure' (reason)"
+            )
+        return self
+
+
+class SynthesisResultResponse(BaseModel):
+    # "applied" on the success path (mental_model inserted), "recorded"
+    # on the failure path (job marked failed).
+    status: Literal["applied", "recorded"]
