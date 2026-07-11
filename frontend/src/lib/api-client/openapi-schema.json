@@ -69483,7 +69483,7 @@
     },
     "/api/v1/memory/synthesis-jobs/{job_id}/result": {
       "post": {
-        "description": "The runner posts a synthesized model (success) or a failure reason.\n\nSuccess (``result_text``): the text is redacted, embedded with the\nLOCAL model, inserted as a ``mental_model`` row (``consolidated_from``\n= the cluster members, importance = best member + 0.1), and the\nmember rows are superseded \u2014 all in one transaction \u2192 ``applied``.\nFailure (``failure``): the job is marked failed \u2192 ``recorded``.\n404 when the job is not in the caller's tenant (never disclosed).",
+        "description": "The runner posts a synthesized model (success) or a failure reason.\n\nSuccess (``result_text``): the text is redacted, embedded with the\nLOCAL model, inserted as a ``mental_model`` row (``consolidated_from``\n= the cluster members, importance = best member + 0.1), and the\nmember rows are superseded \u2014 all in one transaction \u2192 ``applied``.\nFailure (``failure``): the job is marked failed \u2192 ``recorded``.\n404 when the job is not in the caller's tenant (never disclosed); 409\nwhen the job exists but is not in ``'claimed'`` status (already applied,\nrequeued by the reaper, or abandoned) \u2014 a runner may only post back for\na job it holds a live claim on.",
         "operationId": "api_v1_memory_synthesis_jobs_job_id_result_post",
         "parameters": [
           {
