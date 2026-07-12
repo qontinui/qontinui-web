@@ -1,14 +1,11 @@
-"""
-Background task for cleaning up stale device connections.
+"""Scheduled job — clean up stale device connections.
 
-This task runs periodically to identify ``DeviceConnection`` rows
-marked as active (``disconnected_at IS NULL``) whose ``Device`` parent
-has no live WebSocket (per the in-process+Redis registry). It closes
-the connection row, clears the parent ``ws_session_id`` pointer, and
-notifies the manager.
+Runs on the scheduler's ``connection_cleanup`` cadence (every 60s) to
+identify ``DeviceConnection`` rows marked active (``disconnected_at IS
+NULL``) whose ``Device`` parent has no live WebSocket (per the in-process +
+Redis registry). It closes the connection row, clears the parent
+``ws_session_id`` pointer, and notifies the manager.
 """
-
-import asyncio
 
 import structlog
 from qontinui_schemas.common import utc_now
@@ -125,21 +122,3 @@ async def cleanup_stale_connections() -> dict[str, int]:
         )
 
     return stats
-
-
-async def run_cleanup_loop(interval_seconds: int = 60) -> None:
-    """Background loop that periodically cleans up stale sessions."""
-    logger.info("cleanup_loop_started", interval_seconds=interval_seconds)
-
-    while True:
-        try:
-            stats = await cleanup_stale_connections()
-            if stats["stale_found"] > 0:
-                logger.info("cleanup_loop_cycle_completed", stats=stats)
-        except Exception as e:
-            logger.error(
-                "cleanup_loop_error",
-                error=str(e),
-                error_type=type(e).__name__,
-            )
-        await asyncio.sleep(interval_seconds)

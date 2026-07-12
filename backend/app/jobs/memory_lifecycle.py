@@ -1,4 +1,4 @@
-"""Celery beat tasks — tenant agentic-memory lifecycle (Phase 4).
+"""Scheduled jobs — tenant agentic-memory lifecycle.
 
 Plan ``2026-07-10-tenant-agentic-memory-web-backend``, Phase 4. Three
 sweeps over ``coord.memory_records``:
@@ -22,23 +22,17 @@ sweeps over ``coord.memory_records``:
   ``embedding_model`` differs from the deployed tag or whose embedding
   is NULL (heals the Bug-1b drift class), in batches of 100.
 
-Task/session shape: Celery workers are sync, so each task runs its
-async core through ``app.db.session.run_db_task_in_fresh_loop`` — a
-fresh event loop over a per-invocation ``NullPool`` engine, disposed
-before the loop closes (the shared pooled ``async_engine`` must never
-cross ``asyncio.run`` loops; pooled asyncpg connections poison across
-closed loops). Lazy engine-module import keeps module import free of a
-DB handshake. The orchestration cores (``decay_once`` /
-``consolidate_tenant`` / ``reindex_once``) take an ``AsyncSession`` so
-DB tests drive them directly.
+Session shape: the orchestration cores (``decay_once`` /
+``consolidate_tenant`` / ``reindex_once``) take an ``AsyncSession`` so DB
+tests drive them directly. The scheduler runs them on the app event loop
+via the shared pooled engine (see :mod:`app.core.scheduler`).
 
-Beat schedule entries live in ``app.celery_app`` (redbeat loads the
-static ``beat_schedule`` config alongside its dynamic entries).
+Cadences live in :mod:`app.core.scheduler` (decay 03:10 UTC daily,
+reindex 03:40 UTC daily, consolidate 04:20 UTC Sunday).
 """
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -46,7 +40,6 @@ from uuid import UUID
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.celery_app import celery_app
 from app.services import memory_store as store
 from app.services.memory_embedder import (
     EMBEDDING_MODEL_TAG,
@@ -230,34 +223,6 @@ async def reindex_once(
     return {"reindexed": reindexed, "batches": batches}
 
 
-# ---------------------------------------------------------------------------
-# Celery entrypoints (sync workers). Each invocation runs in its own
-# event loop over a DEDICATED NullPool engine via
-# ``run_db_task_in_fresh_loop`` — the shared pooled ``async_engine``
-# must never cross ``asyncio.run`` loops (pooled asyncpg connections
-# poison across closed loops: "Event loop is closed").
-# ---------------------------------------------------------------------------
-
-
-def _run_committed(
-    core: Callable[[AsyncSession], Awaitable[dict[str, int]]],
-) -> dict[str, int]:
-    """Run ``core`` against one fresh committed session on a fresh engine."""
-    # Lazy import to avoid a module-load-time DB engine handshake in
-    # tests that never trigger the Celery path.
-    from app.db.session import run_db_task_in_fresh_loop
-
-    async def _go(
-        session_maker: async_sessionmaker[AsyncSession],
-    ) -> dict[str, int]:
-        async with session_maker() as session:
-            result = await core(session)
-            await session.commit()
-            return result
-
-    return run_db_task_in_fresh_loop(_go)
-
-
 async def _async_consolidate_all(
     session_maker: async_sessionmaker[AsyncSession],
 ) -> dict[str, Any]:
@@ -281,42 +246,3 @@ async def _async_consolidate_all(
         totals["enqueued"] += stats["enqueued"]
     logger.info("memory_consolidation_run_completed", **totals)
     return dict(totals)
-
-
-@celery_app.task(
-    bind=True,
-    name="app.tasks.memory_lifecycle.decay",
-    autoretry_for=(Exception,),
-    retry_backoff=True,
-    retry_kwargs={"max_retries": 3},
-)
-def run_memory_decay(self: Any) -> dict[str, int]:
-    """Daily beat: decay invalidation + grace-period prune."""
-    return _run_committed(decay_once)
-
-
-@celery_app.task(
-    bind=True,
-    name="app.tasks.memory_lifecycle.consolidate",
-    autoretry_for=(Exception,),
-    retry_backoff=True,
-    retry_kwargs={"max_retries": 3},
-)
-def run_memory_consolidation(self: Any) -> dict[str, Any]:
-    """Weekly beat: per-tenant near-dup merge + episode synthesis."""
-    from app.db.session import run_db_task_in_fresh_loop
-
-    result: dict[str, Any] = run_db_task_in_fresh_loop(_async_consolidate_all)
-    return result
-
-
-@celery_app.task(
-    bind=True,
-    name="app.tasks.memory_lifecycle.reindex",
-    autoretry_for=(Exception,),
-    retry_backoff=True,
-    retry_kwargs={"max_retries": 3},
-)
-def run_memory_reindex(self: Any) -> dict[str, int]:
-    """Daily beat: re-embed stale/NULL rows (cheap no-op when clean)."""
-    return _run_committed(reindex_once)

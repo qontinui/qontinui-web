@@ -1,25 +1,39 @@
-"""Tests for Phase 3D — scheduled workflow runs.
+"""Tests for scheduled workflow runs — the in-process-scheduler semantics.
 
-Pattern follows ``tests/test_workflow_dispatch.py`` (Phase 3C):
+RedBeat is gone. The DB row IS the schedule: ``cron_expression`` says when, and
+``next_fire_at`` says when next. There is no second system to keep in lockstep,
+so these tests assert on ``next_fire_at`` where they previously asserted on
+redbeat entry ids.
 
-* Drive CRUD / endpoint handlers directly against the transactional
-  ``async_db_session`` fixture. No live FastAPI app, no running Redis.
-* Mock :mod:`app.services.redbeat_manager` — we don't want to spin up
-  Redis for unit tests, and the manager's "did we install the entry?"
-  behaviour is covered by its own direct tests (not included here; would
-  need a real Redis).
-* Mock the Celery ``send_task`` call for the run-now test.
-* Mock ``httpx.AsyncClient`` on the dispatcher module when exercising the
-  Celery task's happy path.
+The invariants under test:
+
+* create   → ``next_fire_at`` seeded from croniter (or NULL when disabled).
+* update   → recomputed iff cron changed OR enabled flipped. A **target-only**
+  (or name-only) edit must NOT shift the pending fire — that's the regression
+  that would silently reschedule every workflow on a cosmetic edit.
+* delete   → the row goes; nothing external to tear down.
+* run-now  → 200 OK, awaits :func:`fire_scheduled_run`, returns the REAL result
+  dict (not a Celery ``task_id``), and leaves ``next_fire_at`` alone.
+
+Pattern follows ``tests/test_workflow_dispatch.py``: drive CRUD / endpoint
+handlers directly against the transactional ``async_db_session`` fixture. No
+live FastAPI app, no Redis.
+
+``fire_scheduled_run`` itself opens its own committed session over the shared
+engine, so it is *not* observable through this rollback-scoped fixture — its
+real behaviour (dispatch, DispatchError recording, missing-row skip) is covered
+in ``tests/test_scheduler_db.py`` against committed rows.
 """
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
 import pytest_asyncio
+from croniter import croniter  # type: ignore[import-untyped]
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,7 +53,6 @@ from app.api.v1.endpoints.scheduled_runs import (
     update_scheduled_run as update_scheduled_run_endpoint,
 )
 from app.crud import scheduled_workflow_run_crud as crud
-from app.models.scheduled_workflow_run import ScheduledWorkflowRun
 from app.models.unified_workflow import UnifiedWorkflow
 from app.models.user import User
 from app.schemas.scheduled_workflow_run import (
@@ -65,26 +78,66 @@ async def _workflow(async_db_session: AsyncSession, test_user: User) -> UnifiedW
     return wf
 
 
-def _patch_redbeat():
-    """Patch every public redbeat_manager side-effect used by CRUD.
+def _expected_next(cron: str, *, around: datetime) -> datetime:
+    """The croniter fire the CRUD layer should have computed.
 
-    Returns a dict of the patched MagicMocks for assertion. We patch both
-    the ``app.services.redbeat_manager`` module and the re-exports the
-    CRUD imports transitively to avoid surprises.
+    CRUD calls ``croniter(cron, now).get_next()`` with its *own* ``now``, which
+    we cannot observe. For every cron used here the next fire is at least a
+    minute away, so any ``now`` within our few-millisecond test window yields the
+    same answer — we recompute from a timestamp captured around the call.
     """
-    patches = {
-        "upsert": patch(
-            "app.crud.scheduled_workflow_run_crud.redbeat_manager.upsert_schedule",
-            return_value="qontinui:schedule:fake-entry",
+    nxt: datetime = croniter(cron, around).get_next(datetime)
+    return nxt
+
+
+async def _make_run(
+    db: AsyncSession,
+    user: User,
+    workflow: UnifiedWorkflow,
+    *,
+    name: str = "sched",
+    cron: str = "0 9 * * *",
+    enabled: bool = True,
+):
+    """Create a scheduled run via CRUD with sensible defaults."""
+    return await crud.create_scheduled_run(
+        db,
+        user.id,
+        ScheduledWorkflowRunCreate(
+            name=name,
+            cron_expression=cron,
+            target="auto",
+            workflow_id=workflow.id,
+            enabled=enabled,
         ),
-        "disable": patch(
-            "app.crud.scheduled_workflow_run_crud.redbeat_manager.disable_schedule"
-        ),
-        "delete": patch(
-            "app.crud.scheduled_workflow_run_crud.redbeat_manager.delete_schedule"
-        ),
-    }
-    return patches
+    )
+
+
+# ---------------------------------------------------------------------------
+# compute_next_fire_at — the pure helper CRUD is built on
+# ---------------------------------------------------------------------------
+
+
+class TestComputeNextFireAt:
+    """The schedule maths, isolated from the DB."""
+
+    def test_enabled_returns_next_croniter_fire(self):
+        now = datetime(2026, 7, 13, 12, 0, tzinfo=UTC)  # Monday
+        assert crud.compute_next_fire_at("*/15 * * * *", enabled=True, now=now) == (
+            datetime(2026, 7, 13, 12, 15, tzinfo=UTC)
+        )
+
+    def test_disabled_returns_none(self):
+        """A disabled row never fires — NULL keeps it off the due-row index."""
+        now = datetime(2026, 7, 13, 12, 0, tzinfo=UTC)
+        assert crud.compute_next_fire_at("*/15 * * * *", enabled=False, now=now) is None
+
+    def test_result_is_strictly_after_now(self):
+        """Sitting exactly on a boundary yields the NEXT slot, not this one."""
+        now = datetime(2026, 7, 13, 12, 15, tzinfo=UTC)
+        nxt = crud.compute_next_fire_at("*/15 * * * *", enabled=True, now=now)
+        assert nxt == datetime(2026, 7, 13, 12, 30, tzinfo=UTC)
+        assert nxt is not None and nxt > now
 
 
 # ---------------------------------------------------------------------------
@@ -102,146 +155,169 @@ class TestCrud:
         test_user: User,
         _workflow: UnifiedWorkflow,
     ):
-        patches = _patch_redbeat()
-        with patches["upsert"] as upsert, patches["disable"], patches["delete"]:
-            row = await crud.create_scheduled_run(
-                async_db_session,
-                test_user.id,
-                ScheduledWorkflowRunCreate(
-                    name="daily",
-                    cron_expression="0 9 * * *",
-                    target="auto",
-                    workflow_id=_workflow.id,
-                ),
-            )
-            assert row.id is not None
-            assert row.name == "daily"
-            assert row.cron_expression == "0 9 * * *"
-            assert row.target == "auto"
-            assert row.enabled is True
-            assert row.redbeat_entry_id == "qontinui:schedule:fake-entry"
-            assert upsert.call_count == 1
+        before = datetime.now(UTC)
+        row = await _make_run(
+            async_db_session, test_user, _workflow, name="daily", cron="0 9 * * *"
+        )
 
-            rows = await crud.list_scheduled_runs(async_db_session, test_user.id)
-            assert len(rows) == 1
-            assert rows[0].id == row.id
+        assert row.id is not None
+        assert row.name == "daily"
+        assert row.cron_expression == "0 9 * * *"
+        assert row.target == "auto"
+        assert row.enabled is True
+        # The row IS the schedule: next_fire_at is seeded on create.
+        assert row.next_fire_at is not None
+        assert row.next_fire_at == _expected_next("0 9 * * *", around=before)
+        assert row.next_fire_at > before
 
-            fetched = await crud.get_scheduled_run(
-                async_db_session, test_user.id, row.id
-            )
-            assert fetched is not None
-            assert fetched.id == row.id
+        rows = await crud.list_scheduled_runs(async_db_session, test_user.id)
+        assert len(rows) == 1
+        assert rows[0].id == row.id
+
+        fetched = await crud.get_scheduled_run(async_db_session, test_user.id, row.id)
+        assert fetched is not None
+        assert fetched.id == row.id
+        assert fetched.next_fire_at == row.next_fire_at
 
     @pytest.mark.asyncio
-    async def test_update_then_delete(
+    async def test_create_disabled_has_no_next_fire_at(
         self,
         async_db_session: AsyncSession,
         test_user: User,
         _workflow: UnifiedWorkflow,
     ):
-        patches = _patch_redbeat()
-        with (
-            patches["upsert"] as upsert,
-            patches["disable"] as disable,
-            patches["delete"] as delete,
-        ):
-            row = await crud.create_scheduled_run(
-                async_db_session,
-                test_user.id,
-                ScheduledWorkflowRunCreate(
-                    name="initial",
-                    cron_expression="0 9 * * *",
-                    target="auto",
-                    workflow_id=_workflow.id,
-                ),
-            )
-            assert upsert.call_count == 1
+        """A schedule created disabled must never enter the due-row poll."""
+        row = await _make_run(async_db_session, test_user, _workflow, enabled=False)
 
-            updated = await crud.update_scheduled_run(
-                async_db_session,
-                test_user.id,
-                row.id,
-                ScheduledWorkflowRunUpdate(name="renamed"),
-            )
-            assert updated.name == "renamed"
-            # Name-only change — no cron/target diff, no redbeat re-upsert.
-            assert upsert.call_count == 1
-
-            await crud.delete_scheduled_run(async_db_session, test_user.id, row.id)
-            assert delete.call_count == 1
-            assert disable.call_count == 0
-
-            gone = await crud.get_scheduled_run(async_db_session, test_user.id, row.id)
-            assert gone is None
+        assert row.enabled is False
+        assert row.next_fire_at is None
 
     @pytest.mark.asyncio
-    async def test_update_cron_triggers_redbeat_upsert(
+    async def test_update_cron_recomputes_next_fire_at(
         self,
         async_db_session: AsyncSession,
         test_user: User,
         _workflow: UnifiedWorkflow,
     ):
-        """Changing cron_expression re-installs the redbeat entry."""
-        patches = _patch_redbeat()
-        with patches["upsert"] as upsert, patches["disable"], patches["delete"]:
-            row = await crud.create_scheduled_run(
-                async_db_session,
-                test_user.id,
-                ScheduledWorkflowRunCreate(
-                    name="x",
-                    cron_expression="0 9 * * *",
-                    target="auto",
-                    workflow_id=_workflow.id,
-                ),
-            )
-            assert upsert.call_count == 1
+        """Changing the cron moves the pending fire to the new cron's next slot."""
+        row = await _make_run(async_db_session, test_user, _workflow, cron="0 9 * * *")
+        original = row.next_fire_at
+        assert original is not None
 
-            await crud.update_scheduled_run(
-                async_db_session,
-                test_user.id,
-                row.id,
-                ScheduledWorkflowRunUpdate(cron_expression="30 10 * * 1-5"),
-            )
-            # Create called once + update called once → 2 upserts.
-            assert upsert.call_count == 2
+        before = datetime.now(UTC)
+        updated = await crud.update_scheduled_run(
+            async_db_session,
+            test_user.id,
+            row.id,
+            ScheduledWorkflowRunUpdate(cron_expression="*/15 * * * *"),
+        )
+
+        assert updated.cron_expression == "*/15 * * * *"
+        assert updated.next_fire_at is not None
+        assert updated.next_fire_at != original
+        assert updated.next_fire_at == _expected_next("*/15 * * * *", around=before)
 
     @pytest.mark.asyncio
-    async def test_disable_removes_redbeat_entry(
+    async def test_update_name_only_leaves_next_fire_at_untouched(
         self,
         async_db_session: AsyncSession,
         test_user: User,
         _workflow: UnifiedWorkflow,
     ):
-        """Flipping enabled=True→False tears down the entry but keeps the row."""
-        patches = _patch_redbeat()
-        with patches["upsert"], patches["disable"] as disable, patches["delete"]:
-            row = await crud.create_scheduled_run(
-                async_db_session,
-                test_user.id,
-                ScheduledWorkflowRunCreate(
-                    name="x",
-                    cron_expression="0 9 * * *",
-                    target="auto",
-                    workflow_id=_workflow.id,
-                ),
-            )
-            assert row.redbeat_entry_id is not None
+        """A cosmetic rename must not reschedule the pending fire."""
+        row = await _make_run(async_db_session, test_user, _workflow, name="initial")
+        original = row.next_fire_at
+        assert original is not None
 
-            updated = await crud.update_scheduled_run(
-                async_db_session,
-                test_user.id,
-                row.id,
-                ScheduledWorkflowRunUpdate(enabled=False),
-            )
-            assert updated.enabled is False
-            assert updated.redbeat_entry_id is None
-            assert disable.call_count == 1
+        updated = await crud.update_scheduled_run(
+            async_db_session,
+            test_user.id,
+            row.id,
+            ScheduledWorkflowRunUpdate(name="renamed"),
+        )
 
-            # Row still exists.
-            still_there = await crud.get_scheduled_run(
-                async_db_session, test_user.id, row.id
-            )
-            assert still_there is not None
+        assert updated.name == "renamed"
+        assert updated.next_fire_at == original
+
+    @pytest.mark.asyncio
+    async def test_update_target_only_leaves_next_fire_at_untouched(
+        self,
+        async_db_session: AsyncSession,
+        test_user: User,
+        _workflow: UnifiedWorkflow,
+    ):
+        """Regression: re-targeting a schedule must not shift its timing.
+
+        ``target`` says *where* the workflow dispatches, never *when*. If a
+        target edit recomputed ``next_fire_at``, editing a schedule shortly
+        before its slot would silently push the fire a whole cron window out.
+        """
+        row = await _make_run(async_db_session, test_user, _workflow, cron="0 9 * * *")
+        original = row.next_fire_at
+        assert original is not None
+
+        new_target = uuid4()
+        updated = await crud.update_scheduled_run(
+            async_db_session,
+            test_user.id,
+            row.id,
+            ScheduledWorkflowRunUpdate(target=new_target),
+        )
+
+        assert updated.target == str(new_target)
+        assert updated.next_fire_at == original
+
+    @pytest.mark.asyncio
+    async def test_disable_clears_then_reenable_recomputes(
+        self,
+        async_db_session: AsyncSession,
+        test_user: User,
+        _workflow: UnifiedWorkflow,
+    ):
+        """enabled=False → NULL (row + history kept); re-enable → recomputed."""
+        row = await _make_run(async_db_session, test_user, _workflow, cron="0 9 * * *")
+        assert row.next_fire_at is not None
+
+        disabled = await crud.update_scheduled_run(
+            async_db_session,
+            test_user.id,
+            row.id,
+            ScheduledWorkflowRunUpdate(enabled=False),
+        )
+        assert disabled.enabled is False
+        assert disabled.next_fire_at is None
+
+        # The row survives a disable — only the schedule stops.
+        still_there = await crud.get_scheduled_run(
+            async_db_session, test_user.id, row.id
+        )
+        assert still_there is not None
+
+        before = datetime.now(UTC)
+        reenabled = await crud.update_scheduled_run(
+            async_db_session,
+            test_user.id,
+            row.id,
+            ScheduledWorkflowRunUpdate(enabled=True),
+        )
+        assert reenabled.enabled is True
+        assert reenabled.next_fire_at is not None
+        assert reenabled.next_fire_at == _expected_next("0 9 * * *", around=before)
+
+    @pytest.mark.asyncio
+    async def test_delete_removes_row(
+        self,
+        async_db_session: AsyncSession,
+        test_user: User,
+        _workflow: UnifiedWorkflow,
+    ):
+        """Delete just deletes — the row was the whole schedule."""
+        row = await _make_run(async_db_session, test_user, _workflow)
+
+        await crud.delete_scheduled_run(async_db_session, test_user.id, row.id)
+
+        gone = await crud.get_scheduled_run(async_db_session, test_user.id, row.id)
+        assert gone is None
 
     @pytest.mark.asyncio
     async def test_create_rejects_foreign_workflow(
@@ -250,36 +326,24 @@ class TestCrud:
         test_user: User,
     ):
         """Creating a schedule for a workflow you don't own → 404."""
-        patches = _patch_redbeat()
-        with patches["upsert"], patches["disable"], patches["delete"]:
-            # Another user's workflow.
-            other = User(
-                email=f"other_{uuid4()}@x.com",
-                username=f"other_{uuid4().hex[:8]}",
-                full_name="Other",
-                is_active=True,
-                is_verified=True,
-            )
-            async_db_session.add(other)
-            await async_db_session.commit()
-            await async_db_session.refresh(other)
-            wf = UnifiedWorkflow(created_by_user_id=other.id, name="theirs")
-            async_db_session.add(wf)
-            await async_db_session.commit()
-            await async_db_session.refresh(wf)
+        other = User(
+            email=f"other_{uuid4()}@x.com",
+            username=f"other_{uuid4().hex[:8]}",
+            full_name="Other",
+            is_active=True,
+            is_verified=True,
+        )
+        async_db_session.add(other)
+        await async_db_session.commit()
+        await async_db_session.refresh(other)
+        wf = UnifiedWorkflow(created_by_user_id=other.id, name="theirs")
+        async_db_session.add(wf)
+        await async_db_session.commit()
+        await async_db_session.refresh(wf)
 
-            with pytest.raises(HTTPException) as exc_info:
-                await crud.create_scheduled_run(
-                    async_db_session,
-                    test_user.id,
-                    ScheduledWorkflowRunCreate(
-                        name="x",
-                        cron_expression="0 9 * * *",
-                        target="auto",
-                        workflow_id=wf.id,
-                    ),
-                )
-            assert exc_info.value.status_code == 404
+        with pytest.raises(HTTPException) as exc_info:
+            await _make_run(async_db_session, test_user, wf)
+        assert exc_info.value.status_code == 404
 
 
 # ---------------------------------------------------------------------------
@@ -323,46 +387,87 @@ class TestSchemaValidation:
 
 
 class TestRunNow:
-    """``POST /scheduled-runs/{id}/run-now`` enqueues a Celery task."""
+    """``POST /scheduled-runs/{id}/run-now`` fires synchronously and returns
+    the REAL outcome (no Celery task_id for work that never ran)."""
 
     @pytest.mark.asyncio
-    async def test_run_now_sends_celery_task(
+    async def test_run_now_awaits_fire_and_returns_real_result(
         self,
         async_db_session: AsyncSession,
         test_user: User,
         _workflow: UnifiedWorkflow,
     ):
-        patches = _patch_redbeat()
-        with patches["upsert"], patches["disable"], patches["delete"]:
-            row = await crud.create_scheduled_run(
-                async_db_session,
-                test_user.id,
-                ScheduledWorkflowRunCreate(
-                    name="x",
-                    cron_expression="0 9 * * *",
-                    target="auto",
-                    workflow_id=_workflow.id,
-                ),
-            )
+        row = await _make_run(async_db_session, test_user, _workflow)
 
-        fake_async_result = MagicMock()
-        fake_async_result.id = "task-id-xyz"
-        with patch(
-            "app.api.v1.endpoints.scheduled_runs.celery_app.send_task",
-            return_value=fake_async_result,
-        ) as send_task:
+        fire = AsyncMock(
+            return_value={
+                "status": "dispatched",
+                "execution_id": "exec-123",
+                "runner_id": "runner-abc",
+            }
+        )
+        # The endpoint imports the symbol lazily inside the handler, so patching
+        # it on the job module is what the call site actually resolves.
+        with patch("app.jobs.scheduled_dispatch.fire_scheduled_run", fire):
             result = await run_scheduled_run_now_endpoint(
                 run_id=row.id,
                 db=async_db_session,
                 current_user=test_user,
             )
 
-        assert send_task.call_count == 1
-        call_args = send_task.call_args
-        assert call_args[0][0] == "app.tasks.scheduled_dispatch.fire"
-        assert call_args[1]["args"] == [str(row.id)]
-        assert result["task_id"] == "task-id-xyz"
+        fire.assert_awaited_once_with(str(row.id))
+        # The real dispatch outcome is surfaced — not a task_id.
         assert result["scheduled_run_id"] == str(row.id)
+        assert result["status"] == "dispatched"
+        assert result["execution_id"] == "exec-123"
+        assert result["runner_id"] == "runner-abc"
+        assert "task_id" not in result
+
+    @pytest.mark.asyncio
+    async def test_run_now_surfaces_failure_status(
+        self,
+        async_db_session: AsyncSession,
+        test_user: User,
+        _workflow: UnifiedWorkflow,
+    ):
+        """A failed dispatch is reported as ``failed`` — not swallowed."""
+        row = await _make_run(async_db_session, test_user, _workflow)
+
+        fire = AsyncMock(
+            return_value={"status": "failed", "reason": "dispatch_error"}
+        )
+        with patch("app.jobs.scheduled_dispatch.fire_scheduled_run", fire):
+            result = await run_scheduled_run_now_endpoint(
+                run_id=row.id,
+                db=async_db_session,
+                current_user=test_user,
+            )
+
+        assert result["status"] == "failed"
+        assert result["reason"] == "dispatch_error"
+
+    @pytest.mark.asyncio
+    async def test_run_now_does_not_shift_next_fire_at(
+        self,
+        async_db_session: AsyncSession,
+        test_user: User,
+        _workflow: UnifiedWorkflow,
+    ):
+        """A manual out-of-band fire must not move the cron schedule."""
+        row = await _make_run(async_db_session, test_user, _workflow, cron="0 9 * * *")
+        original = row.next_fire_at
+        assert original is not None
+
+        fire = AsyncMock(return_value={"status": "dispatched", "execution_id": "e"})
+        with patch("app.jobs.scheduled_dispatch.fire_scheduled_run", fire):
+            await run_scheduled_run_now_endpoint(
+                run_id=row.id,
+                db=async_db_session,
+                current_user=test_user,
+            )
+
+        await async_db_session.refresh(row)
+        assert row.next_fire_at == original
 
     @pytest.mark.asyncio
     async def test_run_now_404_on_foreign_row(
@@ -375,200 +480,6 @@ class TestRunNow:
                 current_user=test_user,
             )
         assert exc_info.value.status_code == 404
-
-
-# ---------------------------------------------------------------------------
-# Celery task — fire_scheduled_run
-# ---------------------------------------------------------------------------
-
-
-class TestCeleryTask:
-    """Cover the async core of the task (``_async_fire``)."""
-
-    @pytest.mark.asyncio
-    async def test_disabled_row_exits_without_dispatch(
-        self,
-        async_db_session: AsyncSession,
-        test_user: User,
-        _workflow: UnifiedWorkflow,
-    ):
-        """A disabled row short-circuits without calling the dispatcher."""
-        # Create row then disable.
-        patches = _patch_redbeat()
-        with patches["upsert"], patches["disable"], patches["delete"]:
-            row = await crud.create_scheduled_run(
-                async_db_session,
-                test_user.id,
-                ScheduledWorkflowRunCreate(
-                    name="x",
-                    cron_expression="0 9 * * *",
-                    target="auto",
-                    workflow_id=_workflow.id,
-                ),
-            )
-            await crud.update_scheduled_run(
-                async_db_session,
-                test_user.id,
-                row.id,
-                ScheduledWorkflowRunUpdate(enabled=False),
-            )
-
-        # Monkey-patch the task's async-session maker so it uses our test db.
-        from app.tasks import scheduled_dispatch
-
-        async def _fake_in_test_session(scheduled_run_id: str):
-            """Run the task body, but against ``async_db_session``."""
-            from uuid import UUID
-
-            from app.services.workflow_dispatcher import dispatch_workflow_to_runner
-
-            run_uuid = UUID(scheduled_run_id)
-            db = async_db_session
-            db_row = await db.get(ScheduledWorkflowRun, run_uuid)
-            assert db_row is not None
-            if not db_row.enabled:
-                return {"status": "skipped", "reason": "disabled"}
-            _ = dispatch_workflow_to_runner  # should not be called
-            return {"status": "dispatched"}  # pragma: no cover
-
-        with patch.object(scheduled_dispatch, "_async_fire", _fake_in_test_session):
-            result = await scheduled_dispatch._async_fire(str(row.id))
-
-        assert result == {"status": "skipped", "reason": "disabled"}
-
-    @pytest.mark.asyncio
-    async def test_missing_row_exits_without_dispatch(
-        self, async_db_session: AsyncSession
-    ):
-        """Row deleted since schedule was installed → skip."""
-        from app.tasks import scheduled_dispatch
-
-        missing_id = uuid4()
-
-        async def _fake(scheduled_run_id: str):
-            from uuid import UUID as _UUID
-
-            db = async_db_session
-            db_row = await db.get(ScheduledWorkflowRun, _UUID(scheduled_run_id))
-            if db_row is None:
-                return {"status": "skipped", "reason": "row_missing"}
-            return {"status": "dispatched"}  # pragma: no cover
-
-        with patch.object(scheduled_dispatch, "_async_fire", _fake):
-            result = await scheduled_dispatch._async_fire(str(missing_id))
-
-        assert result == {"status": "skipped", "reason": "row_missing"}
-
-    @pytest.mark.asyncio
-    async def test_happy_path_updates_last_fields(
-        self,
-        async_db_session: AsyncSession,
-        test_user: User,
-        _workflow: UnifiedWorkflow,
-    ):
-        """A successful dispatch records ``last_execution_id`` + status."""
-        from datetime import timedelta
-
-        from qontinui_schemas.common import utc_now
-
-        from app.crud import runner_crud
-        from app.services.workflow_dispatcher import dispatch_workflow_to_runner
-
-        # Register a runner with an open WS session for the dispatcher to find.
-        runner = await runner_crud.register_runner(
-            async_db_session,
-            user_id=test_user.id,
-            name="r",
-            hostname="127.0.0.1",
-            port=1420,
-            capabilities=[],
-            restate_enabled=False,
-            restate_healthy=False,
-        )
-        runner.last_heartbeat = utc_now() - timedelta(seconds=5)
-        runner.status = "healthy"
-        # Phase 5A: WS is the sole dispatch channel — mark this runner as
-        # WS-connected so the dispatcher relays to it.
-        runner.ws_session_id = 1
-        await async_db_session.commit()
-
-        # Create the scheduled run.
-        patches = _patch_redbeat()
-        with patches["upsert"], patches["disable"], patches["delete"]:
-            row = await crud.create_scheduled_run(
-                async_db_session,
-                test_user.id,
-                ScheduledWorkflowRunCreate(
-                    name="happy",
-                    cron_expression="0 9 * * *",
-                    target="auto",
-                    workflow_id=_workflow.id,
-                ),
-            )
-
-        async def _run_task_body(scheduled_run_id: str):
-            """Re-implementation of the task body against ``async_db_session``.
-
-            Mirrors :func:`app.tasks.scheduled_dispatch._async_fire` but uses
-            the test transaction, so assertions can observe the row mutations.
-            """
-            from uuid import UUID as _UUID
-
-            from qontinui_schemas.common import utc_now as _utc_now
-
-            db = async_db_session
-            db_row = await db.get(ScheduledWorkflowRun, _UUID(scheduled_run_id))
-            assert db_row is not None
-            assert db_row.enabled
-
-            target = "auto" if db_row.target == "auto" else _UUID(db_row.target)
-            fired_at = _utc_now()
-            result = await dispatch_workflow_to_runner(
-                db,
-                user_id=db_row.user_id,
-                workflow_id=db_row.workflow_id,
-                target=target,
-                parent_task_run_id=None,
-            )
-            db_row.last_fired_at = fired_at
-            db_row.last_status = "dispatched"
-            db_row.last_execution_id = result.execution_id
-            db_row.last_error = None
-            await db.commit()
-            return {
-                "status": "dispatched",
-                "execution_id": result.execution_id,
-            }
-
-        # Patch the WS manager — it's the only dispatch channel after Phase 5A.
-        fake_manager = MagicMock()
-        fake_manager.is_connected = MagicMock(return_value=True)
-        fake_manager.send_dispatch = AsyncMock(return_value=True)
-
-        async def _fake_get_redis():
-            return MagicMock()
-
-        with (
-            patch("app.services.workflow_dispatcher.get_redis", _fake_get_redis),
-            patch(
-                "app.services.workflow_dispatcher.get_runner_websocket_manager",
-                AsyncMock(return_value=fake_manager),
-            ),
-        ):
-            result = await _run_task_body(str(row.id))
-
-        assert result["status"] == "dispatched"
-        # Phase 5A: WS dispatch mints a server-side run_id (UUID string).
-        assert isinstance(result["execution_id"], str)
-        assert len(result["execution_id"]) == 36  # UUID4 string
-
-        await async_db_session.refresh(row)
-        assert row.last_status == "dispatched"
-        assert row.last_execution_id == result["execution_id"]
-        assert row.last_fired_at is not None
-        assert row.last_error is None
-        # The WS dispatch was actually invoked.
-        fake_manager.send_dispatch.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
@@ -586,19 +497,20 @@ class TestEndpointWiring:
         test_user: User,
         _workflow: UnifiedWorkflow,
     ):
-        patches = _patch_redbeat()
-        with patches["upsert"], patches["disable"], patches["delete"]:
-            result = await create_scheduled_run_endpoint(
-                payload=ScheduledWorkflowRunCreate(
-                    name="endpoint",
-                    cron_expression="0 9 * * *",
-                    target="auto",
-                    workflow_id=_workflow.id,
-                ),
-                db=async_db_session,
-                current_user=test_user,
-            )
+        result = await create_scheduled_run_endpoint(
+            payload=ScheduledWorkflowRunCreate(
+                name="endpoint",
+                cron_expression="0 9 * * *",
+                target="auto",
+                workflow_id=_workflow.id,
+            ),
+            db=async_db_session,
+            current_user=test_user,
+        )
         assert result.name == "endpoint"
+        # The response shape carries next_fire_at so the UI can show "next run".
+        assert result.next_fire_at is not None
+        assert result.next_fire_at > datetime.now(UTC) - timedelta(seconds=5)
 
     @pytest.mark.asyncio
     async def test_list_endpoint_empty(
