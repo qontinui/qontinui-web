@@ -1,11 +1,14 @@
+import asyncio
 import os
 import ssl
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable, Coroutine
+from typing import Any
 
 import structlog
 from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
 
@@ -127,6 +130,41 @@ AsyncSessionLocal = async_sessionmaker(
     autocommit=False,
     autoflush=False,
 )
+
+
+def run_db_task_in_fresh_loop[T](
+    core: Callable[[async_sessionmaker[AsyncSession]], Coroutine[Any, Any, T]],
+) -> T:
+    """Run an async DB core in its own event loop over a DEDICATED engine.
+
+    For sync Celery workers (and any other sync context that spins up a
+    throwaway ``asyncio.run`` loop): the shared module-level
+    ``async_engine`` pools asyncpg connections that are bound to the
+    event loop they were created on — reusing it across successive
+    ``asyncio.run`` loops poisons the pool ("Event loop is closed").
+    Each invocation therefore gets its own ``NullPool`` engine (no
+    pooled connections to leak across loops), disposed in a ``finally``
+    BEFORE the loop closes.
+
+    ``core`` receives a session maker bound to the per-invocation engine
+    and owns its own session/commit discipline.
+    """
+
+    async def _go() -> T:
+        engine = create_async_engine(
+            async_database_url,
+            poolclass=NullPool,
+            connect_args=connect_args,
+        )
+        try:
+            maker = async_sessionmaker(
+                engine, class_=AsyncSession, expire_on_commit=False
+            )
+            return await core(maker)
+        finally:
+            await engine.dispose()
+
+    return asyncio.run(_go())
 
 
 def get_sync_db():

@@ -136,3 +136,5 @@ Licensed under the GNU Affero General Public License v3.0 or later (AGPL-3.0-or-
 ## Contact
 
 For questions or licensing inquiries, please contact jspinak@hotmail.com
+
+<!-- dep-label landing-order canary 2026-07-12 (plan 2026-07-11-coord-cross-repo-landing-correctness): parent PR — carries coord:upstream-of naming the coord child; must land FIRST and must NOT be blocked by carrying the label. -->

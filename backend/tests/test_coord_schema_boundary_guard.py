@@ -107,6 +107,15 @@ WRITE_PATH_FOLLOWUP: frozenset[str] = frozenset(
         # a later plan moves this designation write onto coord HTTP and drains
         # this entry).
         "models/test_target.py",
+        # Tenant agentic memory (plan 2026-07-10-tenant-agentic-memory-web-
+        # backend, Phase 1): web OWNS the coord.memory_records substrate —
+        # its schema ships in web's own alembic migration
+        # (`coord_memory_records`) and the /api/v1/memory API is its sole
+        # reader/writer (same shared-Postgres posture as `Device` /
+        # `TestTarget`). Every memory_records / tenant_policies-quota SQL
+        # literal is concentrated in this one module so the allowlist stays
+        # a single entry.
+        "services/memory_store.py",
     }
 )
 # NOTE: files that mention `coord.*` only in DOCSTRINGS/comments (e.g.

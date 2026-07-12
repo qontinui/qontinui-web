@@ -3700,15 +3700,24 @@ async def get_coord_session_output(
         default=None,
         description="`warm` (default) | `cold` — passthrough to coord.",
     ),
+    stream: str | None = Query(
+        default=None,
+        description=(
+            "`pty` (default) | `transcript` — output stream selector, "
+            "passthrough to coord (plan "
+            "`2026-07-09-runner-session-history-cloud-sync` Phase 2)."
+        ),
+    ),
     limit: int | None = Query(
         default=None,
         description="Max warm-tier chunks to return (warm tier only).",
     ),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
-    """Fetch a session's recorded PTY output (Phase 8 read-only pane).
+    """Fetch a session's recorded output (Phase 8 read-only pane).
 
-    Bridges to coord's ``GET /sessions/:id/output[?tier=warm|cold][&limit=N]``.
+    Bridges to coord's
+    ``GET /sessions/:id/output[?tier=warm|cold][&stream=pty|transcript][&limit=N]``.
     The response envelope is::
 
         {
@@ -3732,6 +3741,8 @@ async def get_coord_session_output(
     params: dict[str, Any] = {}
     if tier is not None:
         params["tier"] = tier
+    if stream is not None:
+        params["stream"] = stream
     if limit is not None:
         params["limit"] = limit
     return await _proxy_coord_get(
@@ -3782,6 +3793,137 @@ async def stream_coord_session_events(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.get("/sessions/{session_id}/restore-record")
+async def get_coord_session_restore_record(
+    session_id: UUID,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return the session's latest ``restore-record`` event (plus the
+    latest ``handoff_request``), derived from coord's events read.
+
+    Phase 4 of plan ``2026-07-09-runner-session-history-cloud-sync``:
+    runners mirror each restore-registry record to coord as a
+    ``coord.session_events`` row with ``event_kind='restore-record'`` and
+    payload ``{provider, authoritative_session_id, cwd, launch_command,
+    restore_tier, machine_id}``. The newest such event tells the dashboard
+    how resumable the session is (``restore_tier``: ``full`` restores the
+    conversation via the provider's authoritative id; ``terminal_only``
+    restores terminal+cwd+command with a fresh conversation).
+
+    Coord exposes session events ONLY as the SSE stream
+    (``GET /sessions/:id/events`` — replay of the last 100 rows tagged
+    ``event: replay``, then a JetStream live-tail tagged ``event: live``).
+    There is no JSON events read to pass through, so this endpoint
+    consumes just the replay phase of that stream and reduces it: it
+    keeps the highest-``seq`` ``restore-record`` and ``handoff_request``
+    rows, stopping at the first ``live`` frame or after a short idle gap
+    (the replay is emitted in one eager burst at connect; coord's
+    keep-alive ping cadence is 15s, well above the idle window).
+
+    Honesty note: the replay window is coord's last 100 events. A session
+    whose restore-record was pushed out of that window reads as "no
+    restore-record" here — the same answer a resuming runner would get
+    from the same surface.
+
+    Response::
+
+        {
+          "session_id": "<uuid>",
+          "restore_record":  <SessionEventRow | null>,
+          "handoff_request": <SessionEventRow | null>
+        }
+    """
+    url = f"{settings.COORD_URL}/sessions/{session_id}/events"
+    headers = _tenant_headers(tenant_id)
+
+    # Highest-seq row per event kind we care about.
+    latest: dict[str, dict[str, Any]] = {}
+
+    def _consider(row: Any) -> None:
+        if not isinstance(row, dict):
+            return
+        kind = row.get("event_kind")
+        if kind not in ("restore-record", "handoff_request"):
+            return
+        prev = latest.get(kind)
+        seq = row.get("seq")
+        prev_seq = prev.get("seq") if prev else None
+        if (
+            prev is None
+            or not isinstance(prev_seq, int)
+            or (isinstance(seq, int) and seq >= prev_seq)
+        ):
+            latest[kind] = row
+
+    # Two-tier idle windows. The FIRST line can lag behind connect (coord
+    # queries the replay rows before emitting anything), so it gets a
+    # generous deadline; once lines are flowing, the replay burst is
+    # back-to-back, so a short inter-line gap means the replay is over
+    # (a live-tailing stream emits nothing until a new event or the 15s
+    # keep-alive ping).
+    first_line_timeout_s = 5.0
+    idle_timeout_s = 1.0
+
+    try:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(None, connect=5.0),
+        ) as client:
+            async with client.stream("GET", url, headers=headers) as upstream:
+                if upstream.status_code >= 400:
+                    body = await upstream.aread()
+                    raise HTTPException(
+                        status_code=upstream.status_code,
+                        detail=body.decode("utf-8", "ignore"),
+                    )
+                lines = upstream.aiter_lines()
+                event_name = ""
+                data_lines: list[str] = []
+                received_any_line = False
+                while True:
+                    try:
+                        line = await asyncio.wait_for(
+                            anext(lines),
+                            timeout=(
+                                idle_timeout_s
+                                if received_any_line
+                                else first_line_timeout_s
+                            ),
+                        )
+                    except (TimeoutError, StopAsyncIteration):
+                        break
+                    received_any_line = True
+                    if line.startswith(":"):
+                        continue  # SSE keep-alive comment
+                    if line == "":
+                        # Frame boundary — reduce the completed frame.
+                        if event_name == "replay" and data_lines:
+                            try:
+                                _consider(json.loads("\n".join(data_lines)))
+                            except ValueError:
+                                pass
+                        event_name = ""
+                        data_lines = []
+                        continue
+                    if line.startswith("event:"):
+                        event_name = line[6:].strip()
+                        if event_name == "live":
+                            # Replay frames always precede live frames —
+                            # everything we need has been seen.
+                            break
+                    elif line.startswith("data:"):
+                        data_lines.append(line[5:].removeprefix(" "))
+    except httpx.ConnectError:
+        raise HTTPException(status_code=502, detail="coord is not reachable")
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="timeout waiting for coord")
+
+    return {
+        "session_id": str(session_id),
+        "restore_record": latest.get("restore-record"),
+        "handoff_request": latest.get("handoff_request"),
+    }
 
 
 @router.post("/sessions/{session_id}/steal")

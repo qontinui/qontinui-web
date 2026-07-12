@@ -18,4 +18,14 @@ regexes = [
   # touch CI/test DB config don't false-positive (gitleaks scans the commit
   # range, so it trips on any commit that introduces this literal).
   '''qontinui_dev_password''',
+  # Planted fake fixtures in backend/tests/test_memory_redaction.py (the
+  # memory-write secret-sweep unit tests): a second canonical-style AWS
+  # key, a fake sk- keyed-secret, and the fake PEM body. Each regex
+  # matches only its fabricated fixture, never a real-credential shape.
+  # Same range-scan rationale as above: the introducing commit stays in
+  # every scanned range, so these stay allowlisted even if the test
+  # literals are later refactored.
+  '''AKIAIOSFODNN7EXAMPL2''',
+  '''sk-abcdef1234567890''',
+  '''MIIEpAIBAAKCAQEA7bq0\\nmoresecretbytes''',
 ]

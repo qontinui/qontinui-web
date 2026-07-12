@@ -4,8 +4,9 @@
  * HandoffModal — Phase 7 of
  * `2026-05-23-coord-native-sessions-phase-7-10.md`.
  *
- * Triggered by SessionDetail's "Continue elsewhere" action. Picks a
- * target machine and posts to
+ * Triggered by SessionDetail's "Continue elsewhere" action and reused
+ * (with resume-specific copy) by the twin session page's ResumePanel
+ * "Resume here…" flow. Picks a target machine and posts to
  * `POST /api/v1/operations/sessions/:id/handoff { target_device_id }`.
  *
  * Coord records a durable `handoff_request` event on the source session
@@ -28,7 +29,6 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { handoffSession } from "./api";
-import type { SessionRow } from "./types";
 
 /** One candidate target machine. */
 export interface HandoffTarget {
@@ -39,42 +39,58 @@ export interface HandoffTarget {
 export interface HandoffModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** The session being moved. */
-  session: SessionRow;
+  /** The coord session being moved. */
+  sessionId: string;
   /**
-   * Devices the session can move to. The session's own device is
-   * filtered out by the modal (coord also rejects a self-handoff with
-   * a 400, but filtering here keeps the picker clean).
+   * The device the session currently runs on, or null when unknown.
+   * Rendered disabled + "(current)" in the picker so the operator can
+   * see where the session lives; coord rejects a self-handoff with a
+   * 400 anyway.
    */
+  currentDeviceId: string | null;
+  /** Devices the session can move to (deduped by the modal). */
   candidates: HandoffTarget[];
-  /** Called after the handoff POST resolves OK. */
-  onSucceeded?: () => void;
+  /** Called with the chosen target after the handoff POST resolves OK. */
+  onSucceeded?: (target: HandoffTarget) => void;
+  /** Optional copy overrides — the "Resume here…" flow on the twin
+   *  session page reuses this modal with resume-specific wording. */
+  title?: string;
+  description?: string;
+  confirmLabel?: string;
 }
 
 export function HandoffModal({
   open,
   onOpenChange,
-  session,
+  sessionId,
+  currentDeviceId,
   candidates,
   onSucceeded,
+  title = "Continue elsewhere",
+  description = "Move this session to another machine. The target runner picks up the request, recreates the session with the same working directory, held claims, and recent terminal scrollback, then this session closes. One-way move — no live mirror.",
+  confirmLabel = "Continue elsewhere",
 }: HandoffModalProps) {
   const [targetId, setTargetId] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Eligible targets = every candidate except the session's current
-  // device. Deduped by device_id.
-  const eligible = useMemo(() => {
+  // Deduped candidates. The session's current device stays in the list
+  // (marked + disabled) so the operator sees where the session lives.
+  const deduped = useMemo(() => {
     const seen = new Set<string>();
     const out: HandoffTarget[] = [];
     for (const c of candidates) {
-      if (c.device_id === session.device_id) continue;
       if (seen.has(c.device_id)) continue;
       seen.add(c.device_id);
       out.push(c);
     }
     return out;
-  }, [candidates, session.device_id]);
+  }, [candidates]);
+
+  const eligible = useMemo(
+    () => deduped.filter((c) => c.device_id !== currentDeviceId),
+    [deduped, currentDeviceId]
+  );
 
   // Reset on close; default the selection to the first eligible target
   // on open so a single-target case is one click.
@@ -91,37 +107,34 @@ export function HandoffModal({
     }
   }, [open, eligible]);
 
-  const canSubmit = targetId !== "" && !submitting;
+  const canSubmit =
+    targetId !== "" && targetId !== currentDeviceId && !submitting;
 
   const onSubmit = useCallback(async () => {
     if (!canSubmit) return;
     setSubmitting(true);
     setError(null);
     try {
-      await handoffSession(session.id, { target_device_id: targetId });
-      onSucceeded?.();
+      await handoffSession(sessionId, { target_device_id: targetId });
+      const target = eligible.find((c) => c.device_id === targetId) ?? {
+        device_id: targetId,
+        hostname: "",
+      };
+      onSucceeded?.(target);
       onOpenChange(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "handoff failed");
     } finally {
       setSubmitting(false);
     }
-  }, [canSubmit, session.id, targetId, onSucceeded, onOpenChange]);
+  }, [canSubmit, sessionId, targetId, eligible, onSucceeded, onOpenChange]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        className="sm:max-w-lg"
-        data-ui-bridge-id="handoff-modal"
-      >
+      <DialogContent className="sm:max-w-lg" data-ui-bridge-id="handoff-modal">
         <DialogHeader>
-          <DialogTitle>Continue elsewhere</DialogTitle>
-          <DialogDescription>
-            Move this session to another machine. The target runner picks
-            up the request, recreates the session with the same working
-            directory, held claims, and recent terminal scrollback, then
-            this session closes. One-way move — no live mirror.
-          </DialogDescription>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">
@@ -130,8 +143,8 @@ export function HandoffModal({
               className="rounded-md border border-border/40 bg-muted/30 px-3 py-3 text-xs text-muted-foreground"
               data-ui-bridge-id="handoff-modal.no-targets"
             >
-              No other machines are online in this tenant. A handoff needs
-              a second runner connected to coord.
+              No other machines are online in this tenant. A handoff needs a
+              second runner connected to coord.
             </div>
           ) : (
             <label className="block space-y-1.5">
@@ -146,11 +159,19 @@ export function HandoffModal({
                 disabled={submitting}
                 autoFocus
               >
-                {eligible.map((c) => (
-                  <option key={c.device_id} value={c.device_id}>
-                    {c.hostname || `${c.device_id.slice(0, 8)}…`}
-                  </option>
-                ))}
+                {deduped.map((c) => {
+                  const isCurrent = c.device_id === currentDeviceId;
+                  const label = c.hostname || `${c.device_id.slice(0, 8)}…`;
+                  return (
+                    <option
+                      key={c.device_id}
+                      value={c.device_id}
+                      disabled={isCurrent}
+                    >
+                      {isCurrent ? `${label} (current)` : label}
+                    </option>
+                  );
+                })}
               </select>
             </label>
           )}
@@ -187,7 +208,7 @@ export function HandoffModal({
             ) : (
               <>
                 <ArrowRightLeft className="h-4 w-4 mr-2" />
-                Continue elsewhere
+                {confirmLabel}
               </>
             )}
           </Button>
