@@ -1,4 +1,4 @@
-"""Celery beat task — MEMORY.md bridge indexer (Phase 5).
+"""Scheduled job — MEMORY.md bridge indexer.
 
 Plan ``2026-07-10-tenant-agentic-memory-web-backend``, Phase 5. Mirrors
 ``coord.memories_latest`` (coord's MEMORY.md federation view: latest
@@ -28,12 +28,12 @@ Sync semantics per run:
   compared BEFORE any content fetch or embedding; an in-sync run does
   two key-only SELECTs and stops.
 
-Trigger: the 15-minute beat below IS the v1 trigger. Coord announces
-upserts on NATS (``events.coord.memory.upserted.*``), but this backend
-has no NATS consumer infrastructure (no nats dependency or subscriber
-anywhere under ``app/``), and per the plan we do not introduce a new
-NATS client for this — the beat's compare-first pass is cheap enough
-at 15-minute cadence.
+Trigger: the scheduler's 15-minute ``memory_bridge_sync`` cadence IS the
+v1 trigger. Coord announces upserts on NATS
+(``events.coord.memory.upserted.*``), but this backend has no NATS
+consumer infrastructure (no nats dependency or subscriber anywhere under
+``app/``), and per the plan we do not introduce a new NATS client for
+this — the compare-first pass is cheap enough at 15-minute cadence.
 
 ``coord.memories`` rows without a ``tenant_id`` binding are skipped:
 ``coord.memory_records.tenant_id`` is NOT NULL, so unbound memories
@@ -50,7 +50,6 @@ from uuid import UUID
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.celery_app import celery_app
 from app.services import memory_store as store
 from app.services.memory_embedder import ensure_embedding_dims, get_embedder
 from app.services.memory_redaction import log_redactions, redact_text
@@ -182,29 +181,8 @@ async def bridge_sync_once(
 async def _async_bridge_sync(
     session_maker: async_sessionmaker[AsyncSession],
 ) -> dict[str, int]:
-    """Async core for the beat task (throwaway committed session)."""
+    """Open a fresh committed session and run one bridge pass."""
     async with session_maker() as session:
         result = await bridge_sync_once(session)
         await session.commit()
         return result
-
-
-@celery_app.task(
-    bind=True,
-    name="app.tasks.memory_bridge.sync",
-    autoretry_for=(Exception,),
-    retry_backoff=True,
-    retry_kwargs={"max_retries": 3},
-)
-def run_memory_bridge_sync(self: Any) -> dict[str, int]:
-    """15-minute beat: mirror coord.memories_latest into memory_records.
-
-    Runs on a per-invocation NullPool engine in a fresh event loop —
-    never the shared pooled ``async_engine``, whose asyncpg connections
-    poison across closed ``asyncio.run`` loops.
-    """
-    # Lazy import to avoid a module-load-time DB engine handshake in
-    # tests that never trigger the Celery path.
-    from app.db.session import run_db_task_in_fresh_loop
-
-    return run_db_task_in_fresh_loop(_async_bridge_sync)

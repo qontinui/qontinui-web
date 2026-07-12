@@ -52,7 +52,7 @@ class ScheduledWorkflowRunBase(BaseModel):
         ...,
         description=(
             "5-field cron expression (minute hour dom month dow), evaluated "
-            "in UTC by redbeat."
+            "in UTC by the in-process scheduler."
         ),
     )
     target: Literal["auto"] | UUID = Field(
@@ -111,6 +111,13 @@ class ScheduledWorkflowRunResponse(ScheduledWorkflowRunBase):
     id: UUID
     workflow_id: UUID
     target: str  # type: ignore[assignment]
+    next_fire_at: datetime | None = Field(
+        default=None,
+        description=(
+            "When this schedule next fires (UTC), or null if it never will "
+            "(disabled). Durable in Postgres — survives a restart."
+        ),
+    )
     last_fired_at: datetime | None
     last_execution_id: str | None
     last_status: str | None

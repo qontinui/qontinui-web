@@ -1,25 +1,27 @@
 """CRUD operations for scheduled workflow runs — Phase 3D.
 
-Each async function here keeps the DB row and the redbeat entry (in Redis)
-in lockstep:
+The DB row is the *whole* schedule: ``cron_expression`` says when, and
+``next_fire_at`` says when next. There is no second system to keep in lockstep
+(this replaced RedBeat, whose entries lived in Redis and had to be reconciled on
+every create/update/delete — and were lost on a Redis flush).
 
-* create → insert row, then install entry.
-* update → if cron or target changed, refresh the entry; if enabled flipped,
-  install or tear down accordingly.
-* delete → tear down entry, then delete row.
+So each function here just writes the row and (re)computes ``next_fire_at``:
 
-The redbeat side is best-effort: a failure to install an entry rolls back
-the DB write so the caller sees a single atomic success/failure. Failures on
-*disable* / *delete* are logged but not raised — the DB row is the source
-of truth, and an orphan redbeat entry is harmless (the Celery task itself
-checks the row's ``enabled`` flag before dispatching).
+* create  → insert row; compute next_fire_at if enabled.
+* update  → apply fields; recompute next_fire_at when cron changes or the row is
+            enabled; clear it to NULL when disabled (so the due-row poll skips it).
+* delete  → delete row. Nothing else to tear down.
+
+:mod:`app.core.scheduler` polls ``enabled AND next_fire_at <= now()`` every 30s.
 """
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
+from croniter import croniter  # type: ignore[import-untyped]
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,7 +32,6 @@ from app.schemas.scheduled_workflow_run import (
     ScheduledWorkflowRunCreate,
     ScheduledWorkflowRunUpdate,
 )
-from app.services import redbeat_manager
 
 logger = structlog.get_logger(__name__)
 
@@ -76,6 +77,21 @@ def _serialise_target(target: str | UUID) -> str:
     return target
 
 
+def compute_next_fire_at(
+    cron_expression: str, *, enabled: bool, now: datetime | None = None
+) -> datetime | None:
+    """Next fire time for ``cron_expression``, or ``None`` if it never fires.
+
+    A disabled row gets ``NULL`` so the due-row poll (``enabled AND
+    next_fire_at <= now()``) skips it on the index rather than the predicate.
+    """
+    if not enabled:
+        return None
+    base = now or datetime.now(UTC)
+    nxt: datetime = croniter(cron_expression, base).get_next(datetime)
+    return nxt
+
+
 # ---------------------------------------------------------------------------
 # Create
 # ---------------------------------------------------------------------------
@@ -86,7 +102,7 @@ async def create_scheduled_run(
     user_id: UUID,
     payload: ScheduledWorkflowRunCreate,
 ) -> ScheduledWorkflowRun:
-    """Create a scheduled run and install the redbeat entry."""
+    """Create a scheduled run, seeding its first ``next_fire_at``."""
     await _assert_workflow_owned(db, payload.workflow_id, user_id)
 
     row = ScheduledWorkflowRun(
@@ -97,27 +113,11 @@ async def create_scheduled_run(
         cron_expression=payload.cron_expression,
         target=_serialise_target(payload.target),
         enabled=payload.enabled,
+        next_fire_at=compute_next_fire_at(
+            payload.cron_expression, enabled=payload.enabled
+        ),
     )
     db.add(row)
-    await db.flush()  # materialise row.id so redbeat can key on it
-    await db.refresh(row)
-
-    if row.enabled:
-        try:
-            entry_name = redbeat_manager.upsert_schedule(row)
-            row.redbeat_entry_id = entry_name
-        except Exception:
-            # Redbeat/Redis is down — roll back so we don't leave an
-            # orphan DB row without a schedule.
-            await db.rollback()
-            logger.error(
-                "scheduled_run_create_redbeat_failed",
-                user_id=str(user_id),
-                workflow_id=str(payload.workflow_id),
-                exc_info=True,
-            )
-            raise
-
     await db.commit()
     await db.refresh(row)
     return row
@@ -170,7 +170,7 @@ async def update_scheduled_run(
     run_id: UUID,
     payload: ScheduledWorkflowRunUpdate,
 ) -> ScheduledWorkflowRun:
-    """Apply a partial update. Re-syncs the redbeat entry as needed."""
+    """Apply a partial update, recomputing ``next_fire_at`` when the schedule moves."""
     row = await get_scheduled_run(db, user_id, run_id)
     if row is None:
         raise HTTPException(
@@ -179,32 +179,24 @@ async def update_scheduled_run(
         )
 
     data = payload.model_dump(exclude_unset=True)
-    cron_or_target_changed = (
+    cron_changed = (
         "cron_expression" in data and data["cron_expression"] != row.cron_expression
-    ) or ("target" in data and _serialise_target(data["target"]) != row.target)
+    )
     enabled_changed = "enabled" in data and data["enabled"] != row.enabled
 
-    # Apply simple column mutations on the row first so upsert_schedule
-    # picks up the new cron_expression.
     for field, value in data.items():
         if field == "target":
             row.target = _serialise_target(value)
         else:
             setattr(row, field, value)
 
-    # Redbeat reconciliation.
-    if enabled_changed and row.enabled:
-        # false→true: install a fresh entry.
-        entry_name = redbeat_manager.upsert_schedule(row)
-        row.redbeat_entry_id = entry_name
-    elif enabled_changed and not row.enabled:
-        # true→false: tear down entry, keep row.
-        redbeat_manager.disable_schedule(row)
-        row.redbeat_entry_id = None
-    elif row.enabled and cron_or_target_changed:
-        # Same enabled-state, but schedule shape changed → overwrite entry.
-        entry_name = redbeat_manager.upsert_schedule(row)
-        row.redbeat_entry_id = entry_name
+    # Recompute when the cron moved or the row was just (re-)enabled; clear to
+    # NULL when it was just disabled. Note `target` does NOT affect timing, so a
+    # target-only edit leaves next_fire_at alone — the pending fire stays pending.
+    if cron_changed or enabled_changed:
+        row.next_fire_at = compute_next_fire_at(
+            row.cron_expression, enabled=row.enabled
+        )
 
     await db.commit()
     await db.refresh(row)
@@ -217,22 +209,12 @@ async def update_scheduled_run(
 
 
 async def delete_scheduled_run(db: AsyncSession, user_id: UUID, run_id: UUID) -> None:
-    """Remove the redbeat entry (best-effort) and delete the DB row."""
+    """Delete the row. The row IS the schedule — nothing else to tear down."""
     row = await get_scheduled_run(db, user_id, run_id)
     if row is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Scheduled run not found: {run_id}",
-        )
-
-    try:
-        redbeat_manager.delete_schedule(row)
-    except Exception:
-        # Redis might be down — log and continue; the DB row is truth.
-        logger.warning(
-            "scheduled_run_delete_redbeat_failed",
-            run_id=str(run_id),
-            exc_info=True,
         )
 
     await db.delete(row)

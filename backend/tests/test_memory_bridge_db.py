@@ -27,9 +27,9 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import NullPool
 
+from app.jobs.memory_bridge import bridge_sync_once
 from app.services import memory_embedder
 from app.services import memory_store as store
-from app.tasks.memory_bridge import bridge_sync_once
 from tests.conftest import TEST_DATABASE_URL
 from tests.test_memory_api_db import _SETUP_SQL, HashingStubEmbedder, _exec, _scalar
 
