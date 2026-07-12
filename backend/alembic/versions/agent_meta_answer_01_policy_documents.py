@@ -43,8 +43,14 @@ from sqlalchemy.dialects import postgresql
 from alembic import op
 
 # revision identifiers, used by Alembic.
+# down_revision re-pointed from "auto_fix_red_main_01" to the current single
+# alembic head "coord_memory_synthesis_jobs": main advanced ~13 migrations past
+# auto_fix_red_main_01 while this PR sat open, so branching off it produced a
+# second alembic head and failed the required `alembic-heads-pr` gate. Chaining
+# onto the live head restores a single linear head. coord's land-time dry-rebase
+# re-points this again if the head drifts before merge.
 revision: str = "agent_meta_answer_01_policy_documents"
-down_revision: str | Sequence[str] | None = "auto_fix_red_main_01"
+down_revision: str | Sequence[str] | None = "coord_memory_synthesis_jobs"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
