@@ -31,6 +31,7 @@ from app.models.devenv import Environment, Machine
 from app.models.user import User
 from app.repositories.devenv import (
     application_repo,
+    canonical_log_repo,
     config_repo,
     environment_repo,
     machine_repo,
@@ -39,6 +40,7 @@ from app.schemas.devenv import (
     ApplicationCreate,
     ApplicationResponse,
     ApplicationUpdate,
+    CanonicalChangeResponse,
     DispatchEnrollRequest,
     DispatchEnrollResponse,
     EnvironmentCreate,
@@ -57,6 +59,22 @@ from app.services import devenv_drift
 from app.services.coord_proxy import post_to_coord
 
 router = APIRouter()
+
+# The tenant-switcher header the frontend sends; captured best-effort onto the
+# canonical audit trail (tenants are a coord concept, resolving them
+# authoritatively would add a coord round-trip + failure mode to the write).
+_ACTIVE_TENANT_HEADER = "X-Qontinui-Active-Tenant"
+
+
+def _best_effort_tenant_id(request: Request) -> UUID | None:
+    """Parse the active-tenant header as a UUID, or ``None`` (never raises)."""
+    raw = request.headers.get(_ACTIVE_TENANT_HEADER)
+    if not raw:
+        return None
+    try:
+        return UUID(raw.strip())
+    except (ValueError, AttributeError):
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -558,6 +576,7 @@ async def delete_environment(
 async def set_canonical_machine(
     environment_id: UUID,
     payload: SetCanonicalRequest,
+    request: Request,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_active_user_async),
 ) -> EnvironmentResponse:
@@ -565,7 +584,10 @@ async def set_canonical_machine(
 
     Validates the machine is owned by the caller AND has reported a config
     row for this environment (a machine with no config can't be a useful
-    source of truth). Atomic single-column update.
+    source of truth). Atomic single-column update, plus an append to the
+    ``canonical_change_log`` audit trail (who/when/from->to) — the team-sync
+    model requires every canonical change to be attributable. A no-op change
+    (re-designating the machine that is already canonical) is not recorded.
     """
     env = await environment_repo.get(
         db, owner_id=current_user.id, env_id=environment_id
@@ -585,11 +607,47 @@ async def set_canonical_machine(
             "machine_has_no_config",
             "Machine has not reported a config for this environment yet.",
         )
+    prior_canonical_id = env.canonical_machine_id
     env = await environment_repo.set_canonical(
         db, env=env, machine_id=payload.machine_id
     )
+    # Audit the change (skip a no-op re-designation of the same machine).
+    if prior_canonical_id != payload.machine_id:
+        await canonical_log_repo.record(
+            db,
+            environment_id=environment_id,
+            from_machine_id=prior_canonical_id,
+            to_machine_id=payload.machine_id,
+            changed_by_user_id=current_user.id,
+            tenant_id=_best_effort_tenant_id(request),
+        )
     await db.commit()
     return EnvironmentResponse.model_validate(env)
+
+
+@router.get(
+    "/environments/{environment_id}/canonical-history",
+    response_model=list[CanonicalChangeResponse],
+)
+async def get_canonical_history(
+    environment_id: UUID,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user_async),
+) -> list[CanonicalChangeResponse]:
+    """List the environment's canonical-designation changes, newest first.
+
+    Answers "who made this the canonical environment, and when." Owner-scoped
+    like every other route here (cross-owner env id -> 404).
+    """
+    env = await environment_repo.get(
+        db, owner_id=current_user.id, env_id=environment_id
+    )
+    if env is None:
+        raise _not_found("environment")
+    rows = await canonical_log_repo.list_for_environment(
+        db, environment_id=environment_id
+    )
+    return [CanonicalChangeResponse.model_validate(r) for r in rows]
 
 
 # ---------------------------------------------------------------------------

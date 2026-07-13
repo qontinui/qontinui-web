@@ -226,6 +226,37 @@ class TestMachineKeyCrud:
             assert "1" not in code and "I" not in code
 
 
+class TestSectionPolicy:
+    """:mod:`app.services.devenv_section_policy` — per-section apply policy."""
+
+    def test_known_sections(self) -> None:
+        """versions/services apply; env_contract secret; db_schema destructive."""
+        from app.services import devenv_section_policy as sp
+
+        assert sp.policy_for("versions") == "applyable"
+        assert sp.policy_for("services") == "applyable"
+        assert sp.policy_for("env_contract") == "secret_report_only"
+        assert sp.policy_for("db_schema") == "destructive_confirm"
+        assert sp.policy_for("claude_accounts") == "report_only"
+
+    def test_unknown_section_defaults_report_only(self) -> None:
+        """An unrecognized section is conservatively report_only."""
+        from app.services import devenv_section_policy as sp
+
+        assert sp.policy_for("something_new") == "report_only"
+
+    def test_policy_map(self) -> None:
+        """policy_map returns section -> policy for the given names."""
+        from app.services import devenv_section_policy as sp
+
+        m = sp.policy_map(["versions", "db_schema", "zzz"])
+        assert m == {
+            "versions": "applyable",
+            "db_schema": "destructive_confirm",
+            "zzz": "report_only",
+        }
+
+
 # ---------------------------------------------------------------------------
 # Layer 1 helpers
 # ---------------------------------------------------------------------------
@@ -848,3 +879,231 @@ class TestDispatchEnroll:
         assert body["dispatched"] is False
         assert body["detail"]
         assert body["machine"]["enrollment_code"]
+
+
+class TestCanonicalAuditAndPull:
+    """P1 (pull model) — canonical audit trail + the machine pull surface."""
+
+    async def _seed_env_two_enrolled_machines(
+        self, client: httpx.AsyncClient
+    ) -> tuple[str, str, str, str, str]:
+        """Create env + machines A,B, enroll both, push A's + B's config.
+
+        Returns (env_id, machine_a_id, machine_b_id, key_a, key_b).
+        A carries a secret env_contract so pull secret-safety is testable.
+        """
+        r = await client.post(
+            f"{API_PREFIX}/environments", json={"name": "Sync", "description": None}
+        )
+        env_id = r.json()["id"]
+
+        r = await client.post(f"{API_PREFIX}/machines", json={"name": "machine-a"})
+        body_a = r.json()
+        machine_a_id, code_a = body_a["id"], body_a["enrollment_code"]
+        r = await client.post(f"{API_PREFIX}/machines", json={"name": "machine-b"})
+        body_b = r.json()
+        machine_b_id, code_b = body_b["id"], body_b["enrollment_code"]
+
+        r = await client.post(
+            f"{API_PREFIX}/agent/enroll",
+            json={"enrollment_code": code_a, "machine_id": machine_a_id},
+        )
+        key_a = r.json()["machine_key"]
+        r = await client.post(
+            f"{API_PREFIX}/agent/enroll",
+            json={"enrollment_code": code_b, "machine_id": machine_b_id},
+        )
+        key_b = r.json()["machine_key"]
+
+        await client.put(
+            f"{API_PREFIX}/agent/environments/{env_id}/config",
+            json=_config_body(
+                {
+                    "versions": {"python": "3.13"},
+                    "services": {"redis": "6379"},
+                    "env_contract": {"DATABASE_URL": "postgres://u:topsecret@h/d"},
+                }
+            ),
+            headers={"X-Machine-Key": key_a},
+        )
+        await client.put(
+            f"{API_PREFIX}/agent/environments/{env_id}/config",
+            json=_config_body({"versions": {"python": "3.11"}}),
+            headers={"X-Machine-Key": key_b},
+        )
+        return env_id, machine_a_id, machine_b_id, key_a, key_b
+
+    @pytest.mark.asyncio
+    async def test_canonical_changes_are_audited(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """Every canonical (re)designation is recorded who/when/from->to;
+        a no-op re-designation is not."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app) as client:
+            env_id, a_id, b_id, _, _ = await self._seed_env_two_enrolled_machines(
+                client
+            )
+
+            # No changes yet.
+            r = await client.get(
+                f"{API_PREFIX}/environments/{env_id}/canonical-history"
+            )
+            assert r.status_code == 200, r.text
+            assert r.json() == []
+
+            # First designation A: from None -> A, attributed to the user.
+            r = await client.put(
+                f"{API_PREFIX}/environments/{env_id}/canonical",
+                json={"machine_id": a_id},
+            )
+            assert r.status_code == 200, r.text
+            hist = (
+                await client.get(
+                    f"{API_PREFIX}/environments/{env_id}/canonical-history"
+                )
+            ).json()
+            assert len(hist) == 1
+            assert hist[0]["from_machine_id"] is None
+            assert hist[0]["to_machine_id"] == a_id
+            assert hist[0]["changed_by_user_id"] == str(test_user.id)
+            assert hist[0]["changed_at"].endswith("Z")
+
+            # Re-point to B → a second record with the A -> B transition.
+            # NOTE: assert on the SET of transitions, not positional order:
+            # this test harness wraps every request in ONE transaction, so
+            # Postgres now() (transaction-start time) is identical for both
+            # rows and ORDER BY changed_at DESC is a tie. In production each
+            # change is its own transaction with a distinct timestamp.
+            r = await client.put(
+                f"{API_PREFIX}/environments/{env_id}/canonical",
+                json={"machine_id": b_id},
+            )
+            assert r.status_code == 200, r.text
+            hist = (
+                await client.get(
+                    f"{API_PREFIX}/environments/{env_id}/canonical-history"
+                )
+            ).json()
+            assert len(hist) == 2
+            transitions = {(h["from_machine_id"], h["to_machine_id"]) for h in hist}
+            assert transitions == {(None, a_id), (a_id, b_id)}
+
+            # No-op re-designation of B (already canonical) is NOT recorded.
+            await client.put(
+                f"{API_PREFIX}/environments/{env_id}/canonical",
+                json={"machine_id": b_id},
+            )
+            hist = (
+                await client.get(
+                    f"{API_PREFIX}/environments/{env_id}/canonical-history"
+                )
+            ).json()
+            assert len(hist) == 2
+
+    @pytest.mark.asyncio
+    async def test_audit_records_active_tenant_best_effort(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """The active-tenant header is captured onto the audit row when sent."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        tenant_id = str(uuid4())
+        async with _client(app) as client:
+            env_id, a_id, _, _, _ = await self._seed_env_two_enrolled_machines(client)
+            r = await client.put(
+                f"{API_PREFIX}/environments/{env_id}/canonical",
+                json={"machine_id": a_id},
+                headers={"X-Qontinui-Active-Tenant": tenant_id},
+            )
+            assert r.status_code == 200, r.text
+            hist = (
+                await client.get(
+                    f"{API_PREFIX}/environments/{env_id}/canonical-history"
+                )
+            ).json()
+            assert hist[0]["tenant_id"] == tenant_id
+
+    @pytest.mark.asyncio
+    async def test_pull_canonical_config(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """A machine pulls the canonical config + per-section policy, secret-free."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app) as client:
+            env_id, a_id, _, _, key_b = await self._seed_env_two_enrolled_machines(
+                client
+            )
+            await client.put(
+                f"{API_PREFIX}/environments/{env_id}/canonical",
+                json={"machine_id": a_id},
+            )
+
+            # Machine B pulls what to reconcile toward (canonical = A).
+            r = await client.get(
+                f"{API_PREFIX}/agent/environments/{env_id}/canonical-config",
+                headers={"X-Machine-Key": key_b},
+            )
+            assert r.status_code == 200, r.text
+            body = r.json()
+            assert body["canonical_machine_id"] == a_id
+            assert body["canonical_machine_name"] == "machine-a"
+            assert body["sections"]["versions"]["python"] == "3.13"
+            # Policy delivered alongside so the runner knows what it may apply.
+            assert body["section_policy"]["versions"] == "applyable"
+            assert body["section_policy"]["env_contract"] == "secret_report_only"
+            # Secret-free: env_contract is present/absent, never the raw value.
+            assert body["sections"]["env_contract"]["DATABASE_URL"] == "present"
+            assert "topsecret" not in r.text
+
+    @pytest.mark.asyncio
+    async def test_pull_requires_canonical(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """Pulling with no canonical set → 422 no_canonical_machine."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app) as client:
+            _env, _a, _b, _ka, key_b = await self._seed_env_two_enrolled_machines(
+                client
+            )
+            r = await client.get(
+                f"{API_PREFIX}/agent/environments/{_env}/canonical-config",
+                headers={"X-Machine-Key": key_b},
+            )
+            assert r.status_code == 422, r.text
+            assert r.json()["detail"]["code"] == "no_canonical_machine"
+
+    @pytest.mark.asyncio
+    async def test_pull_cross_owner_404(
+        self, async_db_session: AsyncSession, test_user, second_user
+    ) -> None:
+        """A machine can only pull its own owner's environment (else 404)."""
+        # Owner 1: env + canonical A.
+        app1 = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app1) as client:
+            env_id, a_id, _b, _ka, _kb = await self._seed_env_two_enrolled_machines(
+                client
+            )
+            await client.put(
+                f"{API_PREFIX}/environments/{env_id}/canonical",
+                json={"machine_id": a_id},
+            )
+
+        # Owner 2: a machine of their own, whose key must NOT reach env_id.
+        app2 = _build_app(db_session=async_db_session, user=second_user)
+        async with _client(app2) as client:
+            r = await client.post(f"{API_PREFIX}/machines", json={"name": "intruder"})
+            body = r.json()
+            r = await client.post(
+                f"{API_PREFIX}/agent/enroll",
+                json={
+                    "enrollment_code": body["enrollment_code"],
+                    "machine_id": body["id"],
+                },
+            )
+            key_intruder = r.json()["machine_key"]
+            r = await client.get(
+                f"{API_PREFIX}/agent/environments/{env_id}/canonical-config",
+                headers={"X-Machine-Key": key_intruder},
+            )
+            assert r.status_code == 404, r.text
+            assert r.json()["detail"]["code"] == "environment_not_found"
