@@ -200,9 +200,19 @@ const RUNNER_PAGE_ID_ALIASES: Readonly<Record<string, string>> = {
   "page-run-recap": "runs",
   "page-run-findings": "run-findings",
   "page-runs-history": "runs",
-  // Observe / knowledge surfaces → web "memory" (semantic/knowledge).
-  "page-memory-search": "memory",
-  "page-knowledge-explorer": "memory",
+  // Observe / knowledge surfaces → web's OWN observations page (/observations).
+  //
+  // These used to point at the shared registry's `memory` id. As of
+  // @qontinui/navigation 0.2.0 that item was renamed `observations` AND gated
+  // `platforms: ["runner"]` — its route (`/observe/memory`) 404s on web, which
+  // has no `observe/` route tree. So it is (correctly) absent from
+  // `getWebNavigation()` and therefore from the registry-derived `urlMap`.
+  //
+  // Web's equivalent surface is its own local `/observations` page (see
+  // WEB_LOCAL_PAGES), so the aliases target that instead — otherwise these ids
+  // would dead-end at `undefined`.
+  "page-memory-search": "observations",
+  "page-knowledge-explorer": "observations",
   // Settings family (runner splits into sub-pages the web doesn't have).
   "page-settings": "settings",
   "page-settings-ai": "settings",
@@ -229,6 +239,31 @@ const RUNNER_PAGE_ID_ALIASES: Readonly<Record<string, string>> = {
 };
 
 /**
+ * WEB-LOCAL pages: real qontinui-web routes that the SHARED registry does not
+ * surface for the `web` platform, so `collectItems()` cannot see them.
+ *
+ * Keep this list tiny — it is the deliberate escape hatch for the (few) pages
+ * qontinui-web owns outright, mirroring the web-local ids the sidebar already
+ * carries in `nav-items.ts`. It is NOT a mirror of the registry.
+ *
+ * `observations` (/observations, rendered by
+ * `src/app/(app)/observations/page.tsx`) is the case that forces this: the
+ * shared registry's like-named item is runner-only (its `/observe/memory`
+ * route does not exist on web), so without this entry the co-pilot has NO way
+ * to reach web's observation-memory surface at all.
+ *
+ * Ids here must not collide with a registry id; registry items win.
+ */
+const WEB_LOCAL_PAGES: ReadonlyArray<CopilotPage & { route: string }> = [
+  {
+    id: "observations",
+    description:
+      "Observations — browse cross-session observation memory with temporal filtering",
+    route: "/observations",
+  },
+];
+
+/**
  * Memoized derivation. The navigation registry is static for the process
  * lifetime, so we compute the page list / URL map once on first access.
  */
@@ -250,6 +285,15 @@ function build(): {
   for (const item of items) {
     pages.push({ id: item.id, description: descriptionForItem(item) });
     urlMap[item.id] = routeForItem(item);
+  }
+
+  // Web-local pages the shared registry does not surface for `web`. Registry
+  // items win on an id collision (the registry stays the source of truth).
+  for (const local of WEB_LOCAL_PAGES) {
+    if (urlMap[local.id] !== undefined) continue;
+    if (local.route === SELF_ROUTE || local.route.includes(":")) continue;
+    pages.push({ id: local.id, description: local.description });
+    urlMap[local.id] = local.route;
   }
 
   cachedPages = pages;

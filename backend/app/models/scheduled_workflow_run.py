@@ -1,14 +1,17 @@
 """Scheduled workflow run model — Phase 3D.
 
-One row per user-configured cron-driven workflow dispatch. The DB row is
-the source of truth for ownership, cron expression, and dispatch target;
-the corresponding redbeat entry (in Redis) is the runtime mechanism that
-fires Celery's :func:`app.tasks.scheduled_dispatch.fire` at the configured
-times. The two are kept in sync by :mod:`app.services.redbeat_manager`.
+One row per user-configured cron-driven workflow dispatch. The row is the
+**sole** source of truth for ownership, cron expression, dispatch target, AND
+*when the schedule next fires* — ``next_fire_at`` is a plain indexed column.
 
-Deleting this row removes the redbeat entry. Disabling (enabled=False)
-removes the redbeat entry but keeps the row, so re-enabling restores the
-same schedule without losing history (``last_*`` columns).
+The in-process scheduler (:mod:`app.core.scheduler`) polls due rows every 30s
+(``WHERE enabled AND next_fire_at <= now()``, ``FOR UPDATE SKIP LOCKED``) and
+runs :func:`app.jobs.scheduled_dispatch.poll_and_dispatch_due`.
+
+This replaced RedBeat, which kept schedule state in Redis. Schedule state is now
+durable in Postgres: it survives a Redis flush, and it is inspectable in SQL.
+Deleting the row removes the schedule; disabling it (``enabled=False``) keeps the
+row and its ``last_*`` history, so re-enabling restores the same schedule.
 """
 
 from datetime import datetime
@@ -99,14 +102,15 @@ class ScheduledWorkflowRun(Base):
 
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    redbeat_entry_id: Mapped[str | None] = mapped_column(
-        String(255),
+    next_fire_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
         nullable=True,
-        unique=True,
+        index=True,
         comment=(
-            "Redbeat scheduler key for this row, conventionally "
-            "'qontinui:schedule:{id}'. Present when a redbeat entry exists "
-            "in Redis; cleared when the entry is removed (disable/delete)."
+            "When this schedule next fires. Computed with croniter from "
+            "cron_expression on create/update and advanced after each fire. "
+            "The scheduler polls `enabled AND next_fire_at <= now()`. NULL "
+            "means never fires (disabled, or an uncomputable cron)."
         ),
     )
 

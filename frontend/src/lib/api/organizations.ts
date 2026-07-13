@@ -2,6 +2,10 @@
  * Organization API Service
  *
  * API calls for organization management including invitations and members.
+ *
+ * All requests route through `httpClient` (never bare `fetch`) so they carry
+ * the `Authorization: Bearer` header and inherit the shared 401-refresh /
+ * session-expiry handling. A bare fetch 401s in prod (Cognito bearer auth).
  */
 
 import type {
@@ -10,6 +14,7 @@ import type {
   TeamMember,
   Organization,
 } from "@/types/collaboration";
+import { httpClient } from "@/services/service-factory";
 
 /**
  * Send an invitation to join an organization
@@ -18,11 +23,10 @@ export async function inviteMember(
   organizationId: string,
   data: InvitationCreate
 ): Promise<Invitation> {
-  const response = await fetch(
+  const response = await httpClient.fetch(
     `/api/v1/organizations/${organizationId}/members/invite`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     }
   );
@@ -41,7 +45,7 @@ export async function inviteMember(
 export async function getInvitations(
   organizationId: string
 ): Promise<Invitation[]> {
-  const response = await fetch(
+  const response = await httpClient.fetch(
     `/api/v1/organizations/${organizationId}/invitations`
   );
 
@@ -58,7 +62,7 @@ export async function getInvitations(
 export async function acceptInvitation(
   token: string
 ): Promise<{ organization: Organization }> {
-  const response = await fetch(
+  const response = await httpClient.fetch(
     `/api/v1/organizations/invitations/${token}/accept`,
     {
       method: "POST",
@@ -79,7 +83,9 @@ export async function acceptInvitation(
 export async function getInvitationDetails(
   token: string
 ): Promise<Invitation & { organization: Organization }> {
-  const response = await fetch(`/api/v1/organizations/invitations/${token}`);
+  const response = await httpClient.fetch(
+    `/api/v1/organizations/invitations/${token}`
+  );
 
   if (!response.ok) {
     const error = await response.json();
@@ -96,7 +102,7 @@ export async function cancelInvitation(
   organizationId: string,
   invitationId: string
 ): Promise<void> {
-  const response = await fetch(
+  const response = await httpClient.fetch(
     `/api/v1/organizations/${organizationId}/invitations/${invitationId}`,
     {
       method: "DELETE",
@@ -115,7 +121,7 @@ export async function resendInvitation(
   organizationId: string,
   invitationId: string
 ): Promise<Invitation> {
-  const response = await fetch(
+  const response = await httpClient.fetch(
     `/api/v1/organizations/${organizationId}/invitations/${invitationId}/resend`,
     {
       method: "POST",
@@ -134,7 +140,7 @@ export async function resendInvitation(
  * Decline an invitation
  */
 export async function declineInvitation(token: string): Promise<void> {
-  const response = await fetch(
+  const response = await httpClient.fetch(
     `/api/v1/organizations/invitations/${token}/decline`,
     {
       method: "POST",
@@ -153,7 +159,7 @@ export async function declineInvitation(token: string): Promise<void> {
 export async function getOrganizationMembers(
   organizationId: string
 ): Promise<TeamMember[]> {
-  const response = await fetch(
+  const response = await httpClient.fetch(
     `/api/v1/organizations/${organizationId}/members`
   );
 

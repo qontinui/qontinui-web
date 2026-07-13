@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useUIComponent } from "@qontinui/ui-bridge";
 import * as workflowApi from "@/lib/api/unified-workflows";
 import { useUnifiedWorkflows } from "@/lib/api/unified-workflows";
@@ -24,6 +24,24 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
+/**
+ * Map a failed workflow-list load to user-facing copy.
+ *
+ * The raw error carried by `useUnifiedWorkflows` is a backend diagnostic
+ * (e.g. the literal string `UNAUTHORIZED`) and MUST NOT be rendered — users
+ * were seeing the API error code in place of the list. Map the HTTP status to
+ * copy instead; the raw message stays in the console for debugging.
+ */
+function workflowListErrorMessage(status: number | null): string {
+  if (status === 401 || status === 403) {
+    return "Your session has expired. Please sign in again to view your workflows.";
+  }
+  if (status !== null && status >= 500) {
+    return "Workflows are temporarily unavailable. Please try again.";
+  }
+  return "Couldn't load workflows. Please try again.";
+}
+
 export function WorkflowListSidebar({
   selectedWorkflowId,
   onSelectWorkflow,
@@ -44,6 +62,7 @@ export function WorkflowListSidebar({
     data: workflows,
     isLoading,
     error,
+    errorStatus,
     refetch,
   } = useUnifiedWorkflows();
   // Runner health gates ONLY execution (Run / dispatch). When no runner is
@@ -56,6 +75,18 @@ export function WorkflowListSidebar({
   const [searchQuery, setSearchQuery] = useState("");
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // The raw API error is a diagnostic, not user-facing copy — keep it in the
+  // console (where it stays useful) instead of rendering it into the sidebar.
+  useEffect(() => {
+    if (error) {
+      console.error(
+        "[WorkflowListSidebar] Failed to load workflows:",
+        errorStatus ?? "(no status)",
+        error
+      );
+    }
+  }, [error, errorStatus]);
 
   const filteredWorkflows = useMemo(() => {
     if (!workflows) return [];
@@ -266,7 +297,9 @@ export function WorkflowListSidebar({
           ))
         ) : error ? (
           <div className="py-4 text-center">
-            <p className="text-xs text-red-400">{error}</p>
+            <p className="text-xs text-red-400">
+              {workflowListErrorMessage(errorStatus)}
+            </p>
             <Button
               variant="outline"
               size="sm"

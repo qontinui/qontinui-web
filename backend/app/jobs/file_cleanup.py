@@ -1,12 +1,10 @@
-"""
-Background task for cleaning up expired shared files.
+"""Scheduled job — clean up expired shared files.
 
-Runs periodically to delete shared_files entries and their
-corresponding files on disk whose expires_at has passed.
-Default expiry is 7 days from creation.
+Runs on the scheduler's ``file_cleanup`` cadence (hourly) to delete
+``shared_files`` entries and their corresponding files on disk whose
+``expires_at`` has passed. Default expiry is 7 days from creation.
 """
 
-import asyncio
 import os
 from datetime import UTC, datetime
 
@@ -72,30 +70,10 @@ async def cleanup_expired_files() -> dict[str, int]:
             error_type=type(e).__name__,
             exc_info=True,
         )
+        # Re-raise: the scheduler records `last_status="failed"` on /health and
+        # keeps looping. Swallowing here (needed by the old `while True` loop, which
+        # would have died) would make every failed run report `"ok"` — the exact
+        # silent-no-op blindness this scheduler exists to end.
+        raise
 
     return stats
-
-
-async def run_file_cleanup_loop(interval_seconds: int = 3600) -> None:
-    """
-    Background loop that periodically cleans up expired shared files.
-
-    Args:
-        interval_seconds: Time between cleanup runs (default: 3600 = 1 hour)
-    """
-    logger.info(
-        "file_cleanup_loop_started",
-        interval_seconds=interval_seconds,
-    )
-
-    while True:
-        try:
-            await cleanup_expired_files()
-        except Exception as e:
-            logger.error(
-                "file_cleanup_loop_error",
-                error=str(e),
-                error_type=type(e).__name__,
-            )
-
-        await asyncio.sleep(interval_seconds)

@@ -31,10 +31,16 @@ collect_ignore = ["integration"]
 os.environ["TESTING"] = "1"
 os.environ["ENVIRONMENT"] = "development"  # Use development for tests
 
-# Set required configuration for tests - use PostgreSQL test database
-os.environ["DATABASE_URL"] = (
-    "postgresql://qontinui_user:qontinui_dev_password@localhost:5432/qontinui_test"
-)
+# Set required configuration for tests - use PostgreSQL test database.
+#
+# The host:port is overridable via QONTINUI_TEST_PG so a dev box whose Postgres
+# listens somewhere other than 5432 (e.g. the canonical dev stack publishes it
+# on 5433) can run the DB-backed suite without editing this file. The default is
+# the CI topology, so CI behaviour is unchanged when the var is unset.
+_TEST_PG_HOSTPORT = os.environ.get("QONTINUI_TEST_PG", "localhost:5432")
+_TEST_PG_DSN = f"qontinui_user:qontinui_dev_password@{_TEST_PG_HOSTPORT}/qontinui_test"
+
+os.environ["DATABASE_URL"] = f"postgresql://{_TEST_PG_DSN}"
 os.environ["SECRET_KEY"] = "test-secret-key-for-testing-only-minimum-32-chars-required"
 os.environ["ACCESS_SECRET_KEY"] = (
     "test-access-secret-key-minimum-32-characters-required"
@@ -138,8 +144,8 @@ def pytest_collection_modifyitems(config, items):
 
 # ===== ASYNC DATABASE FIXTURES =====
 
-# PostgreSQL test database URL
-TEST_DATABASE_URL = "postgresql+asyncpg://qontinui_user:qontinui_dev_password@localhost:5432/qontinui_test"
+# PostgreSQL test database URL (host:port overridable via QONTINUI_TEST_PG).
+TEST_DATABASE_URL = f"postgresql+asyncpg://{_TEST_PG_DSN}"
 
 # Session-scoped engine for reuse across tests
 _test_engine = None

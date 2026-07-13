@@ -7,7 +7,7 @@ Routes under ``/api/v1/scheduled-runs``:
 * ``GET    /scheduled-runs/{id}``   — detail
 * ``PATCH  /scheduled-runs/{id}``   — partial update
 * ``DELETE /scheduled-runs/{id}``   — delete
-* ``POST   /scheduled-runs/{id}/run-now`` — enqueue an immediate fire
+* ``POST   /scheduled-runs/{id}/run-now`` — fire immediately
 
 All endpoints are user-authenticated. CRUD ownership is enforced in the
 service layer (:mod:`app.crud.scheduled_workflow_run_crud`).
@@ -23,7 +23,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_active_user_async
-from app.celery_app import celery_app
 from app.crud import scheduled_workflow_run_crud as crud
 from app.models.user import User
 from app.schemas.scheduled_workflow_run import (
@@ -35,9 +34,6 @@ from app.schemas.scheduled_workflow_run import (
 logger = structlog.get_logger(__name__)
 
 router = APIRouter()
-
-
-SCHEDULED_DISPATCH_TASK_NAME = "app.tasks.scheduled_dispatch.fire"
 
 
 @router.post(
@@ -122,13 +118,13 @@ async def delete_scheduled_run(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_active_user_async),
 ) -> None:
-    """Delete a scheduled run (tears down the redbeat entry too)."""
+    """Delete a scheduled run. The row IS the schedule — nothing else to tear down."""
     await crud.delete_scheduled_run(db, current_user.id, run_id)
 
 
 @router.post(
     "/{run_id}/run-now",
-    status_code=status.HTTP_202_ACCEPTED,
+    status_code=status.HTTP_200_OK,
     summary="Fire a scheduled run immediately (bypasses the cron schedule)",
 )
 async def run_scheduled_run_now(
@@ -137,10 +133,23 @@ async def run_scheduled_run_now(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_active_user_async),
 ) -> dict[str, Any]:
-    """Enqueue the same Celery task redbeat would fire at cron time.
+    """Run the same dispatch the scheduler fires at cron time — synchronously.
 
-    Returns immediately with the task id — actual dispatch happens async.
+    Dispatch is one HTTP call to a runner, so we await it and return the REAL
+    outcome. The previous implementation enqueued a Celery task and returned a
+    ``task_id`` for work that — with no worker ever deployed — never executed.
+
+    A failed dispatch is an HTTP ERROR, not a 200 with ``status: "failed"`` in the
+    body. The caller asked us to run the workflow; if the runner is offline we
+    have not run it, and saying "200 OK" would be a lie the client cannot even
+    parse (it expects a dispatch payload and would dereference a missing
+    ``execution_id``). We surface the dispatcher's own status code instead.
+
+    Does NOT touch ``next_fire_at``: an out-of-band manual fire must not shift
+    the cron schedule.
     """
+    from app.jobs.scheduled_dispatch import fire_scheduled_run
+
     row = await crud.get_scheduled_run(db, current_user.id, run_id)
     if row is None:
         raise HTTPException(
@@ -148,17 +157,27 @@ async def run_scheduled_run_now(
             detail=f"Scheduled run not found: {run_id}",
         )
 
-    async_result = celery_app.send_task(
-        SCHEDULED_DISPATCH_TASK_NAME,
-        args=[str(row.id)],
+    result = await fire_scheduled_run(str(row.id))
+    outcome = result.get("status")
+    logger.info("scheduled_run_run_now_complete", run_id=str(run_id), status=outcome)
+
+    if outcome == "dispatched":
+        return {"scheduled_run_id": str(row.id), **result}
+
+    if outcome == "skipped":
+        # The row vanished or is disabled — we did not run it, and won't pretend to.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Scheduled run {run_id} was not fired: "
+                f"{result.get('reason', 'unavailable')}"
+            ),
+        )
+
+    # Dispatch failed. Re-raise with the dispatcher's own status where we have it
+    # (e.g. 503 runner_offline) so the client sees the true cause.
+    raise HTTPException(
+        status_code=int(result.get("status_code") or status.HTTP_502_BAD_GATEWAY),
+        detail=result.get("error")
+        or f"Dispatch failed: {result.get('reason', 'unknown')}",
     )
-    logger.info(
-        "scheduled_run_run_now_enqueued",
-        run_id=str(run_id),
-        task_id=async_result.id,
-    )
-    return {
-        "task_id": async_result.id,
-        "scheduled_run_id": str(row.id),
-        "enqueued_at": "now",
-    }

@@ -1,17 +1,21 @@
 // lib/api/snapshots.ts
+//
+// All requests route through `httpClient` (never bare `fetch`) so they carry
+// the `Authorization: Bearer` header and inherit the shared 401-refresh /
+// session-expiry handling. A bare fetch 401s in prod (Cognito bearer auth).
 
 import type {
   ImportSnapshotRequest,
   SnapshotRun,
   SnapshotListResponse,
 } from "@/types/snapshots";
+import { httpClient } from "@/services/service-factory";
 
 export async function importSnapshot(
   request: ImportSnapshotRequest
 ): Promise<SnapshotRun> {
-  const response = await fetch("/api/v1/snapshots/import", {
+  const response = await httpClient.fetch("/api/v1/snapshots/import", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(request),
   });
 
@@ -37,7 +41,7 @@ export async function listSnapshots(params?: {
     searchParams.set("workflow_id", params.workflow_id.toString());
   if (params?.tags) searchParams.set("tags", params.tags);
 
-  const response = await fetch(`/api/v1/snapshots?${searchParams}`);
+  const response = await httpClient.fetch(`/api/v1/snapshots?${searchParams}`);
 
   if (!response.ok) {
     throw new Error("Failed to fetch snapshots");
@@ -47,7 +51,7 @@ export async function listSnapshots(params?: {
 }
 
 export async function getSnapshot(runId: string): Promise<SnapshotRun> {
-  const response = await fetch(`/api/v1/snapshots/${runId}`);
+  const response = await httpClient.fetch(`/api/v1/snapshots/${runId}`);
 
   if (!response.ok) {
     throw new Error(`Snapshot ${runId} not found`);
@@ -60,7 +64,7 @@ export async function deleteSnapshot(
   runId: string,
   deleteFiles: boolean = false
 ): Promise<void> {
-  const response = await fetch(
+  const response = await httpClient.fetch(
     `/api/v1/snapshots/${runId}?delete_files=${deleteFiles}`,
     { method: "DELETE" }
   );

@@ -2,9 +2,17 @@
  * Batch Import API Client
  *
  * Functions for batch importing annotations from server directories.
+ *
+ * All requests route through `httpClient` (never bare `fetch`) so they carry
+ * the `Authorization: Bearer` header and inherit the shared 401-refresh /
+ * session-expiry handling. A bare fetch 401s in prod (Cognito bearer auth) —
+ * which is also why these functions no longer take a hand-plumbed `token`.
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
+import { httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
+
+const API_BASE = ApiConfig.API_BASE_URL;
 
 export interface FileInfo {
   filename: string;
@@ -69,24 +77,15 @@ export interface BatchImportResponse {
  */
 export async function listImportableFiles(
   directory: string,
-  recursive: boolean = false,
-  token?: string
+  recursive: boolean = false
 ): Promise<ListFilesResponse> {
   const params = new URLSearchParams({
     directory,
     recursive: String(recursive),
   });
 
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
-
-  const response = await fetch(
-    `${API_BASE}/api/v1/annotations/import/list-files?${params}`,
-    { headers }
+  const response = await httpClient.fetch(
+    `${API_BASE}/api/v1/annotations/import/list-files?${params}`
   );
 
   if (!response.ok) {
@@ -103,28 +102,22 @@ export async function listImportableFiles(
  * Batch import annotations from a server directory.
  */
 export async function batchImportFromServer(
-  request: BatchImportRequest,
-  token?: string
+  request: BatchImportRequest
 ): Promise<BatchImportResponse> {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
-
-  const response = await fetch(`${API_BASE}/api/v1/annotations/import/batch`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
-      directory: request.directory,
-      format: request.format || "auto",
-      recursive: request.recursive ?? false,
-      screenshot_width: request.screenshot_width || 1920,
-      screenshot_height: request.screenshot_height || 1080,
-      skip_duplicates: request.skip_duplicates ?? true,
-    }),
-  });
+  const response = await httpClient.fetch(
+    `${API_BASE}/api/v1/annotations/import/batch`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        directory: request.directory,
+        format: request.format || "auto",
+        recursive: request.recursive ?? false,
+        screenshot_width: request.screenshot_width || 1920,
+        screenshot_height: request.screenshot_height || 1080,
+        skip_duplicates: request.skip_duplicates ?? true,
+      }),
+    }
+  );
 
   if (!response.ok) {
     const error = await response

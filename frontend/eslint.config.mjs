@@ -61,6 +61,30 @@ const eslintConfig = [
       "@qontinui-web/no-unredacted-sensitive-input": "error",
     },
   },
+  {
+    // API clients under `src/lib/api/` must go through `httpClient` (see
+    // `@/services/service-factory`), never a bare `fetch`. A bare fetch sends
+    // no `Authorization: Bearer` header, so in prod (Cognito bearer auth) the
+    // request 401s — that is how the Workflows list came to render the literal
+    // string `UNAUTHORIZED`. `httpClient.fetch` attaches the bearer, the CSRF
+    // token and the shared 401-refresh / session-expiry handling.
+    files: ["src/lib/api/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "CallExpression[callee.name='fetch']",
+          message:
+            "Bare fetch() is banned in src/lib/api/ — it sends no Bearer token and 401s in prod. Use httpClient.fetch() from @/services/service-factory.",
+        },
+        {
+          selector: "MemberExpression[object.name='window'][property.name='fetch']",
+          message:
+            "Bare window.fetch is banned in src/lib/api/ — use httpClient.fetch() from @/services/service-factory.",
+        },
+      ],
+    },
+  },
 ];
 
 export default eslintConfig;
