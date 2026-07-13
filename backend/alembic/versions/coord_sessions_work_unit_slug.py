@@ -1,7 +1,7 @@
 """coord.sessions.work_unit_slug — EXPAND half of the plan_slug → work_unit_slug rename
 
 Revision ID: coord_sessions_work_unit_slug
-Revises: coord_memory_synthesis_jobs
+Revises: coord_prompt_injection_events
 Create Date: 2026-07-13
 
 Stage 2a of plan
@@ -93,7 +93,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_sessions_work_unit_slug"
-down_revision: str | Sequence[str] | None = "coord_memory_synthesis_jobs"
+down_revision: str | Sequence[str] | None = "coord_prompt_injection_events"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
