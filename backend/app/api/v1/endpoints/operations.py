@@ -4532,6 +4532,38 @@ async def delete_coord_policy(
     )
 
 
+@router.put("/coord/policies/system/{system_rule_id}/override")
+async def put_coord_policy_override(
+    system_rule_id: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Upsert this tenant's override of a system built-in rule (disable or
+    customize). Tenant-admin only.
+
+    Body is either ``{"disabled": true|false}`` (toggle the built-in for this
+    tenant) or a full customized policy body (``name``/``kind``/``condition``/
+    ``action`` + optional ``priority``/``rationale``). Coord derives the tenant
+    from the bearer and returns its 4xx (validation, not-a-built-in) verbatim.
+    """
+    return await _proxy_coord_put(
+        f"/coord/policies/system/{system_rule_id}/override",
+        body,
+        tenant_id=tenant_id,
+    )
+
+
+@router.delete("/coord/policies/system/{system_rule_id}/override")
+async def delete_coord_policy_override(
+    system_rule_id: str,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Revert this tenant's override of a system built-in rule. Tenant-admin only."""
+    return await _proxy_coord_delete(
+        f"/coord/policies/system/{system_rule_id}/override", tenant_id=tenant_id
+    )
+
+
 @router.get("/coord/composition-rules")
 async def list_composition_rules(
     tenant_id: UUID = Depends(get_tenant_id),
