@@ -186,15 +186,6 @@ export const devNavItems: NavItem[] = [
     productMode: "ai",
   },
   {
-    id: "state-machine-dev",
-    label: "State Machine",
-    description: "UI Bridge state machine builder",
-    icon: React.createElement(Network, { className: "size-5" }),
-    route: "/automation-builder/ui-bridge-states",
-    color: "var(--brand-secondary)",
-    productMode: "ai",
-  },
-  {
     id: "build-flow-designer",
     label: "Flow Designer",
     description: "AI-assisted workflow structure designer",
@@ -217,16 +208,6 @@ export const devNavItems: NavItem[] = [
   // Visual Automation (visible in "visual" product mode)
   // Flattened as top-level items with group labels for the visual mode sidebar.
   // ===========================================================================
-  {
-    id: "visual-automation-execute",
-    label: "Execute",
-    description: "GUI automation control surface",
-    icon: React.createElement(Play, { className: "size-5" }),
-    route: "/tools/visual-automation",
-    color: "#10B981",
-    productMode: "visual",
-    group: "Run",
-  },
   {
     id: "visual-automation-monitor",
     label: "Monitor",
@@ -655,21 +636,6 @@ export const devNavItems: NavItem[] = [
         productMode: "visual",
       },
     ],
-  },
-
-  // ===========================================================================
-  // AI-Dev Coordination (member-visible — Developers view the coord layer)
-  // ===========================================================================
-  {
-    id: "ai-dev-coordination",
-    label: "AI-Dev Coordination",
-    description: "Coordination layer — fleet, plans, gates, merge queue",
-    icon: React.createElement(Network, { className: "size-5" }),
-    route: "/admin/coord",
-    color: "#06B6D4",
-    group: "Runners",
-    // No adminOnly: any authenticated member can reach the coord pages;
-    // mutation controls are gated on coord_is_admin per-page.
   },
 
   // ===========================================================================
