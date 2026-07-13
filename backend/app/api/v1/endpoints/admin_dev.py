@@ -1,14 +1,25 @@
-"""Superuser dev-overview proxy — gates & rollout dashboard backend.
+"""Tenant-member dev-overview proxy — gates & rollout dashboard backend.
 
-A single read-only proxy endpoint backing the superuser "gates & rollout"
+A single read-only proxy endpoint backing the "gates & rollout"
 dashboard at ``/admin/coord/gates`` in the operator console. It forwards to
 coord's ``GET /coord/dev-overview`` (which emits the gates + rollout
 contract consumed by the frontend ``admin-dev-service``).
 
-Auth posture: ``require_admin`` (superuser) is the hard web-side gate and is
-NEVER weakened. The page itself lives behind the console's superuser gate
-too; this is defense in depth. Coord additionally authorizes on the
-forwarded caller bearer.
+Auth posture: the tenant-scoped reads (``/admin-dev/overview`` and
+``/admin-dev/prs``) are viewable by ANY AUTHENTICATED TENANT MEMBER
+(``get_current_active_user_async`` — authn only, no superuser and no coord
+role required). The console is a read-only, tenant-scoped VIEW: coord scopes
+those gate/rollout/PR queries to the caller's effective tenant on the
+forwarded bearer, so it is the tenant-scoping authority and the old
+web-side superuser gate was over-restrictive (it contradicted the console's
+documented "any tenant member may VIEW, read-only" design). Dropping it does
+NOT widen data access — coord still authorizes and scopes by tenant. The
+EXCEPTION is ``/admin-dev/release-verdict``, which stays ``require_admin``
+(operator-only): the release verdict is fleet-wide operator-infrastructure
+state (coord/web service deploys), not tenant-partitioned, so it must not be
+opened to tenant members. Mutating routes remain gated elsewhere
+(``require_coord_tenant_admin``); this module is
+read-only.
 
 Total-outage hardening (Phase 3): the handler must NOT hard-depend on coord
 identity resolution succeeding. Earlier this endpoint depended on
@@ -70,6 +81,7 @@ from app.api.coord_proxy import (
     _extract_caller_token,
     _proxy_coord_get,
 )
+from app.api.deps import get_current_active_user_async
 from app.models.user import User
 from app.services.coord_identity import get_coord_identity
 
@@ -216,8 +228,9 @@ async def _capture_bearer_best_effort(request: Request) -> str | None:
       bearer (``forward_bearer=True``) so the overview's own degradation
       surfaces the banner.
 
-    This is NOT an auth gate — ``require_admin`` (superuser) remains the hard
-    web-side gate on the handler and is unaffected.
+    This is NOT an auth gate — the handler's authn dependency
+    (``get_current_active_user_async``, any authenticated tenant member) is
+    the web-side gate and is unaffected; coord scopes the data by tenant.
     """
     _caller_bearer.set(_extract_caller_token(request))
     selection = (request.headers.get(ACTIVE_TENANT_HEADER) or "").strip() or None
@@ -272,7 +285,9 @@ async def get_dev_overview(
         "⇒ no shadow filter.",
     ),
     tenant_key: str | None = Depends(_capture_bearer_best_effort),
-    _admin: User = Depends(require_admin),  # superuser gate (hard, never weakened)
+    _user: User = Depends(
+        get_current_active_user_async
+    ),  # any authenticated tenant member
 ) -> Any:
     """Proxy coord's ``GET /coord/dev-overview`` (gates + rollout overview).
 
@@ -379,7 +394,9 @@ async def get_prs(
         "before then.",
     ),
     _tenant_key: str | None = Depends(_capture_bearer_best_effort),
-    _admin: User = Depends(require_admin),  # superuser gate (hard, never weakened)
+    _user: User = Depends(
+        get_current_active_user_async
+    ),  # any authenticated tenant member
 ) -> Any:
     """Proxy coord's ``GET /pr-merge/prs`` (open PRs + merge status).
 
@@ -392,11 +409,13 @@ async def get_prs(
     effective tenant; the dependency is retained purely for those
     header captures.
 
-    Mirrors ``get_dev_overview``'s auth + degradation posture exactly:
-    ``require_admin`` (superuser) is the hard web-side gate, the bearer is
-    captured best-effort so a coord-down identity resolution never 502s in
-    the dependency, and ``forward_bearer=True`` forwards the bearer even when
-    the tenant is unresolved. When coord is unreachable/degraded
+    Mirrors ``get_dev_overview``'s auth + degradation posture exactly: the
+    web-side gate is authn only (``get_current_active_user_async`` — any
+    authenticated tenant member; coord scopes the list to the caller's
+    effective tenant), the bearer is captured best-effort so a coord-down
+    identity resolution never 502s in the dependency, and
+    ``forward_bearer=True`` forwards the bearer even when the tenant is
+    unresolved. When coord is unreachable/degraded
     (connect-refused → 502, timeout → 504, etc.) the endpoint returns an
     empty ``{prs, total, coord_error}`` envelope rather than re-raising the
     5xx, so the dashboard renders a clear "coord unavailable" state.
@@ -443,7 +462,9 @@ def _empty_release_verdict(detail: str) -> dict[str, Any]:
 @router.get("/admin-dev/release-verdict")
 async def get_release_verdict(
     _tenant_key: str | None = Depends(_capture_bearer_best_effort),
-    _admin: User = Depends(require_admin),  # superuser gate (hard, never weakened)
+    _admin: User = Depends(
+        require_admin
+    ),  # operator-only: verdict is fleet-wide, not tenant-scoped
 ) -> Any:
     """Proxy coord's ``GET /coord/twin/release/verdict`` (per-surface deploy state).
 
@@ -457,9 +478,14 @@ async def get_release_verdict(
     the operator identity; the dependency is retained purely for those
     header captures.
 
-    Mirrors ``get_prs``'s auth + degradation posture exactly: ``require_admin``
-    (superuser) is the hard web-side gate, the bearer is captured best-effort so
-    a coord-down identity resolution never 502s in the dependency, and
+    Auth: ``require_admin`` (operator/superuser) — UNLIKE ``get_overview`` /
+    ``get_prs``, this read is NOT relaxed to tenant members. The release
+    verdict is fleet-wide (deploy surfaces are the operator's own services —
+    coord/web — not per-tenant), so it carries no tenant-scoped meaning for a
+    developer and coord does not tenant-partition it; opening it to any member
+    would expose operator infrastructure state cross-tenant. It shares
+    ``get_prs``'s degradation posture: the bearer is captured best-effort so a
+    coord-down identity resolution never 502s in the dependency, and
     ``forward_bearer=True`` forwards the bearer even when the tenant is
     unresolved. When coord is unreachable/degraded (connect-refused → 502,
     timeout → 504, etc.) the endpoint returns an empty

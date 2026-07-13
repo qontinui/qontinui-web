@@ -5768,6 +5768,36 @@
         "title": "CiStatusResponse",
         "type": "object"
       },
+      "ClaimSynthesisJobsRequest": {
+        "description": "``POST /memory/synthesis-jobs/claim`` body.",
+        "properties": {
+          "limit": {
+            "default": 4,
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "title": "ClaimSynthesisJobsRequest",
+        "type": "object"
+      },
+      "ClaimSynthesisJobsResponse": {
+        "properties": {
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/SynthesisJobOut"
+            },
+            "title": "Jobs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "jobs"
+        ],
+        "title": "ClaimSynthesisJobsResponse",
+        "type": "object"
+      },
       "ClaudeSessionInfo": {
         "description": "Info about a single Claude Code session.",
         "properties": {
@@ -19018,6 +19048,21 @@
           "hostname": {
             "title": "Hostname",
             "type": "string"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
           }
         },
         "required": [
@@ -19026,7 +19071,8 @@
           "device_name",
           "hostname",
           "freshness",
-          "deployed_at"
+          "deployed_at",
+          "updated_at"
         ],
         "title": "FreshnessRow",
         "type": "object"
@@ -23353,6 +23399,298 @@
         "title": "MatchLocation",
         "type": "object"
       },
+      "MemoryQueryHit": {
+        "description": "One fused retrieval hit.",
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "cosine_similarity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cosine Similarity"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "fts_rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fts Rank"
+          },
+          "importance": {
+            "title": "Importance",
+            "type": "number"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "memory_id": {
+            "format": "uuid",
+            "title": "Memory Id",
+            "type": "string"
+          },
+          "rrf_score": {
+            "title": "Rrf Score",
+            "type": "number"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "source": {
+            "additionalProperties": true,
+            "title": "Source",
+            "type": "object"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "vector_rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vector Rank"
+          }
+        },
+        "required": [
+          "memory_id",
+          "title",
+          "content",
+          "kind",
+          "scope",
+          "importance",
+          "created_at",
+          "source",
+          "rrf_score"
+        ],
+        "title": "MemoryQueryHit",
+        "type": "object"
+      },
+      "MemoryQueryRequest": {
+        "description": "``POST /memory/query`` body \u2014 hybrid RRF retrieval parameters.",
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "kinds": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "observation",
+                    "fact",
+                    "mental_model",
+                    "episode",
+                    "feedback",
+                    "reference",
+                    "rule"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kinds"
+          },
+          "limit": {
+            "default": 8,
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "min_importance": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Importance"
+          },
+          "query_text": {
+            "maxLength": 8192,
+            "minLength": 1,
+            "title": "Query Text",
+            "type": "string"
+          },
+          "scope_ref": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Ref"
+          },
+          "scopes": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "tenant",
+                    "runner",
+                    "agent",
+                    "session"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scopes"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          }
+        },
+        "required": [
+          "query_text"
+        ],
+        "title": "MemoryQueryRequest",
+        "type": "object"
+      },
+      "MemoryQueryResponse": {
+        "properties": {
+          "hits": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryQueryHit"
+            },
+            "title": "Hits",
+            "type": "array"
+          }
+        },
+        "required": [
+          "hits"
+        ],
+        "title": "MemoryQueryResponse",
+        "type": "object"
+      },
+      "MemoryRecordIn": {
+        "description": "One record in a batch write.",
+        "properties": {
+          "content": {
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "importance": {
+            "default": 0.5,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Importance",
+            "type": "number"
+          },
+          "kind": {
+            "enum": [
+              "observation",
+              "fact",
+              "mental_model",
+              "episode",
+              "feedback",
+              "reference",
+              "rule"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "scope": {
+            "default": "tenant",
+            "enum": [
+              "tenant",
+              "runner",
+              "agent",
+              "session"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "scope_ref": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Ref"
+          },
+          "source": {
+            "additionalProperties": true,
+            "title": "Source",
+            "type": "object"
+          },
+          "title": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "content",
+          "kind"
+        ],
+        "title": "MemoryRecordIn",
+        "type": "object"
+      },
       "MemoryRestoreRequest": {
         "description": "`POST /coord/memory/:name/restore` body.",
         "properties": {
@@ -23387,6 +23725,65 @@
           "version"
         ],
         "title": "MemoryRestoreRequest",
+        "type": "object"
+      },
+      "MemoryStatsResponse": {
+        "description": "``GET /memory/stats`` \u2014 usage + quota posture for the tenant.",
+        "properties": {
+          "bytes": {
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "embedding_coverage": {
+            "title": "Embedding Coverage",
+            "type": "number"
+          },
+          "quota_bytes": {
+            "title": "Quota Bytes",
+            "type": "integer"
+          },
+          "quota_rows": {
+            "title": "Quota Rows",
+            "type": "integer"
+          },
+          "quota_utilization": {
+            "title": "Quota Utilization",
+            "type": "number"
+          },
+          "row_count": {
+            "title": "Row Count",
+            "type": "integer"
+          },
+          "synthesis_jobs_claimed": {
+            "default": 0,
+            "title": "Synthesis Jobs Claimed",
+            "type": "integer"
+          },
+          "synthesis_jobs_done": {
+            "default": 0,
+            "title": "Synthesis Jobs Done",
+            "type": "integer"
+          },
+          "synthesis_jobs_failed": {
+            "default": 0,
+            "title": "Synthesis Jobs Failed",
+            "type": "integer"
+          },
+          "synthesis_jobs_pending": {
+            "default": 0,
+            "title": "Synthesis Jobs Pending",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "row_count",
+          "bytes",
+          "embedding_coverage",
+          "quota_bytes",
+          "quota_rows",
+          "quota_utilization"
+        ],
+        "title": "MemoryStatsResponse",
         "type": "object"
       },
       "MemoryUpsertRequest": {
@@ -24435,8 +24832,13 @@
         "type": "object"
       },
       "OnboardingClaimRequest": {
-        "description": "Body for ``POST /pr-merge/onboarding/claim``.\n\n``code`` \u2014 the short-lived GitHub OAuth code from the Setup-URL redirect.\n``installation_id`` \u2014 the GitHub App installation id from the same\nredirect. Both are echoed verbatim to coord's claim endpoint.",
+        "description": "Body for ``POST /pr-merge/onboarding/claim``.\n\n``code`` \u2014 the short-lived GitHub OAuth code from the Setup-URL redirect.\n``installation_id`` \u2014 the GitHub App installation id from the same\nredirect. Both are echoed verbatim to coord's claim endpoint.\n``bind_only`` \u2014 when true, coord binds the account WITHOUT enrolling its\nrepos (no bootstrap PRs); for the clone-only path. Defaults false =\nbind + enroll (today's behavior).",
         "properties": {
+          "bind_only": {
+            "default": false,
+            "title": "Bind Only",
+            "type": "boolean"
+          },
           "code": {
             "title": "Code",
             "type": "string"
@@ -35536,6 +35938,127 @@
         "title": "StorageQuotaResponse",
         "type": "object"
       },
+      "SupersedeRequest": {
+        "description": "``POST /memory/records/{id}/supersede`` body.\n\n``title``/``content`` are the replacement; every omitted field is\ninherited from the record being superseded.",
+        "properties": {
+          "content": {
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "importance": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Importance"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "observation",
+                  "fact",
+                  "mental_model",
+                  "episode",
+                  "feedback",
+                  "reference",
+                  "rule"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "tenant",
+                  "runner",
+                  "agent",
+                  "session"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope"
+          },
+          "scope_ref": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Ref"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "title": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "content"
+        ],
+        "title": "SupersedeRequest",
+        "type": "object"
+      },
+      "SupersedeResponse": {
+        "properties": {
+          "deduped": {
+            "title": "Deduped",
+            "type": "boolean"
+          },
+          "memory_id": {
+            "format": "uuid",
+            "title": "Memory Id",
+            "type": "string"
+          },
+          "superseded_memory_id": {
+            "format": "uuid",
+            "title": "Superseded Memory Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "memory_id",
+          "superseded_memory_id",
+          "deduped"
+        ],
+        "title": "SupersedeResponse",
+        "type": "object"
+      },
       "SyncLockReleaseRequest": {
         "description": "Request to release a sync lock.",
         "properties": {
@@ -35640,6 +36163,77 @@
           "expires_at"
         ],
         "title": "SyncLockResponse",
+        "type": "object"
+      },
+      "SynthesisJobOut": {
+        "description": "One claimed job \u2014 exactly what the runner needs to synthesize.\n\nThe runner distills ``member_texts`` into a single mental-model text\nand posts it back to ``/synthesis-jobs/{job_id}/result``; it never\nreads the memory store directly.",
+        "properties": {
+          "job_id": {
+            "format": "uuid",
+            "title": "Job Id",
+            "type": "string"
+          },
+          "member_texts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Member Texts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "job_id",
+          "member_texts"
+        ],
+        "title": "SynthesisJobOut",
+        "type": "object"
+      },
+      "SynthesisResultRequest": {
+        "description": "``POST /memory/synthesis-jobs/{job_id}/result`` body.\n\nExactly one of ``result_text`` (success \u2014 the synthesized model) or\n``failure`` (the runner could not synthesize; the reason) must be\nset.",
+        "properties": {
+          "failure": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure"
+          },
+          "result_text": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Text"
+          }
+        },
+        "title": "SynthesisResultRequest",
+        "type": "object"
+      },
+      "SynthesisResultResponse": {
+        "properties": {
+          "status": {
+            "enum": [
+              "applied",
+              "recorded"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "SynthesisResultResponse",
         "type": "object"
       },
       "TaskRunAutomationCreate": {
@@ -44785,6 +45379,66 @@
         "title": "WriteConfigRequest",
         "type": "object"
       },
+      "WriteRecordResult": {
+        "description": "Per-record outcome, in request order.",
+        "properties": {
+          "deduped": {
+            "title": "Deduped",
+            "type": "boolean"
+          },
+          "memory_id": {
+            "format": "uuid",
+            "title": "Memory Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "memory_id",
+          "deduped"
+        ],
+        "title": "WriteRecordResult",
+        "type": "object"
+      },
+      "WriteRecordsRequest": {
+        "description": "``POST /memory/records`` body \u2014 a batch of at most 100 records.",
+        "properties": {
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryRecordIn"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Records",
+            "type": "array"
+          }
+        },
+        "required": [
+          "records"
+        ],
+        "title": "WriteRecordsRequest",
+        "type": "object"
+      },
+      "WriteRecordsResponse": {
+        "properties": {
+          "deduped_count": {
+            "title": "Deduped Count",
+            "type": "integer"
+          },
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/WriteRecordResult"
+            },
+            "title": "Records",
+            "type": "array"
+          }
+        },
+        "required": [
+          "records",
+          "deduped_count"
+        ],
+        "title": "WriteRecordsResponse",
+        "type": "object"
+      },
       "_CreateGroupBody": {
         "description": "Body for ``POST /coord/cognito/groups``.",
         "properties": {
@@ -46463,7 +47117,7 @@
     },
     "/api/v1/admin-dev/prs": {
       "get": {
-        "description": "Proxy coord's ``GET /pr-merge/prs`` (open PRs + merge status).\n\nPure passthrough: returns coord's JSON envelope verbatim \u2014 the\n``{prs, total}`` contract where each PR is already enriched coord-side\nwith a typed ``merge_status`` + ``blocking_summary`` (coord owns that\nshape; the web side computes nothing and renames nothing). The caller\nbearer and the tenant-switcher selection are forwarded so coord\nauthorizes on the operator identity and scopes the list to the\neffective tenant; the dependency is retained purely for those\nheader captures.\n\nMirrors ``get_dev_overview``'s auth + degradation posture exactly:\n``require_admin`` (superuser) is the hard web-side gate, the bearer is\ncaptured best-effort so a coord-down identity resolution never 502s in\nthe dependency, and ``forward_bearer=True`` forwards the bearer even when\nthe tenant is unresolved. When coord is unreachable/degraded\n(connect-refused \u2192 502, timeout \u2192 504, etc.) the endpoint returns an\nempty ``{prs, total, coord_error}`` envelope rather than re-raising the\n5xx, so the dashboard renders a clear \"coord unavailable\" state.\n\nUnlike the overview, this list is NOT cached: it reflects fast-moving PR\n+ CI state where stale data is misleading on a merge-readiness dashboard.",
+        "description": "Proxy coord's ``GET /pr-merge/prs`` (open PRs + merge status).\n\nPure passthrough: returns coord's JSON envelope verbatim \u2014 the\n``{prs, total}`` contract where each PR is already enriched coord-side\nwith a typed ``merge_status`` + ``blocking_summary`` (coord owns that\nshape; the web side computes nothing and renames nothing). The caller\nbearer and the tenant-switcher selection are forwarded so coord\nauthorizes on the operator identity and scopes the list to the\neffective tenant; the dependency is retained purely for those\nheader captures.\n\nMirrors ``get_dev_overview``'s auth + degradation posture exactly: the\nweb-side gate is authn only (``get_current_active_user_async`` \u2014 any\nauthenticated tenant member; coord scopes the list to the caller's\neffective tenant), the bearer is captured best-effort so a coord-down\nidentity resolution never 502s in the dependency, and\n``forward_bearer=True`` forwards the bearer even when the tenant is\nunresolved. When coord is unreachable/degraded\n(connect-refused \u2192 502, timeout \u2192 504, etc.) the endpoint returns an\nempty ``{prs, total, coord_error}`` envelope rather than re-raising the\n5xx, so the dashboard renders a clear \"coord unavailable\" state.\n\nUnlike the overview, this list is NOT cached: it reflects fast-moving PR\n+ CI state where stale data is misleading on a merge-readiness dashboard.",
         "operationId": "api_v1_admin_dev_prs_get",
         "parameters": [
           {
@@ -46515,7 +47169,7 @@
     },
     "/api/v1/admin-dev/release-verdict": {
       "get": {
-        "description": "Proxy coord's ``GET /coord/twin/release/verdict`` (per-surface deploy state).\n\nPure passthrough backing the always-visible deploy-status strip atop\n``/admin/coord/prs``: returns coord's release-verdict envelope verbatim \u2014\nthe ``{verdict: {surfaces: [{components: {...}}]}}`` contract where each\nsurface's per-surface drift state lives in ``surfaces[i].components`` (coord\nowns that shape; the web side computes nothing and renames nothing). The\nverdict is fleet-wide (deploy surfaces are not per-tenant); the caller\nbearer + tenant-switcher selection are forwarded so coord authorizes on\nthe operator identity; the dependency is retained purely for those\nheader captures.\n\nMirrors ``get_prs``'s auth + degradation posture exactly: ``require_admin``\n(superuser) is the hard web-side gate, the bearer is captured best-effort so\na coord-down identity resolution never 502s in the dependency, and\n``forward_bearer=True`` forwards the bearer even when the tenant is\nunresolved. When coord is unreachable/degraded (connect-refused \u2192 502,\ntimeout \u2192 504, etc.) the endpoint returns an empty\n``{verdict: {surfaces: []}, coord_error}`` envelope rather than re-raising\nthe 5xx, so neither the Spec CI crawl gate (which runs without a live coord)\nnor the dashboard ever sees a 5xx.\n\nLike ``get_prs``, this is NOT cached: it reflects fast-moving per-surface\ndeploy state where stale data is misleading on a \"is prod current?\" strip.",
+        "description": "Proxy coord's ``GET /coord/twin/release/verdict`` (per-surface deploy state).\n\nPure passthrough backing the always-visible deploy-status strip atop\n``/admin/coord/prs``: returns coord's release-verdict envelope verbatim \u2014\nthe ``{verdict: {surfaces: [{components: {...}}]}}`` contract where each\nsurface's per-surface drift state lives in ``surfaces[i].components`` (coord\nowns that shape; the web side computes nothing and renames nothing). The\nverdict is fleet-wide (deploy surfaces are not per-tenant); the caller\nbearer + tenant-switcher selection are forwarded so coord authorizes on\nthe operator identity; the dependency is retained purely for those\nheader captures.\n\nAuth: ``require_admin`` (operator/superuser) \u2014 UNLIKE ``get_overview`` /\n``get_prs``, this read is NOT relaxed to tenant members. The release\nverdict is fleet-wide (deploy surfaces are the operator's own services \u2014\ncoord/web \u2014 not per-tenant), so it carries no tenant-scoped meaning for a\ndeveloper and coord does not tenant-partition it; opening it to any member\nwould expose operator infrastructure state cross-tenant. It shares\n``get_prs``'s degradation posture: the bearer is captured best-effort so a\ncoord-down identity resolution never 502s in the dependency, and\n``forward_bearer=True`` forwards the bearer even when the tenant is\nunresolved. When coord is unreachable/degraded (connect-refused \u2192 502,\ntimeout \u2192 504, etc.) the endpoint returns an empty\n``{verdict: {surfaces: []}, coord_error}`` envelope rather than re-raising\nthe 5xx, so neither the Spec CI crawl gate (which runs without a live coord)\nnor the dashboard ever sees a 5xx.\n\nLike ``get_prs``, this is NOT cached: it reflects fast-moving per-surface\ndeploy state where stale data is misleading on a \"is prod current?\" strip.",
         "operationId": "api_v1_admin_dev_release_verdict_get",
         "responses": {
           "200": {
@@ -66376,6 +67030,355 @@
         ]
       }
     },
+    "/api/v1/memory/query": {
+      "post": {
+        "description": "Hybrid retrieval: pgvector cosine + websearch FTS, RRF-fused.\n\nBoth arms are tenant-bound and validity-filtered (tombstones out,\n``valid_from``/``valid_until`` against now() or ``as_of``).\n``agent``/``session``-scoped rows are only visible when the request\nnames those scopes AND supplies the matching ``scope_ref``.",
+        "operationId": "api_v1_memory_query_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryQueryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryQueryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Query Records",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/memory/records": {
+      "post": {
+        "description": "Batch-write memory records (\u2264100 per request).\n\nServer-side pipeline per batch: redact \u2192 hash \u2192 quota check (BEFORE\ninsert; 429 on exceed) \u2192 embed the non-deduplicated contents in one\nfastembed batch (on a worker thread) \u2192 ONE set-based insert deduping\non ``(tenant_id, content_hash)`` against live rows only.",
+        "operationId": "api_v1_memory_records_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WriteRecordsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriteRecordsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Write Records",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/memory/records/{memory_id}": {
+      "delete": {
+        "description": "Tombstone a record (``is_tombstone = true, valid_until = now()``).\n\n404 for records that don't exist in the caller's tenant.",
+        "operationId": "api_v1_memory_records_memory_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "memory_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Memory Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Record",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/memory/records/{memory_id}/supersede": {
+      "post": {
+        "description": "Replace a record: insert the successor, end the old row's validity.\n\n404 for records that don't exist in the caller's tenant (including\ncross-tenant ids \u2014 never disclosed).",
+        "operationId": "api_v1_memory_records_memory_id_supersede_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "memory_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Memory Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupersedeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupersedeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Supersede Record",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/memory/stats": {
+      "get": {
+        "description": "Usage + quota posture for the caller's tenant.",
+        "operationId": "api_v1_memory_stats_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryStatsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Memory Stats",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/memory/synthesis-jobs/claim": {
+      "post": {
+        "description": "A runner claims up to ``limit`` pending synthesis jobs (tenant-bound).\n\nConcurrent claims on the same tenant split the queue via\n``FOR UPDATE SKIP LOCKED`` \u2014 no job is ever handed to two runners.\nThe response carries only ``job_id`` + ``member_texts`` per job: the\nrunner distills the texts with its own LLM and posts the result to\n``/synthesis-jobs/{job_id}/result``.",
+        "operationId": "api_v1_memory_synthesis_jobs_claim_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaimSynthesisJobsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaimSynthesisJobsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Claim Synthesis Jobs",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/memory/synthesis-jobs/{job_id}/result": {
+      "post": {
+        "description": "The runner posts a synthesized model (success) or a failure reason.\n\nSuccess (``result_text``): the text is redacted, embedded with the\nLOCAL model, inserted as a ``mental_model`` row (``consolidated_from``\n= the cluster members, importance = best member + 0.1), and the\nmember rows are superseded \u2014 all in one transaction \u2192 ``applied``.\nFailure (``failure``): the job is marked failed \u2192 ``recorded``.\n404 when the job is not in the caller's tenant (never disclosed); 409\nwhen the job exists but is not in ``'claimed'`` status (already applied,\nrequeued by the reaper, or abandoned) \u2014 a runner may only post back for\na job it holds a live claim on.",
+        "operationId": "api_v1_memory_synthesis_jobs_job_id_result_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SynthesisResultRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SynthesisResultResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Submit Synthesis Result",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
     "/api/v1/notifications": {
       "get": {
         "description": "Get notifications for the current user.\n\nSupports filtering by type, read status, and project.",
@@ -68199,7 +69202,7 @@
     },
     "/api/v1/operations/coord/composition-rules": {
       "get": {
-        "description": "List the tenant's composition rules. Tenant-admin only.",
+        "description": "List the tenant's composition rules.\n\nRead-only, any authenticated tenant member (``get_tenant_id``, NOT\n``require_coord_tenant_admin``): coord's ``GET /coord/composition-rules``\ngates on tenant MEMBERSHIP only (its ``TenantId`` extractor), not the admin\nrole, and scopes the list to the caller's tenant \u2014 so the automation-rules\nread view is visible to developers. Writes below stay admin-gated.",
         "operationId": "api_v1_operations_coord_composition_rules_get",
         "responses": {
           "200": {
@@ -68869,7 +69872,7 @@
     },
     "/api/v1/operations/coord/policies": {
       "get": {
-        "description": "List the tenant's automation policies (rules). Tenant-admin only.",
+        "description": "List the tenant's automation policies (rules).\n\nRead-only, any authenticated tenant member (``get_tenant_id``, NOT\n``require_coord_tenant_admin``): coord's ``GET /coord/policies`` gates on\ntenant MEMBERSHIP only (its ``TenantId`` extractor), not the admin role,\nand scopes the list to the caller's tenant \u2014 so the console's read view is\nvisible to developers. Writes below stay admin-gated.",
         "operationId": "api_v1_operations_coord_policies_get",
         "responses": {
           "200": {
@@ -73608,7 +74611,7 @@
     },
     "/api/v1/operations/sessions/{session_id}/output": {
       "get": {
-        "description": "Fetch a session's recorded PTY output (Phase 8 read-only pane).\n\nBridges to coord's ``GET /sessions/:id/output[?tier=warm|cold][&limit=N]``.\nThe response envelope is::\n\n    {\n      \"session_id\": \"<uuid>\",\n      \"tier\": \"warm\" | \"cold\",\n      \"chunks\": [ { \"chunk_offset\": <i64>, \"payload_b64\": \"<base64>\" }, ... ],\n      \"count\": <int>\n    }\n\nEach chunk's ``payload_b64`` decodes to raw PTY bytes (already redacted\nrunner-side when the session opted into redaction). The dashboard fetches\nthe ``warm`` tier for the xterm bootstrap window then live-tails the\n``/sessions/:id/events`` SSE stream (``output_chunk`` frames carry the\nsame ``chunk_offset`` + ``payload_b64`` shape), de-duping by\n``chunk_offset``.\n\nGated on coord serving the Phase 8 output endpoints (PR #130). Until\nthose are deployed, coord returns an error for this path and the pane\nrenders its empty / unavailable state.",
+        "description": "Fetch a session's recorded output (Phase 8 read-only pane).\n\nBridges to coord's\n``GET /sessions/:id/output[?tier=warm|cold][&stream=pty|transcript][&limit=N]``.\nThe response envelope is::\n\n    {\n      \"session_id\": \"<uuid>\",\n      \"tier\": \"warm\" | \"cold\",\n      \"chunks\": [ { \"chunk_offset\": <i64>, \"payload_b64\": \"<base64>\" }, ... ],\n      \"count\": <int>\n    }\n\nEach chunk's ``payload_b64`` decodes to raw PTY bytes (already redacted\nrunner-side when the session opted into redaction). The dashboard fetches\nthe ``warm`` tier for the xterm bootstrap window then live-tails the\n``/sessions/:id/events`` SSE stream (``output_chunk`` frames carry the\nsame ``chunk_offset`` + ``payload_b64`` shape), de-duping by\n``chunk_offset``.\n\nGated on coord serving the Phase 8 output endpoints (PR #130). Until\nthose are deployed, coord returns an error for this path and the pane\nrenders its empty / unavailable state.",
         "operationId": "api_v1_operations_sessions_session_id_output_get",
         "parameters": [
           {
@@ -73637,6 +74640,24 @@
               ],
               "description": "`warm` (default) | `cold` \u2014 passthrough to coord.",
               "title": "Tier"
+            }
+          },
+          {
+            "description": "`pty` (default) | `transcript` \u2014 output stream selector, passthrough to coord (plan `2026-07-09-runner-session-history-cloud-sync` Phase 2).",
+            "in": "query",
+            "name": "stream",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "`pty` (default) | `transcript` \u2014 output stream selector, passthrough to coord (plan `2026-07-09-runner-session-history-cloud-sync` Phase 2).",
+              "title": "Stream"
             }
           },
           {
@@ -73686,6 +74707,55 @@
           }
         ],
         "summary": "Get Coord Session Output",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/sessions/{session_id}/restore-record": {
+      "get": {
+        "description": "Return the session's latest ``restore-record`` event (plus the\nlatest ``handoff_request``), derived from coord's events read.\n\nPhase 4 of plan ``2026-07-09-runner-session-history-cloud-sync``:\nrunners mirror each restore-registry record to coord as a\n``coord.session_events`` row with ``event_kind='restore-record'`` and\npayload ``{provider, authoritative_session_id, cwd, launch_command,\nrestore_tier, machine_id}``. The newest such event tells the dashboard\nhow resumable the session is (``restore_tier``: ``full`` restores the\nconversation via the provider's authoritative id; ``terminal_only``\nrestores terminal+cwd+command with a fresh conversation).\n\nCoord exposes session events ONLY as the SSE stream\n(``GET /sessions/:id/events`` \u2014 replay of the last 100 rows tagged\n``event: replay``, then a JetStream live-tail tagged ``event: live``).\nThere is no JSON events read to pass through, so this endpoint\nconsumes just the replay phase of that stream and reduces it: it\nkeeps the highest-``seq`` ``restore-record`` and ``handoff_request``\nrows, stopping at the first ``live`` frame or after a short idle gap\n(the replay is emitted in one eager burst at connect; coord's\nkeep-alive ping cadence is 15s, well above the idle window).\n\nHonesty note: the replay window is coord's last 100 events. A session\nwhose restore-record was pushed out of that window reads as \"no\nrestore-record\" here \u2014 the same answer a resuming runner would get\nfrom the same surface.\n\nResponse::\n\n    {\n      \"session_id\": \"<uuid>\",\n      \"restore_record\":  <SessionEventRow | null>,\n      \"handoff_request\": <SessionEventRow | null>\n    }",
+        "operationId": "api_v1_operations_sessions_session_id_restore_record_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Coord Session Restore Record Api V1 Operations Sessions  Session Id  Restore Record Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Coord Session Restore Record",
         "tags": [
           "operations"
         ]

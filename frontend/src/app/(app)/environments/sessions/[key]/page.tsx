@@ -28,7 +28,11 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { relativeTime } from "@/components/operations/utils";
+import { LiveTailPane } from "@/components/sessions/LiveTailPane";
+import { ResumePanel } from "@/components/sessions/ResumePanel";
+import { TranscriptPane } from "@/components/sessions/TranscriptPane";
 import {
   AgentSessionsApiError,
   resolveAgentSession,
@@ -139,6 +143,16 @@ function SessionCardView({ card }: { card: SessionCard }) {
           )}
         </div>
 
+        {/* Restore capability + "Resume here…" (plan
+            `2026-07-09-runner-session-history-cloud-sync`, Phase 4).
+            Reads the session's newest `restore-record` event and offers
+            the Phase-7 handoff toward a picked target device. */}
+        <ResumePanel
+          sessionId={card.id}
+          sessionClosed={card.status === "closed"}
+          currentDeviceId={card.device_id}
+        />
+
         {/* Working-on summary */}
         {card.summary && <p className="text-sm">{card.summary}</p>}
 
@@ -213,6 +227,34 @@ function SessionCardView({ card }: { card: SessionCard }) {
             </ul>
           </div>
         )}
+
+        {/* Session content — Transcript + Live tail (plan
+            `2026-07-09-runner-session-history-cloud-sync`, Phases 2 + 6).
+            Both panes read coord's `GET /sessions/:id/output` (+ the
+            `/events` SSE stream) through the web-backend operations
+            proxy, keyed on the card's session id — coord's read path
+            resolves the twin session key via
+            `coord.sessions.claude_code_session_id` (plan §3.2 join key).
+            Inactive tab content is unmounted by Radix, so the SSE
+            connection only exists while "Live tail" is open. */}
+        <Tabs defaultValue="transcript">
+          <TabsList>
+            <TabsTrigger value="transcript">Transcript</TabsTrigger>
+            <TabsTrigger value="live-tail">Live tail</TabsTrigger>
+          </TabsList>
+          <TabsContent value="transcript" className="mt-3">
+            <TranscriptPane
+              sessionId={card.id}
+              sessionClosed={card.status === "closed"}
+            />
+          </TabsContent>
+          <TabsContent value="live-tail" className="mt-3">
+            <LiveTailPane
+              sessionId={card.id}
+              sessionClosed={card.status === "closed"}
+            />
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );
@@ -284,8 +326,7 @@ export default function SessionDetailPage() {
         <div className="text-center py-12">
           <AlertTriangle className="size-10 mx-auto mb-3 text-muted-foreground" />
           <p className="text-sm text-muted-foreground">
-            No session matches{" "}
-            <span className="font-mono">{decodedKey}</span>.
+            No session matches <span className="font-mono">{decodedKey}</span>.
           </p>
         </div>
       ) : loadError ? (

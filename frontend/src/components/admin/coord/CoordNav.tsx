@@ -36,6 +36,7 @@ import {
   Workflow,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/auth-context";
 
 interface NavItem {
   href: string;
@@ -43,6 +44,17 @@ interface NavItem {
   icon: typeof Activity;
   testId: string;
   external?: boolean;
+  /**
+   * Operator-infrastructure-only tab — cross-tenant / fleet-wide surfaces with
+   * no tenant-scoped meaning for a developer (fleet health, worktrees, deploys,
+   * federation, raw git ops, session spawn, operator memory, global merge
+   * settings, GitHub-App onboarding). Rendered only for operators
+   * (`user.is_superuser`). Tenant-relevant tabs (PRs, gates, lands, plans,
+   * alerts, history, policies, automation rules, pull decisions, members,
+   * questions, agents) carry no flag and render for every authenticated member;
+   * the backend enforces tenant scoping on their data.
+   */
+  operatorOnly?: boolean;
 }
 
 const PRIMARY_TABS: NavItem[] = [
@@ -51,12 +63,14 @@ const PRIMARY_TABS: NavItem[] = [
     label: "Fleet",
     icon: Activity,
     testId: "coord-nav-fleet",
+    operatorOnly: true,
   },
   {
     href: "/admin/coord/trees",
     label: "Trees",
     icon: Boxes,
     testId: "coord-nav-trees",
+    operatorOnly: true,
   },
   {
     href: "/admin/coord/plans",
@@ -81,6 +95,7 @@ const PRIMARY_TABS: NavItem[] = [
     label: "Spawn",
     icon: Rocket,
     testId: "coord-nav-spawn",
+    operatorOnly: true,
   },
   {
     href: "/admin/coord/questions",
@@ -105,18 +120,21 @@ const PRIMARY_TABS: NavItem[] = [
     label: "Memory",
     icon: BookOpen,
     testId: "coord-nav-memory",
+    operatorOnly: true,
   },
   {
     href: "/admin/coord/federation",
     label: "Federation",
     icon: GitMerge,
     testId: "coord-nav-federation",
+    operatorOnly: true,
   },
   {
     href: "/admin/coord/git-ops",
     label: "Git Ops",
     icon: GitBranch,
     testId: "coord-nav-git-ops",
+    operatorOnly: true,
   },
   {
     href: "/admin/coord/lands",
@@ -129,6 +147,7 @@ const PRIMARY_TABS: NavItem[] = [
     label: "Deploys",
     icon: Rocket,
     testId: "coord-nav-deploys",
+    operatorOnly: true,
   },
   {
     href: "/admin/coord/history",
@@ -159,6 +178,7 @@ const PRIMARY_TABS: NavItem[] = [
     label: "Onboarding",
     icon: Plug,
     testId: "coord-nav-onboarding",
+    operatorOnly: true,
   },
   {
     // Zero-touch onboarding status (P4) — per-repo doctor checklist. Also
@@ -169,12 +189,14 @@ const PRIMARY_TABS: NavItem[] = [
     label: "Onboarding Status",
     icon: Stethoscope,
     testId: "coord-nav-onboarding-status",
+    operatorOnly: true,
   },
   {
     href: "/admin/coord/merge-settings",
     label: "Merge Settings",
     icon: GitMerge,
     testId: "coord-nav-merge-settings",
+    operatorOnly: true,
   },
   {
     href: "/admin/coord/members",
@@ -203,6 +225,18 @@ const CROSS_LINKS: NavItem[] = [
 
 export default function CoordNav() {
   const pathname = usePathname() ?? "";
+  const { user } = useAuth();
+
+  // Operator-infra tabs are cross-tenant/fleet-wide surfaces — gate them on
+  // `is_superuser` (the operator axis), matching the other operator-only admin
+  // pages in this app (architecture / datasets / automation-rules / …).
+  // `isCoordAdmin` is deliberately NOT used here: it also grants coord-*tenant*
+  // admins, and it is the app's convention for tenant-scoped *mutation* control
+  // gating (see CoordAdminOnly.tsx), not for hiding operator-infra navigation.
+  const isOperator = user?.is_superuser === true;
+  const visibleTabs = PRIMARY_TABS.filter(
+    (item) => !item.operatorOnly || isOperator
+  );
 
   const renderItem = (item: NavItem) => {
     const Icon = item.icon;
@@ -234,7 +268,7 @@ export default function CoordNav() {
       className="flex items-center gap-1 flex-wrap px-3 sm:px-6 py-2 border-b border-border bg-card overflow-x-auto"
     >
       <div className="flex items-center gap-1 flex-wrap">
-        {PRIMARY_TABS.map(renderItem)}
+        {visibleTabs.map(renderItem)}
       </div>
       <div
         className="mx-1 sm:mx-3 h-5 w-px bg-border hidden sm:block"
