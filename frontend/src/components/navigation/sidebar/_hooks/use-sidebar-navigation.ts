@@ -27,8 +27,13 @@ import { useAdvancedAutomation } from "@/contexts/advanced-automation-context";
 // General "Show advanced automation features" toggle (setShowHiddenItems) on
 // BOTH apps — no web-local entry needed for them anymore.
 //
+// (The shared `memory` id is gone as of @qontinui/navigation 0.2.0 — it was
+// renamed `observations` and gated `platforms: ["runner"]` (its /observe/memory
+// route 404s on web), so it never reaches the web sidebar and needs no entry
+// here. Web's OWN `observations` item (/observations) is listed below.)
+//
 // What remains here is the set qontinui-web demotes but the runner KEEPS: the
-// task_run-scoped execution/review surfaces (runs/active/findings/memory) — a
+// task_run-scoped execution/review surfaces (runs/active/findings) — a
 // coord+sessions user works in `coord.sessions`, which produce no task_runs —
 // plus a handful of web-local nav ids that have no package entry
 // (scheduled-runs, state-machine-dev, build-flow-designer, review, inspector,
@@ -38,7 +43,6 @@ const WEB_ADVANCED_IDS = new Set<string>([
   "active",
   "runs",
   "run-findings",
-  "memory",
   "gui-automation",
   // web-local nav ids with no shared-package entry
   "scheduled-runs",
