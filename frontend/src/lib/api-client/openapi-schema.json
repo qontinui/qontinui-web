@@ -4664,6 +4664,174 @@
         "title": "CandidateUrlsResponse",
         "type": "object"
       },
+      "CanonicalChangeResponse": {
+        "description": "One audited canonical-designation change (newest-first in a list).\n\nThe \"records of who changed it and when\" for the team-sync model:\n``changed_by_user_id`` + ``changed_at`` + the ``from``/``to`` machine.\n``tenant_id`` is best-effort (the active-tenant context of the change).",
+        "properties": {
+          "changed_at": {
+            "title": "Changed At",
+            "type": "string"
+          },
+          "changed_by_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Changed By User Id"
+          },
+          "environment_id": {
+            "format": "uuid",
+            "title": "Environment Id",
+            "type": "string"
+          },
+          "from_machine_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Machine Id"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "tenant_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Id"
+          },
+          "to_machine_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Machine Id"
+          }
+        },
+        "required": [
+          "id",
+          "environment_id",
+          "changed_at"
+        ],
+        "title": "CanonicalChangeResponse",
+        "type": "object"
+      },
+      "CanonicalConfigResponse": {
+        "description": "The canonical config a runner PULLS to reconcile its own box toward.\n\nSecret-free by construction (the stored envelope already coerced\n``env_contract`` to present/absent). ``section_policy`` maps each section\nto what a pulling runner may do with it (apply / report secrets only /\nstop on destructive) \u2014 see :mod:`app.services.devenv_section_policy`.\n\n``canonical_machine_id`` is ``None`` (and ``sections`` empty) only if no\ncanonical is set \u2014 the endpoint 422s that case before building this, so in\npractice these are always populated.",
+        "properties": {
+          "canonical_machine_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canonical Machine Id"
+          },
+          "canonical_machine_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canonical Machine Name"
+          },
+          "captured_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captured At"
+          },
+          "environment_id": {
+            "format": "uuid",
+            "title": "Environment Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Version"
+          },
+          "section_policy": {
+            "additionalProperties": {
+              "enum": [
+                "applyable",
+                "secret_report_only",
+                "destructive_confirm",
+                "report_only"
+              ],
+              "type": "string"
+            },
+            "title": "Section Policy",
+            "type": "object"
+          },
+          "sections": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "title": "Sections",
+            "type": "object"
+          }
+        },
+        "required": [
+          "environment_id"
+        ],
+        "title": "CanonicalConfigResponse",
+        "type": "object"
+      },
       "CaptureActionCreate": {
         "description": "Schema for creating a user action.",
         "properties": {
@@ -57467,6 +57635,59 @@
         ]
       }
     },
+    "/api/v1/devenv/agent/environments/{environment_id}/canonical-config": {
+      "get": {
+        "description": "Return the environment's canonical config for a machine to PULL.\n\nThis is the read side of the pull model: a runner fetches the canonical\nmachine's (secret-free) config envelope plus a per-section apply policy,\nthen \u2014 by a LOCAL decision on that box \u2014 reconciles its own environment\ntoward it. Machine-key authenticated; the environment must belong to the\ncalling machine's owner (else 404, never leaking existence).\n\n422 ``no_canonical_machine`` when no canonical is set (mirrors the\nuser-side drift endpoint). The payload is secret-free by construction \u2014\nthe stored envelope already coerced ``env_contract`` to present/absent.",
+        "operationId": "api_v1_devenv_agent_environments_environment_id_canonical_config_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Environment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Machine-Key",
+            "required": true,
+            "schema": {
+              "title": "X-Machine-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanonicalConfigResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Canonical Config",
+        "tags": [
+          "environments-agent"
+        ]
+      }
+    },
     "/api/v1/devenv/agent/environments/{environment_id}/config": {
       "put": {
         "description": "Upsert the calling machine's config for an environment.\n\nThe environment must be owned by the machine's owner (else 404 \u2014 never\nleak existence). The :class:`ConfigEnvelope` validator has already\napplied the secret backstop (env_contract values coerced to\npresent/absent; nested non-string section values rejected) by the time\nthis body runs, so the stored config is secret-safe.",
@@ -57978,7 +58199,7 @@
     },
     "/api/v1/devenv/environments/{environment_id}/canonical": {
       "put": {
-        "description": "Designate a machine as the canonical source of truth for an env.\n\nValidates the machine is owned by the caller AND has reported a config\nrow for this environment (a machine with no config can't be a useful\nsource of truth). Atomic single-column update.",
+        "description": "Designate a machine as the canonical source of truth for an env.\n\nValidates the machine is owned by the caller AND has reported a config\nrow for this environment (a machine with no config can't be a useful\nsource of truth). Atomic single-column update, plus an append to the\n``canonical_change_log`` audit trail (who/when/from->to) \u2014 the team-sync\nmodel requires every canonical change to be attributable. A no-op change\n(re-designating the machine that is already canonical) is not recorded.",
         "operationId": "api_v1_devenv_environments_environment_id_canonical_put",
         "parameters": [
           {
@@ -58030,6 +58251,59 @@
           }
         ],
         "summary": "Set Canonical Machine",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/v1/devenv/environments/{environment_id}/canonical-history": {
+      "get": {
+        "description": "List the environment's canonical-designation changes, newest first.\n\nAnswers \"who made this the canonical environment, and when.\" Owner-scoped\nlike every other route here (cross-owner env id -> 404).",
+        "operationId": "api_v1_devenv_environments_environment_id_canonical_history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Environment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CanonicalChangeResponse"
+                  },
+                  "title": "Response Get Canonical History Api V1 Devenv Environments  Environment Id  Canonical History Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Canonical History",
         "tags": [
           "environments"
         ]
