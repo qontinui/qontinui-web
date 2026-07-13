@@ -15,12 +15,17 @@ PERMISSION_HIERARCHY = {
     PermissionLevel.ADMIN: 3,
 }
 
-# Team role hierarchy (for organization management)
+# Team role hierarchy (for organization management).
+# HELPER ranks strictly below VIEWER: helpers only get the /help portal and
+# must never satisfy any org-management/dev permission check (which all
+# require at least VIEWER). The unknown-role sentinel used by
+# `check_role_level` is -1, so HELPER gets 0 and the rest shift up.
 ROLE_HIERARCHY = {
-    TeamRole.VIEWER: 0,
-    TeamRole.MEMBER: 1,
-    TeamRole.ADMIN: 2,
-    TeamRole.OWNER: 3,
+    TeamRole.HELPER: 0,
+    TeamRole.VIEWER: 1,
+    TeamRole.MEMBER: 2,
+    TeamRole.ADMIN: 3,
+    TeamRole.OWNER: 4,
 }
 
 

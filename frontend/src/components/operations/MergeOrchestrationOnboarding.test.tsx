@@ -1,16 +1,21 @@
 /**
- * Tests for the onboarding wizard's paired-elsewhere UX (Phase 1b of plan
- * `2026-07-02-multi-tenant-device-pairing-reconsideration`).
+ * Tests for the onboarding wizard's paired-elsewhere UX.
  *
- * One runner device serves one tenant at a time — coord's extended
- * precondition-status returns `paired_elsewhere` (devices the calling user
- * has paired to a DIFFERENT tenant). Under test:
- *   - PairDeviceStep renders a visible warning + requires an explicit
- *     inline "Pair anyway" confirmation before pair-start fires;
- *   - empty/absent `paired_elsewhere` (older coord) degrades to today's
- *     one-click flow;
- *   - the step-2 paired indicator says "paired to a different tenant"
- *     instead of the ambiguous bare "waiting".
+ * Pairing is ADDITIVE m:n (plan
+ * `2026-07-02-session-scoped-multi-tenant-device-binding` Phase 3/9,
+ * repurposing the Phase-1b blocking warning from
+ * `2026-07-02-multi-tenant-device-pairing-reconsideration`): a runner
+ * device serves many tenants concurrently, and pairing here ADDS a
+ * binding without touching the others. Under test:
+ *   - PairDeviceStep renders a purely INFORMATIONAL note when
+ *     `paired_elsewhere` is non-empty — no confirmation gate, pair-start
+ *     fires on the first click;
+ *   - empty/absent `paired_elsewhere` (older coord) renders no note and
+ *     the same one-click flow;
+ *   - repeated entries for one hostname (one per binding) collapse into a
+ *     single line with the binding count;
+ *   - the step-2 paired indicator says "paired elsewhere — pair here to
+ *     add" instead of the ambiguous bare "waiting".
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -47,7 +52,7 @@ const ELSEWHERE = [
   },
 ];
 
-describe("<PairDeviceStep> paired-elsewhere confirmation", () => {
+describe("<PairDeviceStep> paired-elsewhere informational note", () => {
   beforeEach(() => {
     fetchMock.mockReset();
   });
@@ -56,7 +61,7 @@ describe("<PairDeviceStep> paired-elsewhere confirmation", () => {
     fetchMock.mockResolvedValue(jsonResponse(PAIR_START_OK));
     render(<PairDeviceStep onPaired={() => {}} pairedElsewhere={[]} />);
 
-    expect(screen.queryByTestId("paired-elsewhere-warning")).toBeNull();
+    expect(screen.queryByTestId("paired-elsewhere-info")).toBeNull();
     fireEvent.click(screen.getByTestId("start-pairing-button"));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
@@ -71,35 +76,30 @@ describe("<PairDeviceStep> paired-elsewhere confirmation", () => {
     fetchMock.mockResolvedValue(jsonResponse(PAIR_START_OK));
     render(<PairDeviceStep onPaired={() => {}} />);
 
-    expect(screen.queryByTestId("paired-elsewhere-warning")).toBeNull();
+    expect(screen.queryByTestId("paired-elsewhere-info")).toBeNull();
     fireEvent.click(screen.getByTestId("start-pairing-button"));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
   });
 
-  it("shows the steal warning and does NOT call pair-start until 'Pair anyway'", async () => {
+  it("shows the additive-pairing note and pair-start fires on the FIRST click (no confirmation gate)", async () => {
     fetchMock.mockResolvedValue(jsonResponse(PAIR_START_OK));
     render(
       <PairDeviceStep onPaired={() => {}} pairedElsewhere={ELSEWHERE} />
     );
 
-    // Warning is visible BEFORE pairing starts, naming the device.
-    const warning = screen.getByTestId("paired-elsewhere-warning");
-    expect(warning.textContent).toContain("spaceship");
-    expect(warning.textContent).toContain(
-      "is currently paired to a different tenant"
+    // Informational note is visible, naming the device — additive copy,
+    // no steal language.
+    const note = screen.getByTestId("paired-elsewhere-info");
+    expect(note.textContent).toContain("spaceship");
+    expect(note.textContent).toContain("also serves 1 other tenant");
+    expect(note.textContent).toContain(
+      "Pairing here adds this tenant — existing pairings are unaffected"
     );
-    expect(warning.textContent).toContain(
-      "Pairing it here will unpair it there"
-    );
+    expect(note.textContent).not.toContain("unpair");
 
-    // First click only ARMS the confirmation — no network call.
+    // No confirmation gate exists: the first click starts pairing.
+    expect(screen.queryByTestId("pair-anyway-button")).toBeNull();
     fireEvent.click(screen.getByTestId("start-pairing-button"));
-    expect(fetchMock).not.toHaveBeenCalled();
-    const pairAnyway = screen.getByTestId("pair-anyway-button");
-    expect(pairAnyway.textContent).toContain("Pair anyway");
-
-    // Explicit confirm → pair-start fires and the pair code renders.
-    fireEvent.click(pairAnyway);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     const url = fetchMock.mock.calls[0][0] as string;
     expect(url).toContain("/coord/devices/pair-start");
@@ -108,19 +108,21 @@ describe("<PairDeviceStep> paired-elsewhere confirmation", () => {
     );
   });
 
-  it("cancel disarms the confirmation without pairing", () => {
+  it("collapses repeated hostname entries (one per binding) into a counted line", () => {
     render(
-      <PairDeviceStep onPaired={() => {}} pairedElsewhere={ELSEWHERE} />
+      <PairDeviceStep
+        onPaired={() => {}}
+        pairedElsewhere={[
+          ...ELSEWHERE,
+          { hostname: "spaceship", name: null, last_seen_at: null },
+        ]}
+      />
     );
 
-    fireEvent.click(screen.getByTestId("start-pairing-button"));
-    fireEvent.click(screen.getByText("Cancel"));
-
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(screen.queryByTestId("pair-anyway-button")).toBeNull();
-    expect(screen.getByTestId("start-pairing-button")).toBeTruthy();
-    // Warning stays visible — the situation hasn't changed.
-    expect(screen.getByTestId("paired-elsewhere-warning")).toBeTruthy();
+    const note = screen.getByTestId("paired-elsewhere-info");
+    expect(note.textContent).toContain("also serves 2 other tenants");
+    // One line per device, not per binding.
+    expect(screen.getAllByText("spaceship")).toHaveLength(1);
   });
 });
 
@@ -143,7 +145,7 @@ describe("<ClaudeCodeStep> paired indicator", () => {
     );
   });
 
-  it("says 'paired to a different tenant' when paired elsewhere", () => {
+  it("says 'paired elsewhere — pair here to add' when paired elsewhere", () => {
     render(
       <ClaudeCodeStep
         status={{ ...base, paired_elsewhere: ELSEWHERE }}
@@ -151,7 +153,7 @@ describe("<ClaudeCodeStep> paired indicator", () => {
       />
     );
     expect(screen.getByTestId("paired-indicator").textContent).toContain(
-      "paired to a different tenant"
+      "paired elsewhere — pair here to add"
     );
   });
 

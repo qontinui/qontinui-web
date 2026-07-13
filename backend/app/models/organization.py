@@ -22,12 +22,18 @@ from app.db.base import Base
 
 
 class TeamRole(StrEnum):
-    """Team member roles with hierarchical permissions"""
+    """Team member roles with hierarchical permissions.
+
+    HELPER ranks BELOW viewer: a helper is a non-technical contributor who
+    only gets access to the /help helper-task portal — no org-management or
+    dev permissions of any kind (helper-task-queue plan, Phase 1.4).
+    """
 
     OWNER = "owner"
     ADMIN = "admin"
     MEMBER = "member"
     VIEWER = "viewer"
+    HELPER = "helper"
 
 
 class PermissionLevel(StrEnum):

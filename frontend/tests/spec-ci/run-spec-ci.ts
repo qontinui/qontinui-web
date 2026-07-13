@@ -957,6 +957,11 @@ function routeForSpec(
     "docs-getting-started": "/docs/getting-started",
     "docs-web": "/docs/web",
     "docs-runner": "/docs/runner",
+    // The developer "Help & Documentation" page moved from /help to /help/docs
+    // when the helper-task portal took over /help (helper-task-queue Phase
+    // 1.4). The spec's content is unchanged — only its route moved, so the
+    // slug-to-route override re-points it (same pattern as the docs-* specs).
+    help: "/help/docs",
     // Admin per-agent log view is a dynamic [agent_id] route. Like demo-detail,
     // we target a fixed sentinel id so the route resolves deterministically.
     // The page fetches GET /operations/agent-logs/by-agent/<id>; a valid-but-

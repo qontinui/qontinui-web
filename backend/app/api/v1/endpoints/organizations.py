@@ -8,7 +8,7 @@ from typing import Any, cast
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_active_user_async
@@ -33,6 +33,7 @@ from app.schemas.collaboration import (
     TeamMemberResponse,
     TeamMemberUpdate,
 )
+from app.services.coord_helper_provisioning import provision_coord_helper_role
 from app.services.organization_service import organization_service
 from app.services.permissions.organization_access import (
     can_user_manage_organization,
@@ -354,11 +355,18 @@ async def list_invitations(
 @router.post("/invitations/accept", response_model=TeamMemberResponse)
 async def accept_invitation(
     *,
+    request: Request,
     db: AsyncSession = Depends(get_async_db),
     invitation_accept: InvitationAccept,
     current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
-    """Accept an invitation by token."""
+    """Accept an invitation by token.
+
+    Accepting a HELPER invite additionally attempts a best-effort coord
+    ``helper`` operator-role provisioning (helper-task-queue plan §9.4) —
+    see ``app.services.coord_helper_provisioning`` for what can and cannot
+    succeed today. Provisioning never blocks acceptance.
+    """
     invitation = await invitation_repo.get_by_token(db, invitation_accept.token)
     if not invitation:
         raise not_found_error("Invitation")
@@ -398,6 +406,16 @@ async def accept_invitation(
         org_id=invitation.organization_id,
         user_id=current_user.id,
     )
+    if invitation.role == TeamRole.HELPER.value:
+        # Best-effort coord `helper` operator-role provisioning — never
+        # blocks acceptance; outcome is logged for the operator.
+        outcome = await provision_coord_helper_role(request)
+        logger.info(
+            "helper_invite_coord_provisioning",
+            org_id=invitation.organization_id,
+            user_id=current_user.id,
+            outcome=outcome,
+        )
     return _member_response(member)
 
 

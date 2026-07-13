@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_active_user_async
@@ -39,6 +39,8 @@ from app.schemas.devenv import (
     ApplicationCreate,
     ApplicationResponse,
     ApplicationUpdate,
+    DispatchEnrollRequest,
+    DispatchEnrollResponse,
     EnvironmentCreate,
     EnvironmentDriftResponse,
     EnvironmentResponse,
@@ -52,6 +54,7 @@ from app.schemas.devenv import (
     SetMachineEnvironmentRequest,
 )
 from app.services import devenv_drift
+from app.services.coord_proxy import post_to_coord
 
 router = APIRouter()
 
@@ -209,6 +212,96 @@ async def create_machine(
     await db.refresh(machine)
     await db.commit()
     return MachineCreatedResponse.from_model(machine)
+
+
+@router.post(
+    "/machines/dispatch-enroll",
+    response_model=DispatchEnrollResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def dispatch_enroll(
+    payload: DispatchEnrollRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user_async),
+) -> DispatchEnrollResponse:
+    """Create a machine + dispatch an enroll directive to a paired runner.
+
+    Phase 3 (dispatched self-enroll): the operator picks an already-paired
+    coord device in the dashboard; the server mints the machine + one-time
+    code, binds it to the chosen device, then asks coord to publish an enroll
+    directive to that device's runner. The runner enrolls itself — no terminal,
+    no copy-paste.
+
+    The machine + code are ALWAYS created and returned, even if the dispatch is
+    rejected (device offline / unknown), so the UI can fall back to the
+    copy-paste command (Phase 1(b)). Coord's admin-gated route resolves the
+    operator from the forwarded Cognito bearer.
+    """
+    if await machine_repo.name_exists(db, owner_id=current_user.id, name=payload.name):
+        raise _conflict("machine_name_taken", "Machine name already in use.")
+    if payload.environment_id is not None and not await environment_repo.get(
+        db, owner_id=current_user.id, env_id=payload.environment_id
+    ):
+        raise _not_found("environment")
+
+    machine = await machine_repo.create(
+        db,
+        owner_id=current_user.id,
+        name=payload.name,
+        hostname=payload.hostname,
+        description=payload.description,
+        environment_id=payload.environment_id,
+    )
+    # Bind the machine to the chosen coord device up front (the dispatch flow
+    # knows the device; the copy-paste flow learns it only at enroll-consume).
+    machine.coord_device_id = payload.target_device_id
+    devenv_machine_crud.mint_enrollment_code(machine)
+    await db.flush()
+    await db.refresh(machine)
+    await db.commit()
+
+    created = MachineCreatedResponse.from_model(machine)
+
+    # Dispatch the enroll directive to the device's runner via coord. Best-effort:
+    # a rejection/timeout does NOT undo the machine — the operator falls back to
+    # the copy-paste command. `backend` is omitted so the runner resolves its web
+    # base from its own paired profile.
+    coord_body: dict[str, object] = {
+        "target_device_id": str(payload.target_device_id),
+        "enrollment_code": created.enrollment_code,
+        "machine_id": str(machine.id),
+    }
+    if machine.environment_id is not None:
+        coord_body["environment_id"] = str(machine.environment_id)
+
+    auth = request.headers.get("Authorization")
+    headers = {"Authorization": auth} if auth else {}
+
+    try:
+        resp = await post_to_coord(
+            "/devenv/enroll-dispatch",
+            headers=headers,
+            json_body=coord_body,
+            log_event="devenv_dispatch_enroll",
+            machine_id=str(machine.id),
+            target_device_id=str(payload.target_device_id),
+        )
+    except HTTPException as exc:
+        # Coord unreachable/timeout — the machine is valid; surface a soft
+        # failure so the UI offers the copy-paste fallback.
+        detail = exc.detail if isinstance(exc.detail, str) else "coord dispatch failed"
+        return DispatchEnrollResponse(
+            machine=created, dispatched=False, detail=str(detail)
+        )
+
+    if resp.status_code >= 400:
+        return DispatchEnrollResponse(
+            machine=created,
+            dispatched=False,
+            detail=f"coord rejected the dispatch (HTTP {resp.status_code})",
+        )
+    return DispatchEnrollResponse(machine=created, dispatched=True)
 
 
 @router.get("/machines", response_model=list[MachineResponse])

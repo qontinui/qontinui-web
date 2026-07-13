@@ -18,11 +18,13 @@
  * Admin-gating + CoordNav come from the /admin/coord layout.
  */
 
+import { ConnectGitHubOrg } from "@/components/operations/ConnectGitHubOrg";
 import { MergeOrchestrationOnboarding } from "@/components/operations/MergeOrchestrationOnboarding";
 
 export default function OnboardingPage() {
   return (
-    <div className="p-3 sm:p-6" data-testid="coord-onboarding-page">
+    <div className="p-3 sm:p-6 space-y-6" data-testid="coord-onboarding-page">
+      <ConnectGitHubOrg />
       <MergeOrchestrationOnboarding />
     </div>
   );

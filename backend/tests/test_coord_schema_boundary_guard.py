@@ -101,6 +101,21 @@ WRITE_PATH_FOLLOWUP: frozenset[str] = frozenset(
         # Cross-schema FK target → `coord.device_connections.id` on the
         # web-owned `software_test_run` table (device-write follow-up).
         "models/software_test_run.py",
+        # `{"schema": "coord"}` binding on the `TestTarget` ORM model — the
+        # fleet-fresh P5 test-host designation write path to `coord.test_targets`
+        # (same shared-Postgres posture as `Device` against `coord.devices`;
+        # a later plan moves this designation write onto coord HTTP and drains
+        # this entry).
+        "models/test_target.py",
+        # Tenant agentic memory (plan 2026-07-10-tenant-agentic-memory-web-
+        # backend, Phase 1): web OWNS the coord.memory_records substrate —
+        # its schema ships in web's own alembic migration
+        # (`coord_memory_records`) and the /api/v1/memory API is its sole
+        # reader/writer (same shared-Postgres posture as `Device` /
+        # `TestTarget`). Every memory_records / tenant_policies-quota SQL
+        # literal is concentrated in this one module so the allowlist stays
+        # a single entry.
+        "services/memory_store.py",
     }
 )
 # NOTE: files that mention `coord.*` only in DOCSTRINGS/comments (e.g.

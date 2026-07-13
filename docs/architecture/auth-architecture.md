@@ -522,7 +522,7 @@ AWS_ACCESS_KEY_ID=<key>
 AWS_SECRET_ACCESS_KEY=<secret>
 
 # Security
-ALLOWED_ORIGINS=https://app.qontinui.com
+ALLOWED_ORIGINS=https://qontinui.io
 MAX_DEVICES_PER_USER=5
 SESSION_INACTIVITY_DAYS=30
 ```

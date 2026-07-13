@@ -31,6 +31,8 @@ import {
   CalendarClock,
   GitCommitHorizontal,
   Boxes,
+  Download,
+  ListChecks,
 } from "lucide-react";
 import type { NavItem } from "./types";
 
@@ -61,6 +63,20 @@ export const devNavItems: NavItem[] = [
     description: "Online runners, session history, and auth tokens",
     icon: React.createElement(Server, { className: "size-5" }),
     route: "/runners",
+    color: "#10B981",
+    group: "Coordination",
+  },
+
+  // Download the Qontinui Runner desktop app. Points at the in-app /download
+  // page (resolves the latest release dynamically). The public marketing
+  // header links /runner/download; the app shell had no download entry until
+  // this item, so a logged-in user could not reach the installer from the menu.
+  {
+    id: "download-runner",
+    label: "Download Runner",
+    description: "Download the Qontinui Runner desktop app",
+    icon: React.createElement(Download, { className: "size-5" }),
+    route: "/download",
     color: "#10B981",
     group: "Coordination",
   },
@@ -101,6 +117,19 @@ export const devNavItems: NavItem[] = [
     description: "Cron-style workflow dispatches",
     icon: React.createElement(CalendarClock, { className: "size-5" }),
     route: "/scheduled-runs",
+    color: "#0EA5E9",
+    group: "Automation",
+  },
+  // Regression Tests — condition groups (natural-language checks) run on demand
+  // or on a schedule against a target URL. Visible to any authenticated user;
+  // talks to the always-registered httpClient via the `/api/v1/conditions/*`
+  // backend proxy.
+  {
+    id: "conditions",
+    label: "Regression Tests",
+    description: "Condition groups run on demand or on a schedule",
+    icon: React.createElement(ListChecks, { className: "size-5" }),
+    route: "/conditions",
     color: "#0EA5E9",
     group: "Automation",
   },

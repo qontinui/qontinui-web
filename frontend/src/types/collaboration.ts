@@ -37,7 +37,7 @@ export interface OrganizationStatistics {
   total_workflows: number;
 }
 
-export type MemberRole = "owner" | "admin" | "member" | "viewer";
+export type MemberRole = "owner" | "admin" | "member" | "viewer" | "helper";
 
 export interface TeamMember {
   id: string;

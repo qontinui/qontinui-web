@@ -25,7 +25,9 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { ConnectedOrgs } from "@/components/operations/ConnectedOrgs";
 import { OnboardingDoctor } from "@/components/operations/OnboardingDoctor";
 import { OPERATIONS_API } from "@/components/operations/utils";
 import { Badge } from "@/components/ui/badge";
@@ -96,6 +98,7 @@ export default function OnboardingStatusPage() {
   const searchParams = useSearchParams();
   const code = searchParams?.get("code") ?? null;
   const installationIdRaw = searchParams?.get("installation_id") ?? null;
+  const repo = searchParams?.get("repo") ?? null;
   // Only the OAuth-redirect shape (code + installation_id) triggers a claim;
   // the `?repo=` status-view path and bare visits fall through to the doctor.
   const hasClaimParams = !!code && !!installationIdRaw;
@@ -159,6 +162,26 @@ export default function OnboardingStatusPage() {
 
   return (
     <div className="p-3 sm:p-6 space-y-3" data-testid="coord-onboarding-status-page">
+      {/* Bare status/doctor visits (no claim params) get a subtle pointer back
+          to the primary self-serve entry point. Hidden during/after a claim so
+          it never competes with the claim result. */}
+      {phase === null && (
+        <p className="text-xs text-muted-foreground">
+          <Link
+            href="/admin/coord/onboarding"
+            className="underline underline-offset-4 hover:text-foreground"
+          >
+            New here? Connect your GitHub organization →
+          </Link>
+        </p>
+      )}
+
+      {/* Bare visit (no claim in flight/done, no `?repo=` deep-link): the
+          account-level "Connected organizations" summary. A connected org with
+          zero enrolled repos reads as success here (closing the empty-org
+          dead-end); each repo links to `?repo=` which loads the doctor below. */}
+      {phase === null && !repo && <ConnectedOrgs />}
+
       {phase === "claiming" && (
         <Card data-testid="onboarding-claim-claiming">
           <CardContent className="flex items-center gap-2 py-6 text-sm">
@@ -210,7 +233,7 @@ export default function OnboardingStatusPage() {
         post-claim follow-up in success/error. It is hidden only WHILE the
         claim POST is in flight so the operator sees a single clear state.
       */}
-      {phase !== "claiming" && <OnboardingDoctor />}
+      {phase !== "claiming" && <OnboardingDoctor key={repo ?? "bare"} />}
     </div>
   );
 }

@@ -2,11 +2,7 @@
 
 import React, { Suspense, useEffect } from "react";
 import nextDynamic from "next/dynamic";
-import {
-  useRouter,
-  usePathname,
-  useSearchParams,
-} from "next/navigation";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { AutomationProvider } from "@/contexts/automation-context/AutomationProviderV2";
 import { OrganizationProvider } from "@/contexts/organization-context";
@@ -22,6 +18,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { BetaBanner } from "@/components/beta-banner";
 import { useAuth } from "@/contexts/auth-context";
 import { MentionRealtimeSubscriber } from "@/app/(app)/strategy/_components/MentionRealtimeSubscriber";
+import { HelperRedirectGate } from "@/components/helper-portal/HelperRedirectGate";
 import { cn } from "@/lib/utils";
 
 // Dynamic imports with ssr:false to avoid hydration mismatches
@@ -107,7 +104,14 @@ function AppAuthGate({ children }: { children: React.ReactNode }) {
     return <AuthLoadingShell />;
   }
 
-  return <>{children}</>;
+  return (
+    <>
+      {/* Helper-task portal lock-in: helper-only users are bounced from
+          every (app) route to /help (helper-task-queue plan Phase 1.4). */}
+      <HelperRedirectGate />
+      {children}
+    </>
+  );
 }
 
 function AppLayoutContent({ children }: { children: React.ReactNode }) {
@@ -171,13 +175,13 @@ export default function AppLayout({
         <RealtimeConnectionsProvider>
           <ActiveRunnerProvider>
             <TenantProvider>
-            <SidebarProvider>
-              <ProductModeProvider>
-                <AdvancedAutomationProvider>
-                <AutomationProvider>
-                  <TabStateProvider>
-                    <AppInitializer>
-                      {/* Radix Tooltip.Root (our `Tooltip`) throws
+              <SidebarProvider>
+                <ProductModeProvider>
+                  <AdvancedAutomationProvider>
+                    <AutomationProvider>
+                      <TabStateProvider>
+                        <AppInitializer>
+                          {/* Radix Tooltip.Root (our `Tooltip`) throws
                           "must be used within TooltipProvider" at render under
                           @radix-ui/react-tooltip's Provider invariant. Mount a
                           single app-shell-level provider so every authenticated
@@ -185,15 +189,15 @@ export default function AppLayout({
                           renders a Tooltip without its own local provider (e.g.
                           /operations via CiStatusPanel/FleetOverview) crashes
                           into the ErrorBoundary and shows no content. */}
-                      <TooltipProvider>
-                        <AppLayoutContent>{children}</AppLayoutContent>
-                      </TooltipProvider>
-                    </AppInitializer>
-                  </TabStateProvider>
-                </AutomationProvider>
-                </AdvancedAutomationProvider>
-              </ProductModeProvider>
-            </SidebarProvider>
+                          <TooltipProvider>
+                            <AppLayoutContent>{children}</AppLayoutContent>
+                          </TooltipProvider>
+                        </AppInitializer>
+                      </TabStateProvider>
+                    </AutomationProvider>
+                  </AdvancedAutomationProvider>
+                </ProductModeProvider>
+              </SidebarProvider>
             </TenantProvider>
           </ActiveRunnerProvider>
         </RealtimeConnectionsProvider>

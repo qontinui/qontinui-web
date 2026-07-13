@@ -29,6 +29,14 @@ const ACTIVE_TENANT_URL_PREFIXES = [
   "/api/v1/operations/",
   "/api/v1/admin-dev/",
   "/api/v1/admin/agent-sessions",
+  // Helper-task portal proxy — coord-scoped; honoring the override lets a
+  // caller who is a coord member of another tenant point the portal at it.
+  "/api/v1/helper-tasks",
+  // Device pair-code mint — the code's tenant is burned server-side from
+  // the operator's coord identity, which honors this override (membership-
+  // gated coord-side). Forwarding it lets a multi-tenant operator pair a
+  // device to the tenant they've switched to, not just their home tenant.
+  "/api/v1/devices/pair-codes",
 ];
 
 function readActiveTenantId(): string | null {

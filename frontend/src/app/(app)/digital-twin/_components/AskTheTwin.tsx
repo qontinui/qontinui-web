@@ -55,19 +55,32 @@ export function AskTheTwin() {
   // session state advances.
   useEffect(() => {
     if (!queued) return;
+    // First question → ONE-SHOT: the twin-primed question IS the session's
+    // initial prompt, so the session's first turn is the answer. This avoids the
+    // fragile "create, then wait for `ready`, then sendMessage" handshake — the
+    // runner's chat session auto-responds to its first turn, and the terminal
+    // `ready` that the old flow waited on to send the real question was never
+    // reliably observed (the question stayed queued → busy stuck forever).
     if (!hasSessionRef.current && isConnected && sessionState === "disconnected") {
-      createSession("Digital Twin question");
+      createSession("Digital Twin question", TWIN_PREAMBLE + queued, queued);
+      sentCountRef.current += 1;
+      setQueued(null);
       return;
     }
-    if (sessionState === "ready") {
-      const isFirst = sentCountRef.current === 0;
-      sendMessage(isFirst ? TWIN_PREAMBLE + queued : queued);
+    // Follow-up question in an already-created session.
+    if (hasSessionRef.current && sessionState === "ready") {
+      sendMessage(queued);
       sentCountRef.current += 1;
       setQueued(null);
     }
   }, [queued, isConnected, sessionState, createSession, sendMessage]);
 
-  const busy = sessionState === "processing" || !!queued;
+  // Busy from submit until the answer finishes: `queued` (awaiting send),
+  // `processing`/`initializing` (session generating), or a live stream in flight.
+  // Not keyed on `queued` alone — the one-shot clears it immediately after
+  // createSession, so the stream/processing signals carry the rest.
+  const busy =
+    !!queued || sessionState === "processing" || !!streamingContent;
 
   const handleSubmit = useCallback(() => {
     const q = input.trim();

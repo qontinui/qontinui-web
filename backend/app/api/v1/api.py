@@ -39,6 +39,7 @@ from app.api.v1.endpoints import (
     code_packages,
     collaboration,
     collaboration_ws,
+    conditions,
     conflicts,
     constraints,
     custom_functions,
@@ -63,7 +64,9 @@ from app.api.v1.endpoints import (
     files_sharing,
     finding_categories,
     fleet_dispatch,
+    fleet_targets,
     health,
+    helper_tasks,
     historical,
     identity_resolution,
     images,
@@ -71,6 +74,7 @@ from app.api.v1.endpoints import (
     issues,
     known_issues,
     library,
+    memory,
     notifications,
     operations,
     organizations,
@@ -211,6 +215,13 @@ api_router.include_router(
 api_router.include_router(runner_wake.router, prefix="/device", tags=["device-wake"])
 # Operations — fleet aggregation + cross-machine Claude session monitoring.
 api_router.include_router(operations.router, prefix="/operations", tags=["operations"])
+# Helper-task portal proxy — coord-brokered human-judgment micro-tasks
+# (helper-task-queue plan Phase 1.4). Any authenticated user, incl. helpers.
+api_router.include_router(
+    helper_tasks.router, prefix="/helper-tasks", tags=["helper-tasks"]
+)
+# Condition groups (regression tests) — tenant-user coord proxy.
+api_router.include_router(conditions.router, prefix="/conditions", tags=["conditions"])
 # Digital Twin Explorer (Phase 1) — coord-backed completeness matrix.
 api_router.include_router(
     digital_twin.router, prefix="/digital-twin", tags=["digital-twin"]
@@ -348,6 +359,8 @@ api_router.include_router(
 api_router.include_router(
     fleet_dispatch.router, prefix="/dispatch", tags=["fleet-dispatch"]
 )
+# Fleet-fresh P5 — app config editor + test-host designation (coord.test_targets)
+api_router.include_router(fleet_targets.router, prefix="/fleet", tags=["fleet-targets"])
 # Scheduled workflow runs (cron-driven dispatch via celery-beat / redbeat)
 api_router.include_router(
     scheduled_runs.router,
@@ -358,6 +371,9 @@ api_router.include_router(
 api_router.include_router(
     semantic_search.router, prefix="/search", tags=["semantic-search"]
 )
+# Tenant agentic memory — write/query/supersede/stats over
+# coord.memory_records (plan 2026-07-10-tenant-agentic-memory, Phase 1).
+api_router.include_router(memory.router, prefix="/memory", tags=["memory"])
 # Library items (checks, check groups, shell commands, API requests, contexts, macros, prompt snippets)
 api_router.include_router(library.router, prefix="/library", tags=["library"])
 # Error monitor entries

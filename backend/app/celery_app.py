@@ -12,6 +12,7 @@ import os
 from typing import Any
 
 from celery import Celery  # type: ignore[import-not-found]
+from celery.schedules import crontab  # type: ignore[import-untyped]
 
 from app.core.config import settings
 
@@ -28,6 +29,10 @@ celery_app = Celery(
         "app.tasks",
         # Phase 3D — scheduled workflow dispatch task registered for redbeat.
         "app.tasks.scheduled_dispatch",
+        # Tenant agentic memory (plan 2026-07-10, Phases 4+5) — lifecycle
+        # sweeps (decay / consolidation / reindex) + the MEMORY.md bridge.
+        "app.tasks.memory_lifecycle",
+        "app.tasks.memory_bridge",
     ],
 )
 
@@ -61,6 +66,36 @@ celery_app.conf.beat_scheduler = "redbeat.RedBeatScheduler"
 celery_app.conf.redbeat_redis_url = REDIS_URL
 celery_app.conf.redbeat_lock_key = "qontinui:redbeat:lock"
 celery_app.conf.redbeat_key_prefix = "qontinui:redbeat:"
+
+# ---------------------------------------------------------------------------
+# Static beat schedule — tenant agentic-memory lifecycle + MEMORY.md bridge
+# (plan 2026-07-10-tenant-agentic-memory-web-backend, Phases 4+5).
+#
+# RedBeatScheduler loads these static ``beat_schedule`` entries alongside the
+# dynamic ``qontinui:schedule:*`` entries redbeat_manager maintains. Daily
+# sweeps run at low-traffic UTC hours; consolidation runs weekly on Sunday;
+# the bridge diff is cheap (key-set compare before any embedding) so it runs
+# every 15 minutes.
+# ---------------------------------------------------------------------------
+celery_app.conf.beat_schedule = {
+    "memory-lifecycle-decay-daily": {
+        "task": "app.tasks.memory_lifecycle.decay",
+        "schedule": crontab(minute=10, hour=3),
+    },
+    "memory-lifecycle-reindex-daily": {
+        "task": "app.tasks.memory_lifecycle.reindex",
+        "schedule": crontab(minute=40, hour=3),
+    },
+    "memory-lifecycle-consolidate-weekly": {
+        "task": "app.tasks.memory_lifecycle.consolidate",
+        # Sunday (day_of_week=0), 04:20 UTC.
+        "schedule": crontab(minute=20, hour=4, day_of_week=0),
+    },
+    "memory-bridge-sync": {
+        "task": "app.tasks.memory_bridge.sync",
+        "schedule": crontab(minute="*/15"),
+    },
+}
 
 # Task routing
 celery_app.conf.task_routes = {

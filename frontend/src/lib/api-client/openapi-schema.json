@@ -2079,6 +2079,95 @@
         "title": "AnnotationSetUpdate",
         "type": "object"
       },
+      "AppConfig": {
+        "description": "Registered app + its fleet-fresh config (``project.apps``).",
+        "properties": {
+          "app_id": {
+            "title": "App Id",
+            "type": "string"
+          },
+          "build_command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Build Command"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "repo_root": {
+            "title": "Repo Root",
+            "type": "string"
+          },
+          "start_command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Command"
+          },
+          "update_strategy": {
+            "$ref": "#/components/schemas/UpdateStrategyEnum"
+          }
+        },
+        "required": [
+          "app_id",
+          "display_name",
+          "repo_root",
+          "update_strategy"
+        ],
+        "title": "AppConfig",
+        "type": "object"
+      },
+      "AppConfigUpdate": {
+        "description": "Partial update of an app's fleet-fresh config.\n\nOnly the fields the operator edits from the fleet UI. ``None`` leaves a\nfield unchanged (build/start commands can be cleared by sending an empty\nstring).",
+        "properties": {
+          "build_command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Build Command"
+          },
+          "start_command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Command"
+          },
+          "update_strategy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpdateStrategyEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "AppConfigUpdate",
+        "type": "object"
+      },
       "ApplicationCreate": {
         "description": "Create an application.",
         "properties": {
@@ -6004,6 +6093,36 @@
         "title": "CiStatusResponse",
         "type": "object"
       },
+      "ClaimSynthesisJobsRequest": {
+        "description": "``POST /memory/synthesis-jobs/claim`` body.",
+        "properties": {
+          "limit": {
+            "default": 4,
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "title": "ClaimSynthesisJobsRequest",
+        "type": "object"
+      },
+      "ClaimSynthesisJobsResponse": {
+        "properties": {
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/SynthesisJobOut"
+            },
+            "title": "Jobs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "jobs"
+        ],
+        "title": "ClaimSynthesisJobsResponse",
+        "type": "object"
+      },
       "ClaudeSessionInfo": {
         "description": "Info about a single Claude Code session.",
         "properties": {
@@ -6267,6 +6386,20 @@
           "content_type"
         ],
         "title": "ClipboardPushRequest",
+        "type": "object"
+      },
+      "CloneCredentialRequest": {
+        "description": "Body for ``POST /operations/github/clone-credential`` \u2014 the ``owner/name``\nof the repo the runner wants a scoped clone token for.",
+        "properties": {
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "title": "CloneCredentialRequest",
         "type": "object"
       },
       "CodeExecutionRequest": {
@@ -12083,6 +12216,60 @@
         "title": "DeviceIdentityResponse",
         "type": "object"
       },
+      "DeviceMachineCredentialExchangeResponse": {
+        "description": "Response body for ``POST /api/v1/devices/{id}/machine-credential/exchange``.\n\nThe device JWT minted by coord (via web's trusted service token) in\nexchange for a valid ``dmk_``. Shape mirrors the ``token`` the runner\nalready stores from the pairing flow, so the runner reuses its existing\ndevice-JWT handling.",
+        "properties": {
+          "token": {
+            "description": "Coord-issued device-token JWT.",
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "DeviceMachineCredentialExchangeResponse",
+        "type": "object"
+      },
+      "DeviceMachineCredentialMintResponse": {
+        "description": "Response body for ``POST /api/v1/devices/{id}/machine-credential/mint``.\n\nDelivers the freshly minted plaintext ``dmk_`` key exactly ONCE (only its\nhash + prefix are persisted; the plaintext is unrecoverable after this\nresponse). The ``prefix`` is a non-secret display fragment the owner can\nuse to recognize the key; ``expires_at`` is when the key lapses (renewed\nopportunistically on each successful exchange).",
+        "properties": {
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "device_machine_key": {
+            "description": "Plaintext ``dmk_`` key \u2014 returned ONCE, never again.",
+            "title": "Device Machine Key",
+            "type": "string"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the key lapses (UTC), or null if none.",
+            "title": "Expires At"
+          },
+          "prefix": {
+            "description": "Non-secret display prefix (first 14 chars).",
+            "title": "Prefix",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "device_machine_key",
+          "prefix"
+        ],
+        "title": "DeviceMachineCredentialMintResponse",
+        "type": "object"
+      },
       "DeviceSessionSummary": {
         "description": "Simplified device session schema for user-facing API.\n\nHides sensitive information like device fingerprint.",
         "properties": {
@@ -13399,6 +13586,92 @@
           "transport"
         ],
         "title": "DispatchDeviceResponse",
+        "type": "object"
+      },
+      "DispatchEnrollRequest": {
+        "description": "Create a machine + dispatch an enroll directive to a paired runner.\n\nExtends :class:`MachineCreate` with the coord device to dispatch to. The\nserver mints the machine + one-time code, then asks coord to publish an\nenroll directive to that device's runner \u2014 no terminal, no copy-paste.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "environment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Id"
+          },
+          "hostname": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hostname"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "target_device_id": {
+            "format": "uuid",
+            "title": "Target Device Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "target_device_id"
+        ],
+        "title": "DispatchEnrollRequest",
+        "type": "object"
+      },
+      "DispatchEnrollResponse": {
+        "description": "Result of a dispatched enroll.\n\n``machine`` carries the created machine + its one-time code, so the UI can\nfall back to the copy-paste command when the runner is offline / the\ndispatch did not land. ``dispatched`` is True when coord accepted the\ndirective.",
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "dispatched": {
+            "title": "Dispatched",
+            "type": "boolean"
+          },
+          "machine": {
+            "$ref": "#/components/schemas/MachineCreatedResponse"
+          }
+        },
+        "required": [
+          "machine",
+          "dispatched"
+        ],
+        "title": "DispatchEnrollResponse",
         "type": "object"
       },
       "DispatchStatusResponse": {
@@ -19437,6 +19710,73 @@
         "title": "FreshHostResponse",
         "type": "object"
       },
+      "FreshnessRow": {
+        "description": "Per-(device, app) deployment freshness (``project.app_deploy_state``).",
+        "properties": {
+          "app_id": {
+            "title": "App Id",
+            "type": "string"
+          },
+          "deployed_at": {
+            "title": "Deployed At",
+            "type": "string"
+          },
+          "deployed_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deployed Sha"
+          },
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "device_name": {
+            "title": "Device Name",
+            "type": "string"
+          },
+          "freshness": {
+            "title": "Freshness",
+            "type": "string"
+          },
+          "hostname": {
+            "title": "Hostname",
+            "type": "string"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "app_id",
+          "device_name",
+          "hostname",
+          "freshness",
+          "deployed_at",
+          "updated_at"
+        ],
+        "title": "FreshnessRow",
+        "type": "object"
+      },
       "FunctionStats": {
         "description": "Custom function statistics for a project.",
         "properties": {
@@ -19953,6 +20293,42 @@
           }
         },
         "title": "HeartbeatBody",
+        "type": "object"
+      },
+      "HelperAnswerRequest": {
+        "description": "Body forwarded to coord ``POST /coord/helper-tasks/:id/answer``.\n\n``verdict`` values are coord's snake_case ``HelperVerdict`` enum\n(``approve`` / ``reject`` / ``not_sure`` for a spot-check; ``choice_a`` /\n``choice_b`` / ``choice_same`` for a compare). Coord validates the enum \u2014\nthe web layer only enforces shape.",
+        "properties": {
+          "free_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional free-text note (when the schema allows it)",
+            "title": "Free Text"
+          },
+          "reasons": {
+            "description": "Preset reason codes selected on a reject",
+            "items": {
+              "type": "string"
+            },
+            "title": "Reasons",
+            "type": "array"
+          },
+          "verdict": {
+            "description": "Helper verdict",
+            "minLength": 1,
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "verdict"
+        ],
+        "title": "HelperAnswerRequest",
         "type": "object"
       },
       "HistoricalResultResponse": {
@@ -20911,7 +21287,7 @@
         "type": "object"
       },
       "InvitationCreate": {
-        "description": "Schema for creating an invitation.",
+        "description": "Schema for creating an invitation.\n\nThe role allowlist is enforced HERE (the input schema) rather than on\n``InvitationBase`` so ``InvitationResponse`` never re-validates stored\nrows \u2014 legacy roles must still serialize.",
         "properties": {
           "email": {
             "description": "Email address to invite",
@@ -20921,7 +21297,7 @@
           },
           "role": {
             "default": "member",
-            "description": "Role to assign: admin, member, viewer",
+            "description": "Role to assign: admin, member, viewer, helper",
             "title": "Role",
             "type": "string"
           }
@@ -21030,7 +21406,7 @@
           },
           "role": {
             "default": "member",
-            "description": "Role to assign: admin, member, viewer",
+            "description": "Role to assign: admin, member, viewer, helper",
             "title": "Role",
             "type": "string"
           },
@@ -23883,6 +24259,298 @@
         "title": "MatchLocation",
         "type": "object"
       },
+      "MemoryQueryHit": {
+        "description": "One fused retrieval hit.",
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "cosine_similarity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cosine Similarity"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "fts_rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fts Rank"
+          },
+          "importance": {
+            "title": "Importance",
+            "type": "number"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "memory_id": {
+            "format": "uuid",
+            "title": "Memory Id",
+            "type": "string"
+          },
+          "rrf_score": {
+            "title": "Rrf Score",
+            "type": "number"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "source": {
+            "additionalProperties": true,
+            "title": "Source",
+            "type": "object"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "vector_rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vector Rank"
+          }
+        },
+        "required": [
+          "memory_id",
+          "title",
+          "content",
+          "kind",
+          "scope",
+          "importance",
+          "created_at",
+          "source",
+          "rrf_score"
+        ],
+        "title": "MemoryQueryHit",
+        "type": "object"
+      },
+      "MemoryQueryRequest": {
+        "description": "``POST /memory/query`` body \u2014 hybrid RRF retrieval parameters.",
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "kinds": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "observation",
+                    "fact",
+                    "mental_model",
+                    "episode",
+                    "feedback",
+                    "reference",
+                    "rule"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kinds"
+          },
+          "limit": {
+            "default": 8,
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "min_importance": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Importance"
+          },
+          "query_text": {
+            "maxLength": 8192,
+            "minLength": 1,
+            "title": "Query Text",
+            "type": "string"
+          },
+          "scope_ref": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Ref"
+          },
+          "scopes": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "tenant",
+                    "runner",
+                    "agent",
+                    "session"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scopes"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          }
+        },
+        "required": [
+          "query_text"
+        ],
+        "title": "MemoryQueryRequest",
+        "type": "object"
+      },
+      "MemoryQueryResponse": {
+        "properties": {
+          "hits": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryQueryHit"
+            },
+            "title": "Hits",
+            "type": "array"
+          }
+        },
+        "required": [
+          "hits"
+        ],
+        "title": "MemoryQueryResponse",
+        "type": "object"
+      },
+      "MemoryRecordIn": {
+        "description": "One record in a batch write.",
+        "properties": {
+          "content": {
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "importance": {
+            "default": 0.5,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Importance",
+            "type": "number"
+          },
+          "kind": {
+            "enum": [
+              "observation",
+              "fact",
+              "mental_model",
+              "episode",
+              "feedback",
+              "reference",
+              "rule"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "scope": {
+            "default": "tenant",
+            "enum": [
+              "tenant",
+              "runner",
+              "agent",
+              "session"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "scope_ref": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Ref"
+          },
+          "source": {
+            "additionalProperties": true,
+            "title": "Source",
+            "type": "object"
+          },
+          "title": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "content",
+          "kind"
+        ],
+        "title": "MemoryRecordIn",
+        "type": "object"
+      },
       "MemoryRestoreRequest": {
         "description": "`POST /coord/memory/:name/restore` body.",
         "properties": {
@@ -23917,6 +24585,65 @@
           "version"
         ],
         "title": "MemoryRestoreRequest",
+        "type": "object"
+      },
+      "MemoryStatsResponse": {
+        "description": "``GET /memory/stats`` \u2014 usage + quota posture for the tenant.",
+        "properties": {
+          "bytes": {
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "embedding_coverage": {
+            "title": "Embedding Coverage",
+            "type": "number"
+          },
+          "quota_bytes": {
+            "title": "Quota Bytes",
+            "type": "integer"
+          },
+          "quota_rows": {
+            "title": "Quota Rows",
+            "type": "integer"
+          },
+          "quota_utilization": {
+            "title": "Quota Utilization",
+            "type": "number"
+          },
+          "row_count": {
+            "title": "Row Count",
+            "type": "integer"
+          },
+          "synthesis_jobs_claimed": {
+            "default": 0,
+            "title": "Synthesis Jobs Claimed",
+            "type": "integer"
+          },
+          "synthesis_jobs_done": {
+            "default": 0,
+            "title": "Synthesis Jobs Done",
+            "type": "integer"
+          },
+          "synthesis_jobs_failed": {
+            "default": 0,
+            "title": "Synthesis Jobs Failed",
+            "type": "integer"
+          },
+          "synthesis_jobs_pending": {
+            "default": 0,
+            "title": "Synthesis Jobs Pending",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "row_count",
+          "bytes",
+          "embedding_coverage",
+          "quota_bytes",
+          "quota_rows",
+          "quota_utilization"
+        ],
+        "title": "MemoryStatsResponse",
         "type": "object"
       },
       "MemoryUpsertRequest": {
@@ -24965,8 +25692,13 @@
         "type": "object"
       },
       "OnboardingClaimRequest": {
-        "description": "Body for ``POST /pr-merge/onboarding/claim``.\n\n``code`` \u2014 the short-lived GitHub OAuth code from the Setup-URL redirect.\n``installation_id`` \u2014 the GitHub App installation id from the same\nredirect. Both are echoed verbatim to coord's claim endpoint.",
+        "description": "Body for ``POST /pr-merge/onboarding/claim``.\n\n``code`` \u2014 the short-lived GitHub OAuth code from the Setup-URL redirect.\n``installation_id`` \u2014 the GitHub App installation id from the same\nredirect. Both are echoed verbatim to coord's claim endpoint.\n``bind_only`` \u2014 when true, coord binds the account WITHOUT enrolling its\nrepos (no bootstrap PRs); for the clone-only path. Defaults false =\nbind + enroll (today's behavior).",
         "properties": {
+          "bind_only": {
+            "default": false,
+            "title": "Bind Only",
+            "type": "boolean"
+          },
           "code": {
             "title": "Code",
             "type": "string"
@@ -26142,6 +26874,18 @@
             "format": "uuid",
             "title": "Device Id",
             "type": "string"
+          },
+          "device_machine_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Long-lived device machine key (``dmk_<token>``) auto-minted at pairing so a runner offline past its Cognito refresh window can still exchange for a device JWT with no user session (4b cold-start recovery). Returned ONCE \u2014 the plaintext is unrecoverable thereafter. ``None`` when auto-mint is unavailable (the runner falls back to the interactive re-login path).",
+            "title": "Device Machine Key"
           },
           "token": {
             "description": "Coord-issued device-token JWT.",
@@ -36488,6 +37232,127 @@
         "title": "SubscriptionResponse",
         "type": "object"
       },
+      "SupersedeRequest": {
+        "description": "``POST /memory/records/{id}/supersede`` body.\n\n``title``/``content`` are the replacement; every omitted field is\ninherited from the record being superseded.",
+        "properties": {
+          "content": {
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "importance": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Importance"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "observation",
+                  "fact",
+                  "mental_model",
+                  "episode",
+                  "feedback",
+                  "reference",
+                  "rule"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "tenant",
+                  "runner",
+                  "agent",
+                  "session"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope"
+          },
+          "scope_ref": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Ref"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "title": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "content"
+        ],
+        "title": "SupersedeRequest",
+        "type": "object"
+      },
+      "SupersedeResponse": {
+        "properties": {
+          "deduped": {
+            "title": "Deduped",
+            "type": "boolean"
+          },
+          "memory_id": {
+            "format": "uuid",
+            "title": "Memory Id",
+            "type": "string"
+          },
+          "superseded_memory_id": {
+            "format": "uuid",
+            "title": "Superseded Memory Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "memory_id",
+          "superseded_memory_id",
+          "deduped"
+        ],
+        "title": "SupersedeResponse",
+        "type": "object"
+      },
       "SyncLockReleaseRequest": {
         "description": "Request to release a sync lock.",
         "properties": {
@@ -36592,6 +37457,77 @@
           "expires_at"
         ],
         "title": "SyncLockResponse",
+        "type": "object"
+      },
+      "SynthesisJobOut": {
+        "description": "One claimed job \u2014 exactly what the runner needs to synthesize.\n\nThe runner distills ``member_texts`` into a single mental-model text\nand posts it back to ``/synthesis-jobs/{job_id}/result``; it never\nreads the memory store directly.",
+        "properties": {
+          "job_id": {
+            "format": "uuid",
+            "title": "Job Id",
+            "type": "string"
+          },
+          "member_texts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Member Texts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "job_id",
+          "member_texts"
+        ],
+        "title": "SynthesisJobOut",
+        "type": "object"
+      },
+      "SynthesisResultRequest": {
+        "description": "``POST /memory/synthesis-jobs/{job_id}/result`` body.\n\nExactly one of ``result_text`` (success \u2014 the synthesized model) or\n``failure`` (the runner could not synthesize; the reason) must be\nset.",
+        "properties": {
+          "failure": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure"
+          },
+          "result_text": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Text"
+          }
+        },
+        "title": "SynthesisResultRequest",
+        "type": "object"
+      },
+      "SynthesisResultResponse": {
+        "properties": {
+          "status": {
+            "enum": [
+              "applied",
+              "recorded"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "SynthesisResultResponse",
         "type": "object"
       },
       "SystemMetrics": {
@@ -38391,7 +39327,7 @@
         "description": "Schema for adding a team member.",
         "properties": {
           "role": {
-            "description": "Member role: owner, admin, member, viewer",
+            "description": "Member role: owner, admin, member, viewer, helper",
             "title": "Role",
             "type": "string"
           },
@@ -38491,7 +39427,7 @@
             "type": "object"
           },
           "role": {
-            "description": "Member role: owner, admin, member, viewer",
+            "description": "Member role: owner, admin, member, viewer, helper",
             "title": "Role",
             "type": "string"
           },
@@ -39866,6 +40802,102 @@
           "recorded_at"
         ],
         "title": "TestRunResultResponse",
+        "type": "object"
+      },
+      "TestTargetDesignation": {
+        "description": "Body for designating a device as a test host for an app.",
+        "properties": {
+          "auto_fresh": {
+            "default": false,
+            "description": "When true, the runner keeps this device's build of the app current (auto-pull + optional rebuild).",
+            "title": "Auto Fresh",
+            "type": "boolean"
+          }
+        },
+        "title": "TestTargetDesignation",
+        "type": "object"
+      },
+      "TestTargetRow": {
+        "description": "A designated (device, app) test host, joined with device + freshness.",
+        "properties": {
+          "app_id": {
+            "title": "App Id",
+            "type": "string"
+          },
+          "auto_fresh": {
+            "title": "Auto Fresh",
+            "type": "boolean"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "deployed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deployed At"
+          },
+          "deployed_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deployed Sha"
+          },
+          "derived_status": {
+            "title": "Derived Status",
+            "type": "string"
+          },
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "device_name": {
+            "title": "Device Name",
+            "type": "string"
+          },
+          "freshness": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Freshness"
+          },
+          "hostname": {
+            "title": "Hostname",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "app_id",
+          "auto_fresh",
+          "device_name",
+          "hostname",
+          "derived_status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "TestTargetRow",
         "type": "object"
       },
       "TestingSettingsSchema": {
@@ -42901,6 +43933,15 @@
         "title": "UnreadCountResponse",
         "type": "object"
       },
+      "UpdateStrategyEnum": {
+        "description": "How the runner keeps a designated host's build of an app current.",
+        "enum": [
+          "pull_only",
+          "pull_build"
+        ],
+        "title": "UpdateStrategyEnum",
+        "type": "string"
+      },
       "UploadResponse": {
         "description": "Response after upload",
         "properties": {
@@ -45832,6 +46873,66 @@
         "title": "WriteConfigRequest",
         "type": "object"
       },
+      "WriteRecordResult": {
+        "description": "Per-record outcome, in request order.",
+        "properties": {
+          "deduped": {
+            "title": "Deduped",
+            "type": "boolean"
+          },
+          "memory_id": {
+            "format": "uuid",
+            "title": "Memory Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "memory_id",
+          "deduped"
+        ],
+        "title": "WriteRecordResult",
+        "type": "object"
+      },
+      "WriteRecordsRequest": {
+        "description": "``POST /memory/records`` body \u2014 a batch of at most 100 records.",
+        "properties": {
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryRecordIn"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Records",
+            "type": "array"
+          }
+        },
+        "required": [
+          "records"
+        ],
+        "title": "WriteRecordsRequest",
+        "type": "object"
+      },
+      "WriteRecordsResponse": {
+        "properties": {
+          "deduped_count": {
+            "title": "Deduped Count",
+            "type": "integer"
+          },
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/WriteRecordResult"
+            },
+            "title": "Records",
+            "type": "array"
+          }
+        },
+        "required": [
+          "records",
+          "deduped_count"
+        ],
+        "title": "WriteRecordsResponse",
+        "type": "object"
+      },
       "_CreateGroupBody": {
         "description": "Body for ``POST /coord/cognito/groups``.",
         "properties": {
@@ -47402,7 +48503,7 @@
     },
     "/api/v1/admin-dev/overview": {
       "get": {
-        "description": "Proxy coord's ``GET /coord/dev-overview`` (gates + rollout overview).\n\nReturns coord's JSON envelope verbatim \u2014 the\n``{generated_at, gates, rollouts}`` contract the frontend\n``admin-dev-service`` types against. The overview is fleet-wide (not\ntenant-scoped on the web side); the caller bearer is forwarded so coord\nauthorizes on the operator identity. ``tenant_id`` is resolved\nbest-effort only (it may be ``None`` when coord identity resolution\nfails) and is used solely as the cache key \u2014 coord-down callers (key\n``None``) never share a cache entry with resolved ones.\n\nCaching: a fresh successful envelope is served from a ~30s in-process\ncache; ``?refresh=1`` bypasses it (the frontend Refresh button passes\nit). Degraded ``coord_error`` envelopes are never cached.\n\nWhen coord is unreachable/degraded (connect-refused \u2192 502, timeout \u2192\n504, etc.) the endpoint returns an empty envelope annotated with\n``coord_error`` rather than re-raising the 5xx, so the dashboard renders\na clear \"coord unavailable\" state instead of a broken page. Because\nidentity resolution no longer hard-fails the request, this covers a TOTAL\ncoord outage too (not just the case where ``/admin/coord/me`` happened to\nsucceed). The Spec CI crawl, which runs without a live coord, stays green.",
+        "description": "Proxy coord's ``GET /coord/dev-overview`` (gates + rollout overview).\n\nReturns coord's JSON envelope verbatim \u2014 the\n``{generated_at, gates, rollouts}`` contract the frontend\n``admin-dev-service`` types against. The caller bearer AND the dashboard\ntenant-switcher selection (``X-Qontinui-Active-Tenant``) are forwarded,\nso coord authorizes on the operator identity and scopes the overview to\nthe selected tenant (coord's ``/coord/dev-overview`` filters every gate/\nrollout query by the effective tenant). ``tenant_key`` is the VALIDATED\neffective tenant (membership-checked selection, else home tenant) and is\nused solely as the cache key \u2014 two tenants never share a cache entry.\n``None`` (identity resolution failed) bypasses the shared cache\nentirely, never sharing an entry with anyone.\n\nCaching: a fresh successful envelope is served from a ~30s in-process\ncache; ``?refresh=1`` bypasses it (the frontend Refresh button passes\nit). Degraded ``coord_error`` envelopes are never cached.\n\nWhen coord is unreachable/degraded (connect-refused \u2192 502, timeout \u2192\n504, etc.) the endpoint returns an empty envelope annotated with\n``coord_error`` rather than re-raising the 5xx, so the dashboard renders\na clear \"coord unavailable\" state instead of a broken page. Because\nidentity resolution no longer hard-fails the request, this covers a TOTAL\ncoord outage too (not just the case where ``/admin/coord/me`` happened to\nsucceed). The Spec CI crawl, which runs without a live coord, stays green.",
         "operationId": "api_v1_admin_dev_overview_get",
         "parameters": [
           {
@@ -47510,7 +48611,7 @@
     },
     "/api/v1/admin-dev/prs": {
       "get": {
-        "description": "Proxy coord's ``GET /pr-merge/prs`` (open PRs + merge status).\n\nPure passthrough: returns coord's JSON envelope verbatim \u2014 the\n``{prs, total}`` contract where each PR is already enriched coord-side\nwith a typed ``merge_status`` + ``blocking_summary`` (coord owns that\nshape; the web side computes nothing and renames nothing). The list is\nfleet-wide (not tenant-scoped on the web side); the caller bearer is\nforwarded so coord authorizes on the operator identity. ``tenant_id`` is\nresolved best-effort only (it may be ``None`` when coord identity\nresolution fails) and is used solely to trigger bearer-forwarding.\n\nMirrors ``get_dev_overview``'s auth + degradation posture exactly:\n``require_admin`` (superuser) is the hard web-side gate, the bearer is\ncaptured best-effort so a coord-down identity resolution never 502s in\nthe dependency, and ``forward_bearer=True`` forwards the bearer even when\nthe tenant is unresolved. When coord is unreachable/degraded\n(connect-refused \u2192 502, timeout \u2192 504, etc.) the endpoint returns an\nempty ``{prs, total, coord_error}`` envelope rather than re-raising the\n5xx, so the dashboard renders a clear \"coord unavailable\" state.\n\nUnlike the overview, this list is NOT cached: it reflects fast-moving PR\n+ CI state where stale data is misleading on a merge-readiness dashboard.",
+        "description": "Proxy coord's ``GET /pr-merge/prs`` (open PRs + merge status).\n\nPure passthrough: returns coord's JSON envelope verbatim \u2014 the\n``{prs, total}`` contract where each PR is already enriched coord-side\nwith a typed ``merge_status`` + ``blocking_summary`` (coord owns that\nshape; the web side computes nothing and renames nothing). The caller\nbearer and the tenant-switcher selection are forwarded so coord\nauthorizes on the operator identity and scopes the list to the\neffective tenant; the dependency is retained purely for those\nheader captures.\n\nMirrors ``get_dev_overview``'s auth + degradation posture exactly: the\nweb-side gate is authn only (``get_current_active_user_async`` \u2014 any\nauthenticated tenant member; coord scopes the list to the caller's\neffective tenant), the bearer is captured best-effort so a coord-down\nidentity resolution never 502s in the dependency, and\n``forward_bearer=True`` forwards the bearer even when the tenant is\nunresolved. When coord is unreachable/degraded\n(connect-refused \u2192 502, timeout \u2192 504, etc.) the endpoint returns an\nempty ``{prs, total, coord_error}`` envelope rather than re-raising the\n5xx, so the dashboard renders a clear \"coord unavailable\" state.\n\nUnlike the overview, this list is NOT cached: it reflects fast-moving PR\n+ CI state where stale data is misleading on a merge-readiness dashboard.",
         "operationId": "api_v1_admin_dev_prs_get",
         "parameters": [
           {
@@ -47562,7 +48663,7 @@
     },
     "/api/v1/admin-dev/release-verdict": {
       "get": {
-        "description": "Proxy coord's ``GET /coord/twin/release/verdict`` (per-surface deploy state).\n\nPure passthrough backing the always-visible deploy-status strip atop\n``/admin/coord/prs``: returns coord's release-verdict envelope verbatim \u2014\nthe ``{verdict: {surfaces: [{components: {...}}]}}`` contract where each\nsurface's per-surface drift state lives in ``surfaces[i].components`` (coord\nowns that shape; the web side computes nothing and renames nothing). The\nverdict is fleet-wide (not tenant-scoped on the web side); the caller bearer\nis forwarded so coord authorizes on the operator identity. ``tenant_id`` is\nresolved best-effort only (it may be ``None`` when coord identity resolution\nfails) and is used solely to trigger bearer-forwarding.\n\nMirrors ``get_prs``'s auth + degradation posture exactly: ``require_admin``\n(superuser) is the hard web-side gate, the bearer is captured best-effort so\na coord-down identity resolution never 502s in the dependency, and\n``forward_bearer=True`` forwards the bearer even when the tenant is\nunresolved. When coord is unreachable/degraded (connect-refused \u2192 502,\ntimeout \u2192 504, etc.) the endpoint returns an empty\n``{verdict: {surfaces: []}, coord_error}`` envelope rather than re-raising\nthe 5xx, so neither the Spec CI crawl gate (which runs without a live coord)\nnor the dashboard ever sees a 5xx.\n\nLike ``get_prs``, this is NOT cached: it reflects fast-moving per-surface\ndeploy state where stale data is misleading on a \"is prod current?\" strip.",
+        "description": "Proxy coord's ``GET /coord/twin/release/verdict`` (per-surface deploy state).\n\nPure passthrough backing the always-visible deploy-status strip atop\n``/admin/coord/prs``: returns coord's release-verdict envelope verbatim \u2014\nthe ``{verdict: {surfaces: [{components: {...}}]}}`` contract where each\nsurface's per-surface drift state lives in ``surfaces[i].components`` (coord\nowns that shape; the web side computes nothing and renames nothing). The\nverdict is fleet-wide (deploy surfaces are not per-tenant); the caller\nbearer + tenant-switcher selection are forwarded so coord authorizes on\nthe operator identity; the dependency is retained purely for those\nheader captures.\n\nAuth: ``require_admin`` (operator/superuser) \u2014 UNLIKE ``get_overview`` /\n``get_prs``, this read is NOT relaxed to tenant members. The release\nverdict is fleet-wide (deploy surfaces are the operator's own services \u2014\ncoord/web \u2014 not per-tenant), so it carries no tenant-scoped meaning for a\ndeveloper and coord does not tenant-partition it; opening it to any member\nwould expose operator infrastructure state cross-tenant. It shares\n``get_prs``'s degradation posture: the bearer is captured best-effort so a\ncoord-down identity resolution never 502s in the dependency, and\n``forward_bearer=True`` forwards the bearer even when the tenant is\nunresolved. When coord is unreachable/degraded (connect-refused \u2192 502,\ntimeout \u2192 504, etc.) the endpoint returns an empty\n``{verdict: {surfaces: []}, coord_error}`` envelope rather than re-raising\nthe 5xx, so neither the Spec CI crawl gate (which runs without a live coord)\nnor the dashboard ever sees a 5xx.\n\nLike ``get_prs``, this is NOT cached: it reflects fast-moving per-surface\ndeploy state where stale data is misleading on a \"is prod current?\" strip.",
         "operationId": "api_v1_admin_dev_release_verdict_get",
         "responses": {
           "200": {
@@ -54059,6 +55160,620 @@
         ]
       }
     },
+    "/api/v1/conditions/groups": {
+      "get": {
+        "description": "List the calling tenant's condition groups.\n\nProxies coord's ``GET /coord/condition-groups``. Tenant-scoped: coord\nresolves the tenant from the forwarded operator bearer.",
+        "operationId": "api_v1_conditions_groups_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response List Condition Groups Api V1 Conditions Groups Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Condition Groups",
+        "tags": [
+          "conditions"
+        ]
+      },
+      "post": {
+        "description": "Create a condition group.\n\nProxies coord's ``POST /coord/condition-groups`` with the request body\nforwarded verbatim.",
+        "operationId": "api_v1_conditions_groups_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Create Condition Group Api V1 Conditions Groups Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Create Condition Group",
+        "tags": [
+          "conditions"
+        ]
+      }
+    },
+    "/api/v1/conditions/groups/{group_id}": {
+      "delete": {
+        "description": "Delete a condition group.\n\nProxies coord's ``DELETE /coord/condition-groups/{group_id}``.",
+        "operationId": "api_v1_conditions_groups_group_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Delete Condition Group Api V1 Conditions Groups  Group Id  Delete"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Condition Group",
+        "tags": [
+          "conditions"
+        ]
+      },
+      "get": {
+        "description": "Return a single condition group (with its conditions).\n\nProxies coord's ``GET /coord/condition-groups/{group_id}``.",
+        "operationId": "api_v1_conditions_groups_group_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Condition Group Api V1 Conditions Groups  Group Id  Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Condition Group",
+        "tags": [
+          "conditions"
+        ]
+      },
+      "patch": {
+        "description": "Update a condition group's fields.\n\nProxies coord's ``PATCH /coord/condition-groups/{group_id}``.",
+        "operationId": "api_v1_conditions_groups_group_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Update Condition Group Api V1 Conditions Groups  Group Id  Patch"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update Condition Group",
+        "tags": [
+          "conditions"
+        ]
+      }
+    },
+    "/api/v1/conditions/groups/{group_id}/conditions": {
+      "post": {
+        "description": "Add a condition to a group.\n\nProxies coord's ``POST /coord/condition-groups/{group_id}/conditions``.",
+        "operationId": "api_v1_conditions_groups_group_id_conditions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Add Condition Api V1 Conditions Groups  Group Id  Conditions Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Add Condition",
+        "tags": [
+          "conditions"
+        ]
+      }
+    },
+    "/api/v1/conditions/groups/{group_id}/reorder": {
+      "post": {
+        "description": "Renumber a group's conditions to the given order.\n\nBody: ``{\"condition_ids\": [...]}`` (the desired top-to-bottom order, which\nmust be exactly the group's current conditions). Proxies coord's\n``POST /coord/condition-groups/{group_id}/reorder``.",
+        "operationId": "api_v1_conditions_groups_group_id_reorder_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Reorder Conditions Api V1 Conditions Groups  Group Id  Reorder Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Reorder Conditions",
+        "tags": [
+          "conditions"
+        ]
+      }
+    },
+    "/api/v1/conditions/groups/{group_id}/run": {
+      "post": {
+        "description": "Trigger a regression run of a condition group.\n\nProxies coord's ``POST /coord/condition-groups/{group_id}/run``. The\nbody is optional (run options); an empty object is forwarded when the\ncaller sends none.",
+        "operationId": "api_v1_conditions_groups_group_id_run_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Run Condition Group Api V1 Conditions Groups  Group Id  Run Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Run Condition Group",
+        "tags": [
+          "conditions"
+        ]
+      }
+    },
+    "/api/v1/conditions/groups/{group_id}/runs": {
+      "get": {
+        "description": "List past runs for a condition group.\n\nProxies coord's ``GET /coord/condition-groups/{group_id}/runs``.",
+        "operationId": "api_v1_conditions_groups_group_id_runs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response List Condition Group Runs Api V1 Conditions Groups  Group Id  Runs Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Condition Group Runs",
+        "tags": [
+          "conditions"
+        ]
+      }
+    },
+    "/api/v1/conditions/items/{condition_id}": {
+      "delete": {
+        "description": "Delete a single condition.\n\nProxies coord's ``DELETE /coord/conditions/{condition_id}``.",
+        "operationId": "api_v1_conditions_items_condition_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "condition_id",
+            "required": true,
+            "schema": {
+              "title": "Condition Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Delete Condition Api V1 Conditions Items  Condition Id  Delete"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Condition",
+        "tags": [
+          "conditions"
+        ]
+      },
+      "patch": {
+        "description": "Update a single condition.\n\nProxies coord's ``PATCH /coord/conditions/{condition_id}``.",
+        "operationId": "api_v1_conditions_items_condition_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "condition_id",
+            "required": true,
+            "schema": {
+              "title": "Condition Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Update Condition Api V1 Conditions Items  Condition Id  Patch"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update Condition",
+        "tags": [
+          "conditions"
+        ]
+      }
+    },
+    "/api/v1/conditions/runs/{run_id}": {
+      "get": {
+        "description": "Return a single condition run's detail/results.\n\nProxies coord's ``GET /coord/condition-runs/{run_id}``.",
+        "operationId": "api_v1_conditions_runs_run_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Condition Run Api V1 Conditions Runs  Run Id  Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Condition Run",
+        "tags": [
+          "conditions"
+        ]
+      }
+    },
     "/api/v1/conflicts": {
       "get": {
         "description": "List conflicts.\n\nReturns conflicts that the current user is involved in or has access to.",
@@ -56986,6 +58701,53 @@
         ]
       }
     },
+    "/api/v1/devenv/machines/dispatch-enroll": {
+      "post": {
+        "description": "Create a machine + dispatch an enroll directive to a paired runner.\n\nPhase 3 (dispatched self-enroll): the operator picks an already-paired\ncoord device in the dashboard; the server mints the machine + one-time\ncode, binds it to the chosen device, then asks coord to publish an enroll\ndirective to that device's runner. The runner enrolls itself \u2014 no terminal,\nno copy-paste.\n\nThe machine + code are ALWAYS created and returned, even if the dispatch is\nrejected (device offline / unknown), so the UI can fall back to the\ncopy-paste command (Phase 1(b)). Coord's admin-gated route resolves the\noperator from the forwarded Cognito bearer.",
+        "operationId": "api_v1_devenv_machines_dispatch_enroll_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DispatchEnrollRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DispatchEnrollResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Dispatch Enroll",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
     "/api/v1/devenv/machines/{machine_id}": {
       "delete": {
         "description": "Delete a machine.",
@@ -58497,6 +60259,108 @@
           }
         ],
         "summary": "Dispatch To Device",
+        "tags": [
+          "devices"
+        ]
+      }
+    },
+    "/api/v1/devices/{device_id}/machine-credential/exchange": {
+      "post": {
+        "description": "Exchange a valid ``dmk_`` for a fresh device JWT \u2014 no user session.\n\nAuthenticated by the ``X-Device-Machine-Key`` header (the\n:func:`get_authenticated_device_credential` dep already rejected an\nunknown / revoked / expired key). The credential's ``device_id`` MUST\nmatch the path (anti-forgery \u2014 a key for device A cannot mint a JWT for\ndevice B => 403). On success ``last_used_at`` is bumped and the TTL slid\nforward (sliding session), then web calls coord's service-mint with its\ntrusted service token; coord resolves the device's owner/tenant itself.\n\n503 when the coord service bridge is disabled (``COORD_ADMIN_SECRET``\nunset). A coord 4xx propagates as the matching client error.",
+        "operationId": "api_v1_devices_device_id_machine_credential_exchange_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Device Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Device-Machine-Key",
+            "required": true,
+            "schema": {
+              "title": "X-Device-Machine-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceMachineCredentialExchangeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Exchange Device Machine Credential",
+        "tags": [
+          "devices"
+        ]
+      }
+    },
+    "/api/v1/devices/{device_id}/machine-credential/mint": {
+      "post": {
+        "description": "Mint (or rotate) the calling user's device machine key for a device.\n\n**User-bearer authenticated.** The caller MUST own ``device_id`` \u2014 this is\nverified over coord's ownership boundary (``GET /coord/devices/:id/owned``,\nthe same check the single-device reads use); a non-owner gets 403. The\ndevice's ``tenant_id`` is resolved server-side from the owned coord row\n(never client-asserted). Returns the plaintext ``dmk_`` ONCE.",
+        "operationId": "api_v1_devices_device_id_machine_credential_mint_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Device Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceMachineCredentialMintResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Mint Device Machine Credential",
         "tags": [
           "devices"
         ]
@@ -64060,6 +65924,330 @@
         ]
       }
     },
+    "/api/v1/fleet/apps": {
+      "get": {
+        "description": "List registered apps + their fleet-fresh config.\n\n``project.apps`` is not user-partitioned (it is the runner-local app\nregistry mirrored on shared Postgres), so this returns every registered\napp \u2014 the fleet UI is an operator surface.",
+        "operationId": "api_v1_fleet_apps_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AppConfig"
+                  },
+                  "title": "Response List Apps Api V1 Fleet Apps Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Apps",
+        "tags": [
+          "fleet-targets"
+        ]
+      }
+    },
+    "/api/v1/fleet/apps/{app_id}": {
+      "patch": {
+        "description": "Edit an app's update strategy + build/start commands.\n\nFields left ``None`` are unchanged. ``build_command`` / ``start_command``\ncan be cleared by sending an empty string.",
+        "operationId": "api_v1_fleet_apps_app_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppConfigUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppConfig"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update App Config",
+        "tags": [
+          "fleet-targets"
+        ]
+      }
+    },
+    "/api/v1/fleet/freshness": {
+      "get": {
+        "description": "Per-(device, app) deployment freshness across the caller's devices.\n\nSourced from ``project.app_deploy_state`` (the P4-landed freshness store\nthe runner's auto-fresh engine writes). Optionally filtered to one app.",
+        "operationId": "api_v1_fleet_freshness_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "app_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "App Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FreshnessRow"
+                  },
+                  "title": "Response List Freshness Api V1 Fleet Freshness Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Freshness",
+        "tags": [
+          "fleet-targets"
+        ]
+      }
+    },
+    "/api/v1/fleet/test-targets": {
+      "get": {
+        "description": "List test-host designations for the caller's devices.\n\nJoins ``coord.test_targets`` \u2192 ``coord.devices`` (owned by the caller)\nand left-joins ``project.app_deploy_state`` so each row carries the\ndevice's current freshness for the app. Optionally filtered to one app.",
+        "operationId": "api_v1_fleet_test_targets_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "app_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "App Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TestTargetRow"
+                  },
+                  "title": "Response List Test Targets Api V1 Fleet Test Targets Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Test Targets",
+        "tags": [
+          "fleet-targets"
+        ]
+      }
+    },
+    "/api/v1/fleet/test-targets/{device_id}/{app_id}": {
+      "delete": {
+        "description": "Remove a test-host designation (idempotent \u2014 204 even if absent).",
+        "operationId": "api_v1_fleet_test_targets_device_id_app_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Device Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Undesignate Test Target",
+        "tags": [
+          "fleet-targets"
+        ]
+      },
+      "put": {
+        "description": "Designate ``device_id`` as a test host for ``app_id`` (upsert).\n\nWrites ``coord.test_targets`` stamped with the caller's coord home\ntenant. Idempotent \u2014 re-designating updates ``auto_fresh``. The device\nmust be owned by the caller and the app must be registered.",
+        "operationId": "api_v1_fleet_test_targets_device_id_app_id_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Device Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestTargetDesignation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestTargetRow"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Designate Test Target",
+        "tags": [
+          "fleet-targets"
+        ]
+      }
+    },
     "/api/v1/health": {
       "get": {
         "description": "Comprehensive health check with all dependencies.\n\nReturns 200 if healthy, 503 if any critical dependency is unhealthy.\n\nResponse format:\n{\n    \"status\": \"healthy\" | \"degraded\" | \"unhealthy\",\n    \"timestamp\": \"2025-11-21T10:30:00Z\",\n    \"checks\": {\n        \"database\": \"healthy\" | \"unhealthy\",\n        \"redis\": \"healthy\" | \"degraded\",\n        \"version\": \"0.1.0\"\n    }\n}",
@@ -64117,6 +66305,123 @@
         "summary": "Readiness Probe",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/api/v1/helper-tasks": {
+      "get": {
+        "description": "List the caller's-tenant open helper tasks (the portal work queue).\n\nProxies coord ``GET /coord/helper-tasks?status=open`` \u2192 a bare array of\n``HelperTask`` (camelCase wire shape). Wrapped here as ``{\"tasks\": [...],\n\"available\": true}`` so queue-unavailable degrades to the same shape with\n``available: false`` instead of an error status. Tenant resolution runs\nin-handler so coord-unreachable / tenant-not-resolved degrade the same\nway instead of erroring out of the dependency.",
+        "operationId": "api_v1_helper_tasks_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Helper Tasks Api V1 Helper Tasks Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Helper Tasks",
+        "tags": [
+          "helper-tasks"
+        ]
+      }
+    },
+    "/api/v1/helper-tasks/status": {
+      "get": {
+        "description": "The caller's helper standing, for the frontend's /help routing.\n\n``is_helper_only`` is true when the user holds at least one HELPER\nmembership and no non-helper role in any *shared* (non-personal)\norganization \u2014 the signal the frontend uses to lock the session to the\n/help portal. Personal-organization ownership (auto-created at signup)\nis deliberately ignored: every user owns one, so it carries no signal.\nSuperusers are never helper-only.",
+        "operationId": "api_v1_helper_tasks_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Helper Status Api V1 Helper Tasks Status Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Helper Status",
+        "tags": [
+          "helper-tasks"
+        ]
+      }
+    },
+    "/api/v1/helper-tasks/{task_id}/answer": {
+      "post": {
+        "description": "Submit the caller's verdict for a task.\n\nProxies coord ``POST /coord/helper-tasks/:id/answer`` \u2192 201 with the\ncreated ``HelperAnswer``. Coord enforces tenant isolation (404 when the\ntask is not in the caller's tenant) and records the answer against the\nauthenticated operator \u2014 never an argument-supplied identity.\n\nUnlike the list read, tenant-resolution failure here stays an ERROR (a\nverdict must never be silently dropped) \u2014 but normalized to the same 503\n``helper_task_queue_unavailable`` detail the portal already understands.",
+        "operationId": "api_v1_helper_tasks_task_id_answer_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HelperAnswerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Submit Helper Answer Api V1 Helper Tasks  Task Id  Answer Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Submit Helper Answer",
+        "tags": [
+          "helper-tasks"
         ]
       }
     },
@@ -67384,6 +69689,355 @@
         ]
       }
     },
+    "/api/v1/memory/query": {
+      "post": {
+        "description": "Hybrid retrieval: pgvector cosine + websearch FTS, RRF-fused.\n\nBoth arms are tenant-bound and validity-filtered (tombstones out,\n``valid_from``/``valid_until`` against now() or ``as_of``).\n``agent``/``session``-scoped rows are only visible when the request\nnames those scopes AND supplies the matching ``scope_ref``.",
+        "operationId": "api_v1_memory_query_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryQueryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryQueryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Query Records",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/memory/records": {
+      "post": {
+        "description": "Batch-write memory records (\u2264100 per request).\n\nServer-side pipeline per batch: redact \u2192 hash \u2192 quota check (BEFORE\ninsert; 429 on exceed) \u2192 embed the non-deduplicated contents in one\nfastembed batch (on a worker thread) \u2192 ONE set-based insert deduping\non ``(tenant_id, content_hash)`` against live rows only.",
+        "operationId": "api_v1_memory_records_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WriteRecordsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriteRecordsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Write Records",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/memory/records/{memory_id}": {
+      "delete": {
+        "description": "Tombstone a record (``is_tombstone = true, valid_until = now()``).\n\n404 for records that don't exist in the caller's tenant.",
+        "operationId": "api_v1_memory_records_memory_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "memory_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Memory Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Record",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/memory/records/{memory_id}/supersede": {
+      "post": {
+        "description": "Replace a record: insert the successor, end the old row's validity.\n\n404 for records that don't exist in the caller's tenant (including\ncross-tenant ids \u2014 never disclosed).",
+        "operationId": "api_v1_memory_records_memory_id_supersede_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "memory_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Memory Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupersedeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupersedeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Supersede Record",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/memory/stats": {
+      "get": {
+        "description": "Usage + quota posture for the caller's tenant.",
+        "operationId": "api_v1_memory_stats_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryStatsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Memory Stats",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/memory/synthesis-jobs/claim": {
+      "post": {
+        "description": "A runner claims up to ``limit`` pending synthesis jobs (tenant-bound).\n\nConcurrent claims on the same tenant split the queue via\n``FOR UPDATE SKIP LOCKED`` \u2014 no job is ever handed to two runners.\nThe response carries only ``job_id`` + ``member_texts`` per job: the\nrunner distills the texts with its own LLM and posts the result to\n``/synthesis-jobs/{job_id}/result``.",
+        "operationId": "api_v1_memory_synthesis_jobs_claim_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaimSynthesisJobsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaimSynthesisJobsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Claim Synthesis Jobs",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/memory/synthesis-jobs/{job_id}/result": {
+      "post": {
+        "description": "The runner posts a synthesized model (success) or a failure reason.\n\nSuccess (``result_text``): the text is redacted, embedded with the\nLOCAL model, inserted as a ``mental_model`` row (``consolidated_from``\n= the cluster members, importance = best member + 0.1), and the\nmember rows are superseded \u2014 all in one transaction \u2192 ``applied``.\nFailure (``failure``): the job is marked failed \u2192 ``recorded``.\n404 when the job is not in the caller's tenant (never disclosed); 409\nwhen the job exists but is not in ``'claimed'`` status (already applied,\nrequeued by the reaper, or abandoned) \u2014 a runner may only post back for\na job it holds a live claim on.",
+        "operationId": "api_v1_memory_synthesis_jobs_job_id_result_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SynthesisResultRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SynthesisResultResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Submit Synthesis Result",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
     "/api/v1/notifications": {
       "get": {
         "description": "Get notifications for the current user.\n\nSupports filtering by type, read status, and project.",
@@ -69207,7 +71861,7 @@
     },
     "/api/v1/operations/coord/composition-rules": {
       "get": {
-        "description": "List the tenant's composition rules. Tenant-admin only.",
+        "description": "List the tenant's composition rules.\n\nRead-only, any authenticated tenant member (``get_tenant_id``, NOT\n``require_coord_tenant_admin``): coord's ``GET /coord/composition-rules``\ngates on tenant MEMBERSHIP only (its ``TenantId`` extractor), not the admin\nrole, and scopes the list to the caller's tenant \u2014 so the automation-rules\nread view is visible to developers. Writes below stay admin-gated.",
         "operationId": "api_v1_operations_coord_composition_rules_get",
         "responses": {
           "200": {
@@ -69877,7 +72531,7 @@
     },
     "/api/v1/operations/coord/policies": {
       "get": {
-        "description": "List the tenant's automation policies (rules). Tenant-admin only.",
+        "description": "List the tenant's automation policies (rules).\n\nRead-only, any authenticated tenant member (``get_tenant_id``, NOT\n``require_coord_tenant_admin``): coord's ``GET /coord/policies`` gates on\ntenant MEMBERSHIP only (its ``TenantId`` extractor), not the admin role,\nand scopes the list to the caller's tenant \u2014 so the console's read view is\nvisible to developers. Writes below stay admin-gated.",
         "operationId": "api_v1_operations_coord_policies_get",
         "responses": {
           "200": {
@@ -71790,6 +74444,78 @@
         ]
       }
     },
+    "/api/v1/operations/github/clone-credential": {
+      "post": {
+        "description": "Mint a repo-scoped, short-TTL, contents:read clone token for a single\nrepo. Proxies coord ``POST /coord/onboarding/installations/clone-credential``.\n\nPasses coord's status + JSON body through verbatim (like the onboarding\nclaim proxy) so the runner sees a clean ``403 repo_owner_not_connected`` when\nthe repo's owner isn't a GitHub account connected to the caller's workspace.",
+        "operationId": "api_v1_operations_github_clone_credential_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloneCredentialRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Github Clone Credential",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/github/repos": {
+      "get": {
+        "description": "List repositories the caller's connected GitHub App installation(s) can\naccess, for the runner setup-wizard clone picker. Proxies coord\n``GET /coord/onboarding/installations/repositories``. Returns\n``{connected: bool, repos: [...]}`` \u2014 ``connected: false`` (with an empty\nlist) when the tenant hasn't installed the GitHub App yet, so the runner can\nshow a \"connect your GitHub org\" CTA instead of an error.",
+        "operationId": "api_v1_operations_github_repos_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Github Installation Repos Api V1 Operations Github Repos Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Github Installation Repos",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/heartbeat": {
       "post": {
         "description": "Receive heartbeat from a runner (cross-machine beacon).",
@@ -73084,6 +75810,33 @@
           }
         ],
         "summary": "Post Pr Merge Onboarding Accept",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/pr-merge/onboarding/accounts": {
+      "get": {
+        "description": "List the GitHub accounts connected to the caller's tenant (+ enrolled repos).\n\nProxies coord's ``GET /coord/onboarding/github-accounts`` (TenantId-gated).\nResponse envelope (coord-owned):\n\n``{\"accounts\": [{\"account_login\", \"account_type\", \"installation_id\",\n\"repos\": [{\"repo\", \"rollout_state\", \"profile_source\"}]}]}``\n\n(``repos`` may be ``[]`` for a freshly-connected org; ``rollout_state`` /\n``profile_source`` may be null.) Reuses the onboarding-doctor proxy's auth\nexactly: ``get_tenant_id`` resolves the operator and captures the caller's\nbearer, which ``_tenant_headers`` forwards so coord scopes the read to the\noperator's own tenant. ``_proxy_coord_get`` passes coord's status code\nthrough (a coord 4xx/5xx re-raises as an ``HTTPException`` with the same\nstatus).",
+        "operationId": "api_v1_operations_pr_merge_onboarding_accounts_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Pr Merge Onboarding Accounts Api V1 Operations Pr Merge Onboarding Accounts Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Pr Merge Onboarding Accounts",
         "tags": [
           "operations"
         ]
@@ -74411,7 +77164,7 @@
     },
     "/api/v1/operations/sessions/{session_id}/output": {
       "get": {
-        "description": "Fetch a session's recorded PTY output (Phase 8 read-only pane).\n\nBridges to coord's ``GET /sessions/:id/output[?tier=warm|cold][&limit=N]``.\nThe response envelope is::\n\n    {\n      \"session_id\": \"<uuid>\",\n      \"tier\": \"warm\" | \"cold\",\n      \"chunks\": [ { \"chunk_offset\": <i64>, \"payload_b64\": \"<base64>\" }, ... ],\n      \"count\": <int>\n    }\n\nEach chunk's ``payload_b64`` decodes to raw PTY bytes (already redacted\nrunner-side when the session opted into redaction). The dashboard fetches\nthe ``warm`` tier for the xterm bootstrap window then live-tails the\n``/sessions/:id/events`` SSE stream (``output_chunk`` frames carry the\nsame ``chunk_offset`` + ``payload_b64`` shape), de-duping by\n``chunk_offset``.\n\nGated on coord serving the Phase 8 output endpoints (PR #130). Until\nthose are deployed, coord returns an error for this path and the pane\nrenders its empty / unavailable state.",
+        "description": "Fetch a session's recorded output (Phase 8 read-only pane).\n\nBridges to coord's\n``GET /sessions/:id/output[?tier=warm|cold][&stream=pty|transcript][&limit=N]``.\nThe response envelope is::\n\n    {\n      \"session_id\": \"<uuid>\",\n      \"tier\": \"warm\" | \"cold\",\n      \"chunks\": [ { \"chunk_offset\": <i64>, \"payload_b64\": \"<base64>\" }, ... ],\n      \"count\": <int>\n    }\n\nEach chunk's ``payload_b64`` decodes to raw PTY bytes (already redacted\nrunner-side when the session opted into redaction). The dashboard fetches\nthe ``warm`` tier for the xterm bootstrap window then live-tails the\n``/sessions/:id/events`` SSE stream (``output_chunk`` frames carry the\nsame ``chunk_offset`` + ``payload_b64`` shape), de-duping by\n``chunk_offset``.\n\nGated on coord serving the Phase 8 output endpoints (PR #130). Until\nthose are deployed, coord returns an error for this path and the pane\nrenders its empty / unavailable state.",
         "operationId": "api_v1_operations_sessions_session_id_output_get",
         "parameters": [
           {
@@ -74440,6 +77193,24 @@
               ],
               "description": "`warm` (default) | `cold` \u2014 passthrough to coord.",
               "title": "Tier"
+            }
+          },
+          {
+            "description": "`pty` (default) | `transcript` \u2014 output stream selector, passthrough to coord (plan `2026-07-09-runner-session-history-cloud-sync` Phase 2).",
+            "in": "query",
+            "name": "stream",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "`pty` (default) | `transcript` \u2014 output stream selector, passthrough to coord (plan `2026-07-09-runner-session-history-cloud-sync` Phase 2).",
+              "title": "Stream"
             }
           },
           {
@@ -74489,6 +77260,55 @@
           }
         ],
         "summary": "Get Coord Session Output",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/sessions/{session_id}/restore-record": {
+      "get": {
+        "description": "Return the session's latest ``restore-record`` event (plus the\nlatest ``handoff_request``), derived from coord's events read.\n\nPhase 4 of plan ``2026-07-09-runner-session-history-cloud-sync``:\nrunners mirror each restore-registry record to coord as a\n``coord.session_events`` row with ``event_kind='restore-record'`` and\npayload ``{provider, authoritative_session_id, cwd, launch_command,\nrestore_tier, machine_id}``. The newest such event tells the dashboard\nhow resumable the session is (``restore_tier``: ``full`` restores the\nconversation via the provider's authoritative id; ``terminal_only``\nrestores terminal+cwd+command with a fresh conversation).\n\nCoord exposes session events ONLY as the SSE stream\n(``GET /sessions/:id/events`` \u2014 replay of the last 100 rows tagged\n``event: replay``, then a JetStream live-tail tagged ``event: live``).\nThere is no JSON events read to pass through, so this endpoint\nconsumes just the replay phase of that stream and reduces it: it\nkeeps the highest-``seq`` ``restore-record`` and ``handoff_request``\nrows, stopping at the first ``live`` frame or after a short idle gap\n(the replay is emitted in one eager burst at connect; coord's\nkeep-alive ping cadence is 15s, well above the idle window).\n\nHonesty note: the replay window is coord's last 100 events. A session\nwhose restore-record was pushed out of that window reads as \"no\nrestore-record\" here \u2014 the same answer a resuming runner would get\nfrom the same surface.\n\nResponse::\n\n    {\n      \"session_id\": \"<uuid>\",\n      \"restore_record\":  <SessionEventRow | null>,\n      \"handoff_request\": <SessionEventRow | null>\n    }",
+        "operationId": "api_v1_operations_sessions_session_id_restore_record_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Coord Session Restore Record Api V1 Operations Sessions  Session Id  Restore Record Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Coord Session Restore Record",
         "tags": [
           "operations"
         ]
