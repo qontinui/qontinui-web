@@ -153,9 +153,7 @@ async def poll_and_dispatch_due(*, now: datetime | None = None) -> dict[str, int
         rows = list(result.scalars().all())
         for row in rows:
             try:
-                row.next_fire_at = croniter(row.cron_expression, now).get_next(
-                    datetime
-                )
+                row.next_fire_at = croniter(row.cron_expression, now).get_next(datetime)
             except Exception as err:  # noqa: BLE001 - bad cron: disable, don't fire
                 _disable_for_bad_cron(row, err)
                 continue
