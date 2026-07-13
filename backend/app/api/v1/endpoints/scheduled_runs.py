@@ -159,9 +159,7 @@ async def run_scheduled_run_now(
 
     result = await fire_scheduled_run(str(row.id))
     outcome = result.get("status")
-    logger.info(
-        "scheduled_run_run_now_complete", run_id=str(run_id), status=outcome
-    )
+    logger.info("scheduled_run_run_now_complete", run_id=str(run_id), status=outcome)
 
     if outcome == "dispatched":
         return {"scheduled_run_id": str(row.id), **result}
@@ -179,9 +177,7 @@ async def run_scheduled_run_now(
     # Dispatch failed. Re-raise with the dispatcher's own status where we have it
     # (e.g. 503 runner_offline) so the client sees the true cause.
     raise HTTPException(
-        status_code=int(
-            result.get("status_code") or status.HTTP_502_BAD_GATEWAY
-        ),
+        status_code=int(result.get("status_code") or status.HTTP_502_BAD_GATEWAY),
         detail=result.get("error")
         or f"Dispatch failed: {result.get('reason', 'unknown')}",
     )

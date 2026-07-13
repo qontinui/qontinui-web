@@ -74,9 +74,7 @@ async def test_advisory_lock_grants_exactly_one_of_two_concurrent_replicas(
             result = await conn.execute(_LOCK_SQL, {"name": name})
             return label, bool(result.scalar())
 
-        outcomes = dict(
-            await asyncio.gather(_try(conn_a, "a"), _try(conn_b, "b"))
-        )
+        outcomes = dict(await asyncio.gather(_try(conn_a, "a"), _try(conn_b, "b")))
 
         # Exactly one winner — never both, never neither.
         assert sorted(outcomes.values()) == [False, True], outcomes
@@ -220,9 +218,7 @@ def _patch_dispatcher(monkeypatch, *, raises: Exception | None = None) -> AsyncM
         mock.return_value = _FakeDispatchResponse(
             execution_id=str(uuid4()), runner_id=uuid4()
         )
-    monkeypatch.setattr(
-        "app.jobs.scheduled_dispatch.dispatch_workflow_to_runner", mock
-    )
+    monkeypatch.setattr("app.jobs.scheduled_dispatch.dispatch_workflow_to_runner", mock)
     return mock
 
 
@@ -238,9 +234,7 @@ class TestDueRowSelection:
         dispatch = _patch_dispatcher(monkeypatch)
         now = datetime.now(UTC)
 
-        due = await _seed(
-            sched_db, next_fire_at=now - timedelta(minutes=1), name="due"
-        )
+        due = await _seed(sched_db, next_fire_at=now - timedelta(minutes=1), name="due")
         disabled_but_due = await _seed(
             sched_db,
             enabled=False,
@@ -512,9 +506,7 @@ class TestFireGuards:
         assert fresh.last_error is None
 
     @pytest.mark.asyncio
-    async def test_manual_fire_does_not_touch_next_fire_at(
-        self, sched_db, monkeypatch
-    ):
+    async def test_manual_fire_does_not_touch_next_fire_at(self, sched_db, monkeypatch):
         """``run-now`` calls this directly — it must not shift the cron schedule."""
         _patch_dispatcher(monkeypatch)
         pinned = datetime.now(UTC) + timedelta(hours=2)
@@ -543,9 +535,7 @@ class TestAnchoring:
     """
 
     @pytest.mark.asyncio
-    async def test_null_next_fire_at_is_anchored_not_fired(
-        self, sched_db, monkeypatch
-    ):
+    async def test_null_next_fire_at_is_anchored_not_fired(self, sched_db, monkeypatch):
         dispatch = _patch_dispatcher(monkeypatch)
         now = datetime.now(UTC)
         # A legacy row as the migration leaves it: enabled, never scheduled.
@@ -567,9 +557,7 @@ class TestAnchoring:
     async def test_disabled_null_row_is_left_alone(self, sched_db, monkeypatch):
         """Anchoring only touches ENABLED rows."""
         _patch_dispatcher(monkeypatch)
-        row = await _seed(
-            sched_db, cron="0 3 * * *", enabled=False, next_fire_at=None
-        )
+        row = await _seed(sched_db, cron="0 3 * * *", enabled=False, next_fire_at=None)
 
         await poll_and_dispatch_due(now=datetime.now(UTC))
 
@@ -598,7 +586,7 @@ class TestAnchoring:
         await poll_and_dispatch_due(now=now)
 
         fresh = await _reload(sched_db, row.id)
-        assert fresh.enabled is False           # visibly dead, not silently
+        assert fresh.enabled is False  # visibly dead, not silently
         assert fresh.next_fire_at is None
         assert fresh.last_status == "failed"
         assert fresh.last_error is not None

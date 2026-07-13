@@ -116,9 +116,7 @@ class ScheduledTask:
                 "cron / interval_seconds"
             )
         if self.cron is not None and not croniter.is_valid(self.cron):
-            raise ValueError(
-                f"ScheduledTask {self.name!r}: invalid cron {self.cron!r}"
-            )
+            raise ValueError(f"ScheduledTask {self.name!r}: invalid cron {self.cron!r}")
 
     def first_run_at(self, now: datetime) -> datetime:
         """When this task should first fire after the scheduler starts."""
