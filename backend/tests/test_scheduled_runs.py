@@ -424,27 +424,66 @@ class TestRunNow:
         assert "task_id" not in result
 
     @pytest.mark.asyncio
-    async def test_run_now_surfaces_failure_status(
+    async def test_run_now_raises_the_dispatchers_status_on_failure(
         self,
         async_db_session: AsyncSession,
         test_user: User,
         _workflow: UnifiedWorkflow,
     ):
-        """A failed dispatch is reported as ``failed`` — not swallowed."""
+        """A failed dispatch is an HTTP ERROR carrying the dispatcher's status.
+
+        Returning 200 with ``{"status": "failed"}`` would tell the caller "OK" for
+        a workflow we did not run, and the frontend — which expects a dispatch
+        payload — would then dereference a missing ``execution_id``. The user must
+        see the real cause (the runner is offline), so we re-raise 503.
+        """
         row = await _make_run(async_db_session, test_user, _workflow)
 
         fire = AsyncMock(
-            return_value={"status": "failed", "reason": "dispatch_error"}
+            return_value={
+                "status": "failed",
+                "reason": "dispatch_error",
+                "status_code": 503,
+                "code": "runner_offline",
+                "error": "[503 runner_offline] no runners online",
+            }
         )
-        with patch("app.jobs.scheduled_dispatch.fire_scheduled_run", fire):
-            result = await run_scheduled_run_now_endpoint(
+        with (
+            patch("app.jobs.scheduled_dispatch.fire_scheduled_run", fire),
+            pytest.raises(HTTPException) as exc,
+        ):
+            await run_scheduled_run_now_endpoint(
                 run_id=row.id,
                 db=async_db_session,
                 current_user=test_user,
             )
 
-        assert result["status"] == "failed"
-        assert result["reason"] == "dispatch_error"
+        assert exc.value.status_code == 503
+        assert "runner_offline" in str(exc.value.detail)
+
+    @pytest.mark.asyncio
+    async def test_run_now_raises_409_when_skipped(
+        self,
+        async_db_session: AsyncSession,
+        test_user: User,
+        _workflow: UnifiedWorkflow,
+    ):
+        """A skipped fire (row disabled/vanished) is a 409, not a fake 200."""
+        row = await _make_run(async_db_session, test_user, _workflow)
+
+        fire = AsyncMock(return_value={"status": "skipped", "reason": "disabled"})
+        with (
+            patch("app.jobs.scheduled_dispatch.fire_scheduled_run", fire),
+            pytest.raises(HTTPException) as exc,
+        ):
+            await run_scheduled_run_now_endpoint(
+                run_id=row.id,
+                db=async_db_session,
+                current_user=test_user,
+            )
+
+        assert exc.value.status_code == 409
+        assert "disabled" in str(exc.value.detail)
 
     @pytest.mark.asyncio
     async def test_run_now_does_not_shift_next_fire_at(
@@ -547,3 +586,49 @@ class TestEndpointWiring:
                 current_user=test_user,
             )
         assert exc_info.value.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Unsatisfiable cron — valid syntax, but never occurs
+# ---------------------------------------------------------------------------
+
+
+class TestUnsatisfiableCron:
+    """A cron that parses but can never fire must 422, not 500.
+
+    ``croniter.is_valid("0 0 30 2 *")`` is True (the schema layer's only check),
+    but ``get_next()`` then raises ``CroniterBadDateError`` — February has no
+    30th. The old RedBeat path built a Celery ``crontab`` object and never
+    evaluated it, so this typo was silently accepted; now that we actually
+    compute ``next_fire_at`` on write, an unguarded call would 500 on the user.
+    """
+
+    def test_compute_next_fire_at_raises_422_on_impossible_cron(self):
+        with pytest.raises(HTTPException) as exc:
+            crud.compute_next_fire_at("0 0 30 2 *", enabled=True)
+
+        assert exc.value.status_code == 422
+        assert "never occurs" in str(exc.value.detail)
+
+    def test_disabled_impossible_cron_is_not_evaluated(self):
+        """A disabled row short-circuits to NULL before croniter ever runs."""
+        assert crud.compute_next_fire_at("0 0 30 2 *", enabled=False) is None
+
+    @pytest.mark.asyncio
+    async def test_create_with_impossible_cron_is_422_not_500(
+        self,
+        async_db_session: AsyncSession,
+        test_user: User,
+        _workflow: UnifiedWorkflow,
+    ):
+        payload = ScheduledWorkflowRunCreate(
+            workflow_id=_workflow.id,
+            name="feb-30",
+            cron_expression="0 0 30 2 *",
+            target="auto",
+            enabled=True,
+        )
+        with pytest.raises(HTTPException) as exc:
+            await crud.create_scheduled_run(async_db_session, test_user.id, payload)
+
+        assert exc.value.status_code == 422

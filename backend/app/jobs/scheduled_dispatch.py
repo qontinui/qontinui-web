@@ -20,6 +20,24 @@ regardless of dispatch outcome.
 
 The ``run-now`` endpoint calls :func:`fire_scheduled_run` directly to fire a single
 row immediately, bypassing the poll.
+
+.. warning::
+
+   **Dispatch is replica-local; the rest of the scheduler is not.** The advisory
+   lock guarantees exactly ONE replica polls, but ``dispatch_workflow_to_runner``
+   can only reach a runner whose WebSocket is held **in this process**
+   (``RunnerWebSocketManager.is_connected`` is an in-process memory check). On a
+   multi-replica deploy the polling winner may not be the replica holding the
+   target runner's socket, and the dispatch then fails ``503 runner_offline`` —
+   recorded on the row, visible, but not delivered.
+
+   This is not a regression (a Celery worker process held *zero* WebSockets, so
+   dispatch could never have worked from there either), and prod today runs a
+   single uvicorn process, so it does not bite. But it DOES bound the
+   "multi-replica safe" property to the non-dispatch tasks. Scaling the web tier
+   out requires routing the dispatch to the socket-holding replica first (a Redis
+   pub/sub fanout — ``is_connected_redis`` already tracks *which* replica has it).
+   Tracked as a follow-up to plan 2026-07-12-backend-inprocess-scheduler.
 """
 
 from __future__ import annotations
@@ -43,6 +61,62 @@ from app.services.workflow_dispatcher import (
 logger = structlog.get_logger(__name__)
 
 
+def _disable_for_bad_cron(row: ScheduledWorkflowRun, err: Exception) -> None:
+    """Kill a schedule whose cron cannot be advanced — VISIBLY.
+
+    The obvious move is to null out ``next_fire_at`` so the poll stops picking the
+    row up. That is a silent death: the poll's ``next_fire_at IS NOT NULL``
+    predicate excludes the row forever while the API still reports
+    ``enabled: true``, so the user sees a live schedule that will never fire again
+    — the precise class of invisible-no-op this whole change exists to abolish.
+    (It also collides with NULL's other meaning: "not yet anchored".)
+
+    So we disable the row and record the reason, which the API already surfaces.
+    """
+    row.enabled = False
+    row.next_fire_at = None
+    row.last_status = "failed"
+    row.last_error = f"Invalid cron {row.cron_expression!r}: {err}. Schedule disabled."
+    logger.error(
+        "scheduled_run_disabled_invalid_cron",
+        scheduled_run_id=str(row.id),
+        cron_expression=row.cron_expression,
+        error=str(err),
+    )
+
+
+async def _anchor_unscheduled_rows(db: AsyncSession, now: datetime) -> int:
+    """Give every enabled row with a NULL ``next_fire_at`` its next cron slot.
+
+    NULL means "enabled but unscheduled" — the state left by the migration that
+    introduced this column (it deliberately does NOT backfill ``now()``, which
+    would make every dormant schedule due at once and dispatch the lot off-cron
+    on the first tick after deploy).
+
+    Anchoring computes the next slot; it never fires the row. So a schedule that
+    lay dormant through the whole RedBeat era resumes on its own cron rather than
+    all of them stampeding at deploy time.
+    """
+    result = await db.execute(
+        select(ScheduledWorkflowRun)
+        .where(
+            ScheduledWorkflowRun.enabled.is_(True),
+            ScheduledWorkflowRun.next_fire_at.is_(None),
+        )
+        .with_for_update(skip_locked=True)
+    )
+    anchored = 0
+    for row in result.scalars().all():
+        try:
+            row.next_fire_at = croniter(row.cron_expression, now).get_next(datetime)
+            anchored += 1
+        except Exception as err:  # noqa: BLE001 - bad cron: disable, don't loop
+            _disable_for_bad_cron(row, err)
+    if anchored:
+        logger.info("scheduled_runs_anchored", count=anchored)
+    return anchored
+
+
 async def poll_and_dispatch_due(*, now: datetime | None = None) -> dict[str, int]:
     """Dispatch every due scheduled run; advance ``next_fire_at`` first.
 
@@ -57,6 +131,11 @@ async def poll_and_dispatch_due(*, now: datetime | None = None) -> dict[str, int
     session_maker = async_sessionmaker(
         async_engine, class_=AsyncSession, expire_on_commit=False
     )
+
+    # 0. Anchor any enabled-but-unscheduled row onto its cron (without firing it).
+    async with session_maker() as db:
+        await _anchor_unscheduled_rows(db, now)
+        await db.commit()
 
     # 1. Claim due rows and advance next_fire_at, committing before we
     #    dispatch so a mid-dispatch crash skips (not replays) the window.
@@ -73,20 +152,14 @@ async def poll_and_dispatch_due(*, now: datetime | None = None) -> dict[str, int
         )
         rows = list(result.scalars().all())
         for row in rows:
-            claimed.append(str(row.id))
             try:
                 row.next_fire_at = croniter(row.cron_expression, now).get_next(
                     datetime
                 )
-            except (ValueError, KeyError):
-                # Corrupt cron on the row — stop scheduling it rather than
-                # loop-firing every tick; the fire below surfaces the error.
-                row.next_fire_at = None
-                logger.error(
-                    "scheduled_run_invalid_cron",
-                    scheduled_run_id=str(row.id),
-                    cron_expression=row.cron_expression,
-                )
+            except Exception as err:  # noqa: BLE001 - bad cron: disable, don't fire
+                _disable_for_bad_cron(row, err)
+                continue
+            claimed.append(str(row.id))
         await db.commit()
 
     # 2. Dispatch each claimed row. One bad row must not abort the batch.
@@ -190,8 +263,17 @@ async def fire_scheduled_run(scheduled_run_id: str) -> dict[str, Any]:
                 status_code=err.status_code,
                 code=err.code,
             )
-            # No re-raise: the next cron window is the retry.
-            return {"status": "failed", "reason": "dispatch_error"}
+            # No re-raise: the next cron window is the retry. But carry the
+            # dispatcher's own status/code out so an interactive caller (run-now)
+            # can surface the real failure to the user rather than dressing it up
+            # as a 200. The scheduler's poll ignores these extra keys.
+            return {
+                "status": "failed",
+                "reason": "dispatch_error",
+                "status_code": err.status_code,
+                "code": err.code,
+                "error": row.last_error,
+            }
 
         row.last_fired_at = fired_at
         row.last_status = "dispatched"

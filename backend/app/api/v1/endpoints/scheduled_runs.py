@@ -136,9 +136,14 @@ async def run_scheduled_run_now(
     """Run the same dispatch the scheduler fires at cron time — synchronously.
 
     Dispatch is one HTTP call to a runner, so we await it and return the REAL
-    outcome (``dispatched`` + ``execution_id``, or ``failed`` + the error). The
-    previous implementation enqueued a Celery task and returned a ``task_id``
-    for work that — with no worker ever deployed — never actually executed.
+    outcome. The previous implementation enqueued a Celery task and returned a
+    ``task_id`` for work that — with no worker ever deployed — never executed.
+
+    A failed dispatch is an HTTP ERROR, not a 200 with ``status: "failed"`` in the
+    body. The caller asked us to run the workflow; if the runner is offline we
+    have not run it, and saying "200 OK" would be a lie the client cannot even
+    parse (it expects a dispatch payload and would dereference a missing
+    ``execution_id``). We surface the dispatcher's own status code instead.
 
     Does NOT touch ``next_fire_at``: an out-of-band manual fire must not shift
     the cron schedule.
@@ -153,9 +158,30 @@ async def run_scheduled_run_now(
         )
 
     result = await fire_scheduled_run(str(row.id))
+    outcome = result.get("status")
     logger.info(
-        "scheduled_run_run_now_complete",
-        run_id=str(run_id),
-        status=result.get("status"),
+        "scheduled_run_run_now_complete", run_id=str(run_id), status=outcome
     )
-    return {"scheduled_run_id": str(row.id), **result}
+
+    if outcome == "dispatched":
+        return {"scheduled_run_id": str(row.id), **result}
+
+    if outcome == "skipped":
+        # The row vanished or is disabled — we did not run it, and won't pretend to.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Scheduled run {run_id} was not fired: "
+                f"{result.get('reason', 'unavailable')}"
+            ),
+        )
+
+    # Dispatch failed. Re-raise with the dispatcher's own status where we have it
+    # (e.g. 503 runner_offline) so the client sees the true cause.
+    raise HTTPException(
+        status_code=int(
+            result.get("status_code") or status.HTTP_502_BAD_GATEWAY
+        ),
+        detail=result.get("error")
+        or f"Dispatch failed: {result.get('reason', 'unknown')}",
+    )

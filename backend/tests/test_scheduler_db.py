@@ -34,6 +34,7 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_asyncio
+from croniter import croniter  # type: ignore[import-untyped]
 from sqlalchemy import delete, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -269,12 +270,18 @@ class TestDueRowSelection:
             assert row.last_status is None
             assert row.last_fired_at is None
 
-        # ...and their next_fire_at is exactly as seeded.
+        # A disabled row and a future row keep their seeded next_fire_at.
         assert (await _reload(sched_db, disabled_but_due.id)).next_fire_at is not None
-        assert (await _reload(sched_db, never.id)).next_fire_at is None
         future_row = await _reload(sched_db, not_yet.id)
         assert future_row.next_fire_at is not None
         assert future_row.next_fire_at > now + timedelta(minutes=30)
+
+        # The enabled row with a NULL next_fire_at is *anchored* onto its cron —
+        # it is not fired (asserted above: no last_status), and it is not left
+        # NULL either, or it would never fire again. See TestAnchoring.
+        anchored = await _reload(sched_db, never.id)
+        assert anchored.next_fire_at is not None
+        assert anchored.next_fire_at > now
 
     @pytest.mark.asyncio
     async def test_no_due_rows_is_a_no_op(self, sched_db, monkeypatch):
@@ -325,11 +332,15 @@ class TestNextFireAdvance:
         assert (await poll_and_dispatch_due(now=now))["due"] == 0
 
     @pytest.mark.asyncio
-    async def test_invalid_cron_stops_scheduling_instead_of_loop_firing(
+    async def test_corrupt_cron_is_disabled_not_fired_and_never_loop_fires(
         self, sched_db, monkeypatch
     ):
-        """A corrupt cron nulls next_fire_at rather than re-firing every tick."""
-        _patch_dispatcher(monkeypatch)
+        """A corrupt cron disables the row — it is never fired, and never loops.
+
+        (The visible-death rationale, and the *syntactically valid but impossible*
+        cron case, are covered in TestAnchoring.)
+        """
+        dispatch = _patch_dispatcher(monkeypatch)
         now = datetime.now(UTC)
         # Bypass the pydantic layer: this models a row corrupted in the DB.
         row = await _seed(
@@ -337,10 +348,15 @@ class TestNextFireAdvance:
         )
 
         stats = await poll_and_dispatch_due(now=now)
-        assert stats["due"] == 1
+
+        # Not claimed, not dispatched — we cannot know when it should have run.
+        assert stats["due"] == 0
+        assert dispatch.await_count == 0
 
         fresh = await _reload(sched_db, row.id)
+        assert fresh.enabled is False
         assert fresh.next_fire_at is None
+        assert fresh.last_error is not None
 
         # It is now inert — no infinite re-fire loop.
         assert (await poll_and_dispatch_due(now=now))["due"] == 0
@@ -443,7 +459,13 @@ class TestDispatchFailure:
 
         result = await fire_scheduled_run(str(row.id))
 
-        assert result == {"status": "failed", "reason": "dispatch_error"}
+        assert result["status"] == "failed"
+        assert result["reason"] == "dispatch_error"
+        # The dispatcher's own status/code ride along, so the interactive
+        # run-now endpoint can re-raise the REAL cause instead of a fake 200.
+        assert result["status_code"] == 404
+        assert result["code"] == "runner_offline"
+        assert "runner is gone" in result["error"]
 
 
 # ---------------------------------------------------------------------------
@@ -502,3 +524,88 @@ class TestFireGuards:
 
         fresh = await _reload(sched_db, row.id)
         assert fresh.next_fire_at == pinned
+
+
+# ---------------------------------------------------------------------------
+# Anchoring + visible bad-cron death
+# ---------------------------------------------------------------------------
+
+
+class TestAnchoring:
+    """NULL next_fire_at means 'enabled but unscheduled' — anchor, don't fire.
+
+    The migration deliberately does NOT backfill `next_fire_at = now()`. Doing so
+    would make every dormant enabled schedule due at once, and the first tick
+    after deploy would dispatch the lot off-cron — real GUI automation firing
+    unattended on users' desktops at deploy time. Since RedBeat never actually
+    fired, the population of enabled-but-never-run schedules is exactly what that
+    would have hit.
+    """
+
+    @pytest.mark.asyncio
+    async def test_null_next_fire_at_is_anchored_not_fired(
+        self, sched_db, monkeypatch
+    ):
+        dispatch = _patch_dispatcher(monkeypatch)
+        now = datetime.now(UTC)
+        # A legacy row as the migration leaves it: enabled, never scheduled.
+        row = await _seed(sched_db, cron="0 3 * * *", next_fire_at=None)
+
+        stats = await poll_and_dispatch_due(now=now)
+
+        # Anchored onto its cron — and emphatically NOT dispatched.
+        assert stats["due"] == 0
+        assert dispatch.await_count == 0
+
+        fresh = await _reload(sched_db, row.id)
+        assert fresh.next_fire_at is not None
+        assert fresh.next_fire_at > now
+        assert fresh.next_fire_at == croniter("0 3 * * *", now).get_next(datetime)
+        assert fresh.last_status is None  # never fired
+
+    @pytest.mark.asyncio
+    async def test_disabled_null_row_is_left_alone(self, sched_db, monkeypatch):
+        """Anchoring only touches ENABLED rows."""
+        _patch_dispatcher(monkeypatch)
+        row = await _seed(
+            sched_db, cron="0 3 * * *", enabled=False, next_fire_at=None
+        )
+
+        await poll_and_dispatch_due(now=datetime.now(UTC))
+
+        fresh = await _reload(sched_db, row.id)
+        assert fresh.next_fire_at is None
+
+    @pytest.mark.asyncio
+    async def test_unsatisfiable_cron_disables_the_row_visibly(
+        self, sched_db, monkeypatch
+    ):
+        """A cron croniter cannot advance DISABLES the row, with the reason.
+
+        Nulling next_fire_at and leaving `enabled=True` would be a silent death:
+        the poll's `next_fire_at IS NOT NULL` predicate excludes the row forever
+        while the API still reports a live schedule. That is precisely the
+        invisible-no-op this whole change exists to abolish — so the row is
+        disabled and the error recorded where the user can see it.
+        """
+        _patch_dispatcher(monkeypatch)
+        now = datetime.now(UTC)
+        # Valid syntax (croniter.is_valid is True), but February has no 30th.
+        row = await _seed(
+            sched_db, cron="0 0 30 2 *", next_fire_at=now - timedelta(minutes=1)
+        )
+
+        await poll_and_dispatch_due(now=now)
+
+        fresh = await _reload(sched_db, row.id)
+        assert fresh.enabled is False           # visibly dead, not silently
+        assert fresh.next_fire_at is None
+        assert fresh.last_status == "failed"
+        assert fresh.last_error is not None
+        assert "0 0 30 2 *" in fresh.last_error
+
+        # And being disabled, it is not re-anchored on the next tick either.
+        await poll_and_dispatch_due(now=now)
+        again = await _reload(sched_db, row.id)
+        assert again.enabled is False
+        assert again.next_fire_at is None

@@ -84,11 +84,26 @@ def compute_next_fire_at(
 
     A disabled row gets ``NULL`` so the due-row poll (``enabled AND
     next_fire_at <= now()``) skips it on the index rather than the predicate.
+
+    Raises 422 on a cron that is *syntactically* valid but can never occur.
+    ``croniter.is_valid`` — all the schema layer checks — accepts ``"0 0 30 2 *"``
+    (Feb 30th), but ``get_next()`` then raises ``CroniterBadDateError``. The old
+    RedBeat path built a Celery ``crontab`` object and never evaluated it, so it
+    swallowed this; evaluating it here would 500 on an ordinary user typo.
     """
     if not enabled:
         return None
     base = now or datetime.now(UTC)
-    nxt: datetime = croniter(cron_expression, base).get_next(datetime)
+    try:
+        nxt: datetime = croniter(cron_expression, base).get_next(datetime)
+    except Exception as err:  # noqa: BLE001 - croniter raises several types
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=(
+                f"cron_expression {cron_expression!r} is syntactically valid but "
+                f"never occurs, so this schedule would never fire: {err}"
+            ),
+        ) from err
     return nxt
 
 

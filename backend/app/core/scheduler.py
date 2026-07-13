@@ -99,6 +99,12 @@ class ScheduledTask:
     cron: str | None = None
     interval_seconds: float | None = None
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
+    # Run once shortly after boot instead of waiting out a full interval first.
+    # The cleanup loops this replaced were `while True: await cleanup(); sleep(n)`
+    # — they swept at startup. Without this, a backend that restarts more often
+    # than its cleanup interval would NEVER sweep (a redeploy every <1h means
+    # clipboard/file cleanup, both hourly, never run at all).
+    run_at_boot: bool = False
     # Runtime state (populated by the scheduler).
     enabled: bool = True
     next_run_at: datetime | None = field(default=None, compare=False)
@@ -113,6 +119,14 @@ class ScheduledTask:
             raise ValueError(
                 f"ScheduledTask {self.name!r}: invalid cron {self.cron!r}"
             )
+
+    def first_run_at(self, now: datetime) -> datetime:
+        """When this task should first fire after the scheduler starts."""
+        if self.run_at_boot:
+            # Not exactly `now`: a small jittered delay lets boot finish and
+            # keeps N replicas from all contending for the lock the same instant.
+            return now + timedelta(seconds=random.uniform(1.0, 10.0))
+        return self.compute_next(now)
 
     def compute_next(self, now: datetime) -> datetime:
         """Next due time strictly after ``now``."""
@@ -252,7 +266,7 @@ class SchedulerService:
         now = datetime.now(UTC)
         for task in self._tasks.values():
             if task.next_run_at is None:
-                task.next_run_at = task.compute_next(now)
+                task.next_run_at = task.first_run_at(now)
 
         while True:
             try:
@@ -456,16 +470,22 @@ def install_default_tasks(service: SchedulerService) -> None:
         )
     )
 
-    # Scheduled workflow dispatch — poll due rows every 30s.
+    # Scheduled workflow dispatch — poll due rows every 30s. Runs at boot too,
+    # so rows left unscheduled (next_fire_at NULL) get anchored onto their cron
+    # promptly rather than up to 30s late.
     service.register(
         ScheduledTask(
             name="scheduled_dispatch",
             coro=_job_scheduled_dispatch,
             interval_seconds=30.0,
+            run_at_boot=True,
         )
     )
 
-    # Cleanup loops (formerly asyncio.create_task in main.startup).
+    # Cleanup loops (formerly asyncio.create_task in main.startup). They ran a
+    # sweep at boot (`while True: await cleanup(); sleep(n)`), so `run_at_boot`
+    # preserves that: an hourly cleanup on a backend that redeploys more often
+    # than hourly would otherwise never run at all.
     # Connection cleanup depends on the Redis-backed WS registry — skip it
     # when Redis is disabled, matching the former REDIS_ENABLED guard.
     if settings.REDIS_ENABLED:
@@ -474,6 +494,7 @@ def install_default_tasks(service: SchedulerService) -> None:
                 name="connection_cleanup",
                 coro=_job_connection_cleanup,
                 interval_seconds=60.0,
+                run_at_boot=True,
             )
         )
     service.register(
@@ -481,6 +502,7 @@ def install_default_tasks(service: SchedulerService) -> None:
             name="clipboard_cleanup",
             coro=_job_clipboard_cleanup,
             interval_seconds=3600.0,
+            run_at_boot=True,
         )
     )
     service.register(
@@ -488,6 +510,7 @@ def install_default_tasks(service: SchedulerService) -> None:
             name="file_cleanup",
             coro=_job_file_cleanup,
             interval_seconds=3600.0,
+            run_at_boot=True,
         )
     )
 

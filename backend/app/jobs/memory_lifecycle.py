@@ -33,6 +33,7 @@ reindex 03:40 UTC daily, consolidate 04:20 UTC Sunday).
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -195,7 +196,15 @@ async def reindex_once(
         )
         if not batch:
             break
-        embeddings = get_embedder().embed_texts([content for _, content in batch])
+        # Offload to a thread: embed_texts is a synchronous, CPU-bound ONNX call.
+        # Under Celery this ran in a separate worker process, where blocking was
+        # harmless. It now runs inside uvicorn, so blocking the event loop here
+        # would stall every in-flight request AND /health — long enough for the
+        # load balancer to cycle the instance mid-reindex. Same idiom the request
+        # path already uses (app/api/v1/endpoints/memory.py:271).
+        embeddings = await asyncio.to_thread(
+            get_embedder().embed_texts, [content for _, content in batch]
+        )
         ensure_embedding_dims(embeddings)
         await store.update_embeddings(
             session,
