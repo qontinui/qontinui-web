@@ -1,7 +1,7 @@
 """project.design_policies — tenant-scoped user-authored design/UX policies.
 
 Revision ID: design_policies_01
-Revises: coord_memory_synthesis_jobs
+Revises: coord_policy_rules_tenant_override
 Create Date: 2026-07-02
 
 Advisory design guidance authored by tenant admins and read tool-agnostically
@@ -20,7 +20,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "design_policies_01"
-down_revision: str | None = "coord_memory_synthesis_jobs"
+down_revision: str | None = "coord_policy_rules_tenant_override"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
