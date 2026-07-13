@@ -13,8 +13,10 @@
 
 import { useState, useCallback, useEffect } from "react";
 import type { UnifiedWorkflow } from "@/types/unified-workflow";
+import { httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
+const API_BASE = ApiConfig.API_BASE_URL;
 const API_PREFIX = "/api/v1/unified-workflows";
 
 /** List/search responses wrap items in a paginated envelope. */
@@ -27,23 +29,38 @@ interface ListResponse {
   };
 }
 
-async function webFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...(options.headers as Record<string, string>),
-  };
+/**
+ * Error carrying the HTTP status alongside the backend message.
+ *
+ * Callers (and the `useUnifiedWorkflows` hook) need the status to decide how
+ * to present a failure: a raw backend error code (`UNAUTHORIZED`) must never
+ * be rendered to the user, so the UI maps `status` to friendly copy instead of
+ * interpolating `message`.
+ */
+export class WorkflowApiError extends Error {
+  readonly status: number;
 
-  const response = await fetch(`${API_BASE}${API_PREFIX}${path}`, {
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "WorkflowApiError";
+    this.status = status;
+  }
+}
+
+async function webFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+  // Routed through httpClient (NOT bare `fetch`) so the request carries the
+  // `Authorization: Bearer` header and inherits the shared 401 refresh /
+  // session-expiry path. A bare fetch 401s in prod (Cognito bearer auth).
+  const response = await httpClient.fetch(`${API_BASE}${API_PREFIX}${path}`, {
     ...options,
-    headers,
-    credentials: "include",
   });
 
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw new Error(
+    throw new WorkflowApiError(
       (body && (body.detail || body.error)) ||
-        `API error: ${response.status} ${response.statusText}`
+        `API error: ${response.status} ${response.statusText}`,
+      response.status
     );
   }
 
@@ -141,6 +158,10 @@ export function useUnifiedWorkflows() {
   const [data, setData] = useState<UnifiedWorkflow[] | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // HTTP status of the failing request, when the failure came from the API.
+  // Consumers map this to user-facing copy; the raw `error` message is a
+  // backend diagnostic (e.g. `UNAUTHORIZED`) and must not be rendered.
+  const [errorStatus, setErrorStatus] = useState<number | null>(null);
   const [isOffline, setIsOffline] = useState(false);
 
   const fetchData = useCallback(async () => {
@@ -148,6 +169,7 @@ export function useUnifiedWorkflows() {
       const result = await listWorkflows();
       setData(result);
       setError(null);
+      setErrorStatus(null);
       setIsOffline(false);
     } catch (err) {
       const message =
@@ -163,6 +185,7 @@ export function useUnifiedWorkflows() {
         setIsOffline(true);
       }
       setError(message);
+      setErrorStatus(err instanceof WorkflowApiError ? err.status : null);
     } finally {
       setIsLoading(false);
     }
@@ -188,7 +211,7 @@ export function useUnifiedWorkflows() {
     };
   }, [fetchData]);
 
-  return { data, isLoading, error, isOffline, refetch: fetchData };
+  return { data, isLoading, error, errorStatus, isOffline, refetch: fetchData };
 }
 
 export function useUnifiedWorkflow(id: string | null) {
