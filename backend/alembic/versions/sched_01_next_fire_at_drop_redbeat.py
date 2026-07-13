@@ -18,7 +18,7 @@ scheduler *re-anchors* a NULL row onto its cron on first sight, without firing i
 see ``app.jobs.scheduled_dispatch._anchor_unscheduled_rows``.
 
 Revision ID: sched_01_next_fire_at
-Revises: coord_prompt_injection_events
+Revises: coord_sessions_work_unit_slug
 Create Date: 2026-07-12
 """
 
@@ -29,7 +29,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "sched_01_next_fire_at"
-down_revision: str | None = "coord_prompt_injection_events"
+down_revision: str | None = "coord_sessions_work_unit_slug"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
