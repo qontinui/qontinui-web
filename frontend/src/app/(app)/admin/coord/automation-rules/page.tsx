@@ -37,6 +37,11 @@ export default function AutomationRulesPage() {
             auto-answer agent questions. Authored in coord and served to every
             runner in the fleet.
           </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            These rules apply to your current workspace. Signing in with a
+            different identity shows a different set — including your own
+            overrides of built-in rules.
+          </p>
         </div>
       </div>
 
