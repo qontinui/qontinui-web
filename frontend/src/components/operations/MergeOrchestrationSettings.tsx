@@ -61,6 +61,9 @@ interface EffectiveProfile {
   auto_merge_label_budget: number | null;
   framework_signals: string[];
   profile_source: string | null;
+  // Red-main auto-remediation Phase 3 (D6) — resolved opt-in for
+  // auto-spawning a fix session when this repo's main goes red.
+  auto_fix_red_main: boolean;
 }
 
 interface TenantSettingsResponse {
@@ -153,6 +156,9 @@ function TenantDefaultsCard({
   const [confidence, setConfidence] = useState<string>(String(profile.confidence_threshold));
   const [autoMerge, setAutoMerge] = useState<boolean>(profile.auto_merge_enabled);
   const [dryRun, setDryRun] = useState<boolean>(profile.dry_run);
+  const [autoFixRedMain, setAutoFixRedMain] = useState<boolean>(
+    profile.auto_fix_red_main
+  );
   const [escalatePathsText, setEscalatePathsText] = useState<string>(
     profile.escalate_paths.join("\n")
   );
@@ -169,6 +175,7 @@ function TenantDefaultsCard({
     setConfidence(String(profile.confidence_threshold));
     setAutoMerge(profile.auto_merge_enabled);
     setDryRun(profile.dry_run);
+    setAutoFixRedMain(profile.auto_fix_red_main);
     setEscalatePathsText(profile.escalate_paths.join("\n"));
     setShadowFloor(String(profile.audit_confidence_shadow_floor));
   }, [profile]);
@@ -189,6 +196,7 @@ function TenantDefaultsCard({
         confidence_threshold: parseFloatOrThrow("confidence_threshold", confidence),
         auto_merge_enabled: autoMerge,
         dry_run: dryRun,
+        auto_fix_red_main: autoFixRedMain,
         audit_confidence_shadow_floor: parseFloatOrThrow(
           "audit_confidence_shadow_floor",
           shadowFloor
@@ -217,6 +225,7 @@ function TenantDefaultsCard({
     confidence,
     autoMerge,
     dryRun,
+    autoFixRedMain,
     shadowFloor,
     escalatePathsText,
     onSaved,
@@ -309,6 +318,28 @@ function TenantDefaultsCard({
             />
           </div>
         </div>
+        <div className="flex items-start justify-between gap-3 rounded-md border border-amber-500/40 px-3 py-2">
+          <div>
+            <Label htmlFor="auto-fix-red-main">
+              Auto-spawn fix session when main goes red
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              When a repo&apos;s main goes red (a tenant-wide merge outage —
+              every green PR is frozen until it&apos;s fixed), coord opens a
+              visible terminal session on your device that diagnoses the
+              failing check and authors a fix; the fix lands via coord&apos;s
+              audited recovery lane. Off by default — turn this on only if you
+              want coord to act on its own. Reversible any time; every recovery
+              land is audited.
+            </p>
+          </div>
+          <Switch
+            id="auto-fix-red-main"
+            checked={autoFixRedMain}
+            onCheckedChange={setAutoFixRedMain}
+            data-testid="settings-auto-fix-red-main"
+          />
+        </div>
         <div className="space-y-1">
           <Label htmlFor="escalate-paths">Escalate paths (one per line)</Label>
           <Textarea
@@ -362,6 +393,9 @@ function RepoOverrideCard({
   const [escalatePathsExtraText, setEscalatePathsExtraText] = useState<string>("");
   const [labelBudget, setLabelBudget] = useState<string>("");
   const [dryRunOverride, setDryRunOverride] = useState<"inherit" | "true" | "false">("inherit");
+  const [autoFixRedMainOverride, setAutoFixRedMainOverride] = useState<
+    "inherit" | "true" | "false"
+  >("inherit");
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -414,6 +448,10 @@ function RepoOverrideCard({
         : parseIntOrThrow("auto_merge_label_budget", labelBudget);
       body.dry_run_override =
         dryRunOverride === "inherit" ? null : dryRunOverride === "true";
+      body.auto_fix_red_main =
+        autoFixRedMainOverride === "inherit"
+          ? null
+          : autoFixRedMainOverride === "true";
 
       const url = `${OPERATIONS_API}/pr-merge/repos/${repoRow.repo}/profile`;
       const res = await httpClient.fetch(url, {
@@ -437,6 +475,7 @@ function RepoOverrideCard({
     escalatePathsExtraText,
     labelBudget,
     dryRunOverride,
+    autoFixRedMainOverride,
     onSaved,
   ]);
 
@@ -535,6 +574,28 @@ function RepoOverrideCard({
               <option value="true">true (dry-run)</option>
               <option value="false">false (live)</option>
             </select>
+          </div>
+          <div className="space-y-1">
+            <Label>Auto-fix red main override</Label>
+            <select
+              className="w-full h-9 rounded-md border bg-background px-3 text-sm"
+              value={autoFixRedMainOverride}
+              onChange={(e) =>
+                setAutoFixRedMainOverride(
+                  e.target.value as "inherit" | "true" | "false"
+                )
+              }
+              data-testid={`repo-auto-fix-red-main-${repoRow.repo}`}
+            >
+              <option value="inherit">inherit tenant</option>
+              <option value="true">true (auto-spawn fix session)</option>
+              <option value="false">false (never auto-spawn)</option>
+            </select>
+            <p className="text-xs text-muted-foreground">
+              Per-repo override of the tenant-wide auto-spawn setting. On red
+              main, coord opens a visible fix session on your device; the fix
+              lands via coord&apos;s audited recovery lane.
+            </p>
           </div>
         </div>
         <div className="space-y-1">

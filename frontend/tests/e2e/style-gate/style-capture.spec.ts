@@ -563,6 +563,41 @@ interface RelayPollResult {
 }
 
 /**
+ * Perform exactly ONE `/control/snapshot` fetch and classify it. Shared by
+ * `pollRelayUntilAttached` (which loops this) and the post-attach sidebar-wait
+ * re-fetch in `captureSnapshot` (which needs exactly one fresh read, not a
+ * poll loop).
+ */
+async function fetchSnapshotOnce(page: Page): Promise<RelayPollResult> {
+  const result = await page.evaluate(
+    async ({ snapshotPath }) => {
+      const res = await fetch(snapshotPath, {
+        method: "GET",
+        headers: { Accept: "application/json" },
+        credentials: "include",
+      });
+      const text = await res.text();
+      return { status: res.status, text };
+    },
+    { snapshotPath: SNAPSHOT_PATH }
+  );
+
+  let parsed: SnapshotResponse = {};
+  try {
+    parsed = JSON.parse(result.text) as SnapshotResponse;
+  } catch {
+    // Non-JSON body — leave parsed empty; treated as not-yet-ready below.
+  }
+
+  // 503 NO_BROWSER_CONNECTED -> relay client not attached yet; keep polling.
+  const notConnected =
+    result.status === 503 || parsed.code === "NO_BROWSER_CONNECTED";
+  const attached =
+    !notConnected && result.status >= 200 && result.status < 300;
+  return { attached, raw: result.text, body: parsed, status: result.status };
+}
+
+/**
  * Poll `/control/snapshot` until the in-page `CommandRelayListener` has
  * registered a tab (a non-503 2xx, element-bearing response) or the budget
  * elapses. The ONE relay-readiness mechanism — used by BOTH the cold-start
@@ -588,38 +623,102 @@ async function pollRelayUntilAttached(
   };
 
   while (Date.now() < deadline) {
-    const result = await page.evaluate(
-      async ({ snapshotPath }) => {
-        const res = await fetch(snapshotPath, {
-          method: "GET",
-          headers: { Accept: "application/json" },
-          credentials: "include",
-        });
-        const text = await res.text();
-        return { status: res.status, text };
-      },
-      { snapshotPath: SNAPSHOT_PATH }
-    );
-
-    let parsed: SnapshotResponse = {};
-    try {
-      parsed = JSON.parse(result.text) as SnapshotResponse;
-    } catch {
-      // Non-JSON body — leave parsed empty; treated as not-yet-ready below.
-    }
-
-    // 503 NO_BROWSER_CONNECTED -> relay client not attached yet; keep polling.
-    const notConnected =
-      result.status === 503 || parsed.code === "NO_BROWSER_CONNECTED";
-    const attached =
-      !notConnected && result.status >= 200 && result.status < 300;
-    last = { attached, raw: result.text, body: parsed, status: result.status };
-    if (attached) return last;
+    last = await fetchSnapshotOnce(page);
+    if (last.attached) return last;
 
     await page.waitForTimeout(500);
   }
 
   return last;
+}
+
+/**
+ * DOM anchor for the shared `(app)` layout's `UnifiedSidebar` shell (its root
+ * `<aside data-sidebar="true">`, rendered unconditionally by every authed
+ * route via `(app)/layout.tsx` — including `button-search-k`/`button-home-0`
+ * and the rest of the left nav).
+ *
+ * The relay-attach signal above (`CommandRelayListener` responding 2xx) is
+ * NECESSARY but NOT SUFFICIENT for a complete element registry: the sidebar
+ * is loaded through its own `next/dynamic(..., { ssr: false })` import
+ * wrapped in a separate `<Suspense>`, decoupled from whatever mounts the
+ * relay listener higher in the provider tree. On a heavier route — e.g.
+ * `/build/workflows`, whose own page bundle (AiGeneratePanel/WorkflowEditor:
+ * several textareas, many buttons) is larger to parse/hydrate than
+ * `/co-pilot` or `/library` — a loaded CI runner can finish the relay
+ * handshake and return a real 2xx from `/control/snapshot` BEFORE the
+ * sidebar's chunk has fetched, evaluated, mounted, and had `useAutoRegister`'s
+ * MutationObserver (100ms debounce) register its elements. That produced a
+ * snapshot with the page's own content fully present but ZERO sidebar
+ * elements at all (not just `button-search-k` — confirmed via CI run
+ * 28922868789's captured `build-workflows.json`: 22 elements, none of them
+ * `button-home-0`/`button-settings`/etc. either). So this is a capture-race
+ * across the WHOLE shared shell, not a `build-workflows`-specific product
+ * regression or a search-button-specific gap — `contrast_meets_wcag` on
+ * `button-search-k` just happens to be the one assertion in this route's
+ * spec that depends on the sidebar.
+ *
+ * Waiting for this selector (present on every authed route by construction)
+ * before treating a capture as final closes that race everywhere, instead of
+ * bumping a per-route timer (the `settleMs` field in `routes.json` reads like
+ * that knob but is intentionally unused — see the field's own doc comment:
+ * "readiness is signal-driven, not timer-driven" — a fixed wait would be
+ * exactly as flaky under variable CI load).
+ */
+const APP_SHELL_SIDEBAR_SELECTOR = '[data-sidebar="true"]';
+
+async function waitForAppShellSidebar(
+  page: Page,
+  timeoutMs = 8_000
+): Promise<void> {
+  await page
+    .locator(APP_SHELL_SIDEBAR_SELECTOR)
+    .first()
+    .waitFor({ state: "attached", timeout: timeoutMs })
+    .catch(() => undefined);
+}
+
+/**
+ * Relay attach confirmed — but (see `waitForAppShellSidebar`) that alone
+ * doesn't guarantee the shared sidebar shell has finished registering its
+ * elements. Wait for it, then take ONE fresh snapshot fetch so a sidebar that
+ * mounted AFTER the attaching response is reflected in what we write/return.
+ * Falls back to the already-attached `attached` result if the re-fetch itself
+ * doesn't come back 2xx (never regress below what we already had), and logs
+ * loudly if the sidebar still never showed up — that would mean a genuine
+ * app-shell regression, not just the capture race this function closes.
+ */
+async function finalizeSnapshotAfterAttach(
+  page: Page,
+  route: StyleGateRoute,
+  attached: RelayPollResult,
+  sidebarTimeoutMs = 8_000
+): Promise<{ raw: string; body: SnapshotResponse }> {
+  await waitForAppShellSidebar(page, sidebarTimeoutMs);
+  const sidebarPresent =
+    (await page
+      .locator(APP_SHELL_SIDEBAR_SELECTOR)
+      .count()
+      .catch(() => 0)) > 0;
+  if (!sidebarPresent) {
+    console.warn(
+      `[style-gate] Route "${route.id}": relay attached but the shared app-shell ` +
+        `sidebar (${APP_SHELL_SIDEBAR_SELECTOR}) never appeared within budget. ` +
+        `Proceeding with whatever the relay returned — the captured snapshot for ` +
+        `this route likely lacks button-search-k/button-home-0/etc.`
+    );
+  }
+  // Use `.attached` (not a raw status-range check) — it's the same
+  // definition `fetchSnapshotOnce`/`pollRelayUntilAttached` use elsewhere,
+  // which correctly excludes a 2xx response whose BODY still carries
+  // `code: "NO_BROWSER_CONNECTED"` (e.g. the tab detached from the relay in
+  // the moment between the sidebar wait and this re-fetch). A plain status
+  // check would wrongly accept that disconnected/empty body as final.
+  const refreshed = await fetchSnapshotOnce(page);
+  if (refreshed.attached) {
+    return { raw: refreshed.raw, body: refreshed.body };
+  }
+  return { raw: attached.raw, body: attached.body };
 }
 
 /**
@@ -643,6 +742,11 @@ async function pollRelayUntilAttached(
  * auth shell is still up partway through, reload ONCE and keep polling. No
  * timeout inflation (still inside the 60s per-test budget) and no extra
  * mechanism — it reuses `pollRelayUntilAttached`.
+ *
+ * Once attached (either attempt), `finalizeSnapshotAfterAttach` additionally
+ * waits for the shared sidebar shell before treating the snapshot as final —
+ * see that function + `waitForAppShellSidebar` for why relay-attach alone is
+ * not a sufficient readiness signal.
  */
 async function captureSnapshot(
   page: Page,
@@ -651,7 +755,7 @@ async function captureSnapshot(
   // First attempt: give the relay poll the bulk of the budget.
   let last = await pollRelayUntilAttached(page, 32_000);
   if (last.attached) {
-    return { raw: last.raw, body: last.body };
+    return finalizeSnapshotAfterAttach(page, route, last);
   }
 
   // Stalled. If the shared auth shell is still up, the client auth bootstrap got
@@ -671,9 +775,17 @@ async function captureSnapshot(
   await page
     .waitForLoadState("networkidle", { timeout: 5_000 })
     .catch(() => undefined);
-  last = await pollRelayUntilAttached(page, 18_000);
+  // Budget trimmed from the pre-sidebar-wait 18_000 to 12_000, and the
+  // post-attach sidebar wait below capped to 3_000 (vs. the first attempt's
+  // default 8_000) — this fallback branch is already the tight one (32s first
+  // poll + 5s reload settle + this poll, all inside the single 60s per-test
+  // timeout in playwright.config.ts); adding the new sidebar wait at its full
+  // default here would risk pushing an already-marginal recovery path over
+  // the wall. Net budget for this branch is unchanged from before this fix
+  // (18_000 -> 12_000 + 3_000 wait + a fast re-fetch ≈ the same envelope).
+  last = await pollRelayUntilAttached(page, 12_000);
   if (last.attached) {
-    return { raw: last.raw, body: last.body };
+    return finalizeSnapshotAfterAttach(page, route, last, 3_000);
   }
 
   // Budget exhausted — surface a precise, actionable failure. A loud failure
@@ -865,9 +977,10 @@ for (const route of AUTHED_ROUTES) {
     expect(
       elementCount,
       `[style-gate] Route "${route.id}" returned a snapshot with 0 elements — ` +
-        `an empty snapshot is worse than a loud failure. The page may not have ` +
-        `finished mounting (raise settleMs) or the AutoRegisterProvider registry ` +
-        `is empty for this surface.`
+        `an empty snapshot is worse than a loud failure. The page (or the ` +
+        `shared sidebar shell — see waitForAppShellSidebar) may not have ` +
+        `finished mounting, or the AutoRegisterProvider registry is empty for ` +
+        `this surface.`
     ).toBeGreaterThan(0);
 
     // Normalize bbox before writing: map the SDK's `{x,y,width,height}` floats

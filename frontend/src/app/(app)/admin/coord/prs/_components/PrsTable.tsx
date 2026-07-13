@@ -21,6 +21,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type {
   PrRow,
   PrMergeStatus,
@@ -154,19 +160,98 @@ function CiCell({ pr }: { pr: PrRow }) {
 
 // ---- mergeable / merge_state cell ---------------------------------------
 
+/**
+ * GitHub's merge_state_status, normalized for display. The value reaches us
+ * verbatim from coord, which sources it from BOTH the GraphQL `mergeStateStatus`
+ * (UPPERCASE) and the REST `mergeable_state` (lowercase) APIs — so we uppercase
+ * before mapping to keep casing + color consistent regardless of which path
+ * populated it. `label` overrides the raw enum where a plain-English word reads
+ * better than GitHub's jargon (notably UNKNOWN → "Recalibrating", the transient
+ * window where GitHub is still recomputing mergeability after `main` moved).
+ * Keys mirror the full GitHub enum.
+ */
+const MERGE_STATE_META: Record<
+  string,
+  { tone: BadgeTone; label?: string; hint: string }
+> = {
+  CLEAN: {
+    tone: "success",
+    hint: "Mergeable and all required checks pass — ready to merge.",
+  },
+  UNSTABLE: {
+    tone: "warning",
+    hint: "Mergeable, but a non-required check is failing or still running.",
+  },
+  BEHIND: {
+    tone: "warning",
+    hint: "Head is behind the base branch — update/rebase before merging.",
+  },
+  BLOCKED: {
+    tone: "destructive",
+    hint: "Blocked by branch protection (required review or check not satisfied).",
+  },
+  DIRTY: {
+    tone: "destructive",
+    hint: "Merge conflict with the base branch — rebase and resolve.",
+  },
+  HAS_HOOKS: {
+    tone: "info",
+    hint: "Mergeable, with pre-receive hooks configured.",
+  },
+  DRAFT: {
+    tone: "secondary",
+    hint: "PR is a draft — not mergeable until marked ready.",
+  },
+  UNKNOWN: {
+    tone: "info",
+    label: "Recalibrating",
+    hint: "GitHub is still recomputing mergeability (it resets every time the base branch moves). This resolves on its own; the row auto-refreshes until it settles.",
+  },
+};
+
+/** Order for the header legend — calm → loud → transient. */
+const MERGE_STATE_LEGEND: readonly string[] = [
+  "CLEAN",
+  "UNSTABLE",
+  "BEHIND",
+  "BLOCKED",
+  "DIRTY",
+  "HAS_HOOKS",
+  "DRAFT",
+  "UNKNOWN",
+];
+
+/** Normalize the raw wire value to an uppercase enum key (UNKNOWN when null). */
+function normalizeMergeState(raw: string | null): string {
+  return raw ? raw.toUpperCase() : "UNKNOWN";
+}
+
+/**
+ * True when the PR's merge state is the transient "Recalibrating" (UNKNOWN)
+ * window — GitHub hasn't finished recomputing mergeability. Exported so the
+ * page can force a fast re-read (`?refresh=1`) until it settles, instead of
+ * leaving the row stuck on the muted cache value.
+ */
+export function isMergeStateRecalibrating(
+  pr: Pick<PrRow, "merge_state_status">,
+): boolean {
+  return normalizeMergeState(pr.merge_state_status) === "UNKNOWN";
+}
+
 function MergeStateCell({ pr }: { pr: PrRow }) {
-  const state = pr.merge_state_status;
-  const mergeable = pr.mergeable;
-  let tone: BadgeTone = "outline";
-  if (state === "CLEAN") tone = "success";
-  else if (state === "DIRTY" || state === "BLOCKED") tone = "destructive";
-  else if (state === "BEHIND") tone = "warning";
-  else if (state === "UNKNOWN" || state === null) tone = "secondary";
+  const state = normalizeMergeState(pr.merge_state_status);
+  const meta = MERGE_STATE_META[state] ?? {
+    tone: "outline" as BadgeTone,
+    hint: "Unrecognized merge state reported by GitHub.",
+  };
 
   return (
     <div className="flex flex-col gap-0.5">
-      <Badge variant={tone} title={`mergeable: ${String(mergeable)}`}>
-        {state ?? "unknown"}
+      <Badge
+        variant={meta.tone}
+        title={`${meta.hint}\nmergeable: ${String(pr.mergeable)}`}
+      >
+        {meta.label ?? state}
       </Badge>
       {pr.review_decision && (
         <span className="text-[11px] text-muted-foreground">
@@ -174,6 +259,48 @@ function MergeStateCell({ pr }: { pr: PrRow }) {
         </span>
       )}
     </div>
+  );
+}
+
+/** The "Merge state" column header + a hover legend explaining each tag. */
+function MergeStateHeader() {
+  return (
+    <TooltipProvider delayDuration={100}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex items-center gap-1 cursor-help">
+            Merge state
+            <span
+              aria-hidden
+              className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border border-border text-[10px] leading-none text-muted-foreground"
+            >
+              i
+            </span>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-sm">
+          <p className="mb-1.5 font-medium">
+            GitHub merge state (from mergeStateStatus)
+          </p>
+          <ul className="space-y-1.5">
+            {MERGE_STATE_LEGEND.map((state) => {
+              const meta = MERGE_STATE_META[state];
+              if (!meta) return null;
+              return (
+                <li key={state} className="flex items-start gap-2">
+                  <Badge variant={meta.tone} className="shrink-0">
+                    {meta.label ?? state}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground">
+                    {meta.hint}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 
@@ -336,7 +463,9 @@ export function PrsTable({
               <TableHead>Branch → base</TableHead>
               <TableHead>State</TableHead>
               <TableHead>CI</TableHead>
-              <TableHead>Merge state</TableHead>
+              <TableHead>
+                <MergeStateHeader />
+              </TableHead>
               <TableHead>Blocking reason</TableHead>
               {merged && <TableHead>Deploy</TableHead>}
               {merged && <TableHead>Merged</TableHead>}
