@@ -32093,7 +32093,7 @@
         "description": "POST body: create a new scheduled run for ``workflow_id``.",
         "properties": {
           "cron_expression": {
-            "description": "5-field cron expression (minute hour dom month dow), evaluated in UTC by redbeat.",
+            "description": "5-field cron expression (minute hour dom month dow), evaluated in UTC by the in-process scheduler.",
             "title": "Cron Expression",
             "type": "string"
           },
@@ -32157,7 +32157,7 @@
             "type": "string"
           },
           "cron_expression": {
-            "description": "5-field cron expression (minute hour dom month dow), evaluated in UTC by redbeat.",
+            "description": "5-field cron expression (minute hour dom month dow), evaluated in UTC by the in-process scheduler.",
             "title": "Cron Expression",
             "type": "string"
           },
@@ -32232,6 +32232,19 @@
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "next_fire_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When this schedule next fires (UTC), or null if it never will (disabled). Durable in Postgres \u2014 survives a restart.",
+            "title": "Next Fire At"
           },
           "target": {
             "title": "Target",
@@ -87541,7 +87554,7 @@
     },
     "/api/v1/scheduled-runs/{run_id}": {
       "delete": {
-        "description": "Delete a scheduled run (tears down the redbeat entry too).",
+        "description": "Delete a scheduled run. The row IS the schedule \u2014 nothing else to tear down.",
         "operationId": "api_v1_scheduled_runs_run_id_delete",
         "parameters": [
           {
@@ -87687,7 +87700,7 @@
     },
     "/api/v1/scheduled-runs/{run_id}/run-now": {
       "post": {
-        "description": "Enqueue the same Celery task redbeat would fire at cron time.\n\nReturns immediately with the task id \u2014 actual dispatch happens async.",
+        "description": "Run the same dispatch the scheduler fires at cron time \u2014 synchronously.\n\nDispatch is one HTTP call to a runner, so we await it and return the REAL\noutcome. The previous implementation enqueued a Celery task and returned a\n``task_id`` for work that \u2014 with no worker ever deployed \u2014 never executed.\n\nA failed dispatch is an HTTP ERROR, not a 200 with ``status: \"failed\"`` in the\nbody. The caller asked us to run the workflow; if the runner is offline we\nhave not run it, and saying \"200 OK\" would be a lie the client cannot even\nparse (it expects a dispatch payload and would dereference a missing\n``execution_id``). We surface the dispatcher's own status code instead.\n\nDoes NOT touch ``next_fire_at``: an out-of-band manual fire must not shift\nthe cron schedule.",
         "operationId": "api_v1_scheduled_runs_run_id_run_now_post",
         "parameters": [
           {
@@ -87702,7 +87715,7 @@
           }
         ],
         "responses": {
-          "202": {
+          "200": {
             "content": {
               "application/json": {
                 "schema": {

@@ -42,6 +42,7 @@ have no tenant store to land in.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from datetime import UTC, datetime
 from typing import Any
@@ -124,7 +125,14 @@ async def bridge_sync_once(
             redacted[name] = (version, rt.text, rc.text)
         log_redactions("memory_bridge", redaction_counts)
 
-        embeddings = get_embedder().embed_texts([redacted[name][2] for name in ordered])
+        # Offload to a thread: embed_texts is a synchronous, CPU-bound ONNX call.
+        # This job now runs inside uvicorn (not a Celery worker process), so
+        # blocking the event loop here would stall every in-flight request and
+        # /health — every 15 minutes. Same idiom as the request path
+        # (app/services/memory_store.py:1505).
+        embeddings = await asyncio.to_thread(
+            get_embedder().embed_texts, [redacted[name][2] for name in ordered]
+        )
         ensure_embedding_dims(embeddings)
         for name, embedding in zip(ordered, embeddings, strict=True):
             version, title, content = redacted[name]

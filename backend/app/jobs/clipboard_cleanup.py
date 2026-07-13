@@ -49,5 +49,10 @@ async def cleanup_expired_clipboard() -> dict[str, int]:
             error_type=type(e).__name__,
             exc_info=True,
         )
+        # Re-raise: the scheduler records `last_status="failed"` on /health and
+        # keeps looping. Swallowing here (needed by the old `while True` loop, which
+        # would have died) would make every failed run report `"ok"` — the exact
+        # silent-no-op blindness this scheduler exists to end.
+        raise
 
     return stats
