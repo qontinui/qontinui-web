@@ -33,9 +33,29 @@ Backfill
 
 ``UPDATE coord.sessions SET work_unit_slug = plan_slug`` for every row that has a
 ``plan_slug`` — so readers can switch to the new column without a COALESCE for
-historical rows. Guarded by ``work_unit_slug IS NULL`` so a re-run is a no-op.
-``coord.sessions`` is a bounded operational table (sessions, not events), so a
-single-statement backfill is appropriate; no batching required.
+historical rows. Guarded by ``work_unit_slug IS NULL`` so a re-run is a no-op
+that can never clobber a value coord itself later dual-wrote.
+
+**Lock posture (deliberate).** alembic runs a migration inside ONE transaction
+(``env.py`` → ``context.begin_transaction()``), so a naive
+``ADD COLUMN`` + ``UPDATE`` would hold the ``ADD COLUMN``'s ``ACCESS EXCLUSIVE``
+lock on ``coord.sessions`` *through the whole backfill* — blocking every session
+registration, every ~40s heartbeat, and both watcher sweeps for that window, with
+a real risk of cascading into pool exhaustion (a precedented failure in this
+fleet). Two guards, both matching house style:
+
+* ``SET LOCAL lock_timeout`` — the ``ADD COLUMN`` fails FAST rather than queueing
+  behind an in-flight query (a queued ``ACCESS EXCLUSIVE`` request itself blocks
+  every new reader that arrives behind it).
+* the backfill runs in ``op.get_context().autocommit_block()`` (same directive as
+  ``coord_pg_overload_idx_01_fanout_query_indexes``) — entering the block commits
+  the DDL, so the ``ACCESS EXCLUSIVE`` lock is RELEASED before the row-rewriting
+  ``UPDATE`` starts. The ``UPDATE`` then takes only row-level locks and never
+  blocks a reader. Splitting the two is safe precisely because each half is
+  independently idempotent.
+
+``coord.sessions`` is a bounded operational table (sessions, not events), so the
+backfill stays a single statement; no batching required.
 
 Rollout ordering (expand → dual-write → stop-write → contract)
 ==============================================================
@@ -79,16 +99,23 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    # Bound the DDL's lock wait: a queued ACCESS EXCLUSIVE request blocks every
+    # reader that arrives behind it, so fail fast instead of stalling coord's
+    # session hot path behind one slow in-flight query.
+    op.execute("SET LOCAL lock_timeout = '3s'")
     op.execute(
         "ALTER TABLE coord.sessions ADD COLUMN IF NOT EXISTS work_unit_slug TEXT"
     )
-    # Backfill the successor column from the legacy one. Guarded so a re-run
-    # (or a run after coord has already begun dual-writing) is a no-op and never
-    # clobbers a value coord wrote.
-    op.execute(
-        "UPDATE coord.sessions SET work_unit_slug = plan_slug "
-        "WHERE plan_slug IS NOT NULL AND work_unit_slug IS NULL"
-    )
+
+    # Backfill OUTSIDE the DDL transaction: entering the autocommit block commits
+    # the ADD COLUMN, releasing its ACCESS EXCLUSIVE lock before this row-rewriting
+    # UPDATE begins. Guarded by `work_unit_slug IS NULL` so a re-run is a no-op and
+    # never clobbers a value coord dual-wrote.
+    with op.get_context().autocommit_block():
+        op.execute(
+            "UPDATE coord.sessions SET work_unit_slug = plan_slug "
+            "WHERE plan_slug IS NOT NULL AND work_unit_slug IS NULL"
+        )
 
 
 def downgrade() -> None:
