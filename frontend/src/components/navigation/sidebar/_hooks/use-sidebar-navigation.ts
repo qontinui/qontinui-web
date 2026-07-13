@@ -36,8 +36,8 @@ import { useAdvancedAutomation } from "@/contexts/advanced-automation-context";
 // task_run-scoped execution/review surfaces (runs/active/findings) — a
 // coord+sessions user works in `coord.sessions`, which produce no task_runs —
 // plus a handful of web-local nav ids that have no package entry
-// (scheduled-runs, state-machine-dev, build-flow-designer, review, inspector,
-// observations). Routes stay registered so deep-links keep working.
+// (scheduled-runs, build-flow-designer, review, inspector, observations).
+// Routes stay registered so deep-links keep working.
 const WEB_ADVANCED_IDS = new Set<string>([
   // execution / review (task_run-scoped, not session-scoped) — runner keeps these
   "active",
@@ -46,7 +46,6 @@ const WEB_ADVANCED_IDS = new Set<string>([
   "gui-automation",
   // web-local nav ids with no shared-package entry
   "scheduled-runs",
-  "state-machine-dev",
   "build-flow-designer",
   "review",
   "inspector",
