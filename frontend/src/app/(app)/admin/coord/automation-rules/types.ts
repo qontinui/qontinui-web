@@ -123,6 +123,25 @@ export interface PolicyRow {
   created_by: string;
   updated_at: string;
   updated_by: string;
+  /**
+   * True when this row is a SYSTEM built-in surfaced by coord's effective-set
+   * resolver (owned by the system tenant, applies to every workspace). The
+   * caller can't edit/delete it directly — only disable, customize, or revert
+   * its override for their own tenant.
+   */
+  built_in: boolean;
+  /**
+   * For a built-in: how THIS tenant has overridden it. `null` when the row is
+   * not a built-in. `active` = built-in applies as-is; `disabled` = turned off
+   * for this tenant; `customized` = replaced by the tenant's own version.
+   */
+  override_state: "active" | "disabled" | "customized" | null;
+  /**
+   * The system rule's `policy_id`, used as the target of the override routes
+   * (`PUT|DELETE /coord/policies/system/{system_rule_id}/override`). `null`
+   * when the row is not a built-in.
+   */
+  system_rule_id: string | null;
 }
 
 /** `GET /coord/policies` response. */
