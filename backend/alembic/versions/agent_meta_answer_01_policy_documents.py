@@ -43,14 +43,25 @@ from sqlalchemy.dialects import postgresql
 from alembic import op
 
 # revision identifiers, used by Alembic.
-# down_revision re-pointed from "auto_fix_red_main_01" to the current single
-# alembic head "coord_memory_synthesis_jobs": main advanced ~13 migrations past
-# auto_fix_red_main_01 while this PR sat open, so branching off it produced a
-# second alembic head and failed the required `alembic-heads-pr` gate. Chaining
-# onto the live head restores a single linear head. coord's land-time dry-rebase
-# re-points this again if the head drifts before merge.
+# down_revision re-pointed again from "coord_memory_synthesis_jobs" to
+# "coord_policy_docs_default_source": main landed a migration of that name
+# (commit 942fde43) as a sibling of this one off the same "coord_memory_
+# synthesis_jobs" parent, producing a second alembic head and failing the
+# required `alembic-heads-pr` gate a second time. Chaining onto it restores
+# a single head as this PR branch's tree currently stands. NOTE: main has
+# since advanced further past coord_policy_docs_default_source (through
+# coord_policy_rules_tenant_override / coord_prompt_injection_events /
+# coord_sessions_work_unit_slug / sched_01_next_fire_at) — none of which are
+# reachable from this branch because this PR has unrelated merge conflicts
+# with current main (see PR #742 discussion) preventing a rebase so far.
+# When those conflicts are resolved and this branch is rebased forward, this
+# down_revision must move again to whatever main's head is at that time —
+# and the migrations in this file/agent_meta_answer_02 duplicate objects
+# ("coord.policy_documents", "coord.policy_rules.default_source") already
+# created by coord_policy_docs_default_source, so they will need to be
+# dropped or reworked before that rebase, not merely re-pointed.
 revision: str = "agent_meta_answer_01_policy_documents"
-down_revision: str | Sequence[str] | None = "coord_memory_synthesis_jobs"
+down_revision: str | Sequence[str] | None = "coord_policy_docs_default_source"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
