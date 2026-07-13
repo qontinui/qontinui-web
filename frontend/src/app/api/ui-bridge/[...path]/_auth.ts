@@ -41,11 +41,31 @@
  *
  * # Failure shape
  *
- * Unauthenticated requests get a flat 401 with no body details (no
- * "token expired" vs "wrong audience" hint that helps an attacker
- * fingerprint the gate). Forbidden origins get a 403. Both responses use
- * the same envelope so the SDK's `_meta.fallback` handling treats them
- * uniformly.
+ * Authentication is THREE-state, not two:
+ *
+ *   - `ok: true`                        — a principal was resolved.
+ *   - `ok: false, reason:"unauthenticated"` — the backend rendered an auth
+ *     VERDICT and the verdict was "no". Flat 401, no body details (no
+ *     "token expired" vs "wrong audience" hint that helps an attacker
+ *     fingerprint the gate).
+ *   - `ok: false, reason:"upstream_error"` — the backend rendered NO verdict
+ *     at all: it was rate-limiting us (429), broken (5xx), or unreachable.
+ *     This is NOT an auth failure and MUST NOT be reported as one.
+ *
+ * That third state is the whole point of the discriminant. Collapsing an
+ * upstream 429/5xx into a 401 tells an operator with a perfectly good token
+ * that their token is bad — which is actively misleading, and sends whoever
+ * is debugging a backend outage or a rate-limit storm hunting the wrong bug.
+ * The `AuthResult` failure variants therefore carry NO bare `status` field:
+ * a caller cannot read a status off the result and blindly render it as an
+ * auth verdict, because the only way to get a status out is to first branch
+ * on `reason`. The bug is unrepresentable rather than merely fixed.
+ *
+ * Upstream errors are surfaced with the upstream's REAL status (429 stays
+ * 429, a 502 stays a 502) and its `Retry-After` header when it sent one, so
+ * a client's backoff logic sees the truth. Forbidden origins get a 403. All
+ * responses use the same envelope so the SDK's `_meta.fallback` handling
+ * treats them uniformly.
  *
  * # Cache invariant
  *
@@ -144,6 +164,14 @@ function backendBaseUrl(): string {
  * Both success variants carry `token` (the verified incoming bearer, to be
  * forwarded to the audit endpoint) and `tokenKeyHash` (SHA-256 of the token,
  * used as the positive-cache key).
+ *
+ * The FAILURE variants are discriminated on `reason` — see the "Failure
+ * shape" section in the module header. Note that neither failure variant
+ * exposes a bare `status`: `unauthenticated` has no status to read (it is
+ * always a 401, produced by `unauthenticatedResponse()`), and
+ * `upstream_error`'s status is only reachable after branching on `reason`.
+ * A caller therefore cannot accidentally render an upstream 429/5xx as an
+ * auth verdict — the type forbids it.
  */
 export type AuthResult =
   | {
@@ -162,7 +190,66 @@ export type AuthResult =
       tokenKeyHash: string;
       token: string;
     }
-  | { ok: false; status: 401 };
+  /** The backend rendered an auth verdict, and the verdict was "no". → 401. */
+  | { ok: false; reason: "unauthenticated" }
+  /**
+   * The backend rendered NO verdict — it rate-limited us, fell over, or was
+   * unreachable. `status` is the upstream's own status (429 or 5xx; 503 when
+   * the fetch never completed) and `retryAfter` is its `Retry-After` header
+   * verbatim, when it sent one.
+   */
+  | {
+      ok: false;
+      reason: "upstream_error";
+      status: number;
+      retryAfter: string | null;
+    };
+
+/**
+ * Outcome of ONE upstream verification probe (`/auth/users/me` or
+ * `/devices/me`). Three-state for the same reason `AuthResult` is:
+ *
+ *   - `match`          — this token is a valid principal of this kind.
+ *   - `no-match`       — the backend answered, and the answer was "not this
+ *     kind of token" (401/403, or a 2xx whose body carries no usable
+ *     principal). The caller may fall through to the other verify path.
+ *   - `upstream-error` — the backend never answered the question (429, 5xx,
+ *     or a transport failure). Says NOTHING about the token's validity.
+ */
+type VerifyOutcome<P> =
+  | { outcome: "match"; principal: P }
+  | { outcome: "no-match" }
+  | { outcome: "upstream-error"; status: number; retryAfter: string | null };
+
+/** Sentinel for the two `no-match` returns below (saves re-allocating). */
+const NO_MATCH = { outcome: "no-match" } as const;
+
+/**
+ * Classify a non-2xx upstream response as either an upstream ERROR (no
+ * verdict rendered) or a plain no-match (a verdict of "not this token").
+ *
+ *   - 429       → upstream error. We are being rate-limited; the backend
+ *                 never looked at the token.
+ *   - 5xx       → upstream error. The backend is broken.
+ *   - any other → no-match. 401/403 is the backend's actual verdict on this
+ *                 token; 404/400 means we asked wrong. Either way it is a
+ *                 real answer, and the disjoint-path fallback depends on a
+ *                 401 from `/auth/users/me` meaning "try the device path".
+ *
+ * Returns null when the status is not an upstream-error class.
+ */
+function upstreamErrorFrom(
+  resp: Response,
+): { outcome: "upstream-error"; status: number; retryAfter: string | null } | null {
+  if (resp.status === 429 || resp.status >= 500) {
+    return {
+      outcome: "upstream-error",
+      status: resp.status,
+      retryAfter: resp.headers.get("retry-after"),
+    };
+  }
+  return null;
+}
 
 /**
  * Authenticate an incoming UI Bridge relay request.
@@ -183,13 +270,26 @@ export type AuthResult =
  *      `/devices/me` rejects a Cognito bearer (401), so the two paths are
  *      disjoint and the order only affects which fetch fires first, never
  *      the outcome.
+ *
+ * # Upstream errors are not auth verdicts
+ *
+ * A 429 or 5xx from either verify path means the backend never rendered a
+ * verdict on the token. Such a request resolves to `reason:"upstream_error"`
+ * carrying the upstream's real status — never a 401.
+ *
+ * Note that an upstream error on the USER path does NOT short-circuit: we
+ * still try the device path. A valid device-JWT must keep authenticating
+ * through a transient blip on `/auth/users/me` (the two endpoints can fail
+ * independently), so availability wins over saving one fetch. Only when
+ * NEITHER path produced a principal do we ask whether the failure was an
+ * upstream error or a genuine "no".
  */
 export async function authenticateBridgeRequest(
   request: NextRequest,
 ): Promise<AuthResult> {
   const token = extractToken(request);
   if (!token) {
-    return { ok: false, status: 401 };
+    return { ok: false, reason: "unauthenticated" };
   }
 
   const key = tokenKey(token);
@@ -202,40 +302,80 @@ export async function authenticateBridgeRequest(
   const base = backendBaseUrl();
 
   // Path 1: Cognito operator bearer.
-  const userPrincipal = await verifyUserToken(base, token);
-  if (userPrincipal) {
+  const user = await verifyUserToken(base, token);
+  if (user.outcome === "match") {
     positiveCache.set(key, {
-      principal: userPrincipal,
+      principal: user.principal,
       expiresAt: now + POSITIVE_TTL_MS,
     });
-    return principalToResult(userPrincipal, key, token);
+    return principalToResult(user.principal, key, token);
   }
 
-  // Path 2: coord device-JWT. Only reached when the user path did not
-  // resolve a principal (wrong token type or a backend reject).
-  const devicePrincipal = await verifyDeviceToken(base, token);
-  if (devicePrincipal) {
+  // Path 2: coord device-JWT. Reached when the user path did not resolve a
+  // principal — whether because the token isn't a Cognito bearer (`no-match`)
+  // or because `/auth/users/me` itself was unavailable (`upstream-error`).
+  const device = await verifyDeviceToken(base, token);
+  if (device.outcome === "match") {
     positiveCache.set(key, {
-      principal: devicePrincipal,
+      principal: device.principal,
       expiresAt: now + POSITIVE_TTL_MS,
     });
-    return principalToResult(devicePrincipal, key, token);
+    return principalToResult(device.principal, key, token);
   }
 
-  return { ok: false, status: 401 };
+  // Neither path resolved a principal. Distinguish "the backend said no"
+  // from "the backend never said anything" — only the former is a 401.
+  //
+  // Precedence when BOTH paths errored: a 429 wins over a 5xx. Both probes
+  // hit the same backend, so a rate limit on one is almost certainly the
+  // condition on the other, and the 429 is the variant that carries an
+  // actionable `Retry-After`. Otherwise the first error observed wins.
+  const upstream = pickUpstreamError(user, device);
+  if (upstream) {
+    return {
+      ok: false,
+      reason: "upstream_error",
+      status: upstream.status,
+      retryAfter: upstream.retryAfter,
+    };
+  }
+
+  // Never cached: a negative verdict must not outlive a token refresh.
+  return { ok: false, reason: "unauthenticated" };
+}
+
+/**
+ * Choose which upstream error (if any) to report when neither verify path
+ * produced a principal. Prefers a 429 (carries `Retry-After`); otherwise the
+ * first error observed. Returns null when both paths were clean `no-match`es
+ * — i.e. the backend genuinely rejected the token, which IS an auth verdict.
+ */
+function pickUpstreamError(
+  ...outcomes: VerifyOutcome<unknown>[]
+): { status: number; retryAfter: string | null } | null {
+  const errors = outcomes.filter(
+    (o): o is Extract<VerifyOutcome<unknown>, { outcome: "upstream-error" }> =>
+      o.outcome === "upstream-error",
+  );
+  const first = errors[0];
+  if (!first) return null;
+  return errors.find((e) => e.status === 429) ?? first;
 }
 
 /**
  * Verify a Cognito operator bearer against `/api/v1/auth/users/me`.
- * Returns the resolved `user` principal on success, or null on any
- * failure (network error, non-2xx, unparseable body, missing id) — null
- * means "not a valid user bearer", which lets the caller fall through to
- * the device path.
+ *
+ * Three-state (see `VerifyOutcome`):
+ *   - `match`          — 2xx with a usable `{ id }`.
+ *   - `upstream-error` — 429 / 5xx / transport failure. The backend never
+ *     rendered a verdict; this says nothing about the token.
+ *   - `no-match`       — anything else (401/403, or a 2xx whose body carries
+ *     no usable id). Lets the caller fall through to the device path.
  */
 async function verifyUserToken(
   base: string,
   token: string,
-): Promise<{ kind: "user"; userId: string } | null> {
+): Promise<VerifyOutcome<{ kind: "user"; userId: string }>> {
   let resp: Response;
   try {
     resp = await fetch(`${base}/api/v1/auth/users/me`, {
@@ -243,41 +383,44 @@ async function verifyUserToken(
       headers: { Authorization: `Bearer ${token}` },
     });
   } catch {
-    // Network error talking to the backend. Treat as a non-match so a
-    // misconfigured `API_URL` doesn't silently grant access.
-    return null;
+    // Transport failure talking to the backend (DNS, refused, timeout). This
+    // is an upstream error, NOT a rejection of the token — a misconfigured
+    // `BACKEND_URL` must not be reported to the caller as "your token is
+    // bad". It still grants nothing: `upstream-error` is a failure state.
+    return unreachable();
   }
   if (!resp.ok) {
-    return null;
+    return upstreamErrorFrom(resp) ?? NO_MATCH;
   }
   let body: unknown;
   try {
     body = await resp.json();
   } catch {
-    return null;
+    return NO_MATCH;
   }
   const userId = extractUserId(body);
   if (!userId) {
-    return null;
+    return NO_MATCH;
   }
-  return { kind: "user", userId };
+  return { outcome: "match", principal: { kind: "user", userId } };
 }
 
 /**
- * Verify a coord device-JWT against `/api/v1/devices/me`. Same fetch
- * idiom and base-URL resolution as the user path. Returns the resolved
- * `device` principal (with the paired operator's `userId`) on success, or
- * null on any failure.
+ * Verify a coord device-JWT against `/api/v1/devices/me`. Same fetch idiom,
+ * base-URL resolution, and three-state contract as the user path; `match`
+ * carries the paired operator's `userId`.
  */
 async function verifyDeviceToken(
   base: string,
   token: string,
-): Promise<{
-  kind: "device";
-  deviceId: string;
-  userId: string;
-  tenantId: string;
-} | null> {
+): Promise<
+  VerifyOutcome<{
+    kind: "device";
+    deviceId: string;
+    userId: string;
+    tenantId: string;
+  }>
+> {
   let resp: Response;
   try {
     resp = await fetch(`${base}/api/v1/devices/me`, {
@@ -285,18 +428,35 @@ async function verifyDeviceToken(
       headers: { Authorization: `Bearer ${token}` },
     });
   } catch {
-    return null;
+    return unreachable();
   }
   if (!resp.ok) {
-    return null;
+    return upstreamErrorFrom(resp) ?? NO_MATCH;
   }
   let body: unknown;
   try {
     body = await resp.json();
   } catch {
-    return null;
+    return NO_MATCH;
   }
-  return extractDevicePrincipal(body);
+  const principal = extractDevicePrincipal(body);
+  if (!principal) {
+    return NO_MATCH;
+  }
+  return { outcome: "match", principal };
+}
+
+/**
+ * The upstream-error outcome for a fetch that never completed. 503 Service
+ * Unavailable is the honest status: we could not reach the authority, so we
+ * cannot say whether the caller is authenticated.
+ */
+function unreachable(): {
+  outcome: "upstream-error";
+  status: number;
+  retryAfter: string | null;
+} {
+  return { outcome: "upstream-error", status: 503, retryAfter: null };
 }
 
 /** Build the discriminated `AuthResult` for a verified principal. */
@@ -406,6 +566,49 @@ export function unauthenticatedResponse(): Response {
       status: 401,
       headers: { "Content-Type": "application/json" },
     },
+  );
+}
+
+/**
+ * Response for the `upstream_error` auth outcome: the identity backend did
+ * not render a verdict on the caller's token, so we must not pretend it
+ * rendered a negative one.
+ *
+ * The upstream's REAL status is passed through (429 stays 429, 502 stays
+ * 502) along with its `Retry-After` header when it sent one, so client-side
+ * backoff sees the truth instead of a 401 it can only respond to by throwing
+ * away a perfectly good token. The `code` distinguishes the rate-limit case
+ * from the outage case for log greppability; both are explicitly NOT
+ * `UNAUTHENTICATED`.
+ *
+ * `status` is defensively clamped to a class this helper is willing to emit
+ * (429, or 5xx) — a 502 stands in for anything unexpected — so the helper is
+ * total and can never throw a `RangeError` out of the request path.
+ */
+export function upstreamErrorResponse(result: {
+  status: number;
+  retryAfter: string | null;
+}): Response {
+  const status =
+    result.status === 429 || (result.status >= 500 && result.status <= 599)
+      ? result.status
+      : 502;
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (result.retryAfter) {
+    headers["Retry-After"] = result.retryAfter;
+  }
+  return new Response(
+    JSON.stringify({
+      success: false,
+      code: status === 429 ? "UPSTREAM_RATE_LIMITED" : "UPSTREAM_UNAVAILABLE",
+      message:
+        status === 429
+          ? "UI Bridge relay could not verify the session token: the identity backend is rate-limiting requests"
+          : "UI Bridge relay could not verify the session token: the identity backend is unavailable",
+    }),
+    { status, headers },
   );
 }
 

@@ -70,6 +70,7 @@ import {
   isAuthGateEnabled,
   originForbiddenResponse,
   unauthenticatedResponse,
+  upstreamErrorResponse,
 } from "./_auth";
 import {
   commandNameFromPath,
@@ -191,7 +192,14 @@ async function wrapHandler(
     }
     const auth = await authenticateBridgeRequest(request);
     if (!auth.ok) {
-      return unauthenticatedResponse();
+      // Auth is three-state. Only `unauthenticated` — the backend rendered a
+      // verdict of "no" — is a 401. An `upstream_error` (the backend was
+      // rate-limiting us, broken, or unreachable) is passed through with its
+      // real status and Retry-After: reporting it as a 401 would tell an
+      // operator holding a perfectly valid token that their token is bad.
+      return auth.reason === "upstream_error"
+        ? upstreamErrorResponse(auth)
+        : unauthenticatedResponse();
     }
     callerUserId = auth.userId;
     callerToken = auth.token;
