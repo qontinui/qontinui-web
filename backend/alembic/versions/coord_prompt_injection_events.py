@@ -1,7 +1,7 @@
 """coord.prompt_injection_events (Unified Coord Prompt-Injection Audit Log — Phase 1)
 
 Revision ID: coord_prompt_injection_events
-Revises: coord_consistent_snapshots_01
+Revises: coord_memory_synthesis_jobs
 Create Date: 2026-07-04
 
 Phase 1 of the "Unified Coord Prompt-Injection Audit Log" plan.
@@ -63,7 +63,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_prompt_injection_events"
-down_revision: str | Sequence[str] | None = "coord_tenant_backfill_01"
+down_revision: str | Sequence[str] | None = "coord_memory_synthesis_jobs"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
