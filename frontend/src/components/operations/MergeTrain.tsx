@@ -268,7 +268,7 @@ interface SuggestionCardProps {
   ) => void;
 }
 
-function SuggestionCard({ sug, busy, onAction }: SuggestionCardProps) {
+export function SuggestionCard({ sug, busy, onAction }: SuggestionCardProps) {
   const subject = sug.detail.subject ?? sug.detail.repo ?? "";
   const rationale = sug.detail.rationale ?? sug.summary;
   const kindLabel =
@@ -402,7 +402,7 @@ function honestyBadgeClass(tone: HonestyTone): string {
   }
 }
 
-function GateDecisionRow({ block }: { block: BlastRadiusBlock }) {
+export function GateDecisionRow({ block }: { block: BlastRadiusBlock }) {
   const honesty = honestyLabel(block);
   const repoShort = block.repo.includes("/")
     ? block.repo.split("/").slice(1).join("/")
