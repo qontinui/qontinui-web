@@ -203,6 +203,11 @@ export interface PrRow {
   last_predicate_eval_at: string | null; // ISO
   ci_lifecycle: string | null; // "complete" | "pending" | null
   ci_conclusion: string | null; // "success" | "failure" | null
+  // Named check contexts on the head sha. OPTIONAL: coord omits them when
+  // empty AND older coord deploys don't send them at all — consumers must
+  // tolerate absence and fall back to ci_lifecycle/ci_conclusion.
+  failing_contexts?: string[]; // completed non-passing check-run names
+  pending_contexts?: string[]; // still-running check-run names
   correlation_id: string | null;
   merge_status: PrMergeStatus;
   blocking_summary: string;

@@ -99,6 +99,18 @@ export interface PrRow {
   ci_lifecycle: "pending" | "complete" | string | null;
   /** "success" | "failure" | null. */
   ci_conclusion: "success" | "failure" | string | null;
+  /**
+   * Names of COMPLETED non-passing check runs on the head sha (e.g.
+   * `["security", "test (windows)"]`). Optional: omitted when empty AND
+   * absent entirely on older coord deploys — every consumer must tolerate
+   * absence and fall back to the aggregate `ci_lifecycle`/`ci_conclusion`.
+   */
+  failing_contexts?: string[];
+  /**
+   * Names of still-RUNNING check runs on the head sha. Same optionality
+   * contract as `failing_contexts`.
+   */
+  pending_contexts?: string[];
   correlation_id: string | null;
 }
 
