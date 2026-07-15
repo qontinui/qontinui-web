@@ -66,8 +66,11 @@ test.describe("Admin - Coord questions inbox", () => {
       page.getByTestId("coord-questions-tab-answered")
     ).toBeVisible();
 
-    // Nav-link to the inbox is wired into CoordNav.
-    await expect(page.getByTestId("coord-nav-questions")).toBeVisible();
+    // Nav wiring: on the questions page, the Work group trigger surfaces
+    // Questions as its wayfinding crumb (nav redesign — grouped menus).
+    await expect(
+      page.getByTestId("coord-nav-questions-active")
+    ).toBeVisible();
   });
 
   test("detail route renders without error and exposes submit composer when pending", async ({
@@ -119,6 +122,8 @@ test.describe("Admin - Coord questions inbox", () => {
       return;
     }
 
+    // Questions lives in the Work group — open the menu, then navigate.
+    await page.getByTestId("coord-nav-group-work").click();
     await page.getByTestId("coord-nav-questions").click();
     await page.waitForURL(/\/admin\/coord\/questions/);
     await expect(page.getByTestId("coord-questions-page")).toBeVisible();

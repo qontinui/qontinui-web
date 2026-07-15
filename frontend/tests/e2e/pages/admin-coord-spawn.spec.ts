@@ -79,9 +79,10 @@ test.describe("Admin - Coord spawn-from-plan", () => {
       return;
     }
 
-    // Spawn page + nav-link both render.
+    // Spawn page renders; the Infra group trigger surfaces Spawn as its
+    // wayfinding crumb (nav redesign — grouped menus).
     await expect(page.getByTestId("coord-spawn-page")).toBeVisible();
-    await expect(page.getByTestId("coord-nav-spawn")).toBeVisible();
+    await expect(page.getByTestId("coord-nav-spawn-active")).toBeVisible();
 
     // The plan row is present + so is its Spawn button.
     await expect(page.getByTestId("coord-spawn-plans-list")).toBeVisible();
