@@ -73818,6 +73818,22 @@
               ],
               "title": "Limit"
             }
+          },
+          {
+            "in": "query",
+            "name": "exclude_orphans",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Exclude Orphans"
+            }
           }
         ],
         "responses": {

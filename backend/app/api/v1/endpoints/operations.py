@@ -1762,6 +1762,7 @@ async def get_gates_list(
     claim_kind: str | None = None,
     resource_key: str | None = None,
     limit: int | None = None,
+    exclude_orphans: str | None = None,
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """List gates, optionally filtered by verdict.
@@ -1776,6 +1777,8 @@ async def get_gates_list(
         params["resource_key"] = resource_key
     if limit is not None:
         params["limit"] = limit
+    if exclude_orphans is not None:
+        params["exclude_orphans"] = exclude_orphans
     return await _proxy_coord_get("/coord/gates", params=params, tenant_id=tenant_id)
 
 
