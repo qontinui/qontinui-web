@@ -17,6 +17,7 @@ import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_API, relativeTime } from "./utils";
 import { CollapsiblePanel } from "./CollapsiblePanel";
+import { unstableHasFailure } from "./prPipeline";
 import type {
   BlastRadiusBlock,
   BlastRadiusBlocksResponse,
@@ -79,7 +80,12 @@ function prStatusTint(pr: PrRow): string {
     case "CLEAN":
       return "bg-green-500/15 text-green-200 border-green-500/30";
     case "UNSTABLE":
-      return "bg-yellow-500/15 text-yellow-200 border-yellow-500/30";
+      // Two honest meanings: a non-required check actually FAILED (red — an
+      // agent/author should look) vs checks merely still running (muted
+      // yellow — just wait). Same predicate as prPipeline/PrsTable.
+      return unstableHasFailure(pr)
+        ? "bg-red-500/15 text-red-200 border-red-500/30"
+        : "bg-yellow-500/10 text-yellow-200/70 border-yellow-500/20";
     case "BEHIND":
       return "bg-orange-500/15 text-orange-200 border-orange-500/30";
     case "BLOCKED":
@@ -182,7 +188,7 @@ export function MergeTrainRow({ proposal }: { proposal: ProposalDetail }) {
 // PR Merge Orchestrator Phase 1 D1.6 -- PR Outer State row component
 // ----------------------------------------------------------------------------
 
-function PrRowDisplay({ pr }: { pr: PrRow }) {
+export function PrRowDisplay({ pr }: { pr: PrRow }) {
   const repoShort = pr.repo.includes("/")
     ? pr.repo.split("/").slice(1).join("/")
     : pr.repo;

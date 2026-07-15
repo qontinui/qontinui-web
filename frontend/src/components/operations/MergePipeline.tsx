@@ -65,6 +65,9 @@ const STATUS_BADGE_CLASS: Record<UnifiedStatusKind, string> = {
   "not-mergeable": "bg-red-500/15 text-red-200 border-red-500/35",
   requirements: "bg-red-500/15 text-red-200 border-red-500/35",
   "checks-failing": "bg-amber-500/15 text-amber-200 border-amber-500/30",
+  // In-flight, not a failure: checks are merely still running — muted, so it
+  // never reads as the red/amber "author must act" family.
+  "checks-pending": "bg-muted text-muted-foreground border-border",
   blocked: "bg-orange-500/15 text-orange-200 border-orange-500/30",
   "needs-rebase": "bg-amber-500/15 text-amber-200 border-amber-500/30",
   draft: "bg-transparent text-muted-foreground border-border border-dashed",
