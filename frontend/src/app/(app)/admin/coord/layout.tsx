@@ -37,22 +37,20 @@ export default function CoordLayout({
       data-testid="coord-layout"
       className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden"
     >
-      <header className="flex items-center gap-3 px-3 sm:px-6 py-3 border-b border-border shrink-0">
-        <Activity className="h-5 w-5 text-muted-foreground shrink-0" />
-        <div className="min-w-0">
-          <h1 className="text-base sm:text-lg font-semibold truncate">
-            Coord operator console
-          </h1>
-          <p className="text-xs text-muted-foreground hidden sm:block">
-            Cross-machine fleet state, primary trees, plans, alerts, history.
-          </p>
-        </div>
+      {/* One chrome row: title + grouped nav + tenant switcher (the old
+          two-row header/nav stack folded together — nav redesign). The h1
+          keeps its exact text: e2e + page specs assert it by role/name. */}
+      <header className="flex items-center gap-2 flex-wrap px-3 sm:px-6 py-2 border-b border-border bg-card shrink-0">
+        <Activity className="h-4 w-4 text-muted-foreground shrink-0" />
+        <h1 className="text-sm font-semibold whitespace-nowrap">
+          Coord operator console
+        </h1>
+        <div className="mx-1 sm:mx-2 h-5 w-px bg-border hidden sm:block" aria-hidden />
+        <CoordNav />
         <div className="ml-auto shrink-0">
           <CoordTenantSwitcher />
         </div>
       </header>
-
-      <CoordNav />
 
       {/* Red-main outage banner (plan 2026-07-06-coord-red-main-…, Phase 1
           D2): one persistent, non-dismissable row per repo whose main CI is

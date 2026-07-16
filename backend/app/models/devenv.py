@@ -341,3 +341,66 @@ class DeviceMachineCredential(Base):
             f"device_id={self.device_id}, "
             f"revoked={self.revoked_at is not None})>"
         )
+
+
+class CanonicalChangeLog(Base):
+    """Append-only audit of canonical-machine designations.
+
+    Written inside ``PUT /environments/{id}/canonical`` so every change to
+    which machine is the source of truth is attributable: who changed it,
+    when, and from which machine to which. This is the "records of who
+    changed it and when" the team-sync (pull-model) design requires.
+
+    ``from_machine_id`` / ``to_machine_id`` are **soft references, NOT FKs**:
+    the audit record must survive later deletion of a machine (an FK would
+    ``SET NULL`` away which machine a past change pointed at). ``tenant_id``
+    is a best-effort, nullable, soft reference to the coord tenant the change
+    was made under (tenants are a coord/identity concept, not a web table) —
+    forward-compat for tenant-scoped devenv (plan P3).
+    """
+
+    __tablename__ = "canonical_change_log"
+    __table_args__ = (
+        Index(
+            "idx_devenv_canonical_log_env_changed_at",
+            "environment_id",
+            text("changed_at DESC"),
+        ),
+        {"schema": _SCHEMA},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    environment_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("devenv.environments.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    # Soft references (NOT FKs) — see class docstring.
+    from_machine_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), nullable=True
+    )
+    to_machine_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), nullable=True
+    )
+    changed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("auth.users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), nullable=True
+    )
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    changed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+
+    def __repr__(self) -> str:
+        """Return repr."""
+        return (
+            f"<CanonicalChangeLog(env={self.environment_id}, to={self.to_machine_id})>"
+        )

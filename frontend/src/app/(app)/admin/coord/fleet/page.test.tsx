@@ -1,5 +1,7 @@
 /**
- * Component test for /admin/coord/fleet — HealthSummaryCard badge wiring.
+ * Component test for /admin/coord/fleet — HealthSummaryCard badge wiring +
+ * the redesigned page structure (MergePipeline hero, System details demoted
+ * and collapsed by default).
  *
  * Regression guard: coord's `GET /coord/fleet/health` serializes devices as
  * `{ state: "healthy" | "degraded" | "partitioned" | "abandoned" }` (Rust
@@ -11,7 +13,7 @@
  */
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 const httpGet = vi.fn();
 
@@ -24,12 +26,12 @@ vi.mock("@/services/service-factory", () => ({
 // The page composes several heavyweight operations components that fetch on
 // mount; they are out of scope here (the badge wiring under test lives in
 // HealthSummaryCard). Stub every operations export the Fleet page imports —
-// the page merged in the former /operations panels.
+// including the MergePipeline hero.
 vi.mock("@/components/operations", () => ({
   DevActionsTile: () => null,
   FleetOverview: () => null,
   FleetTestTargetsPanel: () => null,
-  MergeTrain: () => null,
+  MergePipeline: () => null,
   MergeDependencyGraph: () => null,
   CiStatusPanel: () => null,
   GatesPanel: () => null,
@@ -54,9 +56,46 @@ function coordDevice(id: string, hostname: string, state: string) {
   };
 }
 
+/** The System details section is collapsed (and unmounted) by default —
+ *  open it so HealthSummaryCard renders. */
+function openSystemDetails() {
+  fireEvent.click(screen.getByText("System details"));
+}
+
+describe("/admin/coord/fleet page structure", () => {
+  beforeEach(() => {
+    httpGet.mockReset();
+    window.localStorage.clear();
+  });
+
+  it("collapses System details by default while keeping the unhealthy count visible", async () => {
+    httpGet.mockResolvedValue({
+      devices: [
+        coordDevice("d-1", "alpha", "healthy"),
+        coordDevice("d-2", "bravo", "degraded"),
+      ],
+    });
+
+    render(<CoordFleetPage />);
+
+    // Alarm badge surfaces on the collapsed header (fetch is page-hoisted)…
+    await waitFor(() => {
+      expect(screen.getByText("1 unhealthy")).toBeInTheDocument();
+    });
+    // …but the detail rows are unmounted until the section is opened.
+    expect(screen.queryAllByTestId("coord-fleet-health-row")).toHaveLength(0);
+
+    openSystemDetails();
+    await waitFor(() => {
+      expect(screen.getAllByTestId("coord-fleet-health-row")).toHaveLength(2);
+    });
+  });
+});
+
 describe("/admin/coord/fleet HealthSummaryCard", () => {
   beforeEach(() => {
     httpGet.mockReset();
+    window.localStorage.clear();
   });
 
   it("maps coord `state` values to badges with no 'unknown' fallback", async () => {
@@ -73,6 +112,7 @@ describe("/admin/coord/fleet HealthSummaryCard", () => {
     });
 
     render(<CoordFleetPage />);
+    openSystemDetails();
 
     await waitFor(() => {
       expect(screen.getAllByTestId("coord-fleet-health-row")).toHaveLength(4);
@@ -97,6 +137,7 @@ describe("/admin/coord/fleet HealthSummaryCard", () => {
     });
 
     render(<CoordFleetPage />);
+    openSystemDetails();
 
     await waitFor(() => {
       expect(screen.getByText("unknown")).toBeInTheDocument();
@@ -107,6 +148,7 @@ describe("/admin/coord/fleet HealthSummaryCard", () => {
     httpGet.mockResolvedValue({ devices: [] });
 
     render(<CoordFleetPage />);
+    openSystemDetails();
 
     await waitFor(() => {
       expect(

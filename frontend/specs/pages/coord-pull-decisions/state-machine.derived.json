@@ -92,13 +92,13 @@
         },
         {
           "id": "coord-pull-decisions-shell-elem-2",
-          "description": "'Pull Decisions' nav link (data-testid coord-nav-pull-decisions) — the active section.",
+          "description": "'Pull Decisions' wayfinding crumb (data-testid coord-nav-pull-decisions-active) on the Merge group trigger — the grouped nav surfaces the active section on its group button.",
           "category": "navigation",
           "severity": "warning",
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "coord-nav-pull-decisions" },
+            "criteria": { "id": "coord-nav-pull-decisions-active" },
             "label": "Pull Decisions nav link"
           },
           "source": "ai-generated",

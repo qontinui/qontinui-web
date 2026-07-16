@@ -28,12 +28,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_async_db
 from app.crud import devenv_machine_crud
 from app.models.devenv import Machine
-from app.repositories.devenv import config_repo, environment_repo
+from app.repositories.devenv import config_repo, environment_repo, machine_repo
 from app.schemas.devenv import (
+    CanonicalConfigResponse,
     ConfigEnvelope,
     EnrollRequest,
     EnrollResponse,
 )
+from app.services.devenv_section_policy import policy_map
 
 logger = structlog.get_logger(__name__)
 
@@ -231,3 +233,77 @@ async def report_config(
         "machine_id": str(machine.id),
         "schema_version": envelope.schema_version,
     }
+
+
+# ---------------------------------------------------------------------------
+# Pull canonical config (the runner reconciles its own box toward this)
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/agent/environments/{environment_id}/canonical-config",
+    response_model=CanonicalConfigResponse,
+)
+async def get_canonical_config(
+    environment_id: UUID,
+    db: AsyncSession = Depends(get_async_db),
+    machine: Machine = Depends(get_authenticated_machine),
+) -> CanonicalConfigResponse:
+    """Return the environment's canonical config for a machine to PULL.
+
+    This is the read side of the pull model: a runner fetches the canonical
+    machine's (secret-free) config envelope plus a per-section apply policy,
+    then — by a LOCAL decision on that box — reconciles its own environment
+    toward it. Machine-key authenticated; the environment must belong to the
+    calling machine's owner (else 404, never leaking existence).
+
+    422 ``no_canonical_machine`` when no canonical is set (mirrors the
+    user-side drift endpoint). The payload is secret-free by construction —
+    the stored envelope already coerced ``env_contract`` to present/absent.
+    """
+    env = await environment_repo.get(
+        db, owner_id=machine.owner_user_id, env_id=environment_id
+    )
+    if env is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "code": "environment_not_found",
+                "message": "Environment not found.",
+            },
+        )
+    canonical_id = env.canonical_machine_id
+    if canonical_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "no_canonical_machine",
+                "message": "This environment has no canonical machine set.",
+            },
+        )
+    config_row = await config_repo.get(
+        db, environment_id=environment_id, machine_id=canonical_id
+    )
+    if config_row is None:
+        # set_canonical requires a config row, so this is only reachable if the
+        # config was later deleted. Treat as "nothing to pull yet."
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "canonical_has_no_config",
+                "message": "The canonical machine has no config for this environment.",
+            },
+        )
+    canonical_machine = await machine_repo.get(
+        db, owner_id=machine.owner_user_id, machine_id=canonical_id
+    )
+    sections = config_row.config.get("sections", {}) if config_row.config else {}
+    return CanonicalConfigResponse(
+        environment_id=environment_id,
+        canonical_machine_id=canonical_id,
+        canonical_machine_name=(canonical_machine.name if canonical_machine else None),
+        schema_version=config_row.schema_version,
+        captured_at=config_row.captured_at,
+        sections=sections,
+        section_policy=policy_map(list(sections.keys())),
+    )

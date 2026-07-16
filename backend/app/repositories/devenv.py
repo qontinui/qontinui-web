@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.devenv import (
     Application,
+    CanonicalChangeLog,
     Environment,
     Machine,
     MachineEnvironmentConfig,
@@ -388,8 +389,64 @@ class MachineEnvironmentConfigRepository:
         return (await db.execute(stmt)).scalar_one_or_none()
 
 
+# ---------------------------------------------------------------------------
+# Canonical change log (audit)
+# ---------------------------------------------------------------------------
+
+
+class CanonicalChangeLogRepository:
+    """Append-only audit of canonical designations for ``devenv.environments``.
+
+    Unlike the other repositories this is not owner-filtered on read — callers
+    resolve+authorize the environment first (owner- or, later, tenant-scoped)
+    and then ask for its history by ``environment_id``.
+    """
+
+    async def record(
+        self,
+        db: AsyncSession,
+        *,
+        environment_id: UUID,
+        from_machine_id: UUID | None,
+        to_machine_id: UUID | None,
+        changed_by_user_id: UUID | None,
+        tenant_id: UUID | None = None,
+        note: str | None = None,
+    ) -> CanonicalChangeLog:
+        """Append one canonical-change record."""
+        row = CanonicalChangeLog(
+            environment_id=environment_id,
+            from_machine_id=from_machine_id,
+            to_machine_id=to_machine_id,
+            changed_by_user_id=changed_by_user_id,
+            tenant_id=tenant_id,
+            note=note,
+        )
+        db.add(row)
+        await db.flush()
+        await db.refresh(row)
+        return row
+
+    async def list_for_environment(
+        self,
+        db: AsyncSession,
+        *,
+        environment_id: UUID,
+        limit: int = 100,
+    ) -> list[CanonicalChangeLog]:
+        """List an environment's canonical changes, newest first."""
+        stmt = (
+            select(CanonicalChangeLog)
+            .where(CanonicalChangeLog.environment_id == environment_id)
+            .order_by(CanonicalChangeLog.changed_at.desc())
+            .limit(limit)
+        )
+        return list((await db.execute(stmt)).scalars().all())
+
+
 # Singleton instances.
 application_repo = ApplicationRepository()
 machine_repo = MachineRepository()
 environment_repo = EnvironmentRepository()
 config_repo = MachineEnvironmentConfigRepository()
+canonical_log_repo = CanonicalChangeLogRepository()

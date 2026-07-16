@@ -198,10 +198,9 @@ uploads_dir = Path("uploads")
 uploads_dir.mkdir(exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
 
-# Background task handle for cleanup
-_cleanup_task: asyncio.Task | None = None
-_clipboard_cleanup_task: asyncio.Task | None = None
-_file_cleanup_task: asyncio.Task | None = None
+# Background task handle for the wrapper-registry sync loop. The stale-
+# connection / clipboard / file cleanups and the cron dispatch now run inside
+# the in-process asyncio scheduler (app.core.scheduler), not here.
 _wrapper_sync_task: asyncio.Task | None = None
 
 
@@ -322,60 +321,23 @@ async def startup_event():
     else:
         logger.info("arq_pool_disabled", note="Task queue disabled (Redis not enabled)")
 
-    # Start background cleanup task for stale runner connections
-    if settings.REDIS_ENABLED:
-        try:
-            from app.tasks.connection_cleanup import run_cleanup_loop
-
-            global _cleanup_task
-            _cleanup_task = asyncio.create_task(run_cleanup_loop(interval_seconds=60))
-            logger.info(
-                "connection_cleanup_task_started",
-                interval_seconds=60,
-            )
-        except (ImportError, RuntimeError) as e:
-            logger.warning(
-                "connection_cleanup_task_failed",
-                error=str(e),
-                error_type=type(e).__name__,
-                note="Continuing without cleanup task",
-            )
-    else:
-        logger.info(
-            "connection_cleanup_disabled",
-            note="Cleanup task disabled (Redis not enabled)",
-        )
-
-    # Start clipboard expiry cleanup (runs every hour, no Redis dependency)
+    # Start the in-process asyncio scheduler. This single background loop owns
+    # EVERY periodic behavior in the backend: the tenant-memory lifecycle +
+    # MEMORY.md bridge (formerly Celery beat, which was never deployed and so
+    # never fired), the cron workflow dispatch (formerly RedBeat), and the
+    # stale-connection / clipboard / file cleanups (formerly three ad-hoc
+    # asyncio.create_task loops right here). Every tick is gated on a Postgres
+    # advisory lock, so N replicas run exactly one executor per task.
     try:
-        from app.tasks.clipboard_cleanup import run_clipboard_cleanup_loop
+        from app.core.scheduler import scheduler
 
-        global _clipboard_cleanup_task
-        _clipboard_cleanup_task = asyncio.create_task(
-            run_clipboard_cleanup_loop(interval_seconds=3600)
-        )
-        logger.info("clipboard_cleanup_task_started", interval_seconds=3600)
-    except (ImportError, RuntimeError) as e:
-        logger.warning(
-            "clipboard_cleanup_task_failed",
+        await scheduler.start()
+    except Exception as e:  # noqa: BLE001 - a dead schedule must not kill boot
+        logger.error(
+            "scheduler_start_failed",
             error=str(e),
-            note="Continuing without clipboard cleanup",
-        )
-
-    # Start shared file expiry cleanup (runs every hour, no Redis dependency)
-    try:
-        from app.tasks.file_cleanup import run_file_cleanup_loop
-
-        global _file_cleanup_task
-        _file_cleanup_task = asyncio.create_task(
-            run_file_cleanup_loop(interval_seconds=3600)
-        )
-        logger.info("file_cleanup_task_started", interval_seconds=3600)
-    except (ImportError, RuntimeError) as e:
-        logger.warning(
-            "file_cleanup_task_failed",
-            error=str(e),
-            note="Continuing without file cleanup",
+            error_type=type(e).__name__,
+            note="Continuing without the in-process scheduler",
         )
 
     # Phase 6 — start the wrapper-registry sync background task. Pulls
@@ -396,30 +358,10 @@ async def startup_event():
             note="Continuing without wrapper registry sync",
         )
 
-    # Phase 3D — resync scheduled_workflow_runs rows into redbeat on startup
-    # so a Redis flush doesn't silently drop schedules. Guarded behind
-    # REDIS_ENABLED because redbeat requires Redis.
-    if settings.REDIS_ENABLED:
-        try:
-            from app.services.redbeat_manager import resync_all_enabled_from_db
-
-            reinstalled = await resync_all_enabled_from_db()
-            logger.info(
-                "redbeat_startup_resync_complete",
-                reinstalled=reinstalled,
-            )
-        except Exception as e:
-            logger.warning(
-                "redbeat_startup_resync_failed",
-                error=str(e),
-                error_type=type(e).__name__,
-                note="Continuing; schedules may fire only after next edit.",
-            )
-    else:
-        logger.info(
-            "redbeat_startup_resync_skipped",
-            note="Redis disabled — scheduled_workflow_runs won't fire",
-        )
+    # (The Phase 3D redbeat startup-resync lived here. It is gone with RedBeat:
+    # schedule state is now a Postgres column — `scheduled_workflow_runs.
+    # next_fire_at` — so there is nothing to re-hydrate into Redis, and a Redis
+    # flush can no longer drop a schedule.)
 
     # Strategy Collaboration (Phase 1) service-account bridge. No-op
     # until COORD_ADMIN_SECRET is set; fail-fast when set-but-misconfig.
@@ -449,30 +391,17 @@ async def startup_event():
 async def shutdown_event():
     logger.info("application_shutting_down")
 
-    # Cancel background cleanup tasks
-    global _cleanup_task
-    if _cleanup_task is not None:
-        _cleanup_task.cancel()
-        try:
-            await _cleanup_task
-        except asyncio.CancelledError:
-            logger.info("connection_cleanup_task_cancelled")
+    # Stop the scheduler. It cancels its loop AND any in-flight run, so each
+    # run's `finally` releases its Postgres advisory lock before we exit —
+    # a lock leaked on a pooled connection would block the next replica's tick.
+    try:
+        from app.core.scheduler import scheduler
 
-    global _clipboard_cleanup_task
-    if _clipboard_cleanup_task is not None:
-        _clipboard_cleanup_task.cancel()
-        try:
-            await _clipboard_cleanup_task
-        except asyncio.CancelledError:
-            logger.info("clipboard_cleanup_task_cancelled")
-
-    global _file_cleanup_task
-    if _file_cleanup_task is not None:
-        _file_cleanup_task.cancel()
-        try:
-            await _file_cleanup_task
-        except asyncio.CancelledError:
-            logger.info("file_cleanup_task_cancelled")
+        await scheduler.stop()
+    except Exception as e:  # noqa: BLE001 - never block shutdown
+        logger.warning(
+            "scheduler_stop_failed", error=str(e), error_type=type(e).__name__
+        )
 
     global _wrapper_sync_task
     if _wrapper_sync_task is not None:
@@ -563,6 +492,18 @@ async def health_check():
             logger.warning("health_check_redis_error", error=str(e))
     else:
         health_status["redis"] = "disabled"
+
+    # In-process scheduler. Every registered task is reported even if it has
+    # never run — a never-run task shows null last_run_at rather than being
+    # absent, so "the schedule is dead" is VISIBLE instead of silent (the exact
+    # failure mode that let the Celery beat schedule never fire, unnoticed).
+    try:
+        from app.core.scheduler import scheduler_status
+
+        health_status["scheduler"] = scheduler_status()
+    except Exception as e:  # noqa: BLE001 - health must never 500
+        health_status["scheduler"] = {"error": str(e)}
+        logger.warning("health_check_scheduler_error", error=str(e))
 
     return health_status
 

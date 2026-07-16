@@ -1,15 +1,19 @@
 "use client";
 
 /**
- * /admin/coord/fleet — fleet + operations overview.
+ * /admin/coord/fleet — the merge pipeline + fleet operations view.
  *
- * The single cross-machine view: fleet health + per-device coord
- * cross-links (Trees / Claims / Sessions) + the FleetOverview, plus the
- * operations panels that used to live on the standalone /operations page
- * (merge train, cross-repo dependency graph, CI status, gates, migration
- * queue, landed features). /operations now redirects here, so there is one
- * fleet view instead of two. Fleet/health rollup comes from coord via
- * /api/v1/operations/fleet/health.
+ * Redesigned per qontinui-dev-notes/prompts/
+ * coord-fleet-page-redesign-2026-07-14.md: the unified merge pipeline
+ * (MergePipeline — one row per PR, one plain-language status, traffic-light
+ * health strip) is the hero, because "where is my PR and is it stuck?" is
+ * what ~90% of visits are for. Everything infrastructural — machine health,
+ * CI rollups, gates, dev-action ledger, migration queue, dependency graph,
+ * landed features — is demoted into a single collapsed "System details"
+ * section. Collapsing it unmounts those panels entirely (Radix Collapsible),
+ * so a routine developer visit costs one data stream instead of nine; the
+ * machine-health alarm count is hoisted to this page and stays visible on
+ * the collapsed header so a red fleet state never hides behind the click.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -17,7 +21,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { ExternalLink, HeartPulse, RefreshCw } from "lucide-react";
+import { ExternalLink, HeartPulse, RefreshCw, Server } from "lucide-react";
 import {
   CiStatusPanel,
   DevActionsTile,
@@ -26,7 +30,7 @@ import {
   GatesPanel,
   LandedFeaturesPanel,
   MergeDependencyGraph,
-  MergeTrain,
+  MergePipeline,
   MigrationQueueTile,
 } from "@/components/operations";
 // Imported from its own module (not the barrel) so the inline HealthSummaryCard
@@ -70,12 +74,17 @@ function deviceStateBadgeVariant(state?: string): BadgeVariant {
   return STATE_BADGE_VARIANT[state ?? ""] ?? "outline";
 }
 
-function HealthSummaryCard() {
+/**
+ * Fleet/health polling, hoisted to the page: the System details header badge
+ * needs the unhealthy count even while the section (and HealthSummaryCard
+ * inside it) is collapsed/unmounted.
+ */
+function useFleetHealth() {
   const [data, setData] = useState<FleetHealthPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchData = useCallback(async () => {
+  const refresh = useCallback(async () => {
     try {
       const body = await httpClient.get<FleetHealthPayload>(
         `${API}/fleet/health`
@@ -90,11 +99,27 @@ function HealthSummaryCard() {
   }, []);
 
   useEffect(() => {
-    fetchData();
-    const id = setInterval(fetchData, POLL_INTERVAL_MS);
+    refresh();
+    const id = setInterval(refresh, POLL_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [fetchData]);
+  }, [refresh]);
 
+  return { data, loading, error, refresh };
+}
+
+interface HealthSummaryCardProps {
+  data: FleetHealthPayload | null;
+  loading: boolean;
+  error: string | null;
+  onRefresh: () => void;
+}
+
+function HealthSummaryCard({
+  data,
+  loading,
+  error,
+  onRefresh,
+}: HealthSummaryCardProps) {
   const devices = data?.devices ?? [];
   const unhealthy = devices.filter(
     (d) => d.state && d.state !== "healthy"
@@ -123,7 +148,7 @@ function HealthSummaryCard() {
         <Button
           variant="ghost"
           size="sm"
-          onClick={fetchData}
+          onClick={onRefresh}
           data-testid="coord-fleet-health-refresh"
         >
           <RefreshCw className="h-3 w-3" />
@@ -188,35 +213,76 @@ function HealthSummaryCard() {
 }
 
 export default function CoordFleetPage() {
+  const fleet = useFleetHealth();
+  const devices = fleet.data?.devices ?? [];
+  const unhealthy = devices.filter(
+    (d) => d.state && d.state !== "healthy"
+  ).length;
+
   return (
-    // `overflow-x-auto` mirrors the old /operations ScrollArea: wide panels
-    // (the merge dependency graph, escalation/train rows) scroll instead of
-    // stranding action buttons off-screen. Vertical scroll comes from the
-    // coord layout's <main overflow-y-auto>.
+    // `overflow-x-auto`: wide panels (the merge dependency graph, train rows)
+    // scroll instead of stranding action buttons off-screen. Vertical scroll
+    // comes from the coord layout's <main overflow-y-auto>.
     <div
       className="p-3 sm:p-6 space-y-4 overflow-x-auto"
       data-testid="coord-fleet-page"
     >
-      <HealthSummaryCard />
-      <FleetOverview />
-      <FleetTestTargetsPanel />
+      {/* The hero: unified PR pipeline (health strip + one row per PR). */}
+      <MergePipeline />
 
-      {/* Dev Actions + Migration Queue paired side-by-side: two narrow
-          ledger/queue lists. Full-width stacked on mobile, two columns on
-          large screens. */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        <DevActionsTile />
-        <MigrationQueueTile />
-      </div>
+      {/* Everything infrastructural, one click away. Children unmount while
+          collapsed, so their pollers only run when an operator opens this. */}
+      <CollapsiblePanel
+        data-testid="coord-system-details"
+        storageKey="fleet:system-details"
+        defaultOpen={false}
+        icon={<Server className="h-4 w-4" />}
+        title="System details"
+        summary={
+          <>
+            {devices.length > 0 && (
+              <Badge variant="outline" className="ml-2">
+                {devices.length} machines
+              </Badge>
+            )}
+            {unhealthy > 0 && (
+              <Badge variant="destructive" className="ml-1">
+                {unhealthy} unhealthy
+              </Badge>
+            )}
+            {fleet.error && (
+              <Badge variant="destructive" className="ml-1">
+                health unavailable
+              </Badge>
+            )}
+          </>
+        }
+        contentClassName="space-y-4"
+      >
+        <HealthSummaryCard
+          data={fleet.data}
+          loading={fleet.loading}
+          error={fleet.error}
+          onRefresh={fleet.refresh}
+        />
+        <FleetOverview />
+        <FleetTestTargetsPanel />
 
-      {/* Merged from the former standalone /operations page. */}
-      <MergeTrain />
-      <div id="merge-dep-graph">
-        <MergeDependencyGraph />
-      </div>
-      <CiStatusPanel />
-      <GatesPanel />
-      <LandedFeaturesPanel />
+        {/* Dev Actions + Migration Queue paired side-by-side: two narrow
+            ledger/queue lists. Full-width stacked on mobile, two columns on
+            large screens. */}
+        <div className="grid gap-4 lg:grid-cols-2">
+          <DevActionsTile />
+          <MigrationQueueTile />
+        </div>
+
+        <div id="merge-dep-graph">
+          <MergeDependencyGraph />
+        </div>
+        <CiStatusPanel />
+        <GatesPanel />
+        <LandedFeaturesPanel />
+      </CollapsiblePanel>
     </div>
   );
 }

@@ -1,11 +1,10 @@
-"""
-Background task for cleaning up expired clipboard entries.
+"""Scheduled job — clean up expired clipboard entries.
 
-Runs periodically to delete clipboard_entries whose expires_at has passed.
-Default expiry is 24 hours from creation.
+Runs on the scheduler's ``clipboard_cleanup`` cadence (hourly) to delete
+``clipboard_entries`` whose ``expires_at`` has passed. Default expiry is 24
+hours from creation.
 """
 
-import asyncio
 from datetime import UTC, datetime
 
 import structlog
@@ -50,30 +49,10 @@ async def cleanup_expired_clipboard() -> dict[str, int]:
             error_type=type(e).__name__,
             exc_info=True,
         )
+        # Re-raise: the scheduler records `last_status="failed"` on /health and
+        # keeps looping. Swallowing here (needed by the old `while True` loop, which
+        # would have died) would make every failed run report `"ok"` — the exact
+        # silent-no-op blindness this scheduler exists to end.
+        raise
 
     return stats
-
-
-async def run_clipboard_cleanup_loop(interval_seconds: int = 3600) -> None:
-    """
-    Background loop that periodically cleans up expired clipboard entries.
-
-    Args:
-        interval_seconds: Time between cleanup runs (default: 3600 = 1 hour)
-    """
-    logger.info(
-        "clipboard_cleanup_loop_started",
-        interval_seconds=interval_seconds,
-    )
-
-    while True:
-        try:
-            await cleanup_expired_clipboard()
-        except Exception as e:
-            logger.error(
-                "clipboard_cleanup_loop_error",
-                error=str(e),
-                error_type=type(e).__name__,
-            )
-
-        await asyncio.sleep(interval_seconds)

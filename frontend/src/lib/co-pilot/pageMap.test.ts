@@ -114,9 +114,27 @@ describe("pageIdToUrl — runner-id leakage fallback", () => {
   });
 
   it("resolves an explicit alias whose runner name differs from the web id", () => {
-    // `page-memory-search` (runner) -> `memory` (web).
-    expect(pageIdToUrl("page-memory-search")).toBe(pageIdToUrl("memory"));
-    expect(pageIdToUrl("page-memory-search")).toBeDefined();
+    // The runner's observe/knowledge surfaces (`page-memory-search`,
+    // `page-knowledge-explorer`) must land on web's OWN observations page.
+    //
+    // Asserting the CONCRETE url on purpose: the previous form compared
+    // `pageIdToUrl("page-memory-search")` against `pageIdToUrl("memory")`, which
+    // passes VACUOUSLY once both sides are `undefined` — exactly what happened
+    // when @qontinui/navigation 0.2.0 renamed `memory` -> `observations` and
+    // gated it to the runner. Pin the value so a regression FAILS.
+    expect(pageIdToUrl("page-memory-search")).toBe("/observations");
+    expect(pageIdToUrl("page-knowledge-explorer")).toBe("/observations");
+    expect(pageIdToUrl("observations")).toBe("/observations");
+  });
+
+  it("never resolves a page id to the runner-only /observe/* tree (404s on web)", () => {
+    // @qontinui/navigation gates the `observations` item (route /observe/memory)
+    // to platforms:["runner"]; web has no `observe/` route tree, so no page id —
+    // and no advertised page — may resolve into it.
+    for (const url of Object.values(pageMap)) {
+      expect(url.startsWith("/observe/")).toBe(false);
+    }
+    expect(pageIdToUrl("page-memory-search")).not.toBe("/observe/memory");
   });
 
   it("resolves a runner settings sub-page to the web settings route", () => {

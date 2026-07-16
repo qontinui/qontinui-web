@@ -35,6 +35,16 @@ ENV_CONTRACT_SECTION = "env_contract"
 SeverityT = Literal["info", "warning", "critical"]
 DeltaStatusT = Literal["added", "removed", "changed"]
 
+# What a pulling runner may do with a config section (see
+# app.services.devenv_section_policy). Defined here because it is part of the
+# CanonicalConfigResponse wire contract; the service imports it.
+SectionPolicyT = Literal[
+    "applyable",  # safe to reconcile automatically toward canonical
+    "secret_report_only",  # presence-only; report gaps, never invent values
+    "destructive_confirm",  # schema/migration; stop, require a local confirm
+    "report_only",  # informational; do not auto-apply
+]
+
 
 # ---------------------------------------------------------------------------
 # Applications
@@ -237,6 +247,24 @@ class SetCanonicalRequest(BaseSchema):
     machine_id: UUID
 
 
+class CanonicalChangeResponse(BaseORMSchema):
+    """One audited canonical-designation change (newest-first in a list).
+
+    The "records of who changed it and when" for the team-sync model:
+    ``changed_by_user_id`` + ``changed_at`` + the ``from``/``to`` machine.
+    ``tenant_id`` is best-effort (the active-tenant context of the change).
+    """
+
+    id: UUID
+    environment_id: UUID
+    from_machine_id: UUID | None = None
+    to_machine_id: UUID | None = None
+    changed_by_user_id: UUID | None = None
+    tenant_id: UUID | None = None
+    note: str | None = None
+    changed_at: IsoDatetime
+
+
 # ---------------------------------------------------------------------------
 # Agent enrollment + config
 # ---------------------------------------------------------------------------
@@ -336,6 +364,28 @@ class ConfigEnvelope(BaseSchema):
             "captured_at": self.captured_at.isoformat(),
             "sections": self.sections,
         }
+
+
+class CanonicalConfigResponse(BaseSchema):
+    """The canonical config a runner PULLS to reconcile its own box toward.
+
+    Secret-free by construction (the stored envelope already coerced
+    ``env_contract`` to present/absent). ``section_policy`` maps each section
+    to what a pulling runner may do with it (apply / report secrets only /
+    stop on destructive) — see :mod:`app.services.devenv_section_policy`.
+
+    ``canonical_machine_id`` is ``None`` (and ``sections`` empty) only if no
+    canonical is set — the endpoint 422s that case before building this, so in
+    practice these are always populated.
+    """
+
+    environment_id: UUID
+    canonical_machine_id: UUID | None = None
+    canonical_machine_name: str | None = None
+    schema_version: int | None = None
+    captured_at: IsoDatetime | None = None
+    sections: dict[str, dict[str, str]] = Field(default_factory=dict)
+    section_policy: dict[str, SectionPolicyT] = Field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------

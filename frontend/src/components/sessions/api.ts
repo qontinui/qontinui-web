@@ -21,11 +21,13 @@ import type {
   LineageResponse,
   OutputChunkFrame,
   OutputHistoryResponse,
+  OutputStream,
   RegisteredRepo,
   RegisteredReposResponse,
   SessionClaimsResponse,
   SessionEventRow,
   SessionListResponse,
+  SessionRestoreRecordResponse,
   SessionRow,
   TenantListResponse,
 } from "./types";
@@ -84,6 +86,12 @@ export type OutputTier = "warm" | "cold";
 export interface GetSessionOutputOptions {
   /** `warm` (default) recent scrollback | `cold` archived full history. */
   tier?: OutputTier;
+  /**
+   * `pty` (default) terminal bytes | `transcript` AI conversation JSONL.
+   * Plan `2026-07-09-runner-session-history-cloud-sync` Phase 2 — omitted
+   * for `pty` so requests stay compatible with a pre-`stream` coord.
+   */
+  stream?: OutputStream;
   /** Max warm-tier chunks to fetch. Coord clamps to [1, 65536]; default 4096. */
   limit?: number;
   signal?: AbortSignal;
@@ -106,6 +114,7 @@ export async function getSessionOutput(
 ): Promise<OutputHistoryResponse> {
   const params = new URLSearchParams();
   if (opts.tier) params.set("tier", opts.tier);
+  if (opts.stream) params.set("stream", opts.stream);
   if (opts.limit !== undefined) params.set("limit", String(opts.limit));
 
   const qs = params.toString();
@@ -176,6 +185,25 @@ export async function handoffSession(
     throw new SessionsApiError(`POST ${url} failed: ${res.status}`, res.status);
   }
   return await res.json();
+}
+
+/**
+ * Fetch the session's latest `restore-record` (+ `handoff_request`)
+ * events — plan `2026-07-09-runner-session-history-cloud-sync` Phase 4.
+ * The web backend reduces coord's events replay (SSE) to the two rows
+ * the resume UI needs; both fields are null when the session has no
+ * such event in coord's 100-row replay window.
+ */
+export async function getSessionRestoreRecord(
+  id: string,
+  signal?: AbortSignal
+): Promise<SessionRestoreRecordResponse> {
+  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(id)}/restore-record`;
+  const res = await httpClient.fetch(url, { signal });
+  if (!res.ok) {
+    throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
+  }
+  return (await res.json()) as SessionRestoreRecordResponse;
 }
 
 export async function getSessionClaims(
@@ -251,7 +279,10 @@ export async function listRegisteredRepos(
       const url = `${OPERATIONS_API}/repos`;
       const res = await httpClient.fetch(url, { signal });
       if (!res.ok) {
-        throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
+        throw new SessionsApiError(
+          `GET ${url} failed: ${res.status}`,
+          res.status
+        );
       }
       const data = (await res.json()) as RegisteredReposResponse;
       const repos = data.repos ?? [];
@@ -374,15 +405,35 @@ function parseFrame(frame: string, handlers: SessionEventStreamHandlers): void {
   }
   if (dataLines.length === 0) return;
   const payload = dataLines.join("\n");
+  let parsed: SessionEventRow;
   try {
-    const parsed = JSON.parse(payload) as SessionEventRow;
-    handlers.onEvent(parsed);
+    parsed = JSON.parse(payload) as SessionEventRow;
   } catch (err) {
     handlers.onError?.(
       new Error(
         `failed to parse SSE frame: ${err instanceof Error ? err.message : String(err)}`
       )
     );
+    return;
+  }
+  dispatchToHandler(() => handlers.onEvent(parsed), handlers.onError);
+}
+
+/**
+ * Invoke a subscriber handler, isolating its exceptions from the SSE
+ * reader loop: a throwing handler must not terminate the stream. Errors
+ * route to the subscriber's non-fatal `onError` channel — except
+ * `AbortError`, whose silent-cancellation semantics are preserved.
+ */
+function dispatchToHandler(
+  invoke: () => void,
+  onError: ((err: unknown) => void) | undefined
+): void {
+  try {
+    invoke();
+  } catch (err) {
+    if ((err as { name?: string })?.name === "AbortError") return;
+    onError?.(err);
   }
 }
 
@@ -491,7 +542,8 @@ function parseOutputFrame(
     return;
   }
   if (isOutputChunkFrame(parsed)) {
-    handlers.onChunk(parsed);
+    // Isolated so a chunk-handler exception can't kill the reader loop.
+    dispatchToHandler(() => handlers.onChunk(parsed), handlers.onError);
   }
   // Non-output frames (started/heartbeat/closed/claim_stolen/…) are not
   // this subscriber's concern.

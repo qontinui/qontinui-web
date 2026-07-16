@@ -1,6 +1,12 @@
 /**
  * API client for training job management.
+ *
+ * All requests route through `httpClient` (never bare `fetch`) so they carry
+ * the `Authorization: Bearer` header and inherit the shared 401-refresh /
+ * session-expiry handling. A bare fetch 401s in prod (Cognito bearer auth).
  */
+
+import { httpClient } from "@/services/service-factory";
 
 export type TrainingJobStatus =
   | "pending"
@@ -92,9 +98,8 @@ export async function createTrainingJob(
 ): Promise<TrainingJob> {
   const config = { ...defaultConfig, ...request.config };
 
-  const response = await fetch("/api/v1/training/jobs", {
+  const response = await httpClient.fetch("/api/v1/training/jobs", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       project_id: request.project_id,
       annotation_set_id: request.annotation_set_id,
@@ -130,7 +135,9 @@ export async function listTrainingJobs(params?: {
   if (params?.limit !== undefined)
     searchParams.set("limit", params.limit.toString());
 
-  const response = await fetch(`/api/v1/training/jobs?${searchParams}`);
+  const response = await httpClient.fetch(
+    `/api/v1/training/jobs?${searchParams}`
+  );
 
   if (!response.ok) {
     throw new Error("Failed to fetch training jobs");
@@ -143,7 +150,7 @@ export async function listTrainingJobs(params?: {
  * Get a specific training job by ID.
  */
 export async function getTrainingJob(jobId: string): Promise<TrainingJob> {
-  const response = await fetch(`/api/v1/training/jobs/${jobId}`);
+  const response = await httpClient.fetch(`/api/v1/training/jobs/${jobId}`);
 
   if (!response.ok) {
     if (response.status === 404) {
@@ -159,9 +166,12 @@ export async function getTrainingJob(jobId: string): Promise<TrainingJob> {
  * Start a pending training job.
  */
 export async function startTrainingJob(jobId: string): Promise<TrainingJob> {
-  const response = await fetch(`/api/v1/training/jobs/${jobId}/start`, {
-    method: "POST",
-  });
+  const response = await httpClient.fetch(
+    `/api/v1/training/jobs/${jobId}/start`,
+    {
+      method: "POST",
+    }
+  );
 
   if (!response.ok) {
     const error = await response.json();
@@ -175,9 +185,12 @@ export async function startTrainingJob(jobId: string): Promise<TrainingJob> {
  * Cancel a running or queued training job.
  */
 export async function cancelTrainingJob(jobId: string): Promise<TrainingJob> {
-  const response = await fetch(`/api/v1/training/jobs/${jobId}/cancel`, {
-    method: "POST",
-  });
+  const response = await httpClient.fetch(
+    `/api/v1/training/jobs/${jobId}/cancel`,
+    {
+      method: "POST",
+    }
+  );
 
   if (!response.ok) {
     const error = await response.json();
@@ -191,7 +204,7 @@ export async function cancelTrainingJob(jobId: string): Promise<TrainingJob> {
  * Delete a training job.
  */
 export async function deleteTrainingJob(jobId: string): Promise<void> {
-  const response = await fetch(`/api/v1/training/jobs/${jobId}`, {
+  const response = await httpClient.fetch(`/api/v1/training/jobs/${jobId}`, {
     method: "DELETE",
   });
 
@@ -210,11 +223,10 @@ export async function getTrainingEstimate(
 ): Promise<TrainingEstimate> {
   const fullConfig = { ...defaultConfig, ...config };
 
-  const response = await fetch(
+  const response = await httpClient.fetch(
     `/api/v1/training/estimate?annotation_count=${annotationCount}`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(fullConfig),
     }
   );
