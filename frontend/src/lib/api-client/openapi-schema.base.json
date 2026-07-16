@@ -73820,6 +73820,63 @@
         ]
       }
     },
+    "/api/v1/operations/pr-merge/prs/{repo}/{pr_number}/checks": {
+      "get": {
+        "description": "Per-check detail for one PR \u2014 proxy coord's\n``GET /coord/pr/:repo/:pr_number/state``.\n\nReturns coord's per-PR state envelope whose ``checks[]`` carries one\nrow per check (``name`` / ``status`` / ``conclusion`` /\n``completed_at`` / ``details_url``), read from coord's deduped\n``pr_check_runs_latest`` view. Fetched lazily by the fleet page when\nan operator expands a PR row to see WHICH checks failed \u2014 the bulk\n``/pr-merge/prs`` list stays summary-only.\n\n``repo`` is the ``owner/name`` form; the ``:path`` converter accepts\nthe ``/`` inline (same as ``/pr-merge/repos/{repo:path}/profile``).\nUNLIKE that route, coord's pr-state ``:repo`` param is a single\npath-encoded segment, so the repo is re-encoded here\n(``qontinui/qontinui-runner`` \u2192 ``qontinui%2Fqontinui-runner``).\n\nFleet-wide read; ``tenant_id`` is resolved only to forward the\noperator bearer so coord requires an authenticated operator (same\nposture as ``/merge/queue`` and ``/pr-merge/prs``).",
+        "operationId": "api_v1_operations_pr_merge_prs_repo_pr_number_checks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "title": "Repo",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "pr_number",
+            "required": true,
+            "schema": {
+              "title": "Pr Number",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Pr Merge Pr Checks Api V1 Operations Pr Merge Prs  Repo   Pr Number  Checks Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Pr Merge Pr Checks",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/pr-merge/repos": {
       "get": {
         "description": "List the tenant's repos with framework-signal chips +\nprofile_source provenance. Drives the per-repo override-card list\non the Merge Orchestration \u2192 Settings page.",

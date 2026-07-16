@@ -120,6 +120,42 @@ export interface PrListResponse {
 }
 
 // ============================================================================
+// Per-PR check breakdown wire types.
+//
+// Mirrors coord's `GET /pr-state/:repo/:pr_number` response shapes
+// (`qontinui-coord/src/pr_state.rs::PrStateResponse` / `CheckRunSummary`,
+// lines 60-79), proxied by the web backend at
+// `/operations/pr-merge/prs/{repo}/{pr_number}/checks`. Fetched on demand
+// when an operator expands a failing pipeline row — never polled.
+// ============================================================================
+
+/** One check run on the PR's head sha (coord `pr_state.rs::CheckRunSummary`). */
+export interface CheckRunSummary {
+  name: string;
+  /** `queued` | `in_progress` | `completed`. */
+  status: string;
+  /**
+   * `success` | `failure` | `neutral` | `cancelled` | `timed_out` |
+   * `action_required` | `skipped` | `stale`. Null while `status` is
+   * non-terminal.
+   */
+  conclusion: string | null;
+  /** RFC3339 completion time; null while the check is still running. */
+  completed_at: string | null;
+  /** Link to the run on GitHub; null when the provider sent none. */
+  details_url: string | null;
+}
+
+/** Coord `pr_state.rs::PrStateResponse` — aggregate + per-check breakdown. */
+export interface PrStateResponse {
+  /** `"pending"` while any check still runs; `"complete"` when all terminal. */
+  lifecycle: string;
+  /** `"success"` / `"failure"` once complete; null while pending. */
+  conclusion: string | null;
+  checks: CheckRunSummary[];
+}
+
+// ============================================================================
 // PR Merge Orchestrator Phase 8 D8.6 — Suggestions inbox wire types.
 //
 // Mirrors coord's `GET /pr-merge/suggestions` response (see

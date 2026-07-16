@@ -19,6 +19,7 @@ import json
 import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from urllib.parse import quote
 from uuid import UUID
 
 import httpx
@@ -790,6 +791,38 @@ async def get_pr_merge_prs(
     (operator decision 2026-05-31), mirroring ``/merge/queue``.
     """
     return await _proxy_coord_get("/pr-merge/prs", tenant_id=tenant_id)
+
+
+@router.get("/pr-merge/prs/{repo:path}/{pr_number}/checks")
+async def get_pr_merge_pr_checks(
+    repo: str,
+    pr_number: int,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Per-check detail for one PR — proxy coord's
+    ``GET /coord/pr/:repo/:pr_number/state``.
+
+    Returns coord's per-PR state envelope whose ``checks[]`` carries one
+    row per check (``name`` / ``status`` / ``conclusion`` /
+    ``completed_at`` / ``details_url``), read from coord's deduped
+    ``pr_check_runs_latest`` view. Fetched lazily by the fleet page when
+    an operator expands a PR row to see WHICH checks failed — the bulk
+    ``/pr-merge/prs`` list stays summary-only.
+
+    ``repo`` is the ``owner/name`` form; the ``:path`` converter accepts
+    the ``/`` inline (same as ``/pr-merge/repos/{repo:path}/profile``).
+    UNLIKE that route, coord's pr-state ``:repo`` param is a single
+    path-encoded segment, so the repo is re-encoded here
+    (``qontinui/qontinui-runner`` → ``qontinui%2Fqontinui-runner``).
+
+    Fleet-wide read; ``tenant_id`` is resolved only to forward the
+    operator bearer so coord requires an authenticated operator (same
+    posture as ``/merge/queue`` and ``/pr-merge/prs``).
+    """
+    return await _proxy_coord_get(
+        f"/coord/pr/{quote(repo, safe='')}/{pr_number}/state",
+        tenant_id=tenant_id,
+    )
 
 
 @router.get("/migrations/queue")
