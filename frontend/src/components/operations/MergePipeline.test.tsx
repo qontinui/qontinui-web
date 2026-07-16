@@ -9,7 +9,13 @@
  */
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import type { MergePipelineData } from "./useMergePipelineData";
 import type { PrRow, ProposalDetail } from "./mergeTypes";
 
@@ -28,6 +34,12 @@ const hookData: { current: MergePipelineData } = {
 
 vi.mock("./useMergePipelineData", () => ({
   useMergePipelineData: () => hookData.current,
+}));
+
+// usePrCheckDetails (the on-expand per-check fetch) goes through httpClient.
+const fetchMock = vi.fn();
+vi.mock("@/services/service-factory", () => ({
+  httpClient: { fetch: (...args: unknown[]) => fetchMock(...args) },
 }));
 
 import { MergePipeline } from "./MergePipeline";
@@ -76,6 +88,7 @@ function proposal(overrides: Partial<ProposalDetail> = {}): ProposalDetail {
 describe("MergePipeline", () => {
   beforeEach(() => {
     window.localStorage.clear();
+    fetchMock.mockReset();
     hookData.current = {
       ...hookData.current,
       proposals: [],
@@ -184,5 +197,111 @@ describe("MergePipeline", () => {
     expect(screen.getByTestId("pipeline-empty")).toHaveTextContent(
       "No open PRs or merge activity."
     );
+  });
+
+  // --------------------------------------------------------------------------
+  // Failing-check details (plan 2026-07-16-pr-failing-check-details-expandable)
+  // --------------------------------------------------------------------------
+
+  const failingPr = () =>
+    pr({
+      merge_state_status: "UNSTABLE",
+      ci_conclusion: "failure",
+      failing_contexts: ["security", "docs"],
+    });
+
+  it("expanded failing row fetches and shows named checks with run links", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        lifecycle: "complete",
+        conclusion: "failure",
+        checks: [
+          {
+            name: "security",
+            status: "completed",
+            conclusion: "failure",
+            completed_at: new Date(Date.now() - 5 * 60_000).toISOString(),
+            details_url:
+              "https://github.com/qontinui/qontinui-web/actions/runs/42",
+          },
+          {
+            name: "lint",
+            status: "completed",
+            conclusion: "success",
+            completed_at: new Date().toISOString(),
+            details_url:
+              "https://github.com/qontinui/qontinui-web/actions/runs/43",
+          },
+          {
+            name: "docs",
+            status: "completed",
+            conclusion: "cancelled",
+            completed_at: null,
+            details_url: null,
+          },
+        ],
+      }),
+    });
+    hookData.current.prs = [failingPr()];
+
+    render(<MergePipeline />);
+    fireEvent.click(screen.getByText("Checks failing"));
+
+    await waitFor(() =>
+      expect(screen.getAllByTestId("failing-check-row")).toHaveLength(2)
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0][0])).toContain(
+      "/pr-merge/prs/qontinui%2Fqontinui-web/761/checks"
+    );
+
+    const rows = screen.getAllByTestId("failing-check-row");
+    const securityRow = rows.find((r) => r.textContent?.includes("security"));
+    const docsRow = rows.find((r) => r.textContent?.includes("docs"));
+    expect(securityRow).toBeDefined();
+    expect(docsRow).toBeDefined();
+    // Failed check links to its run and shows when it completed.
+    expect(within(securityRow!).getByText("View run").closest("a")).toHaveAttribute(
+      "href",
+      "https://github.com/qontinui/qontinui-web/actions/runs/42"
+    );
+    expect(securityRow!).toHaveTextContent("5m ago");
+    // Passing checks never render in the failing list.
+    expect(screen.queryByText("lint")).not.toBeInTheDocument();
+    // No details_url + no completed_at -> name-only row, never a dead button.
+    expect(docsRow!.querySelector("a")).toBeNull();
+  });
+
+  it("falls back to failing_contexts chips when the fetch fails", async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 500 });
+    hookData.current.prs = [failingPr()];
+
+    render(<MergePipeline />);
+    fireEvent.click(screen.getByText("Checks failing"));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    // The block still names the checks from the row's own data...
+    const block = await screen.findByTestId("failing-checks");
+    expect(within(block).getByText("security")).toBeInTheDocument();
+    expect(within(block).getByText("docs")).toBeInTheDocument();
+    // ...but never renders detail rows or dead links it doesn't have.
+    await waitFor(() => {
+      expect(screen.queryAllByTestId("failing-check-row")).toHaveLength(0);
+      expect(within(block).queryByText("View run")).not.toBeInTheDocument();
+    });
+  });
+
+  it("does not fetch check details for a non-failing expanded row", () => {
+    hookData.current.prs = [pr()];
+    hookData.current.proposals = [proposal({ status: "awaiting-ci" })];
+
+    render(<MergePipeline />);
+    fireEvent.click(screen.getByText("Awaiting CI"));
+
+    // Detail is open (the candidate CI link renders) yet no checks fetch.
+    expect(screen.getByText("Candidate CI run")).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("failing-checks")).not.toBeInTheDocument();
   });
 });
