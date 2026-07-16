@@ -93,8 +93,9 @@ type BadgeTone =
 
 /**
  * Severity/color map by merge_status. The "stuck" states the operator most
- * needs to see — `ready-but-unlanded` and `awaiting-specialist-review` — are
- * deliberately LOUD (destructive red / warning orange). Calm states
+ * needs to see — `ready-but-unlanded`, `repo-unreachable`, and
+ * `awaiting-specialist-review` — are deliberately LOUD (destructive red /
+ * warning orange). Calm states
  * (`ready`/`queued`) read green/blue; `draft` and `unknown` are muted; the
  * actionable-but-not-stuck blockers (ci/conflicts/behind/review/blast-radius)
  * are warning-colored.
@@ -102,6 +103,7 @@ type BadgeTone =
 const MERGE_STATUS_TONE: Record<PrMergeStatus, BadgeTone> = {
   // LOUD — genuinely stuck, needs an operator.
   "ready-but-unlanded": "destructive",
+  "repo-unreachable": "destructive",
   "awaiting-specialist-review": "warning",
   // Warning — a concrete blocker the PR author can act on.
   "ci-failed": "destructive",

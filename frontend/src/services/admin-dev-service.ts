@@ -168,6 +168,9 @@ export type PrMergeStatus =
   | "ready"
   | "queued"
   | "ready-but-unlanded"
+  // repo cannot be cloned by coord (deleted/renamed or GitHub App access
+  // revoked) — not fixable by a rebase or reevaluate.
+  | "repo-unreachable"
   | "unknown";
 
 /**
