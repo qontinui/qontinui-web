@@ -130,6 +130,29 @@ class TestGetGatesList:
         called_params = instance.get.call_args.kwargs.get("params", {})
         assert called_params.get("verdict") == "open"
 
+    def test_exclude_orphans_forwarded(self, auth_client: TestClient):
+        """`exclude_orphans` passes through to coord verbatim (truthy string);
+        omitting it must NOT inject the key (coord's default is the raw,
+        unfiltered list)."""
+        mock_resp = _mock_response(json_data={"gates": [], "count": 0})
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = mock_resp
+            _configure_mock_client(MockClient, instance)
+            resp = auth_client.get(f"{API_PREFIX}/gates/list?exclude_orphans=1")
+        assert resp.status_code == 200
+        called_params = instance.get.call_args.kwargs.get("params", {})
+        assert called_params.get("exclude_orphans") == "1"
+
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = mock_resp
+            _configure_mock_client(MockClient, instance)
+            resp = auth_client.get(f"{API_PREFIX}/gates/list")
+        assert resp.status_code == 200
+        called_params = instance.get.call_args.kwargs.get("params") or {}
+        assert "exclude_orphans" not in called_params
+
     def test_coord_unreachable_returns_502(self, auth_client: TestClient):
         with _patch_httpx() as MockClient:
             instance = AsyncMock()

@@ -112,6 +112,20 @@ export const CI_STATUS_POLL_FALLBACK_MS = 5_000;
  * - `gateSnoozeUrl(id)`      — POST snooze until `{until: <rfc3339>}`.
  */
 export const GATES_LIST_API = `${OPERATIONS_API}/gates/list`;
+/**
+ * Gates-list URL with optional filters. `excludeOrphans` appends
+ * `?exclude_orphans=1`, asking coord to hide ORPHANED gates — `pr_merged`
+ * gates whose PR is known-closed and `ci_green` gates on superseded SHAs
+ * (no longer any open PR's head); neither can ever clear. Coord treats the
+ * param as a truthy string; omitting it returns the raw, unfiltered list —
+ * so the bare `GATES_LIST_API` constant above stays byte-identical for
+ * existing callers.
+ */
+export function gatesListUrl(opts: { excludeOrphans?: boolean }): string {
+  return opts.excludeOrphans
+    ? `${GATES_LIST_API}?exclude_orphans=1`
+    : GATES_LIST_API;
+}
 export function gateApproveUrl(gateId: string): string {
   return `${OPERATIONS_API}/gates/${encodeURIComponent(gateId)}/approve`;
 }

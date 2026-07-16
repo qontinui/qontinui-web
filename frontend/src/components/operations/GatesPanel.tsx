@@ -606,7 +606,20 @@ function groupGates(gates: GateRow[]): GroupedGates[] {
  * caller's own gates.
  */
 export function GatesPanel() {
-  const { gates, error, refetch } = useGatesStream();
+  // Hide-orphans toggle (plan `2026-07-15-coord-cleanup-closed-pr-gates`
+  // Phase 4). DEFAULT hides ORPHANED gates — `pr_merged` gates whose PR is
+  // known-closed and `ci_green` gates on superseded SHAs (no longer any open
+  // PR's head); neither can ever clear, so the clean panel is the
+  // predictable default. The header checkbox ("Show orphaned gates",
+  // unchecked) is the discoverable, reversible opt-in to the raw view;
+  // checking it drops `exclude_orphans=1` from the list fetch and refetches
+  // immediately (the hook's fetch callback is keyed on the option).
+  // Deliberately local + non-persisted state: the raw view is a diagnostic
+  // peek, not a layout preference.
+  const [showOrphanedGates, setShowOrphanedGates] = useState(false);
+  const { gates, error, refetch } = useGatesStream({
+    excludeOrphans: !showOrphanedGates,
+  });
 
   const onActed = useCallback(() => {
     void refetch();
@@ -646,6 +659,26 @@ export function GatesPanel() {
             </Badge>
           )}
         </>
+      }
+      // Rendered OUTSIDE the collapse trigger (same header row as the count
+      // badges) so toggling never folds the panel — and an <input> inside the
+      // trigger <button> would be invalid nested-interactive HTML. The label
+      // is always visible (even collapsed), which is what makes the hidden
+      // default state discoverable.
+      headerActions={
+        <label
+          className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none whitespace-nowrap"
+          title="Gates for closed PRs or superseded CI SHAs, hidden by default (they can never clear). Check to include them."
+          data-ui-bridge-id="operations.gates-show-orphaned"
+        >
+          <input
+            type="checkbox"
+            checked={showOrphanedGates}
+            onChange={(e) => setShowOrphanedGates(e.target.checked)}
+            className="rounded border-border-subtle"
+          />
+          Show orphaned gates
+        </label>
       }
     >
         {/* Error state — surfaced honestly, polling continues underneath. */}
