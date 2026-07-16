@@ -37,11 +37,13 @@ import { CollapsiblePanel } from "./CollapsiblePanel";
 import { GateDecisionRow, MergeTrainRow, SuggestionCard } from "./MergeTrain";
 import { relativeTime } from "./utils";
 import { useMergePipelineData } from "./useMergePipelineData";
+import { usePrCheckDetails } from "./usePrCheckDetails";
 import {
   buildPipelineRows,
   derivePipelineHealth,
   matchesFilter,
   matchesQuery,
+  unstableHasFailure,
   type PipelineFilter,
   type PipelineRow,
   type UnifiedStatusKind,
@@ -65,6 +67,9 @@ const STATUS_BADGE_CLASS: Record<UnifiedStatusKind, string> = {
   "not-mergeable": "bg-red-500/15 text-red-200 border-red-500/35",
   requirements: "bg-red-500/15 text-red-200 border-red-500/35",
   "checks-failing": "bg-amber-500/15 text-amber-200 border-amber-500/30",
+  // In-flight, not a failure: checks are merely still running — muted, so it
+  // never reads as the red/amber "author must act" family.
+  "checks-pending": "bg-muted text-muted-foreground border-border",
   blocked: "bg-orange-500/15 text-orange-200 border-orange-500/30",
   "needs-rebase": "bg-amber-500/15 text-amber-200 border-amber-500/30",
   draft: "bg-transparent text-muted-foreground border-border border-dashed",
@@ -185,6 +190,92 @@ function HealthStrip({
 // Row + expandable detail
 // ----------------------------------------------------------------------------
 
+/** Conclusions that are NOT failures — everything else gets a red row. */
+const PASSING_CONCLUSIONS = ["success", "neutral", "skipped"];
+
+/**
+ * Named failing checks with a link to each run. Fetches coord's per-check
+ * breakdown on expansion (usePrCheckDetails — once per head sha, no
+ * polling); while the fetch is in flight or if it fails, the row's own
+ * `failing_contexts` names render as plain chips so the operator never
+ * stares at a blank panel.
+ */
+function FailingChecks({ row }: { row: PipelineRow }) {
+  const hasFailure = row.pr !== null && unstableHasFailure(row.pr);
+  const { checks, loading, error } = usePrCheckDetails(
+    row.repo,
+    row.prNumber,
+    hasFailure,
+    row.pr?.head_sha ?? null
+  );
+  if (!hasFailure || row.pr === null) return null;
+
+  // Only COMPLETED non-passing runs — a still-running check is not "failing".
+  const failed =
+    !loading && error === null && checks !== null
+      ? checks.filter(
+          (c) =>
+            c.conclusion !== null && !PASSING_CONCLUSIONS.includes(c.conclusion)
+        )
+      : null;
+  const fallbackNames = row.pr.failing_contexts ?? [];
+  // Nothing to name (older coord omits failing_contexts and the fetch
+  // hasn't produced names) — the status reason already covers the aggregate.
+  if ((failed === null || failed.length === 0) && fallbackNames.length === 0)
+    return null;
+
+  const chipClass =
+    "font-mono text-[11px] bg-red-500/15 text-red-200 border-red-500/35";
+  return (
+    <div className="space-y-1" data-testid="failing-checks">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground m-0">
+        Failing checks
+      </p>
+      {failed !== null && failed.length > 0 ? (
+        <div className="space-y-1">
+          {failed.map((c) => (
+            <div
+              key={c.name}
+              className="flex flex-wrap items-center gap-2"
+              data-testid="failing-check-row"
+            >
+              <Badge variant="outline" className={chipClass}>
+                {c.name}
+              </Badge>
+              {c.completed_at && (
+                <span className="text-[11px] text-muted-foreground tabular-nums">
+                  {relativeTime(c.completed_at)}
+                </span>
+              )}
+              {c.details_url && (
+                <Button asChild size="sm" variant="outline">
+                  <a
+                    href={c.details_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    View run
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : (
+        // Fetch in flight or failed — name the checks from the row itself.
+        <div className="flex flex-wrap gap-1.5">
+          {fallbackNames.map((name) => (
+            <Badge key={name} variant="outline" className={chipClass}>
+              {name}
+            </Badge>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RowDetail({ row }: { row: PipelineRow }) {
   const active = row.activeProposal;
   const earlier = row.attempts.filter(
@@ -204,6 +295,9 @@ function RowDetail({ row }: { row: PipelineRow }) {
           {active.error}
         </p>
       )}
+
+      {/* which checks failed, with links to the runs */}
+      <FailingChecks row={row} />
 
       {/* what you can do / where to look */}
       <div className="flex flex-wrap items-center gap-2">

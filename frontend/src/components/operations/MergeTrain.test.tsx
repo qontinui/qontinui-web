@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
-import { MergeTrainRow } from "./MergeTrain";
-import type { ProposalDetail } from "./mergeTypes";
+import { MergeTrainRow, PrRowDisplay } from "./MergeTrain";
+import type { PrRow, ProposalDetail } from "./mergeTypes";
 
 /**
  * MergeTrainRow — requeue_count starvation badge.
@@ -54,5 +54,72 @@ describe("MergeTrainRow requeue badge", () => {
       <MergeTrainRow proposal={proposal({ requeue_count: undefined })} />
     );
     expect(container.querySelector("[data-requeue-count]")).toBeNull();
+  });
+});
+
+/**
+ * PrRowDisplay — UNSTABLE tint split (plan
+ * 2026-07-15-merge-train-block-reason-ux Phase 3). UNSTABLE has two honest
+ * meanings: a non-required check actually FAILED (red — worth a look) vs
+ * checks merely still running (muted yellow — just wait). The split uses the
+ * shared `unstableHasFailure` predicate, preferring coord's named
+ * `failing_contexts` and falling back to the aggregate `ci_conclusion` when
+ * the arrays are absent (older coord deploys).
+ */
+
+function prRow(overrides: Partial<PrRow> = {}): PrRow {
+  return {
+    repo: "qontinui/qontinui-web",
+    pr_number: 761,
+    branch: "feat/thing",
+    base_branch: "main",
+    head_sha: "abc123",
+    pr_state: "open",
+    mergeable: true,
+    merge_state_status: "UNSTABLE",
+    review_decision: null,
+    required_checks_satisfied: true,
+    last_refreshed_at: new Date().toISOString(),
+    last_predicate_eval_at: null,
+    ci_lifecycle: "pending",
+    ci_conclusion: null,
+    correlation_id: null,
+    ...overrides,
+  };
+}
+
+function renderedRow(overrides: Partial<PrRow> = {}) {
+  const { container } = render(<PrRowDisplay pr={prRow(overrides)} />);
+  const row = container.querySelector(
+    '[data-pr-merge-state-status="UNSTABLE"]'
+  );
+  expect(row).not.toBeNull();
+  return row as HTMLElement;
+}
+
+describe("PrRowDisplay UNSTABLE tint split", () => {
+  it("tints red when a named non-required check failed", () => {
+    const row = renderedRow({ failing_contexts: ["security"] });
+    expect(row.className).toContain("bg-red-500/15");
+  });
+
+  it("tints red on aggregate ci failure with arrays absent (old coord)", () => {
+    const row = renderedRow({
+      ci_lifecycle: "complete",
+      ci_conclusion: "failure",
+    });
+    expect(row.className).toContain("bg-red-500/15");
+  });
+
+  it("tints muted (not red) while non-required checks only run", () => {
+    const row = renderedRow({ pending_contexts: ["test (windows)"] });
+    expect(row.className).not.toContain("bg-red-500/15");
+    expect(row.className).toContain("bg-yellow-500/10");
+  });
+
+  it("tints muted when the context arrays are absent and CI is pending", () => {
+    const row = renderedRow();
+    expect(row.className).not.toContain("bg-red-500/15");
+    expect(row.className).toContain("bg-yellow-500/10");
   });
 });

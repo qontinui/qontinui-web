@@ -37,6 +37,7 @@ export type UnifiedStatusKind =
   | "not-mergeable"
   | "requirements"
   | "checks-failing"
+  | "checks-pending"
   | "draft"
   | "unknown";
 
@@ -123,6 +124,28 @@ function statusFromProposal(p: ProposalDetail): UnifiedStatus {
 }
 
 /**
+ * True when an UNSTABLE (or aggregate-failing) PR actually has a FAILED
+ * check — as opposed to checks that are merely still running. Prefers
+ * coord's named `failing_contexts` (new optional field); falls back to the
+ * aggregate `ci_conclusion` when the arrays are absent (older coord
+ * deploys omit them entirely). Shared by prPipeline, PrsTable, and
+ * MergeTrain so "failed" vs "still running" never drifts between surfaces.
+ */
+export function unstableHasFailure(
+  pr: Pick<PrRow, "failing_contexts" | "ci_conclusion">
+): boolean {
+  return (
+    (pr.failing_contexts?.length ?? 0) > 0 || pr.ci_conclusion === "failure"
+  );
+}
+
+/** "security, test (windows) +2 more" — at most 3 named check contexts. */
+export function formatContextNames(names: readonly string[]): string {
+  const shown = names.slice(0, 3).join(", ");
+  return names.length > 3 ? `${shown} +${names.length - 3} more` : shown;
+}
+
+/**
  * Status for a PR with NO active merge attempt — GitHub's view decides.
  * Precedence (report §C/§7): draft > merged/closed > behind-main (the
  * actionable "your CI is stale" case) > hard-unmergeable > blocked
@@ -141,11 +164,14 @@ function statusFromGitHub(pr: PrRow): UnifiedStatus {
     return { kind: "merged", label: "Merged", reason: "", attention: "none" };
   }
   if (pr.merge_state_status === "BEHIND") {
+    // Coord's merge train rebases candidates itself — BEHIND is a "just
+    // wait" state, not an author-action state. Kind stays `needs-rebase`
+    // for filtering continuity.
     return {
       kind: "needs-rebase",
       label: "Needs rebase",
-      reason: "behind main — green CI here is stale",
-      attention: "author",
+      reason: "behind main — coord auto-rebases in the train",
+      attention: "waiting",
     };
   }
   if (pr.mergeable === false || pr.merge_state_status === "DIRTY") {
@@ -157,14 +183,17 @@ function statusFromGitHub(pr: PrRow): UnifiedStatus {
     };
   }
   if (pr.merge_state_status === "BLOCKED") {
+    const failing = pr.failing_contexts ?? [];
     const reason =
       pr.review_decision === "CHANGES_REQUESTED"
         ? "changes requested in review"
         : pr.review_decision === "REVIEW_REQUIRED"
           ? "review required"
-          : pr.required_checks_satisfied === false
-            ? "required checks not satisfied"
-            : "branch protection requirements not met";
+          : failing.length > 0
+            ? `required checks failing: ${formatContextNames(failing)}`
+            : pr.required_checks_satisfied === false
+              ? "required checks not satisfied"
+              : "ruleset/branch-protection requirements not met";
     return {
       kind: "requirements",
       label: "Blocked by requirements",
@@ -176,11 +205,27 @@ function statusFromGitHub(pr: PrRow): UnifiedStatus {
     pr.merge_state_status === "UNSTABLE" ||
     (pr.ci_lifecycle === "complete" && pr.ci_conclusion === "failure")
   ) {
+    if (unstableHasFailure(pr)) {
+      const failing = pr.failing_contexts ?? [];
+      return {
+        kind: "checks-failing",
+        label: "Checks failing",
+        reason:
+          failing.length > 0
+            ? `failing: ${formatContextNames(failing)}`
+            : "branch CI reports a failing check",
+        attention: "author",
+      };
+    }
+    // No named failure and no aggregate failure — the non-required checks
+    // are merely still running. This branch also covers the old-coord
+    // fallback where the context arrays are absent and `ci_lifecycle` is
+    // still "pending": never claim "failing" without a failure signal.
     return {
-      kind: "checks-failing",
-      label: "Checks failing",
-      reason: "a check is failing on the branch",
-      attention: "author",
+      kind: "checks-pending",
+      label: "Checks running",
+      reason: "non-required checks still running",
+      attention: "none",
     };
   }
   if (pr.merge_state_status === "CLEAN") {
@@ -402,12 +447,13 @@ const KIND_RANK: Record<UnifiedStatusKind, number> = {
   blocked: 1,
   landing: 2,
   "awaiting-ci": 3,
-  rebasing: 4,
-  queued: 5,
-  ready: 6,
-  unknown: 7,
-  draft: 8,
-  merged: 9,
+  "checks-pending": 4,
+  rebasing: 5,
+  queued: 6,
+  ready: 7,
+  unknown: 8,
+  draft: 9,
+  merged: 10,
 };
 
 function compareRows(a: PipelineRow, b: PipelineRow): number {

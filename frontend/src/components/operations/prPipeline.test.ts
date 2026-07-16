@@ -123,7 +123,7 @@ describe("buildPipelineRows — join + unified status", () => {
       [proposal({ status: "cancelled" })]
     );
     expect(rows[0].status.label).toBe("Needs rebase");
-    expect(rows[0].status.attention).toBe("author");
+    expect(rows[0].status.attention).toBe("waiting");
     expect(rows[0].attempts).toHaveLength(1); // history retained
   });
 
@@ -137,7 +137,21 @@ describe("buildPipelineRows — join + unified status", () => {
         { merge_state_status: "BLOCKED", review_decision: "REVIEW_REQUIRED" },
         "Blocked by requirements",
       ],
-      [{ merge_state_status: "UNSTABLE" }, "Checks failing"],
+      // UNSTABLE with no failure signal (default fixture: aggregate success)
+      // is honest about being in-flight, not failing.
+      [{ merge_state_status: "UNSTABLE" }, "Checks running"],
+      [
+        { merge_state_status: "UNSTABLE", ci_conclusion: "failure" },
+        "Checks failing",
+      ],
+      [
+        {
+          merge_state_status: "UNSTABLE",
+          failing_contexts: ["security"],
+          ci_conclusion: null,
+        },
+        "Checks failing",
+      ],
       [{ pr_state: "draft", merge_state_status: "DRAFT" }, "Draft"],
       [{ merge_state_status: "UNKNOWN" }, "Syncing"],
       [{ merge_state_status: null }, "Syncing"],
@@ -259,6 +273,128 @@ describe("buildPipelineRows — join + unified status", () => {
       ]
     );
     expect(rows[0].ciRunUrl).toBe("https://github.com/x/y/actions/runs/1");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Block-reason UX truth table (plan 2026-07-15-merge-train-block-reason-ux):
+// "needs attention" must mean EXACTLY "agent/author action required". A
+// still-running non-required check is not an author problem; BEHIND is
+// coord's problem (auto-rebase); a named or aggregate failure IS the
+// author's problem.
+// ---------------------------------------------------------------------------
+describe("statusFromGitHub — attention truth table", () => {
+  function rowFor(overrides: Partial<PrRow>) {
+    return buildPipelineRows([pr(overrides)], [])[0];
+  }
+  function needsAttention(overrides: Partial<PrRow>): number {
+    return derivePipelineHealth(buildPipelineRows([pr(overrides)], []), NOW)
+      .needsAttention;
+  }
+
+  it("UNSTABLE with only pending contexts → checks-pending, NOT counted", () => {
+    const row = rowFor({
+      merge_state_status: "UNSTABLE",
+      ci_lifecycle: "pending",
+      ci_conclusion: null,
+      pending_contexts: ["test (windows)"],
+    });
+    expect(row.status.kind).toBe("checks-pending");
+    expect(row.status.attention).toBe("none");
+    expect(row.status.reason).toBe("non-required checks still running");
+    expect(
+      needsAttention({
+        merge_state_status: "UNSTABLE",
+        ci_lifecycle: "pending",
+        ci_conclusion: null,
+        pending_contexts: ["test (windows)"],
+      })
+    ).toBe(0);
+  });
+
+  it("UNSTABLE with failing_contexts → checks-failing, counted, names checks", () => {
+    const overrides: Partial<PrRow> = {
+      merge_state_status: "UNSTABLE",
+      ci_conclusion: null,
+      failing_contexts: ["security", "test (windows)"],
+    };
+    const row = rowFor(overrides);
+    expect(row.status.kind).toBe("checks-failing");
+    expect(row.status.attention).toBe("author");
+    expect(row.status.reason).toBe("failing: security, test (windows)");
+    expect(needsAttention(overrides)).toBe(1);
+  });
+
+  it("names at most 3 failing checks and appends +N more", () => {
+    const row = rowFor({
+      merge_state_status: "UNSTABLE",
+      failing_contexts: ["a", "b", "c", "d", "e"],
+    });
+    expect(row.status.reason).toBe("failing: a, b, c +2 more");
+  });
+
+  it("UNSTABLE + aggregate ci failure (arrays absent) → counted — old-coord fallback", () => {
+    const overrides: Partial<PrRow> = {
+      merge_state_status: "UNSTABLE",
+      ci_lifecycle: "complete",
+      ci_conclusion: "failure",
+    };
+    const row = rowFor(overrides);
+    expect(row.status.kind).toBe("checks-failing");
+    expect(row.status.attention).toBe("author");
+    expect(needsAttention(overrides)).toBe(1);
+  });
+
+  it("arrays absent + ci_lifecycle pending → checks-pending (old-coord tolerance)", () => {
+    const row = rowFor({
+      merge_state_status: "UNSTABLE",
+      ci_lifecycle: "pending",
+      ci_conclusion: null,
+    });
+    expect(row.status.kind).toBe("checks-pending");
+    expect(row.status.attention).toBe("none");
+  });
+
+  it("BEHIND → attention 'waiting' (coord auto-rebases), NOT counted", () => {
+    const row = rowFor({ merge_state_status: "BEHIND" });
+    expect(row.status.kind).toBe("needs-rebase");
+    expect(row.status.attention).toBe("waiting");
+    expect(row.status.reason).toBe(
+      "behind main — coord auto-rebases in the train"
+    );
+    expect(needsAttention({ merge_state_status: "BEHIND" })).toBe(0);
+  });
+
+  it("BLOCKED and DIRTY still count as needing the author", () => {
+    expect(needsAttention({ merge_state_status: "BLOCKED" })).toBe(1);
+    expect(
+      needsAttention({ merge_state_status: "DIRTY", mergeable: null })
+    ).toBe(1);
+  });
+
+  it("BLOCKED names the failing required checks when coord provides them", () => {
+    const row = rowFor({
+      merge_state_status: "BLOCKED",
+      failing_contexts: ["security"],
+    });
+    expect(row.status.reason).toBe("required checks failing: security");
+    expect(row.status.attention).toBe("author");
+  });
+
+  it("BLOCKED review-decision reasons outrank named failing checks", () => {
+    const row = rowFor({
+      merge_state_status: "BLOCKED",
+      review_decision: "CHANGES_REQUESTED",
+      failing_contexts: ["security"],
+    });
+    expect(row.status.reason).toBe("changes requested in review");
+  });
+
+  it("BLOCKED fallback attributes rulesets, not just branch protection", () => {
+    const row = rowFor({ merge_state_status: "BLOCKED" });
+    expect(row.status.reason).toBe(
+      "ruleset/branch-protection requirements not met"
+    );
   });
 });
 
