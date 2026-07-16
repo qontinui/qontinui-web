@@ -99,6 +99,12 @@ export default function OnboardingStatusPage() {
   const code = searchParams?.get("code") ?? null;
   const installationIdRaw = searchParams?.get("installation_id") ?? null;
   const repo = searchParams?.get("repo") ?? null;
+  // `state=runner-clone` is set by /connect-runner-github (the desktop runner's
+  // clone-picker connect entry). It makes the claim bind-only: bind the account
+  // so its repos are listable/cloneable WITHOUT enrolling them or opening
+  // bootstrap PRs (D2 in the clone-picker plan). Also reframes the copy and
+  // skips the enroll-watching doctor (nothing is enrolling).
+  const isRunnerClone = searchParams?.get("state") === "runner-clone";
   // Only the OAuth-redirect shape (code + installation_id) triggers a claim;
   // the `?repo=` status-view path and bare visits fall through to the doctor.
   const hasClaimParams = !!code && !!installationIdRaw;
@@ -132,7 +138,12 @@ export default function OnboardingStatusPage() {
           `${OPERATIONS_API}/pr-merge/onboarding/claim`,
           {
             method: "POST",
-            body: JSON.stringify({ code, installation_id: installationId }),
+            body: JSON.stringify({
+              code,
+              installation_id: installationId,
+              // Clone-picker connect binds only — no repo enrollment / PRs.
+              ...(isRunnerClone ? { bind_only: true } : {}),
+            }),
           },
         );
         const body = await res
@@ -158,7 +169,7 @@ export default function OnboardingStatusPage() {
     return () => {
       cancelled = true;
     };
-  }, [hasClaimParams, code, installationIdRaw]);
+  }, [hasClaimParams, code, installationIdRaw, isRunnerClone]);
 
   return (
     <div className="p-3 sm:p-6 space-y-3" data-testid="coord-onboarding-status-page">
@@ -186,7 +197,9 @@ export default function OnboardingStatusPage() {
         <Card data-testid="onboarding-claim-claiming">
           <CardContent className="flex items-center gap-2 py-6 text-sm">
             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-            Connecting your GitHub account and enrolling its repositories…
+            {isRunnerClone
+              ? "Connecting your GitHub account…"
+              : "Connecting your GitHub account and enrolling its repositories…"}
           </CardContent>
         </Card>
       )}
@@ -202,10 +215,21 @@ export default function OnboardingStatusPage() {
               </Badge>
             </CardTitle>
             <p className="text-xs text-muted-foreground">
-              <span className="font-mono">{claim.account_login}</span> is now
-              bound to your Qontinui tenant and its repositories are being
-              enrolled. Watch them go green below — the checklist auto-refreshes
-              as onboarding completes.
+              {isRunnerClone ? (
+                <>
+                  <span className="font-mono">{claim.account_login}</span> is now
+                  connected to your Qontinui workspace. Return to your runner and
+                  click <span className="font-medium">Refresh</span> to see and
+                  clone its repositories.
+                </>
+              ) : (
+                <>
+                  <span className="font-mono">{claim.account_login}</span> is now
+                  bound to your Qontinui tenant and its repositories are being
+                  enrolled. Watch them go green below — the checklist
+                  auto-refreshes as onboarding completes.
+                </>
+              )}
             </p>
           </CardHeader>
         </Card>
@@ -233,7 +257,9 @@ export default function OnboardingStatusPage() {
         post-claim follow-up in success/error. It is hidden only WHILE the
         claim POST is in flight so the operator sees a single clear state.
       */}
-      {phase !== "claiming" && <OnboardingDoctor key={repo ?? "bare"} />}
+      {phase !== "claiming" && !isRunnerClone && (
+        <OnboardingDoctor key={repo ?? "bare"} />
+      )}
     </div>
   );
 }
