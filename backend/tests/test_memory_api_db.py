@@ -51,7 +51,8 @@ from sqlalchemy.pool import NullPool
 
 from app.api.deps import get_async_db
 from app.api.v1.endpoints.memory import MemoryPrincipal, get_memory_tenant, router
-from app.services.memory_embedder import EMBEDDING_DIM, EMBEDDING_MODEL_TAG
+from app.services import memory_store as store
+from app.services.memory_vectors import EMBEDDING_DIM, EMBEDDING_MODEL_TAG
 from tests.conftest import TEST_DATABASE_URL
 
 # ---------------------------------------------------------------------------
@@ -697,6 +698,7 @@ class TestHybridQuery:
             json={
                 "query_text": query,
                 "query_embedding": _client_vector(query),
+                "query_embedding_model": EMBEDDING_MODEL_TAG,
                 "limit": 2,
             },
         )
@@ -1043,7 +1045,11 @@ class TestClientSuppliedEmbeddings:
         mc.client.post("/api/v1/memory/records", json={"records": [_record(content)]})
         resp = mc.client.post(
             "/api/v1/memory/query",
-            json={"query_text": content, "query_embedding": _client_vector(content)},
+            json={
+                "query_text": content,
+                "query_embedding": _client_vector(content),
+                "query_embedding_model": EMBEDDING_MODEL_TAG,
+            },
         )
         assert resp.status_code == 200
         body = resp.json()
@@ -1054,9 +1060,213 @@ class TestClientSuppliedEmbeddings:
     def test_query_wrong_dim_embedding_is_422(self, mc: MemoryClient) -> None:
         resp = mc.client.post(
             "/api/v1/memory/query",
-            json={"query_text": "anything", "query_embedding": [0.1] * 383},
+            json={
+                "query_text": "anything",
+                "query_embedding": [0.1] * 383,
+                "query_embedding_model": EMBEDDING_MODEL_TAG,
+            },
         )
         assert resp.status_code == 422
+
+
+class TestAtomicModelMigration:
+    """A query vector is never scored against a corpus in another space.
+
+    Phase 0 measured the fastembed-128 and sentence-transformers-256
+    spaces as NOT interchangeable (min cosine 0.71, k=10 exact-order
+    agreement 0%), so the model transition is ATOMIC per tenant: while a
+    tenant still holds vectors at a non-deployed tag, the cosine arm is
+    skipped entirely rather than allowed to compare across spaces.
+    """
+
+    def test_query_is_hybrid_once_the_tenant_is_fully_migrated(
+        self, mc: MemoryClient
+    ) -> None:
+        """The steady state: every vector at the deployed tag -> hybrid."""
+        content = "the okapi hides in dense forest"
+        mc.client.post("/api/v1/memory/records", json={"records": [_record(content)]})
+        resp = mc.client.post(
+            "/api/v1/memory/query",
+            json={
+                "query_text": content,
+                "query_embedding": _client_vector(content),
+                "query_embedding_model": EMBEDDING_MODEL_TAG,
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.json()["vector_arm"] == "hybrid"
+
+    def test_old_tag_rows_degrade_the_query_to_fts_only(
+        self, mc: MemoryClient, db: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """One un-reindexed row is enough to skip the arm for the tenant.
+
+        The vector arm is proved NOT to run by making any call to it an
+        error: asserting on absent ``cosine_similarity`` alone could not
+        distinguish "the arm was skipped" from "the arm ran and returned
+        nothing".
+        """
+        content = "the okapi hides in dense forest"
+        mc.client.post("/api/v1/memory/records", json={"records": [_record(content)]})
+        # Simulate the corpus mid-flip: this row predates the tag change
+        # and the runner-paid reindex has not rewritten it yet.
+        _exec(
+            db,
+            [
+                """
+                UPDATE coord.memory_records
+                SET embedding_model = 'minilm-l6-v2-onnx@fastembed'
+                WHERE tenant_id = :t
+                """
+            ],
+            t=str(mc.tenant_id),
+        )
+
+        async def _boom(*_a: Any, **_k: Any) -> None:
+            raise AssertionError(
+                "vector_search ran while the tenant was mid-migration — an "
+                "ST-256 query must never be scored against fastembed-128 docs"
+            )
+
+        monkeypatch.setattr(store, "vector_search", _boom)
+
+        resp = mc.client.post(
+            "/api/v1/memory/query",
+            json={
+                "query_text": content,
+                "query_embedding": _client_vector(content),
+                "query_embedding_model": EMBEDDING_MODEL_TAG,
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["vector_arm"] == "skipped_migrating"
+        assert body["hits"], "the lexical arm still retrieves during migration"
+        for hit in body["hits"]:
+            assert hit["vector_rank"] is None
+            assert hit["cosine_similarity"] is None
+            assert hit["fts_rank"] is not None
+
+    def test_arm_recovers_when_the_reindex_drains(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """The degrade is driven off corpus state, so it self-clears.
+
+        No timer, no flag: rewriting the last foreign-tag vector is what
+        restores the arm.
+        """
+        content = "the okapi hides in dense forest"
+        mc.client.post("/api/v1/memory/records", json={"records": [_record(content)]})
+        query = {
+            "query_text": content,
+            "query_embedding": _client_vector(content),
+            "query_embedding_model": EMBEDDING_MODEL_TAG,
+        }
+        _exec(
+            db,
+            [
+                """
+                UPDATE coord.memory_records
+                SET embedding_model = 'minilm-l6-v2-onnx@fastembed'
+                WHERE tenant_id = :t
+                """
+            ],
+            t=str(mc.tenant_id),
+        )
+        assert (
+            mc.client.post("/api/v1/memory/query", json=query).json()["vector_arm"]
+            == "skipped_migrating"
+        )
+        # The runner posts the re-embedded vector back at the new tag.
+        _exec(
+            db,
+            [
+                """
+                UPDATE coord.memory_records
+                SET embedding_model = :tag
+                WHERE tenant_id = :t
+                """
+            ],
+            t=str(mc.tenant_id),
+            tag=EMBEDDING_MODEL_TAG,
+        )
+        assert (
+            mc.client.post("/api/v1/memory/query", json=query).json()["vector_arm"]
+            == "hybrid"
+        )
+
+    def test_unvectorized_rows_do_not_count_as_migrating(
+        self, mc: MemoryClient
+    ) -> None:
+        """A NULL-embedding row must NOT degrade the arm.
+
+        The cosine arm never scores a NULL-embedding row, so such a row
+        cannot contaminate anything. This matters because the bridge sweep
+        lands rows unvectorized BY DESIGN — counting them as unmigrated
+        would pin every tenant to ``skipped_migrating`` permanently and
+        silently kill the semantic arm forever.
+        """
+        mc.client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    _record("the okapi hides in dense forest"),
+                    _unembedded_record("an unvectorized note awaiting the sweep"),
+                ]
+            },
+        )
+        resp = mc.client.post(
+            "/api/v1/memory/query",
+            json={
+                "query_text": "okapi forest",
+                "query_embedding": _client_vector("okapi forest"),
+                "query_embedding_model": EMBEDDING_MODEL_TAG,
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.json()["vector_arm"] == "hybrid"
+
+    def test_migration_state_is_per_tenant(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """Another tenant's un-reindexed rows must not degrade this one."""
+        content = "the okapi hides in dense forest"
+        mc.client.post("/api/v1/memory/records", json={"records": [_record(content)]})
+        clean_tenant = mc.tenant_id
+
+        stale_tenant = uuid4()
+        mc.as_tenant(stale_tenant).client.post(
+            "/api/v1/memory/records", json={"records": [_record("a stale note")]}
+        )
+        _exec(
+            db,
+            [
+                """
+                UPDATE coord.memory_records
+                SET embedding_model = 'minilm-l6-v2-onnx@fastembed'
+                WHERE tenant_id = :t
+                """
+            ],
+            t=str(stale_tenant),
+        )
+
+        query = {
+            "query_text": content,
+            "query_embedding": _client_vector(content),
+            "query_embedding_model": EMBEDDING_MODEL_TAG,
+        }
+        assert (
+            mc.as_tenant(stale_tenant)
+            .client.post("/api/v1/memory/query", json=query)
+            .json()["vector_arm"]
+            == "skipped_migrating"
+        )
+        assert (
+            mc.as_tenant(clean_tenant)
+            .client.post("/api/v1/memory/query", json=query)
+            .json()["vector_arm"]
+            == "hybrid"
+        )
 
     def test_supersede_without_embedding_lands_null(
         self, mc: MemoryClient, db: AsyncEngine

@@ -44,7 +44,6 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.services import memory_store as store
-from app.services.memory_embedder import EMBEDDING_MODEL_TAG
 from app.services.memory_lifecycle import (
     CLUSTER_CANDIDATE_LIMIT,
     CLUSTER_MIN_SIZE,
@@ -59,6 +58,7 @@ from app.services.memory_lifecycle import (
     greedy_clusters,
     resolve_merges,
 )
+from app.services.memory_vectors import EMBEDDING_MODEL_TAG
 
 logger = structlog.get_logger(__name__)
 

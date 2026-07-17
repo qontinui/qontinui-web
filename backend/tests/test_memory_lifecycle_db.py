@@ -38,8 +38,8 @@ from sqlalchemy.pool import NullPool
 
 from app.jobs.memory_lifecycle import consolidate_tenant, decay_once, reindex_once
 from app.services import memory_store as store
-from app.services.memory_embedder import EMBEDDING_DIM, EMBEDDING_MODEL_TAG
 from app.services.memory_lifecycle import job_input_hash, retention_score
+from app.services.memory_vectors import EMBEDDING_DIM, EMBEDDING_MODEL_TAG
 from tests.conftest import TEST_DATABASE_URL
 from tests.test_memory_api_db import _SETUP_SQL, _exec, _scalar
 
