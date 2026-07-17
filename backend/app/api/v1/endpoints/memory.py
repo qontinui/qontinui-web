@@ -21,8 +21,10 @@ Endpoints (mounted under ``/api/v1/memory``):
   sync-pull surface.
 * ``POST /query``                        — hybrid retrieval: pgvector
   HNSW cosine + websearch FTS, fused with RRF (k=60). The cosine arm
-  runs only when the caller supplies ``query_embedding``; the response's
-  ``vector_arm`` always says which happened.
+  runs only when the caller supplies ``query_embedding`` (+ its
+  ``query_embedding_model``) AND the tenant's corpus is entirely at the
+  deployed tag; otherwise the query degrades to FTS-only. The response's
+  ``vector_arm`` always says which of the three happened.
 * ``POST /graph``                        — bounded outbound traversal of
   ``coord.memory_links`` from a root record → ``{nodes, edges}``.
 * ``POST /records/{id}/supersede``       — insert replacement, end the
@@ -119,6 +121,7 @@ from app.services.coord_jwks import (
 )
 from app.services.memory_redaction import log_redactions, redact_text
 from app.services.memory_retrieval import rrf_fuse
+from app.services.memory_vectors import EMBEDDING_MODEL_TAG
 
 logger = structlog.get_logger(__name__)
 
@@ -508,10 +511,16 @@ async def query_records(
     names those scopes AND supplies the matching ``scope_ref``.
 
     The semantic arm needs a vector, and this endpoint never computes
-    one: with ``query_embedding`` the query is hybrid; without it the
-    cosine arm is SKIPPED and the result is FTS-only. Which one ran is
-    reported in ``vector_arm`` — never inferred, so an FTS-only result
-    can't pass for a hybrid one.
+    one. It runs only when the caller supplies ``query_embedding`` (with
+    its ``query_embedding_model``) AND this tenant's corpus is entirely
+    in the deployed space. Otherwise it is SKIPPED and the result is
+    FTS-only. Which of the three happened is reported in ``vector_arm``
+    — never inferred, so an FTS-only result can't pass for a hybrid one.
+
+    The mid-migration skip is what makes the model transition atomic per
+    tenant: the old and new spaces are not interchangeable, so a
+    new-space query is served FTS-only rather than cosine-scored against
+    documents the runner-paid reindex has not rewritten yet.
     """
     as_of = payload.as_of or datetime.now(UTC)
     scopes: list[str] = (
@@ -528,16 +537,22 @@ async def query_records(
         "min_importance": payload.min_importance,
         "since": payload.since,
     }
-    vector_arm: Literal["hybrid", "skipped_no_embedding"]
+    vector_arm: Literal["hybrid", "skipped_no_embedding", "skipped_migrating"]
     vector_hits: list[tuple[UUID, float]]
-    if payload.query_embedding is not None:
+    if payload.query_embedding is None:
+        # Checked first: a caller with no vector needs no corpus probe.
+        vector_hits = []
+        vector_arm = "skipped_no_embedding"
+    elif await store.has_unmigrated_vectors(
+        db, tenant_id=principal.tenant_id, current_tag=EMBEDDING_MODEL_TAG
+    ):
+        vector_hits = []
+        vector_arm = "skipped_migrating"
+    else:
         vector_hits = await store.vector_search(
             db, query_embedding=payload.query_embedding, **filter_kwargs
         )
         vector_arm = "hybrid"
-    else:
-        vector_hits = []
-        vector_arm = "skipped_no_embedding"
     fts_ids = await store.fts_search(db, query_text=payload.query_text, **filter_kwargs)
 
     fused = rrf_fuse([mid for mid, _sim in vector_hits], fts_ids)

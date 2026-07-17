@@ -460,6 +460,106 @@ def _validity_filters(
     return " AND ".join(clauses), params
 
 
+# Asks "is every tag in this tenant's scorable corpus the deployed one?"
+# as MIN + MAX + an untagged check, rather than the obvious
+# ``EXISTS (... WHERE embedding_model IS DISTINCT FROM :tag)``. Both of
+# the obvious spellings measured badly:
+#
+# * ``IS DISTINCT FROM`` is not an indexable boundary — Postgres seeks to
+#   the tenant's range and FILTERS every entry in it, so the steady state
+#   (fully migrated, answer "no", nothing to stop early on) pays a scan
+#   of the tenant's whole corpus on EVERY query.
+# * Splitting it into ``< :tag`` / ``> :tag`` EXISTS branches does not
+#   fix it either. EXISTS is startup-cost-dominated, and the planner
+#   assumes ``tenant_id`` and ``embedding_model`` are independent — but a
+#   migrated tenant's rows are perfectly ANTI-correlated with "some other
+#   tag", so it estimates a fat match set, expects to hit one instantly,
+#   picks a seq scan on startup cost, and then finds nothing. Measured at
+#   100k rows: 79ms and 25k buffers for that one branch.
+#
+# ``ORDER BY embedding_model LIMIT 1`` removes the choice. A seq scan
+# cannot produce it without a sort, so the (tenant_id, embedding_model)
+# index wins on total cost regardless of selectivity estimates, and each
+# subquery is an Index Only Scan fetching exactly ONE tuple.
+#
+# ``lo`` is ASC (NULLS LAST) and ``hi`` is DESC (NULLS FIRST), so both
+# read straight off the index in its native order — no sort either way.
+# ``hi``'s NULLS FIRST would mask the real maximum when an untagged row
+# exists, which is exactly why ``untagged`` is probed separately and
+# checked FIRST.
+_UNMIGRATED_PROBE = text(
+    """
+    SELECT
+        (SELECT r.embedding_model
+           FROM coord.memory_records r
+          WHERE r.tenant_id = :tenant_id AND r.is_tombstone = false
+            AND r.embedding IS NOT NULL
+          ORDER BY r.embedding_model ASC
+          LIMIT 1) AS lo,
+        (SELECT r.embedding_model
+           FROM coord.memory_records r
+          WHERE r.tenant_id = :tenant_id AND r.is_tombstone = false
+            AND r.embedding IS NOT NULL
+          ORDER BY r.embedding_model DESC
+          LIMIT 1) AS hi,
+        EXISTS (SELECT 1
+                  FROM coord.memory_records r
+                 WHERE r.tenant_id = :tenant_id AND r.is_tombstone = false
+                   AND r.embedding IS NOT NULL
+                   AND r.embedding_model IS NULL) AS untagged
+    """
+)
+
+
+async def has_unmigrated_vectors(
+    session: AsyncSession, *, tenant_id: UUID, current_tag: str
+) -> bool:
+    """True if this tenant still holds VECTORS at a non-deployed tag.
+
+    Gates the cosine arm. The Phase 0 verdict on the fastembed-128 ->
+    sentence-transformers-256 change was NOT interchangeable (min cosine
+    0.71, k=10 exact-order agreement 0%), so the transition is atomic per
+    tenant: a query vector in the new space must never be scored against
+    documents still in the old one. While this returns True the caller
+    serves FTS-only and reports ``vector_arm='skipped_migrating'``.
+
+    Scoped to rows the vector arm could ACTUALLY score:
+
+    * ``embedding IS NOT NULL`` — a NULL-embedding row is invisible to
+      the cosine arm, so it cannot contaminate anything. This matters a
+      lot: since Phase 2 the bridge sweep lands rows unvectorized by
+      design, so counting them as "unmigrated" would pin every tenant to
+      ``skipped_migrating`` permanently and silently kill the semantic
+      arm forever.
+    * ``is_tombstone = false`` — tombstoned rows are never scored.
+
+    It is deliberately tenant-wide rather than mirroring the calling
+    query's kind/scope/validity filters: those would make the answer
+    depend on the filters (the same tenant flipping between hybrid and
+    skipped_migrating query to query) and would cost an unindexable
+    scan. Tenant-wide is the CONSERVATIVE direction — at worst a foreign
+    vector outside the query's filters degrades it to FTS-only, which is
+    the safe way to be wrong.
+
+    ``embedding_model IS NULL`` alongside a non-NULL vector should not
+    exist (the write path rejects a vector without its tag), but if it
+    does the row is unattributable — treated as unmigrated, not trusted.
+    """
+    row = (await session.execute(_UNMIGRATED_PROBE, {"tenant_id": tenant_id})).one()
+    if row.untagged:
+        # An unattributable vector: we cannot prove which space it is in.
+        return True
+    if row.lo is None and row.hi is None:
+        # No scorable vectors at all (a new tenant, or one whose rows are
+        # all still awaiting the runner's sweep). Nothing can be
+        # contaminated, so this is NOT a migration — reporting one here
+        # would degrade tenants that simply have nothing vectorized yet.
+        return False
+    # No untagged rows, so `hi` is the true maximum. min == max == the
+    # deployed tag proves the whole corpus sits in one space: ours.
+    return bool(row.lo != current_tag or row.hi != current_tag)
+
+
 async def vector_search(
     session: AsyncSession,
     *,

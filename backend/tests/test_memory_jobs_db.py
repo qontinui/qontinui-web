@@ -43,7 +43,7 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.pool import NullPool
 
 from app.services import memory_store as store
-from app.services.memory_embedder import EMBEDDING_MODEL_TAG
+from app.services.memory_vectors import EMBEDDING_MODEL_TAG
 from tests.conftest import TEST_DATABASE_URL
 from tests.test_memory_api_db import _SETUP_SQL, _client_vector, _exec, _scalar
 
