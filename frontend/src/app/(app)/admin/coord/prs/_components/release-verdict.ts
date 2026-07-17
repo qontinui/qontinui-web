@@ -55,7 +55,11 @@ export interface ReleaseVerdictResponse {
   tool?: string | null;
   verdict?: ReleaseVerdict | null;
   // Present only on the degraded envelope the admin-dev proxy returns when
-  // coord is unreachable (200 with empty surfaces). The strip already renders
-  // "deploy status unavailable" on empty surfaces, so this is informational.
+  // coord is unreachable (200 with empty surfaces). LOAD-BEARING, not
+  // informational: it is the only thing distinguishing "coord is down, ignore
+  // these empty surfaces" from "coord is healthy and genuinely reports no
+  // surfaces". The strip keys its retention on it — non-null means RETAIN the
+  // last-good surfaces (dimmed, with a reconnecting marker) rather than apply
+  // this envelope's empty list and collapse to "deploy status unavailable".
   coord_error?: string | null;
 }
