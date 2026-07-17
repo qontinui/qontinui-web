@@ -24106,7 +24106,7 @@
         "type": "object"
       },
       "MemoryQueryRequest": {
-        "description": "``POST /memory/query`` body \u2014 hybrid RRF retrieval parameters.",
+        "description": "``POST /memory/query`` body \u2014 hybrid RRF retrieval parameters.\n\n``query_text`` is ALWAYS required: the lexical arm is pure Postgres\n(``websearch_to_tsquery``), costs the caller nothing, and stays\nserver-side. ``query_embedding`` is the caller's own vector for the\nsemantic arm \u2014 omit it and that arm is SKIPPED (the response says so\nvia ``vector_arm``); the query degrades to FTS-only rather than\nmaking the backend embed.",
         "properties": {
           "as_of": {
             "anyOf": [
@@ -24163,6 +24163,20 @@
               }
             ],
             "title": "Min Importance"
+          },
+          "query_embedding": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Query Embedding"
           },
           "query_text": {
             "maxLength": 8192,
@@ -24222,6 +24236,7 @@
         "type": "object"
       },
       "MemoryQueryResponse": {
+        "description": "``POST /memory/query`` result.\n\n``vector_arm`` is REQUIRED and un-defaulted on purpose: FTS-only\nresults must never be indistinguishable from hybrid ones. A caller\nthat omits ``query_embedding`` gets ``\"skipped_no_embedding\"`` and\ncan see that its semantic arm never ran.",
         "properties": {
           "hits": {
             "items": {
@@ -24229,21 +24244,55 @@
             },
             "title": "Hits",
             "type": "array"
+          },
+          "vector_arm": {
+            "enum": [
+              "hybrid",
+              "skipped_no_embedding"
+            ],
+            "title": "Vector Arm",
+            "type": "string"
           }
         },
         "required": [
-          "hits"
+          "hits",
+          "vector_arm"
         ],
         "title": "MemoryQueryResponse",
         "type": "object"
       },
       "MemoryRecordIn": {
-        "description": "One record in a batch write.",
+        "description": "One record in a batch write.\n\n``embedding`` is computed by the CALLER. Omit it (with\n``embedding_model``) to store the row unvectorized \u2014 it is still\nretrievable via FTS and is picked up by the reindex sweep.",
         "properties": {
           "content": {
             "minLength": 1,
             "title": "Content",
             "type": "string"
+          },
+          "embedding": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding"
+          },
+          "embedding_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Model"
           },
           "importance": {
             "default": 0.5,
@@ -36842,12 +36891,37 @@
         "type": "object"
       },
       "SupersedeRequest": {
-        "description": "``POST /memory/records/{id}/supersede`` body.\n\n``title``/``content`` are the replacement; every omitted field is\ninherited from the record being superseded.",
+        "description": "``POST /memory/records/{id}/supersede`` body.\n\n``title``/``content`` are the replacement; every omitted field is\ninherited from the record being superseded. ``embedding`` is NOT\ninherited \u2014 it belongs to the OLD content and would be a lie about\nthe new one; omit it and the successor lands unvectorized (NULL) for\nthe reindex sweep to pick up.",
         "properties": {
           "content": {
             "minLength": 1,
             "title": "Content",
             "type": "string"
+          },
+          "embedding": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding"
+          },
+          "embedding_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Model"
           },
           "importance": {
             "anyOf": [
@@ -37093,8 +37167,33 @@
         "type": "object"
       },
       "SynthesisResultRequest": {
-        "description": "``POST /memory/synthesis-jobs/{job_id}/result`` body.\n\nExactly one of ``result_text`` (success \u2014 the synthesized model) or\n``failure`` (the runner could not synthesize; the reason) must be\nset.",
+        "description": "``POST /memory/synthesis-jobs/{job_id}/result`` body.\n\nExactly one of ``result_text`` (success \u2014 the synthesized model) or\n``failure`` (the runner could not synthesize; the reason) must be\nset.\n\nOn the success path the runner also supplies the ``embedding`` of its\n``result_text`` \u2014 it already ran an LLM over the cluster, so the\nvector is its to pay for. Omitted \u2192 the ``mental_model`` row lands\nwith a NULL embedding (deferred vectorization); the backend never\nembeds it.",
         "properties": {
+          "embedding": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding"
+          },
+          "embedding_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Model"
+          },
           "failure": {
             "anyOf": [
               {
@@ -68289,7 +68388,7 @@
     },
     "/api/v1/memory/query": {
       "post": {
-        "description": "Hybrid retrieval: pgvector cosine + websearch FTS, RRF-fused.\n\nBoth arms are tenant-bound and validity-filtered (tombstones out,\n``valid_from``/``valid_until`` against now() or ``as_of``).\n``agent``/``session``-scoped rows are only visible when the request\nnames those scopes AND supplies the matching ``scope_ref``.",
+        "description": "Hybrid retrieval: pgvector cosine + websearch FTS, RRF-fused.\n\nBoth arms are tenant-bound and validity-filtered (tombstones out,\n``valid_from``/``valid_until`` against now() or ``as_of``).\n``agent``/``session``-scoped rows are only visible when the request\nnames those scopes AND supplies the matching ``scope_ref``.\n\nThe semantic arm needs a vector, and this endpoint never computes\none: with ``query_embedding`` the query is hybrid; without it the\ncosine arm is SKIPPED and the result is FTS-only. Which one ran is\nreported in ``vector_arm`` \u2014 never inferred, so an FTS-only result\ncan't pass for a hybrid one.",
         "operationId": "api_v1_memory_query_post",
         "requestBody": {
           "content": {
@@ -68443,7 +68542,7 @@
         ]
       },
       "post": {
-        "description": "Batch-write memory records (\u2264100 per request).\n\nServer-side pipeline per batch: redact \u2192 hash \u2192 quota check (BEFORE\ninsert; 429 on exceed) \u2192 embed the non-deduplicated contents in one\nfastembed batch (on a worker thread) \u2192 ONE set-based insert deduping\non ``(tenant_id, content_hash)`` against live rows only.",
+        "description": "Batch-write memory records (\u2264100 per request).\n\nServer-side pipeline per batch: redact \u2192 hash \u2192 quota check (BEFORE\ninsert; 429 on exceed) \u2192 ONE set-based insert deduping on\n``(tenant_id, content_hash)`` against live rows only. Each record\ncarries its own caller-computed ``embedding`` (+ ``embedding_model``)\nor neither, in which case that row is stored unvectorized.",
         "operationId": "api_v1_memory_records_post",
         "requestBody": {
           "content": {
@@ -68538,7 +68637,7 @@
     },
     "/api/v1/memory/records/{memory_id}/supersede": {
       "post": {
-        "description": "Replace a record: insert the successor, end the old row's validity.\n\n404 for records that don't exist in the caller's tenant (including\ncross-tenant ids \u2014 never disclosed).",
+        "description": "Replace a record: insert the successor, end the old row's validity.\n\n404 for records that don't exist in the caller's tenant (including\ncross-tenant ids \u2014 never disclosed). The successor's ``embedding`` is\nthe caller's (of the replacement content) or NULL \u2014 the old row's\nvector is never inherited, and nothing is embedded server-side.",
         "operationId": "api_v1_memory_records_memory_id_supersede_post",
         "parameters": [
           {
@@ -68680,7 +68779,7 @@
     },
     "/api/v1/memory/synthesis-jobs/{job_id}/result": {
       "post": {
-        "description": "The runner posts a synthesized model (success) or a failure reason.\n\nSuccess (``result_text``): the text is redacted, embedded with the\nLOCAL model, inserted as a ``mental_model`` row (``consolidated_from``\n= the cluster members, importance = best member + 0.1), and the\nmember rows are superseded \u2014 all in one transaction \u2192 ``applied``.\nFailure (``failure``): the job is marked failed \u2192 ``recorded``.\n404 when the job is not in the caller's tenant (never disclosed); 409\nwhen the job exists but is not in ``'claimed'`` status (already applied,\nrequeued by the reaper, or abandoned) \u2014 a runner may only post back for\na job it holds a live claim on.",
+        "description": "The runner posts a synthesized model (success) or a failure reason.\n\nSuccess (``result_text`` + the runner's own ``embedding`` of it, or\nno embedding at all): the text is redacted, inserted as a\n``mental_model`` row (``consolidated_from`` = the cluster members,\nimportance = best member + 0.1), and the member rows are superseded \u2014\nall in one transaction \u2192 ``applied``. The backend never embeds here:\nthe runner already ran an LLM over this cluster, so the vector is\nits to supply; omitting it stores the row unvectorized for the\nreindex sweep.\nFailure (``failure``): the job is marked failed \u2192 ``recorded``.\n404 when the job is not in the caller's tenant (never disclosed); 409\nwhen the job exists but is not in ``'claimed'`` status (already applied,\nrequeued by the reaper, or abandoned) \u2014 a runner may only post back for\na job it holds a live claim on.",
         "operationId": "api_v1_memory_synthesis_jobs_job_id_result_post",
         "parameters": [
           {
