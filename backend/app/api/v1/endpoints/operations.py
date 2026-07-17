@@ -4568,6 +4568,24 @@ async def delete_coord_policy(
     )
 
 
+@router.post("/coord/policies/{policy_id}/restore-default")
+async def restore_coord_policy_default(
+    policy_id: str,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Re-seed a policy rule's action/payload from its ``default_source`` code
+    default (agent Q&A meta-answer). Tenant-admin only.
+
+    Only rows carrying a ``default_source`` (e.g. the catch-all meta-answer rule
+    stamped ``agent_meta_answer/v1``) can be restored; coord 4xx (no default,
+    unknown rule) passes through. No request body — coord derives the default
+    from the row's own ``default_source``.
+    """
+    return await _proxy_coord_post(
+        f"/coord/policies/{policy_id}/restore-default", {}, tenant_id=tenant_id
+    )
+
+
 @router.put("/coord/policies/system/{system_rule_id}/override")
 async def put_coord_policy_override(
     system_rule_id: str,
