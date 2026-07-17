@@ -10,17 +10,20 @@ sweeps over ``coord.memory_records``:
   terminal marker (tombstone / superseded / decay-stamped). The same
   daily pass also runs the session-close expiry sweep (expire
   ``scope='session'`` rows 7 days after their session closed) and the
-  synthesis-job reaper (requeue/fail claims a dead runner abandoned).
+  job reaper (requeue/fail claims a dead runner abandoned).
 * **Consolidation** (weekly, per tenant): near-duplicate merge via a
   bounded pgvector self-join, then ENQUEUE of episode clusters as
-  ``coord.memory_synthesis_jobs`` rows. This backend ships no LLM
-  client, so synthesis itself is offloaded to a runner: it claims a job,
-  calls its own warm LLM, and posts the result back to
-  ``POST /api/v1/memory/synthesis-jobs/{id}/result``, which embeds
-  (local model) + inserts the ``mental_model`` row.
-* **Reindex** (daily, cheap no-op when clean): re-embeds rows whose
+  ``kind='synthesis'`` ``coord.memory_jobs`` rows. This backend ships no
+  LLM client, so synthesis itself is offloaded to a runner: it claims a
+  job, calls its own warm LLM, and posts the result back to
+  ``POST /api/v1/memory/jobs/{id}/result``, which inserts the
+  ``mental_model`` row with the runner's own vector.
+* **Reindex** (daily, cheap no-op when clean): ENQUEUES rows whose
   ``embedding_model`` differs from the deployed tag or whose embedding
-  is NULL (heals the Bug-1b drift class), in batches of 100.
+  is NULL (heals the Bug-1b drift class) as ``kind='embedding'`` jobs,
+  in batches of 100. It does not embed — this backend loads no embedding
+  model on any live path (``2026-07-13-runner-paid-embedding``); a runner
+  claims the job, embeds locally, and posts the vectors back.
 
 Session shape: the orchestration cores (``decay_once`` /
 ``consolidate_tenant`` / ``reindex_once``) take an ``AsyncSession`` so DB
@@ -33,7 +36,6 @@ reindex 03:40 UTC daily, consolidate 04:20 UTC Sunday).
 
 from __future__ import annotations
 
-import asyncio
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -42,11 +44,7 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.services import memory_store as store
-from app.services.memory_embedder import (
-    EMBEDDING_MODEL_TAG,
-    ensure_embedding_dims,
-    get_embedder,
-)
+from app.services.memory_embedder import EMBEDDING_MODEL_TAG
 from app.services.memory_lifecycle import (
     CLUSTER_CANDIDATE_LIMIT,
     CLUSTER_MIN_SIZE,
@@ -83,8 +81,9 @@ async def decay_once(
     daily: Ebbinghaus decay (invalidate below-threshold rows + prune past
     the grace window), the session-close expiry sweep (expire
     ``scope='session'`` rows 7 days after their session closed, plus
-    orphan cleanup), and the synthesis-job reaper (requeue/fail claims a
-    dead runner abandoned).
+    orphan cleanup), and the job reaper (requeue/fail claims a dead runner
+    abandoned — kind-agnostic, so it covers synthesis and embedding jobs
+    alike).
     """
     now = now or datetime.now(UTC)
     invalidated = await store.decay_invalidate(
@@ -94,7 +93,7 @@ async def decay_once(
         session, now=now, grace_days=DECAY_PRUNE_GRACE_DAYS
     )
     session_expired = await store.expire_closed_session_records(session, now=now)
-    reaped = await store.reap_stale_synthesis_claims(session, now=now)
+    reaped = await store.reap_stale_claims(session, now=now)
     logger.info(
         "memory_decay_completed",
         invalidated=invalidated,
@@ -123,12 +122,12 @@ async def consolidate_tenant(
     Near-dup merge is fully mechanical (set-based pgvector self-join +
     greedy pair resolution) and stays in-process. Synthesis is NOT done
     here — this backend has no LLM client. Instead each episode cluster
-    is enqueued as a ``coord.memory_synthesis_jobs`` row for a runner to
-    synthesize with its own warm LLM and post back (the runner's result
-    is what finally creates the ``mental_model`` row, via
+    is enqueued as a ``kind='synthesis'`` ``coord.memory_jobs`` row for a
+    runner to synthesize with its own warm LLM and post back (the runner's
+    result is what finally creates the ``mental_model`` row, via
     ``memory_store.record_synthesis_result``). Enqueue is deduped by
-    member-set hash, so re-running before the runner drains the queue is
-    a no-op for already-queued clusters.
+    ``input_hash``, so re-running before the runner drains the queue is a
+    no-op for already-queued clusters.
     """
     now = now or datetime.now(UTC)
 
@@ -158,14 +157,14 @@ async def consolidate_tenant(
         min_size=CLUSTER_MIN_SIZE,
     )
     cluster_inputs = [
-        store.SynthesisClusterInput(
-            member_ids=list(members),
-            member_texts=[str(by_id[m]["content"]) for m in members],
+        store.synthesis_job_input(
+            list(members),
+            [str(by_id[m]["content"]) for m in members],
         )
         for members in clusters
         if len(members) >= _MIN_SYNTHESIS_CLUSTER
     ]
-    enqueued = await store.enqueue_synthesis_jobs(session, tenant_id, cluster_inputs)
+    enqueued = await store.enqueue_jobs(session, tenant_id, cluster_inputs)
 
     logger.info(
         "memory_consolidation_completed",
@@ -186,9 +185,27 @@ async def consolidate_tenant(
 async def reindex_once(
     session: AsyncSession, *, now: datetime | None = None
 ) -> dict[str, int]:
-    """Re-embed stale/NULL-embedding rows in batches; no-op when clean."""
+    """ENQUEUE stale/NULL-embedding rows for a runner; no-op when clean.
+
+    This sweep no longer embeds. It still finds exactly the same rows —
+    ``fetch_reindex_batch``'s tag-mismatch-OR-NULL predicate is unchanged
+    — but hands each batch to the job queue as a ``kind='embedding'`` job
+    instead of loading a model and vectorizing in-process. A runner claims
+    it, embeds with its own model, and posts the vectors back to
+    ``POST /api/v1/memory/jobs/{id}/result``, which writes them onto the
+    rows. Nothing here loads an embedding model.
+
+    The ``REINDEX_MAX_BATCHES x REINDEX_BATCH_SIZE`` bound is retained,
+    now as an ENQUEUE-RATE bound (at most 50 x 100 rows queued per run;
+    the daily beat picks up the remainder). It stays meaningful only
+    because ``fetch_reindex_batch`` excludes rows with an in-flight
+    embedding job: the loop's rows are no longer embedded by the time the
+    next batch is fetched, so without that exclusion every iteration would
+    re-select the same oldest 100 rows and the loop would spin.
+    """
     now = now or datetime.now(UTC)
-    reindexed = 0
+    enqueued_rows = 0
+    enqueued_jobs = 0
     batches = 0
     while batches < REINDEX_MAX_BATCHES:
         batch = await store.fetch_reindex_batch(
@@ -196,40 +213,40 @@ async def reindex_once(
         )
         if not batch:
             break
-        # Offload to a thread: embed_texts is a synchronous, CPU-bound ONNX call.
-        # Under Celery this ran in a separate worker process, where blocking was
-        # harmless. It now runs inside uvicorn, so blocking the event loop here
-        # would stall every in-flight request AND /health — long enough for the
-        # load balancer to cycle the instance mid-reindex. Same idiom the request
-        # path already uses (app/api/v1/endpoints/memory.py:271).
-        embeddings = await asyncio.to_thread(
-            get_embedder().embed_texts, [content for _, content in batch]
-        )
-        ensure_embedding_dims(embeddings)
-        await store.update_embeddings(
-            session,
-            [
-                (memory_id, vector)
-                for (memory_id, _), vector in zip(batch, embeddings, strict=True)
-            ],
-            tag=EMBEDDING_MODEL_TAG,
-            now=now,
-        )
-        reindexed += len(batch)
+        # Per-tenant jobs: a job is claimed by a runner within ONE tenant
+        # (the claim is tenant-bound), so a batch spanning tenants cannot
+        # be one job. The batch fetch is deliberately tenant-agnostic —
+        # it sweeps the whole substrate oldest-first — so it is grouped
+        # here rather than by running the sweep once per tenant.
+        by_tenant: dict[UUID, list[tuple[UUID, str]]] = {}
+        for tenant_id, memory_id, content in batch:
+            by_tenant.setdefault(tenant_id, []).append((memory_id, content))
+        for tenant_id, targets in by_tenant.items():
+            enqueued_jobs += await store.enqueue_jobs(
+                session,
+                tenant_id,
+                [store.embedding_job_input(targets, model_tag=EMBEDDING_MODEL_TAG)],
+            )
+        enqueued_rows += len(batch)
         batches += 1
         if len(batch) < REINDEX_BATCH_SIZE:
             break
 
-    if reindexed:
+    if enqueued_rows:
         logger.info(
-            "memory_reindex_completed",
-            reindexed=reindexed,
+            "memory_reindex_enqueued",
+            rows=enqueued_rows,
+            jobs=enqueued_jobs,
             batches=batches,
             model_tag=EMBEDDING_MODEL_TAG,
         )
     else:
         logger.debug("memory_reindex_clean", model_tag=EMBEDDING_MODEL_TAG)
-    return {"reindexed": reindexed, "batches": batches}
+    return {
+        "enqueued_rows": enqueued_rows,
+        "enqueued_jobs": enqueued_jobs,
+        "batches": batches,
+    }
 
 
 async def _async_consolidate_all(

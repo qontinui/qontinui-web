@@ -155,34 +155,43 @@ _SETUP_SQL = [
         started_at  TIMESTAMPTZ NOT NULL DEFAULT now()
     )
     """,
-    # Mirrors alembic/versions/coord_memory_synthesis_jobs.py (sans the
-    # tenants FK).
+    # Mirrors alembic/versions/coord_memory_jobs_01_generic_job_queue.py
+    # (sans the tenants FK). The pre-generalization table is dropped first:
+    # this suite runs against a PERSISTENT test DB, so an older run's
+    # `memory_synthesis_jobs` would otherwise linger and the `IF NOT
+    # EXISTS` below would be a no-op against a stale shape.
+    "DROP TABLE IF EXISTS coord.memory_synthesis_jobs",
     """
-    CREATE TABLE IF NOT EXISTS coord.memory_synthesis_jobs (
-        job_id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        tenant_id       UUID NOT NULL,
-        member_ids      UUID[] NOT NULL,
-        member_texts    JSONB NOT NULL,
-        status          TEXT NOT NULL DEFAULT 'pending'
+    CREATE TABLE IF NOT EXISTS coord.memory_jobs (
+        job_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_id   UUID NOT NULL,
+        kind        TEXT NOT NULL
+            CONSTRAINT memory_jobs_kind_check
+            CHECK (kind IN ('synthesis', 'embedding')),
+        target_ids  UUID[] NOT NULL,
+        input_texts JSONB NOT NULL,
+        status      TEXT NOT NULL DEFAULT 'pending'
             CHECK (status IN ('pending', 'claimed', 'done', 'failed')),
-        claimed_by      TEXT,
-        claimed_at      TIMESTAMPTZ,
-        finished_at     TIMESTAMPTZ,
-        created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-        result_text     TEXT,
-        attempt         INTEGER NOT NULL DEFAULT 0,
-        member_set_hash TEXT NOT NULL
+        claimed_by  TEXT,
+        claimed_at  TIMESTAMPTZ,
+        finished_at TIMESTAMPTZ,
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+        result      JSONB,
+        attempt     INTEGER NOT NULL DEFAULT 0,
+        input_hash  TEXT NOT NULL
     )
     """,
     """
-    CREATE INDEX IF NOT EXISTS idx_memory_synthesis_jobs_pending
-        ON coord.memory_synthesis_jobs (tenant_id, created_at)
+    CREATE INDEX IF NOT EXISTS idx_memory_jobs_pending
+        ON coord.memory_jobs (tenant_id, kind, created_at)
         WHERE status = 'pending'
     """,
+    # The load-bearing dedupe: at most one LIVE job per (tenant, kind,
+    # input set), so the bridge's 15-minute cadence and the daily reindex
+    # cannot pile up duplicate work between runner drains.
     """
-    CREATE UNIQUE INDEX IF NOT EXISTS
-        uq_memory_synthesis_jobs_live_member_set
-        ON coord.memory_synthesis_jobs (tenant_id, member_set_hash)
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_memory_jobs_live_input
+        ON coord.memory_jobs (tenant_id, kind, input_hash)
         WHERE status IN ('pending', 'claimed', 'done')
     """,
     # Librarian Phase 4: widen the kind CHECK to admit 'library'. Mirrors
@@ -274,7 +283,7 @@ def db(memory_engine: AsyncEngine) -> Generator[AsyncEngine, None, None]:
     _exec(
         memory_engine,
         [
-            "DELETE FROM coord.memory_synthesis_jobs",
+            "DELETE FROM coord.memory_jobs",
             "DELETE FROM coord.memory_links",
             "DELETE FROM coord.memory_records",
             "DELETE FROM coord.tenant_policies",
@@ -1110,75 +1119,135 @@ class TestClientSuppliedEmbeddings:
         assert resp.status_code == 422
 
 
-class TestSynthesisEndpoints:
+class TestJobEndpoints:
     """The claim/result wire contract a runner poller builds against."""
 
     @staticmethod
-    def _seed_job(engine: AsyncEngine, tenant: UUID, texts: list[str]) -> UUID:
+    def _seed_job(
+        engine: AsyncEngine,
+        tenant: UUID,
+        texts: list[str],
+        *,
+        kind: str = "synthesis",
+        targets: list[UUID] | None = None,
+    ) -> UUID:
         job_id = uuid4()
         _exec(
             engine,
             [
                 """
-                INSERT INTO coord.memory_synthesis_jobs
-                    (job_id, tenant_id, member_ids, member_texts,
-                     member_set_hash)
+                INSERT INTO coord.memory_jobs
+                    (job_id, tenant_id, kind, target_ids, input_texts,
+                     input_hash)
                 VALUES
-                    (:job_id, :tenant, CAST(:member_ids AS uuid[]),
-                     CAST(:member_texts AS jsonb), :hash)
+                    (:job_id, :tenant, :kind, CAST(:target_ids AS uuid[]),
+                     CAST(:input_texts AS jsonb), :hash)
                 """
             ],
             job_id=job_id,
             tenant=tenant,
-            member_ids=[str(uuid4())],
-            member_texts=json.dumps(texts),
+            kind=kind,
+            target_ids=[str(t) for t in (targets or [uuid4()])],
+            input_texts=json.dumps(texts),
             hash=f"h-{job_id}",
         )
         return job_id
 
-    def test_claim_returns_job_id_and_member_texts(
-        self, mc: MemoryClient, db: AsyncEngine
-    ) -> None:
-        job_id = self._seed_job(db, mc.tenant_id, ["alpha", "beta"])
-        resp = mc.client.post("/api/v1/memory/synthesis-jobs/claim", json={"limit": 4})
+    def _seed_unvectorized(
+        self, engine: AsyncEngine, tenant: UUID, content: str
+    ) -> UUID:
+        """A live row with embedding = NULL — what the enqueuers now land."""
+        memory_id = uuid4()
+        _exec(
+            engine,
+            [
+                """
+                INSERT INTO coord.memory_records
+                    (memory_id, tenant_id, scope, kind, title, content,
+                     content_hash, importance)
+                VALUES
+                    (:memory_id, :tenant, 'tenant', 'reference', 'bridged',
+                     :content, :content_hash, 0.5)
+                """
+            ],
+            memory_id=memory_id,
+            tenant=tenant,
+            content=content,
+            content_hash=f"hash-{memory_id}",
+        )
+        return memory_id
+
+    def _job_status(self, db: AsyncEngine, job_id: UUID) -> Any:
+        return _scalar(
+            db,
+            "SELECT status FROM coord.memory_jobs WHERE job_id = :j",
+            j=job_id,
+        )
+
+    # -- claim -----------------------------------------------------------
+
+    def test_claim_returns_job_shape(self, mc: MemoryClient, db: AsyncEngine) -> None:
+        targets = [uuid4()]
+        job_id = self._seed_job(db, mc.tenant_id, ["alpha", "beta"], targets=targets)
+        resp = mc.client.post(
+            "/api/v1/memory/jobs/claim",
+            json={"limit": 4, "kinds": ["synthesis", "embedding"]},
+        )
         assert resp.status_code == 200
         body = resp.json()
         assert len(body["jobs"]) == 1
-        assert body["jobs"][0]["job_id"] == str(job_id)
-        assert body["jobs"][0]["member_texts"] == ["alpha", "beta"]
+        job = body["jobs"][0]
+        assert job["job_id"] == str(job_id)
+        assert job["kind"] == "synthesis"
+        assert job["input_texts"] == ["alpha", "beta"]
+        assert job["target_ids"] == [str(t) for t in targets]
 
-    def test_result_success_applies(self, mc: MemoryClient, db: AsyncEngine) -> None:
+    def test_claim_kinds_filter(self, mc: MemoryClient, db: AsyncEngine) -> None:
+        synth = self._seed_job(db, mc.tenant_id, ["a"], kind="synthesis")
+        embed = self._seed_job(db, mc.tenant_id, ["b"], kind="embedding")
+        body = mc.client.post(
+            "/api/v1/memory/jobs/claim", json={"limit": 4, "kinds": ["embedding"]}
+        ).json()
+        assert [j["job_id"] for j in body["jobs"]] == [str(embed)]
+        assert self._job_status(db, synth) == "pending"
+
+    def test_claim_defaults_to_all_kinds(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        self._seed_job(db, mc.tenant_id, ["a"], kind="synthesis")
+        self._seed_job(db, mc.tenant_id, ["b"], kind="embedding")
+        body = mc.client.post("/api/v1/memory/jobs/claim", json={"limit": 4}).json()
+        assert {j["kind"] for j in body["jobs"]} == {"synthesis", "embedding"}
+
+    # -- result: synthesis -----------------------------------------------
+
+    def test_synthesis_result_applies(self, mc: MemoryClient, db: AsyncEngine) -> None:
         job_id = self._seed_job(db, mc.tenant_id, ["one", "two"])
         # A result is only accepted for a job the runner holds a claim on.
-        mc.client.post("/api/v1/memory/synthesis-jobs/claim", json={"limit": 4})
+        mc.client.post("/api/v1/memory/jobs/claim", json={"limit": 4})
         resp = mc.client.post(
-            f"/api/v1/memory/synthesis-jobs/{job_id}/result",
-            json={"result_text": "a distilled mental model"},
+            f"/api/v1/memory/jobs/{job_id}/result",
+            json={"result": {"result_text": "a distilled mental model"}},
         )
         assert resp.status_code == 200
         assert resp.json() == {"status": "applied"}
-        assert (
-            _scalar(
-                db,
-                "SELECT status FROM coord.memory_synthesis_jobs WHERE job_id = :j",
-                j=job_id,
-            )
-            == "done"
-        )
+        assert self._job_status(db, job_id) == "done"
 
-    def test_result_with_runner_embedding_stores_it(
+    def test_synthesis_result_with_runner_embedding_stores_it(
         self, mc: MemoryClient, db: AsyncEngine
     ) -> None:
         """The runner pays for the mental_model's vector too."""
         job_id = self._seed_job(db, mc.tenant_id, ["one", "two"])
-        mc.client.post("/api/v1/memory/synthesis-jobs/claim", json={"limit": 4})
+        mc.client.post("/api/v1/memory/jobs/claim", json={"limit": 4})
         model_text = "a distilled mental model of the cluster"
         resp = mc.client.post(
-            f"/api/v1/memory/synthesis-jobs/{job_id}/result",
+            f"/api/v1/memory/jobs/{job_id}/result",
             json={
-                "result_text": model_text,
-                "embedding": _client_vector(model_text),
-                "embedding_model": EMBEDDING_MODEL_TAG,
+                "result": {
+                    "result_text": model_text,
+                    "embedding": _client_vector(model_text),
+                    "embedding_model": EMBEDDING_MODEL_TAG,
+                }
             },
         )
         assert resp.status_code == 200
@@ -1192,16 +1261,16 @@ class TestSynthesisEndpoints:
         got = [float(x) for x in stored.strip("[]").split(",")]
         assert got == pytest.approx(_client_vector(model_text), abs=1e-6)
 
-    def test_result_without_embedding_lands_null(
+    def test_synthesis_result_without_embedding_lands_null(
         self, mc: MemoryClient, db: AsyncEngine
     ) -> None:
         """No runner vector → the mental_model is stored unvectorized (the
-        reindex sweep picks it up); the backend never embeds it itself."""
+        reindex sweep enqueues it); the backend never embeds it itself."""
         job_id = self._seed_job(db, mc.tenant_id, ["one", "two"])
-        mc.client.post("/api/v1/memory/synthesis-jobs/claim", json={"limit": 4})
+        mc.client.post("/api/v1/memory/jobs/claim", json={"limit": 4})
         resp = mc.client.post(
-            f"/api/v1/memory/synthesis-jobs/{job_id}/result",
-            json={"result_text": "an unvectorized distilled model"},
+            f"/api/v1/memory/jobs/{job_id}/result",
+            json={"result": {"result_text": "an unvectorized distilled model"}},
         )
         assert resp.status_code == 200
         assert (
@@ -1214,37 +1283,195 @@ class TestSynthesisEndpoints:
             is True
         )
 
-    def test_result_wrong_dim_embedding_is_422(self, mc: MemoryClient) -> None:
+    def test_synthesis_result_wrong_dim_embedding_is_422(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        job_id = self._seed_job(db, mc.tenant_id, ["a"])
+        mc.client.post("/api/v1/memory/jobs/claim", json={"limit": 4})
         resp = mc.client.post(
-            f"/api/v1/memory/synthesis-jobs/{uuid4()}/result",
+            f"/api/v1/memory/jobs/{job_id}/result",
             json={
-                "result_text": "text",
-                "embedding": [0.1] * 383,
-                "embedding_model": EMBEDDING_MODEL_TAG,
+                "result": {
+                    "result_text": "text",
+                    "embedding": [0.1] * 383,
+                    "embedding_model": EMBEDDING_MODEL_TAG,
+                }
             },
         )
         assert resp.status_code == 422
+        assert self._job_status(db, job_id) == "claimed"
 
-    def test_result_unknown_model_tag_is_422(self, mc: MemoryClient) -> None:
+    def test_synthesis_result_unknown_model_tag_is_422(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        job_id = self._seed_job(db, mc.tenant_id, ["a"])
+        mc.client.post("/api/v1/memory/jobs/claim", json={"limit": 4})
         resp = mc.client.post(
-            f"/api/v1/memory/synthesis-jobs/{uuid4()}/result",
+            f"/api/v1/memory/jobs/{job_id}/result",
             json={
-                "result_text": "text",
-                "embedding": [0.1] * EMBEDDING_DIM,
-                "embedding_model": "not-our-model@v1",
+                "result": {
+                    "result_text": "text",
+                    "embedding": [0.1] * EMBEDDING_DIM,
+                    "embedding_model": "not-our-model@v1",
+                }
             },
         )
         assert resp.status_code == 422
+        assert self._job_status(db, job_id) == "claimed"
+
+    # -- result: embedding -----------------------------------------------
+
+    def _claimed_embedding_job(
+        self, mc: MemoryClient, db: AsyncEngine, contents: list[str]
+    ) -> tuple[UUID, list[UUID]]:
+        targets = [self._seed_unvectorized(db, mc.tenant_id, c) for c in contents]
+        job_id = self._seed_job(
+            db, mc.tenant_id, contents, kind="embedding", targets=targets
+        )
+        mc.client.post(
+            "/api/v1/memory/jobs/claim", json={"limit": 4, "kinds": ["embedding"]}
+        )
+        return job_id, targets
+
+    def test_embedding_result_writes_vectors(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        contents = ["first content", "second content"]
+        job_id, targets = self._claimed_embedding_job(mc, db, contents)
+        resp = mc.client.post(
+            f"/api/v1/memory/jobs/{job_id}/result",
+            json={
+                "result": {
+                    "embeddings": [_client_vector(c) for c in contents],
+                    "embedding_model": EMBEDDING_MODEL_TAG,
+                }
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "applied"}
+        assert self._job_status(db, job_id) == "done"
+        for target, content in zip(targets, contents, strict=True):
+            stored = _scalar(
+                db,
+                "SELECT embedding::text FROM coord.memory_records WHERE memory_id = :m",
+                m=target,
+            )
+            got = [float(x) for x in str(stored).strip("[]").split(",")]
+            assert got == pytest.approx(_client_vector(content), abs=1e-6)
+            assert (
+                _scalar(
+                    db,
+                    "SELECT embedding_model FROM coord.memory_records "
+                    "WHERE memory_id = :m",
+                    m=target,
+                )
+                == EMBEDDING_MODEL_TAG
+            )
+
+    def test_embedding_result_wrong_count_is_422_and_not_done(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        # One vector short: without the arity check the vectors would
+        # silently mis-map onto rows. The job must stay claimable.
+        contents = ["one", "two", "three"]
+        job_id, targets = self._claimed_embedding_job(mc, db, contents)
+        resp = mc.client.post(
+            f"/api/v1/memory/jobs/{job_id}/result",
+            json={
+                "result": {
+                    "embeddings": [_client_vector("one")],
+                    "embedding_model": EMBEDDING_MODEL_TAG,
+                }
+            },
+        )
+        assert resp.status_code == 422
+        assert self._job_status(db, job_id) == "claimed"
+        for target in targets:
+            assert (
+                _scalar(
+                    db,
+                    "SELECT embedding IS NULL FROM coord.memory_records "
+                    "WHERE memory_id = :m",
+                    m=target,
+                )
+                is True
+            )
+
+    def test_embedding_result_wrong_dim_is_422_and_not_done(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        job_id, targets = self._claimed_embedding_job(mc, db, ["one"])
+        resp = mc.client.post(
+            f"/api/v1/memory/jobs/{job_id}/result",
+            json={
+                "result": {
+                    "embeddings": [[0.1] * 383],
+                    "embedding_model": EMBEDDING_MODEL_TAG,
+                }
+            },
+        )
+        assert resp.status_code == 422
+        assert self._job_status(db, job_id) == "claimed"
+        assert (
+            _scalar(
+                db,
+                "SELECT embedding IS NULL FROM coord.memory_records "
+                "WHERE memory_id = :m",
+                m=targets[0],
+            )
+            is True
+        )
+
+    def test_embedding_result_bad_tag_is_422_and_not_done(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        # A vector from an unrecognized model lives in a different space
+        # and would silently poison the cosine arm.
+        job_id, targets = self._claimed_embedding_job(mc, db, ["one"])
+        resp = mc.client.post(
+            f"/api/v1/memory/jobs/{job_id}/result",
+            json={
+                "result": {
+                    "embeddings": [[0.1] * EMBEDDING_DIM],
+                    "embedding_model": "not-our-model@v1",
+                }
+            },
+        )
+        assert resp.status_code == 422
+        assert self._job_status(db, job_id) == "claimed"
+        assert (
+            _scalar(
+                db,
+                "SELECT embedding IS NULL FROM coord.memory_records "
+                "WHERE memory_id = :m",
+                m=targets[0],
+            )
+            is True
+        )
+
+    def test_synthesis_payload_against_embedding_job_is_422(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        job_id, _ = self._claimed_embedding_job(mc, db, ["one"])
+        resp = mc.client.post(
+            f"/api/v1/memory/jobs/{job_id}/result",
+            json={"result": {"result_text": "a synthesized model"}},
+        )
+        assert resp.status_code == 422
+        assert self._job_status(db, job_id) == "claimed"
+
+    # -- result: failure + errors ----------------------------------------
 
     def test_result_failure_records(self, mc: MemoryClient, db: AsyncEngine) -> None:
         job_id = self._seed_job(db, mc.tenant_id, ["x"])
-        mc.client.post("/api/v1/memory/synthesis-jobs/claim", json={"limit": 4})
+        mc.client.post("/api/v1/memory/jobs/claim", json={"limit": 4})
         resp = mc.client.post(
-            f"/api/v1/memory/synthesis-jobs/{job_id}/result",
+            f"/api/v1/memory/jobs/{job_id}/result",
             json={"failure": "could not synthesize"},
         )
         assert resp.status_code == 200
         assert resp.json() == {"status": "recorded"}
+        assert self._job_status(db, job_id) == "failed"
 
     def test_result_on_unclaimed_job_is_409(
         self, mc: MemoryClient, db: AsyncEngine
@@ -1253,8 +1480,8 @@ class TestSynthesisEndpoints:
         # by the reaper) is rejected — the runner must hold a live claim.
         job_id = self._seed_job(db, mc.tenant_id, ["a", "b"])
         resp = mc.client.post(
-            f"/api/v1/memory/synthesis-jobs/{job_id}/result",
-            json={"result_text": "text"},
+            f"/api/v1/memory/jobs/{job_id}/result",
+            json={"result": {"result_text": "text"}},
         )
         assert resp.status_code == 409
 
@@ -1265,36 +1492,34 @@ class TestSynthesisEndpoints:
         # its id is never resolvable on the result path (404, not 409 —
         # existence is not disclosed across the tenant boundary).
         foreign_job = self._seed_job(db, uuid4(), ["secret", "cluster"])
-        claimed = mc.client.post(
-            "/api/v1/memory/synthesis-jobs/claim", json={"limit": 4}
-        ).json()["jobs"]
+        claimed = mc.client.post("/api/v1/memory/jobs/claim", json={"limit": 4}).json()[
+            "jobs"
+        ]
         assert all(j["job_id"] != str(foreign_job) for j in claimed)
 
         resp = mc.client.post(
-            f"/api/v1/memory/synthesis-jobs/{foreign_job}/result",
-            json={"result_text": "text"},
+            f"/api/v1/memory/jobs/{foreign_job}/result",
+            json={"result": {"result_text": "text"}},
         )
         assert resp.status_code == 404
         # Untouched in its own tenant.
-        assert (
-            _scalar(
-                db,
-                "SELECT status FROM coord.memory_synthesis_jobs WHERE job_id = :j",
-                j=foreign_job,
-            )
-            == "pending"
-        )
+        assert self._job_status(db, foreign_job) == "pending"
 
     def test_result_requires_exactly_one_field(self, mc: MemoryClient) -> None:
+        resp = mc.client.post(f"/api/v1/memory/jobs/{uuid4()}/result", json={})
+        assert resp.status_code == 422
+
+    def test_result_rejects_both_fields(self, mc: MemoryClient) -> None:
         resp = mc.client.post(
-            f"/api/v1/memory/synthesis-jobs/{uuid4()}/result", json={}
+            f"/api/v1/memory/jobs/{uuid4()}/result",
+            json={"result": {"result_text": "t"}, "failure": "also failed"},
         )
         assert resp.status_code == 422
 
     def test_result_unknown_job_is_404(self, mc: MemoryClient) -> None:
         resp = mc.client.post(
-            f"/api/v1/memory/synthesis-jobs/{uuid4()}/result",
-            json={"result_text": "text"},
+            f"/api/v1/memory/jobs/{uuid4()}/result",
+            json={"result": {"result_text": "text"}},
         )
         assert resp.status_code == 404
 
