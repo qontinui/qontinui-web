@@ -25000,8 +25000,19 @@
         "type": "object"
       },
       "OnboardingClaimRequest": {
-        "description": "Body for ``POST /pr-merge/onboarding/claim``.\n\n``code`` \u2014 the short-lived GitHub OAuth code from the Setup-URL redirect.\n``installation_id`` \u2014 the GitHub App installation id from the same\nredirect. Both are echoed verbatim to coord's claim endpoint.\n``bind_only`` \u2014 when true, coord binds the account WITHOUT enrolling its\nrepos (no bootstrap PRs); for the clone-only path. Defaults false =\nbind + enroll (today's behavior).",
+        "description": "Body for ``POST /pr-merge/onboarding/claim``.\n\n``code`` \u2014 the short-lived GitHub OAuth code. Comes from EITHER the\nSetup-URL post-install redirect (fresh install) OR the\n``login/oauth/authorize`` user-authorization callback (the only way to get\na code for an org whose App is ALREADY installed \u2014 GitHub issues no\nSetup-URL code on a re-visit).\n\n``installation_id`` / ``account_login`` \u2014 which installation to claim. The\nSetup-URL redirect carries ``installation_id``; the authorize callback\ncarries neither, so that path names the org via ``account_login`` and coord\nresolves the id from the caller's own ``/user/installations``. Exactly one\nis required (coord 400s ``target_required`` otherwise); ``installation_id``\nwins if both are sent. NEITHER selects a tenant \u2014 the tenant always comes\nfrom the caller's auth \u2014 and coord 403s ``installation_not_administered``\nfor an installation the caller doesn't administer, whichever key is used.\n\n``bind_only`` \u2014 when true, coord binds the account WITHOUT enrolling its\nrepos (no bootstrap PRs); for the clone-only path. Defaults false =\nbind + enroll (today's behavior).",
         "properties": {
+          "account_login": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Login"
+          },
           "bind_only": {
             "default": false,
             "title": "Bind Only",
@@ -25012,13 +25023,19 @@
             "type": "string"
           },
           "installation_id": {
-            "title": "Installation Id",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installation Id"
           }
         },
         "required": [
-          "code",
-          "installation_id"
+          "code"
         ],
         "title": "OnboardingClaimRequest",
         "type": "object"
@@ -73689,7 +73706,7 @@
     },
     "/api/v1/operations/pr-merge/onboarding/claim": {
       "post": {
-        "description": "Self-serve onboarding: exchange the GitHub OAuth code + bind/enroll.\n\nProxies coord's ``POST /coord/onboarding/github-accounts/claim`` (coord\nPR #901). Reuses the doctor proxy's auth exactly: ``get_tenant_id``\nresolves the operator and captures the caller's bearer, which\n``_tenant_headers`` forwards to coord so coord binds the GitHub account\nto the operator's own Cognito tenant.\n\nUnlike the raising ``_proxy_coord_post`` helper (which collapses a coord\n4xx/5xx into an ``HTTPException`` whose body is a stringified ``detail``),\nthis handler passes coord's status code AND JSON body through verbatim so\nthe onboarding-status page can render a status-specific message:\n``400 code_exchange_failed`` / ``403 installation_not_administered`` /\n``409 account_already_bound`` / ``500 oauth_not_configured``. httpx\ntransport errors mirror the shared helpers (ConnectError \u2192 502,\nTimeoutException \u2192 504).",
+        "description": "Self-serve onboarding: exchange the GitHub OAuth code + bind/enroll.\n\nProxies coord's ``POST /coord/onboarding/github-accounts/claim`` (coord\nPR #901). Reuses the doctor proxy's auth exactly: ``get_tenant_id``\nresolves the operator and captures the caller's bearer, which\n``_tenant_headers`` forwards to coord so coord binds the GitHub account\nto the operator's own Cognito tenant.\n\nUnlike the raising ``_proxy_coord_post`` helper (which collapses a coord\n4xx/5xx into an ``HTTPException`` whose body is a stringified ``detail``),\nthis handler passes coord's status code AND JSON body through verbatim so\nthe onboarding-status page can render a status-specific message:\n``400 code_exchange_failed`` / ``400 target_required`` /\n``403 installation_not_administered`` / ``409 account_already_bound`` /\n``500 oauth_not_configured``. httpx transport errors mirror the shared\nhelpers (ConnectError \u2192 502, TimeoutException \u2192 504).",
         "operationId": "api_v1_operations_pr_merge_onboarding_claim_post",
         "requestBody": {
           "content": {
@@ -73777,6 +73794,33 @@
           }
         ],
         "summary": "Get Pr Merge Onboarding Doctor",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/pr-merge/onboarding/github-app": {
+      "get": {
+        "description": "The GitHub App's public identity, for building an authorize URL.\n\nProxies coord's ``GET /coord/onboarding/github-app``. Response envelope\n(coord-owned): ``{\"app_slug\", \"client_id\", \"oauth_configured\"}``, where\n``client_id`` may be null and ``oauth_configured`` is false when coord has\nno OAuth creds \u2014 the UI hides the connect action rather than sending users\ninto a flow that would 500 ``oauth_not_configured``.\n\nReturns no tenant-scoped data, but stays ``get_tenant_id``-gated like its\nonboarding siblings so the App's identity isn't served to anonymous callers.",
+        "operationId": "api_v1_operations_pr_merge_onboarding_github_app_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Pr Merge Onboarding Github App Api V1 Operations Pr Merge Onboarding Github App Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Pr Merge Onboarding Github App",
         "tags": [
           "operations"
         ]
