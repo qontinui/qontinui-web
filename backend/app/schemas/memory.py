@@ -26,13 +26,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.services.memory_embedder import EMBEDDING_DIM, EMBEDDING_MODEL_TAG
-
-# The model tags whose vectors this server accepts into
-# ``coord.memory_records.embedding``. ONE named constant — a vector from
-# any other model lives in a different space and would silently poison
-# the cosine arm, so an unrecognized tag is rejected outright.
-ACCEPTED_EMBEDDING_MODEL_TAGS: frozenset[str] = frozenset({EMBEDDING_MODEL_TAG})
+from app.services.memory_vectors import ACCEPTED_EMBEDDING_MODEL_TAGS, EMBEDDING_DIM
 
 # Mirror the migration's CHECK constraints.
 MemoryKind = Literal[
@@ -105,32 +99,44 @@ def check_embedding_dim(vector: list[float] | None, *, field: str) -> None:
 
 
 def check_embedding_input(
-    embedding: list[float] | None, embedding_model: str | None
+    embedding: list[float] | None,
+    embedding_model: str | None,
+    *,
+    field: str = "embedding",
+    model_field: str = "embedding_model",
 ) -> None:
     """Validate a client-supplied ``(embedding, embedding_model)`` pair.
 
-    A vector without its tag is unattributable (the reindex sweep keys
-    off the tag) and a tag without a vector is a caller bug — both are
-    rejected rather than half-applied. An unrecognized tag is rejected
-    because its vectors live in a different space. Omitting BOTH is the
-    supported graceful-degradation path: a NULL-embedding row.
+    A vector without its tag is unattributable — for a WRITE the reindex
+    sweep keys off the tag; for a QUERY the server cannot tell which
+    space the incoming vector is in, and an untagged foreign vector would
+    be cosine-compared against MiniLM ones (the silent-wrong-space class
+    this plan exists to kill). A tag without a vector is a caller bug.
+    Both are rejected rather than half-applied. An unrecognized tag is
+    rejected because its vectors live in a different space. Omitting BOTH
+    is the supported graceful-degradation path: a NULL-embedding row on
+    write, an FTS-only (``skipped_no_embedding``) result on query.
+
+    ``field`` / ``model_field`` name the pair in the raised errors, so a
+    ``/query`` rejection talks about ``query_embedding`` rather than
+    about a write's ``embedding``.
     """
-    check_embedding_dim(embedding, field="embedding")
+    check_embedding_dim(embedding, field=field)
     if embedding is not None and embedding_model is None:
         raise ValueError(
-            "embedding_model is required whenever 'embedding' is supplied; "
+            f"{model_field} is required whenever {field!r} is supplied; "
             f"accepted tags: {sorted(ACCEPTED_EMBEDDING_MODEL_TAGS)}"
         )
     if embedding is None and embedding_model is not None:
         raise ValueError(
-            "embedding_model was supplied without an 'embedding' vector; "
+            f"{model_field} was supplied without an {field!r} vector; "
             "send both or neither"
         )
     if embedding_model is not None and embedding_model not in (
         ACCEPTED_EMBEDDING_MODEL_TAGS
     ):
         raise ValueError(
-            f"embedding_model {embedding_model!r} is not accepted by this "
+            f"{model_field} {embedding_model!r} is not accepted by this "
             f"server; accepted tags: {sorted(ACCEPTED_EMBEDDING_MODEL_TAGS)}"
         )
 
@@ -205,10 +211,17 @@ class MemoryQueryRequest(BaseModel):
     semantic arm — omit it and that arm is SKIPPED (the response says so
     via ``vector_arm``); the query degrades to FTS-only rather than
     making the backend embed.
+
+    ``query_embedding_model`` is REQUIRED whenever ``query_embedding`` is
+    present. Validating the vector's DIMENSION is not enough: every
+    384-dim model would pass that check while living in a different
+    space, and the server has no other way to tell which space an
+    incoming query is in.
     """
 
     query_text: str = Field(min_length=1, max_length=8192)
     query_embedding: list[float] | None = None
+    query_embedding_model: str | None = None
     kinds: list[MemoryKind] | None = None
     scopes: list[MemoryScope] | None = None
     # Required to see any `agent`/`session`-scoped rows: those are only
@@ -219,11 +232,15 @@ class MemoryQueryRequest(BaseModel):
     min_importance: float | None = Field(default=None, ge=0.0, le=1.0)
     limit: int = Field(default=DEFAULT_QUERY_LIMIT, ge=1, le=MAX_QUERY_LIMIT)
 
-    @field_validator("query_embedding")
-    @classmethod
-    def _query_embedding_dim(cls, v: list[float] | None) -> list[float] | None:
-        check_embedding_dim(v, field="query_embedding")
-        return v
+    @model_validator(mode="after")
+    def _query_embedding_input_valid(self) -> MemoryQueryRequest:
+        check_embedding_input(
+            self.query_embedding,
+            self.query_embedding_model,
+            field="query_embedding",
+            model_field="query_embedding_model",
+        )
+        return self
 
 
 class MemoryQueryHit(BaseModel):
@@ -247,13 +264,24 @@ class MemoryQueryResponse(BaseModel):
     """``POST /memory/query`` result.
 
     ``vector_arm`` is REQUIRED and un-defaulted on purpose: FTS-only
-    results must never be indistinguishable from hybrid ones. A caller
-    that omits ``query_embedding`` gets ``"skipped_no_embedding"`` and
-    can see that its semantic arm never ran.
+    results must never be indistinguishable from hybrid ones. Its three
+    states are the only ways a query can end:
+
+    * ``hybrid`` — both arms ran and were RRF-fused.
+    * ``skipped_no_embedding`` — the caller sent no ``query_embedding``,
+      so the semantic arm had no vector to run with.
+    * ``skipped_migrating`` — the caller DID send a vector, but this
+      tenant still holds vectors written under a different model tag, so
+      scoring against that mixed corpus would compare across two
+      non-interchangeable spaces (Phase 0 measured min cosine 0.71 /
+      k=10 exact-order 0% between them). The arm is skipped until the
+      runner-paid reindex drains the tenant back to a single space. This
+      is driven off actual corpus state, never a timer or a flag, so it
+      clears itself the moment the last foreign-tag vector is rewritten.
     """
 
     hits: list[MemoryQueryHit]
-    vector_arm: Literal["hybrid", "skipped_no_embedding"]
+    vector_arm: Literal["hybrid", "skipped_no_embedding", "skipped_migrating"]
 
 
 class SupersedeRequest(BaseModel):

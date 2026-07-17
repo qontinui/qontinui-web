@@ -26,7 +26,7 @@ from app.api.deps import get_async_db
 from app.api.v1.endpoints.memory import MemoryPrincipal, get_memory_tenant, router
 from app.schemas.memory import ACCEPTED_EMBEDDING_MODEL_TAGS
 from app.services import memory_store
-from app.services.memory_embedder import (
+from app.services.memory_vectors import (
     EMBEDDING_DIM,
     EMBEDDING_MODEL_TAG,
     MemoryEmbeddingDimensionError,
@@ -106,6 +106,94 @@ def test_accepted_tags_seeded_from_the_deployed_model() -> None:
     """The accepted-tag set is ONE named constant, seeded from the tag the
     server itself stamps — not a scattered literal."""
     assert EMBEDDING_MODEL_TAG in ACCEPTED_EMBEDDING_MODEL_TAGS
+
+
+def test_deployed_tag_is_the_runners_tag() -> None:
+    """The deployed tag must be the one the RUNNER actually stamps.
+
+    Regression guard for the integration defect that made the whole stack
+    unshippable: the backend accepted only ``minilm-l6-v2-onnx@fastembed``
+    while the runner — now the sole producer of every vector — stamps
+    ``minilm-l6-v2-256@sentence-transformers``, so EVERY runner write
+    422'd on the model tag. The tag is a cross-repo contract, so it is
+    pinned here as a literal rather than derived: an assertion that reads
+    the constant back from the module it is defined in would have passed
+    against the broken value too.
+    """
+    assert EMBEDDING_MODEL_TAG == "minilm-l6-v2-256@sentence-transformers"
+    assert ACCEPTED_EMBEDDING_MODEL_TAGS == frozenset(
+        {"minilm-l6-v2-256@sentence-transformers"}
+    )
+
+
+def test_write_accepts_a_record_stamped_with_the_runners_tag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A record carrying the RUNNER's tag is accepted, end to end.
+
+    The A1 regression test: this is the exact request shape the runner
+    sends, and it 422'd before the tag flip.
+    """
+    _, insert_batch = _stub_store(monkeypatch)
+    # Unlike the rejection tests, this one reaches the insert — so the
+    # batch stub has to honour its contract: one (memory_id, deduped)
+    # outcome per item, in order.
+    insert_batch.side_effect = lambda *_a, **kw: [(uuid4(), False) for _ in kw["items"]]
+    client = _build_client()
+    resp = client.post(
+        "/api/v1/memory/records",
+        json={
+            "records": [
+                {
+                    "title": "runner-written",
+                    "content": "a vector the runner paid for",
+                    "kind": "fact",
+                    "embedding": [0.1] * EMBEDDING_DIM,
+                    "embedding_model": "minilm-l6-v2-256@sentence-transformers",
+                }
+            ]
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    # The runner's vector reached the store verbatim, tag and all.
+    stored = insert_batch.call_args.kwargs["items"][0]
+    assert stored.embedding_model == "minilm-l6-v2-256@sentence-transformers"
+
+
+@pytest.mark.parametrize(
+    ("body", "why"),
+    [
+        (
+            {"query_text": "q", "query_embedding": [0.1] * EMBEDDING_DIM},
+            "vector with no model tag — server cannot tell which space it is in",
+        ),
+        (
+            {
+                "query_text": "q",
+                "query_embedding": [0.1] * EMBEDDING_DIM,
+                "query_embedding_model": "text-embedding-3-small",
+            },
+            "foreign model tag — a 384-dim vector in a different space",
+        ),
+        (
+            {"query_text": "q", "query_embedding_model": EMBEDDING_MODEL_TAG},
+            "tag with no vector",
+        ),
+    ],
+)
+def test_query_rejects_untagged_or_foreign_query_vector(
+    body: dict[str, object], why: str
+) -> None:
+    """``query_embedding_model`` is required whenever a vector is sent.
+
+    Validating the vector's DIMENSION is not enough — every 384-dim model
+    passes that check while living in a different space, so an untagged or
+    foreign query vector would be silently cosine-compared against MiniLM
+    vectors. That is the silent-wrong-space class this plan exists to kill.
+    """
+    client = _build_client()
+    resp = client.post("/api/v1/memory/query", json=body)
+    assert resp.status_code == 422, f"{why}: {resp.text}"
 
 
 def _stub_store(monkeypatch: pytest.MonkeyPatch) -> tuple[AsyncMock, AsyncMock]:
@@ -191,7 +279,11 @@ def test_query_rejects_wrong_dim_embedding() -> None:
     client = _build_client()
     resp = client.post(
         "/api/v1/memory/query",
-        json={"query_text": "anything", "query_embedding": [0.1] * 383},
+        json={
+            "query_text": "anything",
+            "query_embedding": [0.1] * 383,
+            "query_embedding_model": EMBEDDING_MODEL_TAG,
+        },
     )
     assert resp.status_code == 422
 
