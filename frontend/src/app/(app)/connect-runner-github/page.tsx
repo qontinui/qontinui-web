@@ -34,6 +34,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
+import { ConnectInstalledOrg } from "@/components/operations/ConnectInstalledOrg";
 import { cn } from "@/lib/utils";
 
 const APP_SLUG =
@@ -85,6 +86,18 @@ export default function ConnectRunnerGithubPage() {
           </p>
         </CardContent>
       </Card>
+
+      {/*
+        The install link above dead-ends when the App is ALREADY installed on the
+        org (GitHub shows "Configure" and issues no Setup-URL code, so the claim
+        can never fire) — the exact state the clone picker lands users in. This
+        offers the authorize path, which yields a code either way. `runner-clone`
+        keeps it bind-only: connecting from the runner must not enroll repos or
+        open bootstrap PRs.
+      */}
+      <div className="mt-3">
+        <ConnectInstalledOrg flow="runner-clone" />
+      </div>
     </div>
   );
 }
