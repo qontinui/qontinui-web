@@ -58184,6 +58184,33 @@
         ]
       }
     },
+    "/api/v1/digital-twin/catalog": {
+      "get": {
+        "description": "The coord-owned queryable-surface catalog \u2014 the single-source index of the\nfleet-wide ``coord_query_*`` twin observers (agent Q&A meta-answer Phase 2).\n\nThe catalog content is fleet-global static metadata, but coord's\n``GET /coord/twin/catalog`` is auth-gated via ``TenantId`` (read-auth\ncontract), so the operator bearer is forwarded (``forward_bearer=True``).\nThe bearer capture is best-effort (never raises) rather than a hard\n``get_tenant_id`` dependency, mirroring ``get_release_verdict``'s posture:\nwhen coord is unreachable (connect-refused \u2192 502, timeout \u2192 504, etc.) the\nendpoint returns an empty ``{entries: [], total: 0, coord_error}`` envelope\nrather than re-raising the 5xx, so neither the Spec CI crawl gate (which\nruns without a live coord) nor the dashboard ever sees a 5xx. Returns\n``{entries: [...], total: N}``.",
+        "operationId": "api_v1_digital_twin_catalog_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Twin Catalog Api V1 Digital Twin Catalog Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Twin Catalog",
+        "tags": [
+          "digital-twin"
+        ]
+      }
+    },
     "/api/v1/digital-twin/delivery/verdict": {
       "get": {
         "description": "Delivery verdict for one plan \u2014 \"has this plan/PR actually landed?\".\n\nThe *parameterized* twin read (Phase 5 of plan\n``2026-06-15-twin-delivery-verdict-completion-view``). Unlike the snapshot\nmatrix, delivery needs an argument (``plan_slug``, or ``repo``+``pr``), so it\nis a distinct on-demand route rather than a matrix cell. It proxies coord's\nSSO-gated ``GET /coord/twin/delivery/verdict`` (``twin_routes.rs``), which\ndispatches the SAME ``coord_query_delivery`` MCP tool an agent calls \u2014 with\n``force_refresh=true`` server-side \u2014 so the dashboard answer is byte-identical\nto (and as fresh as) what an agent would receive: plan lifecycle status \u22c8\nper-PR merge state \u22c8 best-effort deploy state, with provenance + staleness.\n\nValidates the parameter set locally (mirroring coord) to avoid a wasted\nround-trip; coord's own 4xx/5xx (e.g. a tool failure \u2192 502) still surface via\n:func:`_proxy_coord_get`.",
@@ -70455,6 +70482,54 @@
           }
         ],
         "summary": "Update Coord Policy",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/policies/{policy_id}/restore-default": {
+      "post": {
+        "description": "Re-seed a policy rule's action/payload from its ``default_source`` code\ndefault (agent Q&A meta-answer). Tenant-admin only.\n\nOnly rows carrying a ``default_source`` (e.g. the catch-all meta-answer rule\nstamped ``agent_meta_answer/v1``) can be restored; coord 4xx (no default,\nunknown rule) passes through. No request body \u2014 coord derives the default\nfrom the row's own ``default_source``.",
+        "operationId": "api_v1_operations_coord_policies_policy_id_restore_default_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "policy_id",
+            "required": true,
+            "schema": {
+              "title": "Policy Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Restore Coord Policy Default Api V1 Operations Coord Policies  Policy Id  Restore Default Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Restore Coord Policy Default",
         "tags": [
           "operations"
         ]
