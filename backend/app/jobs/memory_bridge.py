@@ -52,7 +52,11 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.services import memory_store as store
-from app.services.memory_embedder import ensure_embedding_dims, get_embedder
+from app.services.memory_embedder import (
+    EMBEDDING_MODEL_TAG,
+    ensure_embedding_dims,
+    get_embedder,
+)
 from app.services.memory_redaction import log_redactions, redact_text
 
 logger = structlog.get_logger(__name__)
@@ -147,6 +151,10 @@ async def bridge_sync_once(
                 content=content,
                 content_hash=_content_hash(content),
                 embedding=embedding,
+                # This background bridge still embeds server-side (the
+                # request path no longer does — embeddings there are
+                # client-supplied), so it stamps the local model's tag.
+                embedding_model=EMBEDDING_MODEL_TAG,
                 importance=BRIDGE_IMPORTANCE,
                 source=bridge_source,
             )

@@ -6,6 +6,16 @@ The wire contract for ``/api/v1/memory/*``. ``kind`` / ``scope`` values
 mirror the CHECK constraints in the ``coord_memory_records`` migration.
 Tenant identity is NEVER part of these schemas — it comes exclusively
 from the server-side principal (see ``get_memory_tenant``).
+
+Embeddings are **client-supplied** (Phase 1 of
+``2026-07-13-runner-paid-embedding``): the backend never embeds on the
+request path. A caller either sends a vector it computed itself (which
+must be ``EMBEDDING_DIM``-dimensional and carry an accepted model tag —
+anything else is a loud 422, never a silent wrong-space write) or omits
+it, in which case the row is stored with a NULL embedding, stays
+immediately retrievable through the FTS arm, and is vectorized later by
+the reindex sweep (``fetch_reindex_batch`` already targets NULL-embedding
+rows). There is no server-side embed fallback.
 """
 
 from __future__ import annotations
@@ -15,6 +25,14 @@ from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+from app.services.memory_embedder import EMBEDDING_DIM, EMBEDDING_MODEL_TAG
+
+# The model tags whose vectors this server accepts into
+# ``coord.memory_records.embedding``. ONE named constant — a vector from
+# any other model lives in a different space and would silently poison
+# the cosine arm, so an unrecognized tag is rejected outright.
+ACCEPTED_EMBEDDING_MODEL_TAGS: frozenset[str] = frozenset({EMBEDDING_MODEL_TAG})
 
 # Mirror the migration's CHECK constraints.
 MemoryKind = Literal[
@@ -66,8 +84,59 @@ class MemoryLinkIn(BaseModel):
     description: str | None = Field(default=None, max_length=2048)
 
 
+def check_embedding_dim(vector: list[float] | None, *, field: str) -> None:
+    """Reject a wrong-dimensional vector before it can reach pgvector.
+
+    The ``vector(384)`` column would reject it too, but with an opaque
+    driver error at insert time; this raises a caller-actionable one that
+    names the received length (→ 422).
+    """
+    if vector is not None and len(vector) != EMBEDDING_DIM:
+        raise ValueError(
+            f"{field} has {len(vector)} components; this server stores "
+            f"{EMBEDDING_DIM}-dimensional vectors "
+            f"(accepted models: {sorted(ACCEPTED_EMBEDDING_MODEL_TAGS)})"
+        )
+
+
+def check_embedding_input(
+    embedding: list[float] | None, embedding_model: str | None
+) -> None:
+    """Validate a client-supplied ``(embedding, embedding_model)`` pair.
+
+    A vector without its tag is unattributable (the reindex sweep keys
+    off the tag) and a tag without a vector is a caller bug — both are
+    rejected rather than half-applied. An unrecognized tag is rejected
+    because its vectors live in a different space. Omitting BOTH is the
+    supported graceful-degradation path: a NULL-embedding row.
+    """
+    check_embedding_dim(embedding, field="embedding")
+    if embedding is not None and embedding_model is None:
+        raise ValueError(
+            "embedding_model is required whenever 'embedding' is supplied; "
+            f"accepted tags: {sorted(ACCEPTED_EMBEDDING_MODEL_TAGS)}"
+        )
+    if embedding is None and embedding_model is not None:
+        raise ValueError(
+            "embedding_model was supplied without an 'embedding' vector; "
+            "send both or neither"
+        )
+    if embedding_model is not None and embedding_model not in (
+        ACCEPTED_EMBEDDING_MODEL_TAGS
+    ):
+        raise ValueError(
+            f"embedding_model {embedding_model!r} is not accepted by this "
+            f"server; accepted tags: {sorted(ACCEPTED_EMBEDDING_MODEL_TAGS)}"
+        )
+
+
 class MemoryRecordIn(BaseModel):
-    """One record in a batch write."""
+    """One record in a batch write.
+
+    ``embedding`` is computed by the CALLER. Omit it (with
+    ``embedding_model``) to store the row unvectorized — it is still
+    retrievable via FTS and is picked up by the reindex sweep.
+    """
 
     title: str = Field(min_length=1, max_length=512)
     content: str = Field(min_length=1)
@@ -79,6 +148,13 @@ class MemoryRecordIn(BaseModel):
     links: list[MemoryLinkIn] | None = Field(
         default=None, max_length=MAX_LINKS_PER_RECORD
     )
+    embedding: list[float] | None = None
+    embedding_model: str | None = None
+
+    @model_validator(mode="after")
+    def _embedding_input_valid(self) -> MemoryRecordIn:
+        check_embedding_input(self.embedding, self.embedding_model)
+        return self
 
     @field_validator("content")
     @classmethod
@@ -116,9 +192,18 @@ class WriteRecordsResponse(BaseModel):
 
 
 class MemoryQueryRequest(BaseModel):
-    """``POST /memory/query`` body — hybrid RRF retrieval parameters."""
+    """``POST /memory/query`` body — hybrid RRF retrieval parameters.
+
+    ``query_text`` is ALWAYS required: the lexical arm is pure Postgres
+    (``websearch_to_tsquery``), costs the caller nothing, and stays
+    server-side. ``query_embedding`` is the caller's own vector for the
+    semantic arm — omit it and that arm is SKIPPED (the response says so
+    via ``vector_arm``); the query degrades to FTS-only rather than
+    making the backend embed.
+    """
 
     query_text: str = Field(min_length=1, max_length=8192)
+    query_embedding: list[float] | None = None
     kinds: list[MemoryKind] | None = None
     scopes: list[MemoryScope] | None = None
     # Required to see any `agent`/`session`-scoped rows: those are only
@@ -128,6 +213,12 @@ class MemoryQueryRequest(BaseModel):
     as_of: datetime | None = None
     min_importance: float | None = Field(default=None, ge=0.0, le=1.0)
     limit: int = Field(default=DEFAULT_QUERY_LIMIT, ge=1, le=MAX_QUERY_LIMIT)
+
+    @field_validator("query_embedding")
+    @classmethod
+    def _query_embedding_dim(cls, v: list[float] | None) -> list[float] | None:
+        check_embedding_dim(v, field="query_embedding")
+        return v
 
 
 class MemoryQueryHit(BaseModel):
@@ -148,14 +239,26 @@ class MemoryQueryHit(BaseModel):
 
 
 class MemoryQueryResponse(BaseModel):
+    """``POST /memory/query`` result.
+
+    ``vector_arm`` is REQUIRED and un-defaulted on purpose: FTS-only
+    results must never be indistinguishable from hybrid ones. A caller
+    that omits ``query_embedding`` gets ``"skipped_no_embedding"`` and
+    can see that its semantic arm never ran.
+    """
+
     hits: list[MemoryQueryHit]
+    vector_arm: Literal["hybrid", "skipped_no_embedding"]
 
 
 class SupersedeRequest(BaseModel):
     """``POST /memory/records/{id}/supersede`` body.
 
     ``title``/``content`` are the replacement; every omitted field is
-    inherited from the record being superseded.
+    inherited from the record being superseded. ``embedding`` is NOT
+    inherited — it belongs to the OLD content and would be a lie about
+    the new one; omit it and the successor lands unvectorized (NULL) for
+    the reindex sweep to pick up.
     """
 
     title: str = Field(min_length=1, max_length=512)
@@ -165,6 +268,13 @@ class SupersedeRequest(BaseModel):
     scope_ref: str | None = Field(default=None, max_length=512)
     importance: float | None = Field(default=None, ge=0.0, le=1.0)
     source: dict[str, Any] | None = None
+    embedding: list[float] | None = None
+    embedding_model: str | None = None
+
+    @model_validator(mode="after")
+    def _embedding_input_valid(self) -> SupersedeRequest:
+        check_embedding_input(self.embedding, self.embedding_model)
+        return self
 
     @field_validator("content")
     @classmethod
@@ -317,16 +427,30 @@ class SynthesisResultRequest(BaseModel):
     Exactly one of ``result_text`` (success — the synthesized model) or
     ``failure`` (the runner could not synthesize; the reason) must be
     set.
+
+    On the success path the runner also supplies the ``embedding`` of its
+    ``result_text`` — it already ran an LLM over the cluster, so the
+    vector is its to pay for. Omitted → the ``mental_model`` row lands
+    with a NULL embedding (deferred vectorization); the backend never
+    embeds it.
     """
 
     result_text: str | None = Field(default=None, min_length=1)
     failure: str | None = Field(default=None, min_length=1)
+    embedding: list[float] | None = None
+    embedding_model: str | None = None
 
     @model_validator(mode="after")
     def _exactly_one(self) -> SynthesisResultRequest:
         if (self.result_text is None) == (self.failure is None):
             raise ValueError(
                 "provide exactly one of 'result_text' (success) or 'failure' (reason)"
+            )
+        check_embedding_input(self.embedding, self.embedding_model)
+        if self.failure is not None and self.embedding is not None:
+            raise ValueError(
+                "'embedding' is only meaningful with 'result_text'; a failure "
+                "report has no text to vectorize"
             )
         return self
 

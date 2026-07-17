@@ -1,8 +1,11 @@
 """DB-backed tests for the runner-paid synthesis-job flow (v1.1, Phase 2).
 
 Same pgvector-fixture posture as ``tests/test_memory_api_db.py`` (whose
-DDL + stub embedder this reuses): runs against the shared test
-PostgreSQL, SKIPS gracefully when Postgres or pgvector is unavailable.
+DDL + client-side vector helper this reuses): runs against the shared
+test PostgreSQL, SKIPS gracefully when Postgres or pgvector is
+unavailable. The store never embeds — the runner's vector is a parameter
+(``2026-07-13-runner-paid-embedding`` Phase 1), so there is no embedder
+to stub here.
 
 Covers ``memory_store``'s synthesis-job DAL:
 
@@ -33,10 +36,10 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import NullPool
 
-from app.services import memory_embedder
 from app.services import memory_store as store
+from app.services.memory_embedder import EMBEDDING_MODEL_TAG
 from tests.conftest import TEST_DATABASE_URL
-from tests.test_memory_api_db import _SETUP_SQL, HashingStubEmbedder, _exec, _scalar
+from tests.test_memory_api_db import _SETUP_SQL, _client_vector, _exec, _scalar
 
 NOW = datetime(2026, 7, 10, 12, 0, 0, tzinfo=UTC)
 
@@ -70,13 +73,6 @@ def db(memory_engine: AsyncEngine) -> Generator[AsyncEngine, None, None]:
         ],
     )
     yield memory_engine
-
-
-@pytest.fixture(autouse=True)
-def _stub_embedder() -> Generator[None, None, None]:
-    memory_embedder.set_embedder(HashingStubEmbedder())
-    yield
-    memory_embedder.set_embedder(None)
 
 
 def _run[T](engine: AsyncEngine, fn: Callable[[AsyncSession], Awaitable[T]]) -> T:
@@ -270,7 +266,13 @@ class TestResult:
         new_id = _run(
             db,
             lambda s: store.record_synthesis_result(
-                s, tenant, job_id, "Distilled model\nsecond line", now=NOW
+                s,
+                tenant,
+                job_id,
+                "Distilled model\nsecond line",
+                embedding=_client_vector("Distilled model second line"),
+                embedding_model=EMBEDDING_MODEL_TAG,
+                now=NOW,
             ),
         )
         assert new_id is not None
@@ -304,6 +306,8 @@ class TestResult:
                 tenant,
                 job_id,
                 "Model referencing AKIAIOSFODNN7EXAMPLE key",
+                embedding=_client_vector("Model referencing a key"),
+                embedding_model=EMBEDDING_MODEL_TAG,
                 now=NOW,
             ),
         )
@@ -314,12 +318,40 @@ class TestResult:
         # The failed/leaked secret also never lands in the job's result_text.
         assert "AKIAIOSFODNN7EXAMPLE" not in _job_field(db, job_id, "result_text")
 
+    def test_result_without_embedding_stores_null(self, db: AsyncEngine) -> None:
+        """The store NEVER embeds: no runner vector → a NULL-embedding
+        mental_model that the reindex sweep will vectorize later."""
+        tenant = uuid4()
+        job_id = _seed_job(db, tenant, [_seed_member(db, tenant, 0.5)])
+        _run(db, lambda s: store.claim_synthesis_jobs(s, tenant, limit=4, worker="r"))
+        new_id = _run(
+            db,
+            lambda s: store.record_synthesis_result(
+                s,
+                tenant,
+                job_id,
+                "An unvectorized distilled model",
+                embedding=None,
+                embedding_model=None,
+                now=NOW,
+            ),
+        )
+        assert new_id is not None
+        assert _row(db, new_id, "embedding") is None
+        assert _row(db, new_id, "embedding_model") is None
+
     def test_result_unknown_job_returns_none(self, db: AsyncEngine) -> None:
         tenant = uuid4()
         got = _run(
             db,
             lambda s: store.record_synthesis_result(
-                s, tenant, uuid4(), "text", now=NOW
+                s,
+                tenant,
+                uuid4(),
+                "text",
+                embedding=None,
+                embedding_model=None,
+                now=NOW,
             ),
         )
         assert got is None
@@ -329,7 +361,15 @@ class TestResult:
         job_id = _seed_job(db, owner, [uuid4()])
         got = _run(
             db,
-            lambda s: store.record_synthesis_result(s, other, job_id, "text", now=NOW),
+            lambda s: store.record_synthesis_result(
+                s,
+                other,
+                job_id,
+                "text",
+                embedding=None,
+                embedding_model=None,
+                now=NOW,
+            ),
         )
         assert got is None
         assert _job_field(db, job_id, "status") == "pending"
@@ -345,7 +385,13 @@ class TestResult:
             _run(
                 db,
                 lambda s: store.record_synthesis_result(
-                    s, tenant, job_id, "text", now=NOW
+                    s,
+                    tenant,
+                    job_id,
+                    "text",
+                    embedding=None,
+                    embedding_model=None,
+                    now=NOW,
                 ),
             )
         assert _job_field(db, job_id, "status") == "pending"
