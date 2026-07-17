@@ -159,10 +159,13 @@ async function processSyncQueue() {
 }
 
 /**
- * Fetch event - network-first strategy
+ * Fetch event
  *
- * For API requests: always try network first, don't cache
- * For static assets: cache-first with network fallback
+ * - API requests: network only, never cached
+ * - Build-coupled content (documents + RSC payloads): network-first —
+ *   cache is an OFFLINE fallback only
+ * - Other static assets (public/ images, fonts, …): cache-first with
+ *   background revalidation
  */
 self.addEventListener('fetch', (event) => {
   const { request } = event;
@@ -191,6 +194,57 @@ self.addEventListener('fetch', (event) => {
 
   // Skip WebSocket requests
   if (url.protocol === 'ws:' || url.protocol === 'wss:') {
+    return;
+  }
+
+  // Skip App Router flight/RSC fetches (soft navigations). They hit the page
+  // URL itself (with an `_rsc` search param + `RSC: 1` header), not /_next/*,
+  // so the prefix skip above does not cover them. Like chunks, the payload is
+  // coupled to the build that produced it: a cached flight response from the
+  // previous deploy references chunk hashes the new server no longer has, so
+  // serving it cache-first wedges the soft nav at a dead Suspense fallback.
+  if (url.searchParams.has('_rsc') || request.headers.get('RSC') === '1') {
+    return;
+  }
+
+  // Page navigations (HTML documents): NETWORK-FIRST, cache only as an
+  // offline fallback. The document embeds the deploy's hashed chunk URLs and
+  // the standalone server keeps only the current build's chunks — serving a
+  // cached document after a deploy therefore hydrates against 404ing chunks
+  // and the page dies at the SSR'd auth "Loading..." shell until a manual
+  // reload picks up the revalidated copy. Deploys are frequent enough here
+  // that cache-first documents break navigation "often" (observed on
+  // /admin/coord/* and many other pages, 2026-07-17).
+  if (request.mode === 'navigate') {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          // Keep the offline copy fresh for genuine offline use.
+          if (response.ok) {
+            const responseClone = response.clone();
+            event.waitUntil(
+              caches.open(CACHE_NAME).then((cache) => {
+                return cache.put(request, responseClone);
+              })
+            );
+          }
+          return response;
+        })
+        .catch(async (error) => {
+          // Network unreachable (offline, server down): last-known copy of
+          // this page beats an error page; generic offline page beats a
+          // browser network-error screen.
+          const cachedResponse = await caches.match(request);
+          if (cachedResponse) {
+            return cachedResponse;
+          }
+          const offlinePage = await caches.match('/offline.html');
+          if (offlinePage) {
+            return offlinePage;
+          }
+          throw error;
+        })
+    );
     return;
   }
 
@@ -232,13 +286,9 @@ self.addEventListener('fetch', (event) => {
         .catch((error) => {
           console.error('[ServiceWorker] Fetch failed:', error);
 
-          // Only show offline page if truly offline (not just a network error)
-          if (request.mode === 'navigate' && !navigator.onLine) {
-            return caches.match('/offline.html');
-          }
-
-          // For other errors (timeout, server error, etc), let them propagate
-          // The app will handle them normally
+          // Navigations never reach this branch (handled network-first
+          // above); for asset errors let them propagate so the app handles
+          // them normally.
           throw error;
         });
     })
