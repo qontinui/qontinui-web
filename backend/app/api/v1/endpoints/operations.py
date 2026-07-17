@@ -4586,60 +4586,145 @@ async def restore_coord_policy_default(
     )
 
 
-# Agent Q&A meta-answer (plan: agent Q&A single decision-delegation meta-answer)
-# — Phase 1 editable policy documents. Coord owns the ``coord.policy_documents``
-# store (the canonical policy prose the meta-answer template composes in via
-# ``{{policy:<handle>}}`` tokens). Same READ/WRITE auth split as ``/coord/policies``
-# above: GET reads gate on tenant MEMBERSHIP (``get_tenant_id``) so the console
-# read view is visible to developers; PATCH/restore writes stay on
-# ``require_coord_tenant_admin`` (coord re-checks admin on every write). Coord 4xx
-# error bodies pass through verbatim via the ``_proxy_coord_*`` helpers.
+# Prompt documents (plan ``2026-07-17-session-autonomy-fabric.md`` Phase 9).
+#
+# Coord owns the ``coord.prompt_documents`` store — the generalization of the
+# former ``coord.policy_documents`` (this proxy set replaces the
+# ``/coord/policy-documents`` surface it superseded; those rows migrated in as
+# ``kind='policy'``). ONE versioned store for every prompt-shaped document coord
+# serves, addressed by ``(kind, name)`` over four kinds: ``policy`` (the
+# meta-answer's ``{{policy:<name>}}`` bodies), ``response_prompt`` (the agent Q&A
+# meta-answer template), ``continuation_rules`` (the Stop-hook continuation
+# umbrella prompt), and ``agent_playbook`` (e.g. the merge-shepherd playbook).
+#
+# Every PATCH creates an immutable version snapshot coord-side and bumps
+# ``current_version`` — edits never silently overwrite, and the versions routes
+# below serve the history the admin editor renders.
+#
+# Auth posture: the same READ/WRITE split as ``/coord/policies`` above. GET reads
+# gate on tenant MEMBERSHIP (``get_tenant_id``) so the console read view is
+# visible to developers; PATCH/restore writes stay on
+# ``require_coord_tenant_admin`` (coord re-checks admin on every write). Both
+# dependencies capture the caller's bearer so ``_proxy_coord_*`` forwards only
+# the bearer (coord derives the tenant). Coord 4xx error bodies — including its
+# 400 ``unknown kind`` and the ``degraded`` 404 it returns while the store is not
+# yet provisioned (D1 deploy-ordering window) — pass through verbatim via the
+# ``_proxy_coord_*`` helpers rather than collapsing to a 500.
+#
+# Write attribution: ``updated_by`` is stamped SERVER-SIDE from the authenticated
+# web session (never taken from the request body), so every version row is
+# honestly tagged with the human who made the edit.
 
 
-@router.get("/coord/policy-documents")
-async def list_policy_documents(
+def _editor_identity(current_user: UserModel) -> str:
+    """The ``updated_by`` tag stamped on a prompt-document edit.
+
+    Sourced from the authenticated web session — the caller's email when set,
+    else the stable user id. A client-supplied ``updated_by`` is always
+    overwritten with this: the version history is an audit trail, so the editor
+    tag must be the session's identity rather than anything the browser claims.
+    """
+    return current_user.email or f"user:{current_user.id}"
+
+
+@router.get("/coord/prompt-documents")
+async def list_prompt_documents(
+    kind: str | None = None,
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
-    """List the tenant's policy documents. Any authenticated tenant member."""
-    return await _proxy_coord_get("/coord/policy-documents", tenant_id=tenant_id)
+    """List the tenant's prompt documents (no bodies), optionally filtered to a
+    single ``kind``. Any authenticated tenant member.
 
-
-@router.get("/coord/policy-documents/{handle}")
-async def get_policy_document(
-    handle: str,
-    tenant_id: UUID = Depends(get_tenant_id),
-) -> Any:
-    """Fetch one policy document by handle. Any authenticated tenant member."""
+    Coord's list route seeds the canonical documents on first touch, so a fresh
+    tenant sees the full set immediately. An unknown ``kind`` is coord's 400.
+    """
+    params = {"kind": kind} if kind is not None else None
     return await _proxy_coord_get(
-        f"/coord/policy-documents/{handle}", tenant_id=tenant_id
+        "/coord/prompt-documents", params=params, tenant_id=tenant_id
     )
 
 
-@router.patch("/coord/policy-documents/{handle}")
-async def update_policy_document(
-    handle: str,
+@router.get("/coord/prompt-documents/{kind}/{name}")
+async def get_prompt_document(
+    kind: str,
+    name: str,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Fetch one prompt document (with body) by ``(kind, name)``. Any
+    authenticated tenant member."""
+    return await _proxy_coord_get(
+        f"/coord/prompt-documents/{kind}/{name}", tenant_id=tenant_id
+    )
+
+
+@router.patch("/coord/prompt-documents/{kind}/{name}")
+async def update_prompt_document(
+    kind: str,
+    name: str,
     body: dict[str, Any],
     tenant_id: UUID = Depends(require_coord_tenant_admin),
+    current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
-    """Edit a policy document's title/body. Body forwarded verbatim
-    (``{title?, body?, updated_by?}``). Tenant-admin only."""
+    """Edit a prompt document's description/body. Tenant-admin only.
+
+    The body is forwarded as ``{description?, body?, change_description?}`` with
+    ``updated_by`` stamped from the authenticated session (see
+    :func:`_editor_identity`) — a body-supplied ``updated_by`` is ignored, so the
+    version snapshot coord writes carries the real editor. Coord creates a new
+    immutable version on every successful edit; nothing is overwritten in place.
+    """
     return await _proxy_coord_patch(
-        f"/coord/policy-documents/{handle}", body, tenant_id=tenant_id
+        f"/coord/prompt-documents/{kind}/{name}",
+        {**body, "updated_by": _editor_identity(current_user)},
+        tenant_id=tenant_id,
     )
 
 
-@router.post("/coord/policy-documents/{handle}/restore-default")
-async def restore_policy_document_default(
-    handle: str,
+@router.get("/coord/prompt-documents/{kind}/{name}/versions")
+async def list_prompt_document_versions(
+    kind: str,
+    name: str,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Version-history metadata for one prompt document (newest first, no
+    bodies). Any authenticated tenant member."""
+    return await _proxy_coord_get(
+        f"/coord/prompt-documents/{kind}/{name}/versions", tenant_id=tenant_id
+    )
+
+
+@router.get("/coord/prompt-documents/{kind}/{name}/versions/{version}")
+async def get_prompt_document_version(
+    kind: str,
+    name: str,
+    version: int,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """One immutable version snapshot (with body) of a prompt document — the
+    left-hand side of the editor's diff view. Any authenticated tenant member."""
+    return await _proxy_coord_get(
+        f"/coord/prompt-documents/{kind}/{name}/versions/{version}",
+        tenant_id=tenant_id,
+    )
+
+
+@router.post("/coord/prompt-documents/{kind}/{name}/restore-default")
+async def restore_prompt_document_default(
+    kind: str,
+    name: str,
     tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
-    """Re-seed a policy document's body from the code default. Tenant-admin only.
+    """Re-seed a prompt document's body from its code default. Tenant-admin only.
 
     Only documents carrying a ``default_source`` can be restored; coord 4xx (no
-    default, unknown handle) passes through. No request body.
+    default, unknown document) passes through. The restore is itself an edit —
+    coord snapshots a new version — so it is reversible from the history view.
+    No request body.
     """
     return await _proxy_coord_post(
-        f"/coord/policy-documents/{handle}/restore-default", {}, tenant_id=tenant_id
+        f"/coord/prompt-documents/{kind}/{name}/restore-default",
+        {},
+        tenant_id=tenant_id,
     )
 
 

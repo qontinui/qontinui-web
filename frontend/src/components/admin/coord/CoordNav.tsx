@@ -197,10 +197,10 @@ const GROUPS: NavGroup[] = [
         testId: "coord-nav-automation-rules",
       },
       {
-        href: "/admin/coord/policy-documents",
-        label: "Policy Documents",
+        href: "/admin/coord/prompt-documents",
+        label: "Prompt Documents",
         icon: NotebookText,
-        testId: "coord-nav-policy-documents",
+        testId: "coord-nav-prompt-documents",
       },
       {
         href: "/admin/coord/merge-settings",
