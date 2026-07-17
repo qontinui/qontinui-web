@@ -49,6 +49,11 @@ MemoryScope = Literal["tenant", "runner", "agent", "session"]
 # Mirror the coord.memory_links relation CHECK (coord_memory_links migration).
 MemoryLinkRelation = Literal["depends_on", "implements", "supersedes", "related"]
 
+# The job queue's dispatch discriminator — mirrors the CHECK on
+# ``coord.memory_jobs.kind``.
+JobKind = Literal["synthesis", "embedding"]
+JOB_KINDS: tuple[JobKind, ...] = ("synthesis", "embedding")
+
 # Batch + content caps (32 KB cap is app-enforced per the migration notes).
 MAX_RECORDS_PER_REQUEST = 100
 MAX_CONTENT_BYTES = 32 * 1024
@@ -57,9 +62,9 @@ MAX_CONTENT_BYTES = 32 * 1024
 DEFAULT_QUERY_LIMIT = 8
 MAX_QUERY_LIMIT = 50
 
-# Synthesis-job claim: default + hard cap on jobs handed out per claim.
-DEFAULT_SYNTHESIS_CLAIM_LIMIT = 4
-MAX_SYNTHESIS_CLAIM_LIMIT = 4
+# Job claim: default + hard cap on jobs handed out per claim.
+DEFAULT_JOB_CLAIM_LIMIT = 4
+MAX_JOB_CLAIM_LIMIT = 4
 
 # Graph traversal + list-endpoint limits.
 DEFAULT_GRAPH_DEPTH = 3
@@ -303,7 +308,10 @@ class MemoryStatsResponse(BaseModel):
     quota_bytes: int
     quota_rows: int
     quota_utilization: float
-    # Synthesis-job backlog (runner-paid consolidation, v1.1).
+    # Synthesis-job backlog (runner-paid consolidation, v1.1). Scoped to
+    # kind='synthesis' now that coord.memory_jobs also carries embedding
+    # jobs, so these keep meaning exactly what their names say. Embedding
+    # backlog has no field yet — add one when something needs it.
     synthesis_jobs_pending: int = 0
     synthesis_jobs_claimed: int = 0
     synthesis_jobs_done: int = 0
@@ -393,69 +401,123 @@ class ListRecordsResponse(BaseModel):
 
 
 # --------------------------------------------------------------------------
-# Synthesis jobs (v1.1) — backend clusters, runner synthesizes, backend applies
+# Memory jobs — backend enqueues, runner executes, backend applies
 # --------------------------------------------------------------------------
+#
+# One kind-dispatched queue for every piece of backend-initiated work a
+# runner pays for. The backend has neither an LLM client nor (as of
+# ``2026-07-13-runner-paid-embedding``) an embedding model on any live
+# path, so both kinds of compute are offloaded to a runner that claims,
+# computes locally, and posts the result back.
 
 
-class ClaimSynthesisJobsRequest(BaseModel):
-    """``POST /memory/synthesis-jobs/claim`` body."""
+class ClaimJobsRequest(BaseModel):
+    """``POST /memory/jobs/claim`` body.
 
-    limit: int = Field(
-        default=DEFAULT_SYNTHESIS_CLAIM_LIMIT, ge=1, le=MAX_SYNTHESIS_CLAIM_LIMIT
-    )
+    ``kinds`` is the runner's capability declaration — it only claims work
+    it can actually execute, so a runner that cannot synthesize never
+    takes a synthesis job hostage for a full lease before failing it.
+    """
+
+    limit: int = Field(default=DEFAULT_JOB_CLAIM_LIMIT, ge=1, le=MAX_JOB_CLAIM_LIMIT)
+    kinds: list[JobKind] = Field(default_factory=lambda: list(JOB_KINDS), min_length=1)
 
 
-class SynthesisJobOut(BaseModel):
-    """One claimed job — exactly what the runner needs to synthesize.
+class MemoryJobOut(BaseModel):
+    """One claimed job — exactly what the runner needs to execute it.
 
-    The runner distills ``member_texts`` into a single mental-model text
-    and posts it back to ``/synthesis-jobs/{job_id}/result``; it never
-    reads the memory store directly.
+    ``input_texts`` is the text to compute over and ``target_ids`` the
+    rows the job is about; for ``kind='embedding'`` the two are index-
+    aligned (``input_texts[i]`` is the content of ``target_ids[i]``) and
+    the result must come back in that same order. The runner never reads
+    the memory store directly.
     """
 
     job_id: UUID
-    member_texts: list[str]
+    kind: JobKind
+    target_ids: list[UUID]
+    input_texts: list[str]
 
 
-class ClaimSynthesisJobsResponse(BaseModel):
-    jobs: list[SynthesisJobOut]
+class ClaimJobsResponse(BaseModel):
+    jobs: list[MemoryJobOut]
 
 
-class SynthesisResultRequest(BaseModel):
-    """``POST /memory/synthesis-jobs/{job_id}/result`` body.
+class SynthesisResultPayload(BaseModel):
+    """``result`` for a ``kind='synthesis'`` job.
 
-    Exactly one of ``result_text`` (success — the synthesized model) or
-    ``failure`` (the runner could not synthesize; the reason) must be
-    set.
-
-    On the success path the runner also supplies the ``embedding`` of its
-    ``result_text`` — it already ran an LLM over the cluster, so the
-    vector is its to pay for. Omitted → the ``mental_model`` row lands
-    with a NULL embedding (deferred vectorization); the backend never
-    embeds it.
+    ``embedding`` is the runner's vector for ``result_text`` — it already
+    ran an LLM over this cluster, so the vector is its to pay for.
+    Omitted (with ``embedding_model``) -> the ``mental_model`` row lands
+    with a NULL embedding for the reindex sweep; the backend never embeds.
     """
 
-    result_text: str | None = Field(default=None, min_length=1)
-    failure: str | None = Field(default=None, min_length=1)
+    result_text: str = Field(min_length=1)
     embedding: list[float] | None = None
     embedding_model: str | None = None
 
     @model_validator(mode="after")
-    def _exactly_one(self) -> SynthesisResultRequest:
-        if (self.result_text is None) == (self.failure is None):
-            raise ValueError(
-                "provide exactly one of 'result_text' (success) or 'failure' (reason)"
-            )
+    def _embedding_input_valid(self) -> SynthesisResultPayload:
         check_embedding_input(self.embedding, self.embedding_model)
-        if self.failure is not None and self.embedding is not None:
+        return self
+
+
+class EmbeddingResultPayload(BaseModel):
+    """``result`` for a ``kind='embedding'`` job.
+
+    One vector per ``input_texts`` entry, IN THE SAME ORDER — that order
+    is the only thing mapping a vector onto its row, so the arity is
+    checked against the stored job (a 422 from the store) and every vector
+    is checked here for dimension. ``embedding_model`` is required and
+    must be an accepted tag: an unrecognized model's vectors live in a
+    different space and would silently poison the cosine arm.
+    """
+
+    embeddings: list[list[float]] = Field(min_length=1)
+    embedding_model: str
+
+    @field_validator("embeddings")
+    @classmethod
+    def _each_vector_dim(cls, v: list[list[float]]) -> list[list[float]]:
+        for idx, vector in enumerate(v):
+            check_embedding_dim(vector, field=f"embeddings[{idx}]")
+        return v
+
+    @field_validator("embedding_model")
+    @classmethod
+    def _tag_accepted(cls, v: str) -> str:
+        if v not in ACCEPTED_EMBEDDING_MODEL_TAGS:
             raise ValueError(
-                "'embedding' is only meaningful with 'result_text'; a failure "
-                "report has no text to vectorize"
+                f"embedding_model {v!r} is not accepted by this server; "
+                f"accepted tags: {sorted(ACCEPTED_EMBEDDING_MODEL_TAGS)}"
+            )
+        return v
+
+
+class JobResultRequest(BaseModel):
+    """``POST /memory/jobs/{job_id}/result`` body.
+
+    Exactly one of ``result`` (success) or ``failure`` (the runner could
+    not execute the job; the reason) must be set. ``result``'s shape is
+    dispatched on the JOB's ``kind`` server-side rather than on a body
+    discriminator — the job already knows what it is, and trusting a
+    caller-supplied kind would let a runner post an embedding payload
+    against a synthesis job.
+    """
+
+    result: dict[str, Any] | None = None
+    failure: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def _exactly_one(self) -> JobResultRequest:
+        if (self.result is None) == (self.failure is None):
+            raise ValueError(
+                "provide exactly one of 'result' (success) or 'failure' (reason)"
             )
         return self
 
 
-class SynthesisResultResponse(BaseModel):
-    # "applied" on the success path (mental_model inserted), "recorded"
-    # on the failure path (job marked failed).
+class JobResultResponse(BaseModel):
+    # "applied" on the success path (vectors written / mental_model
+    # inserted), "recorded" on the failure path (job marked failed).
     status: Literal["applied", "recorded"]

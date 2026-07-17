@@ -210,16 +210,24 @@ def test_supersede_rejects_foreign_model_tag() -> None:
     assert resp.status_code == 422
 
 
-def test_synthesis_failure_with_an_embedding_is_422() -> None:
-    """A failure report has no text to vectorize — a stray vector on it is
-    a caller bug, not something to silently drop."""
+def test_job_result_with_both_result_and_failure_is_422() -> None:
+    """A job either produced a result or it failed — never both.
+
+    (The old "a stray embedding on a failure report is 422" check is gone
+    because that shape is now UNREPRESENTABLE rather than merely rejected:
+    a vector lives inside ``result``, so it cannot be attached to a
+    failure at all.)
+    """
     client = _build_client()
     resp = client.post(
-        f"/api/v1/memory/synthesis-jobs/{uuid4()}/result",
+        f"/api/v1/memory/jobs/{uuid4()}/result",
         json={
             "failure": "LLM refused",
-            "embedding": [0.1] * EMBEDDING_DIM,
-            "embedding_model": EMBEDDING_MODEL_TAG,
+            "result": {
+                "result_text": "but also a result",
+                "embedding": [0.1] * EMBEDDING_DIM,
+                "embedding_model": EMBEDDING_MODEL_TAG,
+            },
         },
     )
     assert resp.status_code == 422

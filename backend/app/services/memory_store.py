@@ -45,7 +45,7 @@ from app.services.memory_lifecycle import (
     ClusterItem,
     DupCandidate,
     MergeDecision,
-    member_set_hash,
+    job_input_hash,
     synthesized_title,
 )
 from app.services.memory_redaction import log_redactions, redact_text
@@ -1396,28 +1396,51 @@ def cluster_items_from_rows(rows: list[dict[str, Any]]) -> list[ClusterItem]:
 
 async def fetch_reindex_batch(
     session: AsyncSession, *, current_tag: str, limit: int
-) -> list[tuple[UUID, str]]:
-    """One batch of rows needing (re-)embedding.
+) -> list[tuple[UUID, UUID, str]]:
+    """One batch of ``(tenant_id, memory_id, content)`` needing (re-)embedding.
+
+    ``tenant_id`` rides along because the sweep now ENQUEUES these rows
+    rather than embedding them, and a job is tenant-bound (the claim is);
+    the sweep itself stays tenant-agnostic, so its caller groups by tenant.
 
     Targets rows whose ``embedding_model`` differs from the deployed tag
     (including NULL) or whose ``embedding`` is NULL (the Bug-1b drift
     class), skipping tombstones. Oldest-first for stable progress.
+
+    Rows with an IN-FLIGHT (``pending`` / ``claimed``) embedding job are
+    excluded. This is what makes the sweep's enqueue loop TERMINATE: the
+    sweep no longer embeds inline, so a row it queues stays un-embedded
+    until a runner drains it, and without this exclusion every batch in
+    the loop — and every subsequent daily run — would re-select the same
+    oldest rows forever. ``done`` is deliberately NOT excluded here: a
+    done job means the vectors were written, so the row drops out of this
+    query on its own merits; if it somehow did not, it genuinely needs
+    re-embedding and the tag-scoped ``input_hash`` lets it be re-queued.
     """
     rows = await session.execute(
         text(
             """
-            SELECT memory_id, content
-            FROM coord.memory_records
-            WHERE is_tombstone = false
-              AND (embedding_model IS DISTINCT FROM :current_tag
-                   OR embedding IS NULL)
-            ORDER BY created_at ASC, memory_id ASC
+            SELECT r.tenant_id, r.memory_id, r.content
+            FROM coord.memory_records r
+            WHERE r.is_tombstone = false
+              AND (r.embedding_model IS DISTINCT FROM :current_tag
+                   OR r.embedding IS NULL)
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM coord.memory_jobs j
+                  WHERE j.kind = 'embedding'
+                    AND j.status IN ('pending', 'claimed')
+                    AND j.target_ids @> ARRAY[r.memory_id]
+              )
+            ORDER BY r.created_at ASC, r.memory_id ASC
             LIMIT :limit
             """
         ),
         {"current_tag": current_tag, "limit": limit},
     )
-    return [(UUID(str(r.memory_id)), str(r.content)) for r in rows]
+    return [
+        (UUID(str(r.tenant_id)), UUID(str(r.memory_id)), str(r.content)) for r in rows
+    ]
 
 
 async def update_embeddings(
@@ -1562,92 +1585,172 @@ async def merge_record_source(
 
 
 # ===========================================================================
-# Phase 2 (v1.1) — runner-paid synthesis jobs (coord.memory_synthesis_jobs)
+# Phase 2 — the generic, kind-dispatched job queue (coord.memory_jobs)
 # ===========================================================================
 #
-# The backend has no LLM client, so it can CLUSTER but not SYNTHESIZE.
-# Consolidation enqueues one job per episode cluster; a runner claims it,
-# calls its own warm LLM, and posts the synthesized text back. The
-# backend then embeds (local model) + inserts the mental_model row and
-# supersedes the cluster members. Every ``coord.*`` SQL literal for this
-# flow lives here alongside the memory_records SQL.
+# Backend-initiated work that the RUNNER executes and pays for. Two kinds
+# ride the one queue:
+#
+# * ``synthesis`` — this backend clusters episode memories but ships no
+#   LLM client, so it cannot distill them into a ``mental_model``.
+# * ``embedding`` — this backend no longer loads an embedding model on any
+#   path (``2026-07-13-runner-paid-embedding``), so rows land unvectorized
+#   and something else must compute their vectors.
+#
+# Both are the same shape of thing — "here is text; do local compute; post
+# the result back" — so they share one table, one claim endpoint, one
+# reaper and one runner loop, dispatched on ``kind``. The alternative
+# (a second queue) would have duplicated all four for no gain.
+#
+# Every ``coord.*`` SQL literal for this flow lives here alongside the
+# memory_records SQL.
 
 # A claimed job that has sat this long without a result is presumed dead
 # and requeued by the reaper (its runner crashed / lost its lease).
-SYNTHESIS_CLAIM_STALE_MINUTES = 30
+JOB_CLAIM_STALE_MINUTES = 30
 
 # After this many failed attempts a job is abandoned (status='failed')
 # rather than requeued again.
-SYNTHESIS_MAX_ATTEMPTS = 3
+JOB_MAX_ATTEMPTS = 3
+
+# The queue's dispatch discriminator — mirrors the migration's CHECK.
+JOB_KINDS: tuple[str, ...] = ("synthesis", "embedding")
 
 
-class SynthesisJobNotClaimedError(Exception):
+class JobNotClaimedError(Exception):
     """A result/failure was posted for a job not in ``'claimed'`` status.
 
-    The synthesis contract is claim → result: a runner posts back only for
-    a job it holds a live claim on. A job that is ``pending`` (never
-    claimed, or requeued to the queue by the reaper), ``done`` (already
-    applied), or ``failed`` (abandoned) must not be re-terminated — applying
-    a requeued/done job again would double-insert a mental_model and
+    The contract is claim -> result: a runner posts back only for a job it
+    holds a live claim on. A job that is ``pending`` (never claimed, or
+    requeued to the queue by the reaper), ``done`` (already applied), or
+    ``failed`` (abandoned) must not be re-terminated — applying a
+    requeued/done job again would double-insert a mental_model and
     re-supersede members. The result endpoint maps this to HTTP 409.
     """
 
     def __init__(self, status: str) -> None:
-        super().__init__(f"synthesis job is '{status}', not 'claimed'")
+        super().__init__(f"memory job is '{status}', not 'claimed'")
         self.status = status
 
 
+class JobKindMismatchError(Exception):
+    """A result was posted in the wrong shape for the job's ``kind``.
+
+    The result payload is kind-specific (a synthesized text vs. a list of
+    vectors), so posting one against the other kind is a caller bug, not a
+    job failure. The endpoint maps this to HTTP 422 and the job is left
+    ``claimed`` — the runner can still post the right shape (or a failure)
+    before its lease expires.
+    """
+
+
+class JobResultShapeError(Exception):
+    """A result payload was structurally wrong for its job (-> HTTP 422).
+
+    Distinct from the pydantic-level checks (vector dim, model tag), which
+    need no DB: this is the arity check that can only be made against the
+    stored job — one vector per input text, in order.
+    """
+
+
 @dataclass(frozen=True)
-class SynthesisClusterInput:
-    """One cluster to enqueue for runner synthesis."""
+class MemoryJobInput:
+    """One job to enqueue: what it is about, and what to compute over."""
 
-    member_ids: list[UUID]
-    member_texts: list[str]
+    kind: str
+    target_ids: list[UUID]
+    input_texts: list[str]
+    input_hash: str
 
 
 @dataclass(frozen=True)
-class ClaimedSynthesisJob:
-    """A job handed to a runner: only what the runner needs to synthesize."""
+class ClaimedMemoryJob:
+    """A job handed to a runner: only what the runner needs to execute it."""
 
     job_id: UUID
-    member_ids: list[UUID]
-    member_texts: list[str]
+    kind: str
+    target_ids: list[UUID]
+    input_texts: list[str]
 
 
-def _parse_member_texts(raw: Any) -> list[str]:
-    """member_texts JSONB → list[str] (asyncpg may hand back str or list)."""
+def _parse_input_texts(raw: Any) -> list[str]:
+    """input_texts JSONB -> list[str] (asyncpg may hand back str or list)."""
     if isinstance(raw, str):
         raw = json.loads(raw)
     return [str(t) for t in raw]
 
 
-async def enqueue_synthesis_jobs(
+def synthesis_job_input(
+    member_ids: list[UUID], member_texts: list[str]
+) -> MemoryJobInput:
+    """One episode cluster, as a ``synthesis`` job.
+
+    ``target_ids`` are the cluster members (what the eventual
+    ``mental_model`` consolidates and supersedes); ``input_texts`` are
+    their redacted contents, so a runner needs zero read-back into the
+    memory store to synthesize.
+    """
+    return MemoryJobInput(
+        kind="synthesis",
+        target_ids=list(member_ids),
+        input_texts=list(member_texts),
+        input_hash=job_input_hash(list(member_ids)),
+    )
+
+
+def embedding_job_input(
+    targets: list[tuple[UUID, str]], *, model_tag: str
+) -> MemoryJobInput:
+    """A batch of unvectorized rows, as an ``embedding`` job.
+
+    ``input_texts[i]`` is the content of ``target_ids[i]`` — the ORDER IS
+    THE CONTRACT: the runner posts back one vector per input text in the
+    same order, and that is what maps a vector onto its row.
+    ``model_tag`` is the tag the result is expected to carry, and is
+    folded into the dedupe hash (see :func:`job_input_hash`).
+    """
+    return MemoryJobInput(
+        kind="embedding",
+        target_ids=[memory_id for memory_id, _ in targets],
+        input_texts=[content for _, content in targets],
+        input_hash=job_input_hash(
+            [memory_id for memory_id, _ in targets], model_tag=model_tag
+        ),
+    )
+
+
+async def enqueue_jobs(
     session: AsyncSession,
     tenant_id: UUID,
-    clusters: list[SynthesisClusterInput],
+    jobs: list[MemoryJobInput],
 ) -> int:
-    """Insert one pending job per cluster, deduped by ``member_set_hash``.
+    """Insert one pending job per input, deduped by ``input_hash``.
 
-    A cluster whose member set already has a live (pending / claimed /
-    done) job is skipped via ``ON CONFLICT DO NOTHING`` against the
-    ``uq_memory_synthesis_jobs_live_member_set`` partial unique index —
-    so re-running consolidation before the runner drains the queue never
-    piles up duplicate jobs for the same cluster. A ``failed`` job does
-    NOT block re-enqueue (it is outside the partial index), so a cluster
-    can be retried after a permanent failure. Returns the number of jobs
+    A job whose ``(tenant, kind, input set)`` already has a live (pending
+    / claimed / done) job is skipped via ``ON CONFLICT DO NOTHING``
+    against the ``uq_memory_jobs_live_input`` partial unique index.
+
+    **This dedupe is what makes the enqueuers idempotent, and they lean on
+    it hard**: ``memory_bridge_sync`` runs every 15 minutes and
+    ``memory_reindex`` daily, and each enqueues whatever it finds
+    outstanding. Without the guard, every tick would pile up another copy
+    of the same work between runner drains. ``kind`` is IN the key, so the
+    same rows under a different kind are a distinct job. A ``failed`` job
+    sits outside the partial index and so does NOT block re-enqueue —
+    a permanent failure can be retried. Returns the number of jobs
     actually inserted.
     """
     inserted = 0
-    for cluster in clusters:
+    for job in jobs:
         result = await session.execute(
             text(
                 """
-                INSERT INTO coord.memory_synthesis_jobs
-                    (tenant_id, member_ids, member_texts, member_set_hash)
+                INSERT INTO coord.memory_jobs
+                    (tenant_id, kind, target_ids, input_texts, input_hash)
                 VALUES
-                    (:tenant_id, CAST(:member_ids AS uuid[]),
-                     CAST(:member_texts AS jsonb), :member_set_hash)
-                ON CONFLICT (tenant_id, member_set_hash)
+                    (:tenant_id, :kind, CAST(:target_ids AS uuid[]),
+                     CAST(:input_texts AS jsonb), :input_hash)
+                ON CONFLICT (tenant_id, kind, input_hash)
                     WHERE status IN ('pending', 'claimed', 'done')
                     DO NOTHING
                 RETURNING job_id
@@ -1655,9 +1758,10 @@ async def enqueue_synthesis_jobs(
             ),
             {
                 "tenant_id": tenant_id,
-                "member_ids": [str(m) for m in cluster.member_ids],
-                "member_texts": json.dumps(cluster.member_texts),
-                "member_set_hash": member_set_hash(cluster.member_ids),
+                "kind": job.kind,
+                "target_ids": [str(t) for t in job.target_ids],
+                "input_texts": json.dumps(job.input_texts),
+                "input_hash": job.input_hash,
             },
         )
         if result.scalar_one_or_none() is not None:
@@ -1665,50 +1769,133 @@ async def enqueue_synthesis_jobs(
     return inserted
 
 
-async def claim_synthesis_jobs(
+async def claim_jobs(
     session: AsyncSession,
     tenant_id: UUID,
     *,
     limit: int,
+    kinds: list[str],
     worker: str,
-) -> list[ClaimedSynthesisJob]:
-    """Atomically claim up to ``limit`` pending jobs for this tenant.
+) -> list[ClaimedMemoryJob]:
+    """Atomically claim up to ``limit`` pending jobs of ``kinds``.
 
     ``FOR UPDATE SKIP LOCKED`` is mandatory: two runners polling the same
     tenant concurrently must split the queue, never double-claim a row.
-    The claimed rows flip to ``status='claimed'`` stamped with
-    ``claimed_by`` / ``claimed_at`` and are returned oldest-first.
+    ``kinds`` filters the dispatch, so a runner that can only embed never
+    claims a synthesis job it would have to fail. The claimed rows flip to
+    ``status='claimed'`` stamped with ``claimed_by`` / ``claimed_at`` and
+    are returned oldest-first.
     """
+    if not kinds:
+        return []
     rows = await session.execute(
         text(
             """
-            UPDATE coord.memory_synthesis_jobs
+            UPDATE coord.memory_jobs
             SET status = 'claimed',
                 claimed_by = :worker,
                 claimed_at = now()
             WHERE job_id IN (
                 SELECT job_id
-                FROM coord.memory_synthesis_jobs
-                WHERE tenant_id = :tenant_id AND status = 'pending'
+                FROM coord.memory_jobs
+                WHERE tenant_id = :tenant_id
+                  AND status = 'pending'
+                  AND kind = ANY(CAST(:kinds AS text[]))
                 ORDER BY created_at
                 FOR UPDATE SKIP LOCKED
                 LIMIT :limit
             )
-            RETURNING job_id, member_ids, member_texts
+            RETURNING job_id, kind, target_ids, input_texts
             """
         ),
-        {"tenant_id": tenant_id, "worker": worker, "limit": limit},
+        {
+            "tenant_id": tenant_id,
+            "worker": worker,
+            "limit": limit,
+            "kinds": list(kinds),
+        },
     )
-    claimed: list[ClaimedSynthesisJob] = []
+    claimed: list[ClaimedMemoryJob] = []
     for r in rows.mappings():
         claimed.append(
-            ClaimedSynthesisJob(
+            ClaimedMemoryJob(
                 job_id=UUID(str(r["job_id"])),
-                member_ids=[UUID(str(m)) for m in r["member_ids"]],
-                member_texts=_parse_member_texts(r["member_texts"]),
+                kind=str(r["kind"]),
+                target_ids=[UUID(str(m)) for m in r["target_ids"]],
+                input_texts=_parse_input_texts(r["input_texts"]),
             )
         )
     return claimed
+
+
+async def get_job_kind(
+    session: AsyncSession, tenant_id: UUID, job_id: UUID
+) -> str | None:
+    """This job's ``kind``, or ``None`` when it is not in this tenant.
+
+    An unlocked peek, used only to pick the parser for a posted result:
+    ``kind`` is set at enqueue and never updated, so it cannot change
+    under the caller. The authoritative check is the locked one inside
+    :func:`_lock_claimed_job`, which is what actually refuses a result
+    posted in the wrong shape.
+    """
+    kind = (
+        await session.execute(
+            text(
+                """
+                SELECT kind FROM coord.memory_jobs
+                WHERE tenant_id = :tenant_id AND job_id = :job_id
+                """
+            ),
+            {"tenant_id": tenant_id, "job_id": job_id},
+        )
+    ).scalar_one_or_none()
+    return None if kind is None else str(kind)
+
+
+async def _lock_claimed_job(
+    session: AsyncSession,
+    tenant_id: UUID,
+    job_id: UUID,
+    *,
+    expect_kind: str,
+) -> Any:
+    """Load + lock a job that a runner is posting back for.
+
+    Returns ``None`` when the job is not in this tenant (-> 404, never
+    disclosed). Raises :class:`JobNotClaimedError` when it exists but is
+    not ``'claimed'`` (-> 409) and :class:`JobKindMismatchError` on a
+    kind/payload mismatch (-> 422). The ``FOR UPDATE`` row lock serializes
+    concurrent posts: the first sees ``'claimed'`` and applies; the second
+    then sees ``'done'`` and 409s.
+    """
+    job = (
+        (
+            await session.execute(
+                text(
+                    """
+                    SELECT kind, status, target_ids, input_texts
+                    FROM coord.memory_jobs
+                    WHERE tenant_id = :tenant_id AND job_id = :job_id
+                    FOR UPDATE
+                    """
+                ),
+                {"tenant_id": tenant_id, "job_id": job_id},
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    if job is None:
+        return None
+    if str(job["status"]) != "claimed":
+        raise JobNotClaimedError(str(job["status"]))
+    if str(job["kind"]) != expect_kind:
+        raise JobKindMismatchError(
+            f"job is kind '{job['kind']}', but the posted result is shaped "
+            f"for '{expect_kind}'"
+        )
+    return job
 
 
 async def record_synthesis_result(
@@ -1725,17 +1912,11 @@ async def record_synthesis_result(
 
     One atomic transaction (the caller commits): load + lock the job,
     redact the runner-supplied text, read the members' max importance,
-    insert the ``mental_model`` row (``consolidated_from`` = members,
+    insert the ``mental_model`` row (``consolidated_from`` = targets,
     ``importance`` = min(max_member + 0.1, 1.0),
     ``source.synthesis_job`` = job id), supersede the member rows, and
     flip the job to ``done``. Returns the new ``mental_model`` memory id,
-    or ``None`` when the job does not exist for this tenant (→ 404). Raises
-    :class:`SynthesisJobNotClaimedError` when the job exists but is not in
-    ``'claimed'`` status (→ 409) — a result may only be applied to a job a
-    runner holds a live claim on, so a requeued/done/failed job is never
-    (re-)applied. The ``FOR UPDATE`` row lock serializes concurrent posts:
-    the first sees ``'claimed'`` and applies; the second then sees
-    ``'done'`` and 409s.
+    or ``None`` when the job does not exist for this tenant (-> 404).
 
     ``embedding`` is the RUNNER's vector for ``result_text`` (validated by
     the endpoint); it is never computed here — the runner already ran an
@@ -1749,28 +1930,10 @@ async def record_synthesis_result(
     """
     now = now or datetime.now(UTC)
 
-    job = (
-        (
-            await session.execute(
-                text(
-                    """
-                SELECT member_ids, status
-                FROM coord.memory_synthesis_jobs
-                WHERE tenant_id = :tenant_id AND job_id = :job_id
-                FOR UPDATE
-                """
-                ),
-                {"tenant_id": tenant_id, "job_id": job_id},
-            )
-        )
-        .mappings()
-        .one_or_none()
-    )
+    job = await _lock_claimed_job(session, tenant_id, job_id, expect_kind="synthesis")
     if job is None:
         return None
-    if str(job["status"]) != "claimed":
-        raise SynthesisJobNotClaimedError(str(job["status"]))
-    member_ids = [UUID(str(m)) for m in job["member_ids"]]
+    member_ids = [UUID(str(m)) for m in job["target_ids"]]
 
     redaction = redact_text(result_text)
     log_redactions("memory_synthesis_result", redaction.counts)
@@ -1820,27 +1983,76 @@ async def record_synthesis_result(
         now=now,
     )
 
-    await session.execute(
-        text(
-            """
-            UPDATE coord.memory_synthesis_jobs
-            SET status = 'done',
-                finished_at = CAST(:now AS timestamptz),
-                result_text = :result_text
-            WHERE tenant_id = :tenant_id AND job_id = :job_id
-            """
-        ),
-        {
-            "tenant_id": tenant_id,
-            "job_id": job_id,
-            "now": now,
-            "result_text": redacted,
-        },
+    await _finish_job(
+        session,
+        tenant_id,
+        job_id,
+        status="done",
+        result={"result_text": redacted},
+        now=now,
     )
     return new_id
 
 
-async def record_synthesis_failure(
+async def record_embedding_result(
+    session: AsyncSession,
+    tenant_id: UUID,
+    job_id: UUID,
+    *,
+    embeddings: list[list[float]],
+    embedding_model: str,
+    now: datetime | None = None,
+) -> bool | None:
+    """Apply a runner's embedding result: write the vectors, mark done.
+
+    One atomic transaction (the caller commits): load + lock the job,
+    write ``embeddings[i]`` onto ``target_ids[i]`` (the order IS the
+    mapping — the runner was handed ``input_texts`` in that order), stamp
+    ``embedding_model``, and flip the job to ``done``. Returns ``True`` on
+    success, or ``None`` when the job does not exist for this tenant
+    (-> 404).
+
+    Raises :class:`JobResultShapeError` (-> 422) when the vector count does
+    not match the job's input count: a short/long list would silently
+    mis-map vectors onto rows (or, with ``strict=True`` zip, blow up
+    mid-write), and a wrong-space vector on the cosine arm is exactly the
+    failure this whole phase is built to make impossible. Per-vector
+    dimension and the model tag are validated a layer up, by the schema.
+    The job is left ``claimed`` on this error, not ``done``.
+    """
+    now = now or datetime.now(UTC)
+
+    job = await _lock_claimed_job(session, tenant_id, job_id, expect_kind="embedding")
+    if job is None:
+        return None
+
+    target_ids = [UUID(str(t)) for t in job["target_ids"]]
+    input_texts = _parse_input_texts(job["input_texts"])
+    if len(embeddings) != len(input_texts):
+        raise JobResultShapeError(
+            f"job has {len(input_texts)} input_texts but the result carries "
+            f"{len(embeddings)} embeddings; send exactly one vector per "
+            "input text, in the same order"
+        )
+
+    await update_embeddings(
+        session,
+        list(zip(target_ids, embeddings, strict=True)),
+        tag=embedding_model,
+        now=now,
+    )
+    await _finish_job(
+        session,
+        tenant_id,
+        job_id,
+        status="done",
+        result={"embedded": len(embeddings), "embedding_model": embedding_model},
+        now=now,
+    )
+    return True
+
+
+async def record_job_failure(
     session: AsyncSession,
     tenant_id: UUID,
     job_id: UUID,
@@ -1848,19 +2060,20 @@ async def record_synthesis_failure(
 ) -> bool:
     """Mark a CLAIMED job ``failed`` with the runner-supplied reason.
 
-    Returns False when the job does not exist for this tenant (→ 404), and
-    raises :class:`SynthesisJobNotClaimedError` when it exists but is not in
-    ``'claimed'`` status (→ 409): a runner may only fail a job it holds a
+    Kind-agnostic: any job a runner cannot execute fails the same way.
+    Returns False when the job does not exist for this tenant (-> 404), and
+    raises :class:`JobNotClaimedError` when it exists but is not in
+    ``'claimed'`` status (-> 409): a runner may only fail a job it holds a
     live claim on, so a requeued/abandoned/already-terminal job is never
-    re-terminated. The ``reason`` is stored in ``result_text`` (the job is
-    terminal; no mental_model row is produced). The ``FOR UPDATE`` lock
-    keeps the status check and the flip atomic against a concurrent post.
+    re-terminated. The ``reason`` is stored in ``result`` (the job is
+    terminal; no memory row is produced). The ``FOR UPDATE`` lock keeps the
+    status check and the flip atomic against a concurrent post.
     """
     status_row = (
         await session.execute(
             text(
                 """
-                SELECT status FROM coord.memory_synthesis_jobs
+                SELECT status FROM coord.memory_jobs
                 WHERE tenant_id = :tenant_id AND job_id = :job_id
                 FOR UPDATE
                 """
@@ -1871,47 +2084,71 @@ async def record_synthesis_failure(
     if status_row is None:
         return False
     if str(status_row) != "claimed":
-        raise SynthesisJobNotClaimedError(str(status_row))
-    await session.execute(
-        text(
-            """
-            UPDATE coord.memory_synthesis_jobs
-            SET status = 'failed',
-                finished_at = now(),
-                result_text = :reason
-            WHERE tenant_id = :tenant_id AND job_id = :job_id
-            """
-        ),
-        {"tenant_id": tenant_id, "job_id": job_id, "reason": reason},
+        raise JobNotClaimedError(str(status_row))
+    await _finish_job(
+        session,
+        tenant_id,
+        job_id,
+        status="failed",
+        result={"failure": reason},
+        now=datetime.now(UTC),
     )
     return True
 
 
-async def reap_stale_synthesis_claims(
-    session: AsyncSession, *, now: datetime
-) -> dict[str, int]:
+async def _finish_job(
+    session: AsyncSession,
+    tenant_id: UUID,
+    job_id: UUID,
+    *,
+    status: str,
+    result: dict[str, Any],
+    now: datetime,
+) -> None:
+    """Flip a job terminal (``done`` / ``failed``) with its result payload."""
+    await session.execute(
+        text(
+            """
+            UPDATE coord.memory_jobs
+            SET status = :status,
+                finished_at = CAST(:now AS timestamptz),
+                result = CAST(:result AS jsonb)
+            WHERE tenant_id = :tenant_id AND job_id = :job_id
+            """
+        ),
+        {
+            "tenant_id": tenant_id,
+            "job_id": job_id,
+            "status": status,
+            "now": now,
+            "result": json.dumps(result),
+        },
+    )
+
+
+async def reap_stale_claims(session: AsyncSession, *, now: datetime) -> dict[str, int]:
     """Requeue (or fail) claims a dead runner never finished.
 
-    Any ``claimed`` job whose ``claimed_at`` is older than
-    :data:`SYNTHESIS_CLAIM_STALE_MINUTES` has its ``attempt`` bumped and
-    is returned to ``pending`` — unless that pushes ``attempt`` past
-    :data:`SYNTHESIS_MAX_ATTEMPTS`, in which case it is abandoned
-    (``failed``). ``SKIP LOCKED`` so a live claim being finished right
-    now is never disturbed. Returns ``{"requeued": n, "failed": m}``.
+    Kind-agnostic — one reaper for the whole queue. Any ``claimed`` job
+    whose ``claimed_at`` is older than :data:`JOB_CLAIM_STALE_MINUTES` has
+    its ``attempt`` bumped and is returned to ``pending`` — unless that
+    pushes ``attempt`` past :data:`JOB_MAX_ATTEMPTS`, in which case it is
+    abandoned (``failed``). ``SKIP LOCKED`` so a live claim being finished
+    right now is never disturbed. Returns ``{"requeued": n, "failed": m}``.
     """
     rows = await session.execute(
         text(
             """
             WITH stale AS (
                 SELECT job_id
-                FROM coord.memory_synthesis_jobs
+                FROM coord.memory_jobs
                 WHERE status = 'claimed'
                   AND claimed_at
                       < CAST(:now AS timestamptz)
                         - make_interval(mins => :stale_minutes)
                 FOR UPDATE SKIP LOCKED
             )
-            UPDATE coord.memory_synthesis_jobs j
+            UPDATE coord.memory_jobs j
             SET attempt = j.attempt + 1,
                 status = CASE
                     WHEN j.attempt + 1 > :max_attempts THEN 'failed'
@@ -1924,10 +2161,13 @@ async def reap_stale_synthesis_claims(
                     THEN CAST(:now AS timestamptz)
                     ELSE j.finished_at
                 END,
-                result_text = CASE
+                result = CASE
                     WHEN j.attempt + 1 > :max_attempts
-                    THEN 'abandoned after ' || (j.attempt + 1) || ' attempts'
-                    ELSE j.result_text
+                    THEN jsonb_build_object(
+                        'failure',
+                        'abandoned after ' || (j.attempt + 1) || ' attempts'
+                    )
+                    ELSE j.result
                 END
             FROM stale
             WHERE j.job_id = stale.job_id
@@ -1936,8 +2176,8 @@ async def reap_stale_synthesis_claims(
         ),
         {
             "now": now,
-            "stale_minutes": SYNTHESIS_CLAIM_STALE_MINUTES,
-            "max_attempts": SYNTHESIS_MAX_ATTEMPTS,
+            "stale_minutes": JOB_CLAIM_STALE_MINUTES,
+            "max_attempts": JOB_MAX_ATTEMPTS,
         },
     )
     requeued = 0
@@ -1948,24 +2188,24 @@ async def reap_stale_synthesis_claims(
         else:
             requeued += 1
     if requeued or failed:
-        logger.info("memory_synthesis_reap_completed", requeued=requeued, failed=failed)
+        logger.info("memory_job_reap_completed", requeued=requeued, failed=failed)
     return {"requeued": requeued, "failed": failed}
 
 
-async def synthesis_job_counts(
-    session: AsyncSession, tenant_id: UUID
+async def job_counts(
+    session: AsyncSession, tenant_id: UUID, *, kind: str
 ) -> dict[str, int]:
-    """Per-status synthesis-job counts for one tenant (backlog visibility)."""
+    """Per-status job counts for one tenant + kind (backlog visibility)."""
     rows = await session.execute(
         text(
             """
             SELECT status, count(*) AS n
-            FROM coord.memory_synthesis_jobs
-            WHERE tenant_id = :tenant_id
+            FROM coord.memory_jobs
+            WHERE tenant_id = :tenant_id AND kind = :kind
             GROUP BY status
             """
         ),
-        {"tenant_id": tenant_id},
+        {"tenant_id": tenant_id, "kind": kind},
     )
     counts = {"pending": 0, "claimed": 0, "done": 0, "failed": 0}
     for r in rows:

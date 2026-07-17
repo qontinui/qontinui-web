@@ -29,12 +29,13 @@ Endpoints (mounted under ``/api/v1/memory``):
   old row's validity.
 * ``DELETE /records/{id}``               — tombstone.
 * ``GET /stats``                         — usage/quota posture.
-* ``POST /synthesis-jobs/claim``         — a runner claims pending
-  clustering jobs (backend clusters, runner synthesizes).
-* ``POST /synthesis-jobs/{id}/result``   — the runner posts the
-  synthesized model (success, with its own embedding) or a failure
-  reason back; success inserts the ``mental_model`` row and supersedes
-  the members.
+* ``POST /jobs/claim``                   — a runner claims pending jobs
+  of the ``kinds`` it can execute (backend enqueues, runner computes).
+* ``POST /jobs/{id}/result``             — the runner posts the job's
+  result (success) or a failure reason back. The result's shape is
+  dispatched on the JOB's own ``kind``: ``embedding`` writes the posted
+  vectors onto the job's target rows; ``synthesis`` inserts the
+  ``mental_model`` row and supersedes the cluster members.
 
 Auth (fail-closed): the tenant comes EXCLUSIVELY from the server-side
 principal resolved by :func:`get_memory_tenant` — never from the request
@@ -64,13 +65,14 @@ import binascii
 import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Literal, get_args
+from typing import Any, Literal, cast, get_args
 from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse, Response
 from fastapi.security import HTTPAuthorizationCredentials
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
@@ -83,13 +85,17 @@ from app.models.user import User
 from app.schemas.memory import (
     DEFAULT_LIST_LIMIT,
     MAX_LIST_LIMIT,
-    ClaimSynthesisJobsRequest,
-    ClaimSynthesisJobsResponse,
+    ClaimJobsRequest,
+    ClaimJobsResponse,
+    EmbeddingResultPayload,
+    JobResultRequest,
+    JobResultResponse,
     ListRecordsResponse,
     MemoryGraphEdge,
     MemoryGraphNode,
     MemoryGraphRequest,
     MemoryGraphResponse,
+    MemoryJobOut,
     MemoryKind,
     MemoryLinkOut,
     MemoryQueryHit,
@@ -99,9 +105,7 @@ from app.schemas.memory import (
     MemoryStatsResponse,
     SupersedeRequest,
     SupersedeResponse,
-    SynthesisJobOut,
-    SynthesisResultRequest,
-    SynthesisResultResponse,
+    SynthesisResultPayload,
     WriteRecordResult,
     WriteRecordsRequest,
     WriteRecordsResponse,
@@ -796,7 +800,9 @@ async def memory_stats(
     """Usage + quota posture for the caller's tenant."""
     usage = await store.get_usage(db, principal.tenant_id)
     coverage = await store.embedding_coverage(db, principal.tenant_id)
-    job_counts = await store.synthesis_job_counts(db, principal.tenant_id)
+    # Scoped to kind='synthesis': the queue now also carries embedding
+    # jobs, and these fields say "synthesis".
+    job_counts = await store.job_counts(db, principal.tenant_id, kind="synthesis")
     utilization = max(
         usage.bytes / usage.quota_bytes if usage.quota_bytes > 0 else 0.0,
         usage.row_count / usage.quota_rows if usage.quota_rows > 0 else 0.0,
@@ -816,94 +822,163 @@ async def memory_stats(
 
 
 # --------------------------------------------------------------------------
-# Synthesis jobs (v1.1) — backend clusters, runner synthesizes, backend applies
+# Memory jobs — backend enqueues, runner executes, backend applies
 # --------------------------------------------------------------------------
 
 
-@router.post("/synthesis-jobs/claim", response_model=ClaimSynthesisJobsResponse)
-async def claim_synthesis_jobs(
-    payload: ClaimSynthesisJobsRequest,
+@router.post("/jobs/claim", response_model=ClaimJobsResponse)
+async def claim_jobs(
+    payload: ClaimJobsRequest,
     principal: MemoryPrincipal = Depends(get_memory_tenant),
     db: AsyncSession = Depends(get_async_db),
-) -> ClaimSynthesisJobsResponse:
-    """A runner claims up to ``limit`` pending synthesis jobs (tenant-bound).
+) -> ClaimJobsResponse:
+    """A runner claims up to ``limit`` pending jobs of ``kinds`` (tenant-bound).
 
     Concurrent claims on the same tenant split the queue via
     ``FOR UPDATE SKIP LOCKED`` — no job is ever handed to two runners.
-    The response carries only ``job_id`` + ``member_texts`` per job: the
-    runner distills the texts with its own LLM and posts the result to
-    ``/synthesis-jobs/{job_id}/result``.
+    ``kinds`` is the runner's capability filter: it claims only work it
+    can execute. Each job carries what the runner needs and nothing more
+    (``job_id`` / ``kind`` / ``target_ids`` / ``input_texts``); the runner
+    computes locally and posts back to ``/jobs/{job_id}/result``, never
+    reading the memory store directly.
     """
     worker = str(principal.device_id) if principal.device_id else principal.actor
-    jobs = await store.claim_synthesis_jobs(
-        db, principal.tenant_id, limit=payload.limit, worker=worker
+    jobs = await store.claim_jobs(
+        db,
+        principal.tenant_id,
+        limit=payload.limit,
+        kinds=list(payload.kinds),
+        worker=worker,
     )
-    return ClaimSynthesisJobsResponse(
+    return ClaimJobsResponse(
         jobs=[
-            SynthesisJobOut(job_id=job.job_id, member_texts=job.member_texts)
+            MemoryJobOut(
+                job_id=job.job_id,
+                kind=cast(Any, job.kind),
+                target_ids=job.target_ids,
+                input_texts=job.input_texts,
+            )
             for job in jobs
         ]
     )
 
 
-@router.post("/synthesis-jobs/{job_id}/result", response_model=SynthesisResultResponse)
-async def submit_synthesis_result(
+@router.post("/jobs/{job_id}/result", response_model=JobResultResponse)
+async def submit_job_result(
     job_id: UUID,
-    payload: SynthesisResultRequest,
+    payload: JobResultRequest,
     principal: MemoryPrincipal = Depends(get_memory_tenant),
     db: AsyncSession = Depends(get_async_db),
-) -> SynthesisResultResponse:
-    """The runner posts a synthesized model (success) or a failure reason.
+) -> JobResultResponse:
+    """The runner posts a job's result (success) or a failure reason.
 
-    Success (``result_text`` + the runner's own ``embedding`` of it, or
-    no embedding at all): the text is redacted, inserted as a
-    ``mental_model`` row (``consolidated_from`` = the cluster members,
-    importance = best member + 0.1), and the member rows are superseded —
-    all in one transaction → ``applied``. The backend never embeds here:
-    the runner already ran an LLM over this cluster, so the vector is
-    its to supply; omitting it stores the row unvectorized for the
-    reindex sweep.
-    Failure (``failure``): the job is marked failed → ``recorded``.
+    The ``result`` payload is validated against the JOB's own ``kind``
+    (read under the row lock), never against a caller-declared one:
+
+    * ``embedding`` -> ``{"embeddings": [[...384], ...],
+      "embedding_model": "<tag>"}``: one vector per ``input_texts`` entry
+      in the SAME ORDER (that order is the only thing mapping a vector
+      onto its row). The vectors are written onto ``target_ids``.
+    * ``synthesis`` -> ``{"result_text": "...", "embedding": [...384],
+      "embedding_model": "<tag>"}``: the text is redacted, inserted as a
+      ``mental_model`` row (``consolidated_from`` = the cluster members,
+      importance = best member + 0.1), and the member rows superseded —
+      all in one transaction.
+
+    Failure (``failure``): the job is marked failed -> ``recorded``.
+
     404 when the job is not in the caller's tenant (never disclosed); 409
-    when the job exists but is not in ``'claimed'`` status (already applied,
-    requeued by the reaper, or abandoned) — a runner may only post back for
-    a job it holds a live claim on.
+    when the job exists but is not ``'claimed'`` (already applied,
+    requeued by the reaper, or abandoned) — a runner may only post back
+    for a job it holds a live claim on; 422 on a result whose shape does
+    not match the job (wrong kind, wrong vector count, wrong dimension,
+    unaccepted model tag), which leaves the job ``claimed`` so the runner
+    can still post a correct result before its lease expires.
     """
     if payload.failure is not None:
         try:
-            ok = await store.record_synthesis_failure(
+            ok = await store.record_job_failure(
                 db, principal.tenant_id, job_id, payload.failure
             )
-        except store.SynthesisJobNotClaimedError as exc:
+        except store.JobNotClaimedError as exc:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT, detail=str(exc)
             ) from exc
         if not ok:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="synthesis job not found",
+                detail="memory job not found",
             )
-        return SynthesisResultResponse(status="recorded")
+        return JobResultResponse(status="recorded")
 
-    # Success path — result_text is guaranteed present by the schema
-    # validator (exactly one of result_text / failure).
-    assert payload.result_text is not None
-    try:
-        new_id = await store.record_synthesis_result(
-            db,
-            principal.tenant_id,
-            job_id,
-            payload.result_text,
-            embedding=payload.embedding,
-            embedding_model=payload.embedding_model,
+    # Success path — `result` is guaranteed present by the schema
+    # validator (exactly one of result / failure).
+    assert payload.result is not None
+
+    # Dispatch on the STORED kind. The job is locked + its kind checked
+    # inside the store call; we must know the kind out here to parse the
+    # payload, so a cheap unlocked peek picks the parser and the store's
+    # locked re-check is what actually enforces it (a kind cannot change
+    # under us — it is set at enqueue and never updated).
+    kind = await store.get_job_kind(db, principal.tenant_id, job_id)
+    if kind is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="memory job not found"
         )
-    except store.SynthesisJobNotClaimedError as exc:
+
+    try:
+        if kind == "embedding":
+            embedding_result = EmbeddingResultPayload.model_validate(payload.result)
+            applied = await store.record_embedding_result(
+                db,
+                principal.tenant_id,
+                job_id,
+                embeddings=embedding_result.embeddings,
+                embedding_model=embedding_result.embedding_model,
+            )
+            if applied is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="memory job not found",
+                )
+        else:
+            synthesis_result = SynthesisResultPayload.model_validate(payload.result)
+            new_id = await store.record_synthesis_result(
+                db,
+                principal.tenant_id,
+                job_id,
+                synthesis_result.result_text,
+                embedding=synthesis_result.embedding,
+                embedding_model=synthesis_result.embedding_model,
+            )
+            if new_id is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="memory job not found",
+                )
+    except ValidationError as exc:
+        # A malformed `result` for this job's kind. Raised here rather than
+        # by FastAPI's own body validation because the expected shape is
+        # only knowable once the job's kind is read.
+        #
+        # `include_context=False` is load-bearing, not cosmetic: pydantic's
+        # default `ctx` carries the raw ValueError OBJECT, which is not
+        # JSON-serializable — serializing it raises inside the response
+        # encoder and turns this clean 422 into a 500. `include_input`
+        # would also echo the runner's whole 384-float vector back.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=exc.errors(
+                include_url=False, include_context=False, include_input=False
+            ),
+        ) from exc
+    except store.JobNotClaimedError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail=str(exc)
         ) from exc
-    if new_id is None:
+    except (store.JobKindMismatchError, store.JobResultShapeError) as exc:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="synthesis job not found",
-        )
-    return SynthesisResultResponse(status="applied")
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+
+    return JobResultResponse(status="applied")
