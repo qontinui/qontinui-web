@@ -12,8 +12,14 @@ run everywhere.
 The schema is created directly from test DDL mirroring the
 ``coord_memory_records`` migration (minus the FK to ``coord.tenants``,
 which the isolated test DB doesn't carry, and the HNSW index — a
-sequential scan is exact at test sizes). The embedder is a
-deterministic hashing stub — the real model is never downloaded.
+sequential scan is exact at test sizes).
+
+Embeddings are CLIENT-supplied over this API (the backend does not embed
+on the request path), so these tests act as the client: ``_record`` and
+the query helpers compute vectors with a deterministic hashing stub and
+send them, exactly as a runner would. The stub stands in for the RUNNER's
+model — the real one is never downloaded, and the server loads no model
+at all.
 
 Loop discipline: all direct DB access goes through ``asyncio.run`` on a
 NullPool engine, so no asyncpg connection ever crosses event loops (the
@@ -45,14 +51,14 @@ from sqlalchemy.pool import NullPool
 
 from app.api.deps import get_async_db
 from app.api.v1.endpoints.memory import MemoryPrincipal, get_memory_tenant, router
-from app.services import memory_embedder
-from app.services.memory_embedder import EMBEDDING_DIM
+from app.services.memory_embedder import EMBEDDING_DIM, EMBEDDING_MODEL_TAG
 from tests.conftest import TEST_DATABASE_URL
 
 # ---------------------------------------------------------------------------
-# Deterministic stub embedder — hashed bag-of-words, so lexically similar
-# texts land near each other in vector space (enough signal for ranking
-# assertions) with zero model downloads and full determinism.
+# Deterministic stub embedder standing in for the CLIENT's model — hashed
+# bag-of-words, so lexically similar texts land near each other in vector
+# space (enough signal for ranking assertions) with zero model downloads
+# and full determinism.
 # ---------------------------------------------------------------------------
 
 
@@ -278,13 +284,6 @@ def db(memory_engine: AsyncEngine) -> Generator[AsyncEngine, None, None]:
     yield memory_engine
 
 
-@pytest.fixture(autouse=True)
-def _stub_embedder() -> Generator[None, None, None]:
-    memory_embedder.set_embedder(HashingStubEmbedder())
-    yield
-    memory_embedder.set_embedder(None)
-
-
 class MemoryClient:
     """TestClient wrapper with a switchable tenant principal."""
 
@@ -316,10 +315,35 @@ class MemoryClient:
         return self
 
 
+def _client_vector(text_: str) -> list[float]:
+    """The vector a client (the runner) would compute for ``text_``."""
+    return HashingStubEmbedder._vec(text_)
+
+
 def _record(
     content: str, title: str = "note", kind: str = "fact", **extra: Any
 ) -> dict[str, Any]:
-    return {"title": title, "content": content, "kind": kind, **extra}
+    """A write-record payload carrying its own client-computed vector.
+
+    Mirrors the runner's posture (it embeds, then sends). Pass
+    ``embedding=None`` for the unvectorized path.
+    """
+    body: dict[str, Any] = {
+        "title": title,
+        "content": content,
+        "kind": kind,
+        "embedding": _client_vector(content),
+        "embedding_model": EMBEDDING_MODEL_TAG,
+        **extra,
+    }
+    if body.get("embedding") is None:
+        body.pop("embedding_model", None)
+    return body
+
+
+def _unembedded_record(content: str, **extra: Any) -> dict[str, Any]:
+    """A write-record payload with NO vector — the degradation path."""
+    return _record(content, embedding=None, **extra)
 
 
 @pytest.fixture()
@@ -658,12 +682,19 @@ class TestHybridQuery:
                 ]
             },
         )
+        query = "postgres connection pool exhausted"
         resp = mc.client.post(
             "/api/v1/memory/query",
-            json={"query_text": "postgres connection pool exhausted", "limit": 2},
+            json={
+                "query_text": query,
+                "query_embedding": _client_vector(query),
+                "limit": 2,
+            },
         )
         assert resp.status_code == 200
-        hits = resp.json()["hits"]
+        body = resp.json()
+        assert body["vector_arm"] == "hybrid"
+        hits = body["hits"]
         assert hits, "expected at least one hit"
         top = hits[0]
         assert top["title"] == "db incident"
@@ -870,6 +901,215 @@ class TestStorageEffects:
         assert stats["synthesis_jobs_done"] == 0
 
 
+# ---------------------------------------------------------------------------
+# Client-supplied embeddings (2026-07-13-runner-paid-embedding, Phase 1)
+# ---------------------------------------------------------------------------
+
+
+def _stored_vector(engine: AsyncEngine, memory_id: str) -> list[float] | None:
+    """The embedding actually persisted for ``memory_id``, or None."""
+    raw = _scalar(
+        engine,
+        "SELECT embedding::text FROM coord.memory_records WHERE memory_id = :m",
+        m=memory_id,
+    )
+    return None if raw is None else [float(x) for x in raw.strip("[]").split(",")]
+
+
+def _stored_model(engine: AsyncEngine, memory_id: str) -> str | None:
+    return _scalar(
+        engine,
+        "SELECT embedding_model FROM coord.memory_records WHERE memory_id = :m",
+        m=memory_id,
+    )
+
+
+class TestClientSuppliedEmbeddings:
+    """The backend stores the caller's vector verbatim, or NULL — never one
+    it computed itself."""
+
+    def test_supplied_vector_is_stored_verbatim(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        content = "the caller embedded this itself"
+        write = mc.client.post(
+            "/api/v1/memory/records", json={"records": [_record(content)]}
+        )
+        assert write.status_code == 200
+        memory_id = write.json()["records"][0]["memory_id"]
+
+        stored = _stored_vector(db, memory_id)
+        assert stored == pytest.approx(_client_vector(content), abs=1e-6)
+        assert _stored_model(db, memory_id) == EMBEDDING_MODEL_TAG
+
+    def test_write_without_embedding_lands_with_null(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """Graceful degradation: no vector → the write still SUCCEEDS, the
+        row is stored unvectorized, and it stays FTS-retrievable."""
+        resp = mc.client.post(
+            "/api/v1/memory/records",
+            json={"records": [_unembedded_record("unvectorized narwhal note")]},
+        )
+        assert resp.status_code == 200
+        memory_id = resp.json()["records"][0]["memory_id"]
+
+        assert _stored_vector(db, memory_id) is None
+        assert _stored_model(db, memory_id) is None
+
+        # Immediately retrievable through the lexical arm regardless.
+        hits = mc.client.post(
+            "/api/v1/memory/query", json={"query_text": "unvectorized narwhal"}
+        ).json()["hits"]
+        assert [h["memory_id"] for h in hits] == [memory_id]
+
+    def test_mixed_batch_stores_per_record_vectors(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """One batch, one row with a vector and one without — the set-based
+        insert must not smear either onto the other."""
+        resp = mc.client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    _record("vectorized quokka fact"),
+                    _unembedded_record("bare wombat fact"),
+                ]
+            },
+        )
+        assert resp.status_code == 200
+        with_vec, without_vec = (r["memory_id"] for r in resp.json()["records"])
+        assert _stored_vector(db, with_vec) == pytest.approx(
+            _client_vector("vectorized quokka fact"), abs=1e-6
+        )
+        assert _stored_model(db, with_vec) == EMBEDDING_MODEL_TAG
+        assert _stored_vector(db, without_vec) is None
+        assert _stored_model(db, without_vec) is None
+
+    def test_wrong_dim_vector_is_422(self, mc: MemoryClient) -> None:
+        resp = mc.client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    _record("short vector", embedding=[0.1] * (EMBEDDING_DIM - 1))
+                ]
+            },
+        )
+        assert resp.status_code == 422
+        assert "383" in json.dumps(resp.json())
+
+    def test_unknown_model_tag_is_422(self, mc: MemoryClient) -> None:
+        rec = _record("tagged with a foreign model")
+        rec["embedding_model"] = "some-other-model@v9"
+        resp = mc.client.post("/api/v1/memory/records", json={"records": [rec]})
+        assert resp.status_code == 422
+
+    def test_vector_without_model_tag_is_422(self, mc: MemoryClient) -> None:
+        rec = _record("vector with no tag")
+        del rec["embedding_model"]
+        resp = mc.client.post("/api/v1/memory/records", json={"records": [rec]})
+        assert resp.status_code == 422
+
+    def test_query_without_embedding_is_fts_only(self, mc: MemoryClient) -> None:
+        """No query vector → the cosine arm is SKIPPED and the response SAYS
+        so. FTS-only results must never masquerade as hybrid."""
+        mc.client.post(
+            "/api/v1/memory/records",
+            json={"records": [_record("the okapi hides in dense forest")]},
+        )
+        resp = mc.client.post(
+            "/api/v1/memory/query", json={"query_text": "okapi forest"}
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["vector_arm"] == "skipped_no_embedding"
+        assert body["hits"], "the lexical arm still retrieves"
+        for hit in body["hits"]:
+            assert hit["vector_rank"] is None
+            assert hit["cosine_similarity"] is None
+            assert hit["fts_rank"] is not None
+
+    def test_query_with_embedding_is_hybrid(self, mc: MemoryClient) -> None:
+        content = "the okapi hides in dense forest"
+        mc.client.post("/api/v1/memory/records", json={"records": [_record(content)]})
+        resp = mc.client.post(
+            "/api/v1/memory/query",
+            json={"query_text": content, "query_embedding": _client_vector(content)},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["vector_arm"] == "hybrid"
+        assert body["hits"][0]["vector_rank"] == 1
+        assert body["hits"][0]["cosine_similarity"] is not None
+
+    def test_query_wrong_dim_embedding_is_422(self, mc: MemoryClient) -> None:
+        resp = mc.client.post(
+            "/api/v1/memory/query",
+            json={"query_text": "anything", "query_embedding": [0.1] * 383},
+        )
+        assert resp.status_code == 422
+
+    def test_supersede_without_embedding_lands_null(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        write = mc.client.post(
+            "/api/v1/memory/records",
+            json={"records": [_record("the tapir sleeps at noon")]},
+        )
+        old_id = write.json()["records"][0]["memory_id"]
+        resp = mc.client.post(
+            f"/api/v1/memory/records/{old_id}/supersede",
+            json={"title": "note", "content": "the tapir sleeps at dusk"},
+        )
+        assert resp.status_code == 200
+        new_id = resp.json()["memory_id"]
+        # The OLD row's vector is never inherited by the successor.
+        assert _stored_vector(db, new_id) is None
+        assert _stored_model(db, new_id) is None
+
+    def test_supersede_with_embedding_stores_it(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        write = mc.client.post(
+            "/api/v1/memory/records",
+            json={"records": [_record("the tapir sleeps at noon")]},
+        )
+        old_id = write.json()["records"][0]["memory_id"]
+        replacement = "the tapir sleeps at dusk"
+        resp = mc.client.post(
+            f"/api/v1/memory/records/{old_id}/supersede",
+            json={
+                "title": "note",
+                "content": replacement,
+                "embedding": _client_vector(replacement),
+                "embedding_model": EMBEDDING_MODEL_TAG,
+            },
+        )
+        assert resp.status_code == 200
+        new_id = resp.json()["memory_id"]
+        assert _stored_vector(db, new_id) == pytest.approx(
+            _client_vector(replacement), abs=1e-6
+        )
+        assert _stored_model(db, new_id) == EMBEDDING_MODEL_TAG
+
+    def test_supersede_wrong_dim_is_422(self, mc: MemoryClient) -> None:
+        write = mc.client.post(
+            "/api/v1/memory/records",
+            json={"records": [_record("the tapir sleeps at noon")]},
+        )
+        old_id = write.json()["records"][0]["memory_id"]
+        resp = mc.client.post(
+            f"/api/v1/memory/records/{old_id}/supersede",
+            json={
+                "title": "note",
+                "content": "the tapir sleeps at dusk",
+                "embedding": [0.1] * 383,
+                "embedding_model": EMBEDDING_MODEL_TAG,
+            },
+        )
+        assert resp.status_code == 422
+
+
 class TestSynthesisEndpoints:
     """The claim/result wire contract a runner poller builds against."""
 
@@ -925,6 +1165,76 @@ class TestSynthesisEndpoints:
             )
             == "done"
         )
+
+    def test_result_with_runner_embedding_stores_it(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """The runner pays for the mental_model's vector too."""
+        job_id = self._seed_job(db, mc.tenant_id, ["one", "two"])
+        mc.client.post("/api/v1/memory/synthesis-jobs/claim", json={"limit": 4})
+        model_text = "a distilled mental model of the cluster"
+        resp = mc.client.post(
+            f"/api/v1/memory/synthesis-jobs/{job_id}/result",
+            json={
+                "result_text": model_text,
+                "embedding": _client_vector(model_text),
+                "embedding_model": EMBEDDING_MODEL_TAG,
+            },
+        )
+        assert resp.status_code == 200
+        stored = _scalar(
+            db,
+            "SELECT embedding::text FROM coord.memory_records "
+            "WHERE kind = 'mental_model' AND tenant_id = :t",
+            t=mc.tenant_id,
+        )
+        assert stored is not None
+        got = [float(x) for x in stored.strip("[]").split(",")]
+        assert got == pytest.approx(_client_vector(model_text), abs=1e-6)
+
+    def test_result_without_embedding_lands_null(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """No runner vector → the mental_model is stored unvectorized (the
+        reindex sweep picks it up); the backend never embeds it itself."""
+        job_id = self._seed_job(db, mc.tenant_id, ["one", "two"])
+        mc.client.post("/api/v1/memory/synthesis-jobs/claim", json={"limit": 4})
+        resp = mc.client.post(
+            f"/api/v1/memory/synthesis-jobs/{job_id}/result",
+            json={"result_text": "an unvectorized distilled model"},
+        )
+        assert resp.status_code == 200
+        assert (
+            _scalar(
+                db,
+                "SELECT embedding IS NULL FROM coord.memory_records "
+                "WHERE kind = 'mental_model' AND tenant_id = :t",
+                t=mc.tenant_id,
+            )
+            is True
+        )
+
+    def test_result_wrong_dim_embedding_is_422(self, mc: MemoryClient) -> None:
+        resp = mc.client.post(
+            f"/api/v1/memory/synthesis-jobs/{uuid4()}/result",
+            json={
+                "result_text": "text",
+                "embedding": [0.1] * 383,
+                "embedding_model": EMBEDDING_MODEL_TAG,
+            },
+        )
+        assert resp.status_code == 422
+
+    def test_result_unknown_model_tag_is_422(self, mc: MemoryClient) -> None:
+        resp = mc.client.post(
+            f"/api/v1/memory/synthesis-jobs/{uuid4()}/result",
+            json={
+                "result_text": "text",
+                "embedding": [0.1] * EMBEDDING_DIM,
+                "embedding_model": "not-our-model@v1",
+            },
+        )
+        assert resp.status_code == 422
 
     def test_result_failure_records(self, mc: MemoryClient, db: AsyncEngine) -> None:
         job_id = self._seed_job(db, mc.tenant_id, ["x"])

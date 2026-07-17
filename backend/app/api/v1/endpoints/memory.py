@@ -2,16 +2,27 @@
 
 Phase 1 of ``D:/qontinui-root/plans/2026-07-10-tenant-agentic-memory-web-backend.md``.
 
+Embeddings are CLIENT-supplied on every request path here (Phase 1 of
+``2026-07-13-runner-paid-embedding``): no endpoint in this module embeds.
+A caller sends its own vector (validated against ``EMBEDDING_DIM`` +
+``ACCEPTED_EMBEDDING_MODEL_TAGS`` — a mismatch is a 422, never a silent
+wrong-space write) or omits it, in which case the row is stored with a
+NULL embedding, stays retrievable through the FTS arm, and is vectorized
+later by the reindex sweep. There is deliberately no embed-for-you
+fallback.
+
 Endpoints (mounted under ``/api/v1/memory``):
 
 * ``POST /records``                      — batch write (redact → hash →
-  quota → embed → dedup-insert), optionally declaring typed graph
-  ``links`` per record (Librarian Phase 4).
+  quota → dedup-insert; no server-side embed), optionally declaring
+  typed graph ``links`` per record (Librarian Phase 4).
 * ``GET /records``                       — keyset-paginated list of live
   records (newest-first-stable), with outbound links — the runner
   sync-pull surface.
 * ``POST /query``                        — hybrid retrieval: pgvector
-  HNSW cosine + websearch FTS, fused with RRF (k=60).
+  HNSW cosine + websearch FTS, fused with RRF (k=60). The cosine arm
+  runs only when the caller supplies ``query_embedding``; the response's
+  ``vector_arm`` always says which happened.
 * ``POST /graph``                        — bounded outbound traversal of
   ``coord.memory_links`` from a root record → ``{nodes, edges}``.
 * ``POST /records/{id}/supersede``       — insert replacement, end the
@@ -21,8 +32,9 @@ Endpoints (mounted under ``/api/v1/memory``):
 * ``POST /synthesis-jobs/claim``         — a runner claims pending
   clustering jobs (backend clusters, runner synthesizes).
 * ``POST /synthesis-jobs/{id}/result``   — the runner posts the
-  synthesized model (success) or a failure reason back; success embeds
-  + inserts the ``mental_model`` row and supersedes the members.
+  synthesized model (success, with its own embedding) or a failure
+  reason back; success inserts the ``mental_model`` row and supersedes
+  the members.
 
 Auth (fail-closed): the tenant comes EXCLUSIVELY from the server-side
 principal resolved by :func:`get_memory_tenant` — never from the request
@@ -47,13 +59,12 @@ No credential → 401. Credential valid but no tenant resolvable → 403.
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import binascii
 import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, get_args
+from typing import Any, Literal, get_args
 from uuid import UUID
 
 import structlog
@@ -101,12 +112,6 @@ from app.services.coord_jwks import (
     CoordJWKSUnavailableError,
     CoordTokenInvalidError,
     coord_jwks_client,
-)
-from app.services.memory_embedder import (
-    MemoryEmbedderUnavailableError,
-    MemoryEmbeddingDimensionError,
-    ensure_embedding_dims,
-    get_embedder,
 )
 from app.services.memory_redaction import log_redactions, redact_text
 from app.services.memory_retrieval import rrf_fuse
@@ -236,59 +241,6 @@ async def get_memory_tenant(
     )
 
 
-# --------------------------------------------------------------------------
-# Embedding helpers
-# --------------------------------------------------------------------------
-
-
-def _embed_batch_sync(texts: list[str]) -> list[list[float]]:
-    """One embedder batch, with typed failures mapped to HTTP statuses.
-
-    * embedder/model unavailable → 503 (never silently store NULL
-      embeddings — NULL-embedding rows are a watched drift class),
-    * wrong dimensionality or wrong count → 500 (checked BEFORE any
-      insert reaches the ``vector(384)`` column).
-
-    Synchronous (the fastembed ONNX embedder is sync, and its first call
-    downloads/loads the model) — endpoints must reach it through
-    :func:`_embed_batch` so it runs on a worker thread, never on the
-    event loop.
-    """
-    try:
-        embeddings = get_embedder().embed_texts(texts)
-    except MemoryEmbedderUnavailableError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"memory embedder unavailable: {exc}",
-        ) from exc
-    if len(embeddings) != len(texts):
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=(
-                f"embedder returned {len(embeddings)} vectors for {len(texts)} texts"
-            ),
-        )
-    try:
-        ensure_embedding_dims(embeddings)
-    except MemoryEmbeddingDimensionError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(exc),
-        ) from exc
-    return embeddings
-
-
-async def _embed_batch(texts: list[str]) -> list[list[float]]:
-    """:func:`_embed_batch_sync` offloaded to a worker thread.
-
-    The embedder call (including the implicit first-use model
-    download/load inside ``get_embedder``) blocks; running it in-loop
-    would stall every request on the backend. Only the embed call moves
-    off-loop — DB work stays on the event loop.
-    """
-    return await asyncio.to_thread(_embed_batch_sync, texts)
-
-
 def _content_hash(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
@@ -355,9 +307,10 @@ async def write_records(
     """Batch-write memory records (≤100 per request).
 
     Server-side pipeline per batch: redact → hash → quota check (BEFORE
-    insert; 429 on exceed) → embed the non-deduplicated contents in one
-    fastembed batch (on a worker thread) → ONE set-based insert deduping
-    on ``(tenant_id, content_hash)`` against live rows only.
+    insert; 429 on exceed) → ONE set-based insert deduping on
+    ``(tenant_id, content_hash)`` against live rows only. Each record
+    carries its own caller-computed ``embedding`` (+ ``embedding_model``)
+    or neither, in which case that row is stored unvectorized.
     """
     # 1. Redact (server-side pass; log counts only, never the secrets).
     redaction_counts: dict[str, int] = {}
@@ -413,16 +366,13 @@ async def write_records(
             },
         )
 
-    # 4. Embed all new contents in ONE fastembed batch (off-loop).
-    new_hashes = list(new_by_hash)
-    embeddings = await _embed_batch([new_by_hash[h] for h in new_hashes])
-    embedding_by_hash = dict(zip(new_hashes, embeddings, strict=True))
-
-    # 5. Insert every genuinely-new unique content in ONE set-based
+    # 4. Insert every genuinely-new unique content in ONE set-based
     # statement (dedup via the live-row partial-index ON CONFLICT).
     # Intra-batch duplicates were collapsed in step 3 to their FIRST
-    # occurrence — that record's scope/kind/title/importance/source win;
-    # later occurrences report ``deduped=True`` onto the same row.
+    # occurrence — that record's scope/kind/title/importance/source AND
+    # its embedding win; later occurrences report ``deduped=True`` onto
+    # the same row.
+    new_hashes = list(new_by_hash)
     first_index: dict[str, int] = {}
     for i, h in enumerate(hashes):
         first_index.setdefault(h, i)
@@ -434,7 +384,8 @@ async def write_records(
             title=titles[first_index[h]],
             content=contents[first_index[h]],
             content_hash=h,
-            embedding=embedding_by_hash[h],
+            embedding=payload.records[first_index[h]].embedding,
+            embedding_model=payload.records[first_index[h]].embedding_model,
             importance=payload.records[first_index[h]].importance,
             source=payload.records[first_index[h]].source,
         )
@@ -447,7 +398,7 @@ async def write_records(
         zip(new_hashes, batch_results, strict=True)
     )
 
-    # 6. Per-record responses, in request order.
+    # 5. Per-record responses, in request order.
     results: list[WriteRecordResult] = []
     for i, rec in enumerate(payload.records):
         h = hashes[i]
@@ -459,8 +410,9 @@ async def write_records(
                 results.append(WriteRecordResult(memory_id=existing_id, deduped=True))
                 continue
             # Vanishingly rare race (row invalidated between the hash
-            # pre-check and now): embed this one record and insert it.
-            embedding = (await _embed_batch([contents[i]]))[0]
+            # pre-check and now): insert this one record on its own,
+            # reusing ITS OWN caller-supplied vector (or none) — the race
+            # path must never grow a server-side embed back.
             memory_id, deduped = await store.insert_record(
                 db,
                 tenant_id=principal.tenant_id,
@@ -470,7 +422,8 @@ async def write_records(
                 title=titles[i],
                 content=contents[i],
                 content_hash=h,
-                embedding=embedding,
+                embedding=rec.embedding,
+                embedding_model=rec.embedding_model,
                 importance=rec.importance,
                 source=rec.source,
             )
@@ -549,14 +502,18 @@ async def query_records(
     ``valid_from``/``valid_until`` against now() or ``as_of``).
     ``agent``/``session``-scoped rows are only visible when the request
     names those scopes AND supplies the matching ``scope_ref``.
+
+    The semantic arm needs a vector, and this endpoint never computes
+    one: with ``query_embedding`` the query is hybrid; without it the
+    cosine arm is SKIPPED and the result is FTS-only. Which one ran is
+    reported in ``vector_arm`` — never inferred, so an FTS-only result
+    can't pass for a hybrid one.
     """
     as_of = payload.as_of or datetime.now(UTC)
     scopes: list[str] = (
         list(payload.scopes) if payload.scopes else list(_DEFAULT_QUERY_SCOPES)
     )
     kinds: list[str] | None = list(payload.kinds) if payload.kinds else None
-
-    query_embedding = (await _embed_batch([payload.query_text]))[0]
 
     filter_kwargs: dict[str, Any] = {
         "tenant_id": principal.tenant_id,
@@ -567,9 +524,16 @@ async def query_records(
         "min_importance": payload.min_importance,
         "since": payload.since,
     }
-    vector_hits = await store.vector_search(
-        db, query_embedding=query_embedding, **filter_kwargs
-    )
+    vector_arm: Literal["hybrid", "skipped_no_embedding"]
+    vector_hits: list[tuple[UUID, float]]
+    if payload.query_embedding is not None:
+        vector_hits = await store.vector_search(
+            db, query_embedding=payload.query_embedding, **filter_kwargs
+        )
+        vector_arm = "hybrid"
+    else:
+        vector_hits = []
+        vector_arm = "skipped_no_embedding"
     fts_ids = await store.fts_search(db, query_text=payload.query_text, **filter_kwargs)
 
     fused = rrf_fuse([mid for mid, _sim in vector_hits], fts_ids)
@@ -601,7 +565,7 @@ async def query_records(
         )
 
     await store.bump_access(db, principal.tenant_id, [h.memory_id for h in hits])
-    return MemoryQueryResponse(hits=hits)
+    return MemoryQueryResponse(hits=hits, vector_arm=vector_arm)
 
 
 @router.get("/records", response_model=ListRecordsResponse)
@@ -748,7 +712,9 @@ async def supersede_record(
     """Replace a record: insert the successor, end the old row's validity.
 
     404 for records that don't exist in the caller's tenant (including
-    cross-tenant ids — never disclosed).
+    cross-tenant ids — never disclosed). The successor's ``embedding`` is
+    the caller's (of the replacement content) or NULL — the old row's
+    vector is never inherited, and nothing is embedded server-side.
     """
     old = await store.get_record(db, principal.tenant_id, memory_id)
     if old is None:
@@ -766,7 +732,6 @@ async def supersede_record(
     log_redactions("memory_supersede", combined)
 
     content_hash = _content_hash(rc.text)
-    embedding = (await _embed_batch([rc.text]))[0]
 
     new_id, deduped = await store.insert_record(
         db,
@@ -779,7 +744,8 @@ async def supersede_record(
         title=rt.text,
         content=rc.text,
         content_hash=content_hash,
-        embedding=embedding,
+        embedding=payload.embedding,
+        embedding_model=payload.embedding_model,
         importance=(
             payload.importance
             if payload.importance is not None
@@ -889,10 +855,14 @@ async def submit_synthesis_result(
 ) -> SynthesisResultResponse:
     """The runner posts a synthesized model (success) or a failure reason.
 
-    Success (``result_text``): the text is redacted, embedded with the
-    LOCAL model, inserted as a ``mental_model`` row (``consolidated_from``
-    = the cluster members, importance = best member + 0.1), and the
-    member rows are superseded — all in one transaction → ``applied``.
+    Success (``result_text`` + the runner's own ``embedding`` of it, or
+    no embedding at all): the text is redacted, inserted as a
+    ``mental_model`` row (``consolidated_from`` = the cluster members,
+    importance = best member + 0.1), and the member rows are superseded —
+    all in one transaction → ``applied``. The backend never embeds here:
+    the runner already ran an LLM over this cluster, so the vector is
+    its to supply; omitting it stores the row unvectorized for the
+    reindex sweep.
     Failure (``failure``): the job is marked failed → ``recorded``.
     404 when the job is not in the caller's tenant (never disclosed); 409
     when the job exists but is not in ``'claimed'`` status (already applied,
@@ -920,21 +890,16 @@ async def submit_synthesis_result(
     assert payload.result_text is not None
     try:
         new_id = await store.record_synthesis_result(
-            db, principal.tenant_id, job_id, payload.result_text
+            db,
+            principal.tenant_id,
+            job_id,
+            payload.result_text,
+            embedding=payload.embedding,
+            embedding_model=payload.embedding_model,
         )
     except store.SynthesisJobNotClaimedError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail=str(exc)
-        ) from exc
-    except MemoryEmbedderUnavailableError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"memory embedder unavailable: {exc}",
-        ) from exc
-    except MemoryEmbeddingDimensionError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(exc),
         ) from exc
     if new_id is None:
         raise HTTPException(

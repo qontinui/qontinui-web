@@ -26,7 +26,6 @@ agree on seeded rows.
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 from dataclasses import dataclass
@@ -39,11 +38,6 @@ from sqlalchemy import CursorResult, Float, Text, bindparam, text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.memory_embedder import (
-    EMBEDDING_MODEL_TAG,
-    ensure_embedding_dims,
-    get_embedder,
-)
 from app.services.memory_lifecycle import (
     DECAY_ACCESS_CAP,
     DECAY_BASE_HORIZON_DAYS,
@@ -86,6 +80,17 @@ _LIVE_DEDUP_PREDICATE = (
 def format_pgvector(vector: list[float]) -> str:
     """Render a vector as pgvector's text literal (``[v1,v2,...]``)."""
     return "[" + ",".join(repr(float(v)) for v in vector) + "]"
+
+
+def _format_pgvector_opt(vector: list[float] | None) -> str | None:
+    """:func:`format_pgvector`, passing NULL through.
+
+    ``None`` means "not vectorized (yet)" — a supported state since the
+    request path stopped embedding (embeddings are client-supplied). It
+    lands as a NULL ``embedding``, which :func:`fetch_reindex_batch`
+    already targets for later vectorization.
+    """
+    return None if vector is None else format_pgvector(vector)
 
 
 def _content_hash(content: str) -> str:
@@ -185,7 +190,8 @@ async def insert_record(
     title: str,
     content: str,
     content_hash: str,
-    embedding: list[float],
+    embedding: list[float] | None,
+    embedding_model: str | None,
     importance: float,
     source: dict[str, Any],
     consolidated_from: list[UUID] | None = None,
@@ -199,6 +205,11 @@ async def insert_record(
     ``(memory_id, deduped)`` — on conflict the EXISTING live row's id is
     returned with ``deduped=True``. ``consolidated_from`` carries the
     member lineage of a synthesized ``mental_model`` row (Phase 4).
+
+    ``embedding`` / ``embedding_model`` are CLIENT-supplied and travel
+    together; both may be ``None``, storing the row unvectorized (still
+    FTS-retrievable) for the reindex sweep to embed later. Callers
+    validate the pair — this layer stores what it is handed.
     """
     inserted = (
         await session.execute(
@@ -227,8 +238,8 @@ async def insert_record(
                 "title": title,
                 "content": content,
                 "content_hash": content_hash,
-                "embedding": format_pgvector(embedding),
-                "embedding_model": EMBEDDING_MODEL_TAG,
+                "embedding": _format_pgvector_opt(embedding),
+                "embedding_model": embedding_model,
                 "importance": importance,
                 "source": json.dumps(source),
                 "consolidated_from": consolidated_from,
@@ -263,7 +274,9 @@ class MemoryRecordInsert:
     title: str
     content: str
     content_hash: str
-    embedding: list[float]
+    # Client-supplied; ``None`` (both fields) stores the row unvectorized.
+    embedding: list[float] | None
+    embedding_model: str | None
     importance: float
     source: dict[str, Any]
 
@@ -295,7 +308,7 @@ async def insert_records_batch(
              content_hash, embedding, embedding_model, importance, source)
         SELECT :tenant_id, u.scope, u.scope_ref, u.kind, u.title,
                u.content, u.content_hash, CAST(u.embedding AS vector),
-               :embedding_model, u.importance, CAST(u.source AS jsonb)
+               u.embedding_model, u.importance, CAST(u.source AS jsonb)
         FROM unnest(
                  CAST(:scopes AS text[]),
                  CAST(:scope_refs AS text[]),
@@ -304,10 +317,11 @@ async def insert_records_batch(
                  CAST(:contents AS text[]),
                  CAST(:content_hashes AS text[]),
                  CAST(:embeddings AS text[]),
+                 CAST(:embedding_models AS text[]),
                  CAST(:importances AS float8[]),
                  CAST(:sources AS text[])
              ) AS u(scope, scope_ref, kind, title, content, content_hash,
-                    embedding, importance, source)
+                    embedding, embedding_model, importance, source)
         ON CONFLICT (tenant_id, content_hash)
             WHERE {_LIVE_DEDUP_PREDICATE}
             DO NOTHING
@@ -321,6 +335,7 @@ async def insert_records_batch(
         bindparam("contents", type_=ARRAY(Text())),
         bindparam("content_hashes", type_=ARRAY(Text())),
         bindparam("embeddings", type_=ARRAY(Text())),
+        bindparam("embedding_models", type_=ARRAY(Text())),
         bindparam("importances", type_=ARRAY(Float())),
         bindparam("sources", type_=ARRAY(Text())),
     )
@@ -328,14 +343,14 @@ async def insert_records_batch(
         stmt,
         {
             "tenant_id": tenant_id,
-            "embedding_model": EMBEDDING_MODEL_TAG,
             "scopes": [i.scope for i in items],
             "scope_refs": [i.scope_ref for i in items],
             "kinds": [i.kind for i in items],
             "titles": [i.title for i in items],
             "contents": [i.content for i in items],
             "content_hashes": [i.content_hash for i in items],
-            "embeddings": [format_pgvector(i.embedding) for i in items],
+            "embeddings": [_format_pgvector_opt(i.embedding) for i in items],
+            "embedding_models": [i.embedding_model for i in items],
             "importances": [i.importance for i in items],
             "sources": [json.dumps(i.source) for i in items],
         },
@@ -1702,14 +1717,15 @@ async def record_synthesis_result(
     job_id: UUID,
     result_text: str,
     *,
+    embedding: list[float] | None,
+    embedding_model: str | None,
     now: datetime | None = None,
 ) -> UUID | None:
     """Apply a runner's synthesis result: insert the mental_model, mark done.
 
     One atomic transaction (the caller commits): load + lock the job,
     redact the runner-supplied text, read the members' max importance,
-    embed the redacted text with the LOCAL model, insert the
-    ``mental_model`` row (``consolidated_from`` = members,
+    insert the ``mental_model`` row (``consolidated_from`` = members,
     ``importance`` = min(max_member + 0.1, 1.0),
     ``source.synthesis_job`` = job id), supersede the member rows, and
     flip the job to ``done``. Returns the new ``mental_model`` memory id,
@@ -1721,8 +1737,15 @@ async def record_synthesis_result(
     the first sees ``'claimed'`` and applies; the second then sees
     ``'done'`` and 409s.
 
-    Redaction runs BEFORE hashing/embedding/insert so a runner can never
-    smuggle a secret into the store through the synthesized text.
+    ``embedding`` is the RUNNER's vector for ``result_text`` (validated by
+    the endpoint); it is never computed here — the runner already ran an
+    LLM over this cluster and owns the embedding cost too. ``None`` stores
+    the ``mental_model`` unvectorized for the reindex sweep.
+
+    Redaction runs BEFORE hashing/insert so a runner can never smuggle a
+    secret into the store through the synthesized text. NOTE: the vector
+    is the runner's, computed over its PRE-redaction text — a property
+    every client-supplied embedding on this API shares.
     """
     now = now or datetime.now(UTC)
 
@@ -1773,11 +1796,6 @@ async def record_synthesis_result(
     )
     importance = min(max_importance + SYNTHESIS_IMPORTANCE_BONUS, 1.0)
 
-    # Embed off the event loop — the fastembed ONNX call blocks (and may
-    # load the model on first use); DB work stays on the loop.
-    embedding = await asyncio.to_thread(get_embedder().embed_texts, [redacted])
-    ensure_embedding_dims(embedding)
-
     new_id, _deduped = await insert_record(
         session,
         tenant_id=tenant_id,
@@ -1787,7 +1805,8 @@ async def record_synthesis_result(
         title=synthesized_title(redacted),
         content=redacted,
         content_hash=_content_hash(redacted),
-        embedding=embedding[0],
+        embedding=embedding,
+        embedding_model=embedding_model,
         importance=importance,
         source={"synthesis_job": str(job_id)},
         consolidated_from=member_ids,
