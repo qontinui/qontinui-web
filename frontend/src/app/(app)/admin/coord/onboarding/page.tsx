@@ -19,12 +19,19 @@
  */
 
 import { ConnectGitHubOrg } from "@/components/operations/ConnectGitHubOrg";
+import { ConnectInstalledOrg } from "@/components/operations/ConnectInstalledOrg";
 import { MergeOrchestrationOnboarding } from "@/components/operations/MergeOrchestrationOnboarding";
 
 export default function OnboardingPage() {
   return (
     <div className="p-3 sm:p-6 space-y-6" data-testid="coord-onboarding-page">
       <ConnectGitHubOrg />
+      {/*
+        Secondary path for an org that ALREADY has the App installed: GitHub
+        issues no Setup-URL code on a re-visit, so the install CTA above can
+        never complete a claim for it. Renders only when coord has OAuth creds.
+      */}
+      <ConnectInstalledOrg />
       <MergeOrchestrationOnboarding />
     </div>
   );
