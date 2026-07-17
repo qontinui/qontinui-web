@@ -45,6 +45,8 @@ function actionSummary(row: PolicyRow): string {
     if (action.type === "auto_answer") return `→ ${action.response}`;
     if (action.type === "resolve_by_scoring")
       return `→ score ${action.options.length} option(s) on ${action.surface}`;
+    if (action.type === "meta_answer")
+      return "→ decision-delegation meta-answer";
   }
   return "";
 }
@@ -56,6 +58,7 @@ export function RuleList() {
     saving,
     createRule,
     updateRule,
+    restoreDefault,
     deleteRule,
     overrideRule,
     revertOverride,
@@ -136,6 +139,7 @@ export function RuleList() {
         saving={saving}
         onCreate={createRule}
         onUpdate={updateRule}
+        onRestore={restoreDefault}
         onOverride={overrideRule}
       />
 
@@ -199,10 +203,7 @@ function RuleRow({
 
   return (
     <div className="group flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-3">
-      <KindIcon
-        className="size-4 shrink-0 text-muted-foreground"
-        aria-hidden
-      />
+      <KindIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
