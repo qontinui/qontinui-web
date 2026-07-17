@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -318,8 +318,24 @@ export function RuleEditorDialog({
     if (ok) onOpenChange(false);
   };
 
+  // Synchronous re-entry guard. `canSubmit` already checks `saving`, but that
+  // state lands a render later — two click events in the same tick (a real
+  // double-click, or a driver dispatching duplicate events) both see
+  // `saving=false` and create the rule twice. A ref flips before the first
+  // await, so the second call returns before POSTing.
+  const submitInFlight = useRef(false);
+
   const handleSubmit = async () => {
-    if (!canSubmit) return;
+    if (!canSubmit || submitInFlight.current) return;
+    submitInFlight.current = true;
+    try {
+      await doSubmit();
+    } finally {
+      submitInFlight.current = false;
+    }
+  };
+
+  const doSubmit = async () => {
     const action = buildAction();
     const condition = buildCondition();
     let ok: boolean;
