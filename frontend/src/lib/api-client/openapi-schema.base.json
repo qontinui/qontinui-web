@@ -70715,6 +70715,365 @@
         ]
       }
     },
+    "/api/v1/operations/coord/prompt-documents": {
+      "get": {
+        "description": "List the tenant's prompt documents (no bodies), optionally filtered to a\nsingle ``kind``. Any authenticated tenant member.\n\nCoord's list route seeds the canonical documents on first touch, so a fresh\ntenant sees the full set immediately. An unknown ``kind`` is coord's 400.",
+        "operationId": "api_v1_operations_coord_prompt_documents_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response List Prompt Documents Api V1 Operations Coord Prompt Documents Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Prompt Documents",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/prompt-documents/{kind}/{name}": {
+      "get": {
+        "description": "Fetch one prompt document (with body) by ``(kind, name)``. Any\nauthenticated tenant member.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Prompt Document Api V1 Operations Coord Prompt Documents  Kind   Name  Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Prompt Document",
+        "tags": [
+          "operations"
+        ]
+      },
+      "patch": {
+        "description": "Edit a prompt document's description/body. Tenant-admin only.\n\nThe body is forwarded as ``{description?, body?, change_description?}`` with\n``updated_by`` stamped from the authenticated session (see\n:func:`_editor_identity`) \u2014 a body-supplied ``updated_by`` is ignored, so the\nversion snapshot coord writes carries the real editor. Coord creates a new\nimmutable version on every successful edit; nothing is overwritten in place.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Update Prompt Document Api V1 Operations Coord Prompt Documents  Kind   Name  Patch"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update Prompt Document",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/prompt-documents/{kind}/{name}/restore-default": {
+      "post": {
+        "description": "Re-seed a prompt document's body from its code default. Tenant-admin only.\n\nOnly documents carrying a ``default_source`` can be restored; coord 4xx (no\ndefault, unknown document) passes through. The restore is itself an edit \u2014\ncoord snapshots a new version \u2014 so it is reversible from the history view.\nNo request body.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_restore_default_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Restore Prompt Document Default Api V1 Operations Coord Prompt Documents  Kind   Name  Restore Default Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Restore Prompt Document Default",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/prompt-documents/{kind}/{name}/versions": {
+      "get": {
+        "description": "Version-history metadata for one prompt document (newest first, no\nbodies). Any authenticated tenant member.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_versions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response List Prompt Document Versions Api V1 Operations Coord Prompt Documents  Kind   Name  Versions Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Prompt Document Versions",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/prompt-documents/{kind}/{name}/versions/{version}": {
+      "get": {
+        "description": "One immutable version snapshot (with body) of a prompt document \u2014 the\nleft-hand side of the editor's diff view. Any authenticated tenant member.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_versions_version_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Prompt Document Version Api V1 Operations Coord Prompt Documents  Kind   Name  Versions  Version  Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Prompt Document Version",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/pull-decisions": {
       "get": {
         "description": "Return the ``repo_pull`` decision audit feed from coord (tenant-scoped).\n\nForwards to coord's ``GET /coord/policies/resolutions`` with\n``decision_domain=repo_pull`` always pinned, plus the optional\n``device_id`` / ``repo`` / ``limit`` / ``since`` filters. Drives the\n``/admin/coord/pull-decisions`` activity page.",
