@@ -126,3 +126,8 @@ backend/reset_aws_password.example.env
 # package-lock.json); stray lockfiles from other managers must never be committed.
 frontend/pnpm-lock.yaml
 frontend/yarn.lock
+
+# coord-mcp device credential (nonce/JWT) is written into the worktree as
+# .mcp.json at launch. It is a live credential and must never be committed.
+# (Was previously only in .git/info/exclude — local-only, lost on fresh clone/CI.)
+.mcp.json
