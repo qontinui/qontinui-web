@@ -1331,6 +1331,41 @@ async def get_pr_merge_onboarding_accounts(
     return await _proxy_coord_get(COORD_ONBOARDING_ACCOUNTS_PATH, tenant_id=tenant_id)
 
 
+# ---- GitHub App public identity (for the user-authorization URL) ----------
+#
+# Backs the "already installed but unbound" connect path. GitHub issues a
+# Setup-URL `code` only on a FRESH install, so an org that already has the App
+# installed dead-ends: the claim's org-admin gate needs a code and none is ever
+# issued. The `login/oauth/authorize` endpoint issues a code regardless of
+# install state, but the browser needs the App's `client_id` to build that URL.
+# Coord already holds `GITHUB_APP_CLIENT_ID`, so we proxy it rather than adding
+# a second copy of the config here (one source of truth; no new deploy env).
+# The client_id is public by design — it rides in every OAuth URL. The SECRET
+# never leaves coord.
+COORD_ONBOARDING_GITHUB_APP_PATH = "/coord/onboarding/github-app"
+
+
+@router.get("/pr-merge/onboarding/github-app")
+async def get_pr_merge_onboarding_github_app(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """The GitHub App's public identity, for building an authorize URL.
+
+    Proxies coord's ``GET /coord/onboarding/github-app``. Response envelope
+    (coord-owned): ``{"app_slug", "client_id", "oauth_configured"}``, where
+    ``client_id`` may be null and ``oauth_configured`` is false when coord has
+    no OAuth creds — the UI hides the connect action rather than sending users
+    into a flow that would 500 ``oauth_not_configured``.
+
+    Returns no tenant-scoped data, but stays ``get_tenant_id``-gated like its
+    onboarding siblings so the App's identity isn't served to anonymous callers.
+    """
+    return await _proxy_coord_get(
+        COORD_ONBOARDING_GITHUB_APP_PATH,
+        tenant_id=tenant_id,
+    )
+
+
 # ---- Zero-touch onboarding claim (Setup-URL OAuth code exchange) ----------
 #
 # The browser is redirected here post-install by GitHub's App Setup URL with
@@ -1355,16 +1390,29 @@ COORD_ONBOARDING_CLAIM_PATH = "/coord/onboarding/github-accounts/claim"
 class OnboardingClaimRequest(BaseModel):
     """Body for ``POST /pr-merge/onboarding/claim``.
 
-    ``code`` — the short-lived GitHub OAuth code from the Setup-URL redirect.
-    ``installation_id`` — the GitHub App installation id from the same
-    redirect. Both are echoed verbatim to coord's claim endpoint.
+    ``code`` — the short-lived GitHub OAuth code. Comes from EITHER the
+    Setup-URL post-install redirect (fresh install) OR the
+    ``login/oauth/authorize`` user-authorization callback (the only way to get
+    a code for an org whose App is ALREADY installed — GitHub issues no
+    Setup-URL code on a re-visit).
+
+    ``installation_id`` / ``account_login`` — which installation to claim. The
+    Setup-URL redirect carries ``installation_id``; the authorize callback
+    carries neither, so that path names the org via ``account_login`` and coord
+    resolves the id from the caller's own ``/user/installations``. Exactly one
+    is required (coord 400s ``target_required`` otherwise); ``installation_id``
+    wins if both are sent. NEITHER selects a tenant — the tenant always comes
+    from the caller's auth — and coord 403s ``installation_not_administered``
+    for an installation the caller doesn't administer, whichever key is used.
+
     ``bind_only`` — when true, coord binds the account WITHOUT enrolling its
     repos (no bootstrap PRs); for the clone-only path. Defaults false =
     bind + enroll (today's behavior).
     """
 
     code: str
-    installation_id: int
+    installation_id: int | None = None
+    account_login: str | None = None
     bind_only: bool = False
 
 
@@ -1385,18 +1433,25 @@ async def post_pr_merge_onboarding_claim(
     4xx/5xx into an ``HTTPException`` whose body is a stringified ``detail``),
     this handler passes coord's status code AND JSON body through verbatim so
     the onboarding-status page can render a status-specific message:
-    ``400 code_exchange_failed`` / ``403 installation_not_administered`` /
-    ``409 account_already_bound`` / ``500 oauth_not_configured``. httpx
-    transport errors mirror the shared helpers (ConnectError → 502,
-    TimeoutException → 504).
+    ``400 code_exchange_failed`` / ``400 target_required`` /
+    ``403 installation_not_administered`` / ``409 account_already_bound`` /
+    ``500 oauth_not_configured``. httpx transport errors mirror the shared
+    helpers (ConnectError → 502, TimeoutException → 504).
     """
     url = f"{settings.COORD_URL}{COORD_ONBOARDING_CLAIM_PATH}"
     headers = _tenant_headers(tenant_id)
-    payload = {
+    # Send only the target key the caller actually supplied. Coord treats a
+    # present-but-null `installation_id` as absent, but omitting it keeps the
+    # wire shape honest about which flow ran and lets coord's `target_required`
+    # 400 fire on a genuinely empty body.
+    payload: dict[str, Any] = {
         "code": body.code,
-        "installation_id": body.installation_id,
         "bind_only": body.bind_only,
     }
+    if body.installation_id is not None:
+        payload["installation_id"] = body.installation_id
+    if body.account_login:
+        payload["account_login"] = body.account_login
     async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
         try:
             resp = await client.post(url, json=payload, headers=headers)
