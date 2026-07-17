@@ -47653,6 +47653,179 @@
         ]
       }
     },
+    "/api/v1/admin/prompt-injections": {
+      "get": {
+        "description": "List prompt-injection events via coord's\n``GET /coord/prompt-injections``.\n\nForwards the ``limit`` / ``source`` / ``session_name`` /\n``agent_session_id`` / ``since`` filters as query params. ``limit``\n(1..500) is validated by FastAPI before forwarding. Returns coord's\n``{\"events\": [...], \"count\": N}`` envelope verbatim.",
+        "operationId": "api_v1_admin_prompt_injections_get",
+        "parameters": [
+          {
+            "description": "Max rows to return (capped at 500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (capped at 500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "If set, filter to injections from this source (question_auto_answer | regex_submit_prompt | regex_resolve_scoring | session_bus_message | continuation_dispatch | spawned_session_initial).",
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "If set, filter to injections from this source (question_auto_answer | regex_submit_prompt | regex_resolve_scoring | session_bus_message | continuation_dispatch | spawned_session_initial).",
+              "title": "Source"
+            }
+          },
+          {
+            "description": "If set, filter to injections for this session name.",
+            "in": "query",
+            "name": "session_name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "If set, filter to injections for this session name.",
+              "title": "Session Name"
+            }
+          },
+          {
+            "description": "If set, filter to injections for this agent session id.",
+            "in": "query",
+            "name": "agent_session_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "If set, filter to injections for this agent session id.",
+              "title": "Agent Session Id"
+            }
+          },
+          {
+            "description": "If set (RFC3339), filter to rows where created_at >= since.",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "If set (RFC3339), filter to rows where created_at >= since.",
+              "title": "Since"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response List Prompt Injections Api V1 Admin Prompt Injections Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Prompt Injections",
+        "tags": [
+          "admin-prompt-injections"
+        ]
+      }
+    },
+    "/api/v1/admin/prompt-injections/{event_id}": {
+      "get": {
+        "description": "Return the full prompt-injection event via coord's\n``GET /coord/prompt-injections/:id`` \u2014 the lazy detail expand,\nincluding the FULL trigger output (``trigger_text``) and injected\nprompt (``injected_prompt``).\n\ncoord 404s on not-found; that propagates as a 404 here (via\n:func:`_proxy_coord_get`'s ``>= 400`` re-raise).",
+        "operationId": "api_v1_admin_prompt_injections_event_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Prompt Injection Api V1 Admin Prompt Injections  Event Id  Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Prompt Injection",
+        "tags": [
+          "admin-prompt-injections"
+        ]
+      }
+    },
     "/api/v1/ai-prompt-templates/{template_id}/versions": {
       "get": {
         "description": "List all versions for a prompt template with pagination.",
