@@ -150,7 +150,9 @@ def test_gate_failures_pass_through_verbatim(
     Collapsing a 403 into a 500 would make an unadministered org look like an
     outage and invite a retry loop.
     """
-    client = _patched_post(_mock_response(status_code=status, json_data={"error": code}))
+    client = _patched_post(
+        _mock_response(status_code=status, json_data={"error": code})
+    )
     with patch("httpx.AsyncClient", return_value=client):
         res = auth_client.post(
             CLAIM_URL, json={"code": "abc", "account_login": "not-mine"}
