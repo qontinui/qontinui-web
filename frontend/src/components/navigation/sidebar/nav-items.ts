@@ -33,6 +33,7 @@ import {
   Boxes,
   Download,
   ListChecks,
+  Coins,
 } from "lucide-react";
 import type { NavItem } from "./types";
 
@@ -132,6 +133,20 @@ export const devNavItems: NavItem[] = [
     route: "/conditions",
     color: "#0EA5E9",
     group: "Automation",
+  },
+
+  // Model Cost Comparison — static, admin-maintained dataset (refreshed via
+  // the /update-model-costs command) comparing per-token API prices and
+  // subscription-plan combinations across LLM providers, with leaderboard
+  // scores. Visible to all authenticated users.
+  {
+    id: "model-cost-comparison",
+    label: "Model Costs",
+    description: "Compare per-token and subscription costs across AI models",
+    icon: React.createElement(Coins, { className: "size-5" }),
+    route: "/model-cost-comparison",
+    color: "#F59E0B",
+    group: "Tools",
   },
 
   // ===========================================================================
