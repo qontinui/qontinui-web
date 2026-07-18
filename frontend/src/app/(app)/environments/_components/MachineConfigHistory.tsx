@@ -47,6 +47,9 @@ function errMessage(err: unknown, fallback: string): string {
   return fallback;
 }
 
+/** Timeline page size — a fetch returning fewer than this means no more pages. */
+const HISTORY_PAGE_SIZE = 50;
+
 interface MachineConfigHistoryProps {
   environmentId: string;
   machineId: string;
@@ -65,6 +68,9 @@ export function MachineConfigHistory({
 }: MachineConfigHistoryProps) {
   const [entries, setEntries] = useState<ConfigHistoryEntry[] | null>(null);
   const [loading, setLoading] = useState(true);
+  /** True while the backend may hold older pages beyond what's accumulated. */
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [fromId, setFromId] = useState<string | null>(null);
   const [toId, setToId] = useState<string | null>(null);
   const [diff, setDiff] = useState<ConfigHistoryDiff | null>(null);
@@ -74,9 +80,14 @@ export function MachineConfigHistory({
     let cancelled = false;
     (async () => {
       try {
-        const list = await getConfigHistory(environmentId, machineId);
+        const list = await getConfigHistory(
+          environmentId,
+          machineId,
+          HISTORY_PAGE_SIZE
+        );
         if (cancelled) return;
         setEntries(list);
+        setHasMore(list.length === HISTORY_PAGE_SIZE);
         // Preselect the two most recent captures (from = older of the two).
         const [newest, previous] = list;
         if (newest && previous) {
@@ -96,6 +107,25 @@ export function MachineConfigHistory({
       cancelled = true;
     };
   }, [environmentId, machineId]);
+
+  const loadMore = useCallback(async () => {
+    if (!entries || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const next = await getConfigHistory(
+        environmentId,
+        machineId,
+        HISTORY_PAGE_SIZE,
+        entries.length
+      );
+      setEntries((prev) => [...(prev ?? []), ...next]);
+      setHasMore(next.length === HISTORY_PAGE_SIZE);
+    } catch (err) {
+      toast.error(errMessage(err, "Failed to load more captures"));
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [environmentId, machineId, entries, loadingMore]);
 
   const compare = useCallback(async () => {
     if (!fromId || !toId) return;
@@ -185,6 +215,25 @@ export function MachineConfigHistory({
           </div>
         ))}
       </div>
+
+      {hasMore && (
+        <div className="flex justify-center">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={loadMore}
+            disabled={loadingMore}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            {loadingMore ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <History className="size-4" />
+            )}
+            Load older captures
+          </Button>
+        </div>
+      )}
 
       <div className="flex items-center gap-2">
         <Button
