@@ -1,7 +1,7 @@
 """devenv_07: org sharing (organization_id on applications/environments)
 
 Revision ID: devenv_07_org_sharing
-Revises: coord_sessions_role_01
+Revises: a1cc120c0fba
 Create Date: 2026-07-18
 
 P4 of plan ``2026-07-01-devenv-phase2-binding-history-remediation-sharing``.
@@ -34,7 +34,7 @@ are authorized through the ENVIRONMENT's accessibility instead.
 Forward-only + additive (nullable columns + indexes on existing tables).
 Safe for a running app on the prior schema.
 
-``down_revision`` = the current alembic head (``coord_sessions_role_01``).
+``down_revision`` = the current alembic head (``a1cc120c0fba``).
 Per the fleet convention (and as ``devenv_04``/``devenv_05`` did), coord
 re-points at land time if main advances, and ``alembic-graph-pr`` CI guards
 forks.
@@ -47,7 +47,7 @@ from alembic import op
 
 # revision identifiers
 revision = "devenv_07_org_sharing"
-down_revision = "coord_sessions_role_01"
+down_revision = "a1cc120c0fba"
 branch_labels = None
 depends_on = None
 
