@@ -881,6 +881,360 @@ class TestDispatchEnroll:
         assert body["machine"]["enrollment_code"]
 
 
+async def _new_user(db: AsyncSession, label: str):
+    """Create + persist a real ``auth.users`` row (devenv FKs require one)."""
+    from app.models.user import User
+
+    user = User(
+        email=f"{label}_{uuid4()}@example.com",
+        username=f"{label}_{uuid4().hex[:8]}",
+        full_name=f"{label} user",
+        is_active=True,
+        is_verified=True,
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
+async def _new_org(db: AsyncSession, owner):
+    """Create an ``auth.organizations`` row owned by ``owner``."""
+    from app.models.organization import Organization
+
+    org = Organization(
+        name=f"Org {uuid4().hex[:8]}",
+        slug=f"org-{uuid4().hex[:12]}",
+        owner_id=owner.id,
+        settings={},
+        is_active=True,
+    )
+    db.add(org)
+    await db.commit()
+    await db.refresh(org)
+    return org
+
+
+async def _add_member(db: AsyncSession, org, user, role: str) -> None:
+    """Add a ``auth.team_members`` row (org, user, role)."""
+    from app.models.organization import TeamMember
+
+    db.add(
+        TeamMember(
+            organization_id=org.id,
+            user_id=user.id,
+            role=role,
+            permissions={},
+        )
+    )
+    await db.commit()
+
+
+class TestOrgSharing:
+    """P4 — org/team sharing of environments via ``organization_id``.
+
+    Org + membership rows are created directly through the models (no need
+    to drive the org endpoints). The devenv access model under test:
+    owner/admin/member → edit, viewer → view-only (403 ``read_only_access``
+    on edit routes), helper → no devenv access (404), non-member → 404.
+    Sharing/unsharing itself is owner-only.
+    """
+
+    async def _seed_shared_env(
+        self, db: AsyncSession, owner, *, role_members: dict | None = None
+    ) -> tuple[object, str]:
+        """Create an org (owner enrolled with role ``owner``) + a shared env.
+
+        ``role_members`` maps user -> role for extra memberships. Returns
+        ``(org, env_id)``.
+        """
+        org = await _new_org(db, owner)
+        await _add_member(db, org, owner, "owner")
+        for user, role in (role_members or {}).items():
+            await _add_member(db, org, user, role)
+
+        app = _build_app(db_session=db, user=owner)
+        async with _client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/environments",
+                json={"name": f"Shared-{uuid4().hex[:8]}", "description": None},
+            )
+            assert r.status_code == 201, r.text
+            env_id = r.json()["id"]
+            r = await client.patch(
+                f"{API_PREFIX}/environments/{env_id}",
+                json={"organization_id": str(org.id)},
+            )
+            assert r.status_code == 200, r.text
+            assert r.json()["organization_id"] == str(org.id)
+        return org, env_id
+
+    @pytest.mark.asyncio
+    async def test_shared_env_visible_to_member(
+        self, async_db_session: AsyncSession, test_user, second_user
+    ) -> None:
+        """An org-shared env is readable + listed for a ``member``."""
+        _org, env_id = await self._seed_shared_env(
+            async_db_session, test_user, role_members={second_user: "member"}
+        )
+        app2 = _build_app(db_session=async_db_session, user=second_user)
+        async with _client(app2) as client:
+            r = await client.get(f"{API_PREFIX}/environments/{env_id}")
+            assert r.status_code == 200, r.text
+            body = r.json()
+            assert body["owner_user_id"] == str(test_user.id)
+            r = await client.get(f"{API_PREFIX}/environments")
+            assert env_id in {e["id"] for e in r.json()}
+
+    @pytest.mark.asyncio
+    async def test_not_visible_to_non_member(
+        self, async_db_session: AsyncSession, test_user, second_user
+    ) -> None:
+        """A user outside the org gets the never-leak 404."""
+        _org, env_id = await self._seed_shared_env(async_db_session, test_user)
+        app2 = _build_app(db_session=async_db_session, user=second_user)
+        async with _client(app2) as client:
+            r = await client.get(f"{API_PREFIX}/environments/{env_id}")
+            assert r.status_code == 404, r.text
+            assert r.json()["detail"]["code"] == "environment_not_found"
+
+    @pytest.mark.asyncio
+    async def test_helper_gets_nothing(
+        self, async_db_session: AsyncSession, test_user, second_user
+    ) -> None:
+        """``helper`` has no devenv access at all — same 404 as a non-member."""
+        _org, env_id = await self._seed_shared_env(
+            async_db_session, test_user, role_members={second_user: "helper"}
+        )
+        app2 = _build_app(db_session=async_db_session, user=second_user)
+        async with _client(app2) as client:
+            r = await client.get(f"{API_PREFIX}/environments/{env_id}")
+            assert r.status_code == 404, r.text
+            r = await client.get(f"{API_PREFIX}/environments")
+            assert env_id not in {e["id"] for e in r.json()}
+
+    @pytest.mark.asyncio
+    async def test_viewer_can_get_but_not_edit(
+        self, async_db_session: AsyncSession, test_user, second_user
+    ) -> None:
+        """``viewer`` reads the shared env but edit routes 403 read_only_access."""
+        _org, env_id = await self._seed_shared_env(
+            async_db_session, test_user, role_members={second_user: "viewer"}
+        )
+        app2 = _build_app(db_session=async_db_session, user=second_user)
+        async with _client(app2) as client:
+            r = await client.get(f"{API_PREFIX}/environments/{env_id}")
+            assert r.status_code == 200, r.text
+
+            r = await client.patch(
+                f"{API_PREFIX}/environments/{env_id}",
+                json={"description": "viewer edit attempt"},
+            )
+            assert r.status_code == 403, r.text
+            assert r.json()["detail"]["code"] == "read_only_access"
+
+            r = await client.put(
+                f"{API_PREFIX}/environments/{env_id}/canonical",
+                json={"machine_id": str(uuid4())},
+            )
+            assert r.status_code == 403, r.text
+            assert r.json()["detail"]["code"] == "read_only_access"
+
+    @pytest.mark.asyncio
+    async def test_member_can_set_canonical_and_is_audited(
+        self, async_db_session: AsyncSession, test_user, second_user
+    ) -> None:
+        """A ``member`` sets canonical on a shared env (owner's machine) and
+        the canonical change log attributes the change to the member."""
+        _org, env_id = await self._seed_shared_env(
+            async_db_session, test_user, role_members={second_user: "member"}
+        )
+        # Owner enrolls a machine + pushes a config for the shared env.
+        app1 = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app1) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines",
+                json={"name": f"owner-box-{uuid4().hex[:6]}"},
+            )
+            body = r.json()
+            machine_id = body["id"]
+            r = await client.post(
+                f"{API_PREFIX}/agent/enroll",
+                json={"enrollment_code": body["enrollment_code"]},
+            )
+            key = r.json()["machine_key"]
+            r = await client.put(
+                f"{API_PREFIX}/agent/environments/{env_id}/config",
+                json=_config_body({"versions": {"python": "3.13"}}),
+                headers={"X-Machine-Key": key},
+            )
+            assert r.status_code == 200, r.text
+
+        # The member designates that (foreign-owned) machine as canonical.
+        app2 = _build_app(db_session=async_db_session, user=second_user)
+        async with _client(app2) as client:
+            r = await client.put(
+                f"{API_PREFIX}/environments/{env_id}/canonical",
+                json={"machine_id": machine_id},
+            )
+            assert r.status_code == 200, r.text
+            assert r.json()["canonical_machine_id"] == machine_id
+
+            hist = (
+                await client.get(
+                    f"{API_PREFIX}/environments/{env_id}/canonical-history"
+                )
+            ).json()
+            assert len(hist) == 1
+            assert hist[0]["to_machine_id"] == machine_id
+            assert hist[0]["changed_by_user_id"] == str(second_user.id)
+
+    @pytest.mark.asyncio
+    async def test_owner_can_share_and_unshare(
+        self, async_db_session: AsyncSession, test_user, second_user
+    ) -> None:
+        """Owner shares (set) then unshares (explicit null); member loses access."""
+        _org, env_id = await self._seed_shared_env(
+            async_db_session, test_user, role_members={second_user: "member"}
+        )
+        app1 = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app1) as client:
+            # Unshare via explicit null (exclude_unset distinguishes it from
+            # field-absent).
+            r = await client.patch(
+                f"{API_PREFIX}/environments/{env_id}",
+                json={"organization_id": None},
+            )
+            assert r.status_code == 200, r.text
+            assert r.json()["organization_id"] is None
+        # The former member can no longer see it.
+        app2 = _build_app(db_session=async_db_session, user=second_user)
+        async with _client(app2) as client:
+            r = await client.get(f"{API_PREFIX}/environments/{env_id}")
+            assert r.status_code == 404, r.text
+
+    @pytest.mark.asyncio
+    async def test_member_cannot_change_sharing(
+        self, async_db_session: AsyncSession, test_user, second_user
+    ) -> None:
+        """Sharing is the OWNER's call — an edit-capable member gets 403."""
+        _org, env_id = await self._seed_shared_env(
+            async_db_session, test_user, role_members={second_user: "member"}
+        )
+        app2 = _build_app(db_session=async_db_session, user=second_user)
+        async with _client(app2) as client:
+            r = await client.patch(
+                f"{API_PREFIX}/environments/{env_id}",
+                json={"organization_id": None},
+            )
+            assert r.status_code == 403, r.text
+            assert r.json()["detail"]["code"] == "owner_only_operation"
+
+    @pytest.mark.asyncio
+    async def test_share_into_foreign_org_rejected(
+        self, async_db_session: AsyncSession, test_user, second_user
+    ) -> None:
+        """Sharing into an org the owner has no edit membership in → 403,
+        on both the update route and create-with-org."""
+        foreign_org = await _new_org(async_db_session, second_user)
+        await _add_member(async_db_session, foreign_org, second_user, "owner")
+
+        app1 = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app1) as client:
+            r = await client.post(
+                f"{API_PREFIX}/environments",
+                json={"name": f"Mine-{uuid4().hex[:8]}", "description": None},
+            )
+            env_id = r.json()["id"]
+            r = await client.patch(
+                f"{API_PREFIX}/environments/{env_id}",
+                json={"organization_id": str(foreign_org.id)},
+            )
+            assert r.status_code == 403, r.text
+            assert r.json()["detail"]["code"] == "organization_access_denied"
+
+            r = await client.post(
+                f"{API_PREFIX}/environments",
+                json={
+                    "name": f"Born-shared-{uuid4().hex[:8]}",
+                    "organization_id": str(foreign_org.id),
+                },
+            )
+            assert r.status_code == 403, r.text
+            assert r.json()["detail"]["code"] == "organization_access_denied"
+
+    @pytest.mark.asyncio
+    async def test_drift_on_shared_env_visible_to_member(
+        self, async_db_session: AsyncSession, test_user, second_user
+    ) -> None:
+        """Drift on a shared env shows the owner's machines to a member."""
+        _org, env_id = await self._seed_shared_env(
+            async_db_session, test_user, role_members={second_user: "member"}
+        )
+        # Owner: two machines with configs, canonical = A.
+        app1 = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app1) as client:
+            machines = {}
+            for name, py in (("drift-a", "3.13"), ("drift-b", "3.11")):
+                r = await client.post(
+                    f"{API_PREFIX}/machines",
+                    json={"name": f"{name}-{uuid4().hex[:6]}"},
+                )
+                body = r.json()
+                r = await client.post(
+                    f"{API_PREFIX}/agent/enroll",
+                    json={"enrollment_code": body["enrollment_code"]},
+                )
+                key = r.json()["machine_key"]
+                r = await client.put(
+                    f"{API_PREFIX}/agent/environments/{env_id}/config",
+                    json=_config_body({"versions": {"python": py}}),
+                    headers={"X-Machine-Key": key},
+                )
+                assert r.status_code == 200, r.text
+                machines[name] = body["id"]
+            r = await client.put(
+                f"{API_PREFIX}/environments/{env_id}/canonical",
+                json={"machine_id": machines["drift-a"]},
+            )
+            assert r.status_code == 200, r.text
+
+        # Member: reads env drift + single-machine drift for the owner's box.
+        app2 = _build_app(db_session=async_db_session, user=second_user)
+        async with _client(app2) as client:
+            r = await client.get(f"{API_PREFIX}/environments/{env_id}/drift")
+            assert r.status_code == 200, r.text
+            drift = r.json()
+            assert drift["canonical_machine_id"] == machines["drift-a"]
+            assert len(drift["reports"]) == 1
+            assert drift["reports"][0]["machine_id"] == machines["drift-b"]
+            assert drift["reports"][0]["in_sync"] is False
+
+            r = await client.get(
+                f"{API_PREFIX}/environments/{env_id}/drift/{machines['drift-b']}"
+            )
+            assert r.status_code == 200, r.text
+            assert r.json()["machine_id"] == machines["drift-b"]
+
+    @pytest.mark.asyncio
+    async def test_admin_role_user_can_edit(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """An ``admin`` member may update shared-env content (not sharing)."""
+        admin_user = await _new_user(async_db_session, "admin")
+        _org, env_id = await self._seed_shared_env(
+            async_db_session, test_user, role_members={admin_user: "admin"}
+        )
+        app2 = _build_app(db_session=async_db_session, user=admin_user)
+        async with _client(app2) as client:
+            r = await client.patch(
+                f"{API_PREFIX}/environments/{env_id}",
+                json={"description": "edited by admin"},
+            )
+            assert r.status_code == 200, r.text
+            assert r.json()["description"] == "edited by admin"
+
+
 class TestCanonicalAuditAndPull:
     """P1 (pull model) — canonical audit trail + the machine pull surface."""
 
