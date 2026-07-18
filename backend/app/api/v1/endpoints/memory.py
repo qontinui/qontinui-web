@@ -5,9 +5,15 @@ Phase 1 of ``D:/qontinui-root/plans/2026-07-10-tenant-agentic-memory-web-backend
 Endpoints (mounted under ``/api/v1/memory``):
 
 * ``POST /records``                      — batch write (redact → hash →
-  quota → embed → dedup-insert).
+  quota → embed → dedup-insert), optionally declaring typed graph
+  ``links`` per record (Librarian Phase 4).
+* ``GET /records``                       — keyset-paginated list of live
+  records (newest-first-stable), with outbound links — the runner
+  sync-pull surface.
 * ``POST /query``                        — hybrid retrieval: pgvector
   HNSW cosine + websearch FTS, fused with RRF (k=60).
+* ``POST /graph``                        — bounded outbound traversal of
+  ``coord.memory_links`` from a root record → ``{nodes, edges}``.
 * ``POST /records/{id}/supersede``       — insert replacement, end the
   old row's validity.
 * ``DELETE /records/{id}``               — tombstone.
@@ -42,14 +48,16 @@ No credential → 401. Credential valid but no tenant resolvable → 403.
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, get_args
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse, Response
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -62,11 +70,21 @@ from app.api.deps import (
 )
 from app.models.user import User
 from app.schemas.memory import (
+    DEFAULT_LIST_LIMIT,
+    MAX_LIST_LIMIT,
     ClaimSynthesisJobsRequest,
     ClaimSynthesisJobsResponse,
+    ListRecordsResponse,
+    MemoryGraphEdge,
+    MemoryGraphNode,
+    MemoryGraphRequest,
+    MemoryGraphResponse,
+    MemoryKind,
+    MemoryLinkOut,
     MemoryQueryHit,
     MemoryQueryRequest,
     MemoryQueryResponse,
+    MemoryRecordOut,
     MemoryStatsResponse,
     SupersedeRequest,
     SupersedeResponse,
@@ -276,6 +294,54 @@ def _content_hash(content: str) -> str:
 
 
 # --------------------------------------------------------------------------
+# List-endpoint helpers — keyset cursor codec + kinds query parsing
+# --------------------------------------------------------------------------
+
+_VALID_KINDS = frozenset(get_args(MemoryKind))
+
+
+def _encode_cursor(created_at: datetime, memory_id: UUID) -> str:
+    """Opaque keyset cursor over ``(created_at, memory_id)``."""
+    raw = f"{created_at.isoformat()}|{memory_id}"
+    return base64.urlsafe_b64encode(raw.encode("utf-8")).decode("ascii")
+
+
+def _decode_cursor(cursor: str) -> tuple[datetime, UUID]:
+    """Inverse of :func:`_encode_cursor`; 400 on anything malformed."""
+    try:
+        raw = base64.urlsafe_b64decode(cursor.encode("ascii")).decode("utf-8")
+        created_raw, sep, id_raw = raw.partition("|")
+        if not sep:
+            raise ValueError("missing separator")
+        return datetime.fromisoformat(created_raw), UUID(id_raw)
+    except (ValueError, binascii.Error, UnicodeError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="malformed cursor",
+        ) from exc
+
+
+def _parse_kinds(raw: list[str] | None) -> list[str] | None:
+    """Expand repeatable/CSV ``kinds`` query params; 422 on unknown kinds."""
+    if not raw:
+        return None
+    kinds: list[str] = []
+    for item in raw:
+        for part in item.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            if part not in _VALID_KINDS:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail=f"unknown kind {part!r}",
+                )
+            if part not in kinds:
+                kinds.append(part)
+    return kinds or None
+
+
+# --------------------------------------------------------------------------
 # Endpoints
 # --------------------------------------------------------------------------
 
@@ -416,9 +482,58 @@ async def write_records(
         deduped = db_deduped or i != first_index[h]
         results.append(WriteRecordResult(memory_id=memory_id, deduped=deduped))
 
+    # 7. Graph edges (Librarian Phase 4). Resolve each declared link's
+    # target_ref (memory_id first, then content_hash — LIVE rows of THIS
+    # tenant only; sibling records written above are visible) and upsert
+    # the edges set-based. Unresolved targets and degenerate self-edges
+    # are DROPPED and counted — flag-don't-reject.
+    dropped_links = 0
+    all_refs = [
+        link.target_ref for rec in payload.records for link in (rec.links or [])
+    ]
+    if all_refs:
+        resolved = await store.resolve_link_targets(db, principal.tenant_id, all_refs)
+        seen_edges: set[tuple[UUID, UUID, str]] = set()
+        link_items: list[store.MemoryLinkInsert] = []
+        for i, rec in enumerate(payload.records):
+            if not rec.links:
+                continue
+            source_id = results[i].memory_id
+            for link in rec.links:
+                target_id = resolved.get(link.target_ref)
+                if target_id is None or target_id == source_id:
+                    dropped_links += 1
+                    continue
+                edge_key = (source_id, target_id, link.relation)
+                if edge_key in seen_edges:
+                    # Intra-batch repeat of the same edge — collapses
+                    # onto the first declaration (not a drop).
+                    continue
+                seen_edges.add(edge_key)
+                link_items.append(
+                    store.MemoryLinkInsert(
+                        source_id=source_id,
+                        target_id=target_id,
+                        relation=link.relation,
+                        description=link.description,
+                    )
+                )
+        if link_items:
+            await store.insert_links_batch(
+                db, tenant_id=principal.tenant_id, items=link_items
+            )
+        if dropped_links:
+            logger.info(
+                "memory_links_dropped",
+                tenant_id=str(principal.tenant_id),
+                dropped=dropped_links,
+                declared=len(all_refs),
+            )
+
     return WriteRecordsResponse(
         records=results,
         deduped_count=sum(1 for r in results if r.deduped),
+        dropped_links_count=dropped_links,
     )
 
 
@@ -487,6 +602,140 @@ async def query_records(
 
     await store.bump_access(db, principal.tenant_id, [h.memory_id for h in hits])
     return MemoryQueryResponse(hits=hits)
+
+
+@router.get("/records", response_model=ListRecordsResponse)
+async def list_records(
+    kinds: list[str] | None = Query(default=None),
+    since: datetime | None = Query(default=None),
+    cursor: str | None = Query(default=None),
+    limit: int = Query(default=DEFAULT_LIST_LIMIT, ge=1, le=MAX_LIST_LIMIT),
+    principal: MemoryPrincipal = Depends(get_memory_tenant),
+    db: AsyncSession = Depends(get_async_db),
+) -> ListRecordsResponse:
+    """Keyset-paginated list of the tenant's LIVE records, newest first.
+
+    The runner's sync-pull surface (``POST /query`` requires query_text,
+    caps at 50, and relevance-ranks — unusable for a full mirror).
+    ``kinds`` is repeatable and/or CSV; ``since`` filters on the
+    freshest of updated/created; ``cursor`` is the opaque
+    ``(created_at, memory_id)`` keyset token from the previous page.
+    Each record carries its outbound ``links``. Ordering is
+    ``created_at DESC, memory_id DESC`` — stable under concurrent
+    writes (new rows only ever prepend).
+    """
+    kind_filter = _parse_kinds(kinds)
+    cursor_key = _decode_cursor(cursor) if cursor else None
+    rows = await store.list_records_page(
+        db,
+        tenant_id=principal.tenant_id,
+        kinds=kind_filter,
+        since=since,
+        cursor=cursor_key,
+        limit=limit,
+        now=datetime.now(UTC),
+    )
+    links_by_source = await store.fetch_outbound_links(
+        db, principal.tenant_id, [r["memory_id"] for r in rows]
+    )
+    records = [
+        MemoryRecordOut(
+            memory_id=row["memory_id"],
+            title=row["title"],
+            content=row["content"],
+            kind=row["kind"],
+            scope=row["scope"],
+            scope_ref=row["scope_ref"],
+            importance=row["importance"],
+            content_hash=row["content_hash"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+            source=row["source"] or {},
+            links=[
+                MemoryLinkOut(
+                    link_id=link["link_id"],
+                    target_id=link["target_id"],
+                    relation=link["relation"],
+                    description=link["description"],
+                    created_at=link["created_at"],
+                )
+                for link in links_by_source.get(row["memory_id"], [])
+            ],
+        )
+        for row in rows
+    ]
+    next_cursor = (
+        _encode_cursor(rows[-1]["created_at"], rows[-1]["memory_id"])
+        if len(rows) == limit
+        else None
+    )
+    return ListRecordsResponse(records=records, next_cursor=next_cursor)
+
+
+@router.post("/graph", response_model=MemoryGraphResponse)
+async def memory_graph(
+    payload: MemoryGraphRequest,
+    principal: MemoryPrincipal = Depends(get_memory_tenant),
+    db: AsyncSession = Depends(get_async_db),
+) -> MemoryGraphResponse:
+    """Bounded outbound traversal of the memory graph from a root record.
+
+    One tenant-bound ``WITH RECURSIVE`` walk over ``coord.memory_links``
+    (see :func:`store.graph_edges`): outbound edges from the root, then
+    from each reached target, up to ``depth`` (≤5) levels —
+    ``relation_filter`` narrows which relations are followed. Cycles are
+    safe (the depth cap terminates the recursion; duplicate edges
+    collapse). 404 when the root does not exist in the caller's tenant
+    (cross-tenant ids are never disclosed).
+    """
+    root = await store.get_record(db, principal.tenant_id, payload.root_memory_id)
+    if root is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="memory record not found",
+        )
+    relations: list[str] | None = (
+        [str(rel) for rel in payload.relation_filter]
+        if payload.relation_filter
+        else None
+    )
+    edge_rows = await store.graph_edges(
+        db,
+        tenant_id=principal.tenant_id,
+        root_id=payload.root_memory_id,
+        depth=payload.depth,
+        relations=relations,
+    )
+    node_ids: set[UUID] = {payload.root_memory_id}
+    for edge in edge_rows:
+        node_ids.add(edge["source_id"])
+        node_ids.add(edge["target_id"])
+    node_rows = await store.fetch_records(db, principal.tenant_id, sorted(node_ids))
+    nodes = [
+        MemoryGraphNode(
+            memory_id=memory_id,
+            title=row["title"],
+            content=row["content"],
+            kind=row["kind"],
+            scope=row["scope"],
+            importance=float(row["importance"]),
+            created_at=row["created_at"],
+            source=row["source"] or {},
+        )
+        for memory_id, row in sorted(node_rows.items(), key=lambda kv: kv[0])
+    ]
+    edges = [
+        MemoryGraphEdge(
+            link_id=edge["link_id"],
+            source_id=edge["source_id"],
+            target_id=edge["target_id"],
+            relation=edge["relation"],
+            description=edge["description"],
+            created_at=edge["created_at"],
+        )
+        for edge in edge_rows
+    ]
+    return MemoryGraphResponse(nodes=nodes, edges=edges)
 
 
 @router.post("/records/{memory_id}/supersede", response_model=SupersedeResponse)

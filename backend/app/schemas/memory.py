@@ -25,8 +25,11 @@ MemoryKind = Literal[
     "feedback",
     "reference",
     "rule",
+    "library",
 ]
 MemoryScope = Literal["tenant", "runner", "agent", "session"]
+# Mirror the coord.memory_links relation CHECK (coord_memory_links migration).
+MemoryLinkRelation = Literal["depends_on", "implements", "supersedes", "related"]
 
 # Batch + content caps (32 KB cap is app-enforced per the migration notes).
 MAX_RECORDS_PER_REQUEST = 100
@@ -40,6 +43,28 @@ MAX_QUERY_LIMIT = 50
 DEFAULT_SYNTHESIS_CLAIM_LIMIT = 4
 MAX_SYNTHESIS_CLAIM_LIMIT = 4
 
+# Graph traversal + list-endpoint limits.
+DEFAULT_GRAPH_DEPTH = 3
+MAX_GRAPH_DEPTH = 5
+DEFAULT_LIST_LIMIT = 100
+MAX_LIST_LIMIT = 500
+MAX_LINKS_PER_RECORD = 32
+
+
+class MemoryLinkIn(BaseModel):
+    """One outbound edge declared alongside a record write.
+
+    ``target_ref`` names the edge's target either by ``memory_id`` (UUID
+    string) or by ``content_hash`` (sha256 hex of the target's stored
+    content) — the write path tries the UUID interpretation first, then
+    the hash, against LIVE rows of the caller's tenant only. Unresolved
+    targets are dropped and counted, never rejected.
+    """
+
+    target_ref: str = Field(min_length=1, max_length=512)
+    relation: MemoryLinkRelation
+    description: str | None = Field(default=None, max_length=2048)
+
 
 class MemoryRecordIn(BaseModel):
     """One record in a batch write."""
@@ -51,6 +76,9 @@ class MemoryRecordIn(BaseModel):
     scope_ref: str | None = Field(default=None, max_length=512)
     importance: float = Field(default=0.5, ge=0.0, le=1.0)
     source: dict[str, Any] = Field(default_factory=dict)
+    links: list[MemoryLinkIn] | None = Field(
+        default=None, max_length=MAX_LINKS_PER_RECORD
+    )
 
     @field_validator("content")
     @classmethod
@@ -82,6 +110,9 @@ class WriteRecordResult(BaseModel):
 class WriteRecordsResponse(BaseModel):
     records: list[WriteRecordResult]
     deduped_count: int
+    # Links whose target_ref resolved to no LIVE record of the caller's
+    # tenant (plus degenerate self-edges): dropped, never rejected.
+    dropped_links_count: int = 0
 
 
 class MemoryQueryRequest(BaseModel):
@@ -167,6 +198,88 @@ class MemoryStatsResponse(BaseModel):
     synthesis_jobs_claimed: int = 0
     synthesis_jobs_done: int = 0
     synthesis_jobs_failed: int = 0
+
+
+# --------------------------------------------------------------------------
+# Graph layer (Librarian Phase 4) — POST /memory/graph + GET /memory/records
+# --------------------------------------------------------------------------
+
+
+class MemoryGraphRequest(BaseModel):
+    """``POST /memory/graph`` body — bounded outbound traversal."""
+
+    root_memory_id: UUID
+    depth: int = Field(default=DEFAULT_GRAPH_DEPTH, ge=1, le=MAX_GRAPH_DEPTH)
+    relation_filter: list[MemoryLinkRelation] | None = None
+
+
+class MemoryGraphNode(BaseModel):
+    """One record visited by the traversal (query-hit field shape)."""
+
+    memory_id: UUID
+    title: str
+    content: str
+    kind: str
+    scope: str
+    importance: float
+    created_at: datetime
+    source: dict[str, Any]
+
+
+class MemoryGraphEdge(BaseModel):
+    """One ``coord.memory_links`` edge among the visited nodes."""
+
+    link_id: UUID
+    source_id: UUID
+    target_id: UUID
+    relation: str
+    description: str | None
+    created_at: datetime
+
+
+class MemoryGraphResponse(BaseModel):
+    nodes: list[MemoryGraphNode]
+    edges: list[MemoryGraphEdge]
+
+
+class MemoryLinkOut(BaseModel):
+    """One outbound edge hydrated onto a listed record."""
+
+    link_id: UUID
+    target_id: UUID
+    relation: str
+    description: str | None
+    created_at: datetime
+
+
+class MemoryRecordOut(BaseModel):
+    """One record in a ``GET /memory/records`` page.
+
+    The query-hit field shape plus sync-relevant extras
+    (``scope_ref`` / ``content_hash`` / ``updated_at``) and the record's
+    outbound ``links``.
+    """
+
+    memory_id: UUID
+    title: str
+    content: str
+    kind: str
+    scope: str
+    scope_ref: str | None
+    importance: float
+    content_hash: str
+    created_at: datetime
+    updated_at: datetime
+    source: dict[str, Any]
+    links: list[MemoryLinkOut]
+
+
+class ListRecordsResponse(BaseModel):
+    """``GET /memory/records`` — one keyset page, newest-first-stable."""
+
+    records: list[MemoryRecordOut]
+    # Opaque keyset cursor for the next (older) page; None on the last page.
+    next_cursor: str | None
 
 
 # --------------------------------------------------------------------------
