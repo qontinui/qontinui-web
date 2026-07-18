@@ -3,9 +3,10 @@
 /**
  * DeployStatusStrip — always-visible "is prod current?" strip atop /admin/coord/prs.
  *
- * Renders one compact chip per deploy surface (ecs / vercel / npm) with its
- * surface-level drift state, short deployed sha, and lag — glanceable context
- * above the PRs tabs.
+ * Renders one compact chip per deploy surface (ecs / vercel / npm, plus the
+ * runner GitHub-Releases surface shown as "Runner") with its surface-level
+ * drift state, short deployed sha, and lag — glanceable context above the PRs
+ * tabs.
  *
  * Data: `GET /api/v1/admin-dev/release-verdict` (the admin-dev proxy of coord
  * `GET /coord/twin/release/verdict`). That proxy degrades to a 200 empty
@@ -36,9 +37,11 @@ import { RefreshCw, Rocket } from "lucide-react";
 import { httpClient } from "@/services/service-factory";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import type {
-  ReleaseSurfaceComponents,
-  ReleaseVerdictResponse,
+import {
+  normalizeDriftClass,
+  surfaceLabel,
+  type ReleaseSurfaceComponents,
+  type ReleaseVerdictResponse,
 } from "./release-verdict";
 
 const RELEASE_RAW_URL = "/api/v1/admin-dev/release-verdict";
@@ -128,14 +131,17 @@ function lagLabel(lagSeconds: number | null | undefined): string {
 }
 
 function SurfaceChip({ c }: { c: ReleaseSurfaceComponents }) {
-  const meta = driftMeta(c.drift_class);
-  const surface = (c.surface ?? "?").toString();
+  // Normalize the runner surface's namespaced `release:*` sub-classes to the
+  // shared canonical tokens the tone/label map is keyed on.
+  const meta = driftMeta(normalizeDriftClass(c.drift_class));
+  const rawSurface = (c.surface ?? "?").toString();
+  const surface = surfaceLabel(rawSurface);
   const target = shortTarget(c.target);
   const sha = shortSha(c.deployed_sha);
   const lag = lagLabel(c.lag_seconds);
 
   const title = [
-    `surface: ${surface}`,
+    `surface: ${rawSurface}`,
     c.target ? `target: ${c.target}` : null,
     `drift: ${c.drift_class ?? "unknown"}`,
     c.deployed_sha ? `deployed: ${c.deployed_sha}` : null,
@@ -149,7 +155,9 @@ function SurfaceChip({ c }: { c: ReleaseSurfaceComponents }) {
     <div
       className="flex items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1"
       title={title}
-      data-testid={`deploy-surface-${surface}`}
+      // testid keyed on the RAW surface token (a stable selector); the visible
+      // label uses the friendly `surfaceLabel` map.
+      data-testid={`deploy-surface-${rawSurface}`}
     >
       <span className="text-xs font-medium uppercase text-foreground">
         {surface}
