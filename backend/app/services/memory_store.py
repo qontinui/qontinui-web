@@ -653,6 +653,279 @@ async def tombstone_record(
 
 
 # ===========================================================================
+# Librarian Phase 4 — coord.memory_links graph layer
+# ===========================================================================
+#
+# Typed, directed edges between memory records (schema:
+# ``backend/alembic/versions/coord_memory_links.py``). All edge SQL lives
+# here with the rest of the ``coord.*`` memory literals.
+
+
+@dataclass(frozen=True)
+class MemoryLinkInsert:
+    """One edge in a set-based :func:`insert_links_batch` call."""
+
+    source_id: UUID
+    target_id: UUID
+    relation: str
+    description: str | None
+
+
+async def resolve_link_targets(
+    session: AsyncSession, tenant_id: UUID, refs: list[str]
+) -> dict[str, UUID]:
+    """Resolve link ``target_ref`` strings to LIVE record ids, tenant-bound.
+
+    Each ref is tried as a ``memory_id`` (UUID string) first, then as a
+    ``content_hash``. Only LIVE rows (the dedup-liveness predicate —
+    tombstoned / superseded / validity-ended rows never anchor an edge)
+    resolve. Returns ``{ref: memory_id}`` for the refs that resolved;
+    unresolved refs are simply absent (the caller drops + counts them).
+    """
+    if not refs:
+        return {}
+    unique_refs = list(dict.fromkeys(refs))
+    resolved: dict[str, UUID] = {}
+
+    uuid_by_ref: dict[str, UUID] = {}
+    for ref in unique_refs:
+        try:
+            uuid_by_ref[ref] = UUID(ref)
+        except ValueError:
+            continue
+    if uuid_by_ref:
+        stmt = text(
+            f"""
+            SELECT memory_id FROM coord.memory_records
+            WHERE tenant_id = :tenant_id AND memory_id IN :ids
+              AND {_LIVE_DEDUP_PREDICATE}
+            """
+        ).bindparams(bindparam("ids", expanding=True))
+        rows = await session.execute(
+            stmt, {"tenant_id": tenant_id, "ids": list(set(uuid_by_ref.values()))}
+        )
+        found_ids = {UUID(str(r.memory_id)) for r in rows}
+        for ref, candidate in uuid_by_ref.items():
+            if candidate in found_ids:
+                resolved[ref] = candidate
+
+    remaining = [r for r in unique_refs if r not in resolved]
+    if remaining:
+        stmt = text(
+            f"""
+            SELECT memory_id, content_hash FROM coord.memory_records
+            WHERE tenant_id = :tenant_id AND content_hash IN :hashes
+              AND {_LIVE_DEDUP_PREDICATE}
+            """
+        ).bindparams(bindparam("hashes", expanding=True))
+        rows = await session.execute(
+            stmt, {"tenant_id": tenant_id, "hashes": remaining}
+        )
+        by_hash = {str(r.content_hash): UUID(str(r.memory_id)) for r in rows}
+        for ref in remaining:
+            if ref in by_hash:
+                resolved[ref] = by_hash[ref]
+    return resolved
+
+
+async def insert_links_batch(
+    session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    items: list[MemoryLinkInsert],
+) -> int:
+    """Set-based edge upsert: ``ON CONFLICT DO NOTHING`` on the edge key.
+
+    The conflict target is the ``uq_memory_links_edge`` unique index
+    ``(tenant_id, source_id, target_id, relation)`` — re-declaring an
+    existing edge is a silent no-op. Returns the number of edges
+    actually inserted.
+    """
+    if not items:
+        return 0
+    stmt = text(
+        """
+        INSERT INTO coord.memory_links
+            (tenant_id, source_id, target_id, relation, description)
+        SELECT :tenant_id, u.source_id, u.target_id, u.relation, u.description
+        FROM unnest(
+                 CAST(:source_ids AS uuid[]),
+                 CAST(:target_ids AS uuid[]),
+                 CAST(:relations AS text[]),
+                 CAST(:descriptions AS text[])
+             ) AS u(source_id, target_id, relation, description)
+        ON CONFLICT (tenant_id, source_id, target_id, relation) DO NOTHING
+        RETURNING link_id
+        """
+    ).bindparams(
+        bindparam("source_ids", type_=ARRAY(Text())),
+        bindparam("target_ids", type_=ARRAY(Text())),
+        bindparam("relations", type_=ARRAY(Text())),
+        bindparam("descriptions", type_=ARRAY(Text())),
+    )
+    rows = await session.execute(
+        stmt,
+        {
+            "tenant_id": tenant_id,
+            "source_ids": [str(i.source_id) for i in items],
+            "target_ids": [str(i.target_id) for i in items],
+            "relations": [i.relation for i in items],
+            "descriptions": [i.description for i in items],
+        },
+    )
+    return len(rows.fetchall())
+
+
+async def fetch_outbound_links(
+    session: AsyncSession, tenant_id: UUID, source_ids: list[UUID]
+) -> dict[UUID, list[dict[str, Any]]]:
+    """Outbound edges for ``source_ids``, grouped by source. Tenant-bound."""
+    if not source_ids:
+        return {}
+    stmt = text(
+        """
+        SELECT link_id, source_id, target_id, relation, description, created_at
+        FROM coord.memory_links
+        WHERE tenant_id = :tenant_id AND source_id IN :ids
+        ORDER BY created_at ASC, link_id ASC
+        """
+    ).bindparams(bindparam("ids", expanding=True))
+    rows = await session.execute(stmt, {"tenant_id": tenant_id, "ids": source_ids})
+    out: dict[UUID, list[dict[str, Any]]] = {}
+    for r in rows.mappings():
+        d = dict(r)
+        d["link_id"] = UUID(str(d["link_id"]))
+        d["source_id"] = UUID(str(d["source_id"]))
+        d["target_id"] = UUID(str(d["target_id"]))
+        out.setdefault(d["source_id"], []).append(d)
+    return out
+
+
+async def graph_edges(
+    session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    root_id: UUID,
+    depth: int,
+    relations: list[str] | None,
+) -> list[dict[str, Any]]:
+    """Bounded outbound traversal from ``root_id`` over ``coord.memory_links``.
+
+    One ``WITH RECURSIVE`` walk: level 1 is the root's outbound edges;
+    each further level follows the targets' outbound edges, up to
+    ``depth`` levels. Every arm is tenant-bound. Cycle safety is the
+    depth cap itself — a cycle re-surfaces edges at increasing depth
+    until the cap terminates the recursion, and the final DISTINCT
+    collapses the repeats. Returns unique edge rows.
+    """
+    rel_clause = " AND l.relation IN :relations" if relations else ""
+    stmt = text(
+        f"""
+        WITH RECURSIVE walk
+            (link_id, source_id, target_id, relation, description,
+             created_at, depth) AS (
+            SELECT l.link_id, l.source_id, l.target_id, l.relation,
+                   l.description, l.created_at, 1
+            FROM coord.memory_links l
+            WHERE l.tenant_id = :tenant_id
+              AND l.source_id = :root_id{rel_clause}
+            UNION
+            SELECT l.link_id, l.source_id, l.target_id, l.relation,
+                   l.description, l.created_at, w.depth + 1
+            FROM coord.memory_links l
+            JOIN walk w ON l.source_id = w.target_id
+            WHERE l.tenant_id = :tenant_id
+              AND w.depth < :depth{rel_clause}
+        )
+        SELECT DISTINCT link_id, source_id, target_id, relation,
+                        description, created_at
+        FROM walk
+        ORDER BY created_at ASC, link_id ASC
+        """
+    )
+    if relations:
+        stmt = stmt.bindparams(bindparam("relations", expanding=True))
+    params: dict[str, Any] = {
+        "tenant_id": tenant_id,
+        "root_id": root_id,
+        "depth": depth,
+    }
+    if relations:
+        params["relations"] = relations
+    rows = await session.execute(stmt, params)
+    out: list[dict[str, Any]] = []
+    for r in rows.mappings():
+        d = dict(r)
+        d["link_id"] = UUID(str(d["link_id"]))
+        d["source_id"] = UUID(str(d["source_id"]))
+        d["target_id"] = UUID(str(d["target_id"]))
+        out.append(d)
+    return out
+
+
+async def list_records_page(
+    session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    kinds: list[str] | None,
+    since: datetime | None,
+    cursor: tuple[datetime, UUID] | None,
+    limit: int,
+    now: datetime,
+) -> list[dict[str, Any]]:
+    """One keyset page of LIVE records, newest-first-stable.
+
+    Liveness = not tombstoned, not superseded, validity not ended
+    (matching retrieval visibility). Ordering (and the keyset) is
+    ``(created_at DESC, memory_id DESC)``; ``since`` filters on the
+    freshest of ``updated_at`` / ``created_at`` so a sync pull picks up
+    both new rows and in-place updates.
+    """
+    clauses = [
+        "r.tenant_id = :tenant_id",
+        "r.is_tombstone = false",
+        "r.superseded_by IS NULL",
+        "(r.valid_until IS NULL OR r.valid_until > CAST(:now AS timestamptz))",
+    ]
+    params: dict[str, Any] = {"tenant_id": tenant_id, "now": now, "limit": limit}
+    if kinds:
+        clauses.append("r.kind IN :kinds")
+        params["kinds"] = kinds
+    if since is not None:
+        clauses.append("GREATEST(r.updated_at, r.created_at) > :since")
+        params["since"] = since
+    if cursor is not None:
+        clauses.append(
+            "(r.created_at, r.memory_id)"
+            " < (CAST(:cursor_created_at AS timestamptz),"
+            " CAST(:cursor_memory_id AS uuid))"
+        )
+        params["cursor_created_at"] = cursor[0]
+        params["cursor_memory_id"] = cursor[1]
+    stmt = text(
+        f"""
+        SELECT r.memory_id, r.title, r.content, r.kind, r.scope, r.scope_ref,
+               r.importance, r.content_hash, r.created_at, r.updated_at,
+               r.source
+        FROM coord.memory_records r
+        WHERE {" AND ".join(clauses)}
+        ORDER BY r.created_at DESC, r.memory_id DESC
+        LIMIT :limit
+        """
+    )
+    if kinds:
+        stmt = stmt.bindparams(bindparam("kinds", expanding=True))
+    rows = await session.execute(stmt, params)
+    out: list[dict[str, Any]] = []
+    for r in rows.mappings():
+        d = dict(r)
+        d["memory_id"] = UUID(str(d["memory_id"]))
+        d["importance"] = float(d["importance"])
+        out.append(d)
+    return out
+
+
+# ===========================================================================
 # Phase 4 — lifecycle sweeps (decay / consolidation / reindex)
 # ===========================================================================
 

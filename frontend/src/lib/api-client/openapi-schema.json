@@ -23222,6 +23222,35 @@
         "title": "ListFilesResponse",
         "type": "object"
       },
+      "ListRecordsResponse": {
+        "description": "``GET /memory/records`` \u2014 one keyset page, newest-first-stable.",
+        "properties": {
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryRecordOut"
+            },
+            "title": "Records",
+            "type": "array"
+          }
+        },
+        "required": [
+          "records",
+          "next_cursor"
+        ],
+        "title": "ListRecordsResponse",
+        "type": "object"
+      },
       "LocalExportRequest": {
         "description": "Request schema for local filesystem export endpoint.",
         "properties": {
@@ -24293,6 +24322,257 @@
         "title": "MatchLocation",
         "type": "object"
       },
+      "MemoryGraphEdge": {
+        "description": "One ``coord.memory_links`` edge among the visited nodes.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "link_id": {
+            "format": "uuid",
+            "title": "Link Id",
+            "type": "string"
+          },
+          "relation": {
+            "title": "Relation",
+            "type": "string"
+          },
+          "source_id": {
+            "format": "uuid",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "link_id",
+          "source_id",
+          "target_id",
+          "relation",
+          "description",
+          "created_at"
+        ],
+        "title": "MemoryGraphEdge",
+        "type": "object"
+      },
+      "MemoryGraphNode": {
+        "description": "One record visited by the traversal (query-hit field shape).",
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "importance": {
+            "title": "Importance",
+            "type": "number"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "memory_id": {
+            "format": "uuid",
+            "title": "Memory Id",
+            "type": "string"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "source": {
+            "additionalProperties": true,
+            "title": "Source",
+            "type": "object"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "memory_id",
+          "title",
+          "content",
+          "kind",
+          "scope",
+          "importance",
+          "created_at",
+          "source"
+        ],
+        "title": "MemoryGraphNode",
+        "type": "object"
+      },
+      "MemoryGraphRequest": {
+        "description": "``POST /memory/graph`` body \u2014 bounded outbound traversal.",
+        "properties": {
+          "depth": {
+            "default": 3,
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Depth",
+            "type": "integer"
+          },
+          "relation_filter": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "depends_on",
+                    "implements",
+                    "supersedes",
+                    "related"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relation Filter"
+          },
+          "root_memory_id": {
+            "format": "uuid",
+            "title": "Root Memory Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "root_memory_id"
+        ],
+        "title": "MemoryGraphRequest",
+        "type": "object"
+      },
+      "MemoryGraphResponse": {
+        "properties": {
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryGraphEdge"
+            },
+            "title": "Edges",
+            "type": "array"
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryGraphNode"
+            },
+            "title": "Nodes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "nodes",
+          "edges"
+        ],
+        "title": "MemoryGraphResponse",
+        "type": "object"
+      },
+      "MemoryLinkIn": {
+        "description": "One outbound edge declared alongside a record write.\n\n``target_ref`` names the edge's target either by ``memory_id`` (UUID\nstring) or by ``content_hash`` (sha256 hex of the target's stored\ncontent) \u2014 the write path tries the UUID interpretation first, then\nthe hash, against LIVE rows of the caller's tenant only. Unresolved\ntargets are dropped and counted, never rejected.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "relation": {
+            "enum": [
+              "depends_on",
+              "implements",
+              "supersedes",
+              "related"
+            ],
+            "title": "Relation",
+            "type": "string"
+          },
+          "target_ref": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Target Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_ref",
+          "relation"
+        ],
+        "title": "MemoryLinkIn",
+        "type": "object"
+      },
+      "MemoryLinkOut": {
+        "description": "One outbound edge hydrated onto a listed record.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "link_id": {
+            "format": "uuid",
+            "title": "Link Id",
+            "type": "string"
+          },
+          "relation": {
+            "title": "Relation",
+            "type": "string"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "link_id",
+          "target_id",
+          "relation",
+          "description",
+          "created_at"
+        ],
+        "title": "MemoryLinkOut",
+        "type": "object"
+      },
       "MemoryQueryHit": {
         "description": "One fused retrieval hit.",
         "properties": {
@@ -24409,7 +24689,8 @@
                     "episode",
                     "feedback",
                     "reference",
-                    "rule"
+                    "rule",
+                    "library"
                   ],
                   "type": "string"
                 },
@@ -24537,10 +24818,26 @@
               "episode",
               "feedback",
               "reference",
-              "rule"
+              "rule",
+              "library"
             ],
             "title": "Kind",
             "type": "string"
+          },
+          "links": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/MemoryLinkIn"
+                },
+                "maxItems": 32,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Links"
           },
           "scope": {
             "default": "tenant",
@@ -24583,6 +24880,89 @@
           "kind"
         ],
         "title": "MemoryRecordIn",
+        "type": "object"
+      },
+      "MemoryRecordOut": {
+        "description": "One record in a ``GET /memory/records`` page.\n\nThe query-hit field shape plus sync-relevant extras\n(``scope_ref`` / ``content_hash`` / ``updated_at``) and the record's\noutbound ``links``.",
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "content_hash": {
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "importance": {
+            "title": "Importance",
+            "type": "number"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "links": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryLinkOut"
+            },
+            "title": "Links",
+            "type": "array"
+          },
+          "memory_id": {
+            "format": "uuid",
+            "title": "Memory Id",
+            "type": "string"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "scope_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Ref"
+          },
+          "source": {
+            "additionalProperties": true,
+            "title": "Source",
+            "type": "object"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "memory_id",
+          "title",
+          "content",
+          "kind",
+          "scope",
+          "scope_ref",
+          "importance",
+          "content_hash",
+          "created_at",
+          "updated_at",
+          "source",
+          "links"
+        ],
+        "title": "MemoryRecordOut",
         "type": "object"
       },
       "MemoryRestoreRequest": {
@@ -37484,7 +37864,8 @@
                   "episode",
                   "feedback",
                   "reference",
-                  "rule"
+                  "rule",
+                  "library"
                 ],
                 "type": "string"
               },
@@ -47137,6 +47518,11 @@
         "properties": {
           "deduped_count": {
             "title": "Deduped Count",
+            "type": "integer"
+          },
+          "dropped_links_count": {
+            "default": 0,
+            "title": "Dropped Links Count",
             "type": "integer"
           },
           "records": {
@@ -70015,6 +70401,56 @@
         ]
       }
     },
+    "/api/v1/memory/graph": {
+      "post": {
+        "description": "Bounded outbound traversal of the memory graph from a root record.\n\nOne tenant-bound ``WITH RECURSIVE`` walk over ``coord.memory_links``\n(see :func:`store.graph_edges`): outbound edges from the root, then\nfrom each reached target, up to ``depth`` (\u22645) levels \u2014\n``relation_filter`` narrows which relations are followed. Cycles are\nsafe (the depth cap terminates the recursion; duplicate edges\ncollapse). 404 when the root does not exist in the caller's tenant\n(cross-tenant ids are never disclosed).",
+        "operationId": "api_v1_memory_graph_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryGraphRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryGraphResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Memory Graph",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
     "/api/v1/memory/query": {
       "post": {
         "description": "Hybrid retrieval: pgvector cosine + websearch FTS, RRF-fused.\n\nBoth arms are tenant-bound and validity-filtered (tombstones out,\n``valid_from``/``valid_until`` against now() or ``as_of``).\n``agent``/``session``-scoped rows are only visible when the request\nnames those scopes AND supplies the matching ``scope_ref``.",
@@ -70066,6 +70502,110 @@
       }
     },
     "/api/v1/memory/records": {
+      "get": {
+        "description": "Keyset-paginated list of the tenant's LIVE records, newest first.\n\nThe runner's sync-pull surface (``POST /query`` requires query_text,\ncaps at 50, and relevance-ranks \u2014 unusable for a full mirror).\n``kinds`` is repeatable and/or CSV; ``since`` filters on the\nfreshest of updated/created; ``cursor`` is the opaque\n``(created_at, memory_id)`` keyset token from the previous page.\nEach record carries its outbound ``links``. Ordering is\n``created_at DESC, memory_id DESC`` \u2014 stable under concurrent\nwrites (new rows only ever prepend).",
+        "operationId": "api_v1_memory_records_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "kinds",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kinds"
+            }
+          },
+          {
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Since"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListRecordsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Records",
+        "tags": [
+          "memory"
+        ]
+      },
       "post": {
         "description": "Batch-write memory records (\u2264100 per request).\n\nServer-side pipeline per batch: redact \u2192 hash \u2192 quota check (BEFORE\ninsert; 429 on exceed) \u2192 embed the non-deduplicated contents in one\nfastembed batch (on a worker thread) \u2192 ONE set-based insert deduping\non ``(tenant_id, content_hash)`` against live rows only.",
         "operationId": "api_v1_memory_records_post",
