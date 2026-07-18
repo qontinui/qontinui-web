@@ -19503,6 +19503,31 @@
         "title": "GenerateDescriptionRequest",
         "type": "object"
       },
+      "GithubOauthStatusResponse": {
+        "description": "Success body for ``GET /operations/github/oauth-status``.",
+        "properties": {
+          "authorize_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authorize Url"
+          },
+          "authorized": {
+            "title": "Authorized",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "authorized"
+        ],
+        "title": "GithubOauthStatusResponse",
+        "type": "object"
+      },
       "GuiActionTypeConfigCreate": {
         "description": "Schema for creating a GUI action type configuration.",
         "properties": {
@@ -30935,6 +30960,163 @@
           "open_pr_checks"
         ],
         "title": "RepoCiRow",
+        "type": "object"
+      },
+      "RepoCreateRequest": {
+        "description": "Body for ``POST /operations/github/create-repo``.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          },
+          "private": {
+            "default": true,
+            "title": "Private",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "owner",
+          "name"
+        ],
+        "title": "RepoCreateRequest",
+        "type": "object"
+      },
+      "RepoCreateResponse": {
+        "description": "201 body for ``POST /operations/github/create-repo`` (forwarded\nverbatim from coord's ``POST /coord/repos``).",
+        "properties": {
+          "clone_url": {
+            "title": "Clone Url",
+            "type": "string"
+          },
+          "default_branch": {
+            "title": "Default Branch",
+            "type": "string"
+          },
+          "full_name": {
+            "title": "Full Name",
+            "type": "string"
+          },
+          "html_url": {
+            "title": "Html Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "full_name",
+          "clone_url",
+          "html_url",
+          "default_branch"
+        ],
+        "title": "RepoCreateResponse",
+        "type": "object"
+      },
+      "RepoNameCheckRequest": {
+        "description": "Body for ``POST /operations/github/check-name`` \u2014 the GitHub account\nlogin and the candidate repository name to check.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          }
+        },
+        "required": [
+          "owner",
+          "name"
+        ],
+        "title": "RepoNameCheckRequest",
+        "type": "object"
+      },
+      "RepoNameCheckResponse": {
+        "description": "Success body for ``POST /operations/github/check-name`` (forwarded\nverbatim from coord's ``GET /coord/repos/availability``).",
+        "properties": {
+          "normalized_name": {
+            "title": "Normalized Name",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "status": {
+            "enum": [
+              "available",
+              "taken",
+              "invalid",
+              "owner_unbound"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "normalized_name"
+        ],
+        "title": "RepoNameCheckResponse",
+        "type": "object"
+      },
+      "RepoPushCredentialResponse": {
+        "description": "Success body for ``POST /operations/github/push-credential`` \u2014 a\nshort-TTL installation token scoped to one repo.",
+        "properties": {
+          "expires_at": {
+            "title": "Expires At",
+            "type": "string"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "expires_at"
+        ],
+        "title": "RepoPushCredentialResponse",
+        "type": "object"
+      },
+      "RepoRefRequest": {
+        "description": "Body naming an existing repo by ``owner`` + ``name`` \u2014 shared by the\npush-credential and enroll-repo proxies.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          }
+        },
+        "required": [
+          "owner",
+          "name"
+        ],
+        "title": "RepoRefRequest",
         "type": "object"
       },
       "ResendDeviceVerificationRequest": {
@@ -72953,6 +73135,53 @@
         ]
       }
     },
+    "/api/v1/operations/github/check-name": {
+      "post": {
+        "description": "Check whether ``owner/name`` is available for a new repository.\n\nProxies coord ``GET /coord/repos/availability?owner=&name=`` and forwards\nthe JSON verbatim: ``{status: \"available\"|\"taken\"|\"invalid\"|\n\"owner_unbound\", reason?, normalized_name}``. POST (despite the read\nsemantics) so the runner's provisioning flow talks one verb to this\nsurface; the upstream coord call is the GET.",
+        "operationId": "api_v1_operations_github_check_name_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RepoNameCheckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepoNameCheckResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Github Check Name",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/github/clone-credential": {
       "post": {
         "description": "Mint a repo-scoped, short-TTL, contents:read clone token for a single\nrepo. Proxies coord ``POST /coord/onboarding/installations/clone-credential``.\n\nPasses coord's status + JSON body through verbatim (like the onboarding\nclaim proxy) so the runner sees a clean ``403 repo_owner_not_connected`` when\nthe repo's owner isn't a GitHub account connected to the caller's workspace.",
@@ -72993,6 +73222,195 @@
           }
         ],
         "summary": "Post Github Clone Credential",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/github/create-repo": {
+      "post": {
+        "description": "Create a new GitHub repository under a connected account.\n\nProxies coord ``POST /coord/repos``. Success is coord's ``201\n{full_name, clone_url, html_url, default_branch}``; coord's error\nstatuses + bodies pass through VERBATIM \u2014 ``409 name_taken``,\n``403 owner_unbound``, ``409 user_authorization_required`` (whose body\ncarries the ``authorize_url`` the runner must surface), and\n``503 app_unconfigured``.\n\n``description`` is omitted from the forwarded body when unset so coord\nsees an honest wire shape (mirrors the onboarding claim proxy).",
+        "operationId": "api_v1_operations_github_create_repo_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RepoCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepoCreateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Github Create Repo",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/github/enroll-repo": {
+      "post": {
+        "description": "Enroll ``owner/name`` into coord's PR-merge orchestration.\n\nProxies coord ``POST /coord/repos/{owner}/{name}/enroll`` and forwards\ncoord's response verbatim (status + body).",
+        "operationId": "api_v1_operations_github_enroll_repo_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RepoRefRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Github Enroll Repo",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/github/oauth-status": {
+      "get": {
+        "description": "Whether the calling operator has user-authorized the GitHub App for\n``owner``, for the create-repo pre-flight.\n\nProxies coord ``GET /coord/github/oauth/status?account=<owner>`` \u2192\n``{authorized, authorize_url?}`` (``authorize_url`` present when the\noperator still needs to complete the user-authorization flow).",
+        "operationId": "api_v1_operations_github_oauth_status_get",
+        "parameters": [
+          {
+            "description": "GitHub account login to check.",
+            "in": "query",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "description": "GitHub account login to check.",
+              "title": "Owner",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GithubOauthStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Github Oauth Status",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/github/push-credential": {
+      "post": {
+        "description": "Mint a repo-scoped, short-TTL push token for ``owner/name``.\n\nProxies coord ``POST /coord/repos/{owner}/{name}/push-credential`` \u2192\n``{token, expires_at}``. The write-scoped sibling of the contents:read\nclone-credential proxy above; coord enforces that the repo's owner is\nbound to the caller's tenant.",
+        "operationId": "api_v1_operations_github_push_credential_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RepoRefRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepoPushCredentialResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Github Push Credential",
         "tags": [
           "operations"
         ]

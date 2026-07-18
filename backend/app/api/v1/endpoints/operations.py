@@ -1216,8 +1216,7 @@ async def post_github_enroll_repo(
     """
     return await _proxy_coord_verbatim(
         "POST",
-        f"/coord/repos/{quote(body.owner, safe='')}"
-        f"/{quote(body.name, safe='')}/enroll",
+        f"/coord/repos/{quote(body.owner, safe='')}/{quote(body.name, safe='')}/enroll",
         json_body={},
         tenant_id=tenant_id,
     )
