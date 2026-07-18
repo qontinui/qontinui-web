@@ -891,11 +891,8 @@ async def get_machine_drift(
     target_machine = await machine_repo.get_by_id(db, machine_id=machine_id)
     if target_machine is None:
         raise _not_found("machine")
-    if (
-        target_machine.owner_user_id != current_user.id
-        and not await config_repo.exists(
-            db, environment_id=env.id, machine_id=machine_id
-        )
+    if target_machine.owner_user_id != current_user.id and not await config_repo.exists(
+        db, environment_id=env.id, machine_id=machine_id
     ):
         raise _not_found("machine")
 
