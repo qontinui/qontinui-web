@@ -226,6 +226,59 @@ class TestMachineKeyCrud:
             assert "1" not in code and "I" not in code
 
 
+class TestContentHash:
+    """:func:`app.repositories.devenv.compute_content_hash` — canonical JSON."""
+
+    def test_key_order_does_not_change_hash(self) -> None:
+        """The same envelope with different dict key order hashes identically."""
+        from app.repositories.devenv import compute_content_hash
+
+        a = {
+            "schema_version": 1,
+            "sections": {
+                "services": {"redis": "6379", "pg": "5432"},
+                "versions": {"python": "3.12"},
+            },
+        }
+        b = {
+            "sections": {
+                "versions": {"python": "3.12"},
+                "services": {"pg": "5432", "redis": "6379"},
+            },
+            "schema_version": 1,
+        }
+        assert compute_content_hash(a) == compute_content_hash(b)
+        # Shape sanity: sha256 hex.
+        digest = compute_content_hash(a)
+        assert len(digest) == 64
+        assert all(c in "0123456789abcdef" for c in digest)
+
+    def test_captured_at_excluded_from_hash(self) -> None:
+        """A re-capture of identical content dedups despite a moved timestamp."""
+        from app.repositories.devenv import compute_content_hash
+
+        sections = {"services": {"redis": "6379"}}
+        early = {
+            "schema_version": 1,
+            "captured_at": "2026-06-21T00:00:00Z",
+            "sections": sections,
+        }
+        late = {
+            "schema_version": 1,
+            "captured_at": "2026-06-21T00:15:00Z",
+            "sections": sections,
+        }
+        assert compute_content_hash(early) == compute_content_hash(late)
+
+    def test_content_change_changes_hash(self) -> None:
+        """A changed section value produces a different hash."""
+        from app.repositories.devenv import compute_content_hash
+
+        a = {"schema_version": 1, "sections": {"services": {"redis": "6379"}}}
+        b = {"schema_version": 1, "sections": {"services": {"redis": "6380"}}}
+        assert compute_content_hash(a) != compute_content_hash(b)
+
+
 class TestSectionPolicy:
     """:mod:`app.services.devenv_section_policy` — per-section apply policy."""
 
@@ -1104,6 +1157,147 @@ class TestCanonicalAuditAndPull:
             r = await client.get(
                 f"{API_PREFIX}/agent/environments/{env_id}/canonical-config",
                 headers={"X-Machine-Key": key_intruder},
+            )
+            assert r.status_code == 404, r.text
+            assert r.json()["detail"]["code"] == "environment_not_found"
+
+
+class TestConfigHistory:
+    """P2 — append-only config-history timeline + point-to-point diff."""
+
+    async def _seed_enrolled_machine(
+        self, client: httpx.AsyncClient
+    ) -> tuple[str, str, str]:
+        """Create env + one enrolled machine. Returns (env_id, machine_id, key)."""
+        r = await client.post(
+            f"{API_PREFIX}/environments", json={"name": "Hist", "description": None}
+        )
+        env_id = r.json()["id"]
+        r = await client.post(f"{API_PREFIX}/machines", json={"name": "hist-machine"})
+        body = r.json()
+        machine_id, code = body["id"], body["enrollment_code"]
+        r = await client.post(
+            f"{API_PREFIX}/agent/enroll",
+            json={"enrollment_code": code, "machine_id": machine_id},
+        )
+        key = r.json()["machine_key"]
+        return env_id, machine_id, key
+
+    @staticmethod
+    def _body(sections: dict, captured_at: str) -> dict:
+        return {"schema_version": 1, "captured_at": captured_at, "sections": sections}
+
+    @pytest.mark.asyncio
+    async def test_history_dedup_diff_and_prune(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """Identical re-push adds no row; a change appends; diff shows it;
+        prune caps the timeline and reports counts."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app) as client:
+            env_id, machine_id, key = await self._seed_enrolled_machine(client)
+            history_url = (
+                f"{API_PREFIX}/environments/{env_id}"
+                f"/machines/{machine_id}/config-history"
+            )
+
+            # 1. Push a config, then re-push the IDENTICAL envelope → 1 row.
+            sections_v1 = {"services": {"redis": "6379"}}
+            r = await client.put(
+                f"{API_PREFIX}/agent/environments/{env_id}/config",
+                json=self._body(sections_v1, "2026-07-01T10:00:00Z"),
+                headers={"X-Machine-Key": key},
+            )
+            assert r.status_code == 200, r.text
+            r = await client.put(
+                f"{API_PREFIX}/agent/environments/{env_id}/config",
+                json=self._body(sections_v1, "2026-07-01T10:15:00Z"),
+                headers={"X-Machine-Key": key},
+            )
+            assert r.status_code == 200, r.text
+
+            r = await client.get(history_url)
+            assert r.status_code == 200, r.text
+            hist = r.json()
+            assert len(hist) == 1
+            # Metadata only — NEVER a config body in the list payload.
+            assert "config" not in hist[0]
+            assert hist[0]["source"] == "agent"
+            assert hist[0]["schema_version"] == 1
+            assert len(hist[0]["content_hash"]) == 64
+
+            # 2. Push a CHANGED envelope → a second row, newest first.
+            sections_v2 = {"services": {"redis": "6380"}}
+            r = await client.put(
+                f"{API_PREFIX}/agent/environments/{env_id}/config",
+                json=self._body(sections_v2, "2026-07-02T10:00:00Z"),
+                headers={"X-Machine-Key": key},
+            )
+            assert r.status_code == 200, r.text
+
+            hist = (await client.get(history_url)).json()
+            assert len(hist) == 2
+            assert hist[0]["captured_at"] == "2026-07-02T10:00:00Z"
+            assert hist[1]["captured_at"] == "2026-07-01T10:00:00Z"
+            assert hist[0]["content_hash"] != hist[1]["content_hash"]
+            newer_id, older_id = hist[0]["id"], hist[1]["id"]
+
+            # 3. Diff older -> newer surfaces the changed key.
+            r = await client.get(
+                f"{history_url}/diff",
+                params={"from_id": older_id, "to_id": newer_id},
+            )
+            assert r.status_code == 200, r.text
+            diff = r.json()
+            assert diff["machine_id"] == machine_id
+            assert diff["from_id"] == older_id
+            assert diff["to_id"] == newer_id
+            assert diff["in_sync"] is False
+            delta = _find_delta(_find_section(diff, "services"), "redis")
+            assert delta["status"] == "changed"
+            assert delta["expected"] == "6379"
+            assert delta["actual"] == "6380"
+
+            # 3b. A diff id from nowhere → 404 (missing or foreign pair).
+            r = await client.get(
+                f"{history_url}/diff",
+                params={"from_id": str(uuid4()), "to_id": newer_id},
+            )
+            assert r.status_code == 404, r.text
+            assert r.json()["detail"]["code"] == "config_history_entry_not_found"
+
+            # 4. Prune with keep_per_pair=1 deletes the older row + reports it.
+            from app.repositories.devenv import config_history_repo
+
+            pruned = await config_history_repo.prune(async_db_session, keep_per_pair=1)
+            assert pruned == [(UUID(env_id), UUID(machine_id), 1)]
+
+            hist = (await client.get(history_url)).json()
+            assert len(hist) == 1
+            assert hist[0]["id"] == newer_id
+
+    @pytest.mark.asyncio
+    async def test_history_cross_owner_404(
+        self, async_db_session: AsyncSession, test_user, second_user
+    ) -> None:
+        """Another owner cannot read a machine's history (404, not 403)."""
+        app1 = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app1) as client:
+            env_id, machine_id, key = await self._seed_enrolled_machine(client)
+            r = await client.put(
+                f"{API_PREFIX}/agent/environments/{env_id}/config",
+                json=self._body(
+                    {"services": {"redis": "6379"}}, "2026-07-01T10:00:00Z"
+                ),
+                headers={"X-Machine-Key": key},
+            )
+            assert r.status_code == 200, r.text
+
+        app2 = _build_app(db_session=async_db_session, user=second_user)
+        async with _client(app2) as client:
+            r = await client.get(
+                f"{API_PREFIX}/environments/{env_id}"
+                f"/machines/{machine_id}/config-history"
             )
             assert r.status_code == 404, r.text
             assert r.json()["detail"]["code"] == "environment_not_found"

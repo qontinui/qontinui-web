@@ -165,6 +165,35 @@ export interface EnvironmentDrift {
 }
 
 // ---------------------------------------------------------------------------
+// Config history (P2 — drift over time)
+// ---------------------------------------------------------------------------
+
+/**
+ * One capture in a machine's config-history timeline (newest-first).
+ * Metadata only — the backend deliberately omits the config body; content is
+ * reachable through the diff endpoint as a drift report.
+ */
+export interface ConfigHistoryEntry {
+  id: string;
+  captured_at: string;
+  schema_version: number;
+  source: string;
+  content_hash: string;
+}
+
+/**
+ * SELF-drift between two captures of the SAME machine over time. Same shape
+ * as `MachineDriftReport` (the `from` capture fills the expected slot, `to`
+ * the actual), extended with the identity of the two compared captures.
+ */
+export interface ConfigHistoryDiff extends MachineDriftReport {
+  from_id: string;
+  to_id: string;
+  from_captured_at: string;
+  to_captured_at: string;
+}
+
+// ---------------------------------------------------------------------------
 // Error handling
 // ---------------------------------------------------------------------------
 
@@ -435,5 +464,42 @@ export function getMachineDrift(
     `/environments/${encodeURIComponent(
       environmentId
     )}/drift/${encodeURIComponent(machineId)}`
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Config history
+// ---------------------------------------------------------------------------
+
+/** A machine's capture timeline for an environment, newest first (metadata only). */
+export function getConfigHistory(
+  environmentId: string,
+  machineId: string,
+  limit = 50,
+  offset = 0
+): Promise<ConfigHistoryEntry[]> {
+  const params = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  });
+  return request<ConfigHistoryEntry[]>(
+    `/environments/${encodeURIComponent(
+      environmentId
+    )}/machines/${encodeURIComponent(machineId)}/config-history?${params}`
+  );
+}
+
+/** Diff two captures of the same machine (what changed going from → to). */
+export function getConfigHistoryDiff(
+  environmentId: string,
+  machineId: string,
+  fromId: string,
+  toId: string
+): Promise<ConfigHistoryDiff> {
+  const params = new URLSearchParams({ from_id: fromId, to_id: toId });
+  return request<ConfigHistoryDiff>(
+    `/environments/${encodeURIComponent(
+      environmentId
+    )}/machines/${encodeURIComponent(machineId)}/config-history/diff?${params}`
   );
 }
