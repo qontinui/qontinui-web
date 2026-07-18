@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "base_sha": "bf3d87864634853b881e1cbd258bfd0e33e68885",
+  "ours_sha": "d3e4ef255fa53150e43fae9af480d5ec195baca5",
+  "theirs_sha": "bf3d87864634853b881e1cbd258bfd0e33e68885",
+  "entries": [
+    {
+      "path": "backend/app/api/v1/endpoints/operations.py",
+      "base_oid": "253d3c36507717fff8a187ecddb45a033f75555a",
+      "ours_oid": "3258d483f74c29e6b0f8b41b98c6f08021531a2d",
+      "theirs_oid": "4242419d8334d99d4bd51d7a0da517b6165fab64",
+      "base_path": "backend/app/api/v1/endpoints/operations.py.base",
+      "ours_path": "backend/app/api/v1/endpoints/operations.py.ours",
+      "theirs_path": "backend/app/api/v1/endpoints/operations.py.theirs",
+      "hunks": [
+        "<<<<<<< HEAD\n        f\"/coord/repos/{quote(body.owner, safe='')}/{quote(body.name, safe='')}/enroll\",\n=======\n        f\"/coord/repos/{quote(body.owner, safe='')}\"\n        f\"/{quote(body.name, safe='')}/enroll\",\n>>>>>>> d99a7497 (feat: GitHub repo provisioning proxy endpoints (check-name, create-repo, push-credential, enroll-repo, oauth-status))\n"
+      ]
+    }
+  ]
+}

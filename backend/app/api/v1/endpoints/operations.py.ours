@@ -1216,12 +1216,8 @@ async def post_github_enroll_repo(
     """
     return await _proxy_coord_verbatim(
         "POST",
-<<<<<<< HEAD
-        f"/coord/repos/{quote(body.owner, safe='')}/{quote(body.name, safe='')}/enroll",
-=======
         f"/coord/repos/{quote(body.owner, safe='')}"
         f"/{quote(body.name, safe='')}/enroll",
->>>>>>> d99a7497 (feat: GitHub repo provisioning proxy endpoints (check-name, create-repo, push-credential, enroll-repo, oauth-status))
         json_body={},
         tenant_id=tenant_id,
     )
