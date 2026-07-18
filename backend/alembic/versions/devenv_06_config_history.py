@@ -1,7 +1,7 @@
 """devenv_06: machine config history (drift over time)
 
 Revision ID: devenv_06_config_history
-Revises: coord_sessions_role_01
+Revises: a1cc120c0fba
 Create Date: 2026-07-18
 
 P2 of plan ``2026-07-01-devenv-phase2-binding-history-remediation-sharing``.
@@ -34,7 +34,7 @@ Column notes:
 Forward-only + additive (a brand-new table). Safe for a running app on the
 prior schema.
 
-``down_revision`` = the current alembic head (``coord_sessions_role_01``).
+``down_revision`` = the current alembic head (``a1cc120c0fba``).
 Per the fleet convention (and as ``devenv_05`` did), coord re-points at land
 time if main advances, and ``alembic-graph-pr`` CI guards forks.
 """
@@ -46,7 +46,7 @@ from alembic import op
 
 # revision identifiers
 revision = "devenv_06_config_history"
-down_revision = "coord_sessions_role_01"
+down_revision = "a1cc120c0fba"
 branch_labels = None
 depends_on = None
 
