@@ -18,7 +18,7 @@ import contextvars
 import json
 import re
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import quote
 from uuid import UUID
 
@@ -1019,6 +1019,228 @@ async def post_github_clone_credential(
     except ValueError:
         content = {"detail": resp.text}
     return JSONResponse(content=content, status_code=resp.status_code)
+
+
+# ---- GitHub repo provisioning (new-project initiation) ---------------------
+#
+# Five thin proxies backing the runner's "start a new project" flow (plan
+# ``new-project-initiation-2026-07-18``, PR-C). Coord owns the GitHub App
+# credentials and performs the actual GitHub API calls; these routes only
+# authenticate the operator (``get_tenant_id`` → bearer forwarded via
+# ``_tenant_headers``) and pass coord's status code + JSON body through
+# VERBATIM — like the clone-credential proxy above — because the runner
+# branches on coord's ``error`` strings (``name_taken``, ``owner_unbound``,
+# ``user_authorization_required`` with its ``authorize_url``,
+# ``app_unconfigured``). Collapsing a coord 4xx into an ``HTTPException``
+# ``detail`` string would break that dispatch.
+
+
+async def _proxy_coord_verbatim(
+    method: str,
+    path: str,
+    *,
+    tenant_id: UUID,
+    params: dict[str, Any] | None = None,
+    json_body: dict[str, Any] | None = None,
+) -> JSONResponse:
+    """Forward a request to coord, passing status + JSON body through verbatim.
+
+    The shared transport for the repo-provisioning proxies below (the same
+    posture ``post_github_clone_credential`` and the onboarding claim proxy
+    open-code): operator bearer forwarded via ``_tenant_headers``, httpx
+    transport errors mapped like the raising helpers (ConnectError → 502,
+    TimeoutException → 504), and coord's response — success OR error —
+    echoed to the caller with its original status code and JSON body. A
+    non-JSON coord payload is wrapped as ``{"detail": <text>}``.
+    """
+    url = f"{settings.COORD_URL}{path}"
+    headers = _tenant_headers(tenant_id)
+    async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
+        try:
+            resp = await client.request(
+                method, url, params=params, json=json_body, headers=headers
+            )
+        except httpx.ConnectError:
+            raise HTTPException(status_code=502, detail="coord is not reachable")
+        except httpx.TimeoutException:
+            raise HTTPException(status_code=504, detail="timeout waiting for coord")
+    try:
+        content = resp.json()
+    except ValueError:
+        content = {"detail": resp.text}
+    return JSONResponse(content=content, status_code=resp.status_code)
+
+
+class RepoNameCheckRequest(BaseModel):
+    """Body for ``POST /operations/github/check-name`` — the GitHub account
+    login and the candidate repository name to check."""
+
+    owner: str
+    name: str
+
+
+class RepoNameCheckResponse(BaseModel):
+    """Success body for ``POST /operations/github/check-name`` (forwarded
+    verbatim from coord's ``GET /coord/repos/availability``)."""
+
+    status: Literal["available", "taken", "invalid", "owner_unbound"]
+    reason: str | None = None
+    normalized_name: str
+
+
+class RepoCreateRequest(BaseModel):
+    """Body for ``POST /operations/github/create-repo``."""
+
+    owner: str
+    name: str
+    private: bool = True
+    description: str | None = None
+
+
+class RepoCreateResponse(BaseModel):
+    """201 body for ``POST /operations/github/create-repo`` (forwarded
+    verbatim from coord's ``POST /coord/repos``)."""
+
+    full_name: str
+    clone_url: str
+    html_url: str
+    default_branch: str
+
+
+class RepoRefRequest(BaseModel):
+    """Body naming an existing repo by ``owner`` + ``name`` — shared by the
+    push-credential and enroll-repo proxies."""
+
+    owner: str
+    name: str
+
+
+class RepoPushCredentialResponse(BaseModel):
+    """Success body for ``POST /operations/github/push-credential`` — a
+    short-TTL installation token scoped to one repo."""
+
+    token: str
+    expires_at: str
+
+
+class GithubOauthStatusResponse(BaseModel):
+    """Success body for ``GET /operations/github/oauth-status``."""
+
+    authorized: bool
+    authorize_url: str | None = None
+
+
+@router.post("/github/check-name", response_model=RepoNameCheckResponse)
+async def post_github_check_name(
+    body: RepoNameCheckRequest,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Check whether ``owner/name`` is available for a new repository.
+
+    Proxies coord ``GET /coord/repos/availability?owner=&name=`` and forwards
+    the JSON verbatim: ``{status: "available"|"taken"|"invalid"|
+    "owner_unbound", reason?, normalized_name}``. POST (despite the read
+    semantics) so the runner's provisioning flow talks one verb to this
+    surface; the upstream coord call is the GET.
+    """
+    return await _proxy_coord_verbatim(
+        "GET",
+        "/coord/repos/availability",
+        params={"owner": body.owner, "name": body.name},
+        tenant_id=tenant_id,
+    )
+
+
+@router.post("/github/create-repo", response_model=RepoCreateResponse)
+async def post_github_create_repo(
+    body: RepoCreateRequest,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Create a new GitHub repository under a connected account.
+
+    Proxies coord ``POST /coord/repos``. Success is coord's ``201
+    {full_name, clone_url, html_url, default_branch}``; coord's error
+    statuses + bodies pass through VERBATIM — ``409 name_taken``,
+    ``403 owner_unbound``, ``409 user_authorization_required`` (whose body
+    carries the ``authorize_url`` the runner must surface), and
+    ``503 app_unconfigured``.
+
+    ``description`` is omitted from the forwarded body when unset so coord
+    sees an honest wire shape (mirrors the onboarding claim proxy).
+    """
+    payload: dict[str, Any] = {
+        "owner": body.owner,
+        "name": body.name,
+        "private": body.private,
+    }
+    if body.description is not None:
+        payload["description"] = body.description
+    return await _proxy_coord_verbatim(
+        "POST",
+        "/coord/repos",
+        json_body=payload,
+        tenant_id=tenant_id,
+    )
+
+
+@router.post("/github/push-credential", response_model=RepoPushCredentialResponse)
+async def post_github_push_credential(
+    body: RepoRefRequest,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Mint a repo-scoped, short-TTL push token for ``owner/name``.
+
+    Proxies coord ``POST /coord/repos/{owner}/{name}/push-credential`` →
+    ``{token, expires_at}``. The write-scoped sibling of the contents:read
+    clone-credential proxy above; coord enforces that the repo's owner is
+    bound to the caller's tenant.
+    """
+    return await _proxy_coord_verbatim(
+        "POST",
+        f"/coord/repos/{quote(body.owner, safe='')}"
+        f"/{quote(body.name, safe='')}/push-credential",
+        json_body={},
+        tenant_id=tenant_id,
+    )
+
+
+@router.post("/github/enroll-repo")
+async def post_github_enroll_repo(
+    body: RepoRefRequest,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Enroll ``owner/name`` into coord's PR-merge orchestration.
+
+    Proxies coord ``POST /coord/repos/{owner}/{name}/enroll`` and forwards
+    coord's response verbatim (status + body).
+    """
+    return await _proxy_coord_verbatim(
+        "POST",
+        f"/coord/repos/{quote(body.owner, safe='')}"
+        f"/{quote(body.name, safe='')}/enroll",
+        json_body={},
+        tenant_id=tenant_id,
+    )
+
+
+@router.get("/github/oauth-status", response_model=GithubOauthStatusResponse)
+async def get_github_oauth_status(
+    owner: str = Query(..., description="GitHub account login to check."),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Whether the calling operator has user-authorized the GitHub App for
+    ``owner``, for the create-repo pre-flight.
+
+    Proxies coord ``GET /coord/github/oauth/status?account=<owner>`` →
+    ``{authorized, authorize_url?}`` (``authorize_url`` present when the
+    operator still needs to complete the user-authorization flow).
+    """
+    return await _proxy_coord_verbatim(
+        "GET",
+        "/coord/github/oauth/status",
+        params={"account": owner},
+        tenant_id=tenant_id,
+    )
 
 
 @router.get("/pr-merge/repos/{repo:path}/profile")
