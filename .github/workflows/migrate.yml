@@ -64,7 +64,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  AWS_REGION: us-east-1
+  AWS_REGION: eu-central-1
   ECR_REPOSITORY: qontinui-migrator
   IMAGE_TAG: staging
   ECS_CLUSTER: ${{ secrets.STAGING_ECS_CLUSTER }}

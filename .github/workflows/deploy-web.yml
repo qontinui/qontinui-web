@@ -7,7 +7,7 @@ name: Deploy Web Backend
 run-name: "Deploy web${{ inputs.dispatch_id != '' && format(' [dispatch:{0}]', inputs.dispatch_id) || '' }}"
 
 # Builds the qontinui-web backend image and rolls it onto the staging ECS
-# service (cluster qontinui-staging, service "web", region us-east-1). Mirrors
+# service (cluster qontinui-staging, service "web", region eu-central-1). Mirrors
 # the trigger model + AWS plumbing of staging-migrate.yml so staging's two
 # halves — DB schema and the running image — deploy on the same cadence.
 #
@@ -85,7 +85,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  AWS_REGION: us-east-1
+  AWS_REGION: eu-central-1
   ECR_REPOSITORY: qontinui-web-backend
   ECS_CLUSTER: ${{ secrets.STAGING_ECS_CLUSTER }}
   ECS_SERVICE: web
@@ -98,9 +98,9 @@ env:
   API_BASE: https://api.qontinui.io/api/v1
   HEALTH_URL: https://api.qontinui.io/api/v1/health
   # The behavioral smoke reads CI-bot creds from SSM SecureString. Those
-  # parameters live in eu-central-1 (the autonomous-work vault), NOT the
-  # us-east-1 deploy region, so the get-parameter calls pass this region
-  # explicitly rather than ${AWS_REGION}.
+  # parameters live in eu-central-1 (the autonomous-work vault). Kept as an
+  # explicit var (independent of ${AWS_REGION}) so the vault region stays
+  # pinned even if the deploy region ever diverges from it again.
   SSM_REGION: eu-central-1
   # The D3 deploy effect-signature loop (qontinui-coord, plan
   # 2026-05-31-deploy-action-effect-signatures §3.6): the declare/verify steps
@@ -545,7 +545,7 @@ jobs:
           COGNITO_CI_CLIENT_ID="tb0epbojige1900ipu6q80j6b"
           TOKEN=""
           for i in 1 2 3; do
-            resp=$(curl -s -X POST "https://cognito-idp.us-east-1.amazonaws.com/" \
+            resp=$(curl -s -X POST "https://cognito-idp.eu-central-1.amazonaws.com/" \
               -H 'Content-Type: application/x-amz-json-1.1' \
               -H 'X-Amz-Target: AWSCognitoIdentityProviderService.InitiateAuth' \
               -d "{\"AuthFlow\":\"USER_PASSWORD_AUTH\",\"ClientId\":\"${COGNITO_CI_CLIENT_ID}\",\"AuthParameters\":{\"USERNAME\":\"${CI_EMAIL}\",\"PASSWORD\":\"${CI_PASSWORD}\"}}" || echo "")
