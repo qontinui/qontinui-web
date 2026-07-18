@@ -416,6 +416,12 @@ async def _job_scheduled_dispatch() -> Any:
     return await poll_and_dispatch_due()
 
 
+async def _job_devenv_config_history_prune() -> Any:
+    from app.jobs.devenv_history_prune import prune_config_history
+
+    return await prune_config_history()
+
+
 async def _job_connection_cleanup() -> Any:
     from app.jobs.connection_cleanup import cleanup_stale_connections
 
@@ -465,6 +471,17 @@ def install_default_tasks(service: SchedulerService) -> None:
             name="memory_bridge_sync",
             coro=_job_memory_bridge_sync,
             cron="*/15 * * * *",
+        )
+    )
+
+    # Devenv config-history retention — daily cap of the append-only capture
+    # timeline at the newest 500 rows per (environment, machine) pair. Off-peak
+    # like the other daily crons, offset so it never contends with them.
+    service.register(
+        ScheduledTask(
+            name="devenv_config_history_prune",
+            coro=_job_devenv_config_history_prune,
+            cron="25 4 * * *",
         )
     )
 
