@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "base_sha": "521005cff400c33d6ca140da7e52ecbe3d012059",
+  "ours_sha": "27cc6531b48c3db5ffc79dd3f67abbbc5a99d7e6",
+  "theirs_sha": "fcbbf7b51d1a13d6caa02dde897e511756e5e45e",
+  "entries": [
+    {
+      "path": "frontend/src/app/(app)/environments/[envId]/page.tsx",
+      "base_oid": "c9b13f62ca60cfa093d7ac4fff4498b54b41403e",
+      "ours_oid": "543cb4cdbfb30ad160b8538f8f384adcafe1d263",
+      "theirs_oid": "6514f9c0e3f16592ffae57078b98329442deb430",
+      "base_path": "frontend/src/app/(app)/environments/[envId]/page.tsx.base",
+      "ours_path": "frontend/src/app/(app)/environments/[envId]/page.tsx.ours",
+      "theirs_path": "frontend/src/app/(app)/environments/[envId]/page.tsx.theirs",
+      "hunks": [
+        "<<<<<<< HEAD\nimport { MachineConfigHistory } from \"../_components/MachineConfigHistory\";\n=======\nimport { EnvironmentSharingControl } from \"../_components/EnvironmentSharingControl\";\n>>>>>>> 17882dfd (feat(devenv): org/team sharing — organization_id on applications/environments + membership authz (P4))\n"
+      ]
+    }
+  ]
+}
