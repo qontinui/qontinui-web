@@ -11,9 +11,10 @@ Access model (P4 org sharing):
   ``owner``/``admin``/``member`` → edit, ``viewer`` → view only,
   ``helper`` → no devenv access. The ``get_viewable`` / ``list_accessible``
   methods plus the :func:`can_edit` predicate implement this (view-fetch then
-  ``can_edit`` lets endpoints answer 404-for-nonmember vs 403-for-viewer);
-  the plain ``get`` / ``list`` methods stay owner-scoped (the agent surface
-  relies on them).
+  ``can_edit`` lets endpoints answer 404-for-nonmember vs 403-for-viewer).
+  The agent surface (``devenv_agent.py``) applies the SAME predicates keyed
+  on the machine's OWNER (edit for config report, view for canonical pull);
+  only the enroll auto-bind fallback still uses the owner-scoped ``list``.
 
 Cross-owner / non-member ids resolve to ``None`` (the endpoint layer turns
 that into a 404, not a 403, so existence is not leaked).
@@ -286,10 +287,12 @@ class MachineRepository:
 class EnvironmentRepository:
     """CRUD for ``devenv.environments`` (owner- or org-membership-scoped).
 
-    ``get`` / ``list`` remain strictly owner-scoped — the machine-key agent
-    surface (``devenv_agent.py``) resolves environments through the machine's
-    OWNER and must not see org-shared rows. The user-JWT endpoints use the
-    membership-aware ``get_viewable`` / ``list_accessible`` (+ ``can_edit``).
+    Both the user-JWT endpoints and the machine-key agent surface resolve
+    environments through the membership-aware ``get_viewable`` (+
+    ``can_edit``) — the agent keys them on the MACHINE's owner. ``list``
+    remains strictly owner-scoped: it backs the enroll-time single-env
+    auto-bind convenience, which deliberately considers only the owner's
+    own environments.
     """
 
     async def create(
@@ -314,16 +317,6 @@ class EnvironmentRepository:
         await db.flush()
         await db.refresh(env)
         return env
-
-    async def get(
-        self, db: AsyncSession, *, owner_id: UUID, env_id: UUID
-    ) -> Environment | None:
-        """Get an owner's environment by id (strictly owner-scoped)."""
-        stmt = select(Environment).where(
-            Environment.id == env_id,
-            Environment.owner_user_id == owner_id,
-        )
-        return (await db.execute(stmt)).scalar_one_or_none()
 
     async def get_viewable(
         self, db: AsyncSession, *, user_id: UUID, env_id: UUID

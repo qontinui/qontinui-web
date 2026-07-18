@@ -1217,6 +1217,154 @@ class TestOrgSharing:
             assert r.json()["machine_id"] == machines["drift-b"]
 
     @pytest.mark.asyncio
+    async def test_member_machine_agent_report_and_pull_on_shared_env(
+        self, async_db_session: AsyncSession, test_user, second_user
+    ) -> None:
+        """A member's machine (bound to the owner's shared env) can report
+        config and pull the canonical config through the agent surface; a
+        demotion to viewer kills report (404, never-leak), removal kills the
+        pull too."""
+        from sqlalchemy import select as sa_select
+
+        from app.models.organization import TeamMember
+
+        org, env_id = await self._seed_shared_env(
+            async_db_session, test_user, role_members={second_user: "member"}
+        )
+
+        # Owner: a machine with config, designated canonical (the pull target).
+        app1 = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app1) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines",
+                json={"name": f"own-canon-{uuid4().hex[:6]}"},
+            )
+            owner_machine = r.json()
+            r = await client.post(
+                f"{API_PREFIX}/agent/enroll",
+                json={"enrollment_code": owner_machine["enrollment_code"]},
+            )
+            owner_key = r.json()["machine_key"]
+            r = await client.put(
+                f"{API_PREFIX}/agent/environments/{env_id}/config",
+                json=_config_body({"versions": {"python": "3.13"}}),
+                headers={"X-Machine-Key": owner_key},
+            )
+            assert r.status_code == 200, r.text
+            r = await client.put(
+                f"{API_PREFIX}/environments/{env_id}/canonical",
+                json={"machine_id": owner_machine["id"]},
+            )
+            assert r.status_code == 200, r.text
+
+        # Member: their own machine, explicitly bound to the SHARED env.
+        app2 = _build_app(db_session=async_db_session, user=second_user)
+        async with _client(app2) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines",
+                json={
+                    "name": f"member-box-{uuid4().hex[:6]}",
+                    "environment_id": env_id,
+                },
+            )
+            assert r.status_code == 201, r.text
+            member_machine = r.json()
+            r = await client.post(
+                f"{API_PREFIX}/agent/enroll",
+                json={"enrollment_code": member_machine["enrollment_code"]},
+            )
+            assert r.status_code == 200, r.text
+            # Explicit binding resolves the FOREIGN (shared) env at enroll.
+            assert r.json()["environment_id"] == env_id
+            member_key = r.json()["machine_key"]
+
+            # Report config into the shared env (owner has edit via `member`).
+            r = await client.put(
+                f"{API_PREFIX}/agent/environments/{env_id}/config",
+                json=_config_body({"versions": {"python": "3.12"}}),
+                headers={"X-Machine-Key": member_key},
+            )
+            assert r.status_code == 200, r.text
+
+            # Pull the canonical config — canonical machine belongs to the
+            # env owner, and its name still resolves.
+            r = await client.get(
+                f"{API_PREFIX}/agent/environments/{env_id}/canonical-config",
+                headers={"X-Machine-Key": member_key},
+            )
+            assert r.status_code == 200, r.text
+            body = r.json()
+            assert body["canonical_machine_id"] == owner_machine["id"]
+            assert body["canonical_machine_name"] == owner_machine["name"]
+            assert body["sections"]["versions"]["python"] == "3.13"
+
+            # Demote the member to viewer: report loses edit -> 404
+            # (never-leak on the agent surface), but the pull (view) stays.
+            membership = (
+                await async_db_session.execute(
+                    sa_select(TeamMember).where(
+                        TeamMember.organization_id == org.id,
+                        TeamMember.user_id == second_user.id,
+                    )
+                )
+            ).scalar_one()
+            membership.role = "viewer"
+            await async_db_session.commit()
+
+            r = await client.put(
+                f"{API_PREFIX}/agent/environments/{env_id}/config",
+                json=_config_body({"versions": {"python": "3.12"}}),
+                headers={"X-Machine-Key": member_key},
+            )
+            assert r.status_code == 404, r.text
+            assert r.json()["detail"]["code"] == "environment_not_found"
+
+            r = await client.get(
+                f"{API_PREFIX}/agent/environments/{env_id}/canonical-config",
+                headers={"X-Machine-Key": member_key},
+            )
+            assert r.status_code == 200, r.text
+
+            # Remove the membership entirely: the pull 404s too.
+            await async_db_session.delete(membership)
+            await async_db_session.commit()
+            r = await client.get(
+                f"{API_PREFIX}/agent/environments/{env_id}/canonical-config",
+                headers={"X-Machine-Key": member_key},
+            )
+            assert r.status_code == 404, r.text
+            assert r.json()["detail"]["code"] == "environment_not_found"
+
+    @pytest.mark.asyncio
+    async def test_member_cannot_bind_shared_env_to_private_app(
+        self, async_db_session: AsyncSession, test_user, second_user
+    ) -> None:
+        """PATCHing a shared env's application_id to an app the ENV OWNER
+        cannot view (the member's private app) → 404 application_not_found."""
+        _org, env_id = await self._seed_shared_env(
+            async_db_session, test_user, role_members={second_user: "member"}
+        )
+        app2 = _build_app(db_session=async_db_session, user=second_user)
+        async with _client(app2) as client:
+            r = await client.post(
+                f"{API_PREFIX}/applications",
+                json={
+                    "name": "Member Private",
+                    "slug": f"member-private-{uuid4().hex[:8]}",
+                    "description": None,
+                },
+            )
+            assert r.status_code == 201, r.text
+            private_app_id = r.json()["id"]
+
+            r = await client.patch(
+                f"{API_PREFIX}/environments/{env_id}",
+                json={"application_id": private_app_id},
+            )
+            assert r.status_code == 404, r.text
+            assert r.json()["detail"]["code"] == "application_not_found"
+
+    @pytest.mark.asyncio
     async def test_admin_role_user_can_edit(
         self, async_db_session: AsyncSession, test_user
     ) -> None:

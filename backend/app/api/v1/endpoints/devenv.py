@@ -552,13 +552,19 @@ async def set_machine_environment(
 
 
 async def _resolve_application_or_404(
-    db: AsyncSession, user_id: UUID, application_id: UUID | None
+    db: AsyncSession, env_owner_id: UUID, application_id: UUID | None
 ) -> None:
-    """Validate an optional application_id is viewable by the caller."""
+    """Validate an optional application_id is viewable by the ENV's owner.
+
+    Keyed on the environment's ``owner_user_id`` (the caller, on create) —
+    NOT the editing member: otherwise an edit-capable member could bind a
+    shared environment to their own private application, leaving the env
+    owner unable to even fetch it.
+    """
     if application_id is None:
         return
     app = await application_repo.get_viewable(
-        db, user_id=user_id, app_id=application_id
+        db, user_id=env_owner_id, app_id=application_id
     )
     if app is None:
         raise _not_found("application")
@@ -658,7 +664,10 @@ async def update_environment(
     ):
         raise _conflict("environment_name_taken", "Environment name already in use.")
     if "application_id" in fields:
-        await _resolve_application_or_404(db, current_user.id, fields["application_id"])
+        # Keyed on the ENV owner, not the (possibly member) caller — see helper.
+        await _resolve_application_or_404(
+            db, env.owner_user_id, fields["application_id"]
+        )
     env = await environment_repo.update(db, env=env, fields=fields)
     await db.commit()
     return EnvironmentResponse.model_validate(env)
