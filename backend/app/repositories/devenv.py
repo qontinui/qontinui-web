@@ -438,6 +438,18 @@ class MachineEnvironmentConfigHistoryRepository:
         history row for the (environment, machine) pair and inserts only when
         the hash differs (or no prior row exists). Returns whether a row was
         appended.
+
+        **Concurrency invariant — call only AFTER**
+        :meth:`MachineEnvironmentConfigRepository.upsert` **for the same
+        (environment, machine) in the same transaction.** The dedup here is a
+        plain read-then-insert with no lock of its own; its race safety is
+        positional: the upsert's ``INSERT ... ON CONFLICT`` takes a row lock
+        on the (environment, machine) snapshot row, serializing concurrent
+        reporters for the pair until commit, which is what keeps two
+        simultaneous reports from both passing the hash check and appending
+        duplicates. A future call site that skips the upsert (or runs in a
+        separate transaction) silently reintroduces that race — add explicit
+        locking here first.
         """
         content_hash = compute_content_hash(config)
         stmt = (
