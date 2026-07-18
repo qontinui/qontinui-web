@@ -1,8 +1,22 @@
 """Async repositories for the ``devenv`` digital-twin feature.
 
-All operations are **owner-scoped** — every query filters on
-``owner_user_id == owner_id`` so a user can never read or mutate another
-user's rows. Cross-owner ids resolve to ``None`` (the endpoint layer turns
+Access model (P4 org sharing):
+
+* **Machines are strictly owner-scoped** — every machine query filters on
+  ``owner_user_id == owner_id``.
+* **Applications and Environments** are either personal
+  (``organization_id`` NULL → visible to ``owner_user_id`` only) or
+  org-shared (``organization_id`` set → visible to the owner AND all
+  members of that ``auth`` org except ``helper``). Role mapping:
+  ``owner``/``admin``/``member`` → edit, ``viewer`` → view only,
+  ``helper`` → no devenv access. The ``get_viewable`` / ``list_accessible``
+  methods plus the :func:`can_edit` predicate implement this (view-fetch then
+  ``can_edit`` lets endpoints answer 404-for-nonmember vs 403-for-viewer).
+  The agent surface (``devenv_agent.py``) applies the SAME predicates keyed
+  on the machine's OWNER (edit for config report, view for canonical pull);
+  only the enroll auto-bind fallback still uses the owner-scoped ``list``.
+
+Cross-owner / non-member ids resolve to ``None`` (the endpoint layer turns
 that into a 404, not a 403, so existence is not leaked).
 
 The config upsert uses Postgres ``INSERT ... ON CONFLICT (environment_id,
@@ -15,7 +29,7 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select, text
+from sqlalchemy import or_, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,6 +40,53 @@ from app.models.devenv import (
     Machine,
     MachineEnvironmentConfig,
 )
+from app.models.organization import TeamMember, TeamRole
+
+# ---------------------------------------------------------------------------
+# Org-membership access helper (shared by Application/Environment repos)
+# ---------------------------------------------------------------------------
+
+# Roles that grant EDIT on org-shared devenv resources. `viewer` is view-only;
+# `helper` has no devenv access at all (it only sees the /help portal).
+_EDIT_ROLES: tuple[str, ...] = (
+    TeamRole.OWNER.value,
+    TeamRole.ADMIN.value,
+    TeamRole.MEMBER.value,
+)
+
+
+async def view_org_ids(db: AsyncSession, user_id: UUID) -> list[UUID]:
+    """Org ids in which ``user_id`` may VIEW devenv resources (role != helper)."""
+    stmt = select(TeamMember.organization_id).where(
+        TeamMember.user_id == user_id,
+        TeamMember.role != TeamRole.HELPER.value,
+    )
+    return list((await db.execute(stmt)).scalars().all())
+
+
+async def edit_org_ids(db: AsyncSession, user_id: UUID) -> list[UUID]:
+    """Org ids in which ``user_id`` may EDIT devenv resources."""
+    stmt = select(TeamMember.organization_id).where(
+        TeamMember.user_id == user_id,
+        TeamMember.role.in_(_EDIT_ROLES),
+    )
+    return list((await db.execute(stmt)).scalars().all())
+
+
+async def can_edit(
+    db: AsyncSession, user_id: UUID, *, resource: Application | Environment
+) -> bool:
+    """Whether ``user_id`` may edit an (already-fetched) app/environment.
+
+    The owner always may; otherwise the resource must be org-shared and the
+    user must hold an edit-capable role (owner/admin/member) in that org.
+    """
+    if resource.owner_user_id == user_id:
+        return True
+    if resource.organization_id is None:
+        return False
+    return resource.organization_id in await edit_org_ids(db, user_id)
+
 
 # ---------------------------------------------------------------------------
 # Applications
@@ -33,7 +94,7 @@ from app.models.devenv import (
 
 
 class ApplicationRepository:
-    """Owner-scoped CRUD for ``devenv.applications``."""
+    """CRUD for ``devenv.applications`` (owner- or org-membership-scoped)."""
 
     async def create(
         self,
@@ -43,34 +104,48 @@ class ApplicationRepository:
         name: str,
         slug: str,
         description: str | None,
+        organization_id: UUID | None = None,
     ) -> Application:
-        """Create an application."""
+        """Create an application (optionally org-shared from birth)."""
         app = Application(
             owner_user_id=owner_id,
             name=name,
             slug=slug,
             description=description,
+            organization_id=organization_id,
         )
         db.add(app)
         await db.flush()
         await db.refresh(app)
         return app
 
-    async def get(
-        self, db: AsyncSession, *, owner_id: UUID, app_id: UUID
+    async def get_viewable(
+        self, db: AsyncSession, *, user_id: UUID, app_id: UUID
     ) -> Application | None:
-        """Get an owner's application by id."""
+        """Get an application the user may VIEW (owner or non-helper member)."""
+        org_ids = await view_org_ids(db, user_id)
         stmt = select(Application).where(
             Application.id == app_id,
-            Application.owner_user_id == owner_id,
+            or_(
+                Application.owner_user_id == user_id,
+                Application.organization_id.in_(org_ids),
+            ),
         )
         return (await db.execute(stmt)).scalar_one_or_none()
 
-    async def list(self, db: AsyncSession, *, owner_id: UUID) -> list[Application]:
-        """List an owner's applications, newest first."""
+    async def list_accessible(
+        self, db: AsyncSession, *, user_id: UUID
+    ) -> list[Application]:
+        """List applications the user may view (owned + org-shared), newest first."""
+        org_ids = await view_org_ids(db, user_id)
         stmt = (
             select(Application)
-            .where(Application.owner_user_id == owner_id)
+            .where(
+                or_(
+                    Application.owner_user_id == user_id,
+                    Application.organization_id.in_(org_ids),
+                )
+            )
             .order_by(Application.created_at.desc())
         )
         return list((await db.execute(stmt)).scalars().all())
@@ -149,6 +224,19 @@ class MachineRepository:
         )
         return (await db.execute(stmt)).scalar_one_or_none()
 
+    async def get_by_id(self, db: AsyncSession, *, machine_id: UUID) -> Machine | None:
+        """Get a machine by id with NO owner filter.
+
+        For env-mediated reads only: machines remain strictly personal, but an
+        org-shared ENVIRONMENT's machine-derived surfaces (drift reports,
+        canonical designation) are visible to anyone who can view that
+        environment, regardless of which user owns the machines. Callers MUST
+        have already authorized the environment (get_viewable/get_editable)
+        and must only surface machines tied to it (via its config rows).
+        """
+        stmt = select(Machine).where(Machine.id == machine_id)
+        return (await db.execute(stmt)).scalar_one_or_none()
+
     async def list(self, db: AsyncSession, *, owner_id: UUID) -> list[Machine]:
         """List an owner's machines, newest first."""
         stmt = (
@@ -197,7 +285,15 @@ class MachineRepository:
 
 
 class EnvironmentRepository:
-    """Owner-scoped CRUD for ``devenv.environments``."""
+    """CRUD for ``devenv.environments`` (owner- or org-membership-scoped).
+
+    Both the user-JWT endpoints and the machine-key agent surface resolve
+    environments through the membership-aware ``get_viewable`` (+
+    ``can_edit``) — the agent keys them on the MACHINE's owner. ``list``
+    remains strictly owner-scoped: it backs the enroll-time single-env
+    auto-bind convenience, which deliberately considers only the owner's
+    own environments.
+    """
 
     async def create(
         self,
@@ -207,31 +303,57 @@ class EnvironmentRepository:
         name: str,
         description: str | None,
         application_id: UUID | None,
+        organization_id: UUID | None = None,
     ) -> Environment:
-        """Create an environment."""
+        """Create an environment (optionally org-shared from birth)."""
         env = Environment(
             owner_user_id=owner_id,
             name=name,
             description=description,
             application_id=application_id,
+            organization_id=organization_id,
         )
         db.add(env)
         await db.flush()
         await db.refresh(env)
         return env
 
-    async def get(
-        self, db: AsyncSession, *, owner_id: UUID, env_id: UUID
+    async def get_viewable(
+        self, db: AsyncSession, *, user_id: UUID, env_id: UUID
     ) -> Environment | None:
-        """Get an owner's environment by id."""
+        """Get an environment the user may VIEW (owner or non-helper member)."""
+        org_ids = await view_org_ids(db, user_id)
         stmt = select(Environment).where(
             Environment.id == env_id,
-            Environment.owner_user_id == owner_id,
+            or_(
+                Environment.owner_user_id == user_id,
+                Environment.organization_id.in_(org_ids),
+            ),
         )
         return (await db.execute(stmt)).scalar_one_or_none()
 
+    async def list_accessible(
+        self, db: AsyncSession, *, user_id: UUID
+    ) -> list[Environment]:
+        """List environments the user may view (owned + org-shared), newest first."""
+        org_ids = await view_org_ids(db, user_id)
+        stmt = (
+            select(Environment)
+            .where(
+                or_(
+                    Environment.owner_user_id == user_id,
+                    Environment.organization_id.in_(org_ids),
+                )
+            )
+            .order_by(Environment.created_at.desc())
+        )
+        return list((await db.execute(stmt)).scalars().all())
+
+    # NOTE: defined AFTER list_accessible on purpose — once `list` exists in
+    # the class namespace, a later `list[...]` annotation would resolve to
+    # the method, not the builtin (mypy valid-type error).
     async def list(self, db: AsyncSession, *, owner_id: UUID) -> list[Environment]:
-        """List an owner's environments, newest first."""
+        """List an owner's environments, newest first (strictly owner-scoped)."""
         stmt = (
             select(Environment)
             .where(Environment.owner_user_id == owner_id)

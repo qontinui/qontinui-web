@@ -13,9 +13,12 @@ import {
   Loader2,
   RefreshCw,
   TriangleAlert,
+  Users,
 } from "lucide-react";
+import { useAuth } from "@/contexts/auth-context";
 import { CanonicalSelector } from "../_components/CanonicalSelector";
 import { DriftMatrix } from "../_components/DriftMatrix";
+import { EnvironmentSharingControl } from "../_components/EnvironmentSharingControl";
 import {
   DevenvApiError,
   DRIFT_POLL_MS,
@@ -36,6 +39,7 @@ function errMessage(err: unknown, fallback: string): string {
 export default function EnvironmentDetailPage() {
   const params = useParams<{ envId: string }>();
   const envId = params.envId;
+  const { user } = useAuth();
 
   const [environment, setEnvironment] = useState<Environment | null>(null);
   const [machines, setMachines] = useState<Machine[]>([]);
@@ -214,6 +218,26 @@ export default function EnvironmentDetailPage() {
             className={`size-4 ${refreshing ? "animate-spin" : ""}`}
           />
         </Button>
+      </div>
+
+      {/* Sharing */}
+      <div className="rounded-lg border border-border">
+        <div className="px-4 py-3 border-b border-border bg-muted/50">
+          <h3 className="text-sm font-medium flex items-center gap-2">
+            <Users className="size-4" />
+            Sharing
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            Personal, or shared with one of your organizations
+          </p>
+        </div>
+        <div className="p-4">
+          <EnvironmentSharingControl
+            environment={environment}
+            currentUserId={user?.id ?? null}
+            onEnvironmentChange={setEnvironment}
+          />
+        </div>
       </div>
 
       {/* Canonical selector */}

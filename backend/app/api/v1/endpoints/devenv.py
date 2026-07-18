@@ -1,10 +1,18 @@
 """User-JWT management API for the ``devenv`` digital-twin feature.
 
 Every route is authenticated with the user JWT
-(:func:`get_current_active_user_async`) and every query is filtered by
-``owner_user_id == current_user.id``. Cross-owner ids resolve to a **404
-not-found** (NOT a 403) so the existence of another user's resources is
-never leaked.
+(:func:`get_current_active_user_async`).
+
+Access model (P4 org sharing): Applications/Environments are either personal
+(``organization_id`` NULL → owner-only) or org-shared (visible to the owner
+AND all non-``helper`` members of that org; ``owner``/``admin``/``member``
+may edit, ``viewer`` is read-only). Machines stay strictly owner-scoped, but
+an org-shared ENVIRONMENT's machine-derived reads (drift, canonical history,
+the machines listed inside drift) are authorized through the environment's
+accessibility. Ids the caller cannot even VIEW resolve to a **404 not-found**
+(NOT a 403) so existence is never leaked; a caller who CAN view but not edit
+gets an honest **403 read_only_access**. Sharing/unsharing (changing
+``organization_id``) is reserved to the resource OWNER.
 
 Mounted under ``/api/v1/devenv``. Endpoints:
 
@@ -31,8 +39,10 @@ from app.models.devenv import Environment, Machine
 from app.models.user import User
 from app.repositories.devenv import (
     application_repo,
+    can_edit,
     canonical_log_repo,
     config_repo,
+    edit_org_ids,
     environment_repo,
     machine_repo,
 )
@@ -98,6 +108,60 @@ def _conflict(code: str, message: str) -> HTTPException:
     )
 
 
+def _read_only(resource: str) -> HTTPException:
+    """Build the 403 for a VIEWER who can see a shared resource but not edit it.
+
+    Unlike the never-leak 404 for non-members, a viewer legitimately sees the
+    resource — telling them "read-only" is honest UX rather than a leak.
+    """
+    return HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail={
+            "code": "read_only_access",
+            "message": f"You have read-only access to this {resource}.",
+        },
+    )
+
+
+def _forbidden(code: str, message: str) -> HTTPException:
+    """Build a 403 with an explicit code."""
+    return HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail={"code": code, "message": message},
+    )
+
+
+async def _require_org_edit_membership(
+    db: AsyncSession, user_id: UUID, organization_id: UUID | None
+) -> None:
+    """403 unless the user holds an edit-capable role in ``organization_id``.
+
+    Used when SETTING a share target: sharing a resource into an org requires
+    the sharer to be an owner/admin/member of that org (a viewer/helper/
+    non-member cannot pull resources into an org). ``None`` (personal) always
+    passes.
+    """
+    if organization_id is None:
+        return
+    if organization_id not in await edit_org_ids(db, user_id):
+        raise _forbidden(
+            "organization_access_denied",
+            "You are not a member with edit rights in that organization.",
+        )
+
+
+async def _get_editable_environment(
+    db: AsyncSession, user_id: UUID, env_id: UUID
+) -> Environment:
+    """Resolve an environment for an EDIT route: 404 non-member, 403 viewer."""
+    env = await environment_repo.get_viewable(db, user_id=user_id, env_id=env_id)
+    if env is None:
+        raise _not_found("environment")
+    if not await can_edit(db, user_id, resource=env):
+        raise _read_only("environment")
+    return env
+
+
 # ---------------------------------------------------------------------------
 # Applications
 # ---------------------------------------------------------------------------
@@ -113,17 +177,23 @@ async def create_application(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_active_user_async),
 ) -> ApplicationResponse:
-    """Create an application (slug unique per owner)."""
+    """Create an application (slug unique per owner).
+
+    ``organization_id`` shares it from birth — the caller must hold an
+    edit-capable role in that org.
+    """
     if await application_repo.slug_exists(
         db, owner_id=current_user.id, slug=payload.slug
     ):
         raise _conflict("application_slug_taken", "Slug already in use.")
+    await _require_org_edit_membership(db, current_user.id, payload.organization_id)
     app = await application_repo.create(
         db,
         owner_id=current_user.id,
         name=payload.name,
         slug=payload.slug,
         description=payload.description,
+        organization_id=payload.organization_id,
     )
     await db.commit()
     return ApplicationResponse.model_validate(app)
@@ -134,8 +204,8 @@ async def list_applications(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_active_user_async),
 ) -> list[ApplicationResponse]:
-    """List the owner's applications."""
-    apps = await application_repo.list(db, owner_id=current_user.id)
+    """List the applications the caller can view (owned + org-shared)."""
+    apps = await application_repo.list_accessible(db, user_id=current_user.id)
     return [ApplicationResponse.model_validate(a) for a in apps]
 
 
@@ -145,9 +215,9 @@ async def get_application(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_active_user_async),
 ) -> ApplicationResponse:
-    """Get one application."""
-    app = await application_repo.get(
-        db, owner_id=current_user.id, app_id=application_id
+    """Get one application (owned or org-shared)."""
+    app = await application_repo.get_viewable(
+        db, user_id=current_user.id, app_id=application_id
     )
     if app is None:
         raise _not_found("application")
@@ -161,15 +231,33 @@ async def update_application(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_active_user_async),
 ) -> ApplicationResponse:
-    """Partially update an application."""
-    app = await application_repo.get(
-        db, owner_id=current_user.id, app_id=application_id
+    """Partially update an application (edit access; sharing is owner-only)."""
+    app = await application_repo.get_viewable(
+        db, user_id=current_user.id, app_id=application_id
     )
     if app is None:
         raise _not_found("application")
+    if not await can_edit(db, current_user.id, resource=app):
+        raise _read_only("application")
     fields = payload.model_dump(exclude_unset=True)
+    if "organization_id" in fields:
+        # Sharing/unsharing is the OWNER's call — an org member with edit
+        # rights may change content, but not move the resource between orgs.
+        if app.owner_user_id != current_user.id:
+            raise _forbidden(
+                "owner_only_operation",
+                "Only the owner can share or unshare an application.",
+            )
+        # Sharing INTO an org requires the owner to hold an edit-capable
+        # role there; unsharing (null) is always allowed for the owner.
+        await _require_org_edit_membership(
+            db, current_user.id, fields["organization_id"]
+        )
     if "slug" in fields and await application_repo.slug_exists(
-        db, owner_id=current_user.id, slug=fields["slug"], exclude_id=application_id
+        db,
+        owner_id=app.owner_user_id,
+        slug=fields["slug"],
+        exclude_id=application_id,
     ):
         raise _conflict("application_slug_taken", "Slug already in use.")
     app = await application_repo.update(db, app=app, fields=fields)
@@ -183,12 +271,14 @@ async def delete_application(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_active_user_async),
 ) -> None:
-    """Delete an application."""
-    app = await application_repo.get(
-        db, owner_id=current_user.id, app_id=application_id
+    """Delete an application (edit access)."""
+    app = await application_repo.get_viewable(
+        db, user_id=current_user.id, app_id=application_id
     )
     if app is None:
         raise _not_found("application")
+    if not await can_edit(db, current_user.id, resource=app):
+        raise _read_only("application")
     await application_repo.delete(db, app=app)
     await db.commit()
 
@@ -211,12 +301,11 @@ async def create_machine(
     """Register a machine and mint its one-time enrollment code."""
     if await machine_repo.name_exists(db, owner_id=current_user.id, name=payload.name):
         raise _conflict("machine_name_taken", "Machine name already in use.")
-    # Validate the optional environment binding is owned by the caller
-    # (cross-owner or missing ids resolve to 404, per the module convention).
-    if payload.environment_id is not None and not await environment_repo.get(
-        db, owner_id=current_user.id, env_id=payload.environment_id
-    ):
-        raise _not_found("environment")
+    # Validate the optional environment binding is EDITABLE by the caller
+    # (owned, or org-shared with an edit-capable role). Non-viewable ids
+    # resolve to 404 per the module convention; a viewer gets the honest 403.
+    if payload.environment_id is not None:
+        await _get_editable_environment(db, current_user.id, payload.environment_id)
     machine = await machine_repo.create(
         db,
         owner_id=current_user.id,
@@ -258,10 +347,8 @@ async def dispatch_enroll(
     """
     if await machine_repo.name_exists(db, owner_id=current_user.id, name=payload.name):
         raise _conflict("machine_name_taken", "Machine name already in use.")
-    if payload.environment_id is not None and not await environment_repo.get(
-        db, owner_id=current_user.id, env_id=payload.environment_id
-    ):
-        raise _not_found("environment")
+    if payload.environment_id is not None:
+        await _get_editable_environment(db, current_user.id, payload.environment_id)
 
     machine = await machine_repo.create(
         db,
@@ -450,10 +537,8 @@ async def set_machine_environment(
     )
     if machine is None:
         raise _not_found("machine")
-    if payload.environment_id is not None and not await environment_repo.get(
-        db, owner_id=current_user.id, env_id=payload.environment_id
-    ):
-        raise _not_found("environment")
+    if payload.environment_id is not None:
+        await _get_editable_environment(db, current_user.id, payload.environment_id)
     machine = await machine_repo.update(
         db, machine=machine, fields={"environment_id": payload.environment_id}
     )
@@ -467,12 +552,20 @@ async def set_machine_environment(
 
 
 async def _resolve_application_or_404(
-    db: AsyncSession, owner_id: UUID, application_id: UUID | None
+    db: AsyncSession, env_owner_id: UUID, application_id: UUID | None
 ) -> None:
-    """Validate an optional application_id belongs to the owner."""
+    """Validate an optional application_id is viewable by the ENV's owner.
+
+    Keyed on the environment's ``owner_user_id`` (the caller, on create) —
+    NOT the editing member: otherwise an edit-capable member could bind a
+    shared environment to their own private application, leaving the env
+    owner unable to even fetch it.
+    """
     if application_id is None:
         return
-    app = await application_repo.get(db, owner_id=owner_id, app_id=application_id)
+    app = await application_repo.get_viewable(
+        db, user_id=env_owner_id, app_id=application_id
+    )
     if app is None:
         raise _not_found("application")
 
@@ -487,18 +580,24 @@ async def create_environment(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_active_user_async),
 ) -> EnvironmentResponse:
-    """Create an environment, optionally bound to an owned application."""
+    """Create an environment, optionally bound to a viewable application.
+
+    ``organization_id`` shares it from birth — the caller must hold an
+    edit-capable role in that org.
+    """
     if await environment_repo.name_exists(
         db, owner_id=current_user.id, name=payload.name
     ):
         raise _conflict("environment_name_taken", "Environment name already in use.")
     await _resolve_application_or_404(db, current_user.id, payload.application_id)
+    await _require_org_edit_membership(db, current_user.id, payload.organization_id)
     env = await environment_repo.create(
         db,
         owner_id=current_user.id,
         name=payload.name,
         description=payload.description,
         application_id=payload.application_id,
+        organization_id=payload.organization_id,
     )
     await db.commit()
     return EnvironmentResponse.model_validate(env)
@@ -509,8 +608,8 @@ async def list_environments(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_active_user_async),
 ) -> list[EnvironmentResponse]:
-    """List the owner's environments."""
-    envs = await environment_repo.list(db, owner_id=current_user.id)
+    """List the environments the caller can view (owned + org-shared)."""
+    envs = await environment_repo.list_accessible(db, user_id=current_user.id)
     return [EnvironmentResponse.model_validate(e) for e in envs]
 
 
@@ -520,9 +619,9 @@ async def get_environment(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_active_user_async),
 ) -> EnvironmentResponse:
-    """Get one environment."""
-    env = await environment_repo.get(
-        db, owner_id=current_user.id, env_id=environment_id
+    """Get one environment (owned or org-shared)."""
+    env = await environment_repo.get_viewable(
+        db, user_id=current_user.id, env_id=environment_id
     )
     if env is None:
         raise _not_found("environment")
@@ -536,19 +635,39 @@ async def update_environment(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_active_user_async),
 ) -> EnvironmentResponse:
-    """Partially update an environment."""
-    env = await environment_repo.get(
-        db, owner_id=current_user.id, env_id=environment_id
+    """Partially update an environment (edit access; sharing is owner-only)."""
+    env = await environment_repo.get_viewable(
+        db, user_id=current_user.id, env_id=environment_id
     )
     if env is None:
         raise _not_found("environment")
+    if not await can_edit(db, current_user.id, resource=env):
+        raise _read_only("environment")
     fields = payload.model_dump(exclude_unset=True)
+    if "organization_id" in fields:
+        # Sharing/unsharing is the OWNER's call — an org member with edit
+        # rights may change content, but not move the resource between orgs.
+        if env.owner_user_id != current_user.id:
+            raise _forbidden(
+                "owner_only_operation",
+                "Only the owner can share or unshare an environment.",
+            )
+        # Sharing INTO an org requires the owner to hold an edit-capable
+        # role there; unsharing (null) is always allowed for the owner.
+        await _require_org_edit_membership(
+            db, current_user.id, fields["organization_id"]
+        )
+    # Name uniqueness is per resource OWNER (uq_devenv_env_owner_name), which
+    # may differ from the editing member.
     if "name" in fields and await environment_repo.name_exists(
-        db, owner_id=current_user.id, name=fields["name"], exclude_id=environment_id
+        db, owner_id=env.owner_user_id, name=fields["name"], exclude_id=environment_id
     ):
         raise _conflict("environment_name_taken", "Environment name already in use.")
     if "application_id" in fields:
-        await _resolve_application_or_404(db, current_user.id, fields["application_id"])
+        # Keyed on the ENV owner, not the (possibly member) caller — see helper.
+        await _resolve_application_or_404(
+            db, env.owner_user_id, fields["application_id"]
+        )
     env = await environment_repo.update(db, env=env, fields=fields)
     await db.commit()
     return EnvironmentResponse.model_validate(env)
@@ -560,12 +679,8 @@ async def delete_environment(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_active_user_async),
 ) -> None:
-    """Delete an environment."""
-    env = await environment_repo.get(
-        db, owner_id=current_user.id, env_id=environment_id
-    )
-    if env is None:
-        raise _not_found("environment")
+    """Delete an environment (edit access)."""
+    env = await _get_editable_environment(db, current_user.id, environment_id)
     await environment_repo.delete(db, env=env)
     await db.commit()
 
@@ -582,27 +697,30 @@ async def set_canonical_machine(
 ) -> EnvironmentResponse:
     """Designate a machine as the canonical source of truth for an env.
 
-    Validates the machine is owned by the caller AND has reported a config
-    row for this environment (a machine with no config can't be a useful
-    source of truth). Atomic single-column update, plus an append to the
+    Requires EDIT access to the environment. On an org-shared environment
+    the machine may belong to ANY user, but must have reported a config row
+    for this environment (a machine with no config can't be a useful source
+    of truth — and the config row is what ties a foreign machine to the env;
+    a foreign machine WITHOUT one resolves 404 so existence never leaks).
+    Atomic single-column update, plus an append to the
     ``canonical_change_log`` audit trail (who/when/from->to) — the team-sync
-    model requires every canonical change to be attributable. A no-op change
-    (re-designating the machine that is already canonical) is not recorded.
+    model requires every canonical change to be attributable; that audit is
+    the safety mechanism for "any developer can re-designate canonical". A
+    no-op change (re-designating the machine that is already canonical) is
+    not recorded.
     """
-    env = await environment_repo.get(
-        db, owner_id=current_user.id, env_id=environment_id
-    )
-    if env is None:
-        raise _not_found("environment")
-    machine = await machine_repo.get(
-        db, owner_id=current_user.id, machine_id=payload.machine_id
-    )
+    env = await _get_editable_environment(db, current_user.id, environment_id)
+    machine = await machine_repo.get_by_id(db, machine_id=payload.machine_id)
     if machine is None:
         raise _not_found("machine")
     has_config = await config_repo.exists(
         db, environment_id=environment_id, machine_id=payload.machine_id
     )
     if not has_config:
+        # A foreign machine with no config row for this env is indistinguishable
+        # from a nonexistent one to this caller — 404, never leak existence.
+        if machine.owner_user_id != current_user.id:
+            raise _not_found("machine")
         raise _conflict(
             "machine_has_no_config",
             "Machine has not reported a config for this environment yet.",
@@ -636,11 +754,11 @@ async def get_canonical_history(
 ) -> list[CanonicalChangeResponse]:
     """List the environment's canonical-designation changes, newest first.
 
-    Answers "who made this the canonical environment, and when." Owner-scoped
-    like every other route here (cross-owner env id -> 404).
+    Answers "who made this the canonical environment, and when." Visible to
+    anyone who can VIEW the environment (non-viewable env id -> 404).
     """
-    env = await environment_repo.get(
-        db, owner_id=current_user.id, env_id=environment_id
+    env = await environment_repo.get_viewable(
+        db, user_id=current_user.id, env_id=environment_id
     )
     if env is None:
         raise _not_found("environment")
@@ -693,11 +811,14 @@ async def get_environment_drift(
 ) -> EnvironmentDriftResponse:
     """Drift of every non-canonical machine vs the canonical machine.
 
-    422 when no canonical machine is set (drift is undefined without a
-    source of truth).
+    Access is resolved through the ENVIRONMENT: anyone who can view it sees
+    the drift of every machine that reported a config for it, regardless of
+    which user owns those machines (machines themselves stay owner-scoped
+    elsewhere). 422 when no canonical machine is set (drift is undefined
+    without a source of truth).
     """
-    env = await environment_repo.get(
-        db, owner_id=current_user.id, env_id=environment_id
+    env = await environment_repo.get_viewable(
+        db, user_id=current_user.id, env_id=environment_id
     )
     if env is None:
         raise _not_found("environment")
@@ -709,8 +830,8 @@ async def get_environment_drift(
                 "message": "No canonical machine set for this environment.",
             },
         )
-    canonical_machine = await machine_repo.get(
-        db, owner_id=current_user.id, machine_id=env.canonical_machine_id
+    canonical_machine = await machine_repo.get_by_id(
+        db, machine_id=env.canonical_machine_id
     )
     canonical_cfg_row = await config_repo.get(
         db, environment_id=env.id, machine_id=env.canonical_machine_id
@@ -722,9 +843,9 @@ async def get_environment_drift(
     for row in config_rows:
         if row.machine_id == env.canonical_machine_id:
             continue
-        target_machine = await machine_repo.get(
-            db, owner_id=current_user.id, machine_id=row.machine_id
-        )
+        # The config row ties the machine to this (already-authorized) env,
+        # so the lookup is deliberately not caller-owner-scoped.
+        target_machine = await machine_repo.get_by_id(db, machine_id=row.machine_id)
         if target_machine is None:
             continue
         report = devenv_drift.diff_envelopes(canonical_config, row.config)
@@ -748,9 +869,14 @@ async def get_machine_drift(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_active_user_async),
 ) -> MachineDriftReport:
-    """Drift of a single target machine vs the canonical machine."""
-    env = await environment_repo.get(
-        db, owner_id=current_user.id, env_id=environment_id
+    """Drift of a single target machine vs the canonical machine.
+
+    Access is resolved through the ENVIRONMENT (view). A machine that is
+    neither the caller's own nor tied to this env by a config row resolves
+    404 — env visibility must not leak unrelated machines.
+    """
+    env = await environment_repo.get_viewable(
+        db, user_id=current_user.id, env_id=environment_id
     )
     if env is None:
         raise _not_found("environment")
@@ -762,10 +888,12 @@ async def get_machine_drift(
                 "message": "No canonical machine set for this environment.",
             },
         )
-    target_machine = await machine_repo.get(
-        db, owner_id=current_user.id, machine_id=machine_id
-    )
+    target_machine = await machine_repo.get_by_id(db, machine_id=machine_id)
     if target_machine is None:
+        raise _not_found("machine")
+    if target_machine.owner_user_id != current_user.id and not await config_repo.exists(
+        db, environment_id=env.id, machine_id=machine_id
+    ):
         raise _not_found("machine")
 
     canonical_cfg_row = await config_repo.get(

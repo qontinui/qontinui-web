@@ -12,9 +12,18 @@ Endpoints (mounted under ``/api/v1/devenv``):
   the key (hash + prefix only), and returns the plaintext key ONCE plus
   the machine's bound environment_id if any.
 * ``PUT /agent/environments/{environment_id}/config`` — machine-key auth.
-  Validates the environment is owned by the machine's owner, then upserts
-  the config row keyed (environment_id, machine.id). The secret backstop
-  is applied by :class:`ConfigEnvelope`'s validator before persist.
+  Validates the machine's OWNER has EDIT access to the environment (their
+  own, or org-shared with an edit-capable role — P4 org sharing), then
+  upserts the config row keyed (environment_id, machine.id). The secret
+  backstop is applied by :class:`ConfigEnvelope`'s validator before persist.
+
+Access model (P4): the agent inherits the MACHINE OWNER's access. A machine
+bound to an org-shared environment can report config (owner needs edit) and
+pull the canonical config (owner needs view) — otherwise sharing would let
+the management surface bind the machine but the agent would 404 forever.
+Every denial on this surface is a 404 (never leak existence to a machine
+credential — not even the viewer-grade "read-only" distinction the user
+surface makes).
 """
 
 from __future__ import annotations
@@ -28,7 +37,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_async_db
 from app.crud import devenv_machine_crud
 from app.models.devenv import Machine
-from app.repositories.devenv import config_repo, environment_repo, machine_repo
+from app.repositories.devenv import (
+    can_edit,
+    config_repo,
+    environment_repo,
+    machine_repo,
+)
 from app.schemas.devenv import (
     CanonicalConfigResponse,
     ConfigEnvelope,
@@ -190,16 +204,19 @@ async def report_config(
 ) -> dict[str, object]:
     """Upsert the calling machine's config for an environment.
 
-    The environment must be owned by the machine's owner (else 404 — never
-    leak existence). The :class:`ConfigEnvelope` validator has already
-    applied the secret backstop (env_contract values coerced to
-    present/absent; nested non-string section values rejected) by the time
-    this body runs, so the stored config is secret-safe.
+    The machine's OWNER must have EDIT access to the environment: their own,
+    or org-shared with an edit-capable role (owner/admin/member) — reporting
+    writes into the env. Both "no access at all" and "view-only" resolve to
+    404 (never leak existence to a machine credential). The
+    :class:`ConfigEnvelope` validator has already applied the secret backstop
+    (env_contract values coerced to present/absent; nested non-string section
+    values rejected) by the time this body runs, so the stored config is
+    secret-safe.
     """
-    env = await environment_repo.get(
-        db, owner_id=machine.owner_user_id, env_id=environment_id
+    env = await environment_repo.get_viewable(
+        db, user_id=machine.owner_user_id, env_id=environment_id
     )
-    if env is None:
+    if env is None or not await can_edit(db, machine.owner_user_id, resource=env):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={
@@ -254,15 +271,17 @@ async def get_canonical_config(
     This is the read side of the pull model: a runner fetches the canonical
     machine's (secret-free) config envelope plus a per-section apply policy,
     then — by a LOCAL decision on that box — reconciles its own environment
-    toward it. Machine-key authenticated; the environment must belong to the
-    calling machine's owner (else 404, never leaking existence).
+    toward it. Machine-key authenticated; the calling machine's OWNER must
+    have VIEW access to the environment — their own, or org-shared with any
+    non-``helper`` role (a pull is a read, so viewer-grade access suffices).
+    No access -> 404, never leaking existence.
 
     422 ``no_canonical_machine`` when no canonical is set (mirrors the
     user-side drift endpoint). The payload is secret-free by construction —
     the stored envelope already coerced ``env_contract`` to present/absent.
     """
-    env = await environment_repo.get(
-        db, owner_id=machine.owner_user_id, env_id=environment_id
+    env = await environment_repo.get_viewable(
+        db, user_id=machine.owner_user_id, env_id=environment_id
     )
     if env is None:
         raise HTTPException(
@@ -294,9 +313,10 @@ async def get_canonical_config(
                 "message": "The canonical machine has no config for this environment.",
             },
         )
-    canonical_machine = await machine_repo.get(
-        db, owner_id=machine.owner_user_id, machine_id=canonical_id
-    )
+    # On an org-shared environment the canonical machine may belong to a
+    # DIFFERENT user than the calling machine's owner — resolve by id (the
+    # env access above authorizes it; the canonical pointer ties it to the env).
+    canonical_machine = await machine_repo.get_by_id(db, machine_id=canonical_id)
     sections = config_row.config.get("sections", {}) if config_row.config else {}
     return CanonicalConfigResponse(
         environment_id=environment_id,
