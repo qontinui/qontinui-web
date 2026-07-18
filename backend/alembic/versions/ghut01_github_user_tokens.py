@@ -40,7 +40,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "ghut01_github_user_tokens"
-down_revision: str = "coord_sessions_role_01"
+down_revision: str = "devenv_06_config_history"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
