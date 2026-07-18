@@ -179,6 +179,50 @@ _SETUP_SQL = [
         ON coord.memory_synthesis_jobs (tenant_id, member_set_hash)
         WHERE status IN ('pending', 'claimed', 'done')
     """,
+    # Librarian Phase 4: widen the kind CHECK to admit 'library'. Mirrors
+    # the coord_memory_links migration's drop+recreate — also upgrades a
+    # persistent test DB whose table predates the widening.
+    """
+    ALTER TABLE coord.memory_records
+        DROP CONSTRAINT IF EXISTS memory_records_kind_check
+    """,
+    """
+    ALTER TABLE coord.memory_records
+        ADD CONSTRAINT memory_records_kind_check
+            CHECK (kind IN (
+                'observation', 'fact', 'mental_model', 'episode',
+                'feedback', 'reference', 'rule', 'library'
+            ))
+    """,
+    # Mirrors alembic/versions/coord_memory_links.py (sans the tenants FK).
+    """
+    CREATE TABLE IF NOT EXISTS coord.memory_links (
+        link_id     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_id   UUID NOT NULL,
+        source_id   UUID NOT NULL
+            REFERENCES coord.memory_records(memory_id) ON DELETE CASCADE,
+        target_id   UUID NOT NULL
+            REFERENCES coord.memory_records(memory_id) ON DELETE CASCADE,
+        relation    TEXT NOT NULL
+            CHECK (relation IN (
+                'depends_on', 'implements', 'supersedes', 'related'
+            )),
+        description TEXT,
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+    """,
+    """
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_memory_links_edge
+        ON coord.memory_links (tenant_id, source_id, target_id, relation)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_memory_links_tenant_source
+        ON coord.memory_links (tenant_id, source_id)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_memory_links_tenant_target
+        ON coord.memory_links (tenant_id, target_id)
+    """,
 ]
 
 
@@ -225,6 +269,7 @@ def db(memory_engine: AsyncEngine) -> Generator[AsyncEngine, None, None]:
         memory_engine,
         [
             "DELETE FROM coord.memory_synthesis_jobs",
+            "DELETE FROM coord.memory_links",
             "DELETE FROM coord.memory_records",
             "DELETE FROM coord.tenant_policies",
             "DELETE FROM coord.sessions",
@@ -942,3 +987,522 @@ class TestSynthesisEndpoints:
             json={"result_text": "text"},
         )
         assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Librarian Phase 4 — graph links on write
+# ---------------------------------------------------------------------------
+
+
+def _content_sha256(content: str) -> str:
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+def _write_one(mc: MemoryClient, content: str, **extra: Any) -> str:
+    """Write one record, return its memory_id."""
+    resp = mc.client.post(
+        "/api/v1/memory/records", json={"records": [_record(content, **extra)]}
+    )
+    assert resp.status_code == 200, resp.text
+    return str(resp.json()["records"][0]["memory_id"])
+
+
+class TestLinksOnWrite:
+    def test_links_by_memory_id_and_sibling_content_hash(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """target_ref resolves as memory_id (pre-existing row) AND as the
+        content_hash of a sibling record written in the same batch."""
+        existing_id = _write_one(mc, "the anchor tortoise fact")
+        resp = mc.client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    _record("the sibling manatee fact"),
+                    {
+                        **_record("the linking capybara entry", kind="library"),
+                        "links": [
+                            {"target_ref": existing_id, "relation": "depends_on"},
+                            {
+                                "target_ref": _content_sha256(
+                                    "the sibling manatee fact"
+                                ),
+                                "relation": "related",
+                                "description": "batch sibling",
+                            },
+                        ],
+                    },
+                ]
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["dropped_links_count"] == 0
+        source_id = body["records"][1]["memory_id"]
+        sibling_id = body["records"][0]["memory_id"]
+
+        rows = _scalar(
+            db,
+            "SELECT count(*) FROM coord.memory_links WHERE tenant_id = :t",
+            t=mc.tenant_id,
+        )
+        assert rows == 2
+        by_id_target = _scalar(
+            db,
+            "SELECT target_id FROM coord.memory_links "
+            "WHERE source_id = :s AND relation = 'depends_on'",
+            s=source_id,
+        )
+        assert str(by_id_target) == existing_id
+        by_hash_target = _scalar(
+            db,
+            "SELECT target_id FROM coord.memory_links "
+            "WHERE source_id = :s AND relation = 'related'",
+            s=source_id,
+        )
+        assert str(by_hash_target) == sibling_id
+        description = _scalar(
+            db,
+            "SELECT description FROM coord.memory_links "
+            "WHERE source_id = :s AND relation = 'related'",
+            s=source_id,
+        )
+        assert description == "batch sibling"
+
+    def test_duplicate_edges_dedup_on_conflict(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """Re-declaring the same edge (same relation) is a no-op; a
+        different relation between the same pair is a distinct edge."""
+        target_id = _write_one(mc, "the target ibex fact")
+        write = {
+            "records": [
+                {
+                    **_record("the repeating lynx entry"),
+                    "links": [
+                        {"target_ref": target_id, "relation": "implements"},
+                        # Intra-batch repeat of the identical edge.
+                        {"target_ref": target_id, "relation": "implements"},
+                    ],
+                }
+            ]
+        }
+        first = mc.client.post("/api/v1/memory/records", json=write)
+        assert first.status_code == 200
+        assert first.json()["dropped_links_count"] == 0
+        # Cross-request repeat (the record dedups; the edge conflicts).
+        second = mc.client.post("/api/v1/memory/records", json=write)
+        assert second.status_code == 200
+        assert second.json()["dropped_links_count"] == 0
+        assert (
+            _scalar(
+                db,
+                "SELECT count(*) FROM coord.memory_links WHERE tenant_id = :t",
+                t=mc.tenant_id,
+            )
+            == 1
+        )
+
+        # A different relation between the same pair is a new edge.
+        third = mc.client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    {
+                        **_record("the repeating lynx entry"),
+                        "links": [{"target_ref": target_id, "relation": "related"}],
+                    }
+                ]
+            },
+        )
+        assert third.status_code == 200
+        assert (
+            _scalar(
+                db,
+                "SELECT count(*) FROM coord.memory_links WHERE tenant_id = :t",
+                t=mc.tenant_id,
+            )
+            == 2
+        )
+
+    def test_unresolved_targets_are_dropped_and_counted(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """Unknown memory_id, unknown hash, cross-tenant id: dropped (and
+        counted), never rejected — the record itself still lands."""
+        foreign = MemoryClient(db)
+        foreign_id = _write_one(foreign, "foreign tenant walrus fact")
+
+        resp = mc.client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    {
+                        **_record("the optimistic osprey entry"),
+                        "links": [
+                            {"target_ref": str(uuid4()), "relation": "depends_on"},
+                            {
+                                "target_ref": _content_sha256("no such content"),
+                                "relation": "related",
+                            },
+                            {"target_ref": foreign_id, "relation": "implements"},
+                        ],
+                    }
+                ]
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["dropped_links_count"] == 3
+        assert body["records"][0]["deduped"] is False
+        assert (
+            _scalar(
+                db,
+                "SELECT count(*) FROM coord.memory_links WHERE tenant_id = :t",
+                t=mc.tenant_id,
+            )
+            == 0
+        )
+
+    def test_dead_targets_do_not_resolve(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """A tombstoned record is not a linkable target (live rows only)."""
+        dead_id = _write_one(mc, "the ephemeral moth fact")
+        assert mc.client.delete(f"/api/v1/memory/records/{dead_id}").status_code == 204
+        resp = mc.client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    {
+                        **_record("the surviving beetle entry"),
+                        "links": [{"target_ref": dead_id, "relation": "related"}],
+                    }
+                ]
+            },
+        )
+        assert resp.json()["dropped_links_count"] == 1
+
+    def test_kind_library_accepted_and_stored(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        resp = mc.client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    _record("curated library entry on merge wedges", kind="library")
+                ]
+            },
+        )
+        assert resp.status_code == 200
+        memory_id = resp.json()["records"][0]["memory_id"]
+        assert (
+            _scalar(
+                db,
+                "SELECT kind FROM coord.memory_records WHERE memory_id = :m",
+                m=memory_id,
+            )
+            == "library"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Librarian Phase 4 — POST /memory/graph traversal
+# ---------------------------------------------------------------------------
+
+
+def _link_records(mc: MemoryClient, edges: list[tuple[str, str, str]]) -> None:
+    """Declare edges between already-written records by memory_id.
+
+    Each edge is ``(source_content, target_id, relation)`` — re-writing
+    the source content dedups onto the existing row and attaches links.
+    """
+    for source_content, target_id, relation in edges:
+        resp = mc.client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    {
+                        **_record(source_content),
+                        "links": [{"target_ref": target_id, "relation": relation}],
+                    }
+                ]
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.json()["dropped_links_count"] == 0
+
+
+class TestGraphTraversal:
+    def test_chain_traversal_respects_depth(self, mc: MemoryClient) -> None:
+        """A→B→C→D: depth=3 sees the whole chain, depth=1 only A→B."""
+        ids = {c: _write_one(mc, f"chain node {c}") for c in "abcd"}
+        _link_records(
+            mc,
+            [
+                ("chain node a", ids["b"], "depends_on"),
+                ("chain node b", ids["c"], "depends_on"),
+                ("chain node c", ids["d"], "depends_on"),
+            ],
+        )
+        full = mc.client.post(
+            "/api/v1/memory/graph",
+            json={"root_memory_id": ids["a"], "depth": 3},
+        )
+        assert full.status_code == 200
+        body = full.json()
+        assert {n["memory_id"] for n in body["nodes"]} == set(ids.values())
+        assert {(e["source_id"], e["target_id"]) for e in body["edges"]} == {
+            (ids["a"], ids["b"]),
+            (ids["b"], ids["c"]),
+            (ids["c"], ids["d"]),
+        }
+
+        shallow = mc.client.post(
+            "/api/v1/memory/graph",
+            json={"root_memory_id": ids["a"], "depth": 1},
+        ).json()
+        assert {n["memory_id"] for n in shallow["nodes"]} == {ids["a"], ids["b"]}
+        assert len(shallow["edges"]) == 1
+
+    def test_diamond_collects_all_paths(self, mc: MemoryClient) -> None:
+        """A→B, A→C, B→D, C→D: every node once, all four edges."""
+        ids = {c: _write_one(mc, f"diamond node {c}") for c in "abcd"}
+        _link_records(
+            mc,
+            [
+                ("diamond node a", ids["b"], "related"),
+                ("diamond node a", ids["c"], "related"),
+                ("diamond node b", ids["d"], "implements"),
+                ("diamond node c", ids["d"], "implements"),
+            ],
+        )
+        body = mc.client.post(
+            "/api/v1/memory/graph",
+            json={"root_memory_id": ids["a"], "depth": 3},
+        ).json()
+        assert {n["memory_id"] for n in body["nodes"]} == set(ids.values())
+        assert len(body["edges"]) == 4
+        # D appears as one node even though two paths reach it.
+        assert len(body["nodes"]) == 4
+
+    def test_cycle_is_safe_under_depth_cap(self, mc: MemoryClient) -> None:
+        """A→B→C→A at max depth terminates with each edge exactly once."""
+        ids = {c: _write_one(mc, f"cycle node {c}") for c in "abc"}
+        _link_records(
+            mc,
+            [
+                ("cycle node a", ids["b"], "related"),
+                ("cycle node b", ids["c"], "related"),
+                ("cycle node c", ids["a"], "related"),
+            ],
+        )
+        body = mc.client.post(
+            "/api/v1/memory/graph",
+            json={"root_memory_id": ids["a"], "depth": 5},
+        ).json()
+        assert {n["memory_id"] for n in body["nodes"]} == set(ids.values())
+        assert len(body["edges"]) == 3
+
+    def test_relation_filter_narrows_traversal(self, mc: MemoryClient) -> None:
+        """Only edges in relation_filter are followed (and returned)."""
+        ids = {c: _write_one(mc, f"filter node {c}") for c in "abc"}
+        _link_records(
+            mc,
+            [
+                ("filter node a", ids["b"], "depends_on"),
+                ("filter node a", ids["c"], "related"),
+            ],
+        )
+        body = mc.client.post(
+            "/api/v1/memory/graph",
+            json={
+                "root_memory_id": ids["a"],
+                "depth": 3,
+                "relation_filter": ["depends_on"],
+            },
+        ).json()
+        assert {n["memory_id"] for n in body["nodes"]} == {ids["a"], ids["b"]}
+        assert [e["relation"] for e in body["edges"]] == ["depends_on"]
+
+    def test_root_without_edges_returns_lone_node(self, mc: MemoryClient) -> None:
+        root = _write_one(mc, "isolated hermit crab fact")
+        body = mc.client.post(
+            "/api/v1/memory/graph", json={"root_memory_id": root}
+        ).json()
+        assert [n["memory_id"] for n in body["nodes"]] == [root]
+        assert body["edges"] == []
+        # Node payload carries the query-hit field shape.
+        node = body["nodes"][0]
+        for field in (
+            "memory_id",
+            "title",
+            "content",
+            "kind",
+            "scope",
+            "importance",
+            "created_at",
+            "source",
+        ):
+            assert field in node
+
+    def test_depth_over_cap_is_422_and_foreign_root_is_404(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        root = _write_one(mc, "capped narwhal fact")
+        over = mc.client.post(
+            "/api/v1/memory/graph",
+            json={"root_memory_id": root, "depth": 6},
+        )
+        assert over.status_code == 422
+
+        foreign = MemoryClient(db)
+        foreign_root = _write_one(foreign, "foreign badger fact")
+        resp = mc.client.post(
+            "/api/v1/memory/graph", json={"root_memory_id": foreign_root}
+        )
+        assert resp.status_code == 404
+        unknown = mc.client.post(
+            "/api/v1/memory/graph", json={"root_memory_id": str(uuid4())}
+        )
+        assert unknown.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Librarian Phase 4 — GET /memory/records (paginated sync-pull list)
+# ---------------------------------------------------------------------------
+
+
+class TestListRecords:
+    def test_pagination_walks_all_live_records_newest_first(
+        self, mc: MemoryClient
+    ) -> None:
+        written = {_write_one(mc, f"paginated stork fact {i}") for i in range(5)}
+        seen: list[dict[str, Any]] = []
+        cursor: str | None = None
+        pages = 0
+        while True:
+            params: dict[str, Any] = {"limit": 2}
+            if cursor:
+                params["cursor"] = cursor
+            resp = mc.client.get("/api/v1/memory/records", params=params)
+            assert resp.status_code == 200
+            body = resp.json()
+            assert len(body["records"]) <= 2
+            seen.extend(body["records"])
+            pages += 1
+            cursor = body["next_cursor"]
+            if cursor is None:
+                break
+            assert pages < 10, "cursor loop did not terminate"
+        assert {r["memory_id"] for r in seen} == written
+        assert len(seen) == 5
+        # Newest-first-stable: (created_at, memory_id) strictly decreasing.
+        keys = [(r["created_at"], r["memory_id"]) for r in seen]
+        assert all(a > b for a, b in zip(keys, keys[1:], strict=False))
+
+    def test_since_filter_returns_only_newer_rows(self, mc: MemoryClient) -> None:
+        _write_one(mc, "older heron fact")
+        first_page = mc.client.get("/api/v1/memory/records").json()["records"]
+        assert len(first_page) == 1
+        watermark = first_page[0]["updated_at"]
+
+        newer_id = _write_one(mc, "newer egret fact")
+        body = mc.client.get(
+            "/api/v1/memory/records", params={"since": watermark}
+        ).json()
+        assert [r["memory_id"] for r in body["records"]] == [newer_id]
+
+    def test_kinds_filter_csv_and_repeated(self, mc: MemoryClient) -> None:
+        _write_one(mc, "fact about the mole", kind="fact")
+        _write_one(mc, "rule about the vole", kind="rule")
+        _write_one(mc, "episode about the shrew", kind="episode")
+
+        csv = mc.client.get(
+            "/api/v1/memory/records", params={"kinds": "fact,rule"}
+        ).json()
+        assert {r["kind"] for r in csv["records"]} == {"fact", "rule"}
+
+        repeated = mc.client.get(
+            "/api/v1/memory/records", params=[("kinds", "fact"), ("kinds", "rule")]
+        ).json()
+        assert {r["kind"] for r in repeated["records"]} == {"fact", "rule"}
+
+        unknown = mc.client.get(
+            "/api/v1/memory/records", params={"kinds": "not_a_kind"}
+        )
+        assert unknown.status_code == 422
+
+    def test_dead_rows_are_excluded(self, mc: MemoryClient) -> None:
+        live_id = _write_one(mc, "the enduring albatross fact")
+        dead_id = _write_one(mc, "the doomed dodo fact")
+        mc.client.delete(f"/api/v1/memory/records/{dead_id}")
+        superseded_id = _write_one(mc, "the outdated auk fact")
+        superseded = mc.client.post(
+            f"/api/v1/memory/records/{superseded_id}/supersede",
+            json={"title": "note", "content": "the corrected auk fact"},
+        )
+        successor_id = superseded.json()["memory_id"]
+
+        body = mc.client.get("/api/v1/memory/records").json()
+        ids = {r["memory_id"] for r in body["records"]}
+        assert ids == {live_id, successor_id}
+
+    def test_records_carry_outbound_links_and_sync_fields(
+        self, mc: MemoryClient
+    ) -> None:
+        target_id = _write_one(mc, "the linked kestrel fact")
+        resp = mc.client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    {
+                        **_record("the linking merlin entry", kind="library"),
+                        "links": [
+                            {
+                                "target_ref": target_id,
+                                "relation": "depends_on",
+                                "description": "hunts with",
+                            }
+                        ],
+                    }
+                ]
+            },
+        )
+        source_id = resp.json()["records"][0]["memory_id"]
+
+        body = mc.client.get("/api/v1/memory/records").json()
+        by_id = {r["memory_id"]: r for r in body["records"]}
+        source = by_id[source_id]
+        assert [
+            (link["target_id"], link["relation"], link["description"])
+            for link in source["links"]
+        ] == [(target_id, "depends_on", "hunts with")]
+        assert by_id[target_id]["links"] == []
+        # Sync-relevant fields present on every record.
+        for field in (
+            "memory_id",
+            "title",
+            "content",
+            "kind",
+            "scope",
+            "scope_ref",
+            "importance",
+            "content_hash",
+            "created_at",
+            "updated_at",
+            "source",
+            "links",
+        ):
+            assert field in source
+        assert source["content_hash"] == _content_sha256("the linking merlin entry")
+
+    def test_tenant_isolation_and_malformed_cursor(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        foreign = MemoryClient(db)
+        _write_one(foreign, "foreign wombat fact")
+        assert mc.client.get("/api/v1/memory/records").json()["records"] == []
+
+        bad = mc.client.get("/api/v1/memory/records", params={"cursor": "not-a-cursor"})
+        assert bad.status_code == 400
