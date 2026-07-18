@@ -7599,6 +7599,149 @@
         "title": "ConfigEnvelope",
         "type": "object"
       },
+      "ConfigHistoryDiffResponse": {
+        "description": "SELF-drift between two captures of the SAME machine over time.\n\nThe same drift-report shape as the vs-canonical endpoints (sections of\nkey deltas + severity rollup), produced by\n:func:`app.services.devenv_drift.diff_envelopes` with the ``from``\ncapture in the canonical slot (\"expected\") and the ``to`` capture in the\ntarget slot (\"actual\") \u2014 the report reads as \"what changed going from\n``from`` to ``to``\".\nExtends the base shape with the identity of the two compared captures.",
+        "properties": {
+          "actual_schema_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Schema Version"
+          },
+          "expected_schema_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Schema Version"
+          },
+          "from_captured_at": {
+            "title": "From Captured At",
+            "type": "string"
+          },
+          "from_id": {
+            "format": "uuid",
+            "title": "From Id",
+            "type": "string"
+          },
+          "has_config": {
+            "default": true,
+            "title": "Has Config",
+            "type": "boolean"
+          },
+          "in_sync": {
+            "title": "In Sync",
+            "type": "boolean"
+          },
+          "machine_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Machine Id"
+          },
+          "machine_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Machine Name"
+          },
+          "schema_version_mismatch": {
+            "default": false,
+            "title": "Schema Version Mismatch",
+            "type": "boolean"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/SectionDrift"
+            },
+            "title": "Sections",
+            "type": "array"
+          },
+          "severity": {
+            "enum": [
+              "info",
+              "warning",
+              "critical"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "to_captured_at": {
+            "title": "To Captured At",
+            "type": "string"
+          },
+          "to_id": {
+            "format": "uuid",
+            "title": "To Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "severity",
+          "in_sync",
+          "from_id",
+          "to_id",
+          "from_captured_at",
+          "to_captured_at"
+        ],
+        "title": "ConfigHistoryDiffResponse",
+        "type": "object"
+      },
+      "ConfigHistoryEntry": {
+        "description": "One capture in a machine's config-history timeline (newest-first).\n\nMetadata only \u2014 deliberately NO config body, so a long timeline stays a\nsmall payload. The body is reachable through the diff endpoint (as a\ndrift report), never dumped raw.",
+        "properties": {
+          "captured_at": {
+            "title": "Captured At",
+            "type": "string"
+          },
+          "content_hash": {
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "captured_at",
+          "schema_version",
+          "source",
+          "content_hash"
+        ],
+        "title": "ConfigHistoryEntry",
+        "type": "object"
+      },
       "ConflictChange": {
         "description": "Schema for a single field-level conflict.",
         "properties": {
@@ -56265,6 +56408,171 @@
           }
         ],
         "summary": "Get Machine Drift",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/v1/devenv/environments/{environment_id}/machines/{machine_id}/config-history": {
+      "get": {
+        "description": "A machine's config-capture timeline for an environment, newest first.\n\nMetadata only (no config bodies) \u2014 a long timeline stays a small payload.\nOwner-scoped like every sibling route (cross-owner env/machine \u2192 404).\nDistinct-captures only: the agent write path dedups consecutive\nidentical envelopes, so each entry is an actual change point.",
+        "operationId": "api_v1_devenv_environments_environment_id_machines_machine_id_config_history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Environment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "machine_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Machine Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ConfigHistoryEntry"
+                  },
+                  "title": "Response Get Config History Api V1 Devenv Environments  Environment Id  Machines  Machine Id  Config History Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Config History",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/v1/devenv/environments/{environment_id}/machines/{machine_id}/config-history/diff": {
+      "get": {
+        "description": "SELF-drift between two captures of the same machine over time.\n\nDistinct from the vs-canonical drift endpoints: both envelopes belong to\nthe SAME (environment, machine), and the report reads as \"what changed\ngoing from ``from_id`` to ``to_id``\" (``from`` fills the expected slot,\n``to`` the actual). A ``from_id``/``to_id`` that is missing OR belongs to\na different (environment, machine) pair \u2192 404, mirroring the module's\nnever-leak-existence convention.",
+        "operationId": "api_v1_devenv_environments_environment_id_machines_machine_id_config_history_diff_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Environment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "machine_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Machine Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "From Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "To Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigHistoryDiffResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Config History Diff",
         "tags": [
           "environments"
         ]

@@ -265,6 +265,21 @@ class CanonicalChangeResponse(BaseORMSchema):
     changed_at: IsoDatetime
 
 
+class ConfigHistoryEntry(BaseORMSchema):
+    """One capture in a machine's config-history timeline (newest-first).
+
+    Metadata only — deliberately NO config body, so a long timeline stays a
+    small payload. The body is reachable through the diff endpoint (as a
+    drift report), never dumped raw.
+    """
+
+    id: UUID
+    captured_at: IsoDatetime
+    schema_version: int
+    source: str
+    content_hash: str
+
+
 # ---------------------------------------------------------------------------
 # Agent enrollment + config
 # ---------------------------------------------------------------------------
@@ -423,6 +438,24 @@ class MachineDriftReport(BaseSchema):
     expected_schema_version: int | None = None
     actual_schema_version: int | None = None
     has_config: bool = True
+
+
+class ConfigHistoryDiffResponse(MachineDriftReport):
+    """SELF-drift between two captures of the SAME machine over time.
+
+    The same drift-report shape as the vs-canonical endpoints (sections of
+    key deltas + severity rollup), produced by
+    :func:`app.services.devenv_drift.diff_envelopes` with the ``from``
+    capture in the canonical slot ("expected") and the ``to`` capture in the
+    target slot ("actual") — the report reads as "what changed going from
+    ``from`` to ``to``".
+    Extends the base shape with the identity of the two compared captures.
+    """
+
+    from_id: UUID
+    to_id: UUID
+    from_captured_at: IsoDatetime
+    to_captured_at: IsoDatetime
 
 
 class EnvironmentDriftResponse(BaseSchema):
