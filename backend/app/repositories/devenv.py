@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -21,6 +22,7 @@ from uuid import UUID
 from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.models.devenv import (
     Application,
@@ -30,6 +32,7 @@ from app.models.devenv import (
     MachineEnvironmentConfig,
     MachineEnvironmentConfigHistory,
 )
+from app.models.user import User
 
 # ---------------------------------------------------------------------------
 # Applications
@@ -571,6 +574,20 @@ class MachineEnvironmentConfigHistoryRepository:
 # ---------------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class CanonicalChangeRow:
+    """One audit row plus its LEFT-JOIN-resolved display names.
+
+    Every name is ``None``-able by design — the machine ids are soft refs so
+    the audit survives machine deletion, and the actor FK is ``SET NULL``.
+    """
+
+    log: CanonicalChangeLog
+    changed_by_email: str | None
+    from_machine_name: str | None
+    to_machine_name: str | None
+
+
 class CanonicalChangeLogRepository:
     """Append-only audit of canonical designations for ``devenv.environments``.
 
@@ -610,15 +627,46 @@ class CanonicalChangeLogRepository:
         *,
         environment_id: UUID,
         limit: int = 100,
-    ) -> list[CanonicalChangeLog]:
-        """List an environment's canonical changes, newest first."""
+    ) -> list[CanonicalChangeRow]:
+        """List an environment's canonical changes, newest first.
+
+        Resolves the display names (actor email, from/to machine names) in
+        the SAME query via LEFT JOINs — a per-row lookup by the caller would
+        be an N+1 that grows with history length.
+
+        Every joined name is nullable **by design**: the machine ids are soft
+        references (see :class:`~app.models.devenv.CanonicalChangeLog`) so the
+        audit row outlives machine deletion, and ``changed_by_user_id`` is an
+        FK with ``ON DELETE SET NULL``. LEFT joins keep the audit row; the
+        name simply comes back ``None``.
+        """
+        from_machine = aliased(Machine)
+        to_machine = aliased(Machine)
         stmt = (
-            select(CanonicalChangeLog)
+            select(
+                CanonicalChangeLog,
+                User.email.label("changed_by_email"),
+                from_machine.name.label("from_machine_name"),
+                to_machine.name.label("to_machine_name"),
+            )
+            .outerjoin(User, User.id == CanonicalChangeLog.changed_by_user_id)
+            .outerjoin(
+                from_machine, from_machine.id == CanonicalChangeLog.from_machine_id
+            )
+            .outerjoin(to_machine, to_machine.id == CanonicalChangeLog.to_machine_id)
             .where(CanonicalChangeLog.environment_id == environment_id)
             .order_by(CanonicalChangeLog.changed_at.desc())
             .limit(limit)
         )
-        return list((await db.execute(stmt)).scalars().all())
+        return [
+            CanonicalChangeRow(
+                log=row[0],
+                changed_by_email=row[1],
+                from_machine_name=row[2],
+                to_machine_name=row[3],
+            )
+            for row in (await db.execute(stmt)).all()
+        ]
 
 
 # Singleton instances.

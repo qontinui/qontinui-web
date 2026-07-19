@@ -1055,6 +1055,105 @@ class TestCanonicalAuditAndPull:
             assert len(hist) == 2
 
     @pytest.mark.asyncio
+    async def test_history_resolves_display_names(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """History rows carry the actor email + from/to machine names.
+
+        Resolved server-side by LEFT JOIN so the UI never renders a raw UUID
+        and never issues a per-row lookup.
+        """
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app) as client:
+            env_id, a_id, b_id, _, _ = await self._seed_env_two_enrolled_machines(
+                client
+            )
+            await client.put(
+                f"{API_PREFIX}/environments/{env_id}/canonical",
+                json={"machine_id": a_id},
+            )
+            await client.put(
+                f"{API_PREFIX}/environments/{env_id}/canonical",
+                json={"machine_id": b_id},
+            )
+            hist = (
+                await client.get(
+                    f"{API_PREFIX}/environments/{env_id}/canonical-history"
+                )
+            ).json()
+            assert len(hist) == 2
+            # Same-transaction rows share now(), so ORDER BY changed_at DESC
+            # is a tie here — assert on the SET of transitions, not position.
+            named = {(h["from_machine_name"], h["to_machine_name"]) for h in hist}
+            assert named == {(None, "machine-a"), ("machine-a", "machine-b")}
+            assert {h["changed_by_email"] for h in hist} == {test_user.email}
+
+    @pytest.mark.asyncio
+    async def test_history_survives_machine_deletion_with_null_name(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """The load-bearing case: deleting a machine must NOT drop its audit
+        rows — the ids are soft refs, so the row stays and the name is None."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app) as client:
+            env_id, a_id, b_id, _, _ = await self._seed_env_two_enrolled_machines(
+                client
+            )
+            await client.put(
+                f"{API_PREFIX}/environments/{env_id}/canonical",
+                json={"machine_id": a_id},
+            )
+            await client.put(
+                f"{API_PREFIX}/environments/{env_id}/canonical",
+                json={"machine_id": b_id},
+            )
+
+            r = await client.delete(f"{API_PREFIX}/machines/{a_id}")
+            assert r.status_code == 204, r.text
+
+            hist = (
+                await client.get(
+                    f"{API_PREFIX}/environments/{env_id}/canonical-history"
+                )
+            ).json()
+            # Both audit rows survive the deletion.
+            assert len(hist) == 2
+            # The soft-ref ids are untouched — only the resolved name is gone.
+            assert {h["to_machine_id"] for h in hist} == {a_id, b_id}
+            named = {(h["from_machine_name"], h["to_machine_name"]) for h in hist}
+            assert named == {(None, None), (None, "machine-b")}
+
+    @pytest.mark.asyncio
+    async def test_history_null_actor_yields_null_email(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """``changed_by_user_id`` is FK SET NULL — a null actor resolves to a
+        null email rather than erroring or dropping the row."""
+        from app.repositories.devenv import canonical_log_repo
+
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app) as client:
+            env_id, a_id, _, _, _ = await self._seed_env_two_enrolled_machines(client)
+            await canonical_log_repo.record(
+                async_db_session,
+                environment_id=UUID(env_id),
+                from_machine_id=None,
+                to_machine_id=UUID(a_id),
+                changed_by_user_id=None,
+            )
+            await async_db_session.commit()
+
+            hist = (
+                await client.get(
+                    f"{API_PREFIX}/environments/{env_id}/canonical-history"
+                )
+            ).json()
+            assert len(hist) == 1
+            assert hist[0]["changed_by_user_id"] is None
+            assert hist[0]["changed_by_email"] is None
+            assert hist[0]["to_machine_name"] == "machine-a"
+
+    @pytest.mark.asyncio
     async def test_audit_records_active_tenant_best_effort(
         self, async_db_session: AsyncSession, test_user
     ) -> None:
