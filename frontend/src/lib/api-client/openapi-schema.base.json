@@ -73234,6 +73234,186 @@
         ]
       }
     },
+    "/api/v1/operations/gates/{gate_id}/audience": {
+      "patch": {
+        "description": "Re-classify a gate's ``clearance_audience`` (``operator`` vs ``agent``;\noperator bearer forwarded, fleet-auth P2/D6).\n\n``body[\"audience\"]`` is forwarded verbatim; coord owns validation of the\nallowed values.",
+        "operationId": "api_v1_operations_gates_gate_id_audience_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "gate_id",
+            "required": true,
+            "schema": {
+              "title": "Gate Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Set Gate Audience Api V1 Operations Gates  Gate Id  Audience Patch"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Set Gate Audience",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/gates/{gate_id}/continuation-cancel": {
+      "post": {
+        "description": "Cancel a gate's armed/dispatched continuation so clearing it no longer\nspawns the follow-up session (operator bearer forwarded, fleet-auth P2/D6).\n\n``body[\"cancelled_by\"]`` (audit actor) and ``body[\"reason\"]`` are forwarded\nverbatim; coord owns validation.",
+        "operationId": "api_v1_operations_gates_gate_id_continuation_cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "gate_id",
+            "required": true,
+            "schema": {
+              "title": "Gate Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Continuation Cancel Gate Api V1 Operations Gates  Gate Id  Continuation Cancel Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Continuation Cancel Gate",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/gates/{gate_id}/force-clear": {
+      "post": {
+        "description": "Force-clear a gate regardless of its predicate (DESTRUCTIVE \u2014 clears an\nopen gate that has NOT met its condition; operator bearer forwarded,\nfleet-auth P2/D6).\n\n``body[\"reason\"]`` is REQUIRED by coord (the audit records why the operator\noverrode the predicate). It is forwarded verbatim; coord owns validation and\nrejects an empty/absent reason.",
+        "operationId": "api_v1_operations_gates_gate_id_force_clear_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "gate_id",
+            "required": true,
+            "schema": {
+              "title": "Gate Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Force Clear Gate Api V1 Operations Gates  Gate Id  Force Clear Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Force Clear Gate",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/gates/{gate_id}/mute": {
       "post": {
         "description": "Mute a gate so the sweep skips it (reversible \u2014 operator bearer\nforwarded, fleet-auth P2/D6).",
