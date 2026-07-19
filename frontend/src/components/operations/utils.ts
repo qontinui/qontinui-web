@@ -144,6 +144,24 @@ export function gateUnmuteUrl(gateId: string): string {
 export function gateSnoozeUrl(gateId: string): string {
   return `${OPERATIONS_API}/gates/${encodeURIComponent(gateId)}/snooze`;
 }
+/** POST reject an OPEN `operator_approval` gate. Body `{reason?}`. */
+export function gateRejectUrl(gateId: string): string {
+  return `${OPERATIONS_API}/gates/${encodeURIComponent(gateId)}/reject`;
+}
+/**
+ * POST force-clear a gate regardless of its predicate (DESTRUCTIVE — clears an
+ * open gate that has not met its condition). Body `{reason}` REQUIRED.
+ */
+export function gateForceClearUrl(gateId: string): string {
+  return `${OPERATIONS_API}/gates/${encodeURIComponent(gateId)}/force-clear`;
+}
+/**
+ * POST cancel a gate's armed/dispatched continuation so clearing it no longer
+ * spawns the follow-up session. Body `{cancelled_by, reason}`.
+ */
+export function gateContinuationCancelUrl(gateId: string): string {
+  return `${OPERATIONS_API}/gates/${encodeURIComponent(gateId)}/continuation-cancel`;
+}
 
 /**
  * Polling interval for the gates panel (ms). Gates evaluate at coord's
