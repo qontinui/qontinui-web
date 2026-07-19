@@ -71513,7 +71513,7 @@
     },
     "/api/v1/operations/agent-questions/answered": {
       "get": {
-        "description": "Return recently-answered agent questions.\n\nWave 3a \u2014 surfaces the \"answered\" tab on the questions inbox so\noperators can audit prior decisions without leaving the page.",
+        "description": "Return recently-answered agent questions.\n\nWave 3a \u2014 surfaces the \"answered\" tab on the questions inbox so\noperators can audit prior decisions without leaving the page.\n\n``gap`` (Phase 3): forwarded to coord as the POLICY_GAP filter so the\nGaps tab can list pre-answered (non-blocking) gap reports.",
         "operationId": "api_v1_operations_agent_questions_answered_get",
         "parameters": [
           {
@@ -71532,6 +71532,22 @@
                 }
               ],
               "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "gap",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Gap"
             }
           }
         ],
@@ -71618,8 +71634,26 @@
     },
     "/api/v1/operations/agent-questions/pending": {
       "get": {
-        "description": "Return pending agent questions awaiting an operator response.",
+        "description": "Return pending agent questions awaiting an operator response.\n\n``gap`` (Phase 3 of plan 2026-07-18-policy-clause-schema-web-data-model):\nwhen set, forwarded to coord as the POLICY_GAP filter —\n``gap=true`` returns only gap-marked rows, ``gap=false`` only non-gap rows.\nBacks the Gaps tab on the questions inbox.",
         "operationId": "api_v1_operations_agent_questions_pending_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "gap",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Gap"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -71630,6 +71664,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "security": [
