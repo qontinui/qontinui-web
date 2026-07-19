@@ -21,6 +21,8 @@ import { OPERATIONS_API } from "./utils";
 import type {
   BlastRadiusBlock,
   BlastRadiusBlocksResponse,
+  MergeEconomics,
+  MergeEconomicsResponse,
   PrListResponse,
   PrRow,
   ProposalDetail,
@@ -42,6 +44,13 @@ export interface MergePipelineData {
   /** null while the first fetch is in flight. */
   proposals: ProposalDetail[] | null;
   prs: PrRow[] | null;
+  /**
+   * Per-repo merge economics keyed by `owner/name`. Never null — it defaults
+   * to an empty map, and a 404 / coord-down / not-yet-deployed economics read
+   * keeps it empty, so prPipeline transparently falls back to its hardcoded
+   * thresholds + repo-name hint. There is no "loading" state to distinguish.
+   */
+  economicsByRepo: Record<string, MergeEconomics>;
   suggestions: SuggestionRow[] | null;
   gateBlocks: BlastRadiusBlock[] | null;
   gateTotalBlocks: number | null;
@@ -58,6 +67,9 @@ export interface MergePipelineData {
 export function useMergePipelineData(): MergePipelineData {
   const [proposals, setProposals] = useState<ProposalDetail[] | null>(null);
   const [prs, setPrs] = useState<PrRow[] | null>(null);
+  const [economicsByRepo, setEconomicsByRepo] = useState<
+    Record<string, MergeEconomics>
+  >({});
   const [suggestions, setSuggestions] = useState<SuggestionRow[] | null>(null);
   const [suggestionBusy, setSuggestionBusy] = useState<number | null>(null);
   const [gateBlocks, setGateBlocks] = useState<BlastRadiusBlock[] | null>(null);
@@ -105,6 +117,53 @@ export function useMergePipelineData(): MergePipelineData {
     } catch (err) {
       log.warn("fetchPrs failed", err);
       if (!cleanedUpRef.current) setPrs([]);
+    }
+  }, []);
+
+  // Per-repo merge economics — the CI-duration-aware severity input. Same
+  // best-effort + 404-tolerant contract as fetchPrs: coord may not have the
+  // `coord_query_merge_economics` read deployed yet (or it may be transiently
+  // down), in which case this stays an empty map and prPipeline falls back to
+  // its hardcoded thresholds + repo-name hint. Never surfaces an error.
+  // Tolerates three wire shapes: an object keyed by `owner/name`, a
+  // `{ repos: {...} }` wrapper, or an array of `{ repo, ...economics }`.
+  const fetchEconomics = useCallback(async () => {
+    try {
+      const res = await httpClient.fetch(
+        `${OPERATIONS_API}/pr-merge/merge-economics`
+      );
+      if (!res.ok) {
+        if (res.status === 404) {
+          if (!cleanedUpRef.current) setEconomicsByRepo({});
+          return;
+        }
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const body = (await res.json()) as
+        | MergeEconomicsResponse
+        | Record<string, MergeEconomics>
+        | Array<MergeEconomics & { repo?: string }>;
+      let map: Record<string, MergeEconomics> = {};
+      if (Array.isArray(body)) {
+        for (const e of body) {
+          if (e && typeof e.repo === "string") map[e.repo] = e;
+        }
+      } else if (
+        body &&
+        typeof body === "object" &&
+        "repos" in body &&
+        body.repos &&
+        typeof body.repos === "object"
+      ) {
+        map = body.repos as Record<string, MergeEconomics>;
+      } else if (body && typeof body === "object") {
+        // Already keyed by repo.
+        map = body as Record<string, MergeEconomics>;
+      }
+      if (!cleanedUpRef.current) setEconomicsByRepo(map);
+    } catch (err) {
+      log.warn("fetchEconomics failed", err);
+      if (!cleanedUpRef.current) setEconomicsByRepo({});
     }
   }, []);
 
@@ -203,9 +262,10 @@ export function useMergePipelineData(): MergePipelineData {
   const fetchAll = useCallback(() => {
     fetchQueue();
     fetchPrs();
+    fetchEconomics();
     fetchSuggestions();
     fetchGateBlocks();
-  }, [fetchQueue, fetchPrs, fetchSuggestions, fetchGateBlocks]);
+  }, [fetchQueue, fetchPrs, fetchEconomics, fetchSuggestions, fetchGateBlocks]);
 
   const scheduleRefetch = useCallback(() => {
     if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current);
@@ -276,6 +336,7 @@ export function useMergePipelineData(): MergePipelineData {
   return {
     proposals,
     prs,
+    economicsByRepo,
     suggestions,
     gateBlocks,
     gateTotalBlocks,
