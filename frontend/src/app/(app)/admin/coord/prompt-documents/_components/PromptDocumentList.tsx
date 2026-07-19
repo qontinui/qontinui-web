@@ -2,10 +2,17 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle, History, NotebookText, Pencil } from "lucide-react";
+import {
+  AlertTriangle,
+  History,
+  ListTree,
+  NotebookText,
+  Pencil,
+} from "lucide-react";
 import { usePromptDocuments } from "../_hooks/usePromptDocuments";
 import { PromptDocumentEditorDialog } from "./PromptDocumentEditorDialog";
 import { PromptDocumentHistoryDialog } from "./PromptDocumentHistoryDialog";
+import { ClauseManagerDialog } from "./ClauseManagerDialog";
 import type { PromptDocument, PromptDocumentSummary } from "../types";
 import { KIND_META, PROMPT_DOCUMENT_KINDS } from "../types";
 
@@ -29,6 +36,7 @@ export function PromptDocumentList() {
     saving,
     error,
     degraded,
+    reload,
     fetchDocument,
     fetchVersions,
     fetchVersion,
@@ -38,6 +46,7 @@ export function PromptDocumentList() {
 
   const [editorOpen, setEditorOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [clausesOpen, setClausesOpen] = useState(false);
   const [editing, setEditing] = useState<PromptDocument | null>(null);
   const [loadingBody, setLoadingBody] = useState(false);
 
@@ -60,6 +69,11 @@ export function PromptDocumentList() {
 
   const openHistory = async (doc: PromptDocumentSummary) => {
     setHistoryOpen(true);
+    await loadFull(doc);
+  };
+
+  const openClauses = async (doc: PromptDocumentSummary) => {
+    setClausesOpen(true);
     await loadFull(doc);
   };
 
@@ -97,8 +111,8 @@ export function PromptDocumentList() {
         >
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
           <p className="text-sm text-muted-foreground">
-            Coord reports its prompt-document store isn&apos;t provisioned yet
-            ({degraded}). This list is empty because the documents can&apos;t be
+            Coord reports its prompt-document store isn&apos;t provisioned yet (
+            {degraded}). This list is empty because the documents can&apos;t be
             read — not because none exist.
           </p>
         </div>
@@ -131,6 +145,9 @@ export function PromptDocumentList() {
                     doc={doc}
                     onEdit={() => openEdit(doc)}
                     onHistory={() => openHistory(doc)}
+                    onClauses={
+                      doc.kind === "policy" ? () => openClauses(doc) : undefined
+                    }
                   />
                 ))}
               </div>
@@ -170,6 +187,14 @@ export function PromptDocumentList() {
         fetchVersions={fetchVersions}
         fetchVersion={fetchVersion}
       />
+
+      <ClauseManagerDialog
+        open={clausesOpen}
+        onOpenChange={setClausesOpen}
+        document={editing?.kind === "policy" ? editing : null}
+        loadingBody={loadingBody}
+        onDocsReload={reload}
+      />
     </div>
   );
 }
@@ -178,9 +203,11 @@ interface DocumentRowProps {
   doc: PromptDocumentSummary;
   onEdit: () => void;
   onHistory: () => void;
+  /** Only set for `policy` documents — opens the structured clause manager. */
+  onClauses?: () => void;
 }
 
-function DocumentRow({ doc, onEdit, onHistory }: DocumentRowProps) {
+function DocumentRow({ doc, onEdit, onHistory, onClauses }: DocumentRowProps) {
   // A document with a `default_source` has a shipped default the editor can
   // restore; one without is hand-authored with nothing to fall back to.
   const restorable = doc.default_source != null;
@@ -219,6 +246,18 @@ function DocumentRow({ doc, onEdit, onHistory }: DocumentRowProps) {
         </p>
       </div>
 
+      {onClauses && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 w-8 p-0"
+          onClick={onClauses}
+          title="Structured clauses"
+          data-testid={`doc-clauses-${doc.kind}-${doc.name}`}
+        >
+          <ListTree className="size-4" />
+        </Button>
+      )}
       <Button
         variant="ghost"
         size="sm"
