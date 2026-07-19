@@ -253,6 +253,13 @@ class CanonicalChangeResponse(BaseORMSchema):
     The "records of who changed it and when" for the team-sync model:
     ``changed_by_user_id`` + ``changed_at`` + the ``from``/``to`` machine.
     ``tenant_id`` is best-effort (the active-tenant context of the change).
+
+    The ``*_email`` / ``*_name`` fields are display labels resolved
+    server-side by LEFT JOIN (one query, no client N+1). They are **always
+    nullable**: the machine ids are soft references so an audit row outlives
+    the machine it names, and the actor FK is ``ON DELETE SET NULL``. A UI
+    must fall back (e.g. "deleted machine" / a short id prefix) rather than
+    assume a name is present.
     """
 
     id: UUID
@@ -260,6 +267,9 @@ class CanonicalChangeResponse(BaseORMSchema):
     from_machine_id: UUID | None = None
     to_machine_id: UUID | None = None
     changed_by_user_id: UUID | None = None
+    changed_by_email: str | None = None
+    from_machine_name: str | None = None
+    to_machine_name: str | None = None
     tenant_id: UUID | None = None
     note: str | None = None
     changed_at: IsoDatetime

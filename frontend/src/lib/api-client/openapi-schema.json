@@ -4665,11 +4665,22 @@
         "type": "object"
       },
       "CanonicalChangeResponse": {
-        "description": "One audited canonical-designation change (newest-first in a list).\n\nThe \"records of who changed it and when\" for the team-sync model:\n``changed_by_user_id`` + ``changed_at`` + the ``from``/``to`` machine.\n``tenant_id`` is best-effort (the active-tenant context of the change).",
+        "description": "One audited canonical-designation change (newest-first in a list).\n\nThe \"records of who changed it and when\" for the team-sync model:\n``changed_by_user_id`` + ``changed_at`` + the ``from``/``to`` machine.\n``tenant_id`` is best-effort (the active-tenant context of the change).\n\nThe ``*_email`` / ``*_name`` fields are display labels resolved\nserver-side by LEFT JOIN (one query, no client N+1). They are **always\nnullable**: the machine ids are soft references so an audit row outlives\nthe machine it names, and the actor FK is ``ON DELETE SET NULL``. A UI\nmust fall back (e.g. \"deleted machine\" / a short id prefix) rather than\nassume a name is present.",
         "properties": {
           "changed_at": {
             "title": "Changed At",
             "type": "string"
+          },
+          "changed_by_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Changed By Email"
           },
           "changed_by_user_id": {
             "anyOf": [
@@ -4699,6 +4710,17 @@
               }
             ],
             "title": "From Machine Id"
+          },
+          "from_machine_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Machine Name"
           },
           "id": {
             "format": "uuid",
@@ -4739,6 +4761,17 @@
               }
             ],
             "title": "To Machine Id"
+          },
+          "to_machine_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Machine Name"
           }
         },
         "required": [
@@ -58996,7 +59029,7 @@
     },
     "/api/v1/devenv/environments/{environment_id}/canonical-history": {
       "get": {
-        "description": "List the environment's canonical-designation changes, newest first.\n\nAnswers \"who made this the canonical environment, and when.\" Owner-scoped\nlike every other route here (cross-owner env id -> 404).",
+        "description": "List the environment's canonical-designation changes, newest first.\n\nAnswers \"who made this the canonical environment, and when.\" Owner-scoped\nlike every other route here (cross-owner env id -> 404).\n\nDisplay names (actor email, from/to machine names) are resolved by the\nrepository in the same query; each is ``None`` when the referenced row is\ngone, which is expected \u2014 the audit outlives machine/user deletion.",
         "operationId": "api_v1_devenv_environments_environment_id_canonical_history_get",
         "parameters": [
           {

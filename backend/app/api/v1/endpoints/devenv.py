@@ -641,6 +641,10 @@ async def get_canonical_history(
 
     Answers "who made this the canonical environment, and when." Owner-scoped
     like every other route here (cross-owner env id -> 404).
+
+    Display names (actor email, from/to machine names) are resolved by the
+    repository in the same query; each is ``None`` when the referenced row is
+    gone, which is expected — the audit outlives machine/user deletion.
     """
     env = await environment_repo.get(
         db, owner_id=current_user.id, env_id=environment_id
@@ -650,7 +654,16 @@ async def get_canonical_history(
     rows = await canonical_log_repo.list_for_environment(
         db, environment_id=environment_id
     )
-    return [CanonicalChangeResponse.model_validate(r) for r in rows]
+    return [
+        CanonicalChangeResponse.model_validate(r.log).model_copy(
+            update={
+                "changed_by_email": r.changed_by_email,
+                "from_machine_name": r.from_machine_name,
+                "to_machine_name": r.to_machine_name,
+            }
+        )
+        for r in rows
+    ]
 
 
 # ---------------------------------------------------------------------------
