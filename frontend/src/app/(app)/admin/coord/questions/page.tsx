@@ -28,25 +28,35 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import { Inbox, RefreshCw } from "lucide-react";
+import { Inbox, RefreshCw, ScanSearch } from "lucide-react";
 import {
   QuestionCard,
   type AgentQuestionRow,
 } from "@/components/admin/coord/QuestionCard";
+import { GapCard } from "@/components/admin/coord/GapCard";
+import { isGapQuestion } from "@/components/admin/coord/policy-gap";
 import { httpClient } from "@/services/service-factory";
 
 const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 10_000;
 const ANSWERED_LIMIT = 50;
+const GAPS_LIMIT = 200;
 
 interface QuestionsListResponse {
   questions?: AgentQuestionRow[];
 }
 
+function extractQuestions(body: unknown): AgentQuestionRow[] {
+  if (Array.isArray(body)) return body as AgentQuestionRow[];
+  return ((body as QuestionsListResponse).questions ?? []) as AgentQuestionRow[];
+}
+
 export default function CoordQuestionsPage() {
   const [pending, setPending] = useState<AgentQuestionRow[]>([]);
   const [answered, setAnswered] = useState<AgentQuestionRow[]>([]);
-  const [tab, setTab] = useState<"pending" | "answered">("pending");
+  const [gaps, setGaps] = useState<AgentQuestionRow[]>([]);
+  const [handledGaps, setHandledGaps] = useState<Set<string>>(new Set());
+  const [tab, setTab] = useState<"pending" | "answered" | "gaps">("pending");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -55,14 +65,7 @@ export default function CoordQuestionsPage() {
       const body = await httpClient.get<unknown>(
         `${API}/agent-questions/pending`
       );
-      if (Array.isArray(body)) {
-        setPending(body as AgentQuestionRow[]);
-      } else {
-        setPending(
-          ((body as QuestionsListResponse).questions ??
-            []) as AgentQuestionRow[]
-        );
-      }
+      setPending(extractQuestions(body));
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -77,14 +80,7 @@ export default function CoordQuestionsPage() {
       const body = await httpClient.get<unknown>(
         `${API}/agent-questions/answered?limit=${ANSWERED_LIMIT}`
       );
-      if (Array.isArray(body)) {
-        setAnswered(body as AgentQuestionRow[]);
-      } else {
-        setAnswered(
-          ((body as QuestionsListResponse).questions ??
-            []) as AgentQuestionRow[]
-        );
-      }
+      setAnswered(extractQuestions(body));
     } catch (e) {
       // Don't clobber a pending-tab error; just leave answered empty.
       // Operators see the pending tab as the load-bearing view.
@@ -92,10 +88,42 @@ export default function CoordQuestionsPage() {
     }
   }, []);
 
+  // Gaps span both inboxes: blocking gaps are pending (unanswered), non-blocking
+  // gaps are pre-answered. We pass `gap=true` as a coord-side hint AND
+  // defensively client-filter on the POLICY_GAP marker, so the tab is correct
+  // even during the window where coord's `gap` SQL filter isn't yet deployed.
+  const fetchGaps = useCallback(async () => {
+    try {
+      const [pendingBody, answeredBody] = await Promise.all([
+        httpClient.get<unknown>(`${API}/agent-questions/pending?gap=true`),
+        httpClient.get<unknown>(
+          `${API}/agent-questions/answered?gap=true&limit=${GAPS_LIMIT}`
+        ),
+      ]);
+      const merged = [
+        ...extractQuestions(pendingBody),
+        ...extractQuestions(answeredBody),
+      ]
+        .filter(isGapQuestion)
+        .sort((a, b) =>
+          (b.created_at ?? "").localeCompare(a.created_at ?? "")
+        );
+      setGaps(merged);
+    } catch (e) {
+      console.warn("[coord/questions] fetchGaps failed", e);
+    }
+  }, []);
+
   const fetchAll = useCallback(async () => {
-    await Promise.all([fetchPending(), fetchAnswered()]);
+    await Promise.all([fetchPending(), fetchAnswered(), fetchGaps()]);
     setLoading(false);
-  }, [fetchPending, fetchAnswered]);
+  }, [fetchPending, fetchAnswered, fetchGaps]);
+
+  // Gaps handled this session are hidden immediately; a refetch reconciles.
+  const visibleGaps = gaps.filter((g) => !handledGaps.has(g.question_id));
+  const onGapHandled = useCallback((questionId: string) => {
+    setHandledGaps((prev) => new Set(prev).add(questionId));
+  }, []);
 
   useEffect(() => {
     setLoading(true);
@@ -140,7 +168,9 @@ export default function CoordQuestionsPage() {
 
           <Tabs
             value={tab}
-            onValueChange={(v) => setTab(v as "pending" | "answered")}
+            onValueChange={(v) =>
+              setTab(v as "pending" | "answered" | "gaps")
+            }
           >
             <TabsList data-testid="coord-questions-tabs">
               <TabsTrigger
@@ -154,6 +184,14 @@ export default function CoordQuestionsPage() {
                 data-testid="coord-questions-tab-answered"
               >
                 Answered ({answered.length})
+              </TabsTrigger>
+              <TabsTrigger
+                value="gaps"
+                data-testid="coord-questions-tab-gaps"
+                className="gap-1"
+              >
+                <ScanSearch className="h-3.5 w-3.5" />
+                Gaps ({visibleGaps.length})
               </TabsTrigger>
             </TabsList>
 
@@ -198,6 +236,34 @@ export default function CoordQuestionsPage() {
                   data-testid="coord-questions-answered-empty"
                 >
                   No recently-answered questions.
+                </p>
+              )}
+            </TabsContent>
+
+            <TabsContent value="gaps" className="mt-3">
+              {loading ? (
+                <Skeleton className="h-24 w-full" />
+              ) : visibleGaps.length > 0 ? (
+                <div
+                  className="space-y-2"
+                  data-testid="coord-questions-gaps-list"
+                >
+                  {visibleGaps.map((g) => (
+                    <GapCard
+                      key={g.question_id}
+                      question={g}
+                      onHandled={onGapHandled}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <p
+                  className="text-sm text-muted-foreground italic"
+                  data-testid="coord-questions-gaps-empty"
+                >
+                  No policy gaps reported. Agents queue a gap here when no policy
+                  clause covers a decision — accept the proposed clause or
+                  dismiss it.
                 </p>
               )}
             </TabsContent>
