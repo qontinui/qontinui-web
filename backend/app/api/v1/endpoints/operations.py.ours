@@ -793,45 +793,6 @@ async def get_pr_merge_prs(
     return await _proxy_coord_get("/pr-merge/prs", tenant_id=tenant_id)
 
 
-# Coord path for the CI-duration-aware severity economics read
-# (``coord_query_merge_economics``). Isolated as a one-line constant because
-# the read is being added on the coord side in parallel — if coord lands it
-# under a different path (e.g. ``/pr-merge/economics``), fix it here only.
-_COORD_MERGE_ECONOMICS_PATH = "/pr-merge/merge-economics"
-
-
-@router.get("/pr-merge/merge-economics")
-async def get_pr_merge_merge_economics(
-    tenant_id: UUID = Depends(get_tenant_id),
-) -> Any:
-    """Per-repo merge economics for the fleet page's CI-duration-aware PR
-    severity model (plan 2026-07-17-fleet-ci-duration-aware-severity).
-
-    Proxies coord's NEW ``coord_query_merge_economics`` read
-    (``_COORD_MERGE_ECONOMICS_PATH``): per-repo candidate-CI p90, land rate,
-    a suggested stuck-threshold, queue depth, and per-open-PR already-landed
-    flags. The fleet page uses candidate-CI duration + queue proximity to
-    decide whether a merge conflict is "act now" (RED) or "resolve
-    just-before-merge" (AMBER).
-
-    GRACEFUL FALLBACK (required): this coord read may not be deployed yet, so a
-    404 — or a transient coord outage (502/503/504) — degrades to an empty
-    ``{}`` rather than erroring. The frontend then falls back to its hardcoded
-    thresholds + repo-name hint, so the page works today and simply gets more
-    precise once the read is live. Fleet-wide; ``tenant_id`` is resolved only
-    to forward the operator bearer (same posture as ``/merge/queue`` and
-    ``/pr-merge/prs``).
-    """
-    try:
-        return await _proxy_coord_get(
-            _COORD_MERGE_ECONOMICS_PATH, tenant_id=tenant_id
-        )
-    except HTTPException as exc:
-        if exc.status_code in (404, 502, 503, 504):
-            return {}
-        raise
-
-
 @router.get("/pr-merge/prs/{repo:path}/{pr_number}/checks")
 async def get_pr_merge_pr_checks(
     repo: str,
@@ -1255,12 +1216,8 @@ async def post_github_enroll_repo(
     """
     return await _proxy_coord_verbatim(
         "POST",
-<<<<<<< HEAD
-        f"/coord/repos/{quote(body.owner, safe='')}/{quote(body.name, safe='')}/enroll",
-=======
         f"/coord/repos/{quote(body.owner, safe='')}"
         f"/{quote(body.name, safe='')}/enroll",
->>>>>>> d99a7497 (feat: GitHub repo provisioning proxy endpoints (check-name, create-repo, push-credential, enroll-repo, oauth-status))
         json_body={},
         tenant_id=tenant_id,
     )
@@ -2234,84 +2191,6 @@ async def snooze_gate(
         snooze_body["until"] = until
     return await _proxy_coord_post(
         f"/coord/gates/{gate_id}/snooze", snooze_body, tenant_id=tenant_id
-    )
-
-
-# Force-clear / continuation-cancel / audience are the operator-console gate
-# management verbs (admin gates dashboard, `/admin/coord/gates`). They mirror
-# the approve/reject/mute/snooze proxies' shape exactly: operator bearer +
-# tenant-switcher selection forwarded via `require_coord_tenant_admin` →
-# `tenant_id=` (fleet-auth P2/D6), tenant derived server-side by coord's
-# `TenantId` extractor from that bearer — NEVER a client-supplied tenant_id.
-# The coord routes (`POST /coord/gates/{id}/force-clear`·`/continuation-cancel`,
-# `PATCH /coord/gates/{id}/audience`) already exist on coord main; proxying to a
-# not-yet-deployed route is fine either way — the upstream error passes through.
-
-
-@router.post("/gates/{gate_id}/force-clear")
-async def force_clear_gate(
-    gate_id: str,
-    body: dict[str, Any],
-    tenant_id: UUID = Depends(require_coord_tenant_admin),
-) -> Any:
-    """Force-clear a gate regardless of its predicate (DESTRUCTIVE — clears an
-    open gate that has NOT met its condition; operator bearer forwarded,
-    fleet-auth P2/D6).
-
-    ``body["reason"]`` is REQUIRED by coord (the audit records why the operator
-    overrode the predicate). It is forwarded verbatim; coord owns validation and
-    rejects an empty/absent reason."""
-    clear_body: dict[str, Any] = {}
-    reason = body.get("reason")
-    if reason is not None:
-        clear_body["reason"] = reason
-    return await _proxy_coord_post(
-        f"/coord/gates/{gate_id}/force-clear", clear_body, tenant_id=tenant_id
-    )
-
-
-@router.post("/gates/{gate_id}/continuation-cancel")
-async def continuation_cancel_gate(
-    gate_id: str,
-    body: dict[str, Any],
-    tenant_id: UUID = Depends(require_coord_tenant_admin),
-) -> Any:
-    """Cancel a gate's armed/dispatched continuation so clearing it no longer
-    spawns the follow-up session (operator bearer forwarded, fleet-auth P2/D6).
-
-    ``body["cancelled_by"]`` (audit actor) and ``body["reason"]`` are forwarded
-    verbatim; coord owns validation."""
-    cancel_body: dict[str, Any] = {}
-    cancelled_by = body.get("cancelled_by")
-    if cancelled_by is not None:
-        cancel_body["cancelled_by"] = cancelled_by
-    reason = body.get("reason")
-    if reason is not None:
-        cancel_body["reason"] = reason
-    return await _proxy_coord_post(
-        f"/coord/gates/{gate_id}/continuation-cancel",
-        cancel_body,
-        tenant_id=tenant_id,
-    )
-
-
-@router.patch("/gates/{gate_id}/audience")
-async def set_gate_audience(
-    gate_id: str,
-    body: dict[str, Any],
-    tenant_id: UUID = Depends(require_coord_tenant_admin),
-) -> Any:
-    """Re-classify a gate's ``clearance_audience`` (``operator`` vs ``agent``;
-    operator bearer forwarded, fleet-auth P2/D6).
-
-    ``body["audience"]`` is forwarded verbatim; coord owns validation of the
-    allowed values."""
-    audience_body: dict[str, Any] = {}
-    audience = body.get("audience")
-    if audience is not None:
-        audience_body["audience"] = audience
-    return await _proxy_coord_patch(
-        f"/coord/gates/{gate_id}/audience", audience_body, tenant_id=tenant_id
     )
 
 
@@ -3316,79 +3195,6 @@ async def get_deploy_rollback_proposal(
     return await _proxy_coord_get(
         f"/coord/deploys/{deploy_id}/rollback-proposal", tenant_id=tenant_id
     )
-
-
-# ---- Release (Ξ_Release / GitHub-Releases) surface proxy -----------------
-#
-# Plan `twin-runner-release-surface` Phase 2 — the `/admin/coord/releases`
-# operator dashboard backend. Two read-only proxies over coord's release
-# HISTORY surface, the runner-publishing (GitHub Releases) surface of the
-# existing Ξ_Release sub-space (siblings of ECS/Vercel/npm):
-#
-# - `/operations/releases`        → coord `/coord/twin/release/history`
-# - `/operations/releases/{tag}`  → the same list, filtered to one tag
-#
-# Release observations are produced entirely server-side by coord's release
-# observer (GitHub `release`/`workflow_run` webhooks + poll); these proxies
-# only serve the dashboard read path. The operator bearer is forwarded (via
-# `_proxy_coord_get`'s `tenant_id` → `_tenant_headers`) so coord requires an
-# authenticated operator, mirroring the deploys/lands posture above. Coord's
-# `502 release_history_read_failed` passes straight through `_proxy_coord_get`
-# so the dashboard can render it as an inline message.
-#
-# Coord returns the full history list (no single-tag route), so `/{tag}`
-# filters server-side. Repo defaulting also lives coord-side
-# (`qontinui/qontinui-runner`); `repo` is forwarded only when the caller sets
-# it, keeping the multi-repo config list authoritative in coord.
-
-
-@router.get("/releases")
-async def get_releases(
-    repo: str | None = None,
-    limit: int = Query(default=100, ge=1, le=500),
-    tenant_id: UUID = Depends(get_tenant_id),
-) -> Any:
-    """List recent runner release observations (newest-first) from coord.
-
-    Proxies coord ``GET /coord/twin/release/history``. ``repo`` (``owner/name``;
-    default coord's ``qontinui/qontinui-runner``) selects the observed surface;
-    ``limit`` (1–500, coord-clamped too) caps the history window. Returns
-    coord's ``{surface, repo, target, count, history:[...]}`` envelope
-    verbatim."""
-    params: dict[str, str] = {"limit": str(limit)}
-    if repo:
-        params["repo"] = repo
-    return await _proxy_coord_get(
-        "/coord/twin/release/history", tenant_id=tenant_id, params=params
-    )
-
-
-@router.get("/releases/{tag}")
-async def get_release(
-    tag: str,
-    repo: str | None = None,
-    tenant_id: UUID = Depends(get_tenant_id),
-) -> Any:
-    """Return the single release observation matching ``tag``.
-
-    Coord's history endpoint returns the full list (it has no single-tag
-    route), so this fetches the list and filters server-side — matching ``tag``
-    against each entry's ``tag`` / ``version`` / ``published_tag``. The window
-    is fetched at coord's max (500) so a tag is not missed behind the default
-    page. Raises ``404 release_tag_not_found`` when no entry matches."""
-    params: dict[str, str] = {"limit": "500"}
-    if repo:
-        params["repo"] = repo
-    body = await _proxy_coord_get(
-        "/coord/twin/release/history", tenant_id=tenant_id, params=params
-    )
-    history = body.get("history", []) if isinstance(body, dict) else []
-    for entry in history:
-        if not isinstance(entry, dict):
-            continue
-        if tag in (entry.get("tag"), entry.get("version"), entry.get("published_tag")):
-            return entry
-    raise HTTPException(status_code=404, detail="release_tag_not_found")
 
 
 # ---- Symbol-claims surface (Phase 4.4) ----------------------------------
