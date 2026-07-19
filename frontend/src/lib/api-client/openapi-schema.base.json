@@ -4494,7 +4494,7 @@
         "type": "object"
       },
       "CanonicalConfigResponse": {
-        "description": "The canonical config a runner PULLS to reconcile its own box toward.\n\nSecret-free by construction (the stored envelope already coerced\n``env_contract`` to present/absent). ``section_policy`` maps each section\nto what a pulling runner may do with it (apply / report secrets only /\nstop on destructive) \u2014 see :mod:`app.services.devenv_section_policy`.\n\n``canonical_machine_id`` is ``None`` (and ``sections`` empty) only if no\ncanonical is set \u2014 the endpoint 422s that case before building this, so in\npractice these are always populated.",
+        "description": "The canonical config a runner PULLS to reconcile its own box toward.\n\nSecret-free by construction (the stored envelope already coerced\n``env_contract`` to present/absent). ``section_policy`` maps each section\nto what a pulling runner may do with it (apply / report secrets only /\nstop on destructive) \u2014 see :mod:`app.services.devenv_section_policy`.\n\n``derived_keys`` refines that per-SECTION policy down to the KEY level:\n``section -> keys that are repo-derived``. A repo-derived key measures the\nsource tree the capturing binary was built from, not the box, so it is not\nindependently settable (you cannot install your way to a crate version) and\nmust never be counted actionable \u2014 regardless of its section policy. The\nfield is additive: absent/empty means \"no per-key refinement\", i.e. exactly\nthe pre-existing behavior, so already-deployed runners are unaffected.\n\n``canonical_machine_id`` is ``None`` (and ``sections`` empty) only if no\ncanonical is set \u2014 the endpoint 422s that case before building this, so in\npractice these are always populated.",
         "properties": {
           "canonical_machine_id": {
             "anyOf": [
@@ -4529,6 +4529,16 @@
               }
             ],
             "title": "Captured At"
+          },
+          "derived_keys": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Derived Keys",
+            "type": "object"
           },
           "environment_id": {
             "format": "uuid",
