@@ -63,7 +63,9 @@ export function OfflineIndicator() {
         className={`flex items-center gap-2 px-4 py-2 rounded-lg shadow-lg ${
           isOnline
             ? "bg-green-500 text-white"
-            : "bg-destructive text-destructive-foreground"
+            : // `text-destructive-foreground` is a dead token in this theme
+              // (see RedMainBanner); red-600 keeps white text above 4.5:1.
+              "bg-red-600 text-white"
         }`}
       >
         {isOnline ? (
