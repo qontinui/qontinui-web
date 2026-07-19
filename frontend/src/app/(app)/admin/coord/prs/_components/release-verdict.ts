@@ -50,6 +50,39 @@ export interface ReleaseVerdict {
   surfaces?: ReleaseSurface[] | null;
 }
 
+/**
+ * Friendly per-surface display labels. Surfaces not listed fall back to the
+ * raw surface token (which the chip uppercases). The ECS/Vercel/npm surfaces
+ * read fine raw; the runner GitHub-Releases surface would otherwise render as
+ * the long, layout-breaking "GITHUB_RELEASES" — name it "Runner".
+ */
+export const SURFACE_LABELS: Record<string, string> = {
+  github_releases: "Runner",
+};
+
+/** Display label for a surface token — the friendly map, else the raw token. */
+export function surfaceLabel(surface: string | null | undefined): string {
+  const s = (surface ?? "?").toString();
+  return SURFACE_LABELS[s] ?? s;
+}
+
+/**
+ * Normalize a surface-level drift token. The runner GitHub-Releases surface
+ * adds namespaced `release:*` sub-classes (`release:in_flight`,
+ * `release:stale`, `release:failed_deploy`, `release:rolled_back`); coord's
+ * verdict `components.drift_class` carries the bare canonical token
+ * (`failed_deploy`), but a poll/webhook path could surface the namespaced
+ * form. Stripping the `release:` prefix keeps the strip's tone/label map keyed
+ * on one token set regardless of which coord sends.
+ */
+export function normalizeDriftClass(
+  driftClass: string | null | undefined,
+): string | null {
+  if (!driftClass) return null;
+  const s = driftClass.toString();
+  return s.startsWith("release:") ? s.slice("release:".length) : s;
+}
+
 export interface ReleaseVerdictResponse {
   subspace?: string | null;
   tool?: string | null;
