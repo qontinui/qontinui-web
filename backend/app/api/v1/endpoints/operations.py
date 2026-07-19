@@ -793,6 +793,45 @@ async def get_pr_merge_prs(
     return await _proxy_coord_get("/pr-merge/prs", tenant_id=tenant_id)
 
 
+# Coord path for the CI-duration-aware severity economics read
+# (``coord_query_merge_economics``). Isolated as a one-line constant because
+# the read is being added on the coord side in parallel — if coord lands it
+# under a different path (e.g. ``/pr-merge/economics``), fix it here only.
+_COORD_MERGE_ECONOMICS_PATH = "/pr-merge/merge-economics"
+
+
+@router.get("/pr-merge/merge-economics")
+async def get_pr_merge_merge_economics(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Per-repo merge economics for the fleet page's CI-duration-aware PR
+    severity model (plan 2026-07-17-fleet-ci-duration-aware-severity).
+
+    Proxies coord's NEW ``coord_query_merge_economics`` read
+    (``_COORD_MERGE_ECONOMICS_PATH``): per-repo candidate-CI p90, land rate,
+    a suggested stuck-threshold, queue depth, and per-open-PR already-landed
+    flags. The fleet page uses candidate-CI duration + queue proximity to
+    decide whether a merge conflict is "act now" (RED) or "resolve
+    just-before-merge" (AMBER).
+
+    GRACEFUL FALLBACK (required): this coord read may not be deployed yet, so a
+    404 — or a transient coord outage (502/503/504) — degrades to an empty
+    ``{}`` rather than erroring. The frontend then falls back to its hardcoded
+    thresholds + repo-name hint, so the page works today and simply gets more
+    precise once the read is live. Fleet-wide; ``tenant_id`` is resolved only
+    to forward the operator bearer (same posture as ``/merge/queue`` and
+    ``/pr-merge/prs``).
+    """
+    try:
+        return await _proxy_coord_get(
+            _COORD_MERGE_ECONOMICS_PATH, tenant_id=tenant_id
+        )
+    except HTTPException as exc:
+        if exc.status_code in (404, 502, 503, 504):
+            return {}
+        raise
+
+
 @router.get("/pr-merge/prs/{repo:path}/{pr_number}/checks")
 async def get_pr_merge_pr_checks(
     repo: str,

@@ -120,6 +120,63 @@ export interface PrListResponse {
 }
 
 // ============================================================================
+// Merge economics — CI-duration-aware severity inputs.
+//
+// Mirrors coord's NEW `coord_query_merge_economics` read (proxied by the web
+// backend at `/api/v1/operations/pr-merge/merge-economics`). Per-repo merge
+// timing/throughput the fleet page uses to decide whether a merge conflict is
+// "act now" (RED) or "resolve just-before-merge" (AMBER): long candidate-CI
+// DAMPENS conflict urgency, a shallow (near-front) queue AMPLIFIES it.
+//
+// EVERY field is optional. Coord may not have this read deployed yet, and even
+// once it does older deploys can omit individual fields — every consumer MUST
+// treat an absent field as "unknown" and fall back to the hardcoded thresholds
+// / repo-name hint in prPipeline.ts. The page must render identically (just
+// less precisely) with an empty `{}` economics map.
+// ============================================================================
+
+export interface MergeEconomics {
+  /**
+   * p90 of the repo's merge-candidate CI duration, in SECONDS. When present,
+   * `prPipeline` treats the repo as long-CI iff `p90 * 1000 >=
+   * LONG_CI_THRESHOLD_MS`. Absent ⇒ fall back to the static repo-name hint.
+   */
+  candidate_ci_p90_secs?: number | null;
+  /** Observed lands per hour for the repo (throughput). Advisory/informational. */
+  land_rate_per_hour?: number | null;
+  /**
+   * Coord's suggested "this is stuck" threshold in SECONDS (derived from the
+   * repo's own timing). When present, `derivePipelineHealth` uses it as the
+   * red CI-wait threshold (amber at half); absent ⇒ CI_WAIT_{AMBER,RED}_MS.
+   */
+  suggested_stuck_threshold_secs?: number | null;
+  /**
+   * Depth of the repo's land queue. A shallow queue means the merge train
+   * reaches this repo's PRs soon, so a conflict here is near-front and stays
+   * RED even on a long-CI repo. Absent ⇒ queue proximity defaults to
+   * "not-front".
+   */
+  queue_depth?: number | null;
+  /**
+   * Per-open-PR "content is already on main" flag, keyed by PR number (as a
+   * string). Surfaces the phantom-kill orphan wedge (content-on-main but the
+   * PR is still open). Optional; absent ⇒ unknown.
+   */
+  already_landed?: Record<string, boolean> | null;
+}
+
+/**
+ * Coord's `/pr-merge/merge-economics` response. The exact wire shape is coord's
+ * to finalize; the frontend fetch tolerates all of: an object keyed by
+ * `owner/name`, a `{ repos: {...} }` wrapper, or an array of
+ * `{ repo, ...MergeEconomics }`. This declared type is the wrapper form; the
+ * fetch normalizes every shape into a `Record<repo, MergeEconomics>`.
+ */
+export interface MergeEconomicsResponse {
+  repos?: Record<string, MergeEconomics>;
+}
+
+// ============================================================================
 // Per-PR check breakdown wire types.
 //
 // Mirrors coord's `GET /pr-state/:repo/:pr_number` response shapes
