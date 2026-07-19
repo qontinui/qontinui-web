@@ -5,7 +5,12 @@
 // decides otherwise, and internal terminology never leaks into labels.
 
 import { describe, expect, it } from "vitest";
-import type { PrRow, ProposalDetail, RepoDetail } from "./mergeTypes";
+import type {
+  MergeEconomics,
+  PrRow,
+  ProposalDetail,
+  RepoDetail,
+} from "./mergeTypes";
 import {
   buildPipelineRows,
   derivePipelineHealth,
@@ -395,6 +400,201 @@ describe("statusFromGitHub — attention truth table", () => {
     expect(row.status.reason).toBe(
       "ruleset/branch-protection requirements not met"
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CI-duration-aware conflict severity (plan
+// 2026-07-17-fleet-ci-duration-aware-severity). A TRUE conflict
+// (DIRTY / mergeable===false) is RED ("act now") only when the repo's
+// candidate CI is short OR the PR is near the front of the land queue;
+// on a long-CI repo that is NOT near front it de-escalates to AMBER
+// ("resolve just-before-merge"). Core rule: long CI DAMPENS, front-of-queue
+// AMPLIFIES.
+// ---------------------------------------------------------------------------
+describe("statusFromGitHub — CI-duration-aware conflict severity", () => {
+  const HALF_HOUR_SECS = 30 * 60;
+  const TWO_HOURS_SECS = 2 * 60 * 60;
+  const RUNNER = "qontinui/qontinui-runner";
+  const WEB = "qontinui/qontinui-web";
+
+  function conflictRow(
+    repo: string,
+    economics?: Record<string, MergeEconomics>
+  ) {
+    const p = pr({ repo, merge_state_status: "DIRTY", mergeable: null });
+    return buildPipelineRows([p], [], economics ?? {})[0];
+  }
+
+  it("{DIRTY, short-CI} → RED (act now) — measured p90 below threshold", () => {
+    const econ: Record<string, MergeEconomics> = {
+      [WEB]: { candidate_ci_p90_secs: 5 * 60, queue_depth: 20 },
+    };
+    const row = conflictRow(WEB, econ);
+    expect(row.status.kind).toBe("not-mergeable");
+    expect(row.status.attention).toBe("author");
+    expect(row.status.reason).toBe("conflict — blocks now");
+  });
+
+  it("{DIRTY, long-CI, not-front} → AMBER (resolve at merge) — measured p90", () => {
+    const econ: Record<string, MergeEconomics> = {
+      [RUNNER]: { candidate_ci_p90_secs: TWO_HOURS_SECS, queue_depth: 12 },
+    };
+    const row = conflictRow(RUNNER, econ);
+    // KEY de-escalation assertion (mutation target): long CI + not near front
+    // MUST NOT be red. Flipping the de-escalation off makes this "not-mergeable"
+    // and this test fails.
+    expect(row.status.kind).toBe("conflict-deferred");
+    expect(row.status.attention).toBe("waiting");
+    expect(row.status.reason).toBe(
+      "conflict — resolve at merge (repo CI ~2h, 12 in queue)"
+    );
+  });
+
+  it("{DIRTY, long-CI, front-of-queue} → RED — shallow queue amplifies", () => {
+    const econ: Record<string, MergeEconomics> = {
+      [RUNNER]: { candidate_ci_p90_secs: TWO_HOURS_SECS, queue_depth: 1 },
+    };
+    const row = conflictRow(RUNNER, econ);
+    expect(row.status.kind).toBe("not-mergeable");
+    expect(row.status.attention).toBe("author");
+    expect(row.status.reason).toBe(
+      "conflict — blocks now (near front of land queue)"
+    );
+  });
+
+  it("p90 exactly at the 30m threshold reads as long-CI (>=) → AMBER when not front", () => {
+    const econ: Record<string, MergeEconomics> = {
+      [WEB]: { candidate_ci_p90_secs: HALF_HOUR_SECS },
+    };
+    const row = conflictRow(WEB, econ);
+    expect(row.status.kind).toBe("conflict-deferred");
+    // No queue_depth → "deep in queue" phrasing.
+    expect(row.status.reason).toBe(
+      "conflict — resolve at merge (repo CI ~30m, deep in queue)"
+    );
+  });
+
+  it("economics-absent + long-CI repo hint (qontinui-runner) → AMBER (fallback)", () => {
+    const row = conflictRow(RUNNER); // no economics at all
+    expect(row.status.kind).toBe("conflict-deferred");
+    expect(row.status.attention).toBe("waiting");
+    // Fallback CI phrase uses CI_WAIT_RED_MS (~2h); no queue depth known.
+    expect(row.status.reason).toBe(
+      "conflict — resolve at merge (repo CI ~2h, deep in queue)"
+    );
+  });
+
+  it("economics-absent + non-hint repo (short-CI by default) → RED (fallback)", () => {
+    const row = conflictRow(WEB); // qontinui-web is not a long-CI hint
+    expect(row.status.kind).toBe("not-mergeable");
+    expect(row.status.attention).toBe("author");
+    expect(row.status.reason).toBe("conflict — blocks now");
+  });
+
+  it("mergeable===false is treated identically to DIRTY", () => {
+    const p = pr({ repo: RUNNER, merge_state_status: "UNKNOWN", mergeable: false });
+    const row = buildPipelineRows([p], [], {
+      [RUNNER]: { candidate_ci_p90_secs: TWO_HOURS_SECS, queue_depth: 9 },
+    })[0];
+    expect(row.status.kind).toBe("conflict-deferred");
+  });
+
+  it("de-escalated (amber) conflicts are NOT counted as needs-attention", () => {
+    const econ: Record<string, MergeEconomics> = {
+      [RUNNER]: { candidate_ci_p90_secs: TWO_HOURS_SECS, queue_depth: 12 },
+    };
+    const rows = buildPipelineRows(
+      [pr({ repo: RUNNER, merge_state_status: "DIRTY", mergeable: null })],
+      [],
+      econ
+    );
+    expect(derivePipelineHealth(rows, NOW, econ).needsAttention).toBe(0);
+  });
+
+  it("BEHIND stays amber and CLEAN stays neutral regardless of economics", () => {
+    const econ: Record<string, MergeEconomics> = {
+      [RUNNER]: { candidate_ci_p90_secs: TWO_HOURS_SECS, queue_depth: 12 },
+    };
+    const behind = buildPipelineRows(
+      [pr({ repo: RUNNER, merge_state_status: "BEHIND" })],
+      [],
+      econ
+    )[0];
+    expect(behind.status.label).toBe("Needs rebase");
+    expect(behind.status.attention).toBe("waiting");
+    const clean = buildPipelineRows(
+      [pr({ repo: RUNNER, merge_state_status: "CLEAN" })],
+      [],
+      econ
+    )[0];
+    expect(clean.status.attention).toBe("none");
+  });
+
+  it("UNSTABLE + failure stays RED even on a long-CI repo", () => {
+    const econ: Record<string, MergeEconomics> = {
+      [RUNNER]: { candidate_ci_p90_secs: TWO_HOURS_SECS, queue_depth: 12 },
+    };
+    const row = buildPipelineRows(
+      [
+        pr({
+          repo: RUNNER,
+          merge_state_status: "UNSTABLE",
+          ci_conclusion: "failure",
+        }),
+      ],
+      [],
+      econ
+    )[0];
+    expect(row.status.kind).toBe("checks-failing");
+    expect(row.status.attention).toBe("author");
+  });
+});
+
+describe("derivePipelineHealth — per-repo CI-wait thresholds", () => {
+  it("a long-CI repo's awaiting-ci wait is judged against its own p90, not the global 2h", () => {
+    // 90m wait on a repo whose p90 is 3h → below its red line, so NOT red
+    // (global CI_WAIT_RED_MS would have flagged 2h; per-repo does not).
+    const econ: Record<string, MergeEconomics> = {
+      "qontinui/qontinui-runner": { candidate_ci_p90_secs: 3 * 60 * 60 },
+    };
+    const rows = buildPipelineRows(
+      [pr({ repo: "qontinui/qontinui-runner", branch: "b1" })],
+      [
+        proposal({
+          status: "awaiting-ci",
+          updated_at: new Date(NOW - 90 * 60_000).toISOString(),
+          repos: [
+            repoDetail({ repo: "qontinui/qontinui-runner", branch: "b1" }),
+          ],
+        }),
+      ],
+      econ
+    );
+    // 90m > amber (p90/2 = 90m boundary; strictly greater fails) — use 100m.
+    const h = derivePipelineHealth(rows, NOW, econ);
+    expect(h.level).not.toBe("red");
+  });
+
+  it("honors coord's suggested_stuck_threshold_secs as the red line", () => {
+    const econ: Record<string, MergeEconomics> = {
+      "qontinui/qontinui-runner": { suggested_stuck_threshold_secs: 20 * 60 },
+    };
+    const rows = buildPipelineRows(
+      [pr({ repo: "qontinui/qontinui-runner", branch: "b1" })],
+      [
+        proposal({
+          status: "awaiting-ci",
+          updated_at: new Date(NOW - 25 * 60_000).toISOString(),
+          repos: [
+            repoDetail({ repo: "qontinui/qontinui-runner", branch: "b1" }),
+          ],
+        }),
+      ],
+      econ
+    );
+    // 25m > 20m red line → red.
+    expect(derivePipelineHealth(rows, NOW, econ).level).toBe("red");
   });
 });
 

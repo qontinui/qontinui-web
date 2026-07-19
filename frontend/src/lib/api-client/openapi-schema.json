@@ -77981,6 +77981,33 @@
         ]
       }
     },
+    "/api/v1/operations/pr-merge/merge-economics": {
+      "get": {
+        "description": "Per-repo merge economics for the fleet page's CI-duration-aware PR\nseverity model (plan 2026-07-17-fleet-ci-duration-aware-severity).\n\nProxies coord's NEW ``coord_query_merge_economics`` read\n(``_COORD_MERGE_ECONOMICS_PATH``): per-repo candidate-CI p90, land rate,\na suggested stuck-threshold, queue depth, and per-open-PR already-landed\nflags. The fleet page uses candidate-CI duration + queue proximity to\ndecide whether a merge conflict is \"act now\" (RED) or \"resolve\njust-before-merge\" (AMBER).\n\nGRACEFUL FALLBACK (required): this coord read may not be deployed yet, so a\n404 \u2014 or a transient coord outage (502/503/504) \u2014 degrades to an empty\n``{}`` rather than erroring. The frontend then falls back to its hardcoded\nthresholds + repo-name hint, so the page works today and simply gets more\nprecise once the read is live. Fleet-wide; ``tenant_id`` is resolved only\nto forward the operator bearer (same posture as ``/merge/queue`` and\n``/pr-merge/prs``).",
+        "operationId": "api_v1_operations_pr_merge_merge_economics_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Pr Merge Merge Economics Api V1 Operations Pr Merge Merge Economics Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Pr Merge Merge Economics",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/pr-merge/onboarding/accept": {
       "post": {
         "description": "UPSERT ``coord.tenant_repo_profiles`` with\n``profile_source='audit'`` + the (possibly hand-edited) starter\nprofile. Stamps ``coord.operator_audit`` + publishes settings cache\ninvalidation.",

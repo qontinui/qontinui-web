@@ -38,6 +38,7 @@ import { GateDecisionRow, MergeTrainRow, SuggestionCard } from "./MergeTrain";
 import { relativeTime } from "./utils";
 import { useMergePipelineData } from "./useMergePipelineData";
 import { usePrCheckDetails } from "./usePrCheckDetails";
+import type { MergeEconomics } from "./mergeTypes";
 import {
   buildPipelineRows,
   derivePipelineHealth,
@@ -65,6 +66,9 @@ const STATUS_BADGE_CLASS: Record<UnifiedStatusKind, string> = {
   ready: "bg-green-500/5 text-green-300 border-green-500/25",
   conflict: "bg-red-500/15 text-red-200 border-red-500/35",
   "not-mergeable": "bg-red-500/15 text-red-200 border-red-500/35",
+  // De-escalated conflict: amber, "resolve just-before-merge" — deliberately
+  // NOT the red act-now family. Raw Tailwind scale to match its siblings.
+  "conflict-deferred": "bg-amber-500/15 text-amber-200 border-amber-500/30",
   requirements: "bg-red-500/15 text-red-200 border-red-500/35",
   "checks-failing": "bg-amber-500/15 text-amber-200 border-amber-500/30",
   // In-flight, not a failure: checks are merely still running — muted, so it
@@ -123,16 +127,18 @@ const HEADLINE_CLASS = {
 
 function HealthStrip({
   rows,
+  economicsByRepo,
   loaded,
   onShowAttention,
 }: {
   rows: PipelineRow[];
+  economicsByRepo: Record<string, MergeEconomics>;
   loaded: boolean;
   onShowAttention: () => void;
 }) {
   const health = useMemo(
-    () => derivePipelineHealth(rows, Date.now()),
-    [rows]
+    () => derivePipelineHealth(rows, Date.now(), economicsByRepo),
+    [rows, economicsByRepo]
   );
   return (
     <div
@@ -493,6 +499,7 @@ export function MergePipeline() {
   const {
     proposals,
     prs,
+    economicsByRepo,
     suggestions,
     gateBlocks,
     gateTotalBlocks,
@@ -507,8 +514,8 @@ export function MergePipeline() {
 
   const loaded = proposals !== null && prs !== null;
   const rows = useMemo(
-    () => buildPipelineRows(prs ?? [], proposals ?? []),
-    [prs, proposals]
+    () => buildPipelineRows(prs ?? [], proposals ?? [], economicsByRepo),
+    [prs, proposals, economicsByRepo]
   );
   const counts = useMemo(
     () =>
@@ -533,6 +540,7 @@ export function MergePipeline() {
     <section className="space-y-3" data-testid="merge-pipeline">
       <HealthStrip
         rows={rows}
+        economicsByRepo={economicsByRepo}
         loaded={loaded}
         onShowAttention={() => setFilter("attention")}
       />
