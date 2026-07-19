@@ -118,6 +118,16 @@ export interface ListPromptDocumentsResponse {
   degraded?: string;
 }
 
+/** `POST /coord/prompt-documents/:kind` body — create a new hand-authored document. */
+export interface PromptDocumentCreate {
+  /** Kebab-case slug; the address half of `(kind, name)`. Coord 400s a bad slug. */
+  name: string;
+  description?: string;
+  body: string;
+  /** Prose format hint; defaults to `"markdown"` server-side when omitted. */
+  format?: string;
+}
+
 /** `PATCH /coord/prompt-documents/:kind/:name` body. */
 export interface PromptDocumentUpdate {
   description?: string;

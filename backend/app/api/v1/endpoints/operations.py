@@ -4956,6 +4956,32 @@ async def update_prompt_document(
     )
 
 
+@router.post("/coord/prompt-documents/{kind}")
+async def create_prompt_document(
+    kind: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> JSONResponse:
+    """Create a new hand-authored prompt document under ``kind``. Tenant-admin only.
+
+    The body is forwarded as ``{name, description?, body, format?}`` with
+    ``updated_by`` stamped from the authenticated session (see
+    :func:`_editor_identity`) — a body-supplied ``updated_by`` is ignored, so the
+    version-1 snapshot coord writes carries the real author. Coord validates the
+    kebab-case ``name`` and non-empty ``body`` (its 400 passes through) and
+    answers 409 when ``(tenant, kind, name)`` already exists; coord's 201 status
+    is echoed to the browser verbatim.
+    """
+    coord_body, status_code = await _proxy_coord_post(
+        f"/coord/prompt-documents/{kind}",
+        {**body, "updated_by": _editor_identity(current_user)},
+        tenant_id=tenant_id,
+        return_status=True,
+    )
+    return JSONResponse(content=coord_body, status_code=status_code)
+
+
 @router.get("/coord/prompt-documents/{kind}/{name}/versions")
 async def list_prompt_document_versions(
     kind: str,
