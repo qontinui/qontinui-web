@@ -63,6 +63,30 @@ function degraded(msg = "timeout waiting for coord"): ReleaseVerdictResponse {
   return { verdict: { surfaces: [] }, coord_error: msg };
 }
 
+/**
+ * The runner GitHub-Releases surface envelope — the Phase-2 addition. `drift`
+ * is the surface-level `components.drift_class` (bare canonical token, or a
+ * namespaced `release:*` sub-class the strip normalizes).
+ */
+function runnerSurface(drift: string): ReleaseVerdictResponse {
+  return {
+    verdict: {
+      surfaces: [
+        {
+          components: {
+            surface: "github_releases",
+            target: "qontinui/qontinui-runner@github-releases",
+            drift_class: drift,
+            deployed_sha: "v1.0.5",
+            declared_sha: "v1.0.6",
+            lag_seconds: null,
+          },
+        },
+      ],
+    },
+  };
+}
+
 /** Fire the strip's poll and let the resulting state settle. */
 async function tickPoll() {
   await act(async () => {
@@ -154,6 +178,38 @@ describe("DeployStatusStrip coord-down retention", () => {
     );
     expect(screen.queryByTestId("deploy-strip-reconnecting")).toBeNull();
     expect(screen.queryByTestId("deploy-strip-unavailable")).toBeNull();
+  });
+
+  it("renders the runner github_releases surface as a 'Runner' chip reading 'current' when in_sync", async () => {
+    get.mockResolvedValue(runnerSurface("in_sync"));
+    render(<DeployStatusStrip />);
+
+    // Stable selector is the RAW surface token; the visible label is friendly.
+    const chip = await screen.findByTestId("deploy-surface-github_releases");
+    expect(chip).toBeInTheDocument();
+    expect(chip).toHaveTextContent("Runner");
+    expect(chip).toHaveTextContent("current");
+    // The raw surface token rides the tooltip, not the visible label.
+    expect(chip.getAttribute("title")).toMatch(/surface: github_releases/);
+  });
+
+  it("renders a stuck-draft (failed_deploy) runner surface as a loud 'stale' chip", async () => {
+    get.mockResolvedValue(runnerSurface("failed_deploy"));
+    render(<DeployStatusStrip />);
+
+    const chip = await screen.findByTestId("deploy-surface-github_releases");
+    expect(chip).toHaveTextContent("stale");
+    expect(chip.getAttribute("title")).toMatch(/drift: failed_deploy/);
+  });
+
+  it("normalizes a namespaced release:* sub-class to its canonical badge", async () => {
+    // A poll/webhook path could surface the namespaced form; the strip must
+    // map `release:in_flight` to the same amber "deploying" chip as `in_flight`.
+    get.mockResolvedValue(runnerSurface("release:in_flight"));
+    render(<DeployStatusStrip />);
+
+    const chip = await screen.findByTestId("deploy-surface-github_releases");
+    expect(chip).toHaveTextContent("deploying");
   });
 
   it("retains the chips with a reconnecting marker when a refetch throws", async () => {
