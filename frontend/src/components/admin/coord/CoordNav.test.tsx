@@ -81,6 +81,13 @@ describe("CoordNav", () => {
     expect(await screen.findByTestId("coord-nav-trees")).toBeVisible();
     expect(screen.getByTestId("coord-nav-git-ops")).toBeVisible();
     expect(screen.getByTestId("coord-nav-onboarding-status")).toBeVisible();
+    // Runner releases dashboard lives beside Deploys in the operator-infra group.
+    expect(screen.getByTestId("coord-nav-releases")).toBeVisible();
+  });
+
+  it("hides the Releases infra tab from a plain member", () => {
+    render(<CoordNav />);
+    expect(screen.queryByTestId("coord-nav-releases")).not.toBeInTheDocument();
   });
 
   it("surfaces the active page as a crumb on its group trigger", () => {
