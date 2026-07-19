@@ -1,7 +1,7 @@
 """coord memory_synthesis_jobs -> memory_jobs — kind-dispatched job queue
 
 Revision ID: coord_memory_jobs_01
-Revises: coord_claude_acct_usage_01
+Revises: coord_policy_clauses_01
 Create Date: 2026-07-17
 
 Phase 2 of ``2026-07-13-runner-paid-embedding``.
@@ -76,7 +76,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_memory_jobs_01"
-down_revision: str = "coord_claude_acct_usage_01"
+down_revision: str = "coord_policy_clauses_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
