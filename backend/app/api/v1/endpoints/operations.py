@@ -823,9 +823,7 @@ async def get_pr_merge_merge_economics(
     ``/pr-merge/prs``).
     """
     try:
-        return await _proxy_coord_get(
-            _COORD_MERGE_ECONOMICS_PATH, tenant_id=tenant_id
-        )
+        return await _proxy_coord_get(_COORD_MERGE_ECONOMICS_PATH, tenant_id=tenant_id)
     except HTTPException as exc:
         if exc.status_code in (404, 502, 503, 504):
             return {}
