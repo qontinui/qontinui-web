@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "base_sha": "815b4237e58e290b0e64ff91fe9f9500f79c4b95",
+  "ours_sha": "9c1bb6b413139d3194043e1da4fd90b2986bbce8",
+  "theirs_sha": "815b4237e58e290b0e64ff91fe9f9500f79c4b95",
+  "entries": [
+    {
+      "path": "backend/tests/test_operations_onboarding_claim_target.py",
+      "base_oid": null,
+      "ours_oid": "71d36f388badfe173141b5364d37aee849c40cc1",
+      "theirs_oid": "0b566d1b2d064cd670e1c1fa48771ea68090686a",
+      "base_path": null,
+      "ours_path": "backend/tests/test_operations_onboarding_claim_target.py.ours",
+      "theirs_path": "backend/tests/test_operations_onboarding_claim_target.py.theirs",
+      "hunks": [
+        "<<<<<<< HEAD\n    client = _patched_post(\n        _mock_response(status_code=status, json_data={\"error\": code})\n    )\n=======\n    client = _patched_post(_mock_response(status_code=status, json_data={\"error\": code}))\n>>>>>>> 8158e8bc (feat(onboarding): connect an org whose GitHub App is already installed)\n"
+      ]
+    }
+  ]
+}
