@@ -164,8 +164,9 @@ class TestCronNextFire:
             ("10 3 * * *", datetime(2026, 7, 14, 3, 10, tzinfo=UTC)),
             # memory_reindex — daily 03:40 UTC.
             ("40 3 * * *", datetime(2026, 7, 14, 3, 40, tzinfo=UTC)),
-            # memory_consolidate — Sundays 04:20 UTC (NOW is a Monday).
-            ("20 4 * * 0", datetime(2026, 7, 19, 4, 20, tzinfo=UTC)),
+            # memory_consolidate — every 10 minutes (was weekly Sundays 04:20;
+            # corrected so the memory feedback loop stays prompt).
+            ("*/10 * * * *", datetime(2026, 7, 13, 12, 10, tzinfo=UTC)),
             # memory_bridge_sync — every 15 minutes.
             ("*/15 * * * *", datetime(2026, 7, 13, 12, 15, tzinfo=UTC)),
         ],
