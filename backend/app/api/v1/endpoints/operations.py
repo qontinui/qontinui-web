@@ -3235,6 +3235,79 @@ async def get_deploy_rollback_proposal(
     )
 
 
+# ---- Release (Ξ_Release / GitHub-Releases) surface proxy -----------------
+#
+# Plan `twin-runner-release-surface` Phase 2 — the `/admin/coord/releases`
+# operator dashboard backend. Two read-only proxies over coord's release
+# HISTORY surface, the runner-publishing (GitHub Releases) surface of the
+# existing Ξ_Release sub-space (siblings of ECS/Vercel/npm):
+#
+# - `/operations/releases`        → coord `/coord/twin/release/history`
+# - `/operations/releases/{tag}`  → the same list, filtered to one tag
+#
+# Release observations are produced entirely server-side by coord's release
+# observer (GitHub `release`/`workflow_run` webhooks + poll); these proxies
+# only serve the dashboard read path. The operator bearer is forwarded (via
+# `_proxy_coord_get`'s `tenant_id` → `_tenant_headers`) so coord requires an
+# authenticated operator, mirroring the deploys/lands posture above. Coord's
+# `502 release_history_read_failed` passes straight through `_proxy_coord_get`
+# so the dashboard can render it as an inline message.
+#
+# Coord returns the full history list (no single-tag route), so `/{tag}`
+# filters server-side. Repo defaulting also lives coord-side
+# (`qontinui/qontinui-runner`); `repo` is forwarded only when the caller sets
+# it, keeping the multi-repo config list authoritative in coord.
+
+
+@router.get("/releases")
+async def get_releases(
+    repo: str | None = None,
+    limit: int = Query(default=100, ge=1, le=500),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """List recent runner release observations (newest-first) from coord.
+
+    Proxies coord ``GET /coord/twin/release/history``. ``repo`` (``owner/name``;
+    default coord's ``qontinui/qontinui-runner``) selects the observed surface;
+    ``limit`` (1–500, coord-clamped too) caps the history window. Returns
+    coord's ``{surface, repo, target, count, history:[...]}`` envelope
+    verbatim."""
+    params: dict[str, str] = {"limit": str(limit)}
+    if repo:
+        params["repo"] = repo
+    return await _proxy_coord_get(
+        "/coord/twin/release/history", tenant_id=tenant_id, params=params
+    )
+
+
+@router.get("/releases/{tag}")
+async def get_release(
+    tag: str,
+    repo: str | None = None,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return the single release observation matching ``tag``.
+
+    Coord's history endpoint returns the full list (it has no single-tag
+    route), so this fetches the list and filters server-side — matching ``tag``
+    against each entry's ``tag`` / ``version`` / ``published_tag``. The window
+    is fetched at coord's max (500) so a tag is not missed behind the default
+    page. Raises ``404 release_tag_not_found`` when no entry matches."""
+    params: dict[str, str] = {"limit": "500"}
+    if repo:
+        params["repo"] = repo
+    body = await _proxy_coord_get(
+        "/coord/twin/release/history", tenant_id=tenant_id, params=params
+    )
+    history = body.get("history", []) if isinstance(body, dict) else []
+    for entry in history:
+        if not isinstance(entry, dict):
+            continue
+        if tag in (entry.get("tag"), entry.get("version"), entry.get("published_tag")):
+            return entry
+    raise HTTPException(status_code=404, detail="release_tag_not_found")
+
+
 # ---- Symbol-claims surface (Phase 4.4) ----------------------------------
 #
 # Plan: `D:/qontinui-root/plans/2026-05-21-coordination-improvements.md`
