@@ -71968,6 +71968,410 @@
         ]
       }
     },
+    "/api/v1/operations/coord/prompt-documents/{kind}/{name}/clauses": {
+      "get": {
+        "description": "List the structured clauses of a policy document, ordered by ``position``.\nAny authenticated tenant member.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_clauses_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response List Prompt Document Clauses Api V1 Operations Coord Prompt Documents  Kind   Name  Clauses Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Prompt Document Clauses",
+        "tags": [
+          "operations"
+        ]
+      },
+      "post": {
+        "description": "Create one clause on a policy document. Tenant-admin only.\n\nBody is forwarded verbatim as the clause shape (``clause_id``, ``category``,\n``status``, ``tier``, ``trigger``, ``action``, ``bounds``, ``escalate_if``,\n``anti_triggers``, ``depends_on``, ``links``, \u2026). Coord validates kebab-case\n``clause_id``, the status/tier enums, and ``category == name``, and returns a\n409 on a duplicate ``clause_id`` \u2014 all passed through verbatim.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_clauses_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Create Prompt Document Clause Api V1 Operations Coord Prompt Documents  Kind   Name  Clauses Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Create Prompt Document Clause",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/prompt-documents/{kind}/{name}/clauses/import": {
+      "post": {
+        "description": "Seed the clause table for a policy document by parsing clause blocks out of\nits body. Tenant-admin only. Body forwarded verbatim (coord's seed importer\nreads the doc body itself); returns the created clause rows.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_clauses_import_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Import Prompt Document Clauses Api V1 Operations Coord Prompt Documents  Kind   Name  Clauses Import Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Import Prompt Document Clauses",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/prompt-documents/{kind}/{name}/clauses/reorder": {
+      "post": {
+        "description": "Set clause ``position`` from an ordered list of ``clause_id`` values.\nTenant-admin only. Body is ``{\"clause_ids\": [...]}`` (an ordered list),\nforwarded verbatim.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_clauses_reorder_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Reorder Prompt Document Clauses Api V1 Operations Coord Prompt Documents  Kind   Name  Clauses Reorder Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Reorder Prompt Document Clauses",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/prompt-documents/{kind}/{name}/clauses/{clause_id}": {
+      "delete": {
+        "description": "Delete one clause. Tenant-admin only. Coord 404 for an unknown clause\npasses through.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_clauses_clause_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "clause_id",
+            "required": true,
+            "schema": {
+              "title": "Clause Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Delete Prompt Document Clause Api V1 Operations Coord Prompt Documents  Kind   Name  Clauses  Clause Id  Delete"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Prompt Document Clause",
+        "tags": [
+          "operations"
+        ]
+      },
+      "patch": {
+        "description": "Partially update one clause. Tenant-admin only. Body forwarded verbatim;\ncoord validates changed fields and returns 404 for an unknown clause.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_clauses_clause_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "clause_id",
+            "required": true,
+            "schema": {
+              "title": "Clause Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Update Prompt Document Clause Api V1 Operations Coord Prompt Documents  Kind   Name  Clauses  Clause Id  Patch"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update Prompt Document Clause",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/prompt-documents/{kind}/{name}/restore-default": {
       "post": {
         "description": "Re-seed a prompt document's body from its code default. Tenant-admin only.\n\nOnly documents carrying a ``default_source`` can be restored; coord 4xx (no\ndefault, unknown document) passes through. The restore is itself an edit \u2014\ncoord snapshots a new version \u2014 so it is reversible from the history view.\nNo request body.",

@@ -61,6 +61,20 @@ export const KIND_META: Record<
   },
 };
 
+/**
+ * Free-form per-document attributes (JSONB `coord.prompt_documents.attrs`). For a
+ * `policy` document this carries the structured-clause metadata the clause editor
+ * writes — chiefly the per-category `default_tier` inherited by clauses that
+ * don't pin their own tier. `null` when the document has no attrs.
+ */
+export interface PromptDocumentAttrs {
+  /** The tier clauses inherit when their own `tier` is null (see `ClauseTier`). */
+  default_tier?: ClauseTier | null;
+  /** Optional prose description mirrored into attrs by the category editor. */
+  description?: string | null;
+  [key: string]: unknown;
+}
+
 /** One `coord.prompt_documents` row WITHOUT its body (the list shape). */
 export interface PromptDocumentSummary {
   id: string;
@@ -80,6 +94,8 @@ export interface PromptDocumentSummary {
   current_version: number;
   updated_by: string | null;
   updated_at: string;
+  /** Free-form attributes (policy docs carry `{ default_tier, description }`). */
+  attrs: PromptDocumentAttrs | null;
 }
 
 /** A full `coord.prompt_documents` row, body included (the get-one shape). */
@@ -108,7 +124,111 @@ export interface PromptDocumentUpdate {
   body?: string;
   /** Change note recorded on the version snapshot (not the doc description). */
   change_description?: string;
+  /**
+   * Free-form attributes to merge onto the document (the category header editor
+   * writes `{ default_tier }` here). Forwarded verbatim by the PATCH proxy.
+   */
+  attrs?: PromptDocumentAttrs;
 }
+
+/* ------------------------------------------------------------------------- *
+ * Structured policy clauses (plan
+ * `2026-07-18-policy-clause-schema-web-data-model.md`, Phase 2).
+ *
+ * A `policy` prompt document can be edited as an ordered list of structured
+ * clauses (`coord.policy_clauses`) in addition to its prose body. These mirror
+ * the coord clause-route contract under
+ * `/coord/prompt-documents/:kind/:name/clauses`.
+ * ------------------------------------------------------------------------- */
+
+/** Lifecycle state of a clause (matches `coord.policy_clauses.status`). */
+export type ClauseStatus =
+  | "gap"
+  | "proposed"
+  | "confirmed"
+  | "active"
+  | "retired";
+
+export const CLAUSE_STATUSES: readonly ClauseStatus[] = [
+  "gap",
+  "proposed",
+  "confirmed",
+  "active",
+  "retired",
+] as const;
+
+/** Badge variant per status (see `@/components/ui/badge`). */
+export const CLAUSE_STATUS_VARIANT: Record<
+  ClauseStatus,
+  "default" | "secondary" | "outline" | "success" | "warning" | "info"
+> = {
+  gap: "outline",
+  proposed: "warning",
+  confirmed: "info",
+  active: "success",
+  retired: "secondary",
+};
+
+/**
+ * Autonomy tier of a clause (matches `coord.policy_clauses.tier`). `null` means
+ * "inherit" — the clause takes the category's `attrs.default_tier`.
+ */
+export type ClauseTier =
+  | "proceed"
+  | "proceed+log"
+  | "proceed+notify"
+  | "ask-first"
+  | "never";
+
+export const CLAUSE_TIERS: readonly ClauseTier[] = [
+  "proceed",
+  "proceed+log",
+  "proceed+notify",
+  "ask-first",
+  "never",
+] as const;
+
+/** The sentinel the tier `<Select>` uses for the null/"inherit" choice. */
+export const TIER_INHERIT = "__inherit__";
+
+/** One `coord.policy_clauses` row. */
+export interface Clause {
+  clause_id: string;
+  category: string;
+  status: ClauseStatus;
+  /** `null` ⇒ inherit the category default tier. */
+  tier: ClauseTier | null;
+  trigger: string;
+  action: string;
+  bounds: string;
+  escalate_if: string;
+  anti_triggers: string[];
+  depends_on: string[];
+  links: string[];
+  position: number;
+  source: Record<string, unknown> | null;
+}
+
+/** `POST …/clauses` body — the full clause shape sans server-managed fields. */
+export interface ClauseCreate {
+  clause_id: string;
+  category: string;
+  status: ClauseStatus;
+  tier: ClauseTier | null;
+  trigger: string;
+  action: string;
+  bounds: string;
+  escalate_if: string;
+  anti_triggers: string[];
+  depends_on: string[];
+  links: string[];
+}
+
+/** `PATCH …/clauses/:clause_id` body — every field optional. */
+export type ClauseUpdate = Partial<Omit<ClauseCreate, "clause_id">>;
+
+/** `GET …/clauses` response — coord returns the ordered array (or `{clauses}`). */
+export type ListClausesResponse = Clause[] | { clauses: Clause[] };
 
 /** One version row WITHOUT its body (the history-list shape). */
 export interface PromptDocumentVersionMeta {
