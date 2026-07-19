@@ -153,14 +153,27 @@ export function RedMainBanner() {
           key={a.alertKey}
           role="alert"
           data-testid="red-main-banner-row"
-          className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 sm:px-6 py-2 bg-destructive text-destructive-foreground border-b border-border"
+          // Deep-red bar + white text (~10:1, passes WCAG AAA), NOT
+          // `bg-destructive text-destructive-foreground`: this app's theme
+          // has no `--destructive-foreground` token (see globals.css — the
+          // design system dropped it, which is why shadcn's own Badge
+          // destructive variant hardcodes `text-white`), so that class
+          // resolved to nothing and the headline fell back to whatever it
+          // inherited — unreadable against the red fill. White on the raw
+          // `--destructive` (#e5534b) is only 3.7:1 and fails AA for 14px
+          // text anyway, so the surface is darkened rather than just
+          // re-colouring the text. The bright border + icon keep it loud.
+          className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 sm:px-6 py-2 bg-red-900 text-white border-b-2 border-red-500"
         >
-          <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
+          <AlertTriangle
+            className="h-4 w-4 shrink-0 text-red-300"
+            aria-hidden
+          />
           <span className="text-sm font-semibold">
             {redMainHeadline(a, nowMs)}
           </span>
           {a.workflows.length > 0 && (
-            <span className="text-xs font-mono opacity-90">
+            <span className="text-xs font-mono text-red-100">
               failing: {a.workflows.join(", ")}
             </span>
           )}
