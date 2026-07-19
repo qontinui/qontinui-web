@@ -2583,25 +2583,45 @@ async def get_fleet_health(
 
 @router.get("/agent-questions/pending")
 async def get_pending_agent_questions(
+    gap: bool | None = Query(default=None),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
-    """Return pending agent questions awaiting an operator response."""
-    return await _proxy_coord_get("/coord/agent-questions/pending", tenant_id=tenant_id)
+    """Return pending agent questions awaiting an operator response.
+
+    ``gap`` (Phase 3 of plan 2026-07-18-policy-clause-schema-web-data-model):
+    when set, forwarded to coord as the POLICY_GAP filter —
+    ``gap=true`` returns only gap-marked rows, ``gap=false`` only non-gap rows.
+    Backs the Gaps tab on the questions inbox.
+    """
+    params: dict[str, Any] = {}
+    if gap is not None:
+        params["gap"] = gap
+    return await _proxy_coord_get(
+        "/coord/agent-questions/pending",
+        params=params or None,
+        tenant_id=tenant_id,
+    )
 
 
 @router.get("/agent-questions/answered")
 async def get_answered_agent_questions(
     limit: int | None = Query(default=None, ge=1, le=500),
+    gap: bool | None = Query(default=None),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Return recently-answered agent questions.
 
     Wave 3a — surfaces the "answered" tab on the questions inbox so
     operators can audit prior decisions without leaving the page.
+
+    ``gap`` (Phase 3): forwarded to coord as the POLICY_GAP filter so the
+    Gaps tab can list pre-answered (non-blocking) gap reports.
     """
     params: dict[str, Any] = {}
     if limit is not None:
         params["limit"] = limit
+    if gap is not None:
+        params["gap"] = gap
     return await _proxy_coord_get(
         "/coord/agent-questions/answered",
         params=params or None,
