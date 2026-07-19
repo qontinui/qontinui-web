@@ -40,7 +40,7 @@ from app.schemas.devenv import (
     EnrollRequest,
     EnrollResponse,
 )
-from app.services.devenv_section_policy import policy_map
+from app.services.devenv_section_policy import derived_keys_map, policy_map
 
 logger = structlog.get_logger(__name__)
 
@@ -326,4 +326,5 @@ async def get_canonical_config(
         captured_at=config_row.captured_at,
         sections=sections,
         section_policy=policy_map(list(sections.keys())),
+        derived_keys=derived_keys_map(sections),
     )
