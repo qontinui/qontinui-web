@@ -71800,6 +71800,64 @@
         ]
       }
     },
+    "/api/v1/operations/coord/prompt-documents/{kind}": {
+      "post": {
+        "description": "Create a new hand-authored prompt document under ``kind``. Tenant-admin only.\n\nThe body is forwarded as ``{name, description?, body, format?}`` with\n``updated_by`` stamped from the authenticated session (see\n:func:`_editor_identity`) \u2014 a body-supplied ``updated_by`` is ignored, so the\nversion-1 snapshot coord writes carries the real author. Coord validates the\nkebab-case ``name`` and non-empty ``body`` (its 400 passes through) and\nanswers 409 when ``(tenant, kind, name)`` already exists; coord's 201 status\nis echoed to the browser verbatim.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Create Prompt Document",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/prompt-documents/{kind}/{name}": {
       "get": {
         "description": "Fetch one prompt document (with body) by ``(kind, name)``. Any\nauthenticated tenant member.",
