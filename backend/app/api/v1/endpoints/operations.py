@@ -2193,6 +2193,84 @@ async def snooze_gate(
     )
 
 
+# Force-clear / continuation-cancel / audience are the operator-console gate
+# management verbs (admin gates dashboard, `/admin/coord/gates`). They mirror
+# the approve/reject/mute/snooze proxies' shape exactly: operator bearer +
+# tenant-switcher selection forwarded via `require_coord_tenant_admin` →
+# `tenant_id=` (fleet-auth P2/D6), tenant derived server-side by coord's
+# `TenantId` extractor from that bearer — NEVER a client-supplied tenant_id.
+# The coord routes (`POST /coord/gates/{id}/force-clear`·`/continuation-cancel`,
+# `PATCH /coord/gates/{id}/audience`) already exist on coord main; proxying to a
+# not-yet-deployed route is fine either way — the upstream error passes through.
+
+
+@router.post("/gates/{gate_id}/force-clear")
+async def force_clear_gate(
+    gate_id: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Force-clear a gate regardless of its predicate (DESTRUCTIVE — clears an
+    open gate that has NOT met its condition; operator bearer forwarded,
+    fleet-auth P2/D6).
+
+    ``body["reason"]`` is REQUIRED by coord (the audit records why the operator
+    overrode the predicate). It is forwarded verbatim; coord owns validation and
+    rejects an empty/absent reason."""
+    clear_body: dict[str, Any] = {}
+    reason = body.get("reason")
+    if reason is not None:
+        clear_body["reason"] = reason
+    return await _proxy_coord_post(
+        f"/coord/gates/{gate_id}/force-clear", clear_body, tenant_id=tenant_id
+    )
+
+
+@router.post("/gates/{gate_id}/continuation-cancel")
+async def continuation_cancel_gate(
+    gate_id: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Cancel a gate's armed/dispatched continuation so clearing it no longer
+    spawns the follow-up session (operator bearer forwarded, fleet-auth P2/D6).
+
+    ``body["cancelled_by"]`` (audit actor) and ``body["reason"]`` are forwarded
+    verbatim; coord owns validation."""
+    cancel_body: dict[str, Any] = {}
+    cancelled_by = body.get("cancelled_by")
+    if cancelled_by is not None:
+        cancel_body["cancelled_by"] = cancelled_by
+    reason = body.get("reason")
+    if reason is not None:
+        cancel_body["reason"] = reason
+    return await _proxy_coord_post(
+        f"/coord/gates/{gate_id}/continuation-cancel",
+        cancel_body,
+        tenant_id=tenant_id,
+    )
+
+
+@router.patch("/gates/{gate_id}/audience")
+async def set_gate_audience(
+    gate_id: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Re-classify a gate's ``clearance_audience`` (``operator`` vs ``agent``;
+    operator bearer forwarded, fleet-auth P2/D6).
+
+    ``body["audience"]`` is forwarded verbatim; coord owns validation of the
+    allowed values."""
+    audience_body: dict[str, Any] = {}
+    audience = body.get("audience")
+    if audience is not None:
+        audience_body["audience"] = audience
+    return await _proxy_coord_patch(
+        f"/coord/gates/{gate_id}/audience", audience_body, tenant_id=tenant_id
+    )
+
+
 @router.get("/claims/recent-conflicts")
 async def get_recent_conflicts(
     limit: int | None = None,

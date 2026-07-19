@@ -311,7 +311,7 @@ export default function CoordGatesPage() {
               No gates registered.
             </div>
           ) : (
-            <GatesTable gates={overview.gates} />
+            <GatesTable gates={overview.gates} onActed={() => load(true)} />
           )}
 
           <RolloutPanel rollouts={overview.rollouts} />
