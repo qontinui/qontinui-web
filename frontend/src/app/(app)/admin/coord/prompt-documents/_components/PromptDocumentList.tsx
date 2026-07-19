@@ -8,8 +8,10 @@ import {
   ListTree,
   NotebookText,
   Pencil,
+  Plus,
 } from "lucide-react";
 import { usePromptDocuments } from "../_hooks/usePromptDocuments";
+import { PromptDocumentCreateDialog } from "./PromptDocumentCreateDialog";
 import { PromptDocumentEditorDialog } from "./PromptDocumentEditorDialog";
 import { PromptDocumentHistoryDialog } from "./PromptDocumentHistoryDialog";
 import { ClauseManagerDialog } from "./ClauseManagerDialog";
@@ -40,15 +42,24 @@ export function PromptDocumentList() {
     fetchDocument,
     fetchVersions,
     fetchVersion,
+    createDocument,
     updateDocument,
     restoreDefault,
   } = usePromptDocuments();
 
+  const [createOpen, setCreateOpen] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [clausesOpen, setClausesOpen] = useState(false);
   const [editing, setEditing] = useState<PromptDocument | null>(null);
   const [loadingBody, setLoadingBody] = useState(false);
+
+  /** Open the freshly-created document straight into the editor. */
+  const openCreated = (doc: PromptDocument) => {
+    setEditing(doc);
+    setLoadingBody(false);
+    setEditorOpen(true);
+  };
 
   /** The list carries no bodies — fetch the full document before editing. */
   const loadFull = async (
@@ -77,16 +88,28 @@ export function PromptDocumentList() {
     await loadFull(doc);
   };
 
-  if (loading && documents.length === 0) {
-    return (
-      <div className="py-10 text-center text-sm text-muted-foreground">
-        Loading documents…
-      </div>
-    );
-  }
+  const initialLoading = loading && documents.length === 0;
 
   return (
     <div className="space-y-6">
+      <div className="flex items-center justify-end">
+        <Button
+          size="sm"
+          className="gap-1.5"
+          onClick={() => setCreateOpen(true)}
+          data-testid="new-document"
+        >
+          <Plus className="size-4" />
+          New document
+        </Button>
+      </div>
+
+      {initialLoading && (
+        <div className="py-10 text-center text-sm text-muted-foreground">
+          Loading documents…
+        </div>
+      )}
+
       {/* Coord refused or is unreachable: we know nothing, and say so. */}
       {error && (
         <div
@@ -118,7 +141,7 @@ export function PromptDocumentList() {
         </div>
       )}
 
-      {documents.length === 0 && !degraded && !error ? (
+      {documents.length === 0 && !degraded && !error && !initialLoading ? (
         <div className="rounded-lg border border-dashed border-border py-12 text-center">
           <p className="text-sm text-muted-foreground">
             No prompt documents yet.
@@ -155,6 +178,14 @@ export function PromptDocumentList() {
           );
         })
       )}
+
+      <PromptDocumentCreateDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        saving={saving}
+        onCreate={createDocument}
+        onCreated={openCreated}
+      />
 
       <PromptDocumentEditorDialog
         open={editorOpen}

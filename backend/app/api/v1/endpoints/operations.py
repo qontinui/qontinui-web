@@ -2698,25 +2698,45 @@ async def get_fleet_health(
 
 @router.get("/agent-questions/pending")
 async def get_pending_agent_questions(
+    gap: bool | None = Query(default=None),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
-    """Return pending agent questions awaiting an operator response."""
-    return await _proxy_coord_get("/coord/agent-questions/pending", tenant_id=tenant_id)
+    """Return pending agent questions awaiting an operator response.
+
+    ``gap`` (Phase 3 of plan 2026-07-18-policy-clause-schema-web-data-model):
+    when set, forwarded to coord as the POLICY_GAP filter —
+    ``gap=true`` returns only gap-marked rows, ``gap=false`` only non-gap rows.
+    Backs the Gaps tab on the questions inbox.
+    """
+    params: dict[str, Any] = {}
+    if gap is not None:
+        params["gap"] = gap
+    return await _proxy_coord_get(
+        "/coord/agent-questions/pending",
+        params=params or None,
+        tenant_id=tenant_id,
+    )
 
 
 @router.get("/agent-questions/answered")
 async def get_answered_agent_questions(
     limit: int | None = Query(default=None, ge=1, le=500),
+    gap: bool | None = Query(default=None),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Return recently-answered agent questions.
 
     Wave 3a — surfaces the "answered" tab on the questions inbox so
     operators can audit prior decisions without leaving the page.
+
+    ``gap`` (Phase 3): forwarded to coord as the POLICY_GAP filter so the
+    Gaps tab can list pre-answered (non-blocking) gap reports.
     """
     params: dict[str, Any] = {}
     if limit is not None:
         params["limit"] = limit
+    if gap is not None:
+        params["gap"] = gap
     return await _proxy_coord_get(
         "/coord/agent-questions/answered",
         params=params or None,
@@ -5142,6 +5162,32 @@ async def update_prompt_document(
         {**body, "updated_by": _editor_identity(current_user)},
         tenant_id=tenant_id,
     )
+
+
+@router.post("/coord/prompt-documents/{kind}")
+async def create_prompt_document(
+    kind: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> JSONResponse:
+    """Create a new hand-authored prompt document under ``kind``. Tenant-admin only.
+
+    The body is forwarded as ``{name, description?, body, format?}`` with
+    ``updated_by`` stamped from the authenticated session (see
+    :func:`_editor_identity`) — a body-supplied ``updated_by`` is ignored, so the
+    version-1 snapshot coord writes carries the real author. Coord validates the
+    kebab-case ``name`` and non-empty ``body`` (its 400 passes through) and
+    answers 409 when ``(tenant, kind, name)`` already exists; coord's 201 status
+    is echoed to the browser verbatim.
+    """
+    coord_body, status_code = await _proxy_coord_post(
+        f"/coord/prompt-documents/{kind}",
+        {**body, "updated_by": _editor_identity(current_user)},
+        tenant_id=tenant_id,
+        return_status=True,
+    )
+    return JSONResponse(content=coord_body, status_code=status_code)
 
 
 @router.get("/coord/prompt-documents/{kind}/{name}/versions")
