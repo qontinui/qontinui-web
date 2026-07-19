@@ -76325,6 +76325,137 @@
         ]
       }
     },
+    "/api/v1/operations/releases": {
+      "get": {
+        "description": "List recent runner release observations (newest-first) from coord.\n\nProxies coord ``GET /coord/twin/release/history``. ``repo`` (``owner/name``;\ndefault coord's ``qontinui/qontinui-runner``) selects the observed surface;\n``limit`` (1\u2013500, coord-clamped too) caps the history window. Returns\ncoord's ``{surface, repo, target, count, history:[...]}`` envelope\nverbatim.",
+        "operationId": "api_v1_operations_releases_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "repo",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Repo"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Releases Api V1 Operations Releases Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Releases",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/releases/{tag}": {
+      "get": {
+        "description": "Return the single release observation matching ``tag``.\n\nCoord's history endpoint returns the full list (it has no single-tag\nroute), so this fetches the list and filters server-side \u2014 matching ``tag``\nagainst each entry's ``tag`` / ``version`` / ``published_tag``. The window\nis fetched at coord's max (500) so a tag is not missed behind the default\npage. Raises ``404 release_tag_not_found`` when no entry matches.",
+        "operationId": "api_v1_operations_releases_tag_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tag",
+            "required": true,
+            "schema": {
+              "title": "Tag",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "repo",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Repo"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Release Api V1 Operations Releases  Tag  Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Release",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/repos": {
       "delete": {
         "description": "Deregister a canonical repository.",
