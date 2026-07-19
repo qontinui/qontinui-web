@@ -27,6 +27,7 @@ import type {
   ProgressBasis,
 } from "@/services/admin-dev-service";
 import { ShadowReapEvidence } from "./ShadowReap";
+import { GateActions } from "./GateActions";
 
 // ---- formatting helpers --------------------------------------------------
 
@@ -189,7 +190,15 @@ type SortKey = "age" | "fraction" | "eta";
 
 const ALL = "__all__";
 
-export function GatesTable({ gates }: { gates: GateOverviewRow[] }) {
+export function GatesTable({
+  gates,
+  onActed,
+}: {
+  gates: GateOverviewRow[];
+  /** Refetch the overview after a successful gate action (coord is the source
+   *  of truth — the page re-fetches rather than optimistically mutating). */
+  onActed: () => void;
+}) {
   const [verdictFilter, setVerdictFilter] = useState<string>(ALL);
   const [basisFilter, setBasisFilter] = useState<string>(ALL);
   const [sortKey, setSortKey] = useState<SortKey>("age");
@@ -294,13 +303,14 @@ export function GatesTable({ gates }: { gates: GateOverviewRow[] }) {
               <TableHead>Age</TableHead>
               <TableHead>Last evaluated</TableHead>
               <TableHead>Flags</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {rows.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={8}
+                  colSpan={9}
                   className="text-center text-sm text-muted-foreground italic py-6"
                 >
                   No gates match the current filters.
@@ -372,6 +382,9 @@ export function GatesTable({ gates }: { gates: GateOverviewRow[] }) {
                         </Badge>
                       )}
                     </div>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <GateActions gate={g} onActed={onActed} />
                   </TableCell>
                 </TableRow>
               ))
