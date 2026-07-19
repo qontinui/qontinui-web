@@ -461,9 +461,18 @@ def install_default_tasks(service: SchedulerService) -> None:
     service.register(
         ScheduledTask(
             name="memory_consolidate",
+            # Every 10 minutes, NOT the weekly beat cadence this was ported from.
+            # Consolidation is what clusters new episodes into synthesis jobs; a
+            # weekly cadence meant a mental_model surfaced up to 7 days after the
+            # episodes that formed it (and, combined with sub-hourly redeploys,
+            # the Sunday slot was perpetually skipped — it had NEVER run). This
+            # is the memory feedback loop, so it must be prompt. `run_at_boot`
+            # additionally guarantees a sweep shortly after every deploy so a
+            # redeploy can never strand the cadence.
             coro=_job_memory_consolidate,
-            cron="20 4 * * 0",
+            cron="*/10 * * * *",
             timeout_seconds=600.0,
+            run_at_boot=True,
         )
     )
     service.register(
