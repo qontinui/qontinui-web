@@ -310,6 +310,80 @@ class TestSectionPolicy:
         }
 
 
+class TestDerivedKeys:
+    """:mod:`app.services.devenv_section_policy` — per-KEY derived refinement."""
+
+    def test_versions_repo_derived_keys(self) -> None:
+        """Every repo-derived versions key is classified derived, incl. node_dep_*."""
+        from app.services import devenv_section_policy as sp
+
+        derived = sp.derived_keys_map(
+            {
+                "versions": {
+                    "runner_crate_version": "0.1.0",
+                    "node_package_version": "1.2.3",
+                    "node_package_name": "qontinui-runner",
+                    "python_constraint": ">=3.12",
+                    "tauri": "2.0.0",
+                    "node_dep_react": "19.0.0",
+                }
+            }
+        )
+        assert sorted(derived["versions"]) == [
+            "node_dep_react",
+            "node_package_name",
+            "node_package_version",
+            "python_constraint",
+            "runner_crate_version",
+            "tauri",
+        ]
+
+    def test_machine_facts_are_not_derived(self) -> None:
+        """node/python/rustc are shelled machine facts — they stay applyable."""
+        from app.services import devenv_section_policy as sp
+
+        derived = sp.derived_keys_map(
+            {"versions": {"node": "22.1.0", "python": "3.13", "rustc": "1.84.0"}}
+        )
+        assert derived == {"versions": []}
+
+    def test_other_sections_have_no_derived_keys(self) -> None:
+        """services/env_contract/db_schema classify to empty lists."""
+        from app.services import devenv_section_policy as sp
+
+        derived = sp.derived_keys_map(
+            {
+                "services": {"redis": "6379"},
+                "env_contract": {"DATABASE_URL": "present"},
+                "db_schema": {"alembic_head": "abc123"},
+            }
+        )
+        assert derived == {"services": [], "env_contract": [], "db_schema": []}
+
+    def test_unknown_key_is_not_derived(self) -> None:
+        """Conservative default: an unrecognized key keeps its section policy."""
+        from app.services import devenv_section_policy as sp
+
+        assert sp.is_derived_key("versions", "something_new") is False
+        assert sp.is_derived_key("services", "runner_crate_version") is False
+        assert sp.derived_keys_map({"versions": {"something_new": "x"}}) == {
+            "versions": []
+        }
+
+    def test_response_is_valid_without_derived_keys(self) -> None:
+        """Additive: a response built without the field still validates (empty)."""
+        from uuid import uuid4
+
+        from app.schemas.devenv import CanonicalConfigResponse
+
+        r = CanonicalConfigResponse(
+            environment_id=uuid4(),
+            sections={"versions": {"python": "3.13"}},
+            section_policy={"versions": "applyable"},
+        )
+        assert r.derived_keys == {}
+
+
 # ---------------------------------------------------------------------------
 # Layer 1 helpers
 # ---------------------------------------------------------------------------
@@ -1104,6 +1178,10 @@ class TestCanonicalAuditAndPull:
             # Policy delivered alongside so the runner knows what it may apply.
             assert body["section_policy"]["versions"] == "applyable"
             assert body["section_policy"]["env_contract"] == "secret_report_only"
+            # Per-key refinement rides along: python is a machine fact, so the
+            # applyable versions section reports no derived keys here.
+            assert body["derived_keys"]["versions"] == []
+            assert body["derived_keys"]["env_contract"] == []
             # Secret-free: env_contract is present/absent, never the raw value.
             assert body["sections"]["env_contract"]["DATABASE_URL"] == "present"
             assert "topsecret" not in r.text
