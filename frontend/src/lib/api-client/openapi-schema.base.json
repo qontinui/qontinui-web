@@ -76301,8 +76301,24 @@
     },
     "/api/v1/operations/pr-merge/prs": {
       "get": {
-        "description": "PR Merge Orchestrator Phase 1 D1.6 + D1.7 -- proxy coord's\n``GET /pr-merge/prs`` (read-only list of all open PRs joined to\nper-(repo, head_sha) CI lifecycle).\n\nFleet-wide. Forwards the operator bearer so coord requires an\nauthenticated operator \u2014 retires the pilot-anonymous posture\n(operator decision 2026-05-31), mirroring ``/merge/queue``.",
+        "description": "PR Merge Orchestrator Phase 1 D1.6 + D1.7 -- proxy coord's\n``GET /pr-merge/prs`` (read-only list of all open PRs joined to\nper-(repo, head_sha) CI lifecycle).\n\nFleet-wide. Forwards the operator bearer so coord requires an\nauthenticated operator \u2014 retires the pilot-anonymous posture\n(operator decision 2026-05-31), mirroring ``/merge/queue``.\n\n``include_merged`` is forwarded ONLY when set, so the default request is\nbyte-for-byte the legacy call (same convention as ``/admin-dev/prs``).\ncoord's response is returned verbatim \u2014 no field whitelist \u2014 so the\nmerged-row enrichment passes through unchanged.",
         "operationId": "api_v1_operations_pr_merge_prs_get",
+        "parameters": [
+          {
+            "description": "When >0, ask coord to ALSO return PRs merged within the last N hours (each carrying the merge stamp + per-PR deploy_state), not just open ones. 0 (default) preserves the open-PRs-only behavior. Backs the fleet pipeline's 'Merged' tab.",
+            "in": "query",
+            "name": "include_merged",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "When >0, ask coord to ALSO return PRs merged within the last N hours (each carrying the merge stamp + per-PR deploy_state), not just open ones. 0 (default) preserves the open-PRs-only behavior. Backs the fleet pipeline's 'Merged' tab.",
+              "maximum": 720,
+              "minimum": 0,
+              "title": "Include Merged",
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -76313,6 +76329,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "security": [

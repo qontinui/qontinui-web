@@ -37,6 +37,15 @@ const COORD_WS_URL =
   process.env.NEXT_PUBLIC_COORD_WS_URL || "ws://localhost:9870/ws";
 const WS_PATTERN = "events.merge.>";
 const POLL_INTERVAL_MS = 2_000;
+/**
+ * Lookback for the pipeline's "Merged" tab, forwarded to coord as
+ * `?include_merged=<hours>`. coord appends recently-landed PR rows (keyed on
+ * the `merge_commit_sha` + `merged_at` land stamp, so BOTH the merge-button
+ * path and coord's own fast-forward lands are included) to the open/draft
+ * list. A coord deploy that does not honor the param simply returns the open
+ * list — the tab renders empty rather than breaking.
+ */
+export const MERGED_LOOKBACK_HOURS = 48;
 const REFETCH_DEBOUNCE_MS = 250;
 const MAX_RECONNECT_ATTEMPTS = 5;
 
@@ -103,7 +112,9 @@ export function useMergePipelineData(): MergePipelineData {
   // as an empty list, never as an error (the queue fetch owns `error`).
   const fetchPrs = useCallback(async () => {
     try {
-      const res = await httpClient.fetch(`${OPERATIONS_API}/pr-merge/prs`);
+      const res = await httpClient.fetch(
+        `${OPERATIONS_API}/pr-merge/prs?include_merged=${MERGED_LOOKBACK_HOURS}`
+      );
       if (!res.ok) {
         if (res.status === 404) {
           if (!cleanedUpRef.current) setPrs([]);
