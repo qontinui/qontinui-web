@@ -89,6 +89,9 @@ export const STATUS_BADGE_CLASS: Record<UnifiedStatusKind, string> = {
   // A true conflict, de-escalated because coord won't reach this PR for a
   // while: "resolve just-before-merge", not "act now".
   "conflict-deferred": WAITING_AMBER,
+  // ...but only for so long. Once the deferral window lapses, coord is
+  // demonstrably never reaching this PR and it goes back to red.
+  "conflict-stranded": AUTHOR_RED,
   // --- in flight / terminal, nobody is blocked → never red or amber ---------
   "awaiting-ci": CI_YELLOW,
   "checks-pending": CI_YELLOW,

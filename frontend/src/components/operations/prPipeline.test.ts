@@ -23,6 +23,9 @@ import {
   CI_WAIT_AMBER_MS,
   CI_WAIT_RED_MS,
   STALL_RED_MS,
+  CONFLICT_DEFERRAL_MAX_MS,
+  conflictDeferralMaxMs,
+  conflictStrandedForMs,
 } from "./prPipeline";
 
 const NOW = new Date("2026-07-15T12:00:00Z").getTime();
@@ -228,7 +231,12 @@ describe("buildPipelineRows — join + unified status", () => {
   it("renders a proposal with no matching PR as a branch-only row", () => {
     const rows = buildPipelineRows(
       [],
-      [proposal({ status: "landing", repos: [repoDetail({ branch: "agent/x" })] })]
+      [
+        proposal({
+          status: "landing",
+          repos: [repoDetail({ branch: "agent/x" })],
+        }),
+      ]
     );
     expect(rows).toHaveLength(1);
     expect(rows[0].prNumber).toBeNull();
@@ -268,10 +276,7 @@ describe("buildPipelineRows — join + unified status", () => {
 
   it("numbers queued rows by queue position", () => {
     const rows = buildPipelineRows(
-      [
-        pr({ pr_number: 1, branch: "b1" }),
-        pr({ pr_number: 2, branch: "b2" }),
-      ],
+      [pr({ pr_number: 1, branch: "b1" }), pr({ pr_number: 2, branch: "b2" })],
       [
         proposal({
           proposal_id: "q2",
@@ -488,6 +493,21 @@ describe("statusFromGitHub — CI-duration-aware conflict severity", () => {
     return buildPipelineRows([p], [], economics ?? {})[0];
   }
 
+  /** A DIRTY row that coord reports as conflicting for `secs`. */
+  function strandedRow(
+    repo: string,
+    secs: number | null | undefined,
+    economics?: Record<string, MergeEconomics>
+  ) {
+    const p = pr({
+      repo,
+      merge_state_status: "DIRTY",
+      mergeable: null,
+      conflict_age_secs: secs,
+    });
+    return buildPipelineRows([p], [], economics ?? {})[0];
+  }
+
   it("{DIRTY, short-CI} → RED (act now) — measured p90 below threshold", () => {
     const econ: Record<string, MergeEconomics> = {
       [WEB]: { candidate_ci_p90_secs: 5 * 60, queue_depth: 20 },
@@ -511,6 +531,98 @@ describe("statusFromGitHub — CI-duration-aware conflict severity", () => {
     expect(row.status.reason).toBe(
       "conflict — resolve at merge (repo CI ~2h, 12 in queue)"
     );
+  });
+
+  // -------------------------------------------------------------------------
+  // The staleness escape hatch. `conflict-deferred` says "resolve this at
+  // merge", which holds ONLY while "coord reaches this PR soon" holds. coord
+  // lands by rebase and cannot rebase past a true conflict, so a deferred PR
+  // never advances to the front where the label says to fix it — it sits
+  // amber, excluded from needs-attention, indefinitely. Measured 2026-07-20:
+  // 17 PRs stranded fleet-wide, oldest 752h. These tests are the mutation
+  // target: delete the hatch and they fail.
+  // -------------------------------------------------------------------------
+  it("long-CI + not-front + WITHIN the deferral window → still AMBER", () => {
+    const econ: Record<string, MergeEconomics> = {
+      [RUNNER]: { candidate_ci_p90_secs: TWO_HOURS_SECS, queue_depth: 12 },
+    };
+    // 3h stranded, window is max(6h, 2 x 2h) = 6h → not yet expired.
+    const row = strandedRow(RUNNER, 3 * 60 * 60, econ);
+    expect(row.status.kind).toBe("conflict-deferred");
+    expect(row.status.attention).toBe("waiting");
+  });
+
+  it("long-CI + not-front + PAST the deferral window → RED (stranded)", () => {
+    const econ: Record<string, MergeEconomics> = {
+      [RUNNER]: { candidate_ci_p90_secs: TWO_HOURS_SECS, queue_depth: 12 },
+    };
+    // 31 days — the qontinui-schemas#85 case.
+    const row = strandedRow(RUNNER, 31 * 24 * 60 * 60, econ);
+    expect(row.status.kind).toBe("conflict-stranded");
+    expect(row.status.attention).toBe("author");
+    expect(row.status.reason).toContain("needs an author rebase");
+  });
+
+  it("counts toward needsAttention once stranded (the whole point)", () => {
+    const econ: Record<string, MergeEconomics> = {
+      [RUNNER]: { candidate_ci_p90_secs: TWO_HOURS_SECS, queue_depth: 12 },
+    };
+    const deferred = derivePipelineHealth(
+      [strandedRow(RUNNER, 3 * 60 * 60, econ)],
+      NOW,
+      econ
+    );
+    const stranded = derivePipelineHealth(
+      [strandedRow(RUNNER, 31 * 24 * 60 * 60, econ)],
+      NOW,
+      econ
+    );
+    expect(deferred.needsAttention).toBe(0);
+    expect(stranded.needsAttention).toBe(1);
+  });
+
+  it("ABSENT conflict_age_secs is 'no evidence', never 'not stranded'", () => {
+    const econ: Record<string, MergeEconomics> = {
+      [RUNNER]: { candidate_ci_p90_secs: TWO_HOURS_SECS, queue_depth: 12 },
+    };
+    // An older coord deploy omits the field: behaviour must be unchanged
+    // (amber), NOT escalated on missing data.
+    expect(strandedRow(RUNNER, undefined, econ).status.kind).toBe(
+      "conflict-deferred"
+    );
+    expect(strandedRow(RUNNER, null, econ).status.kind).toBe(
+      "conflict-deferred"
+    );
+    expect(conflictStrandedForMs({ conflict_age_secs: undefined })).toBeNull();
+    expect(conflictStrandedForMs({ conflict_age_secs: null })).toBeNull();
+    // Nonsense values are evidence of nothing, not of a strand.
+    expect(conflictStrandedForMs({ conflict_age_secs: -5 })).toBeNull();
+    expect(conflictStrandedForMs({ conflict_age_secs: NaN })).toBeNull();
+  });
+
+  it("a strand cannot downgrade an already-RED conflict", () => {
+    // Short-CI repo: already "blocks now". A stale clock must not turn a red
+    // row amber, so precedence is red-before-deferral in both directions.
+    const econ: Record<string, MergeEconomics> = {
+      [WEB]: { candidate_ci_p90_secs: 5 * 60, queue_depth: 20 },
+    };
+    const row = strandedRow(WEB, 31 * 24 * 60 * 60, econ);
+    expect(row.status.attention).toBe("author");
+  });
+
+  it("deferral window is per-repo: max(floor, 2 x candidate p90)", () => {
+    // No economics → the floor.
+    expect(conflictDeferralMaxMs(RUNNER)).toBe(CONFLICT_DEFERRAL_MAX_MS);
+    // Fast repo → floor still wins (a grace window, not an instant flip).
+    expect(
+      conflictDeferralMaxMs(WEB, { [WEB]: { candidate_ci_p90_secs: 5 * 60 } })
+    ).toBe(CONFLICT_DEFERRAL_MAX_MS);
+    // Slow repo → two full worst-case runs.
+    expect(
+      conflictDeferralMaxMs(RUNNER, {
+        [RUNNER]: { candidate_ci_p90_secs: 5 * 60 * 60 },
+      })
+    ).toBe(10 * 60 * 60 * 1000);
   });
 
   it("{DIRTY, long-CI, front-of-queue} → RED — shallow queue amplifies", () => {
@@ -555,7 +667,11 @@ describe("statusFromGitHub — CI-duration-aware conflict severity", () => {
   });
 
   it("mergeable===false is treated identically to DIRTY", () => {
-    const p = pr({ repo: RUNNER, merge_state_status: "UNKNOWN", mergeable: false });
+    const p = pr({
+      repo: RUNNER,
+      merge_state_status: "UNKNOWN",
+      mergeable: false,
+    });
     const row = buildPipelineRows([p], [], {
       [RUNNER]: { candidate_ci_p90_secs: TWO_HOURS_SECS, queue_depth: 9 },
     })[0];
@@ -721,6 +837,26 @@ describe("ATTENTION_BY_KIND — the color/attention contract", () => {
       what: "conflict-deferred",
       row: buildPipelineRows(
         [pr({ repo: "qontinui/qontinui-runner", mergeable: false })],
+        [],
+        {
+          "qontinui/qontinui-runner": {
+            candidate_ci_p90_secs: 4 * 60 * 60,
+            queue_depth: 9,
+          },
+        }
+      )[0],
+    },
+    // Same shape, but stranded past the deferral window → re-escalated.
+    {
+      what: "conflict-stranded",
+      row: buildPipelineRows(
+        [
+          pr({
+            repo: "qontinui/qontinui-runner",
+            mergeable: false,
+            conflict_age_secs: 30 * 24 * 60 * 60,
+          }),
+        ],
         [],
         {
           "qontinui/qontinui-runner": {
@@ -950,9 +1086,9 @@ describe("derivePipelineHealth", () => {
           }),
         ]
       );
-    expect(
-      derivePipelineHealth(mk(CI_WAIT_AMBER_MS + 60_000), NOW).level
-    ).toBe("amber");
+    expect(derivePipelineHealth(mk(CI_WAIT_AMBER_MS + 60_000), NOW).level).toBe(
+      "amber"
+    );
     expect(derivePipelineHealth(mk(CI_WAIT_RED_MS + 60_000), NOW).level).toBe(
       "red"
     );
