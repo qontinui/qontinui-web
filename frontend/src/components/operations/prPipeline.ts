@@ -963,7 +963,15 @@ export function derivePipelineHealth(
     .map((r) => r.activeProposal)
     .filter((p): p is ProposalDetail => p !== null && !TERMINAL.has(p.status));
 
-  const conflicts = active.filter((p) => p.status === "conflict").length;
+  // Conflicts come from BOTH sides, for the same reason `lastMergedAt` does.
+  // `active` only sees the in-flight queue feed, which EXCLUDES terminal
+  // `conflict` proposals — so a stranded PR has no active proposal at all and
+  // would count zero here. That is how a fleet with 17 stranded PRs rendered
+  // as "Merging normally": the escalation reached the row badge and the
+  // needs-attention chip, but not the headline the operator actually scans.
+  const conflicts =
+    active.filter((p) => p.status === "conflict").length +
+    rows.filter((r) => r.status.kind === "conflict-stranded").length;
   const blocked = active.filter(
     (p) => p.status === "blocked-by-overlap"
   ).length;

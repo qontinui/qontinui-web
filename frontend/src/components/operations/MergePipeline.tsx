@@ -130,7 +130,10 @@ function StatusBadge({ row }: { row: PipelineRow }) {
       title={reason ? `${label} — ${reason}` : label}
     >
       {kind === "merged" && "✓ "}
-      {(kind === "conflict" || kind === "not-mergeable") && "✕ "}
+      {(kind === "conflict" ||
+        kind === "not-mergeable" ||
+        kind === "conflict-stranded") &&
+        "✕ "}
       {label}
     </Badge>
   );
@@ -410,9 +413,11 @@ function RowDetail({ row }: { row: PipelineRow }) {
       {/* CI-on-candidate education — the #1 recurring confusion */}
       {row.status.kind === "awaiting-ci" && (
         <p className="text-[11px] text-muted-foreground m-0">
-          Checks run on coord&rsquo;s merge candidate, not on your branch —
-          your PR&rsquo;s own green checkmarks can be stale.
-          {row.ciRunUrl ? " The candidate run linked above is the one that counts." : ""}
+          Checks run on coord&rsquo;s merge candidate, not on your branch — your
+          PR&rsquo;s own green checkmarks can be stale.
+          {row.ciRunUrl
+            ? " The candidate run linked above is the one that counts."
+            : ""}
         </p>
       )}
 
@@ -432,8 +437,8 @@ function RowDetail({ row }: { row: PipelineRow }) {
           </p>
           {earlier.length > 0 && (
             <p className="m-0">
-              {earlier.length} earlier attempt{earlier.length === 1 ? "" : "s"}
-              : {earlier.map((a) => a.status).join(", ")}
+              {earlier.length} earlier attempt{earlier.length === 1 ? "" : "s"}:{" "}
+              {earlier.map((a) => a.status).join(", ")}
             </p>
           )}
         </div>
@@ -441,7 +446,11 @@ function RowDetail({ row }: { row: PipelineRow }) {
 
       {/* raw state for support/debugging — the ONLY place internals show */}
       <p className="m-0 font-mono text-[10px] text-muted-foreground/60 break-all">
-        {active && <>proposal {active.proposal_id} · {active.status}</>}
+        {active && (
+          <>
+            proposal {active.proposal_id} · {active.status}
+          </>
+        )}
         {row.pr && (
           <>
             {active && " · "}
@@ -524,7 +533,8 @@ function PipelineRowDisplay({
           {row.members && (
             <span className="text-muted-foreground">
               {" "}
-              · {row.members.map((m) => m.repo.repo.split("/").pop()).join(" + ")}
+              ·{" "}
+              {row.members.map((m) => m.repo.repo.split("/").pop()).join(" + ")}
             </span>
           )}
         </span>
@@ -725,7 +735,10 @@ export function MergePipeline() {
           </h4>
           <div className="space-y-2">
             {gateBlocks.map((b) => (
-              <GateDecisionRow key={`${b.repo}#${b.pr_number}@${b.at}`} block={b} />
+              <GateDecisionRow
+                key={`${b.repo}#${b.pr_number}@${b.at}`}
+                block={b}
+              />
             ))}
             <p className="text-[11px] text-muted-foreground pt-1">
               Coverage labels reflect how complete the code graph was when the
@@ -752,7 +765,10 @@ export function MergePipeline() {
         <p className="text-[11px] text-muted-foreground mb-2">
           Raw scheduler proposals, one per attempt (the unified list above
           collapses these per PR). Cross-repo dependency DAG:{" "}
-          <a href="#merge-dep-graph" className="underline hover:text-foreground">
+          <a
+            href="#merge-dep-graph"
+            className="underline hover:text-foreground"
+          >
             dependency graph
           </a>
           .

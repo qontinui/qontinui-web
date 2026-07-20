@@ -581,6 +581,24 @@ describe("statusFromGitHub — CI-duration-aware conflict severity", () => {
     expect(stranded.needsAttention).toBe(1);
   });
 
+  it("a strand reaches the HEALTH HEADLINE, not just the row badge", () => {
+    const econ: Record<string, MergeEconomics> = {
+      [RUNNER]: { candidate_ci_p90_secs: TWO_HOURS_SECS, queue_depth: 12 },
+    };
+    // A stranded PR has NO active proposal (terminal conflicts are excluded
+    // from the in-flight feed), so a headline counting only active proposals
+    // reports a healthy fleet while 17 PRs rot.
+    const health = derivePipelineHealth(
+      [strandedRow(RUNNER, 31 * 24 * 60 * 60, econ)],
+      NOW,
+      econ
+    );
+    // Surfaces in the headline/detail, not just the row badge. One strand is
+    // amber; the measured 17-PR fleet would be red.
+    expect(health.detail).toContain("conflict");
+    expect(health.level).not.toBe("green");
+  });
+
   it("ABSENT conflict_age_secs is 'no evidence', never 'not stranded'", () => {
     const econ: Record<string, MergeEconomics> = {
       [RUNNER]: { candidate_ci_p90_secs: TWO_HOURS_SECS, queue_depth: 12 },
