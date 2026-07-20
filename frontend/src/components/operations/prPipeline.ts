@@ -41,6 +41,12 @@ export type UnifiedStatusKind =
   // won't try to merge it for a while — resolving the conflict now would just
   // go stale. "Resolve just-before-merge", not "act now". See statusFromGitHub.
   | "conflict-deferred"
+  // The `conflict-deferred` de-escalation with an EXPIRED premise. Deferral is
+  // justified only by "coord reaches this PR soon"; coord cannot rebase past a
+  // TRUE conflict, so such a PR never advances to the front where the amber
+  // label says to fix it — it just sits, marked "waiting", excluded from the
+  // needs-attention count. Past the deferral window we re-escalate to red.
+  | "conflict-stranded"
   | "requirements"
   | "checks-failing"
   | "checks-pending"
@@ -75,6 +81,7 @@ export type Attention = "author" | "waiting" | "none";
  * | blocked          | overlaps another PR; coord serializes| no — waits   |
  * | needs-rebase     | BEHIND; coord auto-rebases in train  | no — waits   |
  * | conflict-deferred| true conflict, but far from merging  | no — waits   |
+ * | conflict-stranded| deferred so long the premise expired | YES          |
  * | conflict         | rebase/candidate CI failed           | YES          |
  * | not-mergeable    | conflicts, and it blocks now         | YES          |
  * | checks-failing   | a check reported failure             | YES          |
@@ -93,6 +100,7 @@ export const ATTENTION_BY_KIND: Record<UnifiedStatusKind, Attention> = {
   blocked: "waiting",
   "needs-rebase": "waiting",
   "conflict-deferred": "waiting",
+  "conflict-stranded": "author",
   conflict: "author",
   "not-mergeable": "author",
   "checks-failing": "author",
@@ -242,6 +250,23 @@ export const LONG_CI_REPO_HINTS: readonly string[] = ["qontinui-runner"];
  */
 export const FRONT_QUEUE_DEPTH_THRESHOLD = 2;
 
+/**
+ * Floor for how long a TRUE conflict may stay de-escalated to amber before it
+ * re-escalates to red. Per-repo the real cutoff is `max(this, 2 × candidate-CI
+ * p90)` — see `conflictDeferralMaxMs`.
+ *
+ * Why a hatch is needed at all: `conflict-deferred` says "resolve this at
+ * merge", which is sound ONLY while "coord reaches this PR soon" holds. coord
+ * lands by rebase and cannot rebase past a true conflict — its dry-rebase ends
+ * `could not apply` and the proposal goes terminal. So the PR never reaches the
+ * front of the queue, the amber label never converts to red, and the row stays
+ * out of the needs-attention count indefinitely. Measured 2026-07-20: 17 open
+ * PRs stranded fleet-wide, oldest 752h; the trigger case (coord#1066) sat 4
+ * days on a textual conflict with its fix fully implemented. Deferral is a
+ * scheduling optimisation, not a terminal state — it has to expire.
+ */
+export const CONFLICT_DEFERRAL_MAX_MS = 6 * 60 * 60 * 1000;
+
 /** Look up a repo's economics by full `owner/name` then by short name. */
 function economicsFor(
   repo: string,
@@ -279,7 +304,9 @@ export function isNearFrontOfQueue(
   economics?: Record<string, MergeEconomics>
 ): boolean {
   const econ = economicsFor(repo, economics);
-  return econ?.queue_depth != null && econ.queue_depth <= FRONT_QUEUE_DEPTH_THRESHOLD;
+  return (
+    econ?.queue_depth != null && econ.queue_depth <= FRONT_QUEUE_DEPTH_THRESHOLD
+  );
 }
 
 /**
@@ -291,7 +318,9 @@ export function isNearFrontOfQueue(
 export function hasPendingChecks(
   pr: Pick<PrRow, "pending_contexts" | "ci_lifecycle">
 ): boolean {
-  return (pr.pending_contexts?.length ?? 0) > 0 || pr.ci_lifecycle === "pending";
+  return (
+    (pr.pending_contexts?.length ?? 0) > 0 || pr.ci_lifecycle === "pending"
+  );
 }
 
 /**
@@ -315,6 +344,44 @@ export function hasPendingChecks(
  */
 export function isMergedPr(pr: Pick<PrRow, "pr_state">): boolean {
   return pr.pr_state === "merged" || pr.pr_state === "closed";
+}
+
+/**
+ * How long this repo may defer a true conflict: two full worst-case candidate
+ * runs (long enough that a genuinely-queued PR would have been reached), with
+ * `CONFLICT_DEFERRAL_MAX_MS` as the floor so a fast repo still gets a grace
+ * window rather than flipping red the moment a conflict appears.
+ */
+export function conflictDeferralMaxMs(
+  repo: string,
+  economics?: Record<string, MergeEconomics>
+): number {
+  const econ = economicsFor(repo, economics);
+  const p90Ms =
+    econ?.candidate_ci_p90_secs != null ? econ.candidate_ci_p90_secs * 1000 : 0;
+  return Math.max(CONFLICT_DEFERRAL_MAX_MS, 2 * p90Ms);
+}
+
+/**
+ * How long this PR has been stuck in conflict, in ms, or `null` when nothing
+ * can say.
+ *
+ * Reads coord's strand clock (`conflict_age_secs`) and nothing else. The
+ * proposal history carried in `attempts` CANNOT answer this: coord's terminal
+ * `conflict` proposals are excluded from the in-flight queue feed, so a
+ * stranded PR arrives here with an EMPTY attempts array — which is exactly why
+ * it renders via `statusFromGitHub` in the first place.
+ *
+ * `null` means "no evidence" and the caller must keep the existing amber
+ * rather than invent a strand. Absence is not proof of freshness — an older
+ * coord deploy omits the field entirely.
+ */
+export function conflictStrandedForMs(
+  pr: Pick<PrRow, "conflict_age_secs">
+): number | null {
+  const secs = pr.conflict_age_secs;
+  if (secs == null || !Number.isFinite(secs) || secs < 0) return null;
+  return secs * 1000;
 }
 
 /**
@@ -379,17 +446,35 @@ function statusFromGitHub(
         attention: "author",
       };
     }
+    // RED again — the deferral premise EXPIRED. Everything below assumes coord
+    // reaches this PR soon; past the per-repo deferral window that assumption is
+    // falsified by the clock, and the honest report is that nobody is coming.
+    const strandedMs = conflictStrandedForMs(pr);
+    const deferralMaxMs = conflictDeferralMaxMs(pr.repo, economics);
+    if (strandedMs !== null && strandedMs > deferralMaxMs) {
+      return {
+        kind: "conflict-stranded",
+        label: "Conflict (stranded)",
+        reason:
+          `conflict unresolved for ${formatDurationShort(strandedMs)} — coord cannot ` +
+          `rebase past it and will not reach it on its own; needs an author rebase`,
+        attention: "author",
+      };
+    }
     // AMBER — "resolve just-before-merge": long-CI repo, not near the front.
     // coord only rebases this candidate right before it merges it, so resolving
     // the conflict now would just go stale. De-escalated: NOT counted as
-    // "needs attention" (that count stays true-urgency only).
+    // "needs attention" (that count stays true-urgency only). Bounded by the
+    // hatch above so this can never become a permanent parking state.
     const econ = economicsFor(pr.repo, economics);
     const ciMs =
       econ?.candidate_ci_p90_secs != null
         ? econ.candidate_ci_p90_secs * 1000
         : CI_WAIT_RED_MS;
     const queuePart =
-      econ?.queue_depth != null ? `${econ.queue_depth} in queue` : "deep in queue";
+      econ?.queue_depth != null
+        ? `${econ.queue_depth} in queue`
+        : "deep in queue";
     return {
       kind: "conflict-deferred",
       label: "Conflict (resolve at merge)",
@@ -658,9 +743,8 @@ export function buildPipelineRows(
       attempts,
       ciRunUrl:
         active?.repos.find((r) => r.ci_run_url)?.ci_run_url ??
-        attempts
-          .flatMap((a) => a.repos)
-          .find((r) => r.ci_run_url)?.ci_run_url ??
+        attempts.flatMap((a) => a.repos).find((r) => r.ci_run_url)
+          ?.ci_run_url ??
         null,
       agentId: active?.agent_id ?? attempts[0]?.agent_id ?? null,
       members: null,
@@ -735,6 +819,9 @@ function ordinal(n: number): string {
  */
 const KIND_RANK: Record<UnifiedStatusKind, number> = {
   conflict: 0,
+  // A strand is act-now by definition — it has already waited longer than the
+  // deferral window, so it sorts with the other author-blocked rows.
+  "conflict-stranded": 0,
   "not-mergeable": 0,
   requirements: 0,
   "checks-failing": 0,
@@ -876,7 +963,15 @@ export function derivePipelineHealth(
     .map((r) => r.activeProposal)
     .filter((p): p is ProposalDetail => p !== null && !TERMINAL.has(p.status));
 
-  const conflicts = active.filter((p) => p.status === "conflict").length;
+  // Conflicts come from BOTH sides, for the same reason `lastMergedAt` does.
+  // `active` only sees the in-flight queue feed, which EXCLUDES terminal
+  // `conflict` proposals — so a stranded PR has no active proposal at all and
+  // would count zero here. That is how a fleet with 17 stranded PRs rendered
+  // as "Merging normally": the escalation reached the row badge and the
+  // needs-attention chip, but not the headline the operator actually scans.
+  const conflicts =
+    active.filter((p) => p.status === "conflict").length +
+    rows.filter((r) => r.status.kind === "conflict-stranded").length;
   const blocked = active.filter(
     (p) => p.status === "blocked-by-overlap"
   ).length;
@@ -921,9 +1016,7 @@ export function derivePipelineHealth(
   }
   const newestActivityAgoMs =
     active.length > 0
-      ? Math.min(
-          ...active.map((p) => nowMs - new Date(p.updated_at).getTime())
-        )
+      ? Math.min(...active.map((p) => nowMs - new Date(p.updated_at).getTime()))
       : 0;
   const churning = active.some(
     (p) => (p.requeue_count ?? 0) >= REQUEUE_CHURN_THRESHOLD
@@ -935,7 +1028,9 @@ export function derivePipelineHealth(
   if (conflicts >= 2) redReasons.push(`${conflicts} conflicts accumulating`);
   else if (conflicts === 1) amberReasons.push("1 conflict");
   if (blocked > 0)
-    amberReasons.push(`${blocked} waiting on overlapping PR${blocked === 1 ? "" : "s"}`);
+    amberReasons.push(
+      `${blocked} waiting on overlapping PR${blocked === 1 ? "" : "s"}`
+    );
   if (redCiWaitMs > 0)
     redReasons.push(`oldest CI wait ${formatDurationShort(redCiWaitMs)}`);
   else if (amberCiWaitMs > 0)
@@ -951,11 +1046,7 @@ export function derivePipelineHealth(
   if (churning) amberReasons.push("repeated requeues (leader churn)");
 
   const level: HealthLevel =
-    redReasons.length > 0
-      ? "red"
-      : amberReasons.length > 0
-        ? "amber"
-        : "green";
+    redReasons.length > 0 ? "red" : amberReasons.length > 0 ? "amber" : "green";
   return {
     level,
     headline:
