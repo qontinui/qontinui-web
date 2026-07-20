@@ -175,9 +175,7 @@ function CiStatusRow({ row }: { row: RepoCiRow }) {
             <span className="text-green-400">
               {row.open_pr_checks.success}✓
             </span>
-            <span className="text-red-400">
-              {row.open_pr_checks.failure}✗
-            </span>
+            <span className="text-red-400">{row.open_pr_checks.failure}✗</span>
             <span className="text-yellow-400">
               {row.open_pr_checks.pending}⋯
             </span>
@@ -273,7 +271,7 @@ export function CiStatusPanel() {
 
   const rows = useMemo(() => {
     return Array.from(byRepo.values()).sort((a, b) =>
-      a.repo.localeCompare(b.repo),
+      a.repo.localeCompare(b.repo)
     );
   }, [byRepo]);
 
@@ -297,18 +295,18 @@ export function CiStatusPanel() {
         />
       }
     >
-        {error && <p className="text-xs text-red-300 mb-2">{error}</p>}
-        {rows.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            No repos registered for this tenant.
-          </p>
-        ) : (
-          <div className="space-y-2">
-            {rows.map((row) => (
-              <CiStatusRow key={row.repo} row={row} />
-            ))}
-          </div>
-        )}
+      {error && <p className="text-xs text-red-300 mb-2">{error}</p>}
+      {rows.length === 0 ? (
+        <p className="text-xs text-muted-foreground">
+          No repos registered for this tenant.
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {rows.map((row) => (
+            <CiStatusRow key={row.repo} row={row} />
+          ))}
+        </div>
+      )}
     </CollapsiblePanel>
   );
 }
