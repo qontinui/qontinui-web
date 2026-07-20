@@ -1148,280 +1148,6 @@
         "title": "ActiveLockInfo",
         "type": "object"
       },
-      "AdminNotificationSettingsResponse": {
-        "description": "Schema for admin notification settings response.",
-        "properties": {
-          "created_at": {
-            "title": "Created At",
-            "type": "string"
-          },
-          "id": {
-            "description": "Settings UUID",
-            "title": "Id",
-            "type": "string"
-          },
-          "notification_email": {
-            "description": "Email address to send admin notifications to",
-            "format": "email",
-            "title": "Notification Email",
-            "type": "string"
-          },
-          "notifications_enabled": {
-            "default": true,
-            "description": "Master toggle for all admin notifications",
-            "title": "Notifications Enabled",
-            "type": "boolean"
-          },
-          "notify_on_project_created": {
-            "default": true,
-            "description": "Send notification when a new project is created",
-            "title": "Notify On Project Created",
-            "type": "boolean"
-          },
-          "notify_on_user_signup": {
-            "default": true,
-            "description": "Send notification when a new user signs up",
-            "title": "Notify On User Signup",
-            "type": "boolean"
-          },
-          "updated_at": {
-            "title": "Updated At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "notification_email",
-          "id",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "AdminNotificationSettingsResponse",
-        "type": "object"
-      },
-      "AdminNotificationSettingsUpdate": {
-        "description": "Schema for updating admin notification settings.",
-        "properties": {
-          "notification_email": {
-            "anyOf": [
-              {
-                "format": "email",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Email address to send admin notifications to",
-            "title": "Notification Email"
-          },
-          "notifications_enabled": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Master toggle for all admin notifications",
-            "title": "Notifications Enabled"
-          },
-          "notify_on_project_created": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Send notification when a new project is created",
-            "title": "Notify On Project Created"
-          },
-          "notify_on_user_signup": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Send notification when a new user signs up",
-            "title": "Notify On User Signup"
-          }
-        },
-        "title": "AdminNotificationSettingsUpdate",
-        "type": "object"
-      },
-      "AdminProjectData": {
-        "description": "Schema for admin project data response.",
-        "properties": {
-          "created_at": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "ISO 8601 datetime string",
-            "title": "Created At"
-          },
-          "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
-          "id": {
-            "description": "Project ID or UUID",
-            "title": "Id",
-            "type": "string"
-          },
-          "name": {
-            "minLength": 1,
-            "title": "Name",
-            "type": "string"
-          },
-          "owner_email": {
-            "format": "email",
-            "title": "Owner Email",
-            "type": "string"
-          },
-          "owner_id": {
-            "description": "Owner UUID",
-            "title": "Owner Id",
-            "type": "string"
-          },
-          "owner_username": {
-            "title": "Owner Username",
-            "type": "string"
-          },
-          "state_count": {
-            "minimum": 0.0,
-            "title": "State Count",
-            "type": "integer"
-          },
-          "transition_count": {
-            "minimum": 0.0,
-            "title": "Transition Count",
-            "type": "integer"
-          },
-          "updated_at": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "ISO 8601 datetime string",
-            "title": "Updated At"
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "owner_id",
-          "owner_username",
-          "owner_email",
-          "state_count",
-          "transition_count"
-        ],
-        "title": "AdminProjectData",
-        "type": "object"
-      },
-      "AdminUserData": {
-        "description": "Schema for admin user data response.",
-        "properties": {
-          "created_at": {
-            "description": "ISO 8601 datetime string",
-            "title": "Created At",
-            "type": "string"
-          },
-          "email": {
-            "format": "email",
-            "title": "Email",
-            "type": "string"
-          },
-          "email_verified": {
-            "default": false,
-            "description": "Email verification status (alias for is_verified)",
-            "title": "Email Verified",
-            "type": "boolean"
-          },
-          "full_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Full Name"
-          },
-          "id": {
-            "description": "User UUID",
-            "title": "Id",
-            "type": "string"
-          },
-          "is_active": {
-            "title": "Is Active",
-            "type": "boolean"
-          },
-          "is_verified": {
-            "title": "Is Verified",
-            "type": "boolean"
-          },
-          "last_login": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "ISO 8601 datetime string",
-            "title": "Last Login"
-          },
-          "project_count": {
-            "minimum": 0.0,
-            "title": "Project Count",
-            "type": "integer"
-          },
-          "subscription_tier": {
-            "description": "Subscription tier: free, hobby, or pro",
-            "title": "Subscription Tier",
-            "type": "string"
-          },
-          "username": {
-            "title": "Username",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "email",
-          "username",
-          "is_active",
-          "is_verified",
-          "created_at",
-          "project_count",
-          "subscription_tier"
-        ],
-        "title": "AdminUserData",
-        "type": "object"
-      },
       "AggregatedTaskRuns": {
         "description": "All running tasks across fleet.",
         "properties": {
@@ -3691,21 +3417,6 @@
           "screenshot_ids"
         ],
         "title": "BatchProjectScreenshotDelete",
-        "type": "object"
-      },
-      "BillingPortalResponse": {
-        "description": "Response schema for billing portal session",
-        "properties": {
-          "url": {
-            "description": "Stripe billing portal URL",
-            "title": "Url",
-            "type": "string"
-          }
-        },
-        "required": [
-          "url"
-        ],
-        "title": "BillingPortalResponse",
         "type": "object"
       },
       "Body_create_baseline_from_upload_api_v1_testing_baselines_post": {
@@ -6251,42 +5962,6 @@
         "title": "CheckUpdate",
         "type": "object"
       },
-      "CheckoutSessionRequest": {
-        "description": "Request schema for creating checkout session",
-        "properties": {
-          "tier": {
-            "description": "Subscription tier to purchase (hobby or pro)",
-            "title": "Tier",
-            "type": "string"
-          }
-        },
-        "required": [
-          "tier"
-        ],
-        "title": "CheckoutSessionRequest",
-        "type": "object"
-      },
-      "CheckoutSessionResponse": {
-        "description": "Response schema for checkout session",
-        "properties": {
-          "session_id": {
-            "description": "Stripe checkout session ID",
-            "title": "Session Id",
-            "type": "string"
-          },
-          "url": {
-            "description": "Stripe checkout URL",
-            "title": "Url",
-            "type": "string"
-          }
-        },
-        "required": [
-          "session_id",
-          "url"
-        ],
-        "title": "CheckoutSessionResponse",
-        "type": "object"
-      },
       "CiStatusResponse": {
         "description": "Response wrapper for ``GET /operations/ci-status``.",
         "properties": {
@@ -6304,21 +5979,9 @@
         "title": "CiStatusResponse",
         "type": "object"
       },
-      "ClaimJobsRequest": {
-        "description": "``POST /memory/jobs/claim`` body.\n\n``kinds`` is the runner's capability declaration \u2014 it only claims work\nit can actually execute, so a runner that cannot synthesize never\ntakes a synthesis job hostage for a full lease before failing it.",
+      "ClaimSynthesisJobsRequest": {
+        "description": "``POST /memory/synthesis-jobs/claim`` body.",
         "properties": {
-          "kinds": {
-            "items": {
-              "enum": [
-                "synthesis",
-                "embedding"
-              ],
-              "type": "string"
-            },
-            "minItems": 1,
-            "title": "Kinds",
-            "type": "array"
-          },
           "limit": {
             "default": 4,
             "maximum": 4.0,
@@ -6327,14 +5990,14 @@
             "type": "integer"
           }
         },
-        "title": "ClaimJobsRequest",
+        "title": "ClaimSynthesisJobsRequest",
         "type": "object"
       },
-      "ClaimJobsResponse": {
+      "ClaimSynthesisJobsResponse": {
         "properties": {
           "jobs": {
             "items": {
-              "$ref": "#/components/schemas/MemoryJobOut"
+              "$ref": "#/components/schemas/SynthesisJobOut"
             },
             "title": "Jobs",
             "type": "array"
@@ -6343,7 +6006,7 @@
         "required": [
           "jobs"
         ],
-        "title": "ClaimJobsResponse",
+        "title": "ClaimSynthesisJobsResponse",
         "type": "object"
       },
       "ClaudeSessionInfo": {
@@ -7979,6 +7642,149 @@
         "title": "ConfigEnvelope",
         "type": "object"
       },
+      "ConfigHistoryDiffResponse": {
+        "description": "SELF-drift between two captures of the SAME machine over time.\n\nThe same drift-report shape as the vs-canonical endpoints (sections of\nkey deltas + severity rollup), produced by\n:func:`app.services.devenv_drift.diff_envelopes` with the ``from``\ncapture in the canonical slot (\"expected\") and the ``to`` capture in the\ntarget slot (\"actual\") \u2014 the report reads as \"what changed going from\n``from`` to ``to``\".\nExtends the base shape with the identity of the two compared captures.",
+        "properties": {
+          "actual_schema_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Schema Version"
+          },
+          "expected_schema_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Schema Version"
+          },
+          "from_captured_at": {
+            "title": "From Captured At",
+            "type": "string"
+          },
+          "from_id": {
+            "format": "uuid",
+            "title": "From Id",
+            "type": "string"
+          },
+          "has_config": {
+            "default": true,
+            "title": "Has Config",
+            "type": "boolean"
+          },
+          "in_sync": {
+            "title": "In Sync",
+            "type": "boolean"
+          },
+          "machine_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Machine Id"
+          },
+          "machine_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Machine Name"
+          },
+          "schema_version_mismatch": {
+            "default": false,
+            "title": "Schema Version Mismatch",
+            "type": "boolean"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/SectionDrift"
+            },
+            "title": "Sections",
+            "type": "array"
+          },
+          "severity": {
+            "enum": [
+              "info",
+              "warning",
+              "critical"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "to_captured_at": {
+            "title": "To Captured At",
+            "type": "string"
+          },
+          "to_id": {
+            "format": "uuid",
+            "title": "To Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "severity",
+          "in_sync",
+          "from_id",
+          "to_id",
+          "from_captured_at",
+          "to_captured_at"
+        ],
+        "title": "ConfigHistoryDiffResponse",
+        "type": "object"
+      },
+      "ConfigHistoryEntry": {
+        "description": "One capture in a machine's config-history timeline (newest-first).\n\nMetadata only \u2014 deliberately NO config body, so a long timeline stays a\nsmall payload. The body is reachable through the diff endpoint (as a\ndrift report), never dumped raw.",
+        "properties": {
+          "captured_at": {
+            "title": "Captured At",
+            "type": "string"
+          },
+          "content_hash": {
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "captured_at",
+          "schema_version",
+          "source",
+          "content_hash"
+        ],
+        "title": "ConfigHistoryEntry",
+        "type": "object"
+      },
       "ConflictChange": {
         "description": "Schema for a single field-level conflict.",
         "properties": {
@@ -9562,79 +9368,6 @@
           }
         },
         "title": "CustomFunctionUpdate",
-        "type": "object"
-      },
-      "DatabaseHealth": {
-        "description": "Database health status and metrics.",
-        "properties": {
-          "active_connections": {
-            "description": "Active connections",
-            "title": "Active Connections",
-            "type": "integer"
-          },
-          "alert_level": {
-            "description": "Alert level",
-            "enum": [
-              "healthy",
-              "warning",
-              "critical"
-            ],
-            "title": "Alert Level",
-            "type": "string"
-          },
-          "connection_status": {
-            "description": "Connection status",
-            "title": "Connection Status",
-            "type": "string"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Error message if failed",
-            "title": "Error"
-          },
-          "idle_connections": {
-            "description": "Idle connections",
-            "title": "Idle Connections",
-            "type": "integer"
-          },
-          "pool_size": {
-            "description": "Total connection pool size",
-            "title": "Pool Size",
-            "type": "integer"
-          },
-          "pool_usage_percent": {
-            "description": "Connection pool usage percentage",
-            "title": "Pool Usage Percent",
-            "type": "number"
-          },
-          "status": {
-            "description": "Database status",
-            "enum": [
-              "healthy",
-              "degraded",
-              "down"
-            ],
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "status",
-          "connection_status",
-          "pool_size",
-          "active_connections",
-          "idle_connections",
-          "pool_usage_percent",
-          "alert_level"
-        ],
-        "title": "DatabaseHealth",
         "type": "object"
       },
       "DatasetAnnotationResponse": {
@@ -19813,6 +19546,31 @@
         "title": "GenerateDescriptionRequest",
         "type": "object"
       },
+      "GithubOauthStatusResponse": {
+        "description": "Success body for ``GET /operations/github/oauth-status``.",
+        "properties": {
+          "authorize_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authorize Url"
+          },
+          "authorized": {
+            "title": "Authorized",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "authorized"
+        ],
+        "title": "GithubOauthStatusResponse",
+        "type": "object"
+      },
       "GuiActionTypeConfigCreate": {
         "description": "Schema for creating a GUI action type configuration.",
         "properties": {
@@ -20024,166 +19782,6 @@
           }
         },
         "title": "HTTPValidationError",
-        "type": "object"
-      },
-      "HealthOverview": {
-        "description": "Comprehensive health overview.",
-        "properties": {
-          "database": {
-            "$ref": "#/components/schemas/DatabaseHealth",
-            "description": "Database health metrics"
-          },
-          "overall_status": {
-            "description": "Overall system health status",
-            "enum": [
-              "healthy",
-              "warning",
-              "degraded",
-              "critical"
-            ],
-            "title": "Overall Status",
-            "type": "string"
-          },
-          "redis": {
-            "$ref": "#/components/schemas/RedisHealth",
-            "description": "Redis health metrics"
-          },
-          "security": {
-            "$ref": "#/components/schemas/SecurityWarnings",
-            "description": "Security warnings and alerts"
-          },
-          "sessions": {
-            "$ref": "#/components/schemas/SessionStats",
-            "description": "Session statistics"
-          },
-          "system": {
-            "$ref": "#/components/schemas/SystemMetrics",
-            "description": "System resource metrics"
-          },
-          "timestamp": {
-            "description": "Timestamp of health check (ISO format)",
-            "title": "Timestamp",
-            "type": "string"
-          },
-          "token_blacklist": {
-            "$ref": "#/components/schemas/TokenBlacklistStats",
-            "description": "Token blacklist statistics"
-          }
-        },
-        "required": [
-          "overall_status",
-          "timestamp",
-          "redis",
-          "database",
-          "token_blacklist",
-          "security",
-          "sessions",
-          "system"
-        ],
-        "title": "HealthOverview",
-        "type": "object"
-      },
-      "HealthThresholds": {
-        "description": "Health monitoring thresholds configuration.",
-        "properties": {
-          "cpu_critical": {
-            "default": 90.0,
-            "description": "CPU critical threshold (%)",
-            "title": "Cpu Critical",
-            "type": "number"
-          },
-          "cpu_warning": {
-            "default": 70.0,
-            "description": "CPU warning threshold (%)",
-            "title": "Cpu Warning",
-            "type": "number"
-          },
-          "db_connections_critical": {
-            "default": 95.0,
-            "description": "Database connections critical threshold (%)",
-            "title": "Db Connections Critical",
-            "type": "number"
-          },
-          "db_connections_warning": {
-            "default": 80.0,
-            "description": "Database connections warning threshold (%)",
-            "title": "Db Connections Warning",
-            "type": "number"
-          },
-          "device_mismatches_critical": {
-            "default": 100,
-            "description": "Device mismatches critical threshold (per 24h)",
-            "title": "Device Mismatches Critical",
-            "type": "integer"
-          },
-          "device_mismatches_warning": {
-            "default": 50,
-            "description": "Device mismatches warning threshold (per 24h)",
-            "title": "Device Mismatches Warning",
-            "type": "integer"
-          },
-          "disk_critical": {
-            "default": 95.0,
-            "description": "Disk critical threshold (%)",
-            "title": "Disk Critical",
-            "type": "number"
-          },
-          "disk_warning": {
-            "default": 80.0,
-            "description": "Disk warning threshold (%)",
-            "title": "Disk Warning",
-            "type": "number"
-          },
-          "failed_logins_critical": {
-            "default": 100,
-            "description": "Failed logins critical threshold (per 24h)",
-            "title": "Failed Logins Critical",
-            "type": "integer"
-          },
-          "failed_logins_warning": {
-            "default": 30,
-            "description": "Failed logins warning threshold (per 24h)",
-            "title": "Failed Logins Warning",
-            "type": "integer"
-          },
-          "memory_critical": {
-            "default": 95.0,
-            "description": "Memory critical threshold (%)",
-            "title": "Memory Critical",
-            "type": "number"
-          },
-          "memory_warning": {
-            "default": 80.0,
-            "description": "Memory warning threshold (%)",
-            "title": "Memory Warning",
-            "type": "number"
-          },
-          "new_devices_critical": {
-            "default": 50,
-            "description": "New devices critical threshold (per 24h)",
-            "title": "New Devices Critical",
-            "type": "integer"
-          },
-          "new_devices_warning": {
-            "default": 20,
-            "description": "New devices warning threshold (per 24h)",
-            "title": "New Devices Warning",
-            "type": "integer"
-          },
-          "redis_memory_critical": {
-            "default": 95.0,
-            "description": "Redis memory critical threshold (%)",
-            "title": "Redis Memory Critical",
-            "type": "number"
-          },
-          "redis_memory_warning": {
-            "default": 80.0,
-            "description": "Redis memory warning threshold (%)",
-            "title": "Redis Memory Warning",
-            "type": "number"
-          }
-        },
-        "title": "HealthThresholds",
         "type": "object"
       },
       "HeartbeatBody": {
@@ -21791,54 +21389,6 @@
         "title": "JobListResponse",
         "type": "object"
       },
-      "JobResultRequest": {
-        "description": "``POST /memory/jobs/{job_id}/result`` body.\n\nExactly one of ``result`` (success) or ``failure`` (the runner could\nnot execute the job; the reason) must be set. ``result``'s shape is\ndispatched on the JOB's ``kind`` server-side rather than on a body\ndiscriminator \u2014 the job already knows what it is, and trusting a\ncaller-supplied kind would let a runner post an embedding payload\nagainst a synthesis job.",
-        "properties": {
-          "failure": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Failure"
-          },
-          "result": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Result"
-          }
-        },
-        "title": "JobResultRequest",
-        "type": "object"
-      },
-      "JobResultResponse": {
-        "properties": {
-          "status": {
-            "enum": [
-              "applied",
-              "recorded"
-            ],
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "status"
-        ],
-        "title": "JobResultResponse",
-        "type": "object"
-      },
       "JobStatus": {
         "description": "Status of an embedding generation job.",
         "enum": [
@@ -23157,6 +22707,35 @@
         "title": "ListFilesResponse",
         "type": "object"
       },
+      "ListRecordsResponse": {
+        "description": "``GET /memory/records`` \u2014 one keyset page, newest-first-stable.",
+        "properties": {
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryRecordOut"
+            },
+            "title": "Records",
+            "type": "array"
+          }
+        },
+        "required": [
+          "records",
+          "next_cursor"
+        ],
+        "title": "ListRecordsResponse",
+        "type": "object"
+      },
       "LocalExportRequest": {
         "description": "Request schema for local filesystem export endpoint.",
         "properties": {
@@ -24228,45 +23807,255 @@
         "title": "MatchLocation",
         "type": "object"
       },
-      "MemoryJobOut": {
-        "description": "One claimed job \u2014 exactly what the runner needs to execute it.\n\n``input_texts`` is the text to compute over and ``target_ids`` the\nrows the job is about; for ``kind='embedding'`` the two are index-\naligned (``input_texts[i]`` is the content of ``target_ids[i]``) and\nthe result must come back in that same order. The runner never reads\nthe memory store directly.",
+      "MemoryGraphEdge": {
+        "description": "One ``coord.memory_links`` edge among the visited nodes.",
         "properties": {
-          "input_texts": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Input Texts",
-            "type": "array"
-          },
-          "job_id": {
-            "format": "uuid",
-            "title": "Job Id",
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
             "type": "string"
           },
-          "kind": {
-            "enum": [
-              "synthesis",
-              "embedding"
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
+            "title": "Description"
+          },
+          "link_id": {
+            "format": "uuid",
+            "title": "Link Id",
+            "type": "string"
+          },
+          "relation": {
+            "title": "Relation",
+            "type": "string"
+          },
+          "source_id": {
+            "format": "uuid",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "link_id",
+          "source_id",
+          "target_id",
+          "relation",
+          "description",
+          "created_at"
+        ],
+        "title": "MemoryGraphEdge",
+        "type": "object"
+      },
+      "MemoryGraphNode": {
+        "description": "One record visited by the traversal (query-hit field shape).",
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "importance": {
+            "title": "Importance",
+            "type": "number"
+          },
+          "kind": {
             "title": "Kind",
             "type": "string"
           },
-          "target_ids": {
+          "memory_id": {
+            "format": "uuid",
+            "title": "Memory Id",
+            "type": "string"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "source": {
+            "additionalProperties": true,
+            "title": "Source",
+            "type": "object"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "memory_id",
+          "title",
+          "content",
+          "kind",
+          "scope",
+          "importance",
+          "created_at",
+          "source"
+        ],
+        "title": "MemoryGraphNode",
+        "type": "object"
+      },
+      "MemoryGraphRequest": {
+        "description": "``POST /memory/graph`` body \u2014 bounded outbound traversal.",
+        "properties": {
+          "depth": {
+            "default": 3,
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Depth",
+            "type": "integer"
+          },
+          "relation_filter": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "depends_on",
+                    "implements",
+                    "supersedes",
+                    "related"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relation Filter"
+          },
+          "root_memory_id": {
+            "format": "uuid",
+            "title": "Root Memory Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "root_memory_id"
+        ],
+        "title": "MemoryGraphRequest",
+        "type": "object"
+      },
+      "MemoryGraphResponse": {
+        "properties": {
+          "edges": {
             "items": {
-              "format": "uuid",
-              "type": "string"
+              "$ref": "#/components/schemas/MemoryGraphEdge"
             },
-            "title": "Target Ids",
+            "title": "Edges",
+            "type": "array"
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryGraphNode"
+            },
+            "title": "Nodes",
             "type": "array"
           }
         },
         "required": [
-          "job_id",
-          "kind",
-          "target_ids",
-          "input_texts"
+          "nodes",
+          "edges"
         ],
-        "title": "MemoryJobOut",
+        "title": "MemoryGraphResponse",
+        "type": "object"
+      },
+      "MemoryLinkIn": {
+        "description": "One outbound edge declared alongside a record write.\n\n``target_ref`` names the edge's target either by ``memory_id`` (UUID\nstring) or by ``content_hash`` (sha256 hex of the target's stored\ncontent) \u2014 the write path tries the UUID interpretation first, then\nthe hash, against LIVE rows of the caller's tenant only. Unresolved\ntargets are dropped and counted, never rejected.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "relation": {
+            "enum": [
+              "depends_on",
+              "implements",
+              "supersedes",
+              "related"
+            ],
+            "title": "Relation",
+            "type": "string"
+          },
+          "target_ref": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Target Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_ref",
+          "relation"
+        ],
+        "title": "MemoryLinkIn",
+        "type": "object"
+      },
+      "MemoryLinkOut": {
+        "description": "One outbound edge hydrated onto a listed record.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "link_id": {
+            "format": "uuid",
+            "title": "Link Id",
+            "type": "string"
+          },
+          "relation": {
+            "title": "Relation",
+            "type": "string"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "link_id",
+          "target_id",
+          "relation",
+          "description",
+          "created_at"
+        ],
+        "title": "MemoryLinkOut",
         "type": "object"
       },
       "MemoryQueryHit": {
@@ -24385,7 +24174,8 @@
                     "episode",
                     "feedback",
                     "reference",
-                    "rule"
+                    "rule",
+                    "library"
                   ],
                   "type": "string"
                 },
@@ -24562,10 +24352,26 @@
               "episode",
               "feedback",
               "reference",
-              "rule"
+              "rule",
+              "library"
             ],
             "title": "Kind",
             "type": "string"
+          },
+          "links": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/MemoryLinkIn"
+                },
+                "maxItems": 32,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Links"
           },
           "scope": {
             "default": "tenant",
@@ -24608,6 +24414,89 @@
           "kind"
         ],
         "title": "MemoryRecordIn",
+        "type": "object"
+      },
+      "MemoryRecordOut": {
+        "description": "One record in a ``GET /memory/records`` page.\n\nThe query-hit field shape plus sync-relevant extras\n(``scope_ref`` / ``content_hash`` / ``updated_at``) and the record's\noutbound ``links``.",
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "content_hash": {
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "importance": {
+            "title": "Importance",
+            "type": "number"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "links": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryLinkOut"
+            },
+            "title": "Links",
+            "type": "array"
+          },
+          "memory_id": {
+            "format": "uuid",
+            "title": "Memory Id",
+            "type": "string"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "scope_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Ref"
+          },
+          "source": {
+            "additionalProperties": true,
+            "title": "Source",
+            "type": "object"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "memory_id",
+          "title",
+          "content",
+          "kind",
+          "scope",
+          "scope_ref",
+          "importance",
+          "content_hash",
+          "created_at",
+          "updated_at",
+          "source",
+          "links"
+        ],
+        "title": "MemoryRecordOut",
         "type": "object"
       },
       "MemoryRestoreRequest": {
@@ -25751,8 +25640,19 @@
         "type": "object"
       },
       "OnboardingClaimRequest": {
-        "description": "Body for ``POST /pr-merge/onboarding/claim``.\n\n``code`` \u2014 the short-lived GitHub OAuth code from the Setup-URL redirect.\n``installation_id`` \u2014 the GitHub App installation id from the same\nredirect. Both are echoed verbatim to coord's claim endpoint.\n``bind_only`` \u2014 when true, coord binds the account WITHOUT enrolling its\nrepos (no bootstrap PRs); for the clone-only path. Defaults false =\nbind + enroll (today's behavior).",
+        "description": "Body for ``POST /pr-merge/onboarding/claim``.\n\n``code`` \u2014 the short-lived GitHub OAuth code. Comes from EITHER the\nSetup-URL post-install redirect (fresh install) OR the\n``login/oauth/authorize`` user-authorization callback (the only way to get\na code for an org whose App is ALREADY installed \u2014 GitHub issues no\nSetup-URL code on a re-visit).\n\n``installation_id`` / ``account_login`` \u2014 which installation to claim. The\nSetup-URL redirect carries ``installation_id``; the authorize callback\ncarries neither, so that path names the org via ``account_login`` and coord\nresolves the id from the caller's own ``/user/installations``. Exactly one\nis required (coord 400s ``target_required`` otherwise); ``installation_id``\nwins if both are sent. NEITHER selects a tenant \u2014 the tenant always comes\nfrom the caller's auth \u2014 and coord 403s ``installation_not_administered``\nfor an installation the caller doesn't administer, whichever key is used.\n\n``bind_only`` \u2014 when true, coord binds the account WITHOUT enrolling its\nrepos (no bootstrap PRs); for the clone-only path. Defaults false =\nbind + enroll (today's behavior).",
         "properties": {
+          "account_login": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Login"
+          },
           "bind_only": {
             "default": false,
             "title": "Bind Only",
@@ -25763,13 +25663,19 @@
             "type": "string"
           },
           "installation_id": {
-            "title": "Installation Id",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installation Id"
           }
         },
         "required": [
-          "code",
-          "installation_id"
+          "code"
         ],
         "title": "OnboardingClaimRequest",
         "type": "object"
@@ -25938,35 +25844,6 @@
           }
         },
         "title": "OrganizationStatistics",
-        "type": "object"
-      },
-      "OrganizationSwitchResponse": {
-        "description": "Schema for organization switch response.",
-        "properties": {
-          "current_organization_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Current Organization Id"
-          },
-          "message": {
-            "default": "Organization context switched successfully",
-            "title": "Message",
-            "type": "string"
-          },
-          "success": {
-            "default": true,
-            "title": "Success",
-            "type": "boolean"
-          }
-        },
-        "title": "OrganizationSwitchResponse",
         "type": "object"
       },
       "OrganizationUpdate": {
@@ -30517,188 +30394,6 @@
         "title": "RecordingStatusEnum",
         "type": "string"
       },
-      "RedisHealth": {
-        "description": "Redis health status and metrics.",
-        "properties": {
-          "alert_level": {
-            "description": "Alert level",
-            "enum": [
-              "healthy",
-              "warning",
-              "critical"
-            ],
-            "title": "Alert Level",
-            "type": "string"
-          },
-          "available": {
-            "description": "Whether Redis is available",
-            "title": "Available",
-            "type": "boolean"
-          },
-          "connected_clients": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Number of connected clients",
-            "title": "Connected Clients"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Error message if failed",
-            "title": "Error"
-          },
-          "memory_percent": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Memory usage percentage",
-            "title": "Memory Percent"
-          },
-          "memory_total_mb": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Total memory available to Redis in MB",
-            "title": "Memory Total Mb"
-          },
-          "memory_used_mb": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Memory used by Redis in MB",
-            "title": "Memory Used Mb"
-          },
-          "message": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Status message",
-            "title": "Message"
-          },
-          "mode": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Redis mode (standalone/cluster)",
-            "title": "Mode"
-          },
-          "ops_per_second": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Operations per second",
-            "title": "Ops Per Second"
-          },
-          "ping_time_ms": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Ping response time in milliseconds",
-            "title": "Ping Time Ms"
-          },
-          "redis_version": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Redis version",
-            "title": "Redis Version"
-          },
-          "status": {
-            "description": "Redis status",
-            "enum": [
-              "healthy",
-              "degraded",
-              "down",
-              "disabled"
-            ],
-            "title": "Status",
-            "type": "string"
-          },
-          "uptime_hours": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Redis uptime in hours",
-            "title": "Uptime Hours"
-          },
-          "uptime_seconds": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Redis uptime in seconds",
-            "title": "Uptime Seconds"
-          }
-        },
-        "required": [
-          "status",
-          "available",
-          "alert_level"
-        ],
-        "title": "RedisHealth",
-        "type": "object"
-      },
       "RegisteredRunner": {
         "description": "A runner in the fleet.",
         "properties": {
@@ -31737,6 +31432,163 @@
           "open_pr_checks"
         ],
         "title": "RepoCiRow",
+        "type": "object"
+      },
+      "RepoCreateRequest": {
+        "description": "Body for ``POST /operations/github/create-repo``.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          },
+          "private": {
+            "default": true,
+            "title": "Private",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "owner",
+          "name"
+        ],
+        "title": "RepoCreateRequest",
+        "type": "object"
+      },
+      "RepoCreateResponse": {
+        "description": "201 body for ``POST /operations/github/create-repo`` (forwarded\nverbatim from coord's ``POST /coord/repos``).",
+        "properties": {
+          "clone_url": {
+            "title": "Clone Url",
+            "type": "string"
+          },
+          "default_branch": {
+            "title": "Default Branch",
+            "type": "string"
+          },
+          "full_name": {
+            "title": "Full Name",
+            "type": "string"
+          },
+          "html_url": {
+            "title": "Html Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "full_name",
+          "clone_url",
+          "html_url",
+          "default_branch"
+        ],
+        "title": "RepoCreateResponse",
+        "type": "object"
+      },
+      "RepoNameCheckRequest": {
+        "description": "Body for ``POST /operations/github/check-name`` \u2014 the GitHub account\nlogin and the candidate repository name to check.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          }
+        },
+        "required": [
+          "owner",
+          "name"
+        ],
+        "title": "RepoNameCheckRequest",
+        "type": "object"
+      },
+      "RepoNameCheckResponse": {
+        "description": "Success body for ``POST /operations/github/check-name`` (forwarded\nverbatim from coord's ``GET /coord/repos/availability``).",
+        "properties": {
+          "normalized_name": {
+            "title": "Normalized Name",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "status": {
+            "enum": [
+              "available",
+              "taken",
+              "invalid",
+              "owner_unbound"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "normalized_name"
+        ],
+        "title": "RepoNameCheckResponse",
+        "type": "object"
+      },
+      "RepoPushCredentialResponse": {
+        "description": "Success body for ``POST /operations/github/push-credential`` \u2014 a\nshort-TTL installation token scoped to one repo.",
+        "properties": {
+          "expires_at": {
+            "title": "Expires At",
+            "type": "string"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "expires_at"
+        ],
+        "title": "RepoPushCredentialResponse",
+        "type": "object"
+      },
+      "RepoRefRequest": {
+        "description": "Body naming an existing repo by ``owner`` + ``name`` \u2014 shared by the\npush-credential and enroll-repo proxies.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          }
+        },
+        "required": [
+          "owner",
+          "name"
+        ],
+        "title": "RepoRefRequest",
         "type": "object"
       },
       "ResendDeviceVerificationRequest": {
@@ -33847,109 +33699,6 @@
         "title": "SectionDrift",
         "type": "object"
       },
-      "SecurityRecommendation": {
-        "description": "Security recommendation for alerts.",
-        "properties": {
-          "message": {
-            "description": "Recommendation message",
-            "title": "Message",
-            "type": "string"
-          },
-          "severity": {
-            "description": "Severity level",
-            "enum": [
-              "info",
-              "warning",
-              "critical"
-            ],
-            "title": "Severity",
-            "type": "string"
-          },
-          "type": {
-            "description": "Type of recommendation",
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "type",
-          "severity",
-          "message"
-        ],
-        "title": "SecurityRecommendation",
-        "type": "object"
-      },
-      "SecurityWarnings": {
-        "description": "Security warnings and alerts.",
-        "properties": {
-          "alert_level": {
-            "description": "Overall security alert level",
-            "enum": [
-              "healthy",
-              "warning",
-              "critical",
-              "unknown"
-            ],
-            "title": "Alert Level",
-            "type": "string"
-          },
-          "device_mismatches_24h": {
-            "description": "Device fingerprint mismatches in last 24 hours",
-            "title": "Device Mismatches 24H",
-            "type": "integer"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Error message if failed",
-            "title": "Error"
-          },
-          "failed_logins_24h": {
-            "description": "Failed login attempts in last 24 hours",
-            "title": "Failed Logins 24H",
-            "type": "integer"
-          },
-          "new_devices_24h": {
-            "description": "New devices registered in last 24 hours",
-            "title": "New Devices 24H",
-            "type": "integer"
-          },
-          "recommendations": {
-            "description": "Security recommendations",
-            "items": {
-              "$ref": "#/components/schemas/SecurityRecommendation"
-            },
-            "title": "Recommendations",
-            "type": "array"
-          },
-          "untrusted_devices_total": {
-            "description": "Total number of untrusted devices",
-            "title": "Untrusted Devices Total",
-            "type": "integer"
-          },
-          "users_with_multiple_devices": {
-            "description": "Users with more than 3 devices",
-            "title": "Users With Multiple Devices",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "device_mismatches_24h",
-          "new_devices_24h",
-          "failed_logins_24h",
-          "untrusted_devices_total",
-          "users_with_multiple_devices",
-          "alert_level"
-        ],
-        "title": "SecurityWarnings",
-        "type": "object"
-      },
       "SemanticSearchResultItem": {
         "description": "A single semantic search result.",
         "properties": {
@@ -34001,75 +33750,6 @@
           "similarity"
         ],
         "title": "SemanticSearchResultItem",
-        "type": "object"
-      },
-      "SessionStats": {
-        "description": "Session statistics and metrics.",
-        "properties": {
-          "activity_rate": {
-            "description": "Percentage of sessions active in last hour",
-            "title": "Activity Rate",
-            "type": "number"
-          },
-          "avg_session_age_hours": {
-            "description": "Average age of active sessions in hours",
-            "title": "Avg Session Age Hours",
-            "type": "number"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Error message if failed",
-            "title": "Error"
-          },
-          "remember_me_adoption_rate": {
-            "description": "Percentage of sessions using remember_me",
-            "title": "Remember Me Adoption Rate",
-            "type": "number"
-          },
-          "remember_me_sessions": {
-            "description": "Sessions with remember_me enabled",
-            "title": "Remember Me Sessions",
-            "type": "integer"
-          },
-          "sessions_active_last_hour": {
-            "description": "Sessions active in last hour",
-            "title": "Sessions Active Last Hour",
-            "type": "integer"
-          },
-          "sessions_expiring_soon": {
-            "description": "Sessions expiring in next hour",
-            "title": "Sessions Expiring Soon",
-            "type": "integer"
-          },
-          "standard_sessions": {
-            "description": "Standard sessions",
-            "title": "Standard Sessions",
-            "type": "integer"
-          },
-          "total_active_sessions": {
-            "description": "Total active sessions",
-            "title": "Total Active Sessions",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "total_active_sessions",
-          "remember_me_sessions",
-          "standard_sessions",
-          "remember_me_adoption_rate",
-          "avg_session_age_hours",
-          "sessions_expiring_soon",
-          "sessions_active_last_hour",
-          "activity_rate"
-        ],
-        "title": "SessionStats",
         "type": "object"
       },
       "SessionTimeline": {
@@ -37253,57 +36933,6 @@
         "title": "StorageQuotaResponse",
         "type": "object"
       },
-      "SubscriptionResponse": {
-        "description": "Response schema for subscription details",
-        "properties": {
-          "cancel_at_period_end": {
-            "default": false,
-            "description": "Whether subscription will cancel at period end",
-            "title": "Cancel At Period End",
-            "type": "boolean"
-          },
-          "current_period_end": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "ISO timestamp of when current period ends",
-            "title": "Current Period End"
-          },
-          "status": {
-            "description": "Subscription status",
-            "title": "Status",
-            "type": "string"
-          },
-          "stripe_status": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Live Stripe subscription status",
-            "title": "Stripe Status"
-          },
-          "tier": {
-            "description": "Subscription tier (free, hobby, pro)",
-            "title": "Tier",
-            "type": "string"
-          }
-        },
-        "required": [
-          "tier",
-          "status"
-        ],
-        "title": "SubscriptionResponse",
-        "type": "object"
-      },
       "SupersedeRequest": {
         "description": "``POST /memory/records/{id}/supersede`` body.\n\n``title``/``content`` are the replacement; every omitted field is\ninherited from the record being superseded. ``embedding`` is NOT\ninherited \u2014 it belongs to the OLD content and would be a lie about\nthe new one; omit it and the successor lands unvectorized (NULL) for\nthe reindex sweep to pick up.",
         "properties": {
@@ -37360,7 +36989,8 @@
                   "episode",
                   "feedback",
                   "reference",
-                  "rule"
+                  "rule",
+                  "library"
                 ],
                 "type": "string"
               },
@@ -37556,51 +37186,47 @@
         "title": "SyncLockResponse",
         "type": "object"
       },
-      "SystemMetrics": {
-        "description": "System resource metrics.",
+      "SynthesisJobOut": {
+        "description": "One claimed job \u2014 exactly what the runner needs to synthesize.\n\nThe runner distills ``member_texts`` into a single mental-model text\nand posts it back to ``/synthesis-jobs/{job_id}/result``; it never\nreads the memory store directly.",
         "properties": {
-          "alert_level": {
-            "description": "System health alert level",
-            "enum": [
-              "healthy",
-              "warning",
-              "critical",
-              "unknown"
-            ],
-            "title": "Alert Level",
+          "job_id": {
+            "format": "uuid",
+            "title": "Job Id",
             "type": "string"
           },
-          "cpu_count": {
-            "description": "Number of CPU cores",
-            "title": "Cpu Count",
-            "type": "integer"
+          "member_texts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Member Texts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "job_id",
+          "member_texts"
+        ],
+        "title": "SynthesisJobOut",
+        "type": "object"
+      },
+      "SynthesisResultRequest": {
+        "description": "``POST /memory/synthesis-jobs/{job_id}/result`` body.\n\nExactly one of ``result_text`` (success \u2014 the synthesized model) or\n``failure`` (the runner could not synthesize; the reason) must be\nset.\n\nOn the success path the runner also supplies the ``embedding`` of its\n``result_text`` \u2014 it already ran an LLM over the cluster, so the\nvector is its to pay for. Omitted \u2192 the ``mental_model`` row lands\nwith a NULL embedding (deferred vectorization); the backend never\nembeds it.",
+        "properties": {
+          "embedding": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding"
           },
-          "cpu_percent": {
-            "description": "CPU usage percentage",
-            "title": "Cpu Percent",
-            "type": "number"
-          },
-          "disk_available_gb": {
-            "description": "Available disk space in GB",
-            "title": "Disk Available Gb",
-            "type": "number"
-          },
-          "disk_percent": {
-            "description": "Disk usage percentage",
-            "title": "Disk Percent",
-            "type": "number"
-          },
-          "disk_total_gb": {
-            "description": "Total disk space in GB",
-            "title": "Disk Total Gb",
-            "type": "number"
-          },
-          "disk_used_gb": {
-            "description": "Used disk space in GB",
-            "title": "Disk Used Gb",
-            "type": "number"
-          },
-          "error": {
+          "embedding_model": {
             "anyOf": [
               {
                 "type": "string"
@@ -37609,44 +37235,51 @@
                 "type": "null"
               }
             ],
-            "description": "Error message if failed",
-            "title": "Error"
+            "title": "Embedding Model"
           },
-          "memory_available_mb": {
-            "description": "Available memory in MB",
-            "title": "Memory Available Mb",
-            "type": "number"
+          "failure": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure"
           },
-          "memory_percent": {
-            "description": "Memory usage percentage",
-            "title": "Memory Percent",
-            "type": "number"
-          },
-          "memory_total_mb": {
-            "description": "Total system memory in MB",
-            "title": "Memory Total Mb",
-            "type": "number"
-          },
-          "memory_used_mb": {
-            "description": "Used memory in MB",
-            "title": "Memory Used Mb",
-            "type": "number"
+          "result_text": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Text"
+          }
+        },
+        "title": "SynthesisResultRequest",
+        "type": "object"
+      },
+      "SynthesisResultResponse": {
+        "properties": {
+          "status": {
+            "enum": [
+              "applied",
+              "recorded"
+            ],
+            "title": "Status",
+            "type": "string"
           }
         },
         "required": [
-          "cpu_percent",
-          "cpu_count",
-          "memory_total_mb",
-          "memory_used_mb",
-          "memory_available_mb",
-          "memory_percent",
-          "disk_total_gb",
-          "disk_used_gb",
-          "disk_available_gb",
-          "disk_percent",
-          "alert_level"
+          "status"
         ],
-        "title": "SystemMetrics",
+        "title": "SynthesisResultResponse",
         "type": "object"
       },
       "TaskRunAutomationCreate": {
@@ -41119,39 +40752,6 @@
         "title": "ThreadCreate",
         "type": "object"
       },
-      "TierLimitsResponse": {
-        "description": "Response schema for tier limits",
-        "properties": {
-          "max_configs": {
-            "description": "Maximum number of configs (-1 = unlimited)",
-            "title": "Max Configs",
-            "type": "integer"
-          },
-          "max_images": {
-            "description": "Maximum number of images",
-            "title": "Max Images",
-            "type": "integer"
-          },
-          "max_storage_mb": {
-            "description": "Maximum storage in MB",
-            "title": "Max Storage Mb",
-            "type": "integer"
-          },
-          "tier": {
-            "description": "Subscription tier",
-            "title": "Tier",
-            "type": "string"
-          }
-        },
-        "required": [
-          "tier",
-          "max_configs",
-          "max_images",
-          "max_storage_mb"
-        ],
-        "title": "TierLimitsResponse",
-        "type": "object"
-      },
       "TimelineEvent": {
         "description": "A timeline event that can be either a log or a screenshot",
         "properties": {
@@ -41219,80 +40819,6 @@
           "start_time"
         ],
         "title": "TimingInfo",
-        "type": "object"
-      },
-      "TokenBlacklistStats": {
-        "description": "Token blacklist statistics.",
-        "properties": {
-          "available": {
-            "description": "Whether blacklist service is available",
-            "title": "Available",
-            "type": "boolean"
-          },
-          "count": {
-            "description": "Number of blacklisted tokens",
-            "title": "Count",
-            "type": "integer"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Error message if failed",
-            "title": "Error"
-          },
-          "mode": {
-            "description": "Blacklist storage mode",
-            "enum": [
-              "redis",
-              "memory",
-              "disabled"
-            ],
-            "title": "Mode",
-            "type": "string"
-          },
-          "note": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Additional notes",
-            "title": "Note"
-          },
-          "redis_keys": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Number of Redis keys (if Redis mode)",
-            "title": "Redis Keys"
-          },
-          "size_mb": {
-            "description": "Estimated size in megabytes",
-            "title": "Size Mb",
-            "type": "number"
-          }
-        },
-        "required": [
-          "mode",
-          "count",
-          "size_mb",
-          "available"
-        ],
-        "title": "TokenBlacklistStats",
         "type": "object"
       },
       "TopMatch": {
@@ -46944,6 +46470,11 @@
             "title": "Deduped Count",
             "type": "integer"
           },
+          "dropped_links_count": {
+            "default": 0,
+            "title": "Dropped Links Count",
+            "type": "integer"
+          },
           "records": {
             "items": {
               "$ref": "#/components/schemas/WriteRecordResult"
@@ -48989,744 +48520,6 @@
         "summary": "Get Agent Session Lineage",
         "tags": [
           "admin-agent-sessions"
-        ]
-      }
-    },
-    "/api/v1/admin/analytics": {
-      "get": {
-        "description": "Get analytics metrics including DAU, WAU, MAU, and retention.",
-        "operationId": "api_v1_admin_analytics_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Get Analytics Api V1 Admin Analytics Get"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Analytics",
-        "tags": [
-          "admin",
-          "admin-analytics"
-        ]
-      }
-    },
-    "/api/v1/admin/analytics/summary": {
-      "get": {
-        "description": "Get comprehensive analytics summary for remember_me usage and user behavior.\n\nThis endpoint provides detailed insights into:\n- Login statistics (last 7/30 days)\n- Remember me adoption rate\n- Active sessions count\n- Device mismatch count\n- Top users by activity\n- Session and security metrics\n\nArgs:\n    days: Number of days to look back for trends (default: 30)\n\nReturns:\n    Comprehensive analytics summary with login stats, remember_me adoption,\n    active sessions, security events, and top user activity",
-        "operationId": "api_v1_admin_analytics_summary_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "days",
-            "required": false,
-            "schema": {
-              "default": 30,
-              "title": "Days",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Get Analytics Summary Api V1 Admin Analytics Summary Get"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Analytics Summary",
-        "tags": [
-          "admin",
-          "admin-analytics"
-        ]
-      }
-    },
-    "/api/v1/admin/cleanup/run": {
-      "post": {
-        "description": "Manually trigger cleanup of expired sessions and old data.\n\nThis endpoint allows admins to run cleanup tasks on-demand without\nwaiting for the scheduled cron job. Useful for testing or immediate cleanup needs.",
-        "operationId": "api_v1_admin_cleanup_run_post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Run Cleanup Manually Api V1 Admin Cleanup Run Post"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Run Cleanup Manually",
-        "tags": [
-          "admin",
-          "admin-cleanup"
-        ]
-      }
-    },
-    "/api/v1/admin/download-analytics": {
-      "get": {
-        "description": "Get runner download analytics.\n\nReturns aggregated download statistics including:\n- Total downloads and unique downloaders\n- Downloads by country, platform, browser\n- Daily download trends\n- UTM campaign attribution\n\nQuery params:\n    - days: Number of days to look back (default 30)",
-        "operationId": "api_v1_admin_download_analytics_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "days",
-            "required": false,
-            "schema": {
-              "default": 30,
-              "title": "Days",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Get Download Analytics Api V1 Admin Download Analytics Get"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Download Analytics",
-        "tags": [
-          "admin",
-          "admin-downloads"
-        ]
-      }
-    },
-    "/api/v1/admin/health/blacklist": {
-      "get": {
-        "description": "Get token blacklist statistics.\n\nReturns:\n- Storage mode (redis/memory/disabled)\n- Number of blacklisted tokens\n- Estimated size in MB\n- Redis keys count (if Redis mode)\n- Availability status",
-        "operationId": "api_v1_admin_health_blacklist_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TokenBlacklistStats"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Health Blacklist",
-        "tags": [
-          "admin",
-          "admin-health"
-        ]
-      }
-    },
-    "/api/v1/admin/health/database": {
-      "get": {
-        "description": "Get database health status and connection pool metrics.\n\nReturns:\n- Connection status\n- Pool size and usage\n- Active vs idle connections\n- Pool usage percentage\n- Alert level based on thresholds",
-        "operationId": "api_v1_admin_health_database_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DatabaseHealth"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Health Database",
-        "tags": [
-          "admin",
-          "admin-health"
-        ]
-      }
-    },
-    "/api/v1/admin/health/overview": {
-      "get": {
-        "description": "Get comprehensive health overview with all system metrics.\n\nReturns detailed status for:\n- Redis availability and performance\n- Database connection pool and status\n- Token blacklist statistics\n- Security warnings and suspicious activity\n- Session statistics and adoption rates\n- System resources (CPU, memory, disk)\n\nCached for 30 seconds to avoid overwhelming system with health checks.",
-        "operationId": "api_v1_admin_health_overview_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HealthOverview"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Health Overview",
-        "tags": [
-          "admin",
-          "admin-health"
-        ]
-      }
-    },
-    "/api/v1/admin/health/redis": {
-      "get": {
-        "description": "Get detailed Redis health status and metrics.\n\nReturns:\n- Connection status (healthy/degraded/down/disabled)\n- Uptime and performance metrics\n- Memory usage and availability\n- Connected clients count\n- Operations per second\n- Alert level based on thresholds",
-        "operationId": "api_v1_admin_health_redis_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RedisHealth"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Health Redis",
-        "tags": [
-          "admin",
-          "admin-health"
-        ]
-      }
-    },
-    "/api/v1/admin/health/security": {
-      "get": {
-        "description": "Get security warnings and suspicious activity alerts.\n\nReturns (last 24 hours):\n- Device fingerprint mismatches\n- New device registrations\n- Failed login attempts\n- Untrusted devices count\n- Users with multiple devices\n- Alert level and recommendations",
-        "operationId": "api_v1_admin_health_security_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SecurityWarnings"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Health Security",
-        "tags": [
-          "admin",
-          "admin-health"
-        ]
-      }
-    },
-    "/api/v1/admin/health/sessions": {
-      "get": {
-        "description": "Get session statistics and adoption metrics.\n\nReturns:\n- Total active sessions\n- Remember me vs standard session counts\n- Remember me adoption rate (%)\n- Average session age\n- Sessions expiring soon (within 1 hour)\n- Recent activity metrics",
-        "operationId": "api_v1_admin_health_sessions_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SessionStats"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Health Sessions",
-        "tags": [
-          "admin",
-          "admin-health"
-        ]
-      }
-    },
-    "/api/v1/admin/health/thresholds": {
-      "get": {
-        "description": "Get current health monitoring thresholds configuration.\n\nReturns all alert thresholds for:\n- System resources (CPU, memory, disk)\n- Redis memory usage\n- Security events (device mismatches, failed logins, new devices)\n- Database connection pool",
-        "operationId": "api_v1_admin_health_thresholds_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HealthThresholds"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Health Thresholds",
-        "tags": [
-          "admin",
-          "admin-health"
-        ]
-      }
-    },
-    "/api/v1/admin/notifications/settings": {
-      "get": {
-        "description": "Get admin notification settings.\n\nReturns the current configuration for admin email notifications including:\n- Email address for notifications\n- Which events trigger notifications (user signup, project creation)\n- Whether notifications are enabled\n\nIf no settings exist, creates default settings using the current user's email.",
-        "operationId": "api_v1_admin_notifications_settings_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AdminNotificationSettingsResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Notification Settings",
-        "tags": [
-          "admin",
-          "admin-notifications"
-        ]
-      },
-      "put": {
-        "description": "Update admin notification settings.\n\nAllows updating:\n- notification_email: Email address to receive notifications\n- notify_on_user_signup: Enable/disable user signup notifications\n- notify_on_project_created: Enable/disable project creation notifications\n- notifications_enabled: Master toggle for all notifications\n\nOnly provided fields will be updated.",
-        "operationId": "api_v1_admin_notifications_settings_put",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AdminNotificationSettingsUpdate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AdminNotificationSettingsResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Update Notification Settings",
-        "tags": [
-          "admin",
-          "admin-notifications"
-        ]
-      }
-    },
-    "/api/v1/admin/notifications/test": {
-      "post": {
-        "description": "Send a test notification email to verify settings are working.\n\nSends a test email to the configured notification email address.\nReturns success or failure status.",
-        "operationId": "api_v1_admin_notifications_test_post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Send Test Notification Api V1 Admin Notifications Test Post"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Send Test Notification",
-        "tags": [
-          "admin",
-          "admin-notifications"
-        ]
-      }
-    },
-    "/api/v1/admin/projects": {
-      "get": {
-        "description": "Get all projects across all users.",
-        "operationId": "api_v1_admin_projects_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "skip",
-            "required": false,
-            "schema": {
-              "default": 0,
-              "title": "Skip",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 1000,
-              "title": "Limit",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/AdminProjectData"
-                  },
-                  "title": "Response Get All Projects Api V1 Admin Projects Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get All Projects",
-        "tags": [
-          "admin",
-          "admin-projects"
-        ]
-      }
-    },
-    "/api/v1/admin/projects/{project_id}": {
-      "get": {
-        "description": "Get detailed information about a specific project including full configuration.",
-        "operationId": "api_v1_admin_projects_project_id_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Project Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Get Project Details Api V1 Admin Projects  Project Id  Get"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Project Details",
-        "tags": [
-          "admin",
-          "admin-projects"
-        ]
-      }
-    },
-    "/api/v1/admin/stats": {
-      "get": {
-        "description": "Get overall platform statistics.",
-        "operationId": "api_v1_admin_stats_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Get Admin Stats Api V1 Admin Stats Get"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Admin Stats",
-        "tags": [
-          "admin",
-          "admin-users"
-        ]
-      }
-    },
-    "/api/v1/admin/system/health": {
-      "get": {
-        "description": "Get system health metrics.",
-        "operationId": "api_v1_admin_system_health_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Get System Health Api V1 Admin System Health Get"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get System Health",
-        "tags": [
-          "admin",
-          "admin-health"
-        ]
-      }
-    },
-    "/api/v1/admin/users": {
-      "get": {
-        "description": "Get list of users with basic info.",
-        "operationId": "api_v1_admin_users_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "skip",
-            "required": false,
-            "schema": {
-              "default": 0,
-              "title": "Skip",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 50,
-              "title": "Limit",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/AdminUserData"
-                  },
-                  "title": "Response Get Users List Api V1 Admin Users Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Users List",
-        "tags": [
-          "admin",
-          "admin-users"
-        ]
-      }
-    },
-    "/api/v1/admin/users/{user_id}": {
-      "get": {
-        "description": "Get detailed info about a specific user.",
-        "operationId": "api_v1_admin_users_user_id_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "user_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "User Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Get User Details Api V1 Admin Users  User Id  Get"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get User Details",
-        "tags": [
-          "admin",
-          "admin-users"
         ]
       }
     },
@@ -52320,240 +51113,6 @@
         "summary": "Get Presets",
         "tags": [
           "background-removal"
-        ]
-      }
-    },
-    "/api/v1/billing/checkout": {
-      "post": {
-        "description": "Create a Stripe checkout session for subscription purchase",
-        "operationId": "api_v1_billing_checkout_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CheckoutSessionRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CheckoutSessionResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Create Checkout Session",
-        "tags": [
-          "billing"
-        ]
-      }
-    },
-    "/api/v1/billing/limits": {
-      "get": {
-        "description": "Get storage and resource limits for current user's tier",
-        "operationId": "api_v1_billing_limits_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TierLimitsResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Tier Limits",
-        "tags": [
-          "billing"
-        ]
-      }
-    },
-    "/api/v1/billing/portal": {
-      "post": {
-        "description": "Create a Stripe billing portal session for subscription management",
-        "operationId": "api_v1_billing_portal_post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BillingPortalResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Create Billing Portal Session",
-        "tags": [
-          "billing"
-        ]
-      }
-    },
-    "/api/v1/billing/read-only-status": {
-      "get": {
-        "description": "Check if user is in read-only mode",
-        "operationId": "api_v1_billing_read_only_status_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Get Read Only Status Api V1 Billing Read Only Status Get",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Read Only Status",
-        "tags": [
-          "billing"
-        ]
-      }
-    },
-    "/api/v1/billing/subscription": {
-      "get": {
-        "description": "Get current user's subscription details",
-        "operationId": "api_v1_billing_subscription_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SubscriptionResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Subscription",
-        "tags": [
-          "billing"
-        ]
-      }
-    },
-    "/api/v1/billing/usage": {
-      "get": {
-        "description": "Get detailed usage summary with limits and percentages",
-        "operationId": "api_v1_billing_usage_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Get Usage Summary Api V1 Billing Usage Get",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Usage Summary",
-        "tags": [
-          "billing"
-        ]
-      }
-    },
-    "/api/v1/billing/webhook": {
-      "post": {
-        "description": "Handle Stripe webhook events",
-        "operationId": "api_v1_billing_webhook_post",
-        "parameters": [
-          {
-            "in": "header",
-            "name": "stripe-signature",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Stripe-Signature"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Stripe Webhook",
-        "tags": [
-          "billing"
         ]
       }
     },
@@ -58564,6 +57123,171 @@
         ]
       }
     },
+    "/api/v1/devenv/environments/{environment_id}/machines/{machine_id}/config-history": {
+      "get": {
+        "description": "A machine's config-capture timeline for an environment, newest first.\n\nMetadata only (no config bodies) \u2014 a long timeline stays a small payload.\nOwner-scoped like every sibling route (cross-owner env/machine \u2192 404).\nDistinct-captures only: the agent write path dedups consecutive\nidentical envelopes, so each entry is an actual change point.",
+        "operationId": "api_v1_devenv_environments_environment_id_machines_machine_id_config_history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Environment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "machine_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Machine Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ConfigHistoryEntry"
+                  },
+                  "title": "Response Get Config History Api V1 Devenv Environments  Environment Id  Machines  Machine Id  Config History Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Config History",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/v1/devenv/environments/{environment_id}/machines/{machine_id}/config-history/diff": {
+      "get": {
+        "description": "SELF-drift between two captures of the same machine over time.\n\nDistinct from the vs-canonical drift endpoints: both envelopes belong to\nthe SAME (environment, machine), and the report reads as \"what changed\ngoing from ``from_id`` to ``to_id``\" (``from`` fills the expected slot,\n``to`` the actual). A ``from_id``/``to_id`` that is missing OR belongs to\na different (environment, machine) pair \u2192 404, mirroring the module's\nnever-leak-existence convention.",
+        "operationId": "api_v1_devenv_environments_environment_id_machines_machine_id_config_history_diff_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Environment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "machine_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Machine Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "From Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "To Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigHistoryDiffResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Config History Diff",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
     "/api/v1/devenv/machines": {
       "get": {
         "description": "List the owner's machines (never exposes key material).",
@@ -60475,6 +59199,33 @@
         "summary": "List Running Tasks",
         "tags": [
           "device-chat"
+        ]
+      }
+    },
+    "/api/v1/digital-twin/catalog": {
+      "get": {
+        "description": "The coord-owned queryable-surface catalog \u2014 the single-source index of the\nfleet-wide ``coord_query_*`` twin observers (agent Q&A meta-answer Phase 2).\n\nThe catalog content is fleet-global static metadata, but coord's\n``GET /coord/twin/catalog`` is auth-gated via ``TenantId`` (read-auth\ncontract), so the operator bearer is forwarded (``forward_bearer=True``).\nThe bearer capture is best-effort (never raises) rather than a hard\n``get_tenant_id`` dependency, mirroring ``get_release_verdict``'s posture:\nwhen coord is unreachable (connect-refused \u2192 502, timeout \u2192 504, etc.) the\nendpoint returns an empty ``{entries: [], total: 0, coord_error}`` envelope\nrather than re-raising the 5xx, so neither the Spec CI crawl gate (which\nruns without a live coord) nor the dashboard ever sees a 5xx. Returns\n``{entries: [...], total: N}``.",
+        "operationId": "api_v1_digital_twin_catalog_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Twin Catalog Api V1 Digital Twin Catalog Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Twin Catalog",
+        "tags": [
+          "digital-twin"
         ]
       }
     },
@@ -69628,15 +68379,15 @@
         ]
       }
     },
-    "/api/v1/memory/jobs/claim": {
+    "/api/v1/memory/graph": {
       "post": {
-        "description": "A runner claims up to ``limit`` pending jobs of ``kinds`` (tenant-bound).\n\nConcurrent claims on the same tenant split the queue via\n``FOR UPDATE SKIP LOCKED`` \u2014 no job is ever handed to two runners.\n``kinds`` is the runner's capability filter: it claims only work it\ncan execute. Each job carries what the runner needs and nothing more\n(``job_id`` / ``kind`` / ``target_ids`` / ``input_texts``); the runner\ncomputes locally and posts back to ``/jobs/{job_id}/result``, never\nreading the memory store directly.",
-        "operationId": "api_v1_memory_jobs_claim_post",
+        "description": "Bounded outbound traversal of the memory graph from a root record.\n\nOne tenant-bound ``WITH RECURSIVE`` walk over ``coord.memory_links``\n(see :func:`store.graph_edges`): outbound edges from the root, then\nfrom each reached target, up to ``depth`` (\u22645) levels \u2014\n``relation_filter`` narrows which relations are followed. Cycles are\nsafe (the depth cap terminates the recursion; duplicate edges\ncollapse). 404 when the root does not exist in the caller's tenant\n(cross-tenant ids are never disclosed).",
+        "operationId": "api_v1_memory_graph_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ClaimJobsRequest"
+                "$ref": "#/components/schemas/MemoryGraphRequest"
               }
             }
           },
@@ -69647,7 +68398,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ClaimJobsResponse"
+                  "$ref": "#/components/schemas/MemoryGraphResponse"
                 }
               }
             },
@@ -69672,69 +68423,7 @@
             "HTTPBearer": []
           }
         ],
-        "summary": "Claim Jobs",
-        "tags": [
-          "memory"
-        ]
-      }
-    },
-    "/api/v1/memory/jobs/{job_id}/result": {
-      "post": {
-        "description": "The runner posts a job's result (success) or a failure reason.\n\nThe ``result`` payload is validated against the JOB's own ``kind``\n(read under the row lock), never against a caller-declared one:\n\n* ``embedding`` -> ``{\"embeddings\": [[...384], ...],\n  \"embedding_model\": \"<tag>\"}``: one vector per ``input_texts`` entry\n  in the SAME ORDER (that order is the only thing mapping a vector\n  onto its row). The vectors are written onto ``target_ids``.\n* ``synthesis`` -> ``{\"result_text\": \"...\", \"embedding\": [...384],\n  \"embedding_model\": \"<tag>\"}``: the text is redacted, inserted as a\n  ``mental_model`` row (``consolidated_from`` = the cluster members,\n  importance = best member + 0.1), and the member rows superseded \u2014\n  all in one transaction.\n\nFailure (``failure``): the job is marked failed -> ``recorded``.\n\n404 when the job is not in the caller's tenant (never disclosed); 409\nwhen the job exists but is not ``'claimed'`` (already applied,\nrequeued by the reaper, or abandoned) \u2014 a runner may only post back\nfor a job it holds a live claim on; 422 on a result whose shape does\nnot match the job (wrong kind, wrong vector count, wrong dimension,\nunaccepted model tag), which leaves the job ``claimed`` so the runner\ncan still post a correct result before its lease expires.",
-        "operationId": "api_v1_memory_jobs_job_id_result_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "job_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Job Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/JobResultRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JobResultResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          },
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Submit Job Result",
+        "summary": "Memory Graph",
         "tags": [
           "memory"
         ]
@@ -69791,6 +68480,110 @@
       }
     },
     "/api/v1/memory/records": {
+      "get": {
+        "description": "Keyset-paginated list of the tenant's LIVE records, newest first.\n\nThe runner's sync-pull surface (``POST /query`` requires query_text,\ncaps at 50, and relevance-ranks \u2014 unusable for a full mirror).\n``kinds`` is repeatable and/or CSV; ``since`` filters on the\nfreshest of updated/created; ``cursor`` is the opaque\n``(created_at, memory_id)`` keyset token from the previous page.\nEach record carries its outbound ``links``. Ordering is\n``created_at DESC, memory_id DESC`` \u2014 stable under concurrent\nwrites (new rows only ever prepend).",
+        "operationId": "api_v1_memory_records_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "kinds",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kinds"
+            }
+          },
+          {
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Since"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListRecordsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Records",
+        "tags": [
+          "memory"
+        ]
+      },
       "post": {
         "description": "Batch-write memory records (\u2264100 per request).\n\nServer-side pipeline per batch: redact \u2192 hash \u2192 quota check (BEFORE\ninsert; 429 on exceed) \u2192 ONE set-based insert deduping on\n``(tenant_id, content_hash)`` against live rows only. Each record\ncarries its own caller-computed ``embedding`` (+ ``embedding_model``)\nor neither, in which case that row is stored unvectorized.",
         "operationId": "api_v1_memory_records_post",
@@ -69972,6 +68765,118 @@
           }
         ],
         "summary": "Memory Stats",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/memory/synthesis-jobs/claim": {
+      "post": {
+        "description": "A runner claims up to ``limit`` pending synthesis jobs (tenant-bound).\n\nConcurrent claims on the same tenant split the queue via\n``FOR UPDATE SKIP LOCKED`` \u2014 no job is ever handed to two runners.\nThe response carries only ``job_id`` + ``member_texts`` per job: the\nrunner distills the texts with its own LLM and posts the result to\n``/synthesis-jobs/{job_id}/result``.",
+        "operationId": "api_v1_memory_synthesis_jobs_claim_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaimSynthesisJobsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaimSynthesisJobsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Claim Synthesis Jobs",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/memory/synthesis-jobs/{job_id}/result": {
+      "post": {
+        "description": "The runner posts a synthesized model (success) or a failure reason.\n\nSuccess (``result_text`` + the runner's own ``embedding`` of it, or\nno embedding at all): the text is redacted, inserted as a\n``mental_model`` row (``consolidated_from`` = the cluster members,\nimportance = best member + 0.1), and the member rows are superseded \u2014\nall in one transaction \u2192 ``applied``. The backend never embeds here:\nthe runner already ran an LLM over this cluster, so the vector is\nits to supply; omitting it stores the row unvectorized for the\nreindex sweep.\nFailure (``failure``): the job is marked failed \u2192 ``recorded``.\n404 when the job is not in the caller's tenant (never disclosed); 409\nwhen the job exists but is not in ``'claimed'`` status (already applied,\nrequeued by the reaper, or abandoned) \u2014 a runner may only post back for\na job it holds a live claim on.",
+        "operationId": "api_v1_memory_synthesis_jobs_job_id_result_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SynthesisResultRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SynthesisResultResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Submit Synthesis Result",
         "tags": [
           "memory"
         ]
@@ -72798,6 +71703,54 @@
         ]
       }
     },
+    "/api/v1/operations/coord/policies/{policy_id}/restore-default": {
+      "post": {
+        "description": "Re-seed a policy rule's action/payload from its ``default_source`` code\ndefault (agent Q&A meta-answer). Tenant-admin only.\n\nOnly rows carrying a ``default_source`` (e.g. the catch-all meta-answer rule\nstamped ``agent_meta_answer/v1``) can be restored; coord 4xx (no default,\nunknown rule) passes through. No request body \u2014 coord derives the default\nfrom the row's own ``default_source``.",
+        "operationId": "api_v1_operations_coord_policies_policy_id_restore_default_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "policy_id",
+            "required": true,
+            "schema": {
+              "title": "Policy Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Restore Coord Policy Default Api V1 Operations Coord Policies  Policy Id  Restore Default Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Restore Coord Policy Default",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/priority-sets": {
       "get": {
         "description": "List the tenant's priority sets. Tenant-admin only.",
@@ -72978,7 +71931,6 @@
         ]
       }
     },
-<<<<<<< HEAD
     "/api/v1/operations/coord/prompt-documents": {
       "get": {
         "description": "List the tenant's prompt documents (no bodies), optionally filtered to a\nsingle ``kind``. Any authenticated tenant member.\n\nCoord's list route seeds the canonical documents on first touch, so a fresh\ntenant sees the full set immediately. An unknown ``kind`` is coord's 400.",
@@ -73800,8 +72752,6 @@
         ]
       }
     },
-=======
->>>>>>> 7ec2bf17 (feat: generalize the memory synthesis queue into a kind-dispatched job queue)
     "/api/v1/operations/coord/pull-decisions": {
       "get": {
         "description": "Return the ``repo_pull`` decision audit feed from coord (tenant-scoped).\n\nForwards to coord's ``GET /coord/policies/resolutions`` with\n``decision_domain=repo_pull`` always pinned, plus the optional\n``device_id`` / ``repo`` / ``limit`` / ``since`` filters. Drives the\n``/admin/coord/pull-decisions`` activity page.",
@@ -74932,6 +73882,186 @@
         ]
       }
     },
+    "/api/v1/operations/gates/{gate_id}/audience": {
+      "patch": {
+        "description": "Re-classify a gate's ``clearance_audience`` (``operator`` vs ``agent``;\noperator bearer forwarded, fleet-auth P2/D6).\n\n``body[\"audience\"]`` is forwarded verbatim; coord owns validation of the\nallowed values.",
+        "operationId": "api_v1_operations_gates_gate_id_audience_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "gate_id",
+            "required": true,
+            "schema": {
+              "title": "Gate Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Set Gate Audience Api V1 Operations Gates  Gate Id  Audience Patch"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Set Gate Audience",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/gates/{gate_id}/continuation-cancel": {
+      "post": {
+        "description": "Cancel a gate's armed/dispatched continuation so clearing it no longer\nspawns the follow-up session (operator bearer forwarded, fleet-auth P2/D6).\n\n``body[\"cancelled_by\"]`` (audit actor) and ``body[\"reason\"]`` are forwarded\nverbatim; coord owns validation.",
+        "operationId": "api_v1_operations_gates_gate_id_continuation_cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "gate_id",
+            "required": true,
+            "schema": {
+              "title": "Gate Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Continuation Cancel Gate Api V1 Operations Gates  Gate Id  Continuation Cancel Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Continuation Cancel Gate",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/gates/{gate_id}/force-clear": {
+      "post": {
+        "description": "Force-clear a gate regardless of its predicate (DESTRUCTIVE \u2014 clears an\nopen gate that has NOT met its condition; operator bearer forwarded,\nfleet-auth P2/D6).\n\n``body[\"reason\"]`` is REQUIRED by coord (the audit records why the operator\noverrode the predicate). It is forwarded verbatim; coord owns validation and\nrejects an empty/absent reason.",
+        "operationId": "api_v1_operations_gates_gate_id_force_clear_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "gate_id",
+            "required": true,
+            "schema": {
+              "title": "Gate Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Force Clear Gate Api V1 Operations Gates  Gate Id  Force Clear Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Force Clear Gate",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/gates/{gate_id}/mute": {
       "post": {
         "description": "Mute a gate so the sweep skips it (reversible \u2014 operator bearer\nforwarded, fleet-auth P2/D6).",
@@ -75373,6 +74503,53 @@
         ]
       }
     },
+    "/api/v1/operations/github/check-name": {
+      "post": {
+        "description": "Check whether ``owner/name`` is available for a new repository.\n\nProxies coord ``GET /coord/repos/availability?owner=&name=`` and forwards\nthe JSON verbatim: ``{status: \"available\"|\"taken\"|\"invalid\"|\n\"owner_unbound\", reason?, normalized_name}``. POST (despite the read\nsemantics) so the runner's provisioning flow talks one verb to this\nsurface; the upstream coord call is the GET.",
+        "operationId": "api_v1_operations_github_check_name_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RepoNameCheckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepoNameCheckResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Github Check Name",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/github/clone-credential": {
       "post": {
         "description": "Mint a repo-scoped, short-TTL, contents:read clone token for a single\nrepo. Proxies coord ``POST /coord/onboarding/installations/clone-credential``.\n\nPasses coord's status + JSON body through verbatim (like the onboarding\nclaim proxy) so the runner sees a clean ``403 repo_owner_not_connected`` when\nthe repo's owner isn't a GitHub account connected to the caller's workspace.",
@@ -75413,6 +74590,195 @@
           }
         ],
         "summary": "Post Github Clone Credential",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/github/create-repo": {
+      "post": {
+        "description": "Create a new GitHub repository under a connected account.\n\nProxies coord ``POST /coord/repos``. Success is coord's ``201\n{full_name, clone_url, html_url, default_branch}``; coord's error\nstatuses + bodies pass through VERBATIM \u2014 ``409 name_taken``,\n``403 owner_unbound``, ``409 user_authorization_required`` (whose body\ncarries the ``authorize_url`` the runner must surface), and\n``503 app_unconfigured``.\n\n``description`` is omitted from the forwarded body when unset so coord\nsees an honest wire shape (mirrors the onboarding claim proxy).",
+        "operationId": "api_v1_operations_github_create_repo_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RepoCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepoCreateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Github Create Repo",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/github/enroll-repo": {
+      "post": {
+        "description": "Enroll ``owner/name`` into coord's PR-merge orchestration.\n\nProxies coord ``POST /coord/repos/{owner}/{name}/enroll`` and forwards\ncoord's response verbatim (status + body).",
+        "operationId": "api_v1_operations_github_enroll_repo_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RepoRefRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Github Enroll Repo",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/github/oauth-status": {
+      "get": {
+        "description": "Whether the calling operator has user-authorized the GitHub App for\n``owner``, for the create-repo pre-flight.\n\nProxies coord ``GET /coord/github/oauth/status?account=<owner>`` \u2192\n``{authorized, authorize_url?}`` (``authorize_url`` present when the\noperator still needs to complete the user-authorization flow).",
+        "operationId": "api_v1_operations_github_oauth_status_get",
+        "parameters": [
+          {
+            "description": "GitHub account login to check.",
+            "in": "query",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "description": "GitHub account login to check.",
+              "title": "Owner",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GithubOauthStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Github Oauth Status",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/github/push-credential": {
+      "post": {
+        "description": "Mint a repo-scoped, short-TTL push token for ``owner/name``.\n\nProxies coord ``POST /coord/repos/{owner}/{name}/push-credential`` \u2192\n``{token, expires_at}``. The write-scoped sibling of the contents:read\nclone-credential proxy above; coord enforces that the repo's owner is\nbound to the caller's tenant.",
+        "operationId": "api_v1_operations_github_push_credential_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RepoRefRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepoPushCredentialResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Github Push Credential",
         "tags": [
           "operations"
         ]
@@ -76695,6 +76061,33 @@
         ]
       }
     },
+    "/api/v1/operations/pr-merge/merge-economics": {
+      "get": {
+        "description": "Per-repo merge economics for the fleet page's CI-duration-aware PR\nseverity model (plan 2026-07-17-fleet-ci-duration-aware-severity).\n\nProxies coord's NEW ``coord_query_merge_economics`` read\n(``_COORD_MERGE_ECONOMICS_PATH``): per-repo candidate-CI p90, land rate,\na suggested stuck-threshold, queue depth, and per-open-PR already-landed\nflags. The fleet page uses candidate-CI duration + queue proximity to\ndecide whether a merge conflict is \"act now\" (RED) or \"resolve\njust-before-merge\" (AMBER).\n\nGRACEFUL FALLBACK (required): this coord read may not be deployed yet, so a\n404 \u2014 or a transient coord outage (502/503/504) \u2014 degrades to an empty\n``{}`` rather than erroring. The frontend then falls back to its hardcoded\nthresholds + repo-name hint, so the page works today and simply gets more\nprecise once the read is live. Fleet-wide; ``tenant_id`` is resolved only\nto forward the operator bearer (same posture as ``/merge/queue`` and\n``/pr-merge/prs``).",
+        "operationId": "api_v1_operations_pr_merge_merge_economics_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Pr Merge Merge Economics Api V1 Operations Pr Merge Merge Economics Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Pr Merge Merge Economics",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/pr-merge/onboarding/accept": {
       "post": {
         "description": "UPSERT ``coord.tenant_repo_profiles`` with\n``profile_source='audit'`` + the (possibly hand-edited) starter\nprofile. Stamps ``coord.operator_audit`` + publishes settings cache\ninvalidation.",
@@ -76868,7 +76261,7 @@
     },
     "/api/v1/operations/pr-merge/onboarding/claim": {
       "post": {
-        "description": "Self-serve onboarding: exchange the GitHub OAuth code + bind/enroll.\n\nProxies coord's ``POST /coord/onboarding/github-accounts/claim`` (coord\nPR #901). Reuses the doctor proxy's auth exactly: ``get_tenant_id``\nresolves the operator and captures the caller's bearer, which\n``_tenant_headers`` forwards to coord so coord binds the GitHub account\nto the operator's own Cognito tenant.\n\nUnlike the raising ``_proxy_coord_post`` helper (which collapses a coord\n4xx/5xx into an ``HTTPException`` whose body is a stringified ``detail``),\nthis handler passes coord's status code AND JSON body through verbatim so\nthe onboarding-status page can render a status-specific message:\n``400 code_exchange_failed`` / ``403 installation_not_administered`` /\n``409 account_already_bound`` / ``500 oauth_not_configured``. httpx\ntransport errors mirror the shared helpers (ConnectError \u2192 502,\nTimeoutException \u2192 504).",
+        "description": "Self-serve onboarding: exchange the GitHub OAuth code + bind/enroll.\n\nProxies coord's ``POST /coord/onboarding/github-accounts/claim`` (coord\nPR #901). Reuses the doctor proxy's auth exactly: ``get_tenant_id``\nresolves the operator and captures the caller's bearer, which\n``_tenant_headers`` forwards to coord so coord binds the GitHub account\nto the operator's own Cognito tenant.\n\nUnlike the raising ``_proxy_coord_post`` helper (which collapses a coord\n4xx/5xx into an ``HTTPException`` whose body is a stringified ``detail``),\nthis handler passes coord's status code AND JSON body through verbatim so\nthe onboarding-status page can render a status-specific message:\n``400 code_exchange_failed`` / ``400 target_required`` /\n``403 installation_not_administered`` / ``409 account_already_bound`` /\n``500 oauth_not_configured``. httpx transport errors mirror the shared\nhelpers (ConnectError \u2192 502, TimeoutException \u2192 504).",
         "operationId": "api_v1_operations_pr_merge_onboarding_claim_post",
         "requestBody": {
           "content": {
@@ -76956,6 +76349,33 @@
           }
         ],
         "summary": "Get Pr Merge Onboarding Doctor",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/pr-merge/onboarding/github-app": {
+      "get": {
+        "description": "The GitHub App's public identity, for building an authorize URL.\n\nProxies coord's ``GET /coord/onboarding/github-app``. Response envelope\n(coord-owned): ``{\"app_slug\", \"client_id\", \"oauth_configured\"}``, where\n``client_id`` may be null and ``oauth_configured`` is false when coord has\nno OAuth creds \u2014 the UI hides the connect action rather than sending users\ninto a flow that would 500 ``oauth_not_configured``.\n\nReturns no tenant-scoped data, but stays ``get_tenant_id``-gated like its\nonboarding siblings so the App's identity isn't served to anonymous callers.",
+        "operationId": "api_v1_operations_pr_merge_onboarding_github_app_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Pr Merge Onboarding Github App Api V1 Operations Pr Merge Onboarding Github App Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Pr Merge Onboarding Github App",
         "tags": [
           "operations"
         ]
@@ -77601,6 +77021,137 @@
           }
         ],
         "summary": "Post Pr Merge Suggestion Reject",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/releases": {
+      "get": {
+        "description": "List recent runner release observations (newest-first) from coord.\n\nProxies coord ``GET /coord/twin/release/history``. ``repo`` (``owner/name``;\ndefault coord's ``qontinui/qontinui-runner``) selects the observed surface;\n``limit`` (1\u2013500, coord-clamped too) caps the history window. Returns\ncoord's ``{surface, repo, target, count, history:[...]}`` envelope\nverbatim.",
+        "operationId": "api_v1_operations_releases_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "repo",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Repo"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Releases Api V1 Operations Releases Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Releases",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/releases/{tag}": {
+      "get": {
+        "description": "Return the single release observation matching ``tag``.\n\nCoord's history endpoint returns the full list (it has no single-tag\nroute), so this fetches the list and filters server-side \u2014 matching ``tag``\nagainst each entry's ``tag`` / ``version`` / ``published_tag``. The window\nis fetched at coord's max (500) so a tag is not missed behind the default\npage. Raises ``404 release_tag_not_found`` when no entry matches.",
+        "operationId": "api_v1_operations_releases_tag_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tag",
+            "required": true,
+            "schema": {
+              "title": "Tag",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "repo",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Repo"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Release Api V1 Operations Releases  Tag  Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Release",
         "tags": [
           "operations"
         ]
@@ -78568,7 +78119,7 @@
     },
     "/api/v1/organizations": {
       "get": {
-        "description": "List all organizations the user is a member of.",
+        "description": "List all organizations the current user belongs to.",
         "operationId": "api_v1_organizations_get",
         "parameters": [
           {
@@ -78679,7 +78230,7 @@
     },
     "/api/v1/organizations/invitations/accept": {
       "post": {
-        "description": "Accept an organization invitation.",
+        "description": "Accept an invitation by token.\n\nAccepting a HELPER invite additionally attempts a best-effort coord\n``helper`` operator-role provisioning (helper-task-queue plan \u00a79.4) \u2014\nsee ``app.services.coord_helper_provisioning`` for what can and cannot\nsucceed today. Provisioning never blocks acceptance.",
         "operationId": "api_v1_organizations_invitations_accept_post",
         "requestBody": {
           "content": {
@@ -78726,7 +78277,7 @@
     },
     "/api/v1/organizations/{organization_id}": {
       "delete": {
-        "description": "Delete organization (owner only).",
+        "description": "Delete organization. Owner only. Cannot delete personal organizations.",
         "operationId": "api_v1_organizations_organization_id_delete",
         "parameters": [
           {
@@ -78766,7 +78317,7 @@
         ]
       },
       "get": {
-        "description": "Get organization details.",
+        "description": "Get organization details. User must be a member.",
         "operationId": "api_v1_organizations_organization_id_get",
         "parameters": [
           {
@@ -78813,7 +78364,7 @@
         ]
       },
       "put": {
-        "description": "Update organization (admin only).",
+        "description": "Update organization settings. Requires admin role.",
         "operationId": "api_v1_organizations_organization_id_put",
         "parameters": [
           {
@@ -78872,7 +78423,7 @@
     },
     "/api/v1/organizations/{organization_id}/invitations": {
       "get": {
-        "description": "List organization invitations (admin only).",
+        "description": "List invitations. Requires admin role.",
         "operationId": "api_v1_organizations_organization_id_invitations_get",
         "parameters": [
           {
@@ -78946,7 +78497,7 @@
         ]
       },
       "post": {
-        "description": "Create and send an organization invitation (admin only).",
+        "description": "Create an invitation. Requires admin role.",
         "operationId": "api_v1_organizations_organization_id_invitations_post",
         "parameters": [
           {
@@ -79005,7 +78556,7 @@
     },
     "/api/v1/organizations/{organization_id}/members": {
       "get": {
-        "description": "List organization members.",
+        "description": "List organization members. User must be a member.",
         "operationId": "api_v1_organizations_organization_id_members_get",
         "parameters": [
           {
@@ -79079,7 +78630,7 @@
         ]
       },
       "post": {
-        "description": "Add a team member (admin only).",
+        "description": "Add a team member. Requires admin role.",
         "operationId": "api_v1_organizations_organization_id_members_post",
         "parameters": [
           {
@@ -79138,7 +78689,7 @@
     },
     "/api/v1/organizations/{organization_id}/members/{user_id}": {
       "delete": {
-        "description": "Remove team member (admin only, or self).",
+        "description": "Remove team member. Admin can remove others; any member can remove themselves.",
         "operationId": "api_v1_organizations_organization_id_members_user_id_delete",
         "parameters": [
           {
@@ -79188,7 +78739,7 @@
         ]
       },
       "put": {
-        "description": "Update team member role (admin only).",
+        "description": "Update team member role. Requires admin role.",
         "operationId": "api_v1_organizations_organization_id_members_user_id_put",
         "parameters": [
           {
@@ -79255,85 +78806,9 @@
         ]
       }
     },
-    "/api/v1/organizations/{organization_id}/projects": {
-      "get": {
-        "description": "List all projects in an organization.\n\nUser must be a member of the organization to view its projects.\nReturns all projects where organization_id matches, regardless of\nindividual project access permissions.",
-        "operationId": "api_v1_organizations_organization_id_projects_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "organization_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Organization Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "skip",
-            "required": false,
-            "schema": {
-              "default": 0,
-              "minimum": 0,
-              "title": "Skip",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 100,
-              "maximum": 100,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/Project"
-                  },
-                  "title": "Response List Organization Projects Api V1 Organizations  Organization Id  Projects Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "List Organization Projects",
-        "tags": [
-          "organizations"
-        ]
-      }
-    },
     "/api/v1/organizations/{organization_id}/statistics": {
       "get": {
-        "description": "Get statistics for an organization.\n\nReturns member count, project count, active users today, and total workflows.\nUser must be a member of the organization to view statistics.",
+        "description": "Get organization statistics. User must be a member.",
         "operationId": "api_v1_organizations_organization_id_statistics_get",
         "parameters": [
           {
@@ -79375,55 +78850,6 @@
           }
         ],
         "summary": "Get Organization Statistics",
-        "tags": [
-          "organizations"
-        ]
-      }
-    },
-    "/api/v1/organizations/{organization_id}/switch": {
-      "post": {
-        "description": "Switch current organization context.",
-        "operationId": "api_v1_organizations_organization_id_switch_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "organization_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Organization Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OrganizationSwitchResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Switch Organization",
         "tags": [
           "organizations"
         ]
