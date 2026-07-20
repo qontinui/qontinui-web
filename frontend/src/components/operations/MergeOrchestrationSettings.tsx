@@ -152,9 +152,15 @@ function TenantDefaultsCard({
   profile: EffectiveProfile;
   onSaved: () => void;
 }) {
-  const [minDwell, setMinDwell] = useState<string>(String(profile.min_green_dwell));
-  const [confidence, setConfidence] = useState<string>(String(profile.confidence_threshold));
-  const [autoMerge, setAutoMerge] = useState<boolean>(profile.auto_merge_enabled);
+  const [minDwell, setMinDwell] = useState<string>(
+    String(profile.min_green_dwell)
+  );
+  const [confidence, setConfidence] = useState<string>(
+    String(profile.confidence_threshold)
+  );
+  const [autoMerge, setAutoMerge] = useState<boolean>(
+    profile.auto_merge_enabled
+  );
   const [dryRun, setDryRun] = useState<boolean>(profile.dry_run);
   const [autoFixRedMain, setAutoFixRedMain] = useState<boolean>(
     profile.auto_fix_red_main
@@ -193,7 +199,10 @@ function TenantDefaultsCard({
       // wired; the Phase 8 onboarding has the inheritance model).
       const body: Record<string, unknown> = {
         min_green_dwell_secs: parseIntOrThrow("min_green_dwell_secs", minDwell),
-        confidence_threshold: parseFloatOrThrow("confidence_threshold", confidence),
+        confidence_threshold: parseFloatOrThrow(
+          "confidence_threshold",
+          confidence
+        ),
         auto_merge_enabled: autoMerge,
         dry_run: dryRun,
         auto_fix_red_main: autoFixRedMain,
@@ -206,10 +215,13 @@ function TenantDefaultsCard({
           .map((s) => s.trim())
           .filter((s) => s.length > 0),
       };
-      const res = await httpClient.fetch(`${OPERATIONS_API}/pr-merge/settings`, {
-        method: "PATCH",
-        body: JSON.stringify(body),
-      });
+      const res = await httpClient.fetch(
+        `${OPERATIONS_API}/pr-merge/settings`,
+        {
+          method: "PATCH",
+          body: JSON.stringify(body),
+        }
+      );
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
       }
@@ -326,11 +338,11 @@ function TenantDefaultsCard({
             <p className="text-xs text-muted-foreground">
               When a repo&apos;s main goes red (a tenant-wide merge outage —
               every green PR is frozen until it&apos;s fixed), coord opens a
-              visible terminal session on your device that diagnoses the
-              failing check and authors a fix; the fix lands via coord&apos;s
-              audited recovery lane. Off by default — turn this on only if you
-              want coord to act on its own. Reversible any time; every recovery
-              land is audited.
+              visible terminal session on your device that diagnoses the failing
+              check and authors a fix; the fix lands via coord&apos;s audited
+              recovery lane. Off by default — turn this on only if you want
+              coord to act on its own. Reversible any time; every recovery land
+              is audited.
             </p>
           </div>
           <Switch
@@ -390,9 +402,12 @@ function RepoOverrideCard({
   // value = override.
   const [lineBudgetOverride, setLineBudgetOverride] = useState<string>("");
   const [confidenceOverride, setConfidenceOverride] = useState<string>("");
-  const [escalatePathsExtraText, setEscalatePathsExtraText] = useState<string>("");
+  const [escalatePathsExtraText, setEscalatePathsExtraText] =
+    useState<string>("");
   const [labelBudget, setLabelBudget] = useState<string>("");
-  const [dryRunOverride, setDryRunOverride] = useState<"inherit" | "true" | "false">("inherit");
+  const [dryRunOverride, setDryRunOverride] = useState<
+    "inherit" | "true" | "false"
+  >("inherit");
   const [autoFixRedMainOverride, setAutoFixRedMainOverride] = useState<
     "inherit" | "true" | "false"
   >("inherit");
@@ -407,7 +422,8 @@ function RepoOverrideCard({
   useEffect(() => {
     let cancelled = false;
     const url = `${OPERATIONS_API}/pr-merge/repos/${repoRow.repo}/profile`;
-    httpClient.fetch(url)
+    httpClient
+      .fetch(url)
       .then(async (res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return (await res.json()) as RepoProfileResponse;
@@ -433,19 +449,25 @@ function RepoOverrideCard({
       // to inherit, value = set. Empty string in the UI maps to
       // `null` (clear); a parsed value maps to Set.
       const body: Record<string, unknown> = {};
-      body.line_budget_override = lineBudgetOverride.trim() === ""
-        ? null
-        : parseIntOrThrow("line_budget_override", lineBudgetOverride);
-      body.confidence_threshold_override = confidenceOverride.trim() === ""
-        ? null
-        : parseFloatOrThrow("confidence_threshold_override", confidenceOverride);
+      body.line_budget_override =
+        lineBudgetOverride.trim() === ""
+          ? null
+          : parseIntOrThrow("line_budget_override", lineBudgetOverride);
+      body.confidence_threshold_override =
+        confidenceOverride.trim() === ""
+          ? null
+          : parseFloatOrThrow(
+              "confidence_threshold_override",
+              confidenceOverride
+            );
       body.escalate_paths_extra = escalatePathsExtraText
         .split("\n")
         .map((s) => s.trim())
         .filter((s) => s.length > 0);
-      body.auto_merge_label_budget = labelBudget.trim() === ""
-        ? null
-        : parseIntOrThrow("auto_merge_label_budget", labelBudget);
+      body.auto_merge_label_budget =
+        labelBudget.trim() === ""
+          ? null
+          : parseIntOrThrow("auto_merge_label_budget", labelBudget);
       body.dry_run_override =
         dryRunOverride === "inherit" ? null : dryRunOverride === "true";
       body.auto_fix_red_main =
@@ -504,7 +526,11 @@ function RepoOverrideCard({
         {repoRow.framework_signals.length > 0 && (
           <div className="flex gap-1 flex-wrap mt-1">
             {repoRow.framework_signals.map((s) => (
-              <Badge key={s} variant="secondary" className="font-mono text-[10px]">
+              <Badge
+                key={s}
+                variant="secondary"
+                className="font-mono text-[10px]"
+              >
                 {s}
               </Badge>
             ))}
@@ -566,7 +592,9 @@ function RepoOverrideCard({
               className="w-full h-9 rounded-md border bg-background px-3 text-sm"
               value={dryRunOverride}
               onChange={(e) =>
-                setDryRunOverride(e.target.value as "inherit" | "true" | "false")
+                setDryRunOverride(
+                  e.target.value as "inherit" | "true" | "false"
+                )
               }
               data-testid={`repo-dry-run-${repoRow.repo}`}
             >
@@ -654,11 +682,7 @@ function parseFloatOrThrow(field: string, raw: string): number {
 /// /pr-merge/kill-switch and surfaces the response. Confirmation modal
 /// (browser-native confirm()) guards against accidental clicks — the
 /// dashboard's primary UI control for D9.4.
-function KillSwitchCard({
-  onKilled,
-}: {
-  onKilled: () => void;
-}) {
+function KillSwitchCard({ onKilled }: { onKilled: () => void }) {
   const [reason, setReason] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -684,10 +708,13 @@ function KillSwitchCard({
     if (!ok) return;
     setSubmitting(true);
     try {
-      const res = await httpClient.fetch(`${OPERATIONS_API}/pr-merge/kill-switch`, {
-        method: "POST",
-        body: JSON.stringify({ scope: "tenant", reason: reason.trim() }),
-      });
+      const res = await httpClient.fetch(
+        `${OPERATIONS_API}/pr-merge/kill-switch`,
+        {
+          method: "POST",
+          body: JSON.stringify({ scope: "tenant", reason: reason.trim() }),
+        }
+      );
       if (!res.ok) {
         const body = await res.text().catch(() => "");
         throw new Error(`HTTP ${res.status}${body ? `: ${body}` : ""}`);
@@ -705,18 +732,15 @@ function KillSwitchCard({
   }, [reason, onKilled]);
 
   return (
-    <Card
-      className="border-red-500/60"
-      data-testid="kill-switch-card"
-    >
+    <Card className="border-red-500/60" data-testid="kill-switch-card">
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-base text-red-300">
           <Power className="h-4 w-4" />
           Emergency stop
         </CardTitle>
         <p className="text-xs text-muted-foreground mt-1">
-          Flip every repo this tenant owns to <code>rollout_state=dry_run</code>.
-          In-flight merges drain naturally; the orchestrator stops firing new
+          Flip every repo this tenant owns to <code>rollout_state=dry_run</code>
+          . In-flight merges drain naturally; the orchestrator stops firing new
           merges immediately. Use when a calibration regression is firing
           unwanted merges. The action is auditable + reversible (re-enable via
           tenant settings above).
@@ -938,13 +962,7 @@ function SloRepoCard({
         <div className="grid grid-cols-2 gap-2">
           <div>
             <p className="text-muted-foreground">Auto-merge success</p>
-            <p
-              className={ratingColor(
-                w.auto_merge_success_rate,
-                0.95,
-                0.85
-              )}
-            >
+            <p className={ratingColor(w.auto_merge_success_rate, 0.95, 0.85)}>
               {fmtRate(w.auto_merge_success_rate)} (7d)
             </p>
           </div>
@@ -1043,8 +1061,8 @@ function SloDashboardCard({
         </CardTitle>
         <p className="text-xs text-muted-foreground mt-1">
           Per-(tenant, repo) rollout metrics, 7-day windows. Thresholds from
-          plan §8: ≥95% auto-merge / ≤5% override / ≥95% shadow agreement
-          before promoting from <code>shadow</code> to <code>live</code>.
+          plan §8: ≥95% auto-merge / ≤5% override / ≥95% shadow agreement before
+          promoting from <code>shadow</code> to <code>live</code>.
         </p>
       </CardHeader>
       <CardContent>
@@ -1196,8 +1214,8 @@ export function MergeOrchestrationSettings() {
               <Skeleton className="h-24 w-full" />
             ) : repos.length === 0 ? (
               <p className="text-xs text-muted-foreground">
-                No repos registered. Repos auto-register on first PATCH of
-                their per-repo override.
+                No repos registered. Repos auto-register on first PATCH of their
+                per-repo override.
               </p>
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">

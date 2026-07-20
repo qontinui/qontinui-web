@@ -55,7 +55,7 @@ export function useDevActionsStream(): UseDevActionsStreamResult {
   const fetchOnce = useCallback(async (): Promise<void> => {
     try {
       const resp = await httpClient.fetch(
-        `${DEV_ACTIONS_API}?limit=${DEV_ACTIONS_LIMIT}`,
+        `${DEV_ACTIONS_API}?limit=${DEV_ACTIONS_LIMIT}`
       );
       if (!resp.ok) {
         throw new Error(`HTTP ${resp.status}`);

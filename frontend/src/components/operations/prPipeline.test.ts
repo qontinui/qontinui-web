@@ -132,11 +132,41 @@ describe("derivePipelineHealth — conflicts are backlog, not pipeline state", (
     );
   }
 
-  it("many conflicts alone NEVER read as stuck or even red", () => {
+  it("many conflicts alone NEVER read as stuck or red", () => {
     const h = derivePipelineHealth(conflictedRows(7), NOW);
+    // Amber, not green: with every open PR conflicted there is nothing in the
+    // train at all, and green-by-absence-of-evidence would render "Merging
+    // normally" beside a "last merged never" badge. But never RED, and never
+    // "stuck" — the conflicts themselves are backlog, not a stopped pipeline.
+    expect(h.level).toBe("amber");
+    expect(h.headline).toBe("Pipeline slow");
+    expect(h.headline).not.toBe("Pipeline stuck");
+    expect(h.detail).toContain("nothing in the train");
+  });
+
+  it("conflicts alongside a LIVE train stay green — backlog is not slowness", () => {
+    // The distinguishing case for the amber floor above: the train has work,
+    // so conflicted PRs beside it change nothing about pipeline health.
+    const h = derivePipelineHealth(
+      [
+        ...conflictedRows(7),
+        ...buildPipelineRows(
+          [pr({ pr_number: 960, branch: "feat/live" })],
+          [
+            proposal({
+              proposal_id: "p-live",
+              status: "awaiting-ci",
+              updated_at: ago(1),
+              repos: [repoDetail({ branch: "feat/live" })],
+            }),
+          ]
+        ),
+      ],
+      NOW
+    );
     expect(h.level).toBe("green");
     expect(h.headline).toBe("Merging normally");
-    expect(h.headline).not.toBe("Pipeline stuck");
+    expect(h.conflicted).toBe(7);
   });
 
   it("but they stay VISIBLE, phrased as the action they need", () => {
@@ -1171,7 +1201,7 @@ describe("derivePipelineHealth", () => {
     expect(h.inFlight).toBe(1);
   });
 
-  it("goes amber on a single conflict and red when conflicts accumulate", () => {
+  it("conflicts never turn the strip red, however many accumulate", () => {
     const one = buildPipelineRows(
       [pr({ branch: "b1" })],
       [
@@ -1184,9 +1214,14 @@ describe("derivePipelineHealth", () => {
       ]
     );
     // CONTRACT CHANGE (2026-07-20): conflict COUNT no longer sets the level.
-    // A conflicted PR has no candidate in the train and cannot slow it.
-    expect(derivePipelineHealth(one, NOW).level).toBe("green");
+    // A conflicted PR has no candidate in the train and cannot slow it. Amber
+    // here comes from the EMPTY-TRAIN floor (this one conflict is the whole
+    // fleet, so nothing can move) — never from the count itself, and never red.
+    expect(derivePipelineHealth(one, NOW).level).toBe("amber");
     expect(derivePipelineHealth(one, NOW).conflicted).toBe(1);
+    expect(derivePipelineHealth(one, NOW).detail).toContain(
+      "1 PR needs an author rebase"
+    );
 
     const two = buildPipelineRows(
       [pr({ branch: "b1" }), pr({ branch: "b2", pr_number: 9 })],
@@ -1207,8 +1242,10 @@ describe("derivePipelineHealth", () => {
     );
     const h = derivePipelineHealth(two, NOW);
     // Same contract change: two conflicting PRs are two author asks, not a
-    // stopped pipeline. Reported, counted, never escalated.
-    expect(h.level).toBe("green");
+    // stopped pipeline. Amber from the empty-train floor; crucially NOT red,
+    // and never "Pipeline stuck".
+    expect(h.level).toBe("amber");
+    expect(h.headline).not.toBe("Pipeline stuck");
     expect(h.conflicted).toBe(2);
     expect(h.detail).toContain("2 PRs need an author rebase");
   });
@@ -1290,8 +1327,15 @@ describe("derivePipelineHealth", () => {
 // ----------------------------------------------------------------------------
 describe("derivePipelineHealth — GitHub-derived conflicts reach the headline", () => {
   /** A hard conflict with no economics: short-CI path → `not-mergeable`. */
+  let hardConflictSeq = 0;
   function hardConflictRow(branch: string): PipelineRow {
-    const row = buildPipelineRows([pr({ branch, mergeable: false })], [])[0];
+    // Distinct pr_number per row: a PR is identified by repo + number, and the
+    // health count dedupes on that. Reusing one number across branches would
+    // make two rows claim to be the SAME PR.
+    const row = buildPipelineRows(
+      [pr({ branch, pr_number: 800 + hardConflictSeq++, mergeable: false })],
+      []
+    )[0];
     expect(row.status.kind).toBe("not-mergeable");
     return row;
   }
@@ -1315,7 +1359,7 @@ describe("derivePipelineHealth — GitHub-derived conflicts reach the headline",
     expect(h.detail).toContain("1 PR needs an author rebase");
   });
 
-  it("two hard conflicts read as accumulating — red, not green", () => {
+  it("two hard conflicts are reported, never escalated to stuck", () => {
     const h = derivePipelineHealth(
       [hardConflictRow("feat/a"), hardConflictRow("feat/b")],
       NOW
@@ -1325,7 +1369,12 @@ describe("derivePipelineHealth — GitHub-derived conflicts reach the headline",
     // conflict was days old. Conflicts are reported, not escalated.
     expect(h.conflicted).toBe(2);
     expect(h.detail).toContain("2 PRs need an author rebase");
-    expect(h.headline).not.toBe("Pipeline stuck");
+    // Assert the level POSITIVELY. `not.toBe("Pipeline stuck")` is satisfied by
+    // "Pipeline degraded", which is still red — so a regression re-escalating
+    // conflicts into redReasons would slip through whenever a land is recent.
+    // Amber (not green) because these two rows are the whole fleet: nothing is
+    // in the train. Never red.
+    expect(h.level).toBe("amber");
   });
 
   it("does not double-count a PR whose conflict IS a live proposal", () => {

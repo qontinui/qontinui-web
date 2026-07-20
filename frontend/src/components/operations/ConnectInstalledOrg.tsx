@@ -73,7 +73,7 @@ export function ConnectInstalledOrg({
     (async () => {
       try {
         const res = await httpClient.fetch(
-          `${OPERATIONS_API}/pr-merge/onboarding/github-app`,
+          `${OPERATIONS_API}/pr-merge/onboarding/github-app`
         );
         if (cancelled) return;
         if (res.ok) setConfig((await res.json()) as GithubAppConfig);
@@ -139,7 +139,7 @@ export function ConnectInstalledOrg({
           className={cn(
             buttonVariants({ variant: "secondary" }),
             "w-fit",
-            !valid && "pointer-events-none opacity-50",
+            !valid && "pointer-events-none opacity-50"
           )}
         >
           {loading ? (

@@ -144,7 +144,10 @@ export function PairDeviceStep({
   const elsewhere = pairedElsewhere ?? [];
   // One informational line per device; an entry per binding means a device
   // can appear N times — collapse to (hostname → binding count).
-  const byHost = new Map<string, { device: PairedElsewhereDevice; count: number }>();
+  const byHost = new Map<
+    string,
+    { device: PairedElsewhereDevice; count: number }
+  >();
   for (const d of elsewhere) {
     const cur = byHost.get(d.hostname);
     if (cur) {
@@ -168,10 +171,13 @@ export function PairDeviceStep({
         device_hostname: "operator-workstation",
         web_pair_url: `${window.location.origin}/operations/pair-runner`,
       };
-      const res = await httpClient.fetch(`${OPERATIONS_API}/coord/devices/pair-start`, {
-        method: "POST",
-        body: JSON.stringify(body),
-      });
+      const res = await httpClient.fetch(
+        `${OPERATIONS_API}/coord/devices/pair-start`,
+        {
+          method: "POST",
+          body: JSON.stringify(body),
+        }
+      );
       if (!res.ok) {
         const text = await res.text().catch(() => "");
         throw new Error(`HTTP ${res.status}${text ? `: ${text}` : ""}`);
@@ -190,11 +196,11 @@ export function PairDeviceStep({
   return (
     <div className="space-y-3">
       <p className="text-sm">
-        Pair a device running the Qontinui runner with Claude Code installed.
-        On your device, run <code>qontinui_profile device pair</code> and paste
-        the pair code below. A runner device can serve multiple tenants at
-        once — pairing for a new tenant adds a binding; the device&apos;s
-        existing tenant pairings are unaffected.
+        Pair a device running the Qontinui runner with Claude Code installed. On
+        your device, run <code>qontinui_profile device pair</code> and paste the
+        pair code below. A runner device can serve multiple tenants at once —
+        pairing for a new tenant adds a binding; the device&apos;s existing
+        tenant pairings are unaffected.
       </p>
       {error && (
         <p className="text-xs text-red-300 flex items-center gap-1">
@@ -215,8 +221,8 @@ export function PairDeviceStep({
               <span>
                 Device &lsquo;
                 <span className="font-mono">{d.hostname}</span>
-                &rsquo; also serves {count} other tenant{count === 1 ? "" : "s"}.
-                Pairing here adds this tenant — existing pairings are
+                &rsquo; also serves {count} other tenant{count === 1 ? "" : "s"}
+                . Pairing here adds this tenant — existing pairings are
                 unaffected.
                 {d.last_seen_at && (
                   <span className="text-blue-200/70">
@@ -298,8 +304,8 @@ export function ClaudeCodeStep({
     <div className="space-y-3">
       <p className="text-sm">
         On the paired device, run <code>claude --version</code> to confirm
-        Claude Code is installed and signed in. The runner self-probes every
-        60s and reports availability to coord.
+        Claude Code is installed and signed in. The runner self-probes every 60s
+        and reports availability to coord.
       </p>
       <div className="flex items-center gap-3 text-xs">
         <div className="flex items-center gap-1">
@@ -379,13 +385,18 @@ function AuditStep({ ready }: AuditStepProps) {
       // {agent_id, repo, status:"running"} immediately. The POST is fast, so
       // the default client-side timeout is correct — the slow audit work
       // happens off-connection and we poll audit-status for the result.
-      const res = await httpClient.fetch(`${OPERATIONS_API}/pr-merge/onboarding/audit`, {
-        method: "POST",
-        body: JSON.stringify({ repo: repo.trim() }),
-      });
+      const res = await httpClient.fetch(
+        `${OPERATIONS_API}/pr-merge/onboarding/audit`,
+        {
+          method: "POST",
+          body: JSON.stringify({ repo: repo.trim() }),
+        }
+      );
       if (!res.ok) {
         if (res.status === 409) {
-          const body = await res.json().catch(() => ({} as Record<string, unknown>));
+          const body = await res
+            .json()
+            .catch(() => ({}) as Record<string, unknown>);
           if ((body as { next_step?: string }).next_step === "pair_device") {
             setError(
               "No audit-capable device. Complete step 1 (pair) and step 2 (sign into Claude Code) first."
@@ -554,13 +565,14 @@ function AuditStep({ ready }: AuditStepProps) {
       <div className="space-y-2">
         <p className="text-sm flex items-center gap-1">
           <CheckCircle2 className="h-3 w-3 text-green-400" />
-          Profile saved for <code className="font-mono">{auditResult?.repo}</code>.
+          Profile saved for{" "}
+          <code className="font-mono">{auditResult?.repo}</code>.
         </p>
         <p className="text-xs text-muted-foreground">
-          The orchestrator now uses this profile when evaluating PRs in
-          that repo. Use the &ldquo;Merge Orchestrator → Settings&rdquo; page to edit
-          later, or accept drift suggestions in the Suggestions inbox as
-          coord learns from your overrides.
+          The orchestrator now uses this profile when evaluating PRs in that
+          repo. Use the &ldquo;Merge Orchestrator → Settings&rdquo; page to edit
+          later, or accept drift suggestions in the Suggestions inbox as coord
+          learns from your overrides.
         </p>
       </div>
     );
@@ -594,8 +606,8 @@ function AuditStep({ ready }: AuditStepProps) {
         </div>
         {busy && auditAgentId && (
           <p className="text-xs text-muted-foreground flex items-center gap-1">
-            <Loader2 className="h-3 w-3 animate-spin" /> Auditing on your device —
-            this can take a few minutes. You can leave this open.
+            <Loader2 className="h-3 w-3 animate-spin" /> Auditing on your device
+            — this can take a few minutes. You can leave this open.
           </p>
         )}
         {error && (
@@ -604,8 +616,8 @@ function AuditStep({ ready }: AuditStepProps) {
           </p>
         )}
         <p className="text-[11px] text-muted-foreground">
-          The auditor inspects your repo&apos;s framework, CI workflows, recent PR
-          distribution, and branch protection. It runs on your paired device
+          The auditor inspects your repo&apos;s framework, CI workflows, recent
+          PR distribution, and branch protection. It runs on your paired device
           using your Claude Code subscription — Qontinui spends zero compute.
         </p>
       </div>
@@ -643,7 +655,11 @@ function AuditStep({ ready }: AuditStepProps) {
         </h5>
         <div className="flex flex-wrap gap-1">
           {(editedProfile.framework_signals ?? []).map((sig) => (
-            <Badge key={sig} variant="outline" className="font-mono text-[10px]">
+            <Badge
+              key={sig}
+              variant="outline"
+              className="font-mono text-[10px]"
+            >
               {sig}
             </Badge>
           ))}
@@ -819,7 +835,9 @@ export function MergeOrchestrationOnboarding() {
   return (
     <Card className="mb-4" data-testid="merge-onboarding-card">
       <CardHeader className="pb-3">
-        <CardTitle className="text-base">Pair an autonomous-dev runner</CardTitle>
+        <CardTitle className="text-base">
+          Pair an autonomous-dev runner
+        </CardTitle>
         <CardDescription>
           Optional — for AI-driven development. Pair a device running the
           Qontinui runner so it can audit repos and drive automated changes.

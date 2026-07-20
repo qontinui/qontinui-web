@@ -45,7 +45,7 @@ function renderTile(rows: DeviceStatus[]) {
   return render(
     <TooltipProvider>
       <DeviceStatusTile stream={mockStream(rows)} />
-    </TooltipProvider>,
+    </TooltipProvider>
   );
 }
 
