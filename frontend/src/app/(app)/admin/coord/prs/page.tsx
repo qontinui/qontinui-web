@@ -289,8 +289,15 @@ export default function CoordPrsPage() {
       {/* ---- Reconnecting hint (coord down, last-good rows retained) ----
           A transient coord outage while we hold last-good rows for this tab:
           show a subtle hint OVER the still-rendered table and auto-recover —
-          never the hard banner below. */}
-      {coordError !== null && data !== null && data.prs.length > 0 && (
+          never the hard banner below.
+          Gated on `!loading`: during any loading window (initial load, tab
+          switch) the skeleton owns the body, so this "showing last data" hint
+          would otherwise render over a skeleton showing nothing — dishonest.
+          A tab switch keeps `data` for retention (setLoading(true) but data
+          survives), which is exactly that window. It's honest only when real
+          rows are on screen. A same-tab auto-refresh never sets `loading`, so
+          steady-state outage retention (hint over retained rows) is unchanged. */}
+      {coordError !== null && !loading && data !== null && data.prs.length > 0 && (
         <div
           className="flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-1.5 text-xs text-amber-700 dark:text-amber-400"
           data-testid="prs-coord-reconnecting"
