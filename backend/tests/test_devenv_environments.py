@@ -310,6 +310,80 @@ class TestSectionPolicy:
         }
 
 
+class TestDerivedKeys:
+    """:mod:`app.services.devenv_section_policy` — per-KEY derived refinement."""
+
+    def test_versions_repo_derived_keys(self) -> None:
+        """Every repo-derived versions key is classified derived, incl. node_dep_*."""
+        from app.services import devenv_section_policy as sp
+
+        derived = sp.derived_keys_map(
+            {
+                "versions": {
+                    "runner_crate_version": "0.1.0",
+                    "node_package_version": "1.2.3",
+                    "node_package_name": "qontinui-runner",
+                    "python_constraint": ">=3.12",
+                    "tauri": "2.0.0",
+                    "node_dep_react": "19.0.0",
+                }
+            }
+        )
+        assert sorted(derived["versions"]) == [
+            "node_dep_react",
+            "node_package_name",
+            "node_package_version",
+            "python_constraint",
+            "runner_crate_version",
+            "tauri",
+        ]
+
+    def test_machine_facts_are_not_derived(self) -> None:
+        """node/python/rustc are shelled machine facts — they stay applyable."""
+        from app.services import devenv_section_policy as sp
+
+        derived = sp.derived_keys_map(
+            {"versions": {"node": "22.1.0", "python": "3.13", "rustc": "1.84.0"}}
+        )
+        assert derived == {"versions": []}
+
+    def test_other_sections_have_no_derived_keys(self) -> None:
+        """services/env_contract/db_schema classify to empty lists."""
+        from app.services import devenv_section_policy as sp
+
+        derived = sp.derived_keys_map(
+            {
+                "services": {"redis": "6379"},
+                "env_contract": {"DATABASE_URL": "present"},
+                "db_schema": {"alembic_head": "abc123"},
+            }
+        )
+        assert derived == {"services": [], "env_contract": [], "db_schema": []}
+
+    def test_unknown_key_is_not_derived(self) -> None:
+        """Conservative default: an unrecognized key keeps its section policy."""
+        from app.services import devenv_section_policy as sp
+
+        assert sp.is_derived_key("versions", "something_new") is False
+        assert sp.is_derived_key("services", "runner_crate_version") is False
+        assert sp.derived_keys_map({"versions": {"something_new": "x"}}) == {
+            "versions": []
+        }
+
+    def test_response_is_valid_without_derived_keys(self) -> None:
+        """Additive: a response built without the field still validates (empty)."""
+        from uuid import uuid4
+
+        from app.schemas.devenv import CanonicalConfigResponse
+
+        r = CanonicalConfigResponse(
+            environment_id=uuid4(),
+            sections={"versions": {"python": "3.13"}},
+            section_policy={"versions": "applyable"},
+        )
+        assert r.derived_keys == {}
+
+
 # ---------------------------------------------------------------------------
 # Layer 1 helpers
 # ---------------------------------------------------------------------------
@@ -1055,6 +1129,105 @@ class TestCanonicalAuditAndPull:
             assert len(hist) == 2
 
     @pytest.mark.asyncio
+    async def test_history_resolves_display_names(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """History rows carry the actor email + from/to machine names.
+
+        Resolved server-side by LEFT JOIN so the UI never renders a raw UUID
+        and never issues a per-row lookup.
+        """
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app) as client:
+            env_id, a_id, b_id, _, _ = await self._seed_env_two_enrolled_machines(
+                client
+            )
+            await client.put(
+                f"{API_PREFIX}/environments/{env_id}/canonical",
+                json={"machine_id": a_id},
+            )
+            await client.put(
+                f"{API_PREFIX}/environments/{env_id}/canonical",
+                json={"machine_id": b_id},
+            )
+            hist = (
+                await client.get(
+                    f"{API_PREFIX}/environments/{env_id}/canonical-history"
+                )
+            ).json()
+            assert len(hist) == 2
+            # Same-transaction rows share now(), so ORDER BY changed_at DESC
+            # is a tie here — assert on the SET of transitions, not position.
+            named = {(h["from_machine_name"], h["to_machine_name"]) for h in hist}
+            assert named == {(None, "machine-a"), ("machine-a", "machine-b")}
+            assert {h["changed_by_email"] for h in hist} == {test_user.email}
+
+    @pytest.mark.asyncio
+    async def test_history_survives_machine_deletion_with_null_name(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """The load-bearing case: deleting a machine must NOT drop its audit
+        rows — the ids are soft refs, so the row stays and the name is None."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app) as client:
+            env_id, a_id, b_id, _, _ = await self._seed_env_two_enrolled_machines(
+                client
+            )
+            await client.put(
+                f"{API_PREFIX}/environments/{env_id}/canonical",
+                json={"machine_id": a_id},
+            )
+            await client.put(
+                f"{API_PREFIX}/environments/{env_id}/canonical",
+                json={"machine_id": b_id},
+            )
+
+            r = await client.delete(f"{API_PREFIX}/machines/{a_id}")
+            assert r.status_code == 204, r.text
+
+            hist = (
+                await client.get(
+                    f"{API_PREFIX}/environments/{env_id}/canonical-history"
+                )
+            ).json()
+            # Both audit rows survive the deletion.
+            assert len(hist) == 2
+            # The soft-ref ids are untouched — only the resolved name is gone.
+            assert {h["to_machine_id"] for h in hist} == {a_id, b_id}
+            named = {(h["from_machine_name"], h["to_machine_name"]) for h in hist}
+            assert named == {(None, None), (None, "machine-b")}
+
+    @pytest.mark.asyncio
+    async def test_history_null_actor_yields_null_email(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """``changed_by_user_id`` is FK SET NULL — a null actor resolves to a
+        null email rather than erroring or dropping the row."""
+        from app.repositories.devenv import canonical_log_repo
+
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app) as client:
+            env_id, a_id, _, _, _ = await self._seed_env_two_enrolled_machines(client)
+            await canonical_log_repo.record(
+                async_db_session,
+                environment_id=UUID(env_id),
+                from_machine_id=None,
+                to_machine_id=UUID(a_id),
+                changed_by_user_id=None,
+            )
+            await async_db_session.commit()
+
+            hist = (
+                await client.get(
+                    f"{API_PREFIX}/environments/{env_id}/canonical-history"
+                )
+            ).json()
+            assert len(hist) == 1
+            assert hist[0]["changed_by_user_id"] is None
+            assert hist[0]["changed_by_email"] is None
+            assert hist[0]["to_machine_name"] == "machine-a"
+
+    @pytest.mark.asyncio
     async def test_audit_records_active_tenant_best_effort(
         self, async_db_session: AsyncSession, test_user
     ) -> None:
@@ -1104,6 +1277,10 @@ class TestCanonicalAuditAndPull:
             # Policy delivered alongside so the runner knows what it may apply.
             assert body["section_policy"]["versions"] == "applyable"
             assert body["section_policy"]["env_contract"] == "secret_report_only"
+            # Per-key refinement rides along: python is a machine fact, so the
+            # applyable versions section reports no derived keys here.
+            assert body["derived_keys"]["versions"] == []
+            assert body["derived_keys"]["env_contract"] == []
             # Secret-free: env_contract is present/absent, never the raw value.
             assert body["sections"]["env_contract"]["DATABASE_URL"] == "present"
             assert "topsecret" not in r.text

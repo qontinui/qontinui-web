@@ -194,6 +194,39 @@ export interface ConfigHistoryDiff extends MachineDriftReport {
 }
 
 // ---------------------------------------------------------------------------
+// Canonical-designation audit trail
+// ---------------------------------------------------------------------------
+
+/**
+ * One audited canonical-designation change ("who made this machine canonical,
+ * and when"), newest-first in a list.
+ *
+ * **Every display name is nullable BY DESIGN, not as an edge case.**
+ * `from_machine_id`/`to_machine_id` are deliberately soft refs (NOT foreign
+ * keys) so the audit trail outlives machine deletion, and `changed_by_user_id`
+ * is an FK with `ON DELETE SET NULL`. The server resolves the names with LEFT
+ * joins, so a deleted machine or user yields `null` here while the id may
+ * still be present. Renderers MUST fall back gracefully (see
+ * `CanonicalHistoryPanel`) — a null name is never an error state.
+ */
+export interface CanonicalChange {
+  id: string;
+  environment_id: string;
+  from_machine_id: string | null;
+  to_machine_id: string | null;
+  changed_by_user_id: string | null;
+  tenant_id: string | null;
+  note: string | null;
+  changed_at: string;
+  /** Resolved from `auth.users.email`; null when the user row is gone. */
+  changed_by_email: string | null;
+  /** Resolved from `devenv.machines.name`; null when the machine is gone. */
+  from_machine_name: string | null;
+  /** Resolved from `devenv.machines.name`; null when the machine is gone. */
+  to_machine_name: string | null;
+}
+
+// ---------------------------------------------------------------------------
 // Error handling
 // ---------------------------------------------------------------------------
 
@@ -243,10 +276,7 @@ async function parseError(res: Response): Promise<DevenvApiError> {
   return new DevenvApiError(res.status, message, code);
 }
 
-async function request<T>(
-  path: string,
-  init?: RequestInit
-): Promise<T> {
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // `httpClient.fetch` attaches the Bearer token (+ credentials, CSRF, and the
   // 401-refresh / 429-5xx retry). We keep the raw Response so the devenv error
   // envelope (`{detail:{code,message}}` → DevenvApiError) is preserved rather
@@ -385,13 +415,10 @@ export function setMachineEnvironment(
   id: string,
   environmentId: string | null
 ): Promise<Machine> {
-  return request<Machine>(
-    `/machines/${encodeURIComponent(id)}/environment`,
-    {
-      method: "PUT",
-      body: JSON.stringify({ environment_id: environmentId }),
-    }
-  );
+  return request<Machine>(`/machines/${encodeURIComponent(id)}/environment`, {
+    method: "PUT",
+    body: JSON.stringify({ environment_id: environmentId }),
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -501,5 +528,24 @@ export function getConfigHistoryDiff(
     `/environments/${encodeURIComponent(
       environmentId
     )}/machines/${encodeURIComponent(machineId)}/config-history/diff?${params}`
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Canonical-designation audit trail
+// ---------------------------------------------------------------------------
+
+/**
+ * The environment's canonical-designation changes, newest first.
+ *
+ * An EMPTY list is the correct, expected state until the next designation —
+ * the audit only records changes made after the audit log shipped. Callers
+ * must render an explicit empty state, never an error.
+ */
+export function getCanonicalHistory(
+  environmentId: string
+): Promise<CanonicalChange[]> {
+  return request<CanonicalChange[]>(
+    `/environments/${encodeURIComponent(environmentId)}/canonical-history`
   );
 }

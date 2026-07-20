@@ -12,14 +12,21 @@ import type {
   RepoDetail,
 } from "./mergeTypes";
 import {
+  ATTENTION_BY_KIND,
   buildPipelineRows,
   derivePipelineHealth,
   matchesFilter,
   matchesQuery,
   pickActiveProposal,
+  type PipelineRow,
+  type UnifiedStatusKind,
   CI_WAIT_AMBER_MS,
   CI_WAIT_RED_MS,
   STALL_RED_MS,
+  CONFLICT_DEFERRAL_MAX_MS,
+  conflictDeferralMaxMs,
+  conflictStrandedForMs,
+  GITHUB_CONFLICT_KINDS,
 } from "./prPipeline";
 
 const NOW = new Date("2026-07-15T12:00:00Z").getTime();
@@ -140,11 +147,33 @@ describe("buildPipelineRows — join + unified status", () => {
       [{ merge_state_status: "DIRTY", mergeable: null }, "Not mergeable"],
       [
         { merge_state_status: "BLOCKED", review_decision: "REVIEW_REQUIRED" },
-        "Blocked by requirements",
+        "Review required",
       ],
+      [
+        {
+          merge_state_status: "BLOCKED",
+          review_decision: "CHANGES_REQUESTED" as const,
+        },
+        "Changes requested",
+      ],
+      [
+        { merge_state_status: "BLOCKED", failing_contexts: ["security"] },
+        "Checks failing",
+      ],
+      // The common case: BLOCKED only because required checks haven't
+      // reported yet. Nobody needs to act.
+      [
+        { merge_state_status: "BLOCKED", ci_lifecycle: "pending" },
+        "Checks in progress",
+      ],
+      [
+        { merge_state_status: "BLOCKED", pending_contexts: ["test (windows)"] },
+        "Checks in progress",
+      ],
+      [{ merge_state_status: "BLOCKED" }, "Blocked by requirements"],
       // UNSTABLE with no failure signal (default fixture: aggregate success)
       // is honest about being in-flight, not failing.
-      [{ merge_state_status: "UNSTABLE" }, "Checks running"],
+      [{ merge_state_status: "UNSTABLE" }, "Checks in progress"],
       [
         { merge_state_status: "UNSTABLE", ci_conclusion: "failure" },
         "Checks failing",
@@ -203,7 +232,12 @@ describe("buildPipelineRows — join + unified status", () => {
   it("renders a proposal with no matching PR as a branch-only row", () => {
     const rows = buildPipelineRows(
       [],
-      [proposal({ status: "landing", repos: [repoDetail({ branch: "agent/x" })] })]
+      [
+        proposal({
+          status: "landing",
+          repos: [repoDetail({ branch: "agent/x" })],
+        }),
+      ]
     );
     expect(rows).toHaveLength(1);
     expect(rows[0].prNumber).toBeNull();
@@ -243,10 +277,7 @@ describe("buildPipelineRows — join + unified status", () => {
 
   it("numbers queued rows by queue position", () => {
     const rows = buildPipelineRows(
-      [
-        pr({ pr_number: 1, branch: "b1" }),
-        pr({ pr_number: 2, branch: "b2" }),
-      ],
+      [pr({ pr_number: 1, branch: "b1" }), pr({ pr_number: 2, branch: "b2" })],
       [
         proposal({
           proposal_id: "q2",
@@ -261,8 +292,8 @@ describe("buildPipelineRows — join + unified status", () => {
       ]
     );
     const byNumber = new Map(rows.map((r) => [r.prNumber, r]));
-    expect(byNumber.get(1)!.status.reason).toBe("1st in line");
-    expect(byNumber.get(2)!.status.reason).toBe("2nd in line");
+    expect(byNumber.get(1)!.status.reason).toMatch(/^1st in line/);
+    expect(byNumber.get(2)!.status.reason).toMatch(/^2nd in line/);
   });
 
   it("surfaces the merge-candidate CI link from the active proposal", () => {
@@ -306,7 +337,7 @@ describe("statusFromGitHub — attention truth table", () => {
     });
     expect(row.status.kind).toBe("checks-pending");
     expect(row.status.attention).toBe("none");
-    expect(row.status.reason).toBe("non-required checks still running");
+    expect(row.status.reason).toBe("still running: test (windows)");
     expect(
       needsAttention({
         merge_state_status: "UNSTABLE",
@@ -326,7 +357,9 @@ describe("statusFromGitHub — attention truth table", () => {
     const row = rowFor(overrides);
     expect(row.status.kind).toBe("checks-failing");
     expect(row.status.attention).toBe("author");
-    expect(row.status.reason).toBe("failing: security, test (windows)");
+    expect(row.status.reason).toBe(
+      "failing: security, test (windows) — push a fix"
+    );
     expect(needsAttention(overrides)).toBe(1);
   });
 
@@ -335,7 +368,7 @@ describe("statusFromGitHub — attention truth table", () => {
       merge_state_status: "UNSTABLE",
       failing_contexts: ["a", "b", "c", "d", "e"],
     });
-    expect(row.status.reason).toBe("failing: a, b, c +2 more");
+    expect(row.status.reason).toContain("failing: a, b, c +2 more");
   });
 
   it("UNSTABLE + aggregate ci failure (arrays absent) → counted — old-coord fallback", () => {
@@ -365,16 +398,36 @@ describe("statusFromGitHub — attention truth table", () => {
     expect(row.status.kind).toBe("needs-rebase");
     expect(row.status.attention).toBe("waiting");
     expect(row.status.reason).toBe(
-      "behind main — coord auto-rebases in the train"
+      "behind main — coord auto-rebases it in the train, no action needed"
     );
     expect(needsAttention({ merge_state_status: "BEHIND" })).toBe(0);
   });
 
-  it("BLOCKED and DIRTY still count as needing the author", () => {
+  it("BLOCKED (no pending checks) and DIRTY still count as needing the author", () => {
     expect(needsAttention({ merge_state_status: "BLOCKED" })).toBe(1);
     expect(
       needsAttention({ merge_state_status: "DIRTY", mergeable: null })
     ).toBe(1);
+  });
+
+  it("BLOCKED only because required checks are running is NOT attention", () => {
+    // The reported bug: GitHub says BLOCKED for the whole pre-verdict window,
+    // so "CI hasn't finished" was rendering red and inflating the count.
+    const overrides: Partial<PrRow> = {
+      merge_state_status: "BLOCKED",
+      required_checks_satisfied: false,
+      ci_lifecycle: "pending",
+      ci_conclusion: null,
+      pending_contexts: ["test (windows)"],
+    };
+    const row = rowFor(overrides);
+    expect(row.status.kind).toBe("checks-pending");
+    expect(row.status.label).toBe("Checks in progress");
+    expect(row.status.attention).toBe("none");
+    expect(row.status.reason).toBe(
+      "required checks still running: test (windows)"
+    );
+    expect(needsAttention(overrides)).toBe(0);
   });
 
   it("BLOCKED names the failing required checks when coord provides them", () => {
@@ -382,8 +435,21 @@ describe("statusFromGitHub — attention truth table", () => {
       merge_state_status: "BLOCKED",
       failing_contexts: ["security"],
     });
-    expect(row.status.reason).toBe("required checks failing: security");
+    expect(row.status.kind).toBe("checks-failing");
+    expect(row.status.reason).toBe(
+      "required checks failing: security — push a fix"
+    );
     expect(row.status.attention).toBe("author");
+  });
+
+  it("BLOCKED failing checks outrank still-pending ones", () => {
+    const row = rowFor({
+      merge_state_status: "BLOCKED",
+      ci_lifecycle: "pending",
+      failing_contexts: ["security"],
+      pending_contexts: ["test (windows)"],
+    });
+    expect(row.status.kind).toBe("checks-failing");
   });
 
   it("BLOCKED review-decision reasons outrank named failing checks", () => {
@@ -392,14 +458,16 @@ describe("statusFromGitHub — attention truth table", () => {
       review_decision: "CHANGES_REQUESTED",
       failing_contexts: ["security"],
     });
-    expect(row.status.reason).toBe("changes requested in review");
+    expect(row.status.label).toBe("Changes requested");
+    expect(row.status.reason).toContain("reviewer requested changes");
   });
 
   it("BLOCKED fallback attributes rulesets, not just branch protection", () => {
     const row = rowFor({ merge_state_status: "BLOCKED" });
-    expect(row.status.reason).toBe(
-      "ruleset/branch-protection requirements not met"
-    );
+    expect(row.status.reason).toContain("ruleset");
+    // Names where to look — a bare "requirements not met" left the operator
+    // with nowhere to go, which is what prompted the reason rewrite.
+    expect(row.status.reason).toContain("merge box on GitHub");
   });
 });
 
@@ -426,6 +494,21 @@ describe("statusFromGitHub — CI-duration-aware conflict severity", () => {
     return buildPipelineRows([p], [], economics ?? {})[0];
   }
 
+  /** A DIRTY row that coord reports as conflicting for `secs`. */
+  function strandedRow(
+    repo: string,
+    secs: number | null | undefined,
+    economics?: Record<string, MergeEconomics>
+  ) {
+    const p = pr({
+      repo,
+      merge_state_status: "DIRTY",
+      mergeable: null,
+      conflict_age_secs: secs,
+    });
+    return buildPipelineRows([p], [], economics ?? {})[0];
+  }
+
   it("{DIRTY, short-CI} → RED (act now) — measured p90 below threshold", () => {
     const econ: Record<string, MergeEconomics> = {
       [WEB]: { candidate_ci_p90_secs: 5 * 60, queue_depth: 20 },
@@ -449,6 +532,116 @@ describe("statusFromGitHub — CI-duration-aware conflict severity", () => {
     expect(row.status.reason).toBe(
       "conflict — resolve at merge (repo CI ~2h, 12 in queue)"
     );
+  });
+
+  // -------------------------------------------------------------------------
+  // The staleness escape hatch. `conflict-deferred` says "resolve this at
+  // merge", which holds ONLY while "coord reaches this PR soon" holds. coord
+  // lands by rebase and cannot rebase past a true conflict, so a deferred PR
+  // never advances to the front where the label says to fix it — it sits
+  // amber, excluded from needs-attention, indefinitely. Measured 2026-07-20:
+  // 17 PRs stranded fleet-wide, oldest 752h. These tests are the mutation
+  // target: delete the hatch and they fail.
+  // -------------------------------------------------------------------------
+  it("long-CI + not-front + WITHIN the deferral window → still AMBER", () => {
+    const econ: Record<string, MergeEconomics> = {
+      [RUNNER]: { candidate_ci_p90_secs: TWO_HOURS_SECS, queue_depth: 12 },
+    };
+    // 3h stranded, window is max(6h, 2 x 2h) = 6h → not yet expired.
+    const row = strandedRow(RUNNER, 3 * 60 * 60, econ);
+    expect(row.status.kind).toBe("conflict-deferred");
+    expect(row.status.attention).toBe("waiting");
+  });
+
+  it("long-CI + not-front + PAST the deferral window → RED (stranded)", () => {
+    const econ: Record<string, MergeEconomics> = {
+      [RUNNER]: { candidate_ci_p90_secs: TWO_HOURS_SECS, queue_depth: 12 },
+    };
+    // 31 days — the qontinui-schemas#85 case.
+    const row = strandedRow(RUNNER, 31 * 24 * 60 * 60, econ);
+    expect(row.status.kind).toBe("conflict-stranded");
+    expect(row.status.attention).toBe("author");
+    expect(row.status.reason).toContain("needs an author rebase");
+  });
+
+  it("counts toward needsAttention once stranded (the whole point)", () => {
+    const econ: Record<string, MergeEconomics> = {
+      [RUNNER]: { candidate_ci_p90_secs: TWO_HOURS_SECS, queue_depth: 12 },
+    };
+    const deferred = derivePipelineHealth(
+      [strandedRow(RUNNER, 3 * 60 * 60, econ)],
+      NOW,
+      econ
+    );
+    const stranded = derivePipelineHealth(
+      [strandedRow(RUNNER, 31 * 24 * 60 * 60, econ)],
+      NOW,
+      econ
+    );
+    expect(deferred.needsAttention).toBe(0);
+    expect(stranded.needsAttention).toBe(1);
+  });
+
+  it("a strand reaches the HEALTH HEADLINE, not just the row badge", () => {
+    const econ: Record<string, MergeEconomics> = {
+      [RUNNER]: { candidate_ci_p90_secs: TWO_HOURS_SECS, queue_depth: 12 },
+    };
+    // A stranded PR has NO active proposal (terminal conflicts are excluded
+    // from the in-flight feed), so a headline counting only active proposals
+    // reports a healthy fleet while 17 PRs rot.
+    const health = derivePipelineHealth(
+      [strandedRow(RUNNER, 31 * 24 * 60 * 60, econ)],
+      NOW,
+      econ
+    );
+    // Surfaces in the headline/detail, not just the row badge. One strand is
+    // amber; the measured 17-PR fleet would be red.
+    expect(health.detail).toContain("conflict");
+    expect(health.level).not.toBe("green");
+  });
+
+  it("ABSENT conflict_age_secs is 'no evidence', never 'not stranded'", () => {
+    const econ: Record<string, MergeEconomics> = {
+      [RUNNER]: { candidate_ci_p90_secs: TWO_HOURS_SECS, queue_depth: 12 },
+    };
+    // An older coord deploy omits the field: behaviour must be unchanged
+    // (amber), NOT escalated on missing data.
+    expect(strandedRow(RUNNER, undefined, econ).status.kind).toBe(
+      "conflict-deferred"
+    );
+    expect(strandedRow(RUNNER, null, econ).status.kind).toBe(
+      "conflict-deferred"
+    );
+    expect(conflictStrandedForMs({ conflict_age_secs: undefined })).toBeNull();
+    expect(conflictStrandedForMs({ conflict_age_secs: null })).toBeNull();
+    // Nonsense values are evidence of nothing, not of a strand.
+    expect(conflictStrandedForMs({ conflict_age_secs: -5 })).toBeNull();
+    expect(conflictStrandedForMs({ conflict_age_secs: NaN })).toBeNull();
+  });
+
+  it("a strand cannot downgrade an already-RED conflict", () => {
+    // Short-CI repo: already "blocks now". A stale clock must not turn a red
+    // row amber, so precedence is red-before-deferral in both directions.
+    const econ: Record<string, MergeEconomics> = {
+      [WEB]: { candidate_ci_p90_secs: 5 * 60, queue_depth: 20 },
+    };
+    const row = strandedRow(WEB, 31 * 24 * 60 * 60, econ);
+    expect(row.status.attention).toBe("author");
+  });
+
+  it("deferral window is per-repo: max(floor, 2 x candidate p90)", () => {
+    // No economics → the floor.
+    expect(conflictDeferralMaxMs(RUNNER)).toBe(CONFLICT_DEFERRAL_MAX_MS);
+    // Fast repo → floor still wins (a grace window, not an instant flip).
+    expect(
+      conflictDeferralMaxMs(WEB, { [WEB]: { candidate_ci_p90_secs: 5 * 60 } })
+    ).toBe(CONFLICT_DEFERRAL_MAX_MS);
+    // Slow repo → two full worst-case runs.
+    expect(
+      conflictDeferralMaxMs(RUNNER, {
+        [RUNNER]: { candidate_ci_p90_secs: 5 * 60 * 60 },
+      })
+    ).toBe(10 * 60 * 60 * 1000);
   });
 
   it("{DIRTY, long-CI, front-of-queue} → RED — shallow queue amplifies", () => {
@@ -493,7 +686,11 @@ describe("statusFromGitHub — CI-duration-aware conflict severity", () => {
   });
 
   it("mergeable===false is treated identically to DIRTY", () => {
-    const p = pr({ repo: RUNNER, merge_state_status: "UNKNOWN", mergeable: false });
+    const p = pr({
+      repo: RUNNER,
+      merge_state_status: "UNKNOWN",
+      mergeable: false,
+    });
     const row = buildPipelineRows([p], [], {
       [RUNNER]: { candidate_ci_p90_secs: TWO_HOURS_SECS, queue_depth: 9 },
     })[0];
@@ -598,6 +795,214 @@ describe("derivePipelineHealth — per-repo CI-wait thresholds", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// The audit that keeps color honest.
+// ---------------------------------------------------------------------------
+
+describe("ATTENTION_BY_KIND — the color/attention contract", () => {
+  /**
+   * Every status this module can construct, from every branch of both
+   * derivations. If a new kind or branch is added without an entry in
+   * `ATTENTION_BY_KIND`, or with an attention that contradicts it, this fails
+   * — and so does the badge palette keyed off the same table.
+   */
+  const EVERY_STATUS: Array<{ what: string; row: PipelineRow }> = [
+    ...(
+      [
+        ["CLEAN", { merge_state_status: "CLEAN" }],
+        ["BEHIND", { merge_state_status: "BEHIND" }],
+        ["DIRTY", { merge_state_status: "DIRTY", mergeable: null }],
+        ["draft", { pr_state: "draft", merge_state_status: "DRAFT" }],
+        ["unknown", { merge_state_status: "UNKNOWN" }],
+        [
+          "merged (merge button)",
+          { pr_state: "merged", merge_state_status: "CLEAN" },
+        ],
+        [
+          "merged (coord ff-land)",
+          { pr_state: "closed", merge_commit_sha: "deadbeefcafe" },
+        ],
+        [
+          "BLOCKED/review",
+          {
+            merge_state_status: "BLOCKED",
+            review_decision: "REVIEW_REQUIRED" as const,
+          },
+        ],
+        [
+          "BLOCKED/failing",
+          { merge_state_status: "BLOCKED", failing_contexts: ["security"] },
+        ],
+        [
+          "BLOCKED/pending",
+          { merge_state_status: "BLOCKED", ci_lifecycle: "pending" },
+        ],
+        ["BLOCKED/ruleset", { merge_state_status: "BLOCKED" }],
+        [
+          "UNSTABLE/failing",
+          { merge_state_status: "UNSTABLE", ci_conclusion: "failure" },
+        ],
+        [
+          "UNSTABLE/pending",
+          { merge_state_status: "UNSTABLE", ci_lifecycle: "pending" },
+        ],
+      ] as Array<[string, Partial<PrRow>]>
+    ).map(([what, overrides]) => ({
+      what,
+      row: buildPipelineRows([pr(overrides)], [])[0],
+    })),
+    // The de-escalated conflict needs long-CI economics to be reachable.
+    {
+      what: "conflict-deferred",
+      row: buildPipelineRows(
+        [pr({ repo: "qontinui/qontinui-runner", mergeable: false })],
+        [],
+        {
+          "qontinui/qontinui-runner": {
+            candidate_ci_p90_secs: 4 * 60 * 60,
+            queue_depth: 9,
+          },
+        }
+      )[0],
+    },
+    // Same shape, but stranded past the deferral window → re-escalated.
+    {
+      what: "conflict-stranded",
+      row: buildPipelineRows(
+        [
+          pr({
+            repo: "qontinui/qontinui-runner",
+            mergeable: false,
+            conflict_age_secs: 30 * 24 * 60 * 60,
+          }),
+        ],
+        [],
+        {
+          "qontinui/qontinui-runner": {
+            candidate_ci_p90_secs: 4 * 60 * 60,
+            queue_depth: 9,
+          },
+        }
+      )[0],
+    },
+    ...(
+      [
+        "queued",
+        "dry-rebasing",
+        "awaiting-ci",
+        "landing",
+        "merged",
+        "conflict",
+        "blocked-by-overlap",
+      ] as const
+    ).map((status) => ({
+      what: `proposal:${status}`,
+      row: buildPipelineRows([pr()], [proposal({ status })])[0],
+    })),
+  ];
+
+  it("covers every declared kind at least once", () => {
+    const seen = new Set(EVERY_STATUS.map((s) => s.row.status.kind));
+    expect([...seen].sort()).toEqual(
+      Object.keys(ATTENTION_BY_KIND).sort() as UnifiedStatusKind[]
+    );
+  });
+
+  it.each(EVERY_STATUS)(
+    "$what carries the audited attention for its kind",
+    ({ row }) => {
+      expect(row.status.attention).toBe(ATTENTION_BY_KIND[row.status.kind]);
+    }
+  );
+
+  it("no state that needs nobody is filed as needing the author", () => {
+    // The original bug, stated as an invariant: "checks are still running" is
+    // never an author-action state, and "a check failed" always is.
+    expect(ATTENTION_BY_KIND["checks-pending"]).toBe("none");
+    expect(ATTENTION_BY_KIND["awaiting-ci"]).toBe("none");
+    expect(ATTENTION_BY_KIND["checks-failing"]).toBe("author");
+  });
+
+  it("every status explains itself — no blank reasons", () => {
+    for (const { what, row } of EVERY_STATUS) {
+      expect(row.status.reason, `${what} has no reason`).not.toBe("");
+    }
+  });
+});
+
+describe("merged rows", () => {
+  const MERGED_A = pr({
+    pr_number: 10,
+    branch: "b-old",
+    pr_state: "merged",
+    merged_at: ago(600),
+    merge_commit_sha: "aaaaaaa1111",
+  });
+  const MERGED_B = pr({
+    pr_number: 11,
+    branch: "b-new",
+    pr_state: "closed", // coord ff-land: closed with merged=false
+    merged_at: ago(5),
+    merge_commit_sha: "bbbbbbb2222",
+  });
+
+  it("detects BOTH land paths and carries the land time", () => {
+    const rows = buildPipelineRows([MERGED_A, MERGED_B], []);
+    expect(rows.map((r) => r.status.kind)).toEqual(["merged", "merged"]);
+    expect(rows.map((r) => r.mergedAt)).toEqual([ago(5), ago(600)]);
+  });
+
+  it("orders newest merge first and shows the landed sha in the reason", () => {
+    const rows = buildPipelineRows([MERGED_A, MERGED_B], []).filter((r) =>
+      matchesFilter(r, "merged")
+    );
+    expect(rows.map((r) => r.prNumber)).toEqual([11, 10]);
+    expect(rows[0].status.reason).toContain("bbbbbbb");
+  });
+
+  it("treats a closed row as merged even with NO sha (pre-projection coord)", () => {
+    // coord's ff-land closes the PR with merged=false and older deploys do
+    // not serialize merge_commit_sha. Gating on the sha would drop these
+    // through to the GitHub derivation and show landed PRs as "Ready" in the
+    // LIVE list — strictly worse than not having the tab.
+    const row = buildPipelineRows(
+      [pr({ pr_state: "closed", merge_state_status: "CLEAN" })],
+      []
+    )[0];
+    expect(row.status.kind).toBe("merged");
+    expect(matchesFilter(row, "all")).toBe(false);
+    // No sha to cite, so the reason names the branch only — never a fake sha.
+    expect(row.status.reason).toBe("landed on main");
+  });
+
+  it("keeps merged rows out of the live list and in their own tab", () => {
+    const rows = buildPipelineRows([MERGED_A, pr({ pr_number: 12 })], []);
+    expect(
+      rows.filter((r) => matchesFilter(r, "all")).map((r) => r.prNumber)
+    ).toEqual([12]);
+    expect(
+      rows.filter((r) => matchesFilter(r, "merged")).map((r) => r.prNumber)
+    ).toEqual([10]);
+  });
+
+  it("reports 'no land time' rather than passing off a refresh time", () => {
+    // Coord deploys that don't project `merged_at` must not make the tab lie.
+    const row = buildPipelineRows(
+      [pr({ pr_state: "merged", last_refreshed_at: ago(3) })],
+      []
+    )[0];
+    expect(row.status.kind).toBe("merged");
+    expect(row.mergedAt).toBeNull();
+  });
+
+  it("feeds the health strip's 'last merged' from PR rows, not just proposals", () => {
+    // `GET /merge/queue` excludes terminal proposals, so before this the
+    // health strip read "last merged never" on a perfectly healthy fleet.
+    const h = derivePipelineHealth(buildPipelineRows([MERGED_B], []), NOW);
+    expect(h.lastMergedAt).toBe(ago(5));
+  });
+});
+
 describe("filters + search", () => {
   const rows = buildPipelineRows(
     [
@@ -625,6 +1030,7 @@ describe("filters + search", () => {
     const inFlight = rows.filter((r) => matchesFilter(r, "in-flight"));
     expect(inFlight.map((r) => r.prNumber).sort()).toEqual([1, 2]);
     expect(rows.every((r) => matchesFilter(r, "all"))).toBe(true);
+    expect(rows.some((r) => matchesFilter(r, "merged"))).toBe(false);
   });
 
   it("matches repo shorthand, #number, branch, and status label", () => {
@@ -699,9 +1105,9 @@ describe("derivePipelineHealth", () => {
           }),
         ]
       );
-    expect(
-      derivePipelineHealth(mk(CI_WAIT_AMBER_MS + 60_000), NOW).level
-    ).toBe("amber");
+    expect(derivePipelineHealth(mk(CI_WAIT_AMBER_MS + 60_000), NOW).level).toBe(
+      "amber"
+    );
     expect(derivePipelineHealth(mk(CI_WAIT_RED_MS + 60_000), NOW).level).toBe(
       "red"
     );
@@ -750,5 +1156,84 @@ describe("derivePipelineHealth", () => {
     expect(h.level).toBe("green");
     expect(h.queueDepth).toBe(0);
     expect(h.lastMergedAt).toBeNull();
+  });
+});
+
+// ----------------------------------------------------------------------------
+// The health headline vs. GitHub-derived conflicts.
+//
+// `derivePipelineHealth` counts conflicts by scanning ACTIVE proposals. Every
+// conflict GitHub reports but coord has no live proposal for is therefore
+// invisible to it. `conflict-stranded` was taught to reach the headline; its
+// sibling `not-mergeable` — the LOUDEST red row in the table, a hard conflict
+// on a short-CI repo or one at the front of the land queue — was not, so a
+// fleet of hard conflicts still rendered "Merging normally" with a green dot.
+// ----------------------------------------------------------------------------
+describe("derivePipelineHealth — GitHub-derived conflicts reach the headline", () => {
+  /** A hard conflict with no economics: short-CI path → `not-mergeable`. */
+  function hardConflictRow(branch: string): PipelineRow {
+    const row = buildPipelineRows([pr({ branch, mergeable: false })], [])[0];
+    expect(row.status.kind).toBe("not-mergeable");
+    return row;
+  }
+
+  it("every GITHUB_CONFLICT_KINDS member is an author-action kind", () => {
+    // Guards the set against a kind being added that is not actually red —
+    // the headline must never escalate on a state nobody has to act on.
+    for (const kind of GITHUB_CONFLICT_KINDS) {
+      expect(ATTENTION_BY_KIND[kind]).toBe("author");
+    }
+    // And the two conflict families stay disjoint: the de-escalated kind is
+    // deliberately NOT a headline conflict (see the set's doc comment).
+    expect(GITHUB_CONFLICT_KINDS.has("conflict-deferred")).toBe(false);
+  });
+
+  it("a hard conflict with no live proposal is not invisible to the headline", () => {
+    const h = derivePipelineHealth([hardConflictRow("feat/a")], NOW);
+    expect(h.needsAttention).toBe(1);
+    expect(h.detail).toContain("conflict");
+    expect(h.level).not.toBe("green");
+  });
+
+  it("two hard conflicts read as accumulating — red, not green", () => {
+    const h = derivePipelineHealth(
+      [hardConflictRow("feat/a"), hardConflictRow("feat/b")],
+      NOW
+    );
+    expect(h.detail).toContain("2 conflicts accumulating");
+    expect(h.level).toBe("red");
+    expect(h.headline).toBe("Pipeline stuck");
+  });
+
+  it("does not double-count a PR whose conflict IS a live proposal", () => {
+    // The row's kind is `conflict` (from the proposal), which is NOT in
+    // GITHUB_CONFLICT_KINDS — so the active-proposal count owns it alone.
+    const rows = buildPipelineRows(
+      [pr({ mergeable: false })],
+      [proposal({ status: "conflict" })]
+    );
+    expect(rows[0].status.kind).toBe("conflict");
+    expect(rows[0].activeProposal).not.toBeNull();
+    // One conflict, not two: 2+ would trip the red "accumulating" branch.
+    expect(derivePipelineHealth(rows, NOW).level).toBe("amber");
+    expect(derivePipelineHealth(rows, NOW).detail).toContain("1 conflict");
+  });
+
+  it("keeps the deliberate de-escalation: a deferred conflict stays out", () => {
+    const econ: Record<string, MergeEconomics> = {
+      "qontinui/qontinui-runner": {
+        candidate_ci_p90_secs: 4 * 60 * 60,
+        queue_depth: 12,
+      },
+    };
+    const rows = buildPipelineRows(
+      [pr({ repo: "qontinui/qontinui-runner", mergeable: false })],
+      [],
+      econ
+    );
+    expect(rows[0].status.kind).toBe("conflict-deferred");
+    const h = derivePipelineHealth(rows, NOW, econ);
+    expect(h.detail).not.toContain("conflict");
+    expect(h.level).toBe("green");
   });
 });

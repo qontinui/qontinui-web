@@ -10,12 +10,18 @@
  * the other tab's header, and a healthy tab switch shows the loading skeleton
  * rather than a flash of the previous tab's rows.
  *
- * The five states under test:
+ * The states under test:
  *   1. degraded after healthy (same tab) → subtle hint + retained rows
  *   2. degraded on the very first fetch  → hard banner + empty state
  *   3. recovery                          → both banners gone, fresh rows
  *   4. tab switch into a degraded fetch  → hard banner, no cross-tab rows
  *   5. healthy tab switch                → skeleton, never stale rows
+ *
+ * Plus the banner/skeleton exclusion (plan 2026-07-20-*-over-skeleton and its
+ * follow-up): a coord banner must never describe data the skeleton is covering,
+ * so neither banner may render during a load/tab-switch window. Cases 6-7 pin
+ * each banner; case 8 pins the rule itself, so a future third coord banner
+ * can't silently reintroduce it.
  */
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
@@ -60,6 +66,23 @@ function healthy(rows: PrRow[]): PrListResponse {
 
 function degraded(msg = "timeout waiting for coord"): PrListResponse {
   return { prs: [], total: 0, coord_error: msg };
+}
+
+/**
+ * Hold the NEXT `getPrs` call open so the loading window is observable, and
+ * return the function that lands it. Several cases below need to assert what
+ * the page renders *while* a fetch is in flight, which is only reachable with
+ * the promise under the test's control.
+ */
+function heldFetch(): (value: PrListResponse) => void {
+  let resolve!: (value: PrListResponse) => void;
+  getPrs.mockImplementationOnce(
+    () =>
+      new Promise<PrListResponse>((r) => {
+        resolve = r;
+      }),
+  );
+  return (value) => resolve(value);
 }
 
 describe("/admin/coord/prs coord-down retention", () => {
@@ -149,13 +172,7 @@ describe("/admin/coord/prs coord-down retention", () => {
     );
 
     // Hold the merged-tab fetch open so the loading window is observable.
-    let resolveFetch: (value: PrListResponse) => void = () => {};
-    getPrs.mockImplementationOnce(
-      () =>
-        new Promise<PrListResponse>((resolve) => {
-          resolveFetch = resolve;
-        }),
-    );
+    const land = heldFetch();
     await userEvent.click(screen.getByTestId("coord-prs-tab-merged"));
 
     await waitFor(() =>
@@ -165,12 +182,128 @@ describe("/admin/coord/prs coord-down retention", () => {
     expect(screen.queryByTestId("prs-table-stub")).toBeNull();
     expect(screen.queryByTestId("prs-empty")).toBeNull();
 
-    resolveFetch(healthy([]));
+    land(healthy([]));
     await waitFor(() =>
       expect(screen.getByTestId("prs-empty")).toHaveTextContent(
         "No PRs merged in the last 24h.",
       ),
     );
     expect(screen.queryByTestId("prs-loading")).toBeNull();
+  });
+
+  it("suppresses the reconnecting hint during a tab-switch loading window (no hint over skeleton)", async () => {
+    // 1. Healthy Open tab with rows.
+    getPrs.mockResolvedValueOnce(healthy([row(1), row(2)]));
+    render(<CoordPrsPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("prs-table-stub")).toHaveTextContent("#1,#2"),
+    );
+
+    // 2. Degrade in place (same tab) so the subtle hint shows over retained rows.
+    getPrs.mockResolvedValue(degraded("timeout"));
+    await userEvent.click(screen.getByTestId("prs-refresh"));
+    await waitFor(() =>
+      expect(screen.getByTestId("prs-coord-reconnecting")).toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("prs-table-stub")).toHaveTextContent("#1,#2");
+
+    // 3. Switch tabs with the next fetch held PENDING: loading=true, but `data`
+    //    (the Open rows) survives for retention. The hint keys on retained
+    //    `data`, so without the `!loading` guard it would render OVER the
+    //    skeleton. Assert only the skeleton shows — both banners suppressed.
+    const land = heldFetch();
+    await userEvent.click(screen.getByTestId("coord-prs-tab-merged"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("prs-loading")).toBeInTheDocument(),
+    );
+    // The whole point: no "showing last data" hint painted over the skeleton,
+    // and the hard cold-start banner is likewise suppressed (data still has rows).
+    expect(screen.queryByTestId("prs-coord-reconnecting")).toBeNull();
+    expect(screen.queryByTestId("prs-coord-unavailable")).toBeNull();
+    expect(screen.queryByTestId("prs-table-stub")).toBeNull();
+
+    // 4. Land the fetch degraded-empty for the merged tab: the guard didn't
+    //    over-suppress — the terminal state is the hard banner + merged empty,
+    //    and the subtle hint stays absent (no rows to retain across tabs).
+    land(degraded("timeout"));
+    await waitFor(() =>
+      expect(screen.getByTestId("prs-coord-unavailable")).toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("prs-empty")).toHaveTextContent(
+      "No PRs merged in the last 24h.",
+    );
+    expect(screen.queryByTestId("prs-coord-reconnecting")).toBeNull();
+    expect(screen.queryByTestId("prs-loading")).toBeNull();
+  });
+
+  it("suppresses the hard unavailable banner during a tab-switch loading window (no banner over skeleton)", async () => {
+    // Symmetric counterpart of the case above, for the OTHER banner. The hint
+    // is suppressed while loading because rows are retained; this is the branch
+    // where nothing is retained (degraded-empty), which keys the hard banner.
+    //
+    // 1. Cold-start outage on the Open tab: hard banner + empty state.
+    getPrs.mockResolvedValueOnce(degraded("coord down"));
+    render(<CoordPrsPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("prs-coord-unavailable")).toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("prs-empty")).toBeInTheDocument();
+
+    // 2. Switch tabs with the next fetch held PENDING. `coordError` is still
+    //    set from the previous fetch and `data` holds the empty envelope, so
+    //    without a `!loading` guard the hard banner renders OVER the skeleton —
+    //    asserting "showing no PRs. Retry with Refresh" while a fetch is
+    //    already in flight and the Refresh button is disabled.
+    const land = heldFetch();
+    await userEvent.click(screen.getByTestId("coord-prs-tab-merged"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("prs-loading")).toBeInTheDocument(),
+    );
+    // The skeleton owns the body: neither banner may claim what it shows.
+    expect(screen.queryByTestId("prs-coord-unavailable")).toBeNull();
+    expect(screen.queryByTestId("prs-coord-reconnecting")).toBeNull();
+    expect(screen.queryByTestId("prs-empty")).toBeNull();
+
+    // 3. Land the fetch HEALTHY with rows — coord had already recovered, so the
+    //    banner shown during the loading window was not merely premature but
+    //    factually wrong. Both banners clear and the rows render.
+    land(healthy([row(9)]));
+    await waitFor(() =>
+      expect(screen.getByTestId("prs-table-stub")).toHaveTextContent("#9"),
+    );
+    expect(screen.queryByTestId("prs-coord-unavailable")).toBeNull();
+    expect(screen.queryByTestId("prs-coord-reconnecting")).toBeNull();
+    expect(screen.queryByTestId("prs-loading")).toBeNull();
+  });
+
+  it("renders NO coord banner of any kind while the skeleton is up (invariant, catches future banners)", async () => {
+    // The two tests above pin the two banners that exist today. This one pins
+    // the RULE they both follow, so a third coord banner added later can't
+    // silently reintroduce the bug: while `prs-loading` owns the body, nothing
+    // matching `prs-coord-*` may be on screen. Must be testid-prefix-based, not
+    // role-based — DeployStatusStrip also renders a `role="status"` marker on
+    // this page (it is stubbed out here, but the page is not the only owner).
+    getPrs.mockResolvedValueOnce(degraded("coord down"));
+    const { container } = render(<CoordPrsPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("prs-coord-unavailable")).toBeInTheDocument(),
+    );
+
+    const land = heldFetch();
+    await userEvent.click(screen.getByTestId("coord-prs-tab-merged"));
+    await waitFor(() =>
+      expect(screen.getByTestId("prs-loading")).toBeInTheDocument(),
+    );
+
+    expect(
+      container.querySelectorAll('[data-testid^="prs-coord-"]'),
+    ).toHaveLength(0);
+
+    land(healthy([row(3)]));
+    await waitFor(() =>
+      expect(screen.getByTestId("prs-table-stub")).toHaveTextContent("#3"),
+    );
   });
 });
