@@ -118,7 +118,7 @@ describe("MergePipeline", () => {
     expect(screen.getByText("qontinui-web#761")).toBeInTheDocument();
   });
 
-  it("shows a green health strip when merging normally and red when stuck", () => {
+  it("green when merging normally; conflicts alone never turn the strip red", () => {
     hookData.current.prs = [pr()];
     hookData.current.proposals = [proposal()];
     const { unmount } = render(<MergePipeline />);
@@ -135,23 +135,24 @@ describe("MergePipeline", () => {
       proposal({
         proposal_id: "c1",
         status: "conflict",
-        repos: [
-          { repo: "qontinui/qontinui-web", branch: "b1", head_sha: "a" },
-        ],
+        repos: [{ repo: "qontinui/qontinui-web", branch: "b1", head_sha: "a" }],
       }),
       proposal({
         proposal_id: "c2",
         status: "conflict",
-        repos: [
-          { repo: "qontinui/qontinui-web", branch: "b2", head_sha: "b" },
-        ],
+        repos: [{ repo: "qontinui/qontinui-web", branch: "b2", head_sha: "b" }],
       }),
     ];
     render(<MergePipeline />);
+    // CONTRACT (2026-07-20): conflicted PRs are author backlog. They never
+    // enter the train, so they cannot make it stuck — they are reported, not
+    // escalated. There IS one amber reason here (both PRs conflicted means
+    // nothing is in the train), but the strip must never read "Pipeline stuck".
     expect(screen.getByTestId("pipeline-health").dataset.healthLevel).toBe(
-      "red"
+      "amber"
     );
-    expect(screen.getByText("Pipeline stuck")).toBeInTheDocument();
+    expect(screen.queryByText("Pipeline stuck")).not.toBeInTheDocument();
+    expect(screen.getByText(/2 PRs need an author rebase/)).toBeInTheDocument();
   });
 
   it("filters to needs-attention rows", () => {
@@ -192,9 +193,7 @@ describe("MergePipeline", () => {
       "https://github.com/qontinui/qontinui-web/actions/runs/9"
     );
     // The recurring confusion gets addressed in-place.
-    expect(
-      screen.getByText(/not on your branch/i)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/not on your branch/i)).toBeInTheDocument();
     // Raw ids stay available for support, in the debug footer only.
     expect(screen.getByText(/proposal p-1/)).toBeInTheDocument();
   });
@@ -269,7 +268,9 @@ describe("MergePipeline", () => {
     expect(securityRow).toBeDefined();
     expect(docsRow).toBeDefined();
     // Failed check links to its run and shows when it completed.
-    expect(within(securityRow!).getByText("View run").closest("a")).toHaveAttribute(
+    expect(
+      within(securityRow!).getByText("View run").closest("a")
+    ).toHaveAttribute(
       "href",
       "https://github.com/qontinui/qontinui-web/actions/runs/42"
     );
@@ -323,7 +324,9 @@ describe("MergePipeline", () => {
     for (const [kind, attention] of Object.entries(ATTENTION_BY_KIND)) {
       const cls = STATUS_BADGE_CLASS[kind as UnifiedStatusKind];
       expect(cls, `${kind} has no badge class`).toBeTruthy();
-      expect(/\bbg-red-/.test(cls), `${kind} red?`).toBe(attention === "author");
+      expect(/\bbg-red-/.test(cls), `${kind} red?`).toBe(
+        attention === "author"
+      );
       expect(/\bbg-amber-/.test(cls), `${kind} amber?`).toBe(
         attention === "waiting"
       );

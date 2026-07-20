@@ -62,7 +62,7 @@ function repoBranchLabel(row: DeviceStatus): string | null {
 function focusMachineCard(hostname: string | null) {
   if (!hostname) return;
   const card = document.querySelector(
-    `[data-operations-machine-card][data-hostname="${CSS.escape(hostname)}"]`,
+    `[data-operations-machine-card][data-hostname="${CSS.escape(hostname)}"]`
   );
   if (!card) return;
   card.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -174,9 +174,9 @@ export function DeviceStatusTile({
     () =>
       [...byHostname.values()].sort(
         (a, b) =>
-          new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
+          new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
       ),
-    [byHostname],
+    [byHostname]
   );
 
   return (
@@ -197,10 +197,7 @@ export function DeviceStatusTile({
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           {connected ? (
             <>
-              <span
-                className="h-2 w-2 rounded-full bg-green-500"
-                aria-hidden
-              />
+              <span className="h-2 w-2 rounded-full bg-green-500" aria-hidden />
               <span data-ui-bridge-id="operations.device-status-connection">
                 live
               </span>
@@ -282,9 +279,7 @@ export function DeviceStatusTile({
                   data-ui-bridge-id="operations.device-status-task"
                 >
                   {row.current_task ?? (
-                    <span className="text-muted-foreground italic">
-                      idle
-                    </span>
+                    <span className="text-muted-foreground italic">idle</span>
                   )}
                 </span>
 

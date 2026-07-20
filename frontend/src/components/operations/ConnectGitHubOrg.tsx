@@ -58,8 +58,8 @@ export function ConnectGitHubOrg() {
           Install the GitHub App
         </a>
         <p className="text-xs text-muted-foreground">
-          After installing, GitHub returns you to Qontinui to finish
-          connecting — automatically.
+          After installing, GitHub returns you to Qontinui to finish connecting
+          — automatically.
         </p>
         <p className="text-xs text-muted-foreground">
           <Link
