@@ -112,6 +112,18 @@ export interface PrRow {
    */
   pending_contexts?: string[];
   correlation_id: string | null;
+  // ---- Recently-merged enrichment ------------------------------------------
+  // Present only on the rows coord appends for `?include_merged=<hours>`
+  // (`query_recently_merged_prs`). Every field is optional: a coord deploy
+  // that predates the merged-row projection omits them entirely, and the
+  // merged tab must degrade to "merge time unknown" rather than break.
+  /** RFC3339 time the PR landed on its base branch (`repo_branches.merged_at`). */
+  merged_at?: string | null;
+  /** The commit that actually landed. Non-null is coord's land-path-independent
+   *  "this PR merged" signal — a coord ff-land closes the PR with merged=false. */
+  merge_commit_sha?: string | null;
+  /** kebab-case deploy state ("has my merged PR deployed yet?"). */
+  deploy_state?: string | null;
 }
 
 export interface PrListResponse {

@@ -780,6 +780,15 @@ async def get_merge_proposal(
 
 @router.get("/pr-merge/prs")
 async def get_pr_merge_prs(
+    include_merged: int = Query(
+        default=0,
+        ge=0,
+        le=24 * 30,
+        description="When >0, ask coord to ALSO return PRs merged within the "
+        "last N hours (each carrying the merge stamp + per-PR deploy_state), "
+        "not just open ones. 0 (default) preserves the open-PRs-only "
+        "behavior. Backs the fleet pipeline's 'Merged' tab.",
+    ),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """PR Merge Orchestrator Phase 1 D1.6 + D1.7 -- proxy coord's
@@ -789,8 +798,14 @@ async def get_pr_merge_prs(
     Fleet-wide. Forwards the operator bearer so coord requires an
     authenticated operator — retires the pilot-anonymous posture
     (operator decision 2026-05-31), mirroring ``/merge/queue``.
+
+    ``include_merged`` is forwarded ONLY when set, so the default request is
+    byte-for-byte the legacy call (same convention as ``/admin-dev/prs``).
+    coord's response is returned verbatim — no field whitelist — so the
+    merged-row enrichment passes through unchanged.
     """
-    return await _proxy_coord_get("/pr-merge/prs", tenant_id=tenant_id)
+    params = {"include_merged": include_merged} if include_merged > 0 else None
+    return await _proxy_coord_get("/pr-merge/prs", params=params, tenant_id=tenant_id)
 
 
 # Coord path for the CI-duration-aware severity economics read
