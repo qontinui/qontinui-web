@@ -16,6 +16,12 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "jsdom",
+    // Heavy component test files (e.g. workflow-canvas/auto-layout, nodes) do the
+    // same work but wall-clock-slower under parallel CPU contention, so vitest's
+    // 5s DEFAULT testTimeout flakes them on full-suite runs while they pass in
+    // isolation. 20s absorbs the contention slowdown; a real hang still fails.
+    testTimeout: 20_000,
+    hookTimeout: 20_000,
     setupFiles: ["./src/test/setup.ts"],
     include: [
       "src/**/*.{test,spec}.{ts,tsx}",
