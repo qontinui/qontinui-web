@@ -938,6 +938,18 @@ export interface PipelineHealth {
   inFlight: number;
   /** Rows whose status needs the author. */
   needsAttention: number;
+  /**
+   * PRs blocked on a merge conflict — author-side backlog.
+   *
+   * Reported SEPARATELY from `level` on purpose. A conflicted PR never enters
+   * the merge train (coord cannot rebase past a conflict, so no candidate is
+   * ever cut), which means it cannot slow the pipeline down and its count says
+   * nothing about pipeline throughput. Folding it into the level is what made
+   * the page announce "Pipeline stuck · 7 conflicts accumulating" while all
+   * three trains were landing normally (measured 2026-07-20: three lands inside
+   * 1h40m, and every one of the conflicts was days old).
+   */
+  conflicted: number;
   lastMergedAt: string | null;
 }
 
@@ -949,6 +961,14 @@ export const CI_WAIT_RED_MS = 2 * 60 * 60 * 1000;
 // than this while the queue is non-empty.
 export const STALL_AMBER_MS = 30 * 60 * 1000;
 export const STALL_RED_MS = 90 * 60 * 1000;
+/**
+ * A land inside this window proves the pipeline is passing work through, so a
+ * red signal is reported as "degraded" rather than "stuck". Sized to the
+ * fleet's slowest candidate CI (~2h) so a long-CI repo mid-cycle is not called
+ * stopped merely for being slow.
+ */
+export const LAND_RECENCY_MS = 2 * 60 * 60 * 1000;
+
 /** Requeue count at which leader-takeover churn reads as an infra problem. */
 export const REQUEUE_CHURN_THRESHOLD = 3;
 
@@ -1049,11 +1069,20 @@ export function derivePipelineHealth(
     (p) => (p.requeue_count ?? 0) >= REQUEUE_CHURN_THRESHOLD
   );
 
+  // Pipeline reasons drive `level`. Author reasons NEVER do — see below.
   const redReasons: string[] = [];
   const amberReasons: string[] = [];
+  const authorReasons: string[] = [];
 
-  if (conflicts >= 2) redReasons.push(`${conflicts} conflicts accumulating`);
-  else if (conflicts === 1) amberReasons.push("1 conflict");
+  // Conflicts are author-side backlog, not pipeline throughput. They stay
+  // VISIBLE (that was the point of surfacing them at all) but they no longer
+  // set the level: a conflicted PR has no candidate in the train and cannot
+  // make the train slow or stuck. Phrase it as the action it needs, so the
+  // reader is not left inferring severity from a bare noun.
+  if (conflicts > 0)
+    authorReasons.push(
+      `${conflicts} PR${conflicts === 1 ? " needs" : "s need"} an author rebase`
+    );
   if (blocked > 0)
     amberReasons.push(
       `${blocked} waiting on overlapping PR${blocked === 1 ? "" : "s"}`
@@ -1074,18 +1103,30 @@ export function derivePipelineHealth(
 
   const level: HealthLevel =
     redReasons.length > 0 ? "red" : amberReasons.length > 0 ? "amber" : "green";
+
+  // "Stuck" is a claim that nothing is getting through, and a train that landed
+  // minutes ago falsifies it. A red signal with a recent land is DEGRADED, not
+  // stopped — same severity, honest wording. Without this guard the strongest
+  // available evidence (a land) loses to a threshold breach.
+  const landedRecently =
+    lastMergedAt !== null &&
+    nowMs - new Date(lastMergedAt).getTime() < LAND_RECENCY_MS;
+
   return {
     level,
     headline:
       level === "red"
-        ? "Pipeline stuck"
+        ? landedRecently
+          ? "Pipeline degraded"
+          : "Pipeline stuck"
         : level === "amber"
           ? "Pipeline slow"
           : "Merging normally",
-    detail: [...redReasons, ...amberReasons].join(" · "),
+    detail: [...redReasons, ...amberReasons, ...authorReasons].join(" · "),
     queueDepth: active.length,
     inFlight,
     needsAttention,
+    conflicted: conflicts,
     lastMergedAt,
   };
 }

@@ -27,6 +27,7 @@ import {
   conflictDeferralMaxMs,
   conflictStrandedForMs,
   GITHUB_CONFLICT_KINDS,
+  LAND_RECENCY_MS,
 } from "./prPipeline";
 
 const NOW = new Date("2026-07-15T12:00:00Z").getTime();
@@ -78,6 +79,118 @@ function proposal(overrides: Partial<ProposalDetail> = {}): ProposalDetail {
     ...overrides,
   };
 }
+
+describe("derivePipelineHealth — conflicts are backlog, not pipeline state", () => {
+  // Reproduces the 2026-07-20 banner: "Pipeline stuck · 7 conflicts
+  // accumulating" while all three trains were landing and every conflict was
+  // days old. A conflicted PR never enters the train (coord cannot rebase past
+  // a conflict, so no candidate is cut) and therefore cannot make it stuck.
+  function conflictedRows(n: number) {
+    return Array.from({ length: n }, (_, i) =>
+      buildPipelineRows(
+        [
+          pr({
+            pr_number: 900 + i,
+            branch: `feat/c${i}`,
+            mergeable: false,
+            merge_state_status: "DIRTY",
+          }),
+        ],
+        []
+      )
+    ).flat();
+  }
+
+  /** A row whose ACTIVE proposal has been silent past the red stall threshold. */
+  function stalledRow() {
+    return buildPipelineRows(
+      [pr({ pr_number: 950, branch: "feat/stall" })],
+      [
+        proposal({
+          proposal_id: "p-stall",
+          status: "awaiting-ci",
+          updated_at: ago(STALL_RED_MS / 60000 + 60),
+          repos: [repoDetail({ branch: "feat/stall" })],
+        }),
+      ]
+    );
+  }
+
+  /** A separate landed row, `minsAgo` old — the land-cadence evidence. */
+  function landedRow(minsAgo: number) {
+    return buildPipelineRows(
+      [pr({ pr_number: 951, branch: "feat/landed" })],
+      [
+        proposal({
+          proposal_id: "p-landed",
+          status: "merged",
+          updated_at: ago(minsAgo),
+          merged_at: ago(minsAgo),
+          repos: [repoDetail({ branch: "feat/landed" })],
+        }),
+      ]
+    );
+  }
+
+  it("many conflicts alone NEVER read as stuck or even red", () => {
+    const h = derivePipelineHealth(conflictedRows(7), NOW);
+    expect(h.level).toBe("green");
+    expect(h.headline).toBe("Merging normally");
+    expect(h.headline).not.toBe("Pipeline stuck");
+  });
+
+  it("but they stay VISIBLE, phrased as the action they need", () => {
+    const h = derivePipelineHealth(conflictedRows(7), NOW);
+    expect(h.conflicted).toBe(7);
+    expect(h.detail).toContain("7 PRs need an author rebase");
+    // Never the old severity-implying phrasing.
+    expect(h.detail).not.toContain("accumulating");
+  });
+
+  it("singular/plural is not mangled at one conflict", () => {
+    const h = derivePipelineHealth(conflictedRows(1), NOW);
+    expect(h.conflicted).toBe(1);
+    expect(h.detail).toContain("1 PR needs an author rebase");
+  });
+
+  it("zero conflicts adds no author clause at all", () => {
+    const h = derivePipelineHealth(buildPipelineRows([pr()], []), NOW);
+    expect(h.conflicted).toBe(0);
+    expect(h.detail).not.toContain("author rebase");
+  });
+
+  it("a genuine pipeline red is UNAFFECTED — conflicts neither cause nor mask it", () => {
+    // Stalled active proposal => real red, independent of conflict count.
+    const stalled = buildPipelineRows(
+      [pr()],
+      [
+        proposal({
+          status: "awaiting-ci",
+          updated_at: ago(STALL_RED_MS / 60000 + 60),
+        }),
+      ]
+    );
+    const h = derivePipelineHealth([...stalled, ...conflictedRows(7)], NOW);
+    expect(h.level).toBe("red");
+    // ...and the conflicts are still reported beside it, not swallowed.
+    expect(h.detail).toContain("author rebase");
+  });
+
+  it("RED + a recent land is DEGRADED, not stuck — a land falsifies 'stuck'", () => {
+    const h = derivePipelineHealth([...stalledRow(), ...landedRow(30)], NOW);
+    expect(h.level).toBe("red");
+    expect(h.headline).toBe("Pipeline degraded");
+  });
+
+  it("RED with the last land beyond the window IS stuck", () => {
+    const h = derivePipelineHealth(
+      [...stalledRow(), ...landedRow(LAND_RECENCY_MS / 60000 + 60)],
+      NOW
+    );
+    expect(h.level).toBe("red");
+    expect(h.headline).toBe("Pipeline stuck");
+  });
+});
 
 describe("buildPipelineRows — join + unified status", () => {
   it("fuses a PR and its active proposal into one row (proposal state wins)", () => {
@@ -594,10 +707,11 @@ describe("statusFromGitHub — CI-duration-aware conflict severity", () => {
       NOW,
       econ
     );
-    // Surfaces in the headline/detail, not just the row badge. One strand is
-    // amber; the measured 17-PR fleet would be red.
-    expect(health.detail).toContain("conflict");
-    expect(health.level).not.toBe("green");
+    // Surfaces in the detail line and the count — visibility was the point.
+    // It must NOT move the level: a strand is author backlog, and the train
+    // can be landing perfectly beside it.
+    expect(health.conflicted).toBe(1);
+    expect(health.detail).toContain("author rebase");
   });
 
   it("ABSENT conflict_age_secs is 'no evidence', never 'not stranded'", () => {
@@ -1069,7 +1183,10 @@ describe("derivePipelineHealth", () => {
         }),
       ]
     );
-    expect(derivePipelineHealth(one, NOW).level).toBe("amber");
+    // CONTRACT CHANGE (2026-07-20): conflict COUNT no longer sets the level.
+    // A conflicted PR has no candidate in the train and cannot slow it.
+    expect(derivePipelineHealth(one, NOW).level).toBe("green");
+    expect(derivePipelineHealth(one, NOW).conflicted).toBe(1);
 
     const two = buildPipelineRows(
       [pr({ branch: "b1" }), pr({ branch: "b2", pr_number: 9 })],
@@ -1089,9 +1206,11 @@ describe("derivePipelineHealth", () => {
       ]
     );
     const h = derivePipelineHealth(two, NOW);
-    expect(h.level).toBe("red");
-    expect(h.headline).toBe("Pipeline stuck");
-    expect(h.detail).toContain("2 conflicts");
+    // Same contract change: two conflicting PRs are two author asks, not a
+    // stopped pipeline. Reported, counted, never escalated.
+    expect(h.level).toBe("green");
+    expect(h.conflicted).toBe(2);
+    expect(h.detail).toContain("2 PRs need an author rebase");
   });
 
   it("flags a stuck CI wait at amber then red thresholds", () => {
@@ -1191,8 +1310,9 @@ describe("derivePipelineHealth — GitHub-derived conflicts reach the headline",
   it("a hard conflict with no live proposal is not invisible to the headline", () => {
     const h = derivePipelineHealth([hardConflictRow("feat/a")], NOW);
     expect(h.needsAttention).toBe(1);
-    expect(h.detail).toContain("conflict");
-    expect(h.level).not.toBe("green");
+    expect(h.conflicted).toBe(1);
+    // Visible in the detail line; NOT an escalation of pipeline state.
+    expect(h.detail).toContain("1 PR needs an author rebase");
   });
 
   it("two hard conflicts read as accumulating — red, not green", () => {
@@ -1200,9 +1320,12 @@ describe("derivePipelineHealth — GitHub-derived conflicts reach the headline",
       [hardConflictRow("feat/a"), hardConflictRow("feat/b")],
       NOW
     );
-    expect(h.detail).toContain("2 conflicts accumulating");
-    expect(h.level).toBe("red");
-    expect(h.headline).toBe("Pipeline stuck");
+    // Was: "2 conflicts accumulating" / red / "Pipeline stuck". That banner
+    // fired on 2026-07-20 while all three trains were landing and every
+    // conflict was days old. Conflicts are reported, not escalated.
+    expect(h.conflicted).toBe(2);
+    expect(h.detail).toContain("2 PRs need an author rebase");
+    expect(h.headline).not.toBe("Pipeline stuck");
   });
 
   it("does not double-count a PR whose conflict IS a live proposal", () => {
@@ -1214,9 +1337,11 @@ describe("derivePipelineHealth — GitHub-derived conflicts reach the headline",
     );
     expect(rows[0].status.kind).toBe("conflict");
     expect(rows[0].activeProposal).not.toBeNull();
-    // One conflict, not two: 2+ would trip the red "accumulating" branch.
-    expect(derivePipelineHealth(rows, NOW).level).toBe("amber");
-    expect(derivePipelineHealth(rows, NOW).detail).toContain("1 conflict");
+    // One conflict, not two — the double-count guard this test exists for.
+    expect(derivePipelineHealth(rows, NOW).conflicted).toBe(1);
+    expect(derivePipelineHealth(rows, NOW).detail).toContain(
+      "1 PR needs an author rebase"
+    );
   });
 
   it("keeps the deliberate de-escalation: a deferred conflict stays out", () => {
