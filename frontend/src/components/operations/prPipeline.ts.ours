@@ -1016,26 +1016,9 @@ export function derivePipelineHealth(
   // The two sides are disjoint by construction: `buildPipelineRows` only calls
   // `statusFromGitHub` (the sole producer of GITHUB_CONFLICT_KINDS) when the
   // row has no active proposal, so nothing is double-counted.
-  // Counted as DISTINCT PRs, not rows. A multi-repo group proposal produces
-  // its OWN row (keyed `repoA::b1|repoB::b2`) *and* a row per member PR, so a
-  // row-wise sum reports one conflict two or three times — and this number is
-  // printed to the operator as a literal PR count.
-  const conflictedPrs = new Set<string>();
-  const noteConflict = (repo: string, prNumber: number | null | undefined) => {
-    if (prNumber != null) conflictedPrs.add(`${repo}#${prNumber}`);
-  };
-  for (const r of rows) {
-    const conflicted =
-      (r.activeProposal !== null && r.activeProposal.status === "conflict") ||
-      GITHUB_CONFLICT_KINDS.has(r.status.kind);
-    if (!conflicted) continue;
-    if (r.members) {
-      for (const m of r.members) noteConflict(m.repo.repo, m.pr?.pr_number);
-    } else {
-      noteConflict(r.repo, r.prNumber);
-    }
-  }
-  const conflicts = conflictedPrs.size;
+  const conflicts =
+    active.filter((p) => p.status === "conflict").length +
+    rows.filter((r) => GITHUB_CONFLICT_KINDS.has(r.status.kind)).length;
   const blocked = active.filter(
     (p) => p.status === "blocked-by-overlap"
   ).length;
@@ -1100,21 +1083,6 @@ export function derivePipelineHealth(
     authorReasons.push(
       `${conflicts} PR${conflicts === 1 ? " needs" : "s need"} an author rebase`
     );
-<<<<<<< HEAD
-  // Orthogonal means the conflict count is no evidence EITHER WAY — it does not
-  // license asserting the positive. With backlog present and nothing at all in
-  // the train, green would be reached by absence of evidence and would render
-  // "Merging normally" beside a "last merged never" badge. Nothing can be cut
-  // into the train, which is a pipeline fact, so it earns amber (never red).
-  // NB: a `conflict` proposal is "active" here (this module's TERMINAL set is
-  // only {merged, cancelled}), so `active.length` is NOT the test — it stays
-  // non-zero on a fleet where every proposal has conflicted. The question is
-  // whether anything can still MOVE.
-  const movable = active.filter((p) => p.status !== "conflict").length;
-  if (conflicts > 0 && movable === 0)
-    amberReasons.push("nothing in the train — all open work is conflicted");
-=======
->>>>>>> 8d6c3a53 (fix(fleet): conflicts are author backlog, not a stuck pipeline)
   if (blocked > 0)
     amberReasons.push(
       `${blocked} waiting on overlapping PR${blocked === 1 ? "" : "s"}`
@@ -1140,21 +1108,9 @@ export function derivePipelineHealth(
   // minutes ago falsifies it. A red signal with a recent land is DEGRADED, not
   // stopped — same severity, honest wording. Without this guard the strongest
   // available evidence (a land) loses to a threshold breach.
-<<<<<<< HEAD
-  // `nowMs` is the BROWSER clock; `lastMergedAt` is a coord SERVER stamp. Any
-  // skew putting the newest land ahead of the client makes the difference
-  // negative — trivially < the window — which would suppress "stuck" forever.
-  // Same lower bound `relativeTime` (utils.ts) already applies to this value.
-  // NaN falls through to "stuck", which is the safe direction.
-  const sinceLandMs = lastMergedAt
-    ? nowMs - new Date(lastMergedAt).getTime()
-    : Number.NaN;
-  const landedRecently = sinceLandMs >= 0 && sinceLandMs < LAND_RECENCY_MS;
-=======
   const landedRecently =
     lastMergedAt !== null &&
     nowMs - new Date(lastMergedAt).getTime() < LAND_RECENCY_MS;
->>>>>>> 8d6c3a53 (fix(fleet): conflicts are author backlog, not a stuck pipeline)
 
   return {
     level,

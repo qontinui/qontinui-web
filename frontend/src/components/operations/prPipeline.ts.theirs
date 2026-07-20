@@ -1100,7 +1100,6 @@ export function derivePipelineHealth(
     authorReasons.push(
       `${conflicts} PR${conflicts === 1 ? " needs" : "s need"} an author rebase`
     );
-<<<<<<< HEAD
   // Orthogonal means the conflict count is no evidence EITHER WAY — it does not
   // license asserting the positive. With backlog present and nothing at all in
   // the train, green would be reached by absence of evidence and would render
@@ -1113,8 +1112,6 @@ export function derivePipelineHealth(
   const movable = active.filter((p) => p.status !== "conflict").length;
   if (conflicts > 0 && movable === 0)
     amberReasons.push("nothing in the train — all open work is conflicted");
-=======
->>>>>>> 8d6c3a53 (fix(fleet): conflicts are author backlog, not a stuck pipeline)
   if (blocked > 0)
     amberReasons.push(
       `${blocked} waiting on overlapping PR${blocked === 1 ? "" : "s"}`
@@ -1140,7 +1137,6 @@ export function derivePipelineHealth(
   // minutes ago falsifies it. A red signal with a recent land is DEGRADED, not
   // stopped — same severity, honest wording. Without this guard the strongest
   // available evidence (a land) loses to a threshold breach.
-<<<<<<< HEAD
   // `nowMs` is the BROWSER clock; `lastMergedAt` is a coord SERVER stamp. Any
   // skew putting the newest land ahead of the client makes the difference
   // negative — trivially < the window — which would suppress "stuck" forever.
@@ -1150,11 +1146,6 @@ export function derivePipelineHealth(
     ? nowMs - new Date(lastMergedAt).getTime()
     : Number.NaN;
   const landedRecently = sinceLandMs >= 0 && sinceLandMs < LAND_RECENCY_MS;
-=======
-  const landedRecently =
-    lastMergedAt !== null &&
-    nowMs - new Date(lastMergedAt).getTime() < LAND_RECENCY_MS;
->>>>>>> 8d6c3a53 (fix(fleet): conflicts are author backlog, not a stuck pipeline)
 
   return {
     level,

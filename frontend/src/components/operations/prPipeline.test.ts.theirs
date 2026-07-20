@@ -132,7 +132,6 @@ describe("derivePipelineHealth — conflicts are backlog, not pipeline state", (
     );
   }
 
-<<<<<<< HEAD
   it("many conflicts alone NEVER read as stuck or red", () => {
     const h = derivePipelineHealth(conflictedRows(7), NOW);
     // Amber, not green: with every open PR conflicted there is nothing in the
@@ -168,13 +167,6 @@ describe("derivePipelineHealth — conflicts are backlog, not pipeline state", (
     expect(h.level).toBe("green");
     expect(h.headline).toBe("Merging normally");
     expect(h.conflicted).toBe(7);
-=======
-  it("many conflicts alone NEVER read as stuck or even red", () => {
-    const h = derivePipelineHealth(conflictedRows(7), NOW);
-    expect(h.level).toBe("green");
-    expect(h.headline).toBe("Merging normally");
-    expect(h.headline).not.toBe("Pipeline stuck");
->>>>>>> 8d6c3a53 (fix(fleet): conflicts are author backlog, not a stuck pipeline)
   });
 
   it("but they stay VISIBLE, phrased as the action they need", () => {
@@ -1222,7 +1214,6 @@ describe("derivePipelineHealth", () => {
       ]
     );
     // CONTRACT CHANGE (2026-07-20): conflict COUNT no longer sets the level.
-<<<<<<< HEAD
     // A conflicted PR has no candidate in the train and cannot slow it. Amber
     // here comes from the EMPTY-TRAIN floor (this one conflict is the whole
     // fleet, so nothing can move) — never from the count itself, and never red.
@@ -1231,11 +1222,6 @@ describe("derivePipelineHealth", () => {
     expect(derivePipelineHealth(one, NOW).detail).toContain(
       "1 PR needs an author rebase"
     );
-=======
-    // A conflicted PR has no candidate in the train and cannot slow it.
-    expect(derivePipelineHealth(one, NOW).level).toBe("green");
-    expect(derivePipelineHealth(one, NOW).conflicted).toBe(1);
->>>>>>> 8d6c3a53 (fix(fleet): conflicts are author backlog, not a stuck pipeline)
 
     const two = buildPipelineRows(
       [pr({ branch: "b1" }), pr({ branch: "b2", pr_number: 9 })],
@@ -1256,15 +1242,10 @@ describe("derivePipelineHealth", () => {
     );
     const h = derivePipelineHealth(two, NOW);
     // Same contract change: two conflicting PRs are two author asks, not a
-<<<<<<< HEAD
     // stopped pipeline. Amber from the empty-train floor; crucially NOT red,
     // and never "Pipeline stuck".
     expect(h.level).toBe("amber");
     expect(h.headline).not.toBe("Pipeline stuck");
-=======
-    // stopped pipeline. Reported, counted, never escalated.
-    expect(h.level).toBe("green");
->>>>>>> 8d6c3a53 (fix(fleet): conflicts are author backlog, not a stuck pipeline)
     expect(h.conflicted).toBe(2);
     expect(h.detail).toContain("2 PRs need an author rebase");
   });
@@ -1388,16 +1369,12 @@ describe("derivePipelineHealth — GitHub-derived conflicts reach the headline",
     // conflict was days old. Conflicts are reported, not escalated.
     expect(h.conflicted).toBe(2);
     expect(h.detail).toContain("2 PRs need an author rebase");
-<<<<<<< HEAD
     // Assert the level POSITIVELY. `not.toBe("Pipeline stuck")` is satisfied by
     // "Pipeline degraded", which is still red — so a regression re-escalating
     // conflicts into redReasons would slip through whenever a land is recent.
     // Amber (not green) because these two rows are the whole fleet: nothing is
     // in the train. Never red.
     expect(h.level).toBe("amber");
-=======
-    expect(h.headline).not.toBe("Pipeline stuck");
->>>>>>> 8d6c3a53 (fix(fleet): conflicts are author backlog, not a stuck pipeline)
   });
 
   it("does not double-count a PR whose conflict IS a live proposal", () => {

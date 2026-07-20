@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "base_sha": "982fe935ff626e9737b0c2f9705009fa7c79e26f",
+  "ours_sha": "271491afef37d076f5ef8a213dad7a9efc3fb688",
+  "theirs_sha": "f11571fe8021384a1db835b473c36d6dae917a13",
+  "entries": [
+    {
+      "path": "frontend/src/components/operations/prPipeline.test.ts",
+      "base_oid": "92e1e80fe4237b3aa0274cc756365e93cab01c8f",
+      "ours_oid": "febc470b8b43ce2c5d2497b0ba1babf67c8fc04b",
+      "theirs_oid": "d39f6bb937b1935e180655e79feb468832ecd080",
+      "base_path": "frontend/src/components/operations/prPipeline.test.ts.base",
+      "ours_path": "frontend/src/components/operations/prPipeline.test.ts.ours",
+      "theirs_path": "frontend/src/components/operations/prPipeline.test.ts.theirs",
+      "hunks": [
+        "<<<<<<< HEAD\n  it(\"many conflicts alone NEVER read as stuck or red\", () => {\n    const h = derivePipelineHealth(conflictedRows(7), NOW);\n    // Amber, not green: with every open PR conflicted there is nothing in the\n    // train at all, and green-by-absence-of-evidence would render \"Merging\n    // normally\" beside a \"last merged never\" badge. But never RED, and never\n    // \"stuck\" — the conflicts themselves are backlog, not a stopped pipeline.\n    expect(h.level).toBe(\"amber\");\n    expect(h.headline).toBe(\"Pipeline slow\");\n    expect(h.headline).not.toBe(\"Pipeline stuck\");\n    expect(h.detail).toContain(\"nothing in the train\");\n  });\n\n  it(\"conflicts alongside a LIVE train stay green — backlog is not slowness\", () => {\n    // The distinguishing case for the amber floor above: the train has work,\n    // so conflicted PRs beside it change nothing about pipeline health.\n    const h = derivePipelineHealth(\n      [\n        ...conflictedRows(7),\n        ...buildPipelineRows(\n          [pr({ pr_number: 960, branch: \"feat/live\" })],\n          [\n            proposal({\n              proposal_id: \"p-live\",\n              status: \"awaiting-ci\",\n              updated_at: ago(1),\n              repos: [repoDetail({ branch: \"feat/live\" })],\n            }),\n          ]\n        ),\n      ],\n      NOW\n    );\n    expect(h.level).toBe(\"green\");\n    expect(h.headline).toBe(\"Merging normally\");\n    expect(h.conflicted).toBe(7);\n=======\n  it(\"many conflicts alone NEVER read as stuck or even red\", () => {\n    const h = derivePipelineHealth(conflictedRows(7), NOW);\n    expect(h.level).toBe(\"green\");\n    expect(h.headline).toBe(\"Merging normally\");\n    expect(h.headline).not.toBe(\"Pipeline stuck\");\n>>>>>>> 8d6c3a53 (fix(fleet): conflicts are author backlog, not a stuck pipeline)\n",
+        "<<<<<<< HEAD\n    // A conflicted PR has no candidate in the train and cannot slow it. Amber\n    // here comes from the EMPTY-TRAIN floor (this one conflict is the whole\n    // fleet, so nothing can move) — never from the count itself, and never red.\n    expect(derivePipelineHealth(one, NOW).level).toBe(\"amber\");\n    expect(derivePipelineHealth(one, NOW).conflicted).toBe(1);\n    expect(derivePipelineHealth(one, NOW).detail).toContain(\n      \"1 PR needs an author rebase\"\n    );\n=======\n    // A conflicted PR has no candidate in the train and cannot slow it.\n    expect(derivePipelineHealth(one, NOW).level).toBe(\"green\");\n    expect(derivePipelineHealth(one, NOW).conflicted).toBe(1);\n>>>>>>> 8d6c3a53 (fix(fleet): conflicts are author backlog, not a stuck pipeline)\n",
+        "<<<<<<< HEAD\n    // stopped pipeline. Amber from the empty-train floor; crucially NOT red,\n    // and never \"Pipeline stuck\".\n    expect(h.level).toBe(\"amber\");\n    expect(h.headline).not.toBe(\"Pipeline stuck\");\n=======\n    // stopped pipeline. Reported, counted, never escalated.\n    expect(h.level).toBe(\"green\");\n>>>>>>> 8d6c3a53 (fix(fleet): conflicts are author backlog, not a stuck pipeline)\n",
+        "<<<<<<< HEAD\n    // Assert the level POSITIVELY. `not.toBe(\"Pipeline stuck\")` is satisfied by\n    // \"Pipeline degraded\", which is still red — so a regression re-escalating\n    // conflicts into redReasons would slip through whenever a land is recent.\n    // Amber (not green) because these two rows are the whole fleet: nothing is\n    // in the train. Never red.\n    expect(h.level).toBe(\"amber\");\n=======\n    expect(h.headline).not.toBe(\"Pipeline stuck\");\n>>>>>>> 8d6c3a53 (fix(fleet): conflicts are author backlog, not a stuck pipeline)\n"
+      ]
+    },
+    {
+      "path": "frontend/src/components/operations/prPipeline.ts",
+      "base_oid": "b1cf660fc5a1aeb82e8d36dd74b69df371ef00b1",
+      "ours_oid": "114d161a02473cf5c487aec346453a4a3330bbba",
+      "theirs_oid": "12e999e5c58fce20e7cf940d959923cfad81c916",
+      "base_path": "frontend/src/components/operations/prPipeline.ts.base",
+      "ours_path": "frontend/src/components/operations/prPipeline.ts.ours",
+      "theirs_path": "frontend/src/components/operations/prPipeline.ts.theirs",
+      "hunks": [
+        "<<<<<<< HEAD\n  // Orthogonal means the conflict count is no evidence EITHER WAY — it does not\n  // license asserting the positive. With backlog present and nothing at all in\n  // the train, green would be reached by absence of evidence and would render\n  // \"Merging normally\" beside a \"last merged never\" badge. Nothing can be cut\n  // into the train, which is a pipeline fact, so it earns amber (never red).\n  // NB: a `conflict` proposal is \"active\" here (this module's TERMINAL set is\n  // only {merged, cancelled}), so `active.length` is NOT the test — it stays\n  // non-zero on a fleet where every proposal has conflicted. The question is\n  // whether anything can still MOVE.\n  const movable = active.filter((p) => p.status !== \"conflict\").length;\n  if (conflicts > 0 && movable === 0)\n    amberReasons.push(\"nothing in the train — all open work is conflicted\");\n=======\n>>>>>>> 8d6c3a53 (fix(fleet): conflicts are author backlog, not a stuck pipeline)\n",
+        "<<<<<<< HEAD\n  // `nowMs` is the BROWSER clock; `lastMergedAt` is a coord SERVER stamp. Any\n  // skew putting the newest land ahead of the client makes the difference\n  // negative — trivially < the window — which would suppress \"stuck\" forever.\n  // Same lower bound `relativeTime` (utils.ts) already applies to this value.\n  // NaN falls through to \"stuck\", which is the safe direction.\n  const sinceLandMs = lastMergedAt\n    ? nowMs - new Date(lastMergedAt).getTime()\n    : Number.NaN;\n  const landedRecently = sinceLandMs >= 0 && sinceLandMs < LAND_RECENCY_MS;\n=======\n  const landedRecently =\n    lastMergedAt !== null &&\n    nowMs - new Date(lastMergedAt).getTime() < LAND_RECENCY_MS;\n>>>>>>> 8d6c3a53 (fix(fleet): conflicts are author backlog, not a stuck pipeline)\n"
+      ]
+    }
+  ]
+}
