@@ -50,6 +50,55 @@ export type UnifiedStatusKind =
 /** Who (if anyone) the status is waiting on — drives the row accent. */
 export type Attention = "author" | "waiting" | "none";
 
+/**
+ * The audited kind → attention table. Every status this module constructs
+ * MUST carry the attention listed here (enforced by a unit test), because the
+ * badge palette in MergePipeline is keyed off the SAME table: `author` → red,
+ * `waiting` → amber, `none` → never red or amber. Keeping the mapping in one
+ * exported constant is what stops the two surfaces from drifting into the
+ * bug this replaced — a red badge on a state that needs nobody (CI still
+ * running) and an amber one on a state that does (a failed check).
+ *
+ * The audit, one line per kind:
+ *
+ * | kind             | why it exists                        | author acts? |
+ * |------------------|--------------------------------------|--------------|
+ * | ready            | CLEAN, coord will pick it up         | no           |
+ * | queued           | in coord's queue                     | no           |
+ * | rebasing         | coord dry-rebasing the candidate     | no           |
+ * | awaiting-ci      | candidate CI running                 | no           |
+ * | checks-pending   | branch CI still running              | no           |
+ * | landing          | coord pushing the land               | no           |
+ * | merged           | landed                               | no           |
+ * | draft            | intentionally parked by the author   | no           |
+ * | unknown          | GitHub still recomputing             | no           |
+ * | blocked          | overlaps another PR; coord serializes| no — waits   |
+ * | needs-rebase     | BEHIND; coord auto-rebases in train  | no — waits   |
+ * | conflict-deferred| true conflict, but far from merging  | no — waits   |
+ * | conflict         | rebase/candidate CI failed           | YES          |
+ * | not-mergeable    | conflicts, and it blocks now         | YES          |
+ * | checks-failing   | a check reported failure             | YES          |
+ * | requirements     | review demanded / ruleset unmet      | YES          |
+ */
+export const ATTENTION_BY_KIND: Record<UnifiedStatusKind, Attention> = {
+  ready: "none",
+  queued: "none",
+  rebasing: "none",
+  "awaiting-ci": "none",
+  "checks-pending": "none",
+  landing: "none",
+  merged: "none",
+  draft: "none",
+  unknown: "none",
+  blocked: "waiting",
+  "needs-rebase": "waiting",
+  "conflict-deferred": "waiting",
+  conflict: "author",
+  "not-mergeable": "author",
+  "checks-failing": "author",
+  requirements: "author",
+};
+
 export interface UnifiedStatus {
   kind: UnifiedStatusKind;
   /** User-facing label. Never a raw coord/GitHub enum value. */
@@ -93,11 +142,16 @@ function statusFromProposal(p: ProposalDetail): UnifiedStatus {
       return {
         kind: "landing",
         label: "Landing",
-        reason: "about to merge",
+        reason: "coord is pushing the merge — no action needed",
         attention: "none",
       };
     case "merged":
-      return { kind: "merged", label: "Merged", reason: "", attention: "none" };
+      return {
+        kind: "merged",
+        label: "Merged",
+        reason: "landed by the merge train",
+        attention: "none",
+      };
     case "conflict":
       return {
         kind: "conflict",
@@ -229,10 +283,46 @@ export function isNearFrontOfQueue(
 }
 
 /**
+ * True when the PR has checks that are still RUNNING (no verdict yet).
+ * Prefers coord's named `pending_contexts`; falls back to the aggregate
+ * `ci_lifecycle` when the arrays are absent (older coord deploys omit them).
+ * This is the "just wait" signal — it must never be reported as a failure.
+ */
+export function hasPendingChecks(
+  pr: Pick<PrRow, "pending_contexts" | "ci_lifecycle">
+): boolean {
+  return (pr.pending_contexts?.length ?? 0) > 0 || pr.ci_lifecycle === "pending";
+}
+
+/**
+ * True when this PR has LANDED.
+ *
+ * `closed` counts as merged, and that is deliberate — it rests on a guarantee
+ * from the FEED, not on GitHub's own flag. coord's two land paths close a PR
+ * differently: the merge button sets `pr_state = "merged"`, while coord's
+ * rebase-fast-forward land pushes straight to the base branch, so GitHub
+ * reports the PR `closed` with `merged = false`. ff-lands are the MAJORITY of
+ * this fleet's landings. The only way a non-open row reaches this list at all
+ * is coord's `query_recently_merged_prs`, whose WHERE clause already requires
+ * `merge_commit_sha IS NOT NULL` — so a closed row here has landed, whether
+ * or not the sha is serialized in the payload.
+ *
+ * Gating on `merge_commit_sha` instead would be correct only against a coord
+ * that projects it; against every older deploy the ff-landed rows would fail
+ * the check, fall through to the GitHub derivation, and pollute the LIVE
+ * list with closed PRs rendered as "Ready". The sha is used for the reason
+ * text and nothing else.
+ */
+export function isMergedPr(pr: Pick<PrRow, "pr_state">): boolean {
+  return pr.pr_state === "merged" || pr.pr_state === "closed";
+}
+
+/**
  * Status for a PR with NO active merge attempt — GitHub's view decides.
- * Precedence (report §C/§7): draft > merged/closed > behind-main (the
- * actionable "your CI is stale" case) > hard-unmergeable > blocked
- * requirements > failing checks > clean.
+ * Precedence (report §C/§7): merged (terminal, and it outranks the stale
+ * pr_state a fast-forward land leaves behind) > draft > behind-main >
+ * hard-unmergeable > BLOCKED (itself split by cause: review demanded /
+ * checks failed / checks still running) > failing checks > clean.
  *
  * `economics` (optional; default `{}`) drives CI-duration-aware conflict
  * severity — see the DIRTY branch below.
@@ -241,16 +331,25 @@ function statusFromGitHub(
   pr: PrRow,
   economics: Record<string, MergeEconomics> = {}
 ): UnifiedStatus {
+  // Merged wins over draft: a landed PR is terminal, and coord's
+  // recently-merged rows keep whatever pr_state GitHub last mirrored.
+  if (isMergedPr(pr)) {
+    return {
+      kind: "merged",
+      label: "Merged",
+      reason: pr.merge_commit_sha
+        ? `landed on ${pr.base_branch} as ${pr.merge_commit_sha.slice(0, 7)}`
+        : `landed on ${pr.base_branch}`,
+      attention: "none",
+    };
+  }
   if (pr.pr_state === "draft" || pr.merge_state_status === "DRAFT") {
     return {
       kind: "draft",
       label: "Draft",
-      reason: "not in the pipeline until marked ready",
+      reason: "parked by the author — not in the pipeline until marked ready",
       attention: "none",
     };
-  }
-  if (pr.pr_state === "merged") {
-    return { kind: "merged", label: "Merged", reason: "", attention: "none" };
   }
   if (pr.merge_state_status === "BEHIND") {
     // Coord's merge train rebases candidates itself — BEHIND is a "just
@@ -259,7 +358,7 @@ function statusFromGitHub(
     return {
       kind: "needs-rebase",
       label: "Needs rebase",
-      reason: "behind main — coord auto-rebases in the train",
+      reason: `behind ${pr.base_branch} — coord auto-rebases it in the train, no action needed`,
       attention: "waiting",
     };
   }
@@ -300,20 +399,56 @@ function statusFromGitHub(
   }
   if (pr.merge_state_status === "BLOCKED") {
     const failing = pr.failing_contexts ?? [];
-    const reason =
-      pr.review_decision === "CHANGES_REQUESTED"
-        ? "changes requested in review"
-        : pr.review_decision === "REVIEW_REQUIRED"
-          ? "review required"
-          : failing.length > 0
-            ? `required checks failing: ${formatContextNames(failing)}`
-            : pr.required_checks_satisfied === false
-              ? "required checks not satisfied"
-              : "ruleset/branch-protection requirements not met";
+    // GitHub reports BLOCKED for the WHOLE window in which required checks
+    // have not yet reported — and on this fleet the overwhelmingly common
+    // cause is simply "CI is still running", which needs nobody. Collapsing
+    // all of BLOCKED into one red "Blocked by requirements" is what trained
+    // the eye to ignore red. Split it by cause; only a real failure or a
+    // review demand is an author-action state.
+    if (pr.review_decision === "CHANGES_REQUESTED") {
+      return {
+        kind: "requirements",
+        label: "Changes requested",
+        reason:
+          "a reviewer requested changes — address them and re-request review",
+        attention: "author",
+      };
+    }
+    if (pr.review_decision === "REVIEW_REQUIRED") {
+      return {
+        kind: "requirements",
+        label: "Review required",
+        reason: "a required approving review is missing — request one",
+        attention: "author",
+      };
+    }
+    if (failing.length > 0) {
+      return {
+        kind: "checks-failing",
+        label: "Checks failing",
+        reason: `required checks failing: ${formatContextNames(failing)} — push a fix`,
+        attention: "author",
+      };
+    }
+    if (hasPendingChecks(pr)) {
+      const pending = pr.pending_contexts ?? [];
+      return {
+        kind: "checks-pending",
+        label: "Checks in progress",
+        reason:
+          pending.length > 0
+            ? `required checks still running: ${formatContextNames(pending)}`
+            : "required checks still running — no action needed",
+        attention: "none",
+      };
+    }
     return {
       kind: "requirements",
       label: "Blocked by requirements",
-      reason,
+      reason:
+        pr.required_checks_satisfied === false
+          ? "a required check has not reported and none is running — re-run CI on the head commit"
+          : "a branch ruleset / protection requirement is unmet — the PR's merge box on GitHub names it",
       attention: "author",
     };
   }
@@ -328,8 +463,8 @@ function statusFromGitHub(
         label: "Checks failing",
         reason:
           failing.length > 0
-            ? `failing: ${formatContextNames(failing)}`
-            : "branch CI reports a failing check",
+            ? `failing: ${formatContextNames(failing)} — push a fix`
+            : "branch CI reports a failing check — push a fix",
         attention: "author",
       };
     }
@@ -337,10 +472,14 @@ function statusFromGitHub(
     // are merely still running. This branch also covers the old-coord
     // fallback where the context arrays are absent and `ci_lifecycle` is
     // still "pending": never claim "failing" without a failure signal.
+    const pending = pr.pending_contexts ?? [];
     return {
       kind: "checks-pending",
-      label: "Checks running",
-      reason: "non-required checks still running",
+      label: "Checks in progress",
+      reason:
+        pending.length > 0
+          ? `still running: ${formatContextNames(pending)}`
+          : "non-required checks still running — no action needed",
       attention: "none",
     };
   }
@@ -348,14 +487,15 @@ function statusFromGitHub(
     return {
       kind: "ready",
       label: "Ready",
-      reason: "waiting for coord to pick it up",
+      reason: "clean and green — waiting for coord to pick it up",
       attention: "none",
     };
   }
   return {
     kind: "unknown",
     label: "Syncing",
-    reason: "waiting for fresh GitHub data",
+    reason:
+      "GitHub is still recomputing mergeability — this resolves on its own",
     attention: "none",
   };
 }
@@ -383,6 +523,14 @@ export interface PipelineRow {
   status: UnifiedStatus;
   /** Most recent signal — proposal state change if active, else PR refresh. */
   updatedAt: string | null;
+  /**
+   * When this row LANDED, for the merged tab's ordering + timestamp. Null on
+   * every non-merged row, and also on a merged row whose coord deploy does not
+   * yet project `merged_at` (the tab degrades to "merge time unknown" rather
+   * than inventing one from `updatedAt`, which is a refresh time, not a land
+   * time).
+   */
+  mergedAt: string | null;
   pr: PrRow | null;
   activeProposal: ProposalDetail | null;
   /** All proposals ever seen for this key, newest first (attempt history). */
@@ -436,6 +584,28 @@ export function pickActiveProposal(
 
 const TERMINAL: ReadonlySet<ProposalStatus> = new Set(["merged", "cancelled"]);
 
+/**
+ * The land time for a row, or null when it has not landed / no source carries
+ * one. Two independent sources, because the two land paths stamp different
+ * tables: coord's own fast-forward land stamps `merge_proposals.merged_at`,
+ * while `repo_branches.merged_at` is written by whichever path closed the PR.
+ * We never substitute `updated_at` — a refresh time presented as a merge time
+ * would silently mis-order the merged tab on every poll.
+ */
+function pickMergedAt(
+  status: UnifiedStatus,
+  pr: PrRow | null,
+  attempts: ProposalDetail[]
+): string | null {
+  if (status.kind !== "merged") return null;
+  const newestProposalMerge = attempts.reduce<string | null>(
+    (acc, a) =>
+      a.merged_at && (acc === null || a.merged_at > acc) ? a.merged_at : acc,
+    null
+  );
+  return pr?.merged_at ?? newestProposalMerge;
+}
+
 export function buildPipelineRows(
   prs: PrRow[],
   proposals: ProposalDetail[],
@@ -482,6 +652,7 @@ export function buildPipelineRows(
       baseBranch: pr.base_branch,
       status,
       updatedAt: active ? active.updated_at : pr.last_refreshed_at,
+      mergedAt: pickMergedAt(status, pr, attempts),
       pr,
       activeProposal: active,
       attempts,
@@ -504,6 +675,7 @@ export function buildPipelineRows(
     const first = active.repos[0];
     if (!first) continue; // unreachable: zero-repo proposals never enter byKey
     const isGroup = active.repos.length > 1;
+    const status = statusFromProposal(active);
     rows.push({
       key,
       repo: first.repo,
@@ -511,8 +683,9 @@ export function buildPipelineRows(
       prNumber: null,
       branch: first.branch,
       baseBranch: null,
-      status: statusFromProposal(active),
+      status,
       updatedAt: active.updated_at,
+      mergedAt: pickMergedAt(status, null, attempts),
       pr: null,
       activeProposal: active,
       attempts,
@@ -536,7 +709,10 @@ export function buildPipelineRows(
         new Date(b.activeProposal!.created_at).getTime()
     );
   queued.forEach((row, i) => {
-    row.status = { ...row.status, reason: ordinal(i + 1) + " in line" };
+    row.status = {
+      ...row.status,
+      reason: `${ordinal(i + 1)} in line for the merge train — no action needed`,
+    };
   });
 
   rows.sort(compareRows);
@@ -581,6 +757,15 @@ const KIND_RANK: Record<UnifiedStatusKind, number> = {
 function compareRows(a: PipelineRow, b: PipelineRow): number {
   const rank = KIND_RANK[a.status.kind] - KIND_RANK[b.status.kind];
   if (rank !== 0) return rank;
+  // Merged rows order by LAND time, newest first — that is what the merged
+  // tab is a record of. Rows whose coord deploy carries no `merged_at` fall
+  // back to `updatedAt` so they still interleave sanely instead of sinking.
+  if (a.status.kind === "merged" && b.status.kind === "merged") {
+    return (
+      new Date(b.mergedAt ?? b.updatedAt ?? 0).getTime() -
+      new Date(a.mergedAt ?? a.updatedAt ?? 0).getTime()
+    );
+  }
   return (
     new Date(b.updatedAt ?? 0).getTime() - new Date(a.updatedAt ?? 0).getTime()
   );
@@ -590,18 +775,22 @@ function compareRows(a: PipelineRow, b: PipelineRow): number {
 // Filtering
 // ----------------------------------------------------------------------------
 
-export type PipelineFilter = "all" | "attention" | "in-flight";
+export type PipelineFilter = "all" | "attention" | "in-flight" | "merged";
 
 export function matchesFilter(row: PipelineRow, f: PipelineFilter): boolean {
   switch (f) {
+    // "All PRs" is the live pipeline — merged rows are history and live in
+    // their own tab, so they do not pad the working list.
     case "all":
-      return true;
+      return row.status.kind !== "merged";
     case "attention":
       return row.status.attention !== "none";
     case "in-flight": {
       const s = row.activeProposal?.status;
       return s !== undefined && !TERMINAL.has(s);
     }
+    case "merged":
+      return row.status.kind === "merged";
   }
 }
 
@@ -701,13 +890,17 @@ export function derivePipelineHealth(
     (r) => r.status.attention === "author"
   ).length;
 
+  // Land times come from BOTH sources. `GET /merge/queue` is the in-flight
+  // view — it excludes terminal proposals — so reading only `attempts` left
+  // this permanently "never" on a healthy fleet; the merged PR rows are the
+  // reliable source.
   let lastMergedAt: string | null = null;
+  const noteMerge = (t: string | null | undefined) => {
+    if (t && (lastMergedAt === null || t > lastMergedAt)) lastMergedAt = t;
+  };
   for (const r of rows) {
-    for (const p of r.attempts) {
-      if (p.merged_at && (!lastMergedAt || p.merged_at > lastMergedAt)) {
-        lastMergedAt = p.merged_at;
-      }
-    }
+    noteMerge(r.mergedAt);
+    for (const p of r.attempts) noteMerge(p.merged_at);
   }
 
   // Per-repo CI-wait severity: each awaiting-ci proposal is judged against its

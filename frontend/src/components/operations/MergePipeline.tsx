@@ -36,7 +36,10 @@ import Link from "next/link";
 import { CollapsiblePanel } from "./CollapsiblePanel";
 import { GateDecisionRow, MergeTrainRow, SuggestionCard } from "./MergeTrain";
 import { relativeTime } from "./utils";
-import { useMergePipelineData } from "./useMergePipelineData";
+import {
+  MERGED_LOOKBACK_HOURS,
+  useMergePipelineData,
+} from "./useMergePipelineData";
 import { usePrCheckDetails } from "./usePrCheckDetails";
 import type { MergeEconomics } from "./mergeTypes";
 import {
@@ -51,33 +54,51 @@ import {
 } from "./prPipeline";
 
 // ----------------------------------------------------------------------------
-// Status visuals — one color family per unified status. Same palette
-// direction as the old proposal tints so returning operators keep their
-// color instincts: green=done/ready, blue=landing, yellow=CI, purple=coord
-// testing, red=needs the author, orange/amber=waiting on something else.
+// Status visuals.
+//
+// THE RULE, and the whole point of the palette: **color encodes who has to do
+// something, not how alarming the word sounds.** Red is reserved for
+// `attention: "author"` — someone must act now. Amber means the row is
+// waiting on something else and will clear itself. Everything else is a calm
+// in-flight hue (yellow = CI running, purple = coord testing, blue = landing,
+// green = ready/done, muted = inert).
+//
+// Getting this backwards is the bug this table exists to prevent: a red badge
+// on "CI hasn't finished" trained the eye to ignore red, while a failed check
+// — the one state that genuinely needs a push — sat in amber next to it.
+// `ATTENTION_BY_KIND` (prPipeline.ts) is the shared audit table and a unit
+// test asserts every entry below agrees with it, so the severity model and
+// the palette can never drift apart again.
 // ----------------------------------------------------------------------------
 
-const STATUS_BADGE_CLASS: Record<UnifiedStatusKind, string> = {
-  merged: "bg-green-500/15 text-green-200 border-green-500/30",
-  landing: "bg-blue-500/15 text-blue-200 border-blue-500/30",
-  "awaiting-ci": "bg-yellow-500/15 text-yellow-200 border-yellow-500/30",
+/** The three families. A kind may only use the family its attention allows. */
+const AUTHOR_RED = "bg-red-500/15 text-red-200 border-red-500/35";
+const WAITING_AMBER = "bg-amber-500/15 text-amber-200 border-amber-500/30";
+const CI_YELLOW = "bg-yellow-500/15 text-yellow-200 border-yellow-500/30";
+const INERT = "bg-muted text-muted-foreground border-border";
+
+export const STATUS_BADGE_CLASS: Record<UnifiedStatusKind, string> = {
+  // --- someone must act now → red -------------------------------------------
+  conflict: AUTHOR_RED,
+  "not-mergeable": AUTHOR_RED,
+  requirements: AUTHOR_RED,
+  "checks-failing": AUTHOR_RED,
+  // --- waiting on something else → amber ------------------------------------
+  blocked: WAITING_AMBER,
+  "needs-rebase": WAITING_AMBER,
+  // A true conflict, de-escalated because coord won't reach this PR for a
+  // while: "resolve just-before-merge", not "act now".
+  "conflict-deferred": WAITING_AMBER,
+  // --- in flight / terminal, nobody is blocked → never red or amber ---------
+  "awaiting-ci": CI_YELLOW,
+  "checks-pending": CI_YELLOW,
   rebasing: "bg-purple-500/15 text-purple-200 border-purple-500/30",
-  queued: "bg-muted text-muted-foreground border-border",
+  landing: "bg-blue-500/15 text-blue-200 border-blue-500/30",
+  merged: "bg-green-500/15 text-green-200 border-green-500/30",
   ready: "bg-green-500/5 text-green-300 border-green-500/25",
-  conflict: "bg-red-500/15 text-red-200 border-red-500/35",
-  "not-mergeable": "bg-red-500/15 text-red-200 border-red-500/35",
-  // De-escalated conflict: amber, "resolve just-before-merge" — deliberately
-  // NOT the red act-now family. Raw Tailwind scale to match its siblings.
-  "conflict-deferred": "bg-amber-500/15 text-amber-200 border-amber-500/30",
-  requirements: "bg-red-500/15 text-red-200 border-red-500/35",
-  "checks-failing": "bg-amber-500/15 text-amber-200 border-amber-500/30",
-  // In-flight, not a failure: checks are merely still running — muted, so it
-  // never reads as the red/amber "author must act" family.
-  "checks-pending": "bg-muted text-muted-foreground border-border",
-  blocked: "bg-orange-500/15 text-orange-200 border-orange-500/30",
-  "needs-rebase": "bg-amber-500/15 text-amber-200 border-amber-500/30",
+  queued: INERT,
+  unknown: INERT,
   draft: "bg-transparent text-muted-foreground border-border border-dashed",
-  unknown: "bg-muted text-muted-foreground border-border",
 };
 
 /** Left-edge accent: red = the author must act, amber = waiting on others. */
@@ -89,19 +110,65 @@ function rowAccentClass(row: PipelineRow): string {
   return "";
 }
 
+/**
+ * The badge carries its own reason as a `title`, so the "why is this PR
+ * blocked?" answer is one hover away on EVERY row — including the narrow
+ * viewports where the inline reason is dropped and the wide ones where it is
+ * truncated. A native title (rather than a JS tooltip) also survives in the
+ * accessibility tree and needs no provider.
+ */
 function StatusBadge({ row }: { row: PipelineRow }) {
+  const { kind, label, reason } = row.status;
   return (
     <Badge
       variant="outline"
-      className={`text-[11px] font-semibold whitespace-nowrap ${STATUS_BADGE_CLASS[row.status.kind]}`}
-      data-status-kind={row.status.kind}
+      className={`text-[11px] font-semibold whitespace-nowrap ${STATUS_BADGE_CLASS[kind]}`}
+      data-status-kind={kind}
+      title={reason ? `${label} — ${reason}` : label}
     >
-      {row.status.kind === "merged" && "✓ "}
-      {(row.status.kind === "conflict" ||
-        row.status.kind === "not-mergeable") &&
-        "✕ "}
-      {row.status.label}
+      {kind === "merged" && "✓ "}
+      {(kind === "conflict" || kind === "not-mergeable") && "✕ "}
+      {label}
     </Badge>
+  );
+}
+
+/** Absolute local timestamp for a `title` — "unknown" reads better than "". */
+function absoluteTime(iso: string | null): string {
+  if (!iso) return "time unknown";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "time unknown" : d.toLocaleString();
+}
+
+/**
+ * The right-hand timestamp. A merged row reports its LAND time (what the
+ * merged tab is a record of); every other row reports its last state change.
+ * A merged row from a coord deploy that does not project `merged_at` says so
+ * rather than passing a refresh time off as a merge time.
+ */
+function RowTime({ row }: { row: PipelineRow }) {
+  const isMerged = row.status.kind === "merged";
+  if (isMerged && row.mergedAt === null) {
+    return (
+      <span
+        className="text-xs text-muted-foreground/70 italic shrink-0"
+        title="coord did not report a merge time for this PR"
+        data-testid="row-time"
+      >
+        merged
+      </span>
+    );
+  }
+  const iso = isMerged ? row.mergedAt : row.updatedAt;
+  return (
+    <span
+      className="text-xs text-muted-foreground tabular-nums shrink-0"
+      title={`${isMerged ? "Merged" : "Updated"} ${absoluteTime(iso)}`}
+      data-testid="row-time"
+    >
+      {isMerged && <span className="text-green-300/80">merged </span>}
+      {relativeTime(iso)}
+    </span>
   );
 }
 
@@ -460,13 +527,19 @@ function PipelineRowDisplay({
         </span>
         <StatusBadge row={row} />
         {row.status.reason && !expanded && (
-          <span className="hidden lg:inline text-xs text-muted-foreground truncate max-w-[26ch]">
+          // The reason rides beside the badge from `sm` up (it used to appear
+          // only at `lg`, which hid the answer to "why?" on most laptops).
+          // Below that, and whenever it truncates, the badge's title carries
+          // the full text.
+          <span
+            className="hidden sm:inline text-xs text-muted-foreground truncate max-w-[22ch] lg:max-w-[40ch]"
+            title={row.status.reason}
+            data-testid="row-reason"
+          >
             {row.status.reason}
           </span>
         )}
-        <span className="text-xs text-muted-foreground tabular-nums shrink-0">
-          {relativeTime(row.updatedAt)}
-        </span>
+        <RowTime row={row} />
         <Chevron className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
       </button>
       {expanded && (
@@ -487,6 +560,9 @@ const FILTERS: Array<{ id: PipelineFilter; label: string }> = [
   { id: "all", label: "All PRs" },
   { id: "attention", label: "Needs attention" },
   { id: "in-flight", label: "In flight" },
+  // Landing history, newest-merge-first. Populated from coord's
+  // `?include_merged=<hours>` rows (see MERGED_LOOKBACK_HOURS).
+  { id: "merged", label: "Merged" },
 ];
 // A "My PRs" tab needs pr_author from coord's /pr-merge/prs join (today the
 // queue only carries agent_id) — backend follow-up per the redesign report §4.
@@ -590,9 +666,11 @@ export function MergePipeline() {
           className="text-sm text-muted-foreground italic py-4 text-center"
           data-testid="pipeline-empty"
         >
-          {rows.length === 0
-            ? "No open PRs or merge activity."
-            : "No PRs match this filter."}
+          {filter === "merged"
+            ? `Nothing merged in the last ${MERGED_LOOKBACK_HOURS} hours.`
+            : rows.length === 0
+              ? "No open PRs or merge activity."
+              : "No PRs match this filter."}
         </p>
       ) : (
         <div className="space-y-1.5">

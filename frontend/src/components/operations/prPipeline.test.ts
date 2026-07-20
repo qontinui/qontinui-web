@@ -12,11 +12,14 @@ import type {
   RepoDetail,
 } from "./mergeTypes";
 import {
+  ATTENTION_BY_KIND,
   buildPipelineRows,
   derivePipelineHealth,
   matchesFilter,
   matchesQuery,
   pickActiveProposal,
+  type PipelineRow,
+  type UnifiedStatusKind,
   CI_WAIT_AMBER_MS,
   CI_WAIT_RED_MS,
   STALL_RED_MS,
@@ -140,11 +143,33 @@ describe("buildPipelineRows — join + unified status", () => {
       [{ merge_state_status: "DIRTY", mergeable: null }, "Not mergeable"],
       [
         { merge_state_status: "BLOCKED", review_decision: "REVIEW_REQUIRED" },
-        "Blocked by requirements",
+        "Review required",
       ],
+      [
+        {
+          merge_state_status: "BLOCKED",
+          review_decision: "CHANGES_REQUESTED" as const,
+        },
+        "Changes requested",
+      ],
+      [
+        { merge_state_status: "BLOCKED", failing_contexts: ["security"] },
+        "Checks failing",
+      ],
+      // The common case: BLOCKED only because required checks haven't
+      // reported yet. Nobody needs to act.
+      [
+        { merge_state_status: "BLOCKED", ci_lifecycle: "pending" },
+        "Checks in progress",
+      ],
+      [
+        { merge_state_status: "BLOCKED", pending_contexts: ["test (windows)"] },
+        "Checks in progress",
+      ],
+      [{ merge_state_status: "BLOCKED" }, "Blocked by requirements"],
       // UNSTABLE with no failure signal (default fixture: aggregate success)
       // is honest about being in-flight, not failing.
-      [{ merge_state_status: "UNSTABLE" }, "Checks running"],
+      [{ merge_state_status: "UNSTABLE" }, "Checks in progress"],
       [
         { merge_state_status: "UNSTABLE", ci_conclusion: "failure" },
         "Checks failing",
@@ -261,8 +286,8 @@ describe("buildPipelineRows — join + unified status", () => {
       ]
     );
     const byNumber = new Map(rows.map((r) => [r.prNumber, r]));
-    expect(byNumber.get(1)!.status.reason).toBe("1st in line");
-    expect(byNumber.get(2)!.status.reason).toBe("2nd in line");
+    expect(byNumber.get(1)!.status.reason).toMatch(/^1st in line/);
+    expect(byNumber.get(2)!.status.reason).toMatch(/^2nd in line/);
   });
 
   it("surfaces the merge-candidate CI link from the active proposal", () => {
@@ -306,7 +331,7 @@ describe("statusFromGitHub — attention truth table", () => {
     });
     expect(row.status.kind).toBe("checks-pending");
     expect(row.status.attention).toBe("none");
-    expect(row.status.reason).toBe("non-required checks still running");
+    expect(row.status.reason).toBe("still running: test (windows)");
     expect(
       needsAttention({
         merge_state_status: "UNSTABLE",
@@ -326,7 +351,9 @@ describe("statusFromGitHub — attention truth table", () => {
     const row = rowFor(overrides);
     expect(row.status.kind).toBe("checks-failing");
     expect(row.status.attention).toBe("author");
-    expect(row.status.reason).toBe("failing: security, test (windows)");
+    expect(row.status.reason).toBe(
+      "failing: security, test (windows) — push a fix"
+    );
     expect(needsAttention(overrides)).toBe(1);
   });
 
@@ -335,7 +362,7 @@ describe("statusFromGitHub — attention truth table", () => {
       merge_state_status: "UNSTABLE",
       failing_contexts: ["a", "b", "c", "d", "e"],
     });
-    expect(row.status.reason).toBe("failing: a, b, c +2 more");
+    expect(row.status.reason).toContain("failing: a, b, c +2 more");
   });
 
   it("UNSTABLE + aggregate ci failure (arrays absent) → counted — old-coord fallback", () => {
@@ -365,16 +392,36 @@ describe("statusFromGitHub — attention truth table", () => {
     expect(row.status.kind).toBe("needs-rebase");
     expect(row.status.attention).toBe("waiting");
     expect(row.status.reason).toBe(
-      "behind main — coord auto-rebases in the train"
+      "behind main — coord auto-rebases it in the train, no action needed"
     );
     expect(needsAttention({ merge_state_status: "BEHIND" })).toBe(0);
   });
 
-  it("BLOCKED and DIRTY still count as needing the author", () => {
+  it("BLOCKED (no pending checks) and DIRTY still count as needing the author", () => {
     expect(needsAttention({ merge_state_status: "BLOCKED" })).toBe(1);
     expect(
       needsAttention({ merge_state_status: "DIRTY", mergeable: null })
     ).toBe(1);
+  });
+
+  it("BLOCKED only because required checks are running is NOT attention", () => {
+    // The reported bug: GitHub says BLOCKED for the whole pre-verdict window,
+    // so "CI hasn't finished" was rendering red and inflating the count.
+    const overrides: Partial<PrRow> = {
+      merge_state_status: "BLOCKED",
+      required_checks_satisfied: false,
+      ci_lifecycle: "pending",
+      ci_conclusion: null,
+      pending_contexts: ["test (windows)"],
+    };
+    const row = rowFor(overrides);
+    expect(row.status.kind).toBe("checks-pending");
+    expect(row.status.label).toBe("Checks in progress");
+    expect(row.status.attention).toBe("none");
+    expect(row.status.reason).toBe(
+      "required checks still running: test (windows)"
+    );
+    expect(needsAttention(overrides)).toBe(0);
   });
 
   it("BLOCKED names the failing required checks when coord provides them", () => {
@@ -382,8 +429,21 @@ describe("statusFromGitHub — attention truth table", () => {
       merge_state_status: "BLOCKED",
       failing_contexts: ["security"],
     });
-    expect(row.status.reason).toBe("required checks failing: security");
+    expect(row.status.kind).toBe("checks-failing");
+    expect(row.status.reason).toBe(
+      "required checks failing: security — push a fix"
+    );
     expect(row.status.attention).toBe("author");
+  });
+
+  it("BLOCKED failing checks outrank still-pending ones", () => {
+    const row = rowFor({
+      merge_state_status: "BLOCKED",
+      ci_lifecycle: "pending",
+      failing_contexts: ["security"],
+      pending_contexts: ["test (windows)"],
+    });
+    expect(row.status.kind).toBe("checks-failing");
   });
 
   it("BLOCKED review-decision reasons outrank named failing checks", () => {
@@ -392,14 +452,16 @@ describe("statusFromGitHub — attention truth table", () => {
       review_decision: "CHANGES_REQUESTED",
       failing_contexts: ["security"],
     });
-    expect(row.status.reason).toBe("changes requested in review");
+    expect(row.status.label).toBe("Changes requested");
+    expect(row.status.reason).toContain("reviewer requested changes");
   });
 
   it("BLOCKED fallback attributes rulesets, not just branch protection", () => {
     const row = rowFor({ merge_state_status: "BLOCKED" });
-    expect(row.status.reason).toBe(
-      "ruleset/branch-protection requirements not met"
-    );
+    expect(row.status.reason).toContain("ruleset");
+    // Names where to look — a bare "requirements not met" left the operator
+    // with nowhere to go, which is what prompted the reason rewrite.
+    expect(row.status.reason).toContain("merge box on GitHub");
   });
 });
 
@@ -598,6 +660,194 @@ describe("derivePipelineHealth — per-repo CI-wait thresholds", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// The audit that keeps color honest.
+// ---------------------------------------------------------------------------
+
+describe("ATTENTION_BY_KIND — the color/attention contract", () => {
+  /**
+   * Every status this module can construct, from every branch of both
+   * derivations. If a new kind or branch is added without an entry in
+   * `ATTENTION_BY_KIND`, or with an attention that contradicts it, this fails
+   * — and so does the badge palette keyed off the same table.
+   */
+  const EVERY_STATUS: Array<{ what: string; row: PipelineRow }> = [
+    ...(
+      [
+        ["CLEAN", { merge_state_status: "CLEAN" }],
+        ["BEHIND", { merge_state_status: "BEHIND" }],
+        ["DIRTY", { merge_state_status: "DIRTY", mergeable: null }],
+        ["draft", { pr_state: "draft", merge_state_status: "DRAFT" }],
+        ["unknown", { merge_state_status: "UNKNOWN" }],
+        [
+          "merged (merge button)",
+          { pr_state: "merged", merge_state_status: "CLEAN" },
+        ],
+        [
+          "merged (coord ff-land)",
+          { pr_state: "closed", merge_commit_sha: "deadbeefcafe" },
+        ],
+        [
+          "BLOCKED/review",
+          {
+            merge_state_status: "BLOCKED",
+            review_decision: "REVIEW_REQUIRED" as const,
+          },
+        ],
+        [
+          "BLOCKED/failing",
+          { merge_state_status: "BLOCKED", failing_contexts: ["security"] },
+        ],
+        [
+          "BLOCKED/pending",
+          { merge_state_status: "BLOCKED", ci_lifecycle: "pending" },
+        ],
+        ["BLOCKED/ruleset", { merge_state_status: "BLOCKED" }],
+        [
+          "UNSTABLE/failing",
+          { merge_state_status: "UNSTABLE", ci_conclusion: "failure" },
+        ],
+        [
+          "UNSTABLE/pending",
+          { merge_state_status: "UNSTABLE", ci_lifecycle: "pending" },
+        ],
+      ] as Array<[string, Partial<PrRow>]>
+    ).map(([what, overrides]) => ({
+      what,
+      row: buildPipelineRows([pr(overrides)], [])[0],
+    })),
+    // The de-escalated conflict needs long-CI economics to be reachable.
+    {
+      what: "conflict-deferred",
+      row: buildPipelineRows(
+        [pr({ repo: "qontinui/qontinui-runner", mergeable: false })],
+        [],
+        {
+          "qontinui/qontinui-runner": {
+            candidate_ci_p90_secs: 4 * 60 * 60,
+            queue_depth: 9,
+          },
+        }
+      )[0],
+    },
+    ...(
+      [
+        "queued",
+        "dry-rebasing",
+        "awaiting-ci",
+        "landing",
+        "merged",
+        "conflict",
+        "blocked-by-overlap",
+      ] as const
+    ).map((status) => ({
+      what: `proposal:${status}`,
+      row: buildPipelineRows([pr()], [proposal({ status })])[0],
+    })),
+  ];
+
+  it("covers every declared kind at least once", () => {
+    const seen = new Set(EVERY_STATUS.map((s) => s.row.status.kind));
+    expect([...seen].sort()).toEqual(
+      Object.keys(ATTENTION_BY_KIND).sort() as UnifiedStatusKind[]
+    );
+  });
+
+  it.each(EVERY_STATUS)(
+    "$what carries the audited attention for its kind",
+    ({ row }) => {
+      expect(row.status.attention).toBe(ATTENTION_BY_KIND[row.status.kind]);
+    }
+  );
+
+  it("no state that needs nobody is filed as needing the author", () => {
+    // The original bug, stated as an invariant: "checks are still running" is
+    // never an author-action state, and "a check failed" always is.
+    expect(ATTENTION_BY_KIND["checks-pending"]).toBe("none");
+    expect(ATTENTION_BY_KIND["awaiting-ci"]).toBe("none");
+    expect(ATTENTION_BY_KIND["checks-failing"]).toBe("author");
+  });
+
+  it("every status explains itself — no blank reasons", () => {
+    for (const { what, row } of EVERY_STATUS) {
+      expect(row.status.reason, `${what} has no reason`).not.toBe("");
+    }
+  });
+});
+
+describe("merged rows", () => {
+  const MERGED_A = pr({
+    pr_number: 10,
+    branch: "b-old",
+    pr_state: "merged",
+    merged_at: ago(600),
+    merge_commit_sha: "aaaaaaa1111",
+  });
+  const MERGED_B = pr({
+    pr_number: 11,
+    branch: "b-new",
+    pr_state: "closed", // coord ff-land: closed with merged=false
+    merged_at: ago(5),
+    merge_commit_sha: "bbbbbbb2222",
+  });
+
+  it("detects BOTH land paths and carries the land time", () => {
+    const rows = buildPipelineRows([MERGED_A, MERGED_B], []);
+    expect(rows.map((r) => r.status.kind)).toEqual(["merged", "merged"]);
+    expect(rows.map((r) => r.mergedAt)).toEqual([ago(5), ago(600)]);
+  });
+
+  it("orders newest merge first and shows the landed sha in the reason", () => {
+    const rows = buildPipelineRows([MERGED_A, MERGED_B], []).filter((r) =>
+      matchesFilter(r, "merged")
+    );
+    expect(rows.map((r) => r.prNumber)).toEqual([11, 10]);
+    expect(rows[0].status.reason).toContain("bbbbbbb");
+  });
+
+  it("treats a closed row as merged even with NO sha (pre-projection coord)", () => {
+    // coord's ff-land closes the PR with merged=false and older deploys do
+    // not serialize merge_commit_sha. Gating on the sha would drop these
+    // through to the GitHub derivation and show landed PRs as "Ready" in the
+    // LIVE list — strictly worse than not having the tab.
+    const row = buildPipelineRows(
+      [pr({ pr_state: "closed", merge_state_status: "CLEAN" })],
+      []
+    )[0];
+    expect(row.status.kind).toBe("merged");
+    expect(matchesFilter(row, "all")).toBe(false);
+    // No sha to cite, so the reason names the branch only — never a fake sha.
+    expect(row.status.reason).toBe("landed on main");
+  });
+
+  it("keeps merged rows out of the live list and in their own tab", () => {
+    const rows = buildPipelineRows([MERGED_A, pr({ pr_number: 12 })], []);
+    expect(
+      rows.filter((r) => matchesFilter(r, "all")).map((r) => r.prNumber)
+    ).toEqual([12]);
+    expect(
+      rows.filter((r) => matchesFilter(r, "merged")).map((r) => r.prNumber)
+    ).toEqual([10]);
+  });
+
+  it("reports 'no land time' rather than passing off a refresh time", () => {
+    // Coord deploys that don't project `merged_at` must not make the tab lie.
+    const row = buildPipelineRows(
+      [pr({ pr_state: "merged", last_refreshed_at: ago(3) })],
+      []
+    )[0];
+    expect(row.status.kind).toBe("merged");
+    expect(row.mergedAt).toBeNull();
+  });
+
+  it("feeds the health strip's 'last merged' from PR rows, not just proposals", () => {
+    // `GET /merge/queue` excludes terminal proposals, so before this the
+    // health strip read "last merged never" on a perfectly healthy fleet.
+    const h = derivePipelineHealth(buildPipelineRows([MERGED_B], []), NOW);
+    expect(h.lastMergedAt).toBe(ago(5));
+  });
+});
+
 describe("filters + search", () => {
   const rows = buildPipelineRows(
     [
@@ -625,6 +875,7 @@ describe("filters + search", () => {
     const inFlight = rows.filter((r) => matchesFilter(r, "in-flight"));
     expect(inFlight.map((r) => r.prNumber).sort()).toEqual([1, 2]);
     expect(rows.every((r) => matchesFilter(r, "all"))).toBe(true);
+    expect(rows.some((r) => matchesFilter(r, "merged"))).toBe(false);
   });
 
   it("matches repo shorthand, #number, branch, and status label", () => {
