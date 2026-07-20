@@ -285,6 +285,7 @@ export default function CoordGatesPage() {
         <div
           className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400"
           data-testid="gates-coord-unavailable"
+          role="status"
         >
           coord is currently unavailable ({overview.coord_error}) — showing no
           gates or rollout state. Retry with Refresh.
