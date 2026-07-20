@@ -780,6 +780,15 @@ async def get_merge_proposal(
 
 @router.get("/pr-merge/prs")
 async def get_pr_merge_prs(
+    include_merged: int = Query(
+        default=0,
+        ge=0,
+        le=24 * 30,
+        description="When >0, ask coord to ALSO return PRs merged within the "
+        "last N hours (each carrying the merge stamp + per-PR deploy_state), "
+        "not just open ones. 0 (default) preserves the open-PRs-only "
+        "behavior. Backs the fleet pipeline's 'Merged' tab.",
+    ),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """PR Merge Orchestrator Phase 1 D1.6 + D1.7 -- proxy coord's
@@ -789,8 +798,14 @@ async def get_pr_merge_prs(
     Fleet-wide. Forwards the operator bearer so coord requires an
     authenticated operator — retires the pilot-anonymous posture
     (operator decision 2026-05-31), mirroring ``/merge/queue``.
+
+    ``include_merged`` is forwarded ONLY when set, so the default request is
+    byte-for-byte the legacy call (same convention as ``/admin-dev/prs``).
+    coord's response is returned verbatim — no field whitelist — so the
+    merged-row enrichment passes through unchanged.
     """
-    return await _proxy_coord_get("/pr-merge/prs", tenant_id=tenant_id)
+    params = {"include_merged": include_merged} if include_merged > 0 else None
+    return await _proxy_coord_get("/pr-merge/prs", params=params, tenant_id=tenant_id)
 
 
 # Coord path for the CI-duration-aware severity economics read
@@ -823,9 +838,7 @@ async def get_pr_merge_merge_economics(
     ``/pr-merge/prs``).
     """
     try:
-        return await _proxy_coord_get(
-            _COORD_MERGE_ECONOMICS_PATH, tenant_id=tenant_id
-        )
+        return await _proxy_coord_get(_COORD_MERGE_ECONOMICS_PATH, tenant_id=tenant_id)
     except HTTPException as exc:
         if exc.status_code in (404, 502, 503, 504):
             return {}
@@ -2700,25 +2713,45 @@ async def get_fleet_health(
 
 @router.get("/agent-questions/pending")
 async def get_pending_agent_questions(
+    gap: bool | None = Query(default=None),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
-    """Return pending agent questions awaiting an operator response."""
-    return await _proxy_coord_get("/coord/agent-questions/pending", tenant_id=tenant_id)
+    """Return pending agent questions awaiting an operator response.
+
+    ``gap`` (Phase 3 of plan 2026-07-18-policy-clause-schema-web-data-model):
+    when set, forwarded to coord as the POLICY_GAP filter —
+    ``gap=true`` returns only gap-marked rows, ``gap=false`` only non-gap rows.
+    Backs the Gaps tab on the questions inbox.
+    """
+    params: dict[str, Any] = {}
+    if gap is not None:
+        params["gap"] = gap
+    return await _proxy_coord_get(
+        "/coord/agent-questions/pending",
+        params=params or None,
+        tenant_id=tenant_id,
+    )
 
 
 @router.get("/agent-questions/answered")
 async def get_answered_agent_questions(
     limit: int | None = Query(default=None, ge=1, le=500),
+    gap: bool | None = Query(default=None),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Return recently-answered agent questions.
 
     Wave 3a — surfaces the "answered" tab on the questions inbox so
     operators can audit prior decisions without leaving the page.
+
+    ``gap`` (Phase 3): forwarded to coord as the POLICY_GAP filter so the
+    Gaps tab can list pre-answered (non-blocking) gap reports.
     """
     params: dict[str, Any] = {}
     if limit is not None:
         params["limit"] = limit
+    if gap is not None:
+        params["gap"] = gap
     return await _proxy_coord_get(
         "/coord/agent-questions/answered",
         params=params or None,
@@ -5146,6 +5179,32 @@ async def update_prompt_document(
     )
 
 
+@router.post("/coord/prompt-documents/{kind}")
+async def create_prompt_document(
+    kind: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> JSONResponse:
+    """Create a new hand-authored prompt document under ``kind``. Tenant-admin only.
+
+    The body is forwarded as ``{name, description?, body, format?}`` with
+    ``updated_by`` stamped from the authenticated session (see
+    :func:`_editor_identity`) — a body-supplied ``updated_by`` is ignored, so the
+    version-1 snapshot coord writes carries the real author. Coord validates the
+    kebab-case ``name`` and non-empty ``body`` (its 400 passes through) and
+    answers 409 when ``(tenant, kind, name)`` already exists; coord's 201 status
+    is echoed to the browser verbatim.
+    """
+    coord_body, status_code = await _proxy_coord_post(
+        f"/coord/prompt-documents/{kind}",
+        {**body, "updated_by": _editor_identity(current_user)},
+        tenant_id=tenant_id,
+        return_status=True,
+    )
+    return JSONResponse(content=coord_body, status_code=status_code)
+
+
 @router.get("/coord/prompt-documents/{kind}/{name}/versions")
 async def list_prompt_document_versions(
     kind: str,
@@ -5190,6 +5249,124 @@ async def restore_prompt_document_default(
     return await _proxy_coord_post(
         f"/coord/prompt-documents/{kind}/{name}/restore-default",
         {},
+        tenant_id=tenant_id,
+    )
+
+
+# Structured policy clauses (plan
+# ``2026-07-18-policy-clause-schema-web-data-model.md`` Phase 2).
+#
+# A ``policy`` prompt document can additionally be edited as a list of structured
+# clauses (``coord.policy_clauses`` — one row per clause, ordered by ``position``)
+# rather than as a single prose blob. Coord owns validation (kebab-case
+# ``clause_id``, status/tier enums, ``category == name``, UNIQUE ``clause_id`` per
+# doc → 409) and the seed importer that parses clause blocks out of the doc body.
+#
+# These proxy the coord clause routes under
+# ``/coord/prompt-documents/:kind/:name/clauses`` verbatim, mirroring the
+# READ/WRITE auth split of the prompt-document proxies above: GET reads gate on
+# tenant MEMBERSHIP (``get_tenant_id``); every mutating route gates on
+# ``require_coord_tenant_admin`` (coord re-checks admin on every write). Coord's
+# 4xx bodies (kebab-case violation, bad enum, ``category != name``, UNIQUE 409,
+# unknown clause 404) pass through verbatim via the ``_proxy_coord_*`` helpers.
+# ``kind`` must be ``policy``; coord returns its own 400 for any other kind.
+
+
+@router.get("/coord/prompt-documents/{kind}/{name}/clauses")
+async def list_prompt_document_clauses(
+    kind: str,
+    name: str,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """List the structured clauses of a policy document, ordered by ``position``.
+    Any authenticated tenant member."""
+    return await _proxy_coord_get(
+        f"/coord/prompt-documents/{kind}/{name}/clauses", tenant_id=tenant_id
+    )
+
+
+@router.post("/coord/prompt-documents/{kind}/{name}/clauses")
+async def create_prompt_document_clause(
+    kind: str,
+    name: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Create one clause on a policy document. Tenant-admin only.
+
+    Body is forwarded verbatim as the clause shape (``clause_id``, ``category``,
+    ``status``, ``tier``, ``trigger``, ``action``, ``bounds``, ``escalate_if``,
+    ``anti_triggers``, ``depends_on``, ``links``, …). Coord validates kebab-case
+    ``clause_id``, the status/tier enums, and ``category == name``, and returns a
+    409 on a duplicate ``clause_id`` — all passed through verbatim.
+    """
+    return await _proxy_coord_post(
+        f"/coord/prompt-documents/{kind}/{name}/clauses", body, tenant_id=tenant_id
+    )
+
+
+@router.patch("/coord/prompt-documents/{kind}/{name}/clauses/{clause_id}")
+async def update_prompt_document_clause(
+    kind: str,
+    name: str,
+    clause_id: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Partially update one clause. Tenant-admin only. Body forwarded verbatim;
+    coord validates changed fields and returns 404 for an unknown clause."""
+    return await _proxy_coord_patch(
+        f"/coord/prompt-documents/{kind}/{name}/clauses/{clause_id}",
+        body,
+        tenant_id=tenant_id,
+    )
+
+
+@router.delete("/coord/prompt-documents/{kind}/{name}/clauses/{clause_id}")
+async def delete_prompt_document_clause(
+    kind: str,
+    name: str,
+    clause_id: str,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Delete one clause. Tenant-admin only. Coord 404 for an unknown clause
+    passes through."""
+    return await _proxy_coord_delete(
+        f"/coord/prompt-documents/{kind}/{name}/clauses/{clause_id}",
+        tenant_id=tenant_id,
+    )
+
+
+@router.post("/coord/prompt-documents/{kind}/{name}/clauses/reorder")
+async def reorder_prompt_document_clauses(
+    kind: str,
+    name: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Set clause ``position`` from an ordered list of ``clause_id`` values.
+    Tenant-admin only. Body is ``{"clause_ids": [...]}`` (an ordered list),
+    forwarded verbatim."""
+    return await _proxy_coord_post(
+        f"/coord/prompt-documents/{kind}/{name}/clauses/reorder",
+        body,
+        tenant_id=tenant_id,
+    )
+
+
+@router.post("/coord/prompt-documents/{kind}/{name}/clauses/import")
+async def import_prompt_document_clauses(
+    kind: str,
+    name: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Seed the clause table for a policy document by parsing clause blocks out of
+    its body. Tenant-admin only. Body forwarded verbatim (coord's seed importer
+    reads the doc body itself); returns the created clause rows."""
+    return await _proxy_coord_post(
+        f"/coord/prompt-documents/{kind}/{name}/clauses/import",
+        body,
         tenant_id=tenant_id,
     )
 

@@ -253,6 +253,13 @@ class CanonicalChangeResponse(BaseORMSchema):
     The "records of who changed it and when" for the team-sync model:
     ``changed_by_user_id`` + ``changed_at`` + the ``from``/``to`` machine.
     ``tenant_id`` is best-effort (the active-tenant context of the change).
+
+    The ``*_email`` / ``*_name`` fields are display labels resolved
+    server-side by LEFT JOIN (one query, no client N+1). They are **always
+    nullable**: the machine ids are soft references so an audit row outlives
+    the machine it names, and the actor FK is ``ON DELETE SET NULL``. A UI
+    must fall back (e.g. "deleted machine" / a short id prefix) rather than
+    assume a name is present.
     """
 
     id: UUID
@@ -260,6 +267,9 @@ class CanonicalChangeResponse(BaseORMSchema):
     from_machine_id: UUID | None = None
     to_machine_id: UUID | None = None
     changed_by_user_id: UUID | None = None
+    changed_by_email: str | None = None
+    from_machine_name: str | None = None
+    to_machine_name: str | None = None
     tenant_id: UUID | None = None
     note: str | None = None
     changed_at: IsoDatetime
@@ -389,6 +399,14 @@ class CanonicalConfigResponse(BaseSchema):
     to what a pulling runner may do with it (apply / report secrets only /
     stop on destructive) — see :mod:`app.services.devenv_section_policy`.
 
+    ``derived_keys`` refines that per-SECTION policy down to the KEY level:
+    ``section -> keys that are repo-derived``. A repo-derived key measures the
+    source tree the capturing binary was built from, not the box, so it is not
+    independently settable (you cannot install your way to a crate version) and
+    must never be counted actionable — regardless of its section policy. The
+    field is additive: absent/empty means "no per-key refinement", i.e. exactly
+    the pre-existing behavior, so already-deployed runners are unaffected.
+
     ``canonical_machine_id`` is ``None`` (and ``sections`` empty) only if no
     canonical is set — the endpoint 422s that case before building this, so in
     practice these are always populated.
@@ -401,6 +419,7 @@ class CanonicalConfigResponse(BaseSchema):
     captured_at: IsoDatetime | None = None
     sections: dict[str, dict[str, str]] = Field(default_factory=dict)
     section_policy: dict[str, SectionPolicyT] = Field(default_factory=dict)
+    derived_keys: dict[str, list[str]] = Field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------

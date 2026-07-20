@@ -173,4 +173,56 @@ describe("/admin/coord/prs coord-down retention", () => {
     );
     expect(screen.queryByTestId("prs-loading")).toBeNull();
   });
+
+  it("suppresses the reconnecting hint during a tab-switch loading window (no hint over skeleton)", async () => {
+    // 1. Healthy Open tab with rows.
+    getPrs.mockResolvedValueOnce(healthy([row(1), row(2)]));
+    render(<CoordPrsPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("prs-table-stub")).toHaveTextContent("#1,#2"),
+    );
+
+    // 2. Degrade in place (same tab) so the subtle hint shows over retained rows.
+    getPrs.mockResolvedValue(degraded("timeout"));
+    await userEvent.click(screen.getByTestId("prs-refresh"));
+    await waitFor(() =>
+      expect(screen.getByTestId("prs-coord-reconnecting")).toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("prs-table-stub")).toHaveTextContent("#1,#2");
+
+    // 3. Switch tabs with the next fetch held PENDING: loading=true, but `data`
+    //    (the Open rows) survives for retention. The hint keys on retained
+    //    `data`, so without the `!loading` guard it would render OVER the
+    //    skeleton. Assert only the skeleton shows — both banners suppressed.
+    let resolveFetch: (value: PrListResponse) => void = () => {};
+    getPrs.mockImplementationOnce(
+      () =>
+        new Promise<PrListResponse>((resolve) => {
+          resolveFetch = resolve;
+        }),
+    );
+    await userEvent.click(screen.getByTestId("coord-prs-tab-merged"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("prs-loading")).toBeInTheDocument(),
+    );
+    // The whole point: no "showing last data" hint painted over the skeleton,
+    // and the hard cold-start banner is likewise suppressed (data still has rows).
+    expect(screen.queryByTestId("prs-coord-reconnecting")).toBeNull();
+    expect(screen.queryByTestId("prs-coord-unavailable")).toBeNull();
+    expect(screen.queryByTestId("prs-table-stub")).toBeNull();
+
+    // 4. Land the fetch degraded-empty for the merged tab: the guard didn't
+    //    over-suppress — the terminal state is the hard banner + merged empty,
+    //    and the subtle hint stays absent (no rows to retain across tabs).
+    resolveFetch(degraded("timeout"));
+    await waitFor(() =>
+      expect(screen.getByTestId("prs-coord-unavailable")).toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("prs-empty")).toHaveTextContent(
+      "No PRs merged in the last 24h.",
+    );
+    expect(screen.queryByTestId("prs-coord-reconnecting")).toBeNull();
+    expect(screen.queryByTestId("prs-loading")).toBeNull();
+  });
 });

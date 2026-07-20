@@ -7,6 +7,7 @@ import type {
   ListPromptDocumentsResponse,
   ListVersionsResponse,
   PromptDocument,
+  PromptDocumentCreate,
   PromptDocumentKind,
   PromptDocumentSummary,
   PromptDocumentUpdate,
@@ -126,6 +127,32 @@ export function usePromptDocuments() {
     []
   );
 
+  /**
+   * Create a new hand-authored document. Coord writes the row AND its version-1
+   * snapshot; a duplicate `(kind, name)` is coord's 409. Returns the created
+   * document (with body) on success so the caller can open it, else `null`.
+   */
+  const createDocument = async (
+    kind: PromptDocumentKind,
+    data: PromptDocumentCreate
+  ): Promise<PromptDocument | null> => {
+    try {
+      setSaving(true);
+      const created = await httpClient.post<PromptDocument>(
+        `${API}/coord/prompt-documents/${encodeURIComponent(kind)}`,
+        data
+      );
+      toast.success(`Created "${created.description ?? created.name}"`);
+      await loadDocuments();
+      return created;
+    } catch (err) {
+      toast.error(message(err, "Failed to create document"));
+      return null;
+    } finally {
+      setSaving(false);
+    }
+  };
+
   /** Save an edit. Coord snapshots a NEW version; nothing is overwritten. */
   const updateDocument = async (
     kind: PromptDocumentKind,
@@ -178,6 +205,7 @@ export function usePromptDocuments() {
     fetchDocument,
     fetchVersions,
     fetchVersion,
+    createDocument,
     updateDocument,
     restoreDefault,
   };

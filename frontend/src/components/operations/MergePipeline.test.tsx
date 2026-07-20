@@ -32,9 +32,15 @@ const hookData: { current: MergePipelineData } = {
   },
 };
 
+// The hook is stubbed, but the module also exports the merged-tab lookback
+// constant the component renders — keep the real value so the empty-state
+// copy under test is the one operators see. (Literal, not a reference:
+// `vi.mock` factories are hoisted above const declarations.)
 vi.mock("./useMergePipelineData", () => ({
   useMergePipelineData: () => hookData.current,
+  MERGED_LOOKBACK_HOURS: 48,
 }));
+const MERGED_LOOKBACK_HOURS = 48;
 
 // usePrCheckDetails (the on-expand per-check fetch) goes through httpClient.
 const fetchMock = vi.fn();
@@ -42,7 +48,8 @@ vi.mock("@/services/service-factory", () => ({
   httpClient: { fetch: (...args: unknown[]) => fetchMock(...args) },
 }));
 
-import { MergePipeline } from "./MergePipeline";
+import { MergePipeline, STATUS_BADGE_CLASS } from "./MergePipeline";
+import { ATTENTION_BY_KIND, type UnifiedStatusKind } from "./prPipeline";
 
 function pr(overrides: Partial<PrRow> = {}): PrRow {
   return {
@@ -303,5 +310,119 @@ describe("MergePipeline", () => {
     expect(screen.getByText("Candidate CI run")).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
     expect(screen.queryByTestId("failing-checks")).not.toBeInTheDocument();
+  });
+
+  // --------------------------------------------------------------------------
+  // Color encodes WHO MUST ACT, and every badge explains itself
+  // --------------------------------------------------------------------------
+
+  it("keys the badge palette off attention — red only for author-action", () => {
+    // The contract in one assertion: red iff someone must act, amber iff the
+    // row waits on something else, neither otherwise. A future badge that
+    // paints "CI still running" red (the original bug) fails here.
+    for (const [kind, attention] of Object.entries(ATTENTION_BY_KIND)) {
+      const cls = STATUS_BADGE_CLASS[kind as UnifiedStatusKind];
+      expect(cls, `${kind} has no badge class`).toBeTruthy();
+      expect(/\bbg-red-/.test(cls), `${kind} red?`).toBe(attention === "author");
+      expect(/\bbg-amber-/.test(cls), `${kind} amber?`).toBe(
+        attention === "waiting"
+      );
+    }
+  });
+
+  it("in-progress checks are yellow and NOT counted as needing attention", () => {
+    hookData.current.prs = [
+      pr({
+        merge_state_status: "BLOCKED",
+        required_checks_satisfied: false,
+        ci_lifecycle: "pending",
+        ci_conclusion: null,
+        pending_contexts: ["test (windows)"],
+      }),
+    ];
+
+    render(<MergePipeline />);
+
+    const badge = screen.getByText("Checks in progress");
+    expect(badge.className).toContain("bg-yellow-");
+    expect(badge.className).not.toContain("bg-red-");
+    // The health strip's attention counter must ignore it entirely.
+    expect(screen.queryByText(/needs attention/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("pipeline-filter-attention"));
+    expect(screen.queryAllByTestId("pipeline-row")).toHaveLength(0);
+  });
+
+  it("every badge carries its reason as a hover title, plus inline text", () => {
+    hookData.current.prs = [pr({ mergeable: false })];
+
+    render(<MergePipeline />);
+
+    // The badge prefixes an "✕ " glyph, so query it by its status kind.
+    const badge = document.querySelector('[data-status-kind="not-mergeable"]');
+    expect(badge?.getAttribute("title")).toContain("Not mergeable — conflict");
+    expect(screen.getByTestId("row-reason")).toHaveTextContent(/conflict/);
+  });
+
+  // --------------------------------------------------------------------------
+  // Merged tab
+  // --------------------------------------------------------------------------
+
+  const mergedPr = (n: number, minutesAgo: number, sha: string) =>
+    pr({
+      pr_number: n,
+      branch: `b-${n}`,
+      pr_state: "closed", // coord ff-land shape
+      merge_commit_sha: sha,
+      merged_at: new Date(Date.now() - minutesAgo * 60_000).toISOString(),
+    });
+
+  it("lists merged PRs newest-first with their merge time", () => {
+    hookData.current.prs = [
+      mergedPr(1, 600, "aaaaaaa1111"),
+      mergedPr(2, 5, "bbbbbbb2222"),
+      pr({ pr_number: 3, branch: "b-open" }),
+    ];
+
+    render(<MergePipeline />);
+
+    // Merged rows are history — the live list does not carry them.
+    expect(screen.getAllByTestId("pipeline-row")).toHaveLength(1);
+
+    fireEvent.click(screen.getByTestId("pipeline-filter-merged"));
+    const rows = screen.getAllByTestId("pipeline-row");
+    expect(rows).toHaveLength(2);
+    // Most recent merge on top.
+    expect(rows[0]).toHaveTextContent("qontinui-web#2");
+    expect(rows[1]).toHaveTextContent("qontinui-web#1");
+    // Merge time, relative in the row and absolute on hover.
+    expect(within(rows[0]).getByTestId("row-time")).toHaveTextContent(
+      "merged 5m ago"
+    );
+    expect(
+      within(rows[1]).getByTestId("row-time").getAttribute("title")
+    ).toMatch(/^Merged /);
+  });
+
+  it("says so instead of inventing a time when coord reports no merged_at", () => {
+    hookData.current.prs = [pr({ pr_state: "merged" })];
+
+    render(<MergePipeline />);
+    fireEvent.click(screen.getByTestId("pipeline-filter-merged"));
+
+    const time = screen.getByTestId("row-time");
+    expect(time).toHaveTextContent("merged");
+    expect(time).not.toHaveTextContent(/ago/);
+    expect(time.getAttribute("title")).toContain("did not report a merge time");
+  });
+
+  it("has its own empty state naming the lookback window", () => {
+    hookData.current.prs = [pr()];
+
+    render(<MergePipeline />);
+    fireEvent.click(screen.getByTestId("pipeline-filter-merged"));
+
+    expect(screen.getByTestId("pipeline-empty")).toHaveTextContent(
+      `Nothing merged in the last ${MERGED_LOOKBACK_HOURS} hours.`
+    );
   });
 });

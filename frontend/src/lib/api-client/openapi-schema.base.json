@@ -4376,11 +4376,22 @@
         "type": "object"
       },
       "CanonicalChangeResponse": {
-        "description": "One audited canonical-designation change (newest-first in a list).\n\nThe \"records of who changed it and when\" for the team-sync model:\n``changed_by_user_id`` + ``changed_at`` + the ``from``/``to`` machine.\n``tenant_id`` is best-effort (the active-tenant context of the change).",
+        "description": "One audited canonical-designation change (newest-first in a list).\n\nThe \"records of who changed it and when\" for the team-sync model:\n``changed_by_user_id`` + ``changed_at`` + the ``from``/``to`` machine.\n``tenant_id`` is best-effort (the active-tenant context of the change).\n\nThe ``*_email`` / ``*_name`` fields are display labels resolved\nserver-side by LEFT JOIN (one query, no client N+1). They are **always\nnullable**: the machine ids are soft references so an audit row outlives\nthe machine it names, and the actor FK is ``ON DELETE SET NULL``. A UI\nmust fall back (e.g. \"deleted machine\" / a short id prefix) rather than\nassume a name is present.",
         "properties": {
           "changed_at": {
             "title": "Changed At",
             "type": "string"
+          },
+          "changed_by_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Changed By Email"
           },
           "changed_by_user_id": {
             "anyOf": [
@@ -4410,6 +4421,17 @@
               }
             ],
             "title": "From Machine Id"
+          },
+          "from_machine_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Machine Name"
           },
           "id": {
             "format": "uuid",
@@ -4450,6 +4472,17 @@
               }
             ],
             "title": "To Machine Id"
+          },
+          "to_machine_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Machine Name"
           }
         },
         "required": [
@@ -4461,7 +4494,7 @@
         "type": "object"
       },
       "CanonicalConfigResponse": {
-        "description": "The canonical config a runner PULLS to reconcile its own box toward.\n\nSecret-free by construction (the stored envelope already coerced\n``env_contract`` to present/absent). ``section_policy`` maps each section\nto what a pulling runner may do with it (apply / report secrets only /\nstop on destructive) \u2014 see :mod:`app.services.devenv_section_policy`.\n\n``canonical_machine_id`` is ``None`` (and ``sections`` empty) only if no\ncanonical is set \u2014 the endpoint 422s that case before building this, so in\npractice these are always populated.",
+        "description": "The canonical config a runner PULLS to reconcile its own box toward.\n\nSecret-free by construction (the stored envelope already coerced\n``env_contract`` to present/absent). ``section_policy`` maps each section\nto what a pulling runner may do with it (apply / report secrets only /\nstop on destructive) \u2014 see :mod:`app.services.devenv_section_policy`.\n\n``derived_keys`` refines that per-SECTION policy down to the KEY level:\n``section -> keys that are repo-derived``. A repo-derived key measures the\nsource tree the capturing binary was built from, not the box, so it is not\nindependently settable (you cannot install your way to a crate version) and\nmust never be counted actionable \u2014 regardless of its section policy. The\nfield is additive: absent/empty means \"no per-key refinement\", i.e. exactly\nthe pre-existing behavior, so already-deployed runners are unaffected.\n\n``canonical_machine_id`` is ``None`` (and ``sections`` empty) only if no\ncanonical is set \u2014 the endpoint 422s that case before building this, so in\npractice these are always populated.",
         "properties": {
           "canonical_machine_id": {
             "anyOf": [
@@ -4496,6 +4529,16 @@
               }
             ],
             "title": "Captured At"
+          },
+          "derived_keys": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Derived Keys",
+            "type": "object"
           },
           "environment_id": {
             "format": "uuid",
@@ -56822,7 +56865,7 @@
     },
     "/api/v1/devenv/environments/{environment_id}/canonical-history": {
       "get": {
-        "description": "List the environment's canonical-designation changes, newest first.\n\nAnswers \"who made this the canonical environment, and when.\" Owner-scoped\nlike every other route here (cross-owner env id -> 404).",
+        "description": "List the environment's canonical-designation changes, newest first.\n\nAnswers \"who made this the canonical environment, and when.\" Owner-scoped\nlike every other route here (cross-owner env id -> 404).\n\nDisplay names (actor email, from/to machine names) are resolved by the\nrepository in the same query; each is ``None`` when the referenced row is\ngone, which is expected \u2014 the audit outlives machine/user deletion.",
         "operationId": "api_v1_devenv_environments_environment_id_canonical_history_get",
         "parameters": [
           {
@@ -69349,7 +69392,7 @@
     },
     "/api/v1/operations/agent-questions/answered": {
       "get": {
-        "description": "Return recently-answered agent questions.\n\nWave 3a \u2014 surfaces the \"answered\" tab on the questions inbox so\noperators can audit prior decisions without leaving the page.",
+        "description": "Return recently-answered agent questions.\n\nWave 3a \u2014 surfaces the \"answered\" tab on the questions inbox so\noperators can audit prior decisions without leaving the page.\n\n``gap`` (Phase 3): forwarded to coord as the POLICY_GAP filter so the\nGaps tab can list pre-answered (non-blocking) gap reports.",
         "operationId": "api_v1_operations_agent_questions_answered_get",
         "parameters": [
           {
@@ -69368,6 +69411,22 @@
                 }
               ],
               "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "gap",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Gap"
             }
           }
         ],
@@ -69454,8 +69513,26 @@
     },
     "/api/v1/operations/agent-questions/pending": {
       "get": {
-        "description": "Return pending agent questions awaiting an operator response.",
+        "description": "Return pending agent questions awaiting an operator response.\n\n``gap`` (Phase 3 of plan 2026-07-18-policy-clause-schema-web-data-model):\nwhen set, forwarded to coord as the POLICY_GAP filter \u2014\n``gap=true`` returns only gap-marked rows, ``gap=false`` only non-gap rows.\nBacks the Gaps tab on the questions inbox.",
         "operationId": "api_v1_operations_agent_questions_pending_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "gap",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Gap"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -69466,6 +69543,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "security": [
@@ -71800,6 +71887,64 @@
         ]
       }
     },
+    "/api/v1/operations/coord/prompt-documents/{kind}": {
+      "post": {
+        "description": "Create a new hand-authored prompt document under ``kind``. Tenant-admin only.\n\nThe body is forwarded as ``{name, description?, body, format?}`` with\n``updated_by`` stamped from the authenticated session (see\n:func:`_editor_identity`) \u2014 a body-supplied ``updated_by`` is ignored, so the\nversion-1 snapshot coord writes carries the real author. Coord validates the\nkebab-case ``name`` and non-empty ``body`` (its 400 passes through) and\nanswers 409 when ``(tenant, kind, name)`` already exists; coord's 201 status\nis echoed to the browser verbatim.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Create Prompt Document",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/prompt-documents/{kind}/{name}": {
       "get": {
         "description": "Fetch one prompt document (with body) by ``(kind, name)``. Any\nauthenticated tenant member.",
@@ -71919,6 +72064,410 @@
           }
         ],
         "summary": "Update Prompt Document",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/prompt-documents/{kind}/{name}/clauses": {
+      "get": {
+        "description": "List the structured clauses of a policy document, ordered by ``position``.\nAny authenticated tenant member.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_clauses_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response List Prompt Document Clauses Api V1 Operations Coord Prompt Documents  Kind   Name  Clauses Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Prompt Document Clauses",
+        "tags": [
+          "operations"
+        ]
+      },
+      "post": {
+        "description": "Create one clause on a policy document. Tenant-admin only.\n\nBody is forwarded verbatim as the clause shape (``clause_id``, ``category``,\n``status``, ``tier``, ``trigger``, ``action``, ``bounds``, ``escalate_if``,\n``anti_triggers``, ``depends_on``, ``links``, \u2026). Coord validates kebab-case\n``clause_id``, the status/tier enums, and ``category == name``, and returns a\n409 on a duplicate ``clause_id`` \u2014 all passed through verbatim.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_clauses_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Create Prompt Document Clause Api V1 Operations Coord Prompt Documents  Kind   Name  Clauses Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Create Prompt Document Clause",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/prompt-documents/{kind}/{name}/clauses/import": {
+      "post": {
+        "description": "Seed the clause table for a policy document by parsing clause blocks out of\nits body. Tenant-admin only. Body forwarded verbatim (coord's seed importer\nreads the doc body itself); returns the created clause rows.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_clauses_import_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Import Prompt Document Clauses Api V1 Operations Coord Prompt Documents  Kind   Name  Clauses Import Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Import Prompt Document Clauses",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/prompt-documents/{kind}/{name}/clauses/reorder": {
+      "post": {
+        "description": "Set clause ``position`` from an ordered list of ``clause_id`` values.\nTenant-admin only. Body is ``{\"clause_ids\": [...]}`` (an ordered list),\nforwarded verbatim.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_clauses_reorder_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Reorder Prompt Document Clauses Api V1 Operations Coord Prompt Documents  Kind   Name  Clauses Reorder Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Reorder Prompt Document Clauses",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/prompt-documents/{kind}/{name}/clauses/{clause_id}": {
+      "delete": {
+        "description": "Delete one clause. Tenant-admin only. Coord 404 for an unknown clause\npasses through.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_clauses_clause_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "clause_id",
+            "required": true,
+            "schema": {
+              "title": "Clause Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Delete Prompt Document Clause Api V1 Operations Coord Prompt Documents  Kind   Name  Clauses  Clause Id  Delete"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Prompt Document Clause",
+        "tags": [
+          "operations"
+        ]
+      },
+      "patch": {
+        "description": "Partially update one clause. Tenant-admin only. Body forwarded verbatim;\ncoord validates changed fields and returns 404 for an unknown clause.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_clauses_clause_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "clause_id",
+            "required": true,
+            "schema": {
+              "title": "Clause Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Update Prompt Document Clause Api V1 Operations Coord Prompt Documents  Kind   Name  Clauses  Clause Id  Patch"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update Prompt Document Clause",
         "tags": [
           "operations"
         ]
@@ -75762,8 +76311,24 @@
     },
     "/api/v1/operations/pr-merge/prs": {
       "get": {
-        "description": "PR Merge Orchestrator Phase 1 D1.6 + D1.7 -- proxy coord's\n``GET /pr-merge/prs`` (read-only list of all open PRs joined to\nper-(repo, head_sha) CI lifecycle).\n\nFleet-wide. Forwards the operator bearer so coord requires an\nauthenticated operator \u2014 retires the pilot-anonymous posture\n(operator decision 2026-05-31), mirroring ``/merge/queue``.",
+        "description": "PR Merge Orchestrator Phase 1 D1.6 + D1.7 -- proxy coord's\n``GET /pr-merge/prs`` (read-only list of all open PRs joined to\nper-(repo, head_sha) CI lifecycle).\n\nFleet-wide. Forwards the operator bearer so coord requires an\nauthenticated operator \u2014 retires the pilot-anonymous posture\n(operator decision 2026-05-31), mirroring ``/merge/queue``.\n\n``include_merged`` is forwarded ONLY when set, so the default request is\nbyte-for-byte the legacy call (same convention as ``/admin-dev/prs``).\ncoord's response is returned verbatim \u2014 no field whitelist \u2014 so the\nmerged-row enrichment passes through unchanged.",
         "operationId": "api_v1_operations_pr_merge_prs_get",
+        "parameters": [
+          {
+            "description": "When >0, ask coord to ALSO return PRs merged within the last N hours (each carrying the merge stamp + per-PR deploy_state), not just open ones. 0 (default) preserves the open-PRs-only behavior. Backs the fleet pipeline's 'Merged' tab.",
+            "in": "query",
+            "name": "include_merged",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "When >0, ask coord to ALSO return PRs merged within the last N hours (each carrying the merge stamp + per-PR deploy_state), not just open ones. 0 (default) preserves the open-PRs-only behavior. Backs the fleet pipeline's 'Merged' tab.",
+              "maximum": 720,
+              "minimum": 0,
+              "title": "Include Merged",
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -75774,6 +76339,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "security": [
