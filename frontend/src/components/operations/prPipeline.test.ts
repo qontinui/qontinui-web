@@ -26,6 +26,7 @@ import {
   CONFLICT_DEFERRAL_MAX_MS,
   conflictDeferralMaxMs,
   conflictStrandedForMs,
+  GITHUB_CONFLICT_KINDS,
 } from "./prPipeline";
 
 const NOW = new Date("2026-07-15T12:00:00Z").getTime();
@@ -1155,5 +1156,84 @@ describe("derivePipelineHealth", () => {
     expect(h.level).toBe("green");
     expect(h.queueDepth).toBe(0);
     expect(h.lastMergedAt).toBeNull();
+  });
+});
+
+// ----------------------------------------------------------------------------
+// The health headline vs. GitHub-derived conflicts.
+//
+// `derivePipelineHealth` counts conflicts by scanning ACTIVE proposals. Every
+// conflict GitHub reports but coord has no live proposal for is therefore
+// invisible to it. `conflict-stranded` was taught to reach the headline; its
+// sibling `not-mergeable` — the LOUDEST red row in the table, a hard conflict
+// on a short-CI repo or one at the front of the land queue — was not, so a
+// fleet of hard conflicts still rendered "Merging normally" with a green dot.
+// ----------------------------------------------------------------------------
+describe("derivePipelineHealth — GitHub-derived conflicts reach the headline", () => {
+  /** A hard conflict with no economics: short-CI path → `not-mergeable`. */
+  function hardConflictRow(branch: string): PipelineRow {
+    const row = buildPipelineRows([pr({ branch, mergeable: false })], [])[0];
+    expect(row.status.kind).toBe("not-mergeable");
+    return row;
+  }
+
+  it("every GITHUB_CONFLICT_KINDS member is an author-action kind", () => {
+    // Guards the set against a kind being added that is not actually red —
+    // the headline must never escalate on a state nobody has to act on.
+    for (const kind of GITHUB_CONFLICT_KINDS) {
+      expect(ATTENTION_BY_KIND[kind]).toBe("author");
+    }
+    // And the two conflict families stay disjoint: the de-escalated kind is
+    // deliberately NOT a headline conflict (see the set's doc comment).
+    expect(GITHUB_CONFLICT_KINDS.has("conflict-deferred")).toBe(false);
+  });
+
+  it("a hard conflict with no live proposal is not invisible to the headline", () => {
+    const h = derivePipelineHealth([hardConflictRow("feat/a")], NOW);
+    expect(h.needsAttention).toBe(1);
+    expect(h.detail).toContain("conflict");
+    expect(h.level).not.toBe("green");
+  });
+
+  it("two hard conflicts read as accumulating — red, not green", () => {
+    const h = derivePipelineHealth(
+      [hardConflictRow("feat/a"), hardConflictRow("feat/b")],
+      NOW
+    );
+    expect(h.detail).toContain("2 conflicts accumulating");
+    expect(h.level).toBe("red");
+    expect(h.headline).toBe("Pipeline stuck");
+  });
+
+  it("does not double-count a PR whose conflict IS a live proposal", () => {
+    // The row's kind is `conflict` (from the proposal), which is NOT in
+    // GITHUB_CONFLICT_KINDS — so the active-proposal count owns it alone.
+    const rows = buildPipelineRows(
+      [pr({ mergeable: false })],
+      [proposal({ status: "conflict" })]
+    );
+    expect(rows[0].status.kind).toBe("conflict");
+    expect(rows[0].activeProposal).not.toBeNull();
+    // One conflict, not two: 2+ would trip the red "accumulating" branch.
+    expect(derivePipelineHealth(rows, NOW).level).toBe("amber");
+    expect(derivePipelineHealth(rows, NOW).detail).toContain("1 conflict");
+  });
+
+  it("keeps the deliberate de-escalation: a deferred conflict stays out", () => {
+    const econ: Record<string, MergeEconomics> = {
+      "qontinui/qontinui-runner": {
+        candidate_ci_p90_secs: 4 * 60 * 60,
+        queue_depth: 12,
+      },
+    };
+    const rows = buildPipelineRows(
+      [pr({ repo: "qontinui/qontinui-runner", mergeable: false })],
+      [],
+      econ
+    );
+    expect(rows[0].status.kind).toBe("conflict-deferred");
+    const h = derivePipelineHealth(rows, NOW, econ);
+    expect(h.detail).not.toContain("conflict");
+    expect(h.level).toBe("green");
   });
 });

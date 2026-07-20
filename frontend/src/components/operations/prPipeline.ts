@@ -107,6 +107,28 @@ export const ATTENTION_BY_KIND: Record<UnifiedStatusKind, Attention> = {
   requirements: "author",
 };
 
+/**
+ * The kinds that mean "this PR has a TRUE merge conflict and the author must
+ * act", derived from GitHub state rather than from a live merge proposal.
+ *
+ * These rows are invisible to the in-flight queue feed: `buildPipelineRows`
+ * only reaches `statusFromGitHub` (the sole producer of these kinds) when the
+ * row has NO active proposal, and coord's `GET /merge/queue` excludes terminal
+ * proposals. So any health/severity roll-up that counts conflicts by scanning
+ * active proposals alone silently reports zero for every one of them — the
+ * exact defect that let a 17-strand fleet render "Merging normally".
+ *
+ * Membership is deliberately narrow: `conflict-deferred` is a true conflict too
+ * but is de-escalated ON PURPOSE (coord won't reach it for a while, resolving
+ * now would go stale), and `conflict-stranded` already covers the case where
+ * that deferral outlives its premise. A unit test asserts every member carries
+ * `attention: "author"`, so a kind cannot be added here without also being red.
+ */
+export const GITHUB_CONFLICT_KINDS: ReadonlySet<UnifiedStatusKind> = new Set([
+  "not-mergeable",
+  "conflict-stranded",
+]);
+
 export interface UnifiedStatus {
   kind: UnifiedStatusKind;
   /** User-facing label. Never a raw coord/GitHub enum value. */
@@ -965,13 +987,18 @@ export function derivePipelineHealth(
 
   // Conflicts come from BOTH sides, for the same reason `lastMergedAt` does.
   // `active` only sees the in-flight queue feed, which EXCLUDES terminal
-  // `conflict` proposals — so a stranded PR has no active proposal at all and
-  // would count zero here. That is how a fleet with 17 stranded PRs rendered
-  // as "Merging normally": the escalation reached the row badge and the
-  // needs-attention chip, but not the headline the operator actually scans.
+  // `conflict` proposals — so a PR whose conflict is reported by GitHub rather
+  // than by a live proposal has no active proposal at all and would count zero
+  // here. That is how a fleet with 17 stranded PRs rendered as "Merging
+  // normally": the escalation reached the row badge and the needs-attention
+  // chip, but not the headline the operator actually scans.
+  //
+  // The two sides are disjoint by construction: `buildPipelineRows` only calls
+  // `statusFromGitHub` (the sole producer of GITHUB_CONFLICT_KINDS) when the
+  // row has no active proposal, so nothing is double-counted.
   const conflicts =
     active.filter((p) => p.status === "conflict").length +
-    rows.filter((r) => r.status.kind === "conflict-stranded").length;
+    rows.filter((r) => GITHUB_CONFLICT_KINDS.has(r.status.kind)).length;
   const blocked = active.filter(
     (p) => p.status === "blocked-by-overlap"
   ).length;
