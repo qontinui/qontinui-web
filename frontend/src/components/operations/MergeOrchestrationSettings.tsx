@@ -55,7 +55,10 @@ interface EffectiveProfile {
   auto_merge_enabled: boolean;
   dry_run: boolean;
   rulebook_overrides: Record<string, unknown> | null;
-  escalate_paths: string[];
+  // coord omits this for a default/unconfigured tenant profile, so the wire
+  // value can be absent even though the settings_wire contract nominally types
+  // it as always-present — guard every read (see the `?? []` sites below).
+  escalate_paths?: string[];
   audit_confidence_shadow_floor: number;
   preferred_auditor_device_id: string | null;
   auto_merge_label_budget: number | null;
@@ -166,7 +169,7 @@ function TenantDefaultsCard({
     profile.auto_fix_red_main
   );
   const [escalatePathsText, setEscalatePathsText] = useState<string>(
-    profile.escalate_paths.join("\n")
+    (profile.escalate_paths ?? []).join("\n")
   );
   const [shadowFloor, setShadowFloor] = useState<string>(
     String(profile.audit_confidence_shadow_floor)
@@ -182,7 +185,7 @@ function TenantDefaultsCard({
     setAutoMerge(profile.auto_merge_enabled);
     setDryRun(profile.dry_run);
     setAutoFixRedMain(profile.auto_fix_red_main);
-    setEscalatePathsText(profile.escalate_paths.join("\n"));
+    setEscalatePathsText((profile.escalate_paths ?? []).join("\n"));
     setShadowFloor(String(profile.audit_confidence_shadow_floor));
   }, [profile]);
 
