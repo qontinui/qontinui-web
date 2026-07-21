@@ -70,11 +70,18 @@ NEAR_DUP_WINDOW_DAYS = 90
 # Max near-dup pairs considered per consolidation run per tenant.
 NEAR_DUP_PAIR_LIMIT = 500
 
-# Cosine similarity for episode-cluster membership.
-CLUSTER_SIMILARITY = 0.80
+# Cosine similarity for episode-cluster membership (seed-radius: a member is
+# any row within this cosine of the seed). 0.80 was too tight for a single
+# sparse tenant — no 5 rows sat within 0.80 of a common seed, so synthesis
+# never fired. 0.75 is still "clearly related" for MiniLM-L6 (unrelated pairs
+# sit ~0.3-0.5). See plan 2026-07-21-tenant-memory-synthesis-clustering-tune.
+CLUSTER_SIMILARITY = 0.75
 
-# Minimum members for a cluster to be synthesized.
-CLUSTER_MIN_SIZE = 5
+# Minimum members for a cluster to be synthesized. Lowered 5 -> 3: a synthesized
+# mental_model from 3 related episodes is meaningful, and 5 was unreachable at
+# realistic single-tenant episode volumes (kept above the hard floor
+# _MIN_SYNTHESIS_CLUSTER=2 so a 2-row "cluster" is still not distilled).
+CLUSTER_MIN_SIZE = 3
 
 # Max candidate rows pulled per tenant per synthesis run.
 CLUSTER_CANDIDATE_LIMIT = 1000
