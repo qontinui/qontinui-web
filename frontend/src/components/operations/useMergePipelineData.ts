@@ -72,13 +72,44 @@ const MIN_BATCH_SPACING_MS = 3_000;
  * list — the tab renders empty rather than breaking.
  */
 export const MERGED_LOOKBACK_HOURS = 48;
+/**
+ * Cadence for the recently-merged rows — deliberately ~30x slower than the hot
+ * poll, and only ticking while the Merged tab is open.
+ *
+ * `?include_merged=` makes coord run `query_recently_merged_prs`, which
+ * resolves a deploy surface per repo (a git-ancestry probe per merged PR) on
+ * top of the open-PR scan. Measured against prod on 2026-07-21 the plain
+ * endpoint already takes ~31s and 500s at its 30s gateway timeout under load;
+ * with `include_merged` it timed out 5/5. Asking for that set on a 2s loop is
+ * both useless (landings are minutes apart, not seconds) and actively harmful
+ * — it multiplies an already-marginal query by the poll rate. Landing history
+ * is cold data; poll it like cold data.
+ */
+const MERGED_POLL_INTERVAL_MS = 60_000;
 const REFETCH_DEBOUNCE_MS = 250;
 const MAX_RECONNECT_ATTEMPTS = 5;
+
+/** Options for {@link useMergePipelineData}. */
+export interface MergePipelineOptions {
+  /**
+   * Fetch recently-merged rows. False (default) keeps the hot poll on the
+   * cheap open-PR query; the caller sets it only while the Merged tab is the
+   * visible one.
+   */
+  includeMerged?: boolean;
+}
 
 export interface MergePipelineData {
   /** null while the first fetch is in flight. */
   proposals: ProposalDetail[] | null;
   prs: PrRow[] | null;
+  /**
+   * Recently-merged rows for the Merged tab. `null` until the first merged
+   * fetch resolves, and it only ever runs while the caller passes
+   * `includeMerged` — so this stays null for the whole session on the other
+   * tabs, which is exactly the point.
+   */
+  mergedPrs: PrRow[] | null;
   /**
    * Per-repo merge economics keyed by `owner/name`. Never null — it defaults
    * to an empty map, and a 404 / coord-down / not-yet-deployed economics read
@@ -99,9 +130,13 @@ export interface MergePipelineData {
   ) => void;
 }
 
-export function useMergePipelineData(): MergePipelineData {
+export function useMergePipelineData(
+  opts: MergePipelineOptions = {}
+): MergePipelineData {
+  const includeMerged = opts.includeMerged ?? false;
   const [proposals, setProposals] = useState<ProposalDetail[] | null>(null);
   const [prs, setPrs] = useState<PrRow[] | null>(null);
+  const [mergedPrs, setMergedPrs] = useState<PrRow[] | null>(null);
   const [economicsByRepo, setEconomicsByRepo] = useState<
     Record<string, MergeEconomics>
   >({});
@@ -154,11 +189,13 @@ export function useMergePipelineData(): MergePipelineData {
 
   // Best-effort + 404-tolerant: a coord deploy without the endpoint renders
   // as an empty list, never as an error (the queue fetch owns `error`).
+  //
+  // The hot poll asks for OPEN PRs only. Merged rows are a separate, much
+  // slower fetch (see fetchMergedPrs) because `?include_merged=` is an order
+  // of magnitude more expensive server-side.
   const fetchPrs = useCallback(async () => {
     try {
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/prs?include_merged=${MERGED_LOOKBACK_HOURS}`
-      );
+      const res = await httpClient.fetch(`${OPERATIONS_API}/pr-merge/prs`);
       if (!res.ok) {
         if (res.status === 404) {
           if (!cleanedUpRef.current) setPrs([]);
@@ -170,8 +207,45 @@ export function useMergePipelineData(): MergePipelineData {
       const list = Array.isArray(body) ? body : (body.prs ?? []);
       if (!cleanedUpRef.current) setPrs(list);
     } catch (err) {
-      log.warn("fetchPrs failed", err);
-      if (!cleanedUpRef.current) setPrs([]);
+      // Keep the last known-good list. This endpoint is slow enough on a
+      // loaded fleet to intermittently 500/504 at the gateway (~30s); wiping
+      // to [] on each miss made the whole pipeline blink empty mid-triage,
+      // which reads as "nothing to do" rather than "the read failed". 404 is
+      // handled above and IS authoritative emptiness.
+      log.warn("fetchPrs failed — keeping last known rows", err);
+      if (!cleanedUpRef.current) setPrs((prev) => prev ?? []);
+    }
+  }, []);
+
+  // Recently-merged rows. Fetched ONLY while the caller asks for them (the
+  // Merged tab is open) and on a slow cadence — see MERGED_POLL_INTERVAL_MS
+  // for why this must never ride the hot poll.
+  const fetchMergedPrs = useCallback(async () => {
+    try {
+      const res = await httpClient.fetch(
+        `${OPERATIONS_API}/pr-merge/prs?include_merged=${MERGED_LOOKBACK_HOURS}`
+      );
+      if (!res.ok) {
+        if (res.status === 404) {
+          if (!cleanedUpRef.current) setMergedPrs([]);
+          return;
+        }
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const body = (await res.json()) as PrListResponse | PrRow[];
+      const list = Array.isArray(body) ? body : (body.prs ?? []);
+      // Keep only the terminal rows; the open ones already arrive via the hot
+      // poll, and taking them from here too would double-render every PR.
+      if (!cleanedUpRef.current) {
+        setMergedPrs(
+          list.filter(
+            (p) => p.pr_state === "merged" || p.pr_state === "closed"
+          )
+        );
+      }
+    } catch (err) {
+      log.warn("fetchMergedPrs failed — keeping last known merged rows", err);
+      if (!cleanedUpRef.current) setMergedPrs((prev) => prev ?? []);
     }
   }, []);
 
@@ -530,9 +604,22 @@ export function useMergePipelineData(): MergePipelineData {
     };
   }, [connectWs, scheduleRefetch, reviveWs]);
 
+  // Merged rows ride their OWN slow timer, and only while the caller wants
+  // them. Deliberately not folded into `fetchAll`: that is the 2s loop, and
+  // the merged query is the expensive one (see MERGED_POLL_INTERVAL_MS).
+  // Leaving the Merged tab clears the timer; the last rows stay in state so
+  // returning to the tab renders instantly while the refetch runs.
+  useEffect(() => {
+    if (!includeMerged) return;
+    fetchMergedPrs();
+    const id = setInterval(fetchMergedPrs, MERGED_POLL_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [includeMerged, fetchMergedPrs]);
+
   return {
     proposals,
     prs,
+    mergedPrs,
     economicsByRepo,
     suggestions,
     gateBlocks,
