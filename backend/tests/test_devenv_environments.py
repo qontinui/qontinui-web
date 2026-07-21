@@ -1129,6 +1129,121 @@ class TestCanonicalAuditAndPull:
             assert len(hist) == 2
 
     @pytest.mark.asyncio
+    async def test_canonical_note_round_trips(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """The optional "why" travels from the request into the audit row.
+
+        The column, the response field and the UI row all existed; nothing
+        could WRITE one until ``SetCanonicalRequest.note`` did.
+        """
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app) as client:
+            env_id, a_id, b_id, _, _ = await self._seed_env_two_enrolled_machines(
+                client
+            )
+            r = await client.put(
+                f"{API_PREFIX}/environments/{env_id}/canonical",
+                json={"machine_id": a_id, "note": "  a-box rebuilt on 3.12  "},
+            )
+            assert r.status_code == 200, r.text
+
+            # A note-less designation stays null (the field is optional).
+            r = await client.put(
+                f"{API_PREFIX}/environments/{env_id}/canonical",
+                json={"machine_id": b_id},
+            )
+            assert r.status_code == 200, r.text
+
+            hist = (
+                await client.get(
+                    f"{API_PREFIX}/environments/{env_id}/canonical-history"
+                )
+            ).json()
+            # Same-transaction rows tie on changed_at — key by transition.
+            notes = {h["to_machine_id"]: h["note"] for h in hist}
+            assert notes[a_id] == "a-box rebuilt on 3.12"  # trimmed
+            assert notes[b_id] is None
+
+    @pytest.mark.asyncio
+    async def test_blank_canonical_note_is_stored_as_null(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """A whitespace-only note is no note — never an empty string.
+
+        Readers test the note for truthiness (the UI renders the line only
+        when it is non-null); `""` would be a third state meaning nothing.
+        """
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app) as client:
+            env_id, a_id, _, _, _ = await self._seed_env_two_enrolled_machines(client)
+            r = await client.put(
+                f"{API_PREFIX}/environments/{env_id}/canonical",
+                json={"machine_id": a_id, "note": "   "},
+            )
+            assert r.status_code == 200, r.text
+            hist = (
+                await client.get(
+                    f"{API_PREFIX}/environments/{env_id}/canonical-history"
+                )
+            ).json()
+            assert len(hist) == 1
+            assert hist[0]["note"] is None
+
+    @pytest.mark.asyncio
+    async def test_overlong_canonical_note_is_rejected(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """The note is bounded — the audit trail is not a free-text dumping
+        ground, and the UI renders it inline."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app) as client:
+            env_id, a_id, _, _, _ = await self._seed_env_two_enrolled_machines(client)
+            r = await client.put(
+                f"{API_PREFIX}/environments/{env_id}/canonical",
+                json={"machine_id": a_id, "note": "x" * 501},
+            )
+            assert r.status_code == 422, r.text
+
+    @pytest.mark.asyncio
+    async def test_history_pages_without_gaps_or_repeats(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """limit/offset page the audit trail deterministically.
+
+        The load-bearing part is the ``id`` tiebreaker in the repository sort:
+        ``changed_at`` defaults to Postgres ``now()`` (transaction time), so
+        these three rows share a timestamp exactly. Ordering on the timestamp
+        alone would let the two pages skip or repeat a row.
+        """
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app) as client:
+            env_id, a_id, b_id, _, _ = await self._seed_env_two_enrolled_machines(
+                client
+            )
+            for machine_id in (a_id, b_id, a_id):
+                r = await client.put(
+                    f"{API_PREFIX}/environments/{env_id}/canonical",
+                    json={"machine_id": machine_id},
+                )
+                assert r.status_code == 200, r.text
+
+            async def page(limit: int, offset: int) -> list[str]:
+                r = await client.get(
+                    f"{API_PREFIX}/environments/{env_id}/canonical-history"
+                    f"?limit={limit}&offset={offset}"
+                )
+                assert r.status_code == 200, r.text
+                return [h["id"] for h in r.json()]
+
+            first, second = await page(2, 0), await page(2, 2)
+            assert len(first) == 2
+            assert len(second) == 1
+            # Disjoint, and together the whole history.
+            assert set(first).isdisjoint(second)
+            assert set(first) | set(second) == set(await page(50, 0))
+
+    @pytest.mark.asyncio
     async def test_history_resolves_display_names(
         self, async_db_session: AsyncSession, test_user
     ) -> None:

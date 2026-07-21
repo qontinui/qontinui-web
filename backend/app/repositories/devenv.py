@@ -626,7 +626,8 @@ class CanonicalChangeLogRepository:
         db: AsyncSession,
         *,
         environment_id: UUID,
-        limit: int = 100,
+        limit: int = 50,
+        offset: int = 0,
     ) -> list[CanonicalChangeRow]:
         """List an environment's canonical changes, newest first.
 
@@ -639,6 +640,12 @@ class CanonicalChangeLogRepository:
         audit row outlives machine deletion, and ``changed_by_user_id`` is an
         FK with ``ON DELETE SET NULL``. LEFT joins keep the audit row; the
         name simply comes back ``None``.
+
+        The sort carries an ``id`` tiebreaker because ``changed_at`` defaults
+        to Postgres ``now()`` — *transaction* time — so several designations
+        made in one transaction share a timestamp exactly. Without it the cut
+        between pages would be nondeterministic and paging could skip or
+        repeat a row.
         """
         from_machine = aliased(Machine)
         to_machine = aliased(Machine)
@@ -655,8 +662,11 @@ class CanonicalChangeLogRepository:
             )
             .outerjoin(to_machine, to_machine.id == CanonicalChangeLog.to_machine_id)
             .where(CanonicalChangeLog.environment_id == environment_id)
-            .order_by(CanonicalChangeLog.changed_at.desc())
+            .order_by(
+                CanonicalChangeLog.changed_at.desc(), CanonicalChangeLog.id.desc()
+            )
             .limit(limit)
+            .offset(offset)
         )
         return [
             CanonicalChangeRow(

@@ -458,15 +458,29 @@ export function deleteEnvironment(id: string): Promise<void> {
   });
 }
 
+/** Longest note the API accepts (`SetCanonicalRequest.note`, max_length=500). */
+export const CANONICAL_NOTE_MAX_LEN = 500;
+
+/**
+ * Designate a machine as canonical, optionally recording WHY.
+ *
+ * `note` is stored on the audit row and rendered by `CanonicalHistoryPanel`.
+ * A blank note is sent as `null`, never `""` — the server validator enforces
+ * the same rule, so "has a note" stays a truthiness check for every reader.
+ */
 export function setCanonicalMachine(
   environmentId: string,
-  machineId: string
+  machineId: string,
+  note?: string | null
 ): Promise<Environment> {
   return request<Environment>(
     `/environments/${encodeURIComponent(environmentId)}/canonical`,
     {
       method: "PUT",
-      body: JSON.stringify({ machine_id: machineId }),
+      body: JSON.stringify({
+        machine_id: machineId,
+        note: note?.trim() || null,
+      }),
     }
   );
 }
@@ -536,16 +550,34 @@ export function getConfigHistoryDiff(
 // ---------------------------------------------------------------------------
 
 /**
- * The environment's canonical-designation changes, newest first.
+ * Rows per canonical-history page. Shared with the panel (and its test) so the
+ * "a full page means older rows exist" inference can never be made against a
+ * page size the request did not actually use.
+ */
+export const CANONICAL_HISTORY_PAGE_SIZE = 50;
+
+/**
+ * One page of the environment's canonical-designation changes, newest first.
  *
- * An EMPTY list is the correct, expected state until the next designation —
- * the audit only records changes made after the audit log shipped. Callers
- * must render an explicit empty state, never an error.
+ * An EMPTY first page is the correct, expected state until the next
+ * designation — the audit only records changes made after the audit log
+ * shipped. Callers must render an explicit empty state, never an error.
+ *
+ * Paged like `getConfigHistory`: a full page means older changes may exist,
+ * fetched by advancing `offset`.
  */
 export function getCanonicalHistory(
-  environmentId: string
+  environmentId: string,
+  limit = CANONICAL_HISTORY_PAGE_SIZE,
+  offset = 0
 ): Promise<CanonicalChange[]> {
+  const params = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  });
   return request<CanonicalChange[]>(
-    `/environments/${encodeURIComponent(environmentId)}/canonical-history`
+    `/environments/${encodeURIComponent(
+      environmentId
+    )}/canonical-history?${params}`
   );
 }
