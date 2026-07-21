@@ -19876,6 +19876,23 @@
         "title": "FunctionStats",
         "type": "object"
       },
+      "GateDoctorSweepRequest": {
+        "description": "Body for ``POST /admin-dev/gates/doctor/sweep``.\n\nMirrors coord's ``GateDoctorSweepRequest`` defaults verbatim\n(``qontinui-coord/src/api/gate_routes.rs``): dry-run-first, and the\n``land_backfill`` sweep mode (re-clear ``failed`` ``pr_merged``-on-coord\ngates whose work actually landed). ``mode`` is passed through unvalidated\nso coord remains the single authority on the mode set \u2014 an unknown mode\nis coord's ``400`` to raise, not the web layer's.",
+        "properties": {
+          "dry_run": {
+            "default": true,
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "mode": {
+            "default": "land_backfill",
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "title": "GateDoctorSweepRequest",
+        "type": "object"
+      },
       "GateEvaluationResult": {
         "description": "Result of evaluating a gate step.",
         "properties": {
@@ -49264,6 +49281,53 @@
         "summary": "List feedback scores for an action",
         "tags": [
           "feedback-scores"
+        ]
+      }
+    },
+    "/api/v1/admin-dev/gates/doctor/sweep": {
+      "post": {
+        "description": "Proxy coord's ``POST /coord/gates/doctor/sweep`` (gate-doctor sweep).\n\nFires coord's gate-doctor sweep from the interactive operator console.\ncoord mounts this on its admin-role ``operator_admin_writes`` router and\nrejects non-interactive/headless callers by design \u2014 the sweep must run\nfrom a logged-in dashboard session, which is exactly the operator bearer\nthis proxy forwards (``forward_bearer=True``). The ``land_backfill`` mode\nre-clears ``failed`` ``pr_merged``-on-coord gates whose work actually\nlanded (the residue the land-aware ``pr_merged`` verdict leaves behind).\n\nAuth: ``require_admin`` (operator-only) \u2014 UNLIKE the tenant-member reads\n(``overview`` / ``prs``), this is a MUTATION on fleet-wide operator\ninfrastructure (``coord.gates``), not tenant-partitioned state. It mirrors\nthe sibling operator-only mutation (``release-verdict``): web fails fast\nwith a clean ``403`` for a non-admin rather than forwarding a doomed\nbearer for coord's admin-role router to reject opaquely. The\n``_capture_bearer_best_effort`` dependency captures the caller bearer +\ntenant-switcher selection so ``forward_bearer=True`` forwards the\noperator's real identity for coord to authorize on.\n\nBody (``GateDoctorSweepRequest``) is passed through verbatim\n(``dry_run`` default ``true``, ``mode`` default ``\"land_backfill\"``);\ncoord's ``BackfillReport`` JSON \u2014 ``{dry_run, examined, backfilled,\nleft_failed, entries[]}`` \u2014 is returned verbatim. This is a MUTATION:\nit is NOT cached/SWR'd. coord ``4xx``/``5xx`` are surfaced verbatim (a\n``403`` means the operator bearer was not forwarded/accepted \u2014 it is NOT\nswallowed into a degraded envelope).",
+        "operationId": "api_v1_admin_dev_gates_doctor_sweep_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GateDoctorSweepRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Gate Doctor Sweep Api V1 Admin Dev Gates Doctor Sweep Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Gate Doctor Sweep",
+        "tags": [
+          "admin-dev"
         ]
       }
     },

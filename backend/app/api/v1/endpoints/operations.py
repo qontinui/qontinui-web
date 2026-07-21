@@ -1960,12 +1960,20 @@ async def _proxy_coord_post(
     body: Any,
     *,
     tenant_id: UUID | None = None,
+    forward_bearer: bool = False,
     timeout: httpx.Timeout | None = None,
     return_status: bool = False,
 ) -> Any:
     """Proxy a POST request to coord and return the JSON body.
 
     ``tenant_id`` — see ``_proxy_coord_get``.
+    ``forward_bearer`` — forward the captured caller bearer EVEN WHEN
+    ``tenant_id is None`` (mirrors ``_proxy_coord_get``). A fleet-wide
+    mutation that must forward the operator bearer without resolving a
+    tenant (e.g. ``/admin-dev/gates/doctor/sweep`` → coord's admin-role
+    gate-doctor sweep) sets this True so coord authorizes on the
+    operator's real identity. Default False preserves the prior behavior
+    exactly: no bearer is forwarded unless a tenant was resolved.
     ``timeout`` — optional per-route override. Defaults to ``_COORD_TIMEOUT``
     (5s) which is appropriate for short JSON-from-PG endpoints. Endpoints
     that dispatch device-side work (e.g., onboarding audit) must pass an
@@ -1979,7 +1987,9 @@ async def _proxy_coord_post(
     the prior behavior exactly (returns just the JSON body).
     """
     url = f"{settings.COORD_URL}{path}"
-    headers = _tenant_headers(tenant_id) if tenant_id is not None else None
+    headers = (
+        _tenant_headers(tenant_id) if tenant_id is not None or forward_bearer else None
+    )
     async with httpx.AsyncClient(timeout=timeout or _COORD_TIMEOUT) as client:
         try:
             resp = await client.post(url, json=body, headers=headers)

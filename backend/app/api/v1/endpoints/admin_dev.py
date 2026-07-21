@@ -72,6 +72,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel
 
 from app.api.admin_deps import require_admin
 from app.api.coord_proxy import (
@@ -80,6 +81,7 @@ from app.api.coord_proxy import (
     _caller_bearer,
     _extract_caller_token,
     _proxy_coord_get,
+    _proxy_coord_post,
 )
 from app.api.deps import get_current_active_user_async
 from app.models.user import User
@@ -555,3 +557,61 @@ async def _last_good_get(key: _CacheKey) -> dict[str, Any] | None:
             _last_good_cache.pop(key, None)
             return None
         return envelope
+
+
+class GateDoctorSweepRequest(BaseModel):
+    """Body for ``POST /admin-dev/gates/doctor/sweep``.
+
+    Mirrors coord's ``GateDoctorSweepRequest`` defaults verbatim
+    (``qontinui-coord/src/api/gate_routes.rs``): dry-run-first, and the
+    ``land_backfill`` sweep mode (re-clear ``failed`` ``pr_merged``-on-coord
+    gates whose work actually landed). ``mode`` is passed through unvalidated
+    so coord remains the single authority on the mode set — an unknown mode
+    is coord's ``400`` to raise, not the web layer's.
+    """
+
+    dry_run: bool = True
+    mode: str = "land_backfill"
+
+
+@router.post("/admin-dev/gates/doctor/sweep")
+async def post_gate_doctor_sweep(
+    body: GateDoctorSweepRequest,
+    _tenant_key: str | None = Depends(_capture_bearer_best_effort),
+    _admin: User = Depends(
+        require_admin
+    ),  # operator-only: the sweep mutates fleet-wide coord.gates, not tenant state
+) -> Any:
+    """Proxy coord's ``POST /coord/gates/doctor/sweep`` (gate-doctor sweep).
+
+    Fires coord's gate-doctor sweep from the interactive operator console.
+    coord mounts this on its admin-role ``operator_admin_writes`` router and
+    rejects non-interactive/headless callers by design — the sweep must run
+    from a logged-in dashboard session, which is exactly the operator bearer
+    this proxy forwards (``forward_bearer=True``). The ``land_backfill`` mode
+    re-clears ``failed`` ``pr_merged``-on-coord gates whose work actually
+    landed (the residue the land-aware ``pr_merged`` verdict leaves behind).
+
+    Auth: ``require_admin`` (operator-only) — UNLIKE the tenant-member reads
+    (``overview`` / ``prs``), this is a MUTATION on fleet-wide operator
+    infrastructure (``coord.gates``), not tenant-partitioned state. It mirrors
+    the sibling operator-only mutation (``release-verdict``): web fails fast
+    with a clean ``403`` for a non-admin rather than forwarding a doomed
+    bearer for coord's admin-role router to reject opaquely. The
+    ``_capture_bearer_best_effort`` dependency captures the caller bearer +
+    tenant-switcher selection so ``forward_bearer=True`` forwards the
+    operator's real identity for coord to authorize on.
+
+    Body (``GateDoctorSweepRequest``) is passed through verbatim
+    (``dry_run`` default ``true``, ``mode`` default ``"land_backfill"``);
+    coord's ``BackfillReport`` JSON — ``{dry_run, examined, backfilled,
+    left_failed, entries[]}`` — is returned verbatim. This is a MUTATION:
+    it is NOT cached/SWR'd. coord ``4xx``/``5xx`` are surfaced verbatim (a
+    ``403`` means the operator bearer was not forwarded/accepted — it is NOT
+    swallowed into a degraded envelope).
+    """
+    return await _proxy_coord_post(
+        "/coord/gates/doctor/sweep",
+        body.model_dump(),
+        forward_bearer=True,
+    )
