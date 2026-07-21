@@ -585,9 +585,14 @@ const FILTERS: Array<{ id: PipelineFilter; label: string }> = [
 // ----------------------------------------------------------------------------
 
 export function MergePipeline() {
+  // Declared before the data hook: the merged rows are an expensive read, so
+  // the hook only fetches them while this tab is the visible one.
+  const [filter, setFilter] = useState<PipelineFilter>("all");
+
   const {
     proposals,
     prs,
+    mergedPrs,
     economicsByRepo,
     suggestions,
     gateBlocks,
@@ -595,16 +600,20 @@ export function MergePipeline() {
     error,
     suggestionBusy,
     onSuggestionAction,
-  } = useMergePipelineData();
+  } = useMergePipelineData({ includeMerged: filter === "merged" });
 
-  const [filter, setFilter] = useState<PipelineFilter>("all");
   const [query, setQuery] = useState("");
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   const loaded = proposals !== null && prs !== null;
   const rows = useMemo(
-    () => buildPipelineRows(prs ?? [], proposals ?? [], economicsByRepo),
-    [prs, proposals, economicsByRepo]
+    () =>
+      buildPipelineRows(
+        [...(prs ?? []), ...(mergedPrs ?? [])],
+        proposals ?? [],
+        economicsByRepo
+      ),
+    [prs, mergedPrs, proposals, economicsByRepo]
   );
   const counts = useMemo(
     () =>
@@ -652,7 +661,10 @@ export function MergePipeline() {
                   : "text-muted-foreground"
               }`}
             >
-              {counts[f.id]}
+              {/* The merged set is only fetched while its tab is open, so
+                  before that a count would be a lie ("0 merged") rather than
+                  a fact. Show a dash until we've actually looked. */}
+              {f.id === "merged" && mergedPrs === null ? "–" : counts[f.id]}
             </span>
           </Button>
         ))}

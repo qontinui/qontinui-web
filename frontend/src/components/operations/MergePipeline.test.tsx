@@ -23,6 +23,7 @@ const hookData: { current: MergePipelineData } = {
   current: {
     proposals: [],
     prs: [],
+    mergedPrs: null,
     suggestions: [],
     gateBlocks: [],
     gateTotalBlocks: 0,
@@ -36,8 +37,14 @@ const hookData: { current: MergePipelineData } = {
 // constant the component renders — keep the real value so the empty-state
 // copy under test is the one operators see. (Literal, not a reference:
 // `vi.mock` factories are hoisted above const declarations.)
+// Records the options the component passes, so a test can assert that the
+// expensive merged-rows read is requested ONLY while its tab is open.
+const hookCalls: Array<{ includeMerged?: boolean }> = [];
 vi.mock("./useMergePipelineData", () => ({
-  useMergePipelineData: () => hookData.current,
+  useMergePipelineData: (opts: { includeMerged?: boolean } = {}) => {
+    hookCalls.push(opts);
+    return hookData.current;
+  },
   MERGED_LOOKBACK_HOURS: 48,
 }));
 const MERGED_LOOKBACK_HOURS = 48;
@@ -100,6 +107,7 @@ describe("MergePipeline", () => {
       ...hookData.current,
       proposals: [],
       prs: [],
+      mergedPrs: null,
       error: null,
     };
   });
@@ -426,6 +434,42 @@ describe("MergePipeline", () => {
 
     expect(screen.getByTestId("pipeline-empty")).toHaveTextContent(
       `Nothing merged in the last ${MERGED_LOOKBACK_HOURS} hours.`
+    );
+  });
+
+  // --------------------------------------------------------------------------
+  // The merged read is expensive — it must stay off the 2s hot poll
+  // --------------------------------------------------------------------------
+
+  it("asks for merged rows ONLY while the Merged tab is open", () => {
+    hookData.current.prs = [pr()];
+    hookCalls.length = 0;
+
+    render(<MergePipeline />);
+    // Default tab: every render so far must have opted OUT of the expensive
+    // `?include_merged=` read.
+    expect(hookCalls.length).toBeGreaterThan(0);
+    expect(hookCalls.every((c) => c.includeMerged === false)).toBe(true);
+
+    fireEvent.click(screen.getByTestId("pipeline-filter-merged"));
+    expect(hookCalls.at(-1)?.includeMerged).toBe(true);
+
+    // Leaving the tab must switch it back off — otherwise the costly read
+    // keeps running for the rest of the session.
+    fireEvent.click(screen.getByTestId("pipeline-filter-all"));
+    expect(hookCalls.at(-1)?.includeMerged).toBe(false);
+  });
+
+  it("shows a dash, not '0', for the merged count before it has looked", () => {
+    hookData.current.prs = [pr()];
+    hookData.current.mergedPrs = null;
+
+    render(<MergePipeline />);
+
+    // "0" here would assert an unknown as a fact — nothing has been fetched.
+    expect(screen.getByTestId("pipeline-filter-merged")).toHaveTextContent("–");
+    expect(screen.getByTestId("pipeline-filter-merged")).not.toHaveTextContent(
+      /Merged\s*0/
     );
   });
 });
