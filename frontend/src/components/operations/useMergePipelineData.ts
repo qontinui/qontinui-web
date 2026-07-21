@@ -158,8 +158,17 @@ export function useMergePipelineData(
   const rerunRef = useRef(false);
   /** Latest `fetchAll`, so timers/listeners need not re-bind on each change. */
   const fetchAllRef = useRef<() => Promise<void>>(async () => {});
-  /** Epoch ms of the last batch START — enforces `MIN_BATCH_SPACING_MS`. */
+  /** Epoch ms of the last batch START. */
   const lastBatchStartedAtRef = useRef(0);
+  /**
+   * Epoch ms of the last batch SETTLING. `MIN_BATCH_SPACING_MS` anchors to
+   * whichever of the two is later: anchoring to start alone makes the floor
+   * evaporate for any batch slower than the floor (elapsed already exceeds
+   * it the moment the batch ends), which is precisely the degraded regime it
+   * has to hold in. Anchoring to completion guarantees a real idle gap in
+   * which the backend's pooled connections are actually released.
+   */
+  const lastBatchEndedAtRef = useRef(0);
 
   const fetchQueue = useCallback(async () => {
     try {
@@ -383,15 +392,22 @@ export function useMergePipelineData(
   // socket) no longer re-binds whenever a fetch callback identity changes.
   const scheduleRefetch = useCallback(() => {
     if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current);
-    const sinceLast = Date.now() - lastBatchStartedAtRef.current;
+    const anchor = Math.max(
+      lastBatchStartedAtRef.current,
+      lastBatchEndedAtRef.current
+    );
     const delay = Math.max(
       REFETCH_DEBOUNCE_MS,
-      MIN_BATCH_SPACING_MS - sinceLast
+      MIN_BATCH_SPACING_MS - (Date.now() - anchor)
     );
-    refetchTimerRef.current = setTimeout(
-      () => void fetchAllRef.current(),
-      delay
-    );
+    refetchTimerRef.current = setTimeout(() => {
+      // Rule 3 applies to the WS path too, not just the poll: a hidden tab
+      // with a live socket would otherwise keep running full batches off
+      // `events.merge.>` all night. Suppressing here rather than at schedule
+      // time loses nothing — `onVisibility` re-schedules on reveal.
+      if (document.hidden) return;
+      void fetchAllRef.current();
+    }, delay);
   }, []);
 
   const fetchAll = useCallback(async () => {
@@ -416,6 +432,7 @@ export function useMergePipelineData(
       ]);
     } finally {
       inFlightRef.current = false;
+      lastBatchEndedAtRef.current = Date.now();
     }
     if (rerunRef.current && !cleanedUpRef.current) {
       rerunRef.current = false;
@@ -481,7 +498,9 @@ export function useMergePipelineData(
       // `wsRef.current !== ws` means we have already been superseded.
       if (cleanedUpRef.current || wsRef.current !== ws) return;
       if (reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
-        log.warn("WS max reconnect attempts reached; relying on poll");
+        // Not terminal: the poll's `reviveWs` retries every POLL_INTERVAL_MS,
+        // which restarts this ladder. This only ends the fast backoff burst.
+        log.warn("WS fast-reconnect ladder exhausted; poll will keep retrying");
         return;
       }
       const delay = Math.min(1_000 * 2 ** reconnectAttemptsRef.current, 30_000);
@@ -489,6 +508,24 @@ export function useMergePipelineData(
       reconnectRef.current = setTimeout(connectWs, delay);
     };
   }, [scheduleRefetch]);
+
+  /**
+   * Bring the socket back up if it is gone. Cancels any in-flight backoff
+   * first — otherwise that timer fires later and tears down the socket we
+   * just opened, discarding its `onopen` resync. Shared by the poll
+   * supervisor and the tab-reveal handler so the two cannot drift apart.
+   */
+  const reviveWs = useCallback(() => {
+    const ws = wsRef.current;
+    // readyState <= OPEN covers CONNECTING(0) and OPEN(1) — both fine as-is.
+    if (ws && ws.readyState <= WebSocket.OPEN) return;
+    if (reconnectRef.current) {
+      clearTimeout(reconnectRef.current);
+      reconnectRef.current = null;
+    }
+    reconnectAttemptsRef.current = 0;
+    connectWs();
+  }, [connectWs]);
 
   useEffect(() => {
     cleanedUpRef.current = false;
@@ -511,15 +548,6 @@ export function useMergePipelineData(
         // latency, which is the incident's shape all over again.
         if (!document.hidden && !inFlightRef.current) {
           await fetchAllRef.current();
-          // The poll doubles as WS supervisor. `onclose` gives up for good
-          // after MAX_RECONNECT_ATTEMPTS (~31s of backoff), so without this a
-          // coord restart would strand the page on poll-only freshness until
-          // the user happened to hide and re-reveal the tab.
-          const ws = wsRef.current;
-          if (!ws || ws.readyState > WebSocket.OPEN) {
-            reconnectAttemptsRef.current = 0;
-            connectWs();
-          }
         }
       } catch (err) {
         // Rearming lives in `finally`: this is the ONLY rearm site, so an
@@ -528,12 +556,23 @@ export function useMergePipelineData(
         log.warn("poll tick failed", err);
       } finally {
         if (!stopped && !cleanedUpRef.current) {
+          // Supervise the socket in `finally` for the same reason the rearm
+          // lives here: a rejecting `fetchAll` must not also disable socket
+          // recovery, or one broken surface takes down both transports.
+          // `onclose`'s ladder gives up after MAX_RECONNECT_ATTEMPTS (~31s),
+          // so this is what makes WS recovery unconditional.
+          if (!document.hidden) reviveWs();
           pollTimerRef.current = setTimeout(() => void tick(), POLL_INTERVAL_MS);
         }
       }
     };
 
-    void fetchAllRef.current();
+    // Hidden-gated like every other path into `fetchAll`: session-restore or
+    // ctrl-clicking several dashboard tabs into the background would
+    // otherwise each fire 5 concurrent requests before anything is on screen
+    // — four such tabs is the entire 20-connection pool. `onVisibility`
+    // fetches on first reveal, so nothing is lost.
+    if (!document.hidden) void fetchAllRef.current();
     pollTimerRef.current = setTimeout(() => void tick(), POLL_INTERVAL_MS);
     connectWs();
 
@@ -546,17 +585,7 @@ export function useMergePipelineData(
       // (alt-tab, a monitor sleeping, window-manager events) would otherwise
       // issue an unthrottled batch per reveal.
       scheduleRefetch();
-      const ws = wsRef.current;
-      if (!ws || ws.readyState > WebSocket.OPEN) {
-        // Cancel any pending backoff first, or it fires later and churns the
-        // socket we are about to open.
-        if (reconnectRef.current) {
-          clearTimeout(reconnectRef.current);
-          reconnectRef.current = null;
-        }
-        reconnectAttemptsRef.current = 0;
-        connectWs();
-      }
+      reviveWs();
     };
     document.addEventListener("visibilitychange", onVisibility);
 
@@ -573,7 +602,7 @@ export function useMergePipelineData(
         ws.close();
       }
     };
-  }, [connectWs, scheduleRefetch]);
+  }, [connectWs, scheduleRefetch, reviveWs]);
 
   // Merged rows ride their OWN slow timer, and only while the caller wants
   // them. Deliberately not folded into `fetchAll`: that is the 2s loop, and
