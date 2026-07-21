@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import {
   ArrowRight,
   ChevronDown,
@@ -11,6 +12,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  CANONICAL_HISTORY_PAGE_SIZE,
   DevenvApiError,
   getCanonicalHistory,
   type CanonicalChange,
@@ -64,35 +66,58 @@ export function CanonicalHistoryPanel({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
+  /** True while the backend may hold older pages beyond what's accumulated. */
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  /** Bumped by Retry so the reload runs through the effect (and stays cancellable). */
+  const [reloadKey, setReloadKey] = useState(0);
 
-  const load = useCallback(
-    async (signal: { cancelled: boolean }) => {
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
       setLoading(true);
       setError(null);
       try {
         const list = await getCanonicalHistory(environmentId);
-        if (signal.cancelled) return;
+        if (cancelled) return;
         setChanges(list);
+        setHasMore(list.length === CANONICAL_HISTORY_PAGE_SIZE);
       } catch (err) {
-        if (signal.cancelled) return;
+        if (cancelled) return;
         setChanges(null);
         setError(errMessage(err, "Failed to load canonical history"));
       } finally {
-        if (!signal.cancelled) setLoading(false);
+        if (!cancelled) setLoading(false);
       }
-    },
-    [environmentId]
-  );
-
-  useEffect(() => {
-    const signal = { cancelled: false };
-    void load(signal);
+    })();
     return () => {
-      signal.cancelled = true;
+      cancelled = true;
     };
-  }, [load, refreshKey]);
+  }, [environmentId, refreshKey, reloadKey]);
 
-  if (loading) {
+  const loadMore = async () => {
+    if (!changes || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const next = await getCanonicalHistory(
+        environmentId,
+        CANONICAL_HISTORY_PAGE_SIZE,
+        changes.length
+      );
+      setChanges((prev) => [...(prev ?? []), ...next]);
+      setHasMore(next.length === CANONICAL_HISTORY_PAGE_SIZE);
+    } catch (err) {
+      // Toast, not the inline error state: the rows already on screen stay —
+      // failing to fetch OLDER history must not hide the history we have.
+      toast.error(errMessage(err, "Failed to load older changes"));
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  // Spinner only when there is nothing to show. A refresh after a designation
+  // keeps the existing rows on screen rather than flashing back to a spinner.
+  if (loading && !changes) {
     return (
       <div
         className="flex items-center gap-2 py-2 text-xs text-muted-foreground"
@@ -112,7 +137,7 @@ export function CanonicalHistoryPanel({
           variant="ghost"
           size="sm"
           className="mt-1 h-7 px-2 text-muted-foreground hover:text-foreground"
-          onClick={() => void load({ cancelled: false })}
+          onClick={() => setReloadKey((k) => k + 1)}
         >
           Retry
         </Button>
@@ -167,6 +192,26 @@ export function CanonicalHistoryPanel({
           {expanded
             ? "Show fewer"
             : `Show ${hidden} older change${hidden === 1 ? "" : "s"}`}
+        </Button>
+      )}
+
+      {/* A full page means older rows exist beyond it. Offer to fetch them —
+          an audit trail that looks complete but isn't is worse than none, and
+          a bare "older ones are not listed" would be a dead end. */}
+      {expanded && hasMore && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => void loadMore()}
+          disabled={loadingMore}
+          className="h-7 px-2 text-muted-foreground hover:text-foreground"
+        >
+          {loadingMore ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <ChevronDown className="size-4" />
+          )}
+          Load older changes
         </Button>
       )}
     </div>

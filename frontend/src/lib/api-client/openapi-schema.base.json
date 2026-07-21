@@ -33909,12 +33909,24 @@
         "type": "object"
       },
       "SetCanonicalRequest": {
-        "description": "Designate a machine as the canonical source of truth for an env.",
+        "description": "Designate a machine as the canonical source of truth for an env.\n\n``note`` is the optional \"why\" recorded alongside the who/when in\n:class:`~app.models.devenv.CanonicalChangeLog`. Changing canonical\nre-points every other machine's drift, so the reason is the part of the\naudit trail a teammate reading it later actually needs. Optional by\ndesign \u2014 an unexplained change is still fully attributable, and requiring\nprose would only produce empty ceremony.",
         "properties": {
           "machine_id": {
             "format": "uuid",
             "title": "Machine Id",
             "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
           }
         },
         "required": [
@@ -56986,7 +56998,7 @@
     },
     "/api/v1/devenv/environments/{environment_id}/canonical": {
       "put": {
-        "description": "Designate a machine as the canonical source of truth for an env.\n\nValidates the machine is owned by the caller AND has reported a config\nrow for this environment (a machine with no config can't be a useful\nsource of truth). Atomic single-column update, plus an append to the\n``canonical_change_log`` audit trail (who/when/from->to) \u2014 the team-sync\nmodel requires every canonical change to be attributable. A no-op change\n(re-designating the machine that is already canonical) is not recorded.",
+        "description": "Designate a machine as the canonical source of truth for an env.\n\nValidates the machine is owned by the caller AND has reported a config\nrow for this environment (a machine with no config can't be a useful\nsource of truth). Atomic single-column update, plus an append to the\n``canonical_change_log`` audit trail (who/when/from->to, plus the\noptional ``note`` explaining why) \u2014 the team-sync model requires every\ncanonical change to be attributable. A no-op change (re-designating the\nmachine that is already canonical) is not recorded, and neither is its\nnote: there is no change for it to annotate.",
         "operationId": "api_v1_devenv_environments_environment_id_canonical_put",
         "parameters": [
           {
@@ -57045,7 +57057,7 @@
     },
     "/api/v1/devenv/environments/{environment_id}/canonical-history": {
       "get": {
-        "description": "List the environment's canonical-designation changes, newest first.\n\nAnswers \"who made this the canonical environment, and when.\" Owner-scoped\nlike every other route here (cross-owner env id -> 404).\n\nDisplay names (actor email, from/to machine names) are resolved by the\nrepository in the same query; each is ``None`` when the referenced row is\ngone, which is expected \u2014 the audit outlives machine/user deletion.",
+        "description": "List the environment's canonical-designation changes, newest first.\n\nAnswers \"who made this the canonical environment, when, and why.\"\nOwner-scoped like every other route here (cross-owner env id -> 404).\n\nPaged with the same ``limit``/``offset`` contract as the config-history\ntimeline, so a client can page BACK through an audit trail longer than one\npage instead of silently presenting the first page as the whole history.\n\nDisplay names (actor email, from/to machine names) are resolved by the\nrepository in the same query; each is ``None`` when the referenced row is\ngone, which is expected \u2014 the audit outlives machine/user deletion.",
         "operationId": "api_v1_devenv_environments_environment_id_canonical_history_get",
         "parameters": [
           {
@@ -57056,6 +57068,29 @@
               "format": "uuid",
               "title": "Environment Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
             }
           }
         ],

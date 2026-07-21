@@ -242,9 +242,28 @@ class EnvironmentResponse(BaseORMSchema):
 
 
 class SetCanonicalRequest(BaseSchema):
-    """Designate a machine as the canonical source of truth for an env."""
+    """Designate a machine as the canonical source of truth for an env.
+
+    ``note`` is the optional "why" recorded alongside the who/when in
+    :class:`~app.models.devenv.CanonicalChangeLog`. Changing canonical
+    re-points every other machine's drift, so the reason is the part of the
+    audit trail a teammate reading it later actually needs. Optional by
+    design — an unexplained change is still fully attributable, and requiring
+    prose would only produce empty ceremony.
+    """
 
     machine_id: UUID
+    note: str | None = Field(default=None, max_length=500)
+
+    @field_validator("note")
+    @classmethod
+    def _blank_note_is_none(cls, v: str | None) -> str | None:
+        """Trim, and treat a whitespace-only note as no note at all.
+
+        Keeps `""` out of the audit trail, so "has a note" is a truthiness
+        check for every reader (the UI renders the row only when non-null).
+        """
+        return (v or "").strip() or None
 
 
 class CanonicalChangeResponse(BaseORMSchema):
