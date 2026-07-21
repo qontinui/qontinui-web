@@ -17,7 +17,7 @@ from app.services.memory_lifecycle import (
     DupCandidate,
     cosine_similarity,
     greedy_clusters,
-    member_set_hash,
+    job_input_hash,
     resolve_merges,
     retention_score,
     synthesized_title,
@@ -182,19 +182,32 @@ class TestCosineSimilarity:
         assert cosine_similarity([0.0, 0.0], [1.0, 0.0]) == 0.0
 
 
-class TestMemberSetHash:
+class TestJobInputHash:
     def test_order_independent(self) -> None:
         a, b, c = uuid4(), uuid4(), uuid4()
-        assert member_set_hash([a, b, c]) == member_set_hash([c, a, b])
+        assert job_input_hash([a, b, c]) == job_input_hash([c, a, b])
 
     def test_distinct_sets_differ(self) -> None:
         a, b, c = uuid4(), uuid4(), uuid4()
-        assert member_set_hash([a, b]) != member_set_hash([a, b, c])
+        assert job_input_hash([a, b]) != job_input_hash([a, b, c])
 
     def test_stable_hex(self) -> None:
-        h = member_set_hash([uuid4()])
+        h = job_input_hash([uuid4()])
         assert len(h) == 64
         int(h, 16)  # sha256 hex digest parses as hex
+
+    def test_model_tag_scopes_the_hash(self) -> None:
+        # An embedding job folds the deployed tag in, so a tag change
+        # re-opens the same rows for a fresh job even though the earlier
+        # job is `done` (and `done` is inside the live dedupe index).
+        ids = [uuid4(), uuid4()]
+        assert job_input_hash(ids, model_tag="m@v1") != job_input_hash(
+            ids, model_tag="m@v2"
+        )
+        # Synthesis passes no tag — its hash stays byte-identical to the
+        # pre-generalization `member_set_hash`, so values migrated across
+        # from the old column keep matching.
+        assert job_input_hash(ids) != job_input_hash(ids, model_tag="m@v1")
 
 
 class TestSynthesizedTitle:

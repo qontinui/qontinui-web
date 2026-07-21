@@ -89,7 +89,10 @@ export function CollapsiblePanel({
     <Collapsible
       open={open}
       onOpenChange={handleOpenChange}
-      className={cn("rounded-lg border border-border bg-card/30 p-4", className)}
+      className={cn(
+        "rounded-lg border border-border bg-card/30 p-4",
+        className
+      )}
       {...rest}
     >
       <div className="flex items-center justify-between gap-2">

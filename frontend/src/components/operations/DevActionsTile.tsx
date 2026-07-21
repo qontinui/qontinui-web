@@ -193,7 +193,10 @@ function OutcomeList({ state }: { state: OutcomeState }) {
           data-ui-bridge-id="operations.dev-action-outcome-row"
           className="flex items-center justify-between gap-2 text-xs"
         >
-          <span className="font-mono truncate text-foreground/90" title={o.signature}>
+          <span
+            className="font-mono truncate text-foreground/90"
+            title={o.signature}
+          >
             {o.signature}
           </span>
           <div className="flex items-center gap-2 shrink-0">
@@ -204,7 +207,9 @@ function OutcomeList({ state }: { state: OutcomeState }) {
             )}
             <span
               className="tabular-nums text-muted-foreground"
-              title={o.observed_at ? new Date(o.observed_at).toLocaleString() : ""}
+              title={
+                o.observed_at ? new Date(o.observed_at).toLocaleString() : ""
+              }
             >
               {relativeTime(o.observed_at)}
             </span>
@@ -432,8 +437,8 @@ export function DevActionsTile() {
         </p>
       ) : rows.length === 0 ? (
         <div className="rounded-md border border-border/40 bg-muted/10 p-3 text-xs text-muted-foreground">
-          No dev actions recorded yet. Agents record actions into the ledger
-          via coord; rows appear here as they execute.
+          No dev actions recorded yet. Agents record actions into the ledger via
+          coord; rows appear here as they execute.
         </div>
       ) : (
         <ul

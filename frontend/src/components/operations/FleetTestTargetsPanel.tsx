@@ -155,7 +155,14 @@ function AppCard({
     } finally {
       setSaving(false);
     }
-  }, [app.app_id, app.display_name, strategy, buildCommand, startCommand, onChanged]);
+  }, [
+    app.app_id,
+    app.display_name,
+    strategy,
+    buildCommand,
+    startCommand,
+    onChanged,
+  ]);
 
   const designate = useCallback(
     async (deviceId: string, autoFresh: boolean) => {

@@ -47,7 +47,7 @@ interface UseGatesStreamResult {
  * shape changes.
  */
 export function useGatesStream(
-  options: UseGatesStreamOptions = {},
+  options: UseGatesStreamOptions = {}
 ): UseGatesStreamResult {
   const { excludeOrphans = false } = options;
   const [gates, setGates] = useState<GateRow[] | null>(null);

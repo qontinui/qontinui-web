@@ -27,13 +27,13 @@ const OP_SYMBOL: Record<string, string> = {
 };
 
 /** Render a `{k: v}` label filter as a Prometheus-style `{k="v", ...}`. */
-function formatLabels(labels: Record<string, string> | null | undefined): string {
+function formatLabels(
+  labels: Record<string, string> | null | undefined
+): string {
   if (!labels) return "";
   const entries = Object.entries(labels);
   if (entries.length === 0) return "";
-  const inner = entries
-    .map(([k, v]) => `${k}="${v}"`)
-    .join(", ");
+  const inner = entries.map(([k, v]) => `${k}="${v}"`).join(", ");
   return `{${inner}}`;
 }
 
@@ -97,7 +97,9 @@ export function humanizePredicate(p: GatePredicate | null | undefined): string {
       }
       return "claim_terminal";
     case "operator_approval":
-      return p.prompt ? `operator_approval: "${p.prompt}"` : "operator_approval";
+      return p.prompt
+        ? `operator_approval: "${p.prompt}"`
+        : "operator_approval";
     case "ci_green":
       if (p.repo) {
         const sha = p.head_sha ? ` @ ${p.head_sha.slice(0, 7)}` : "";
@@ -199,7 +201,7 @@ function firstLine(text: string): string {
  */
 function shortDevice(
   deviceId: string | undefined,
-  hostname?: string | null,
+  hostname?: string | null
 ): string {
   if (hostname) return hostname;
   if (deviceId) return deviceId.slice(0, DEVICE_ID_SHORT);
@@ -226,7 +228,7 @@ function shortDevice(
  */
 export function summarizeContinuation(
   spawn: ContinuationSpawn | null | undefined,
-  hostnameFor?: (deviceId: string) => string | null | undefined,
+  hostnameFor?: (deviceId: string) => string | null | undefined
 ): string | null {
   if (!spawn || typeof spawn !== "object") return null;
 
@@ -342,7 +344,7 @@ type ContinuationLifecycleFields = Pick<
  */
 export function summarizeContinuationLifecycle(
   gate: ContinuationLifecycleFields,
-  now: number = Date.now(),
+  now: number = Date.now()
 ): ContinuationLifecycle | null {
   // Cancelled wins outright — a withdrawn continuation must never read as
   // pending/spawned even if a later stamp also landed.
