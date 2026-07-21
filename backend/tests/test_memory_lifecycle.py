@@ -12,6 +12,8 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 from app.services.memory_lifecycle import (
+    CLUSTER_MIN_SIZE,
+    CLUSTER_SIMILARITY,
     DECAY_SCORE_THRESHOLD,
     ClusterItem,
     DupCandidate,
@@ -168,6 +170,22 @@ class TestGreedyClusters:
         vectors = [_axis(i) for i in range(6)]
         clusters = greedy_clusters(self._items(vectors), similarity=0.80, min_size=2)
         assert clusters == []
+
+    def test_production_constants_cluster_three_related_episodes(self) -> None:
+        # Regression for plan 2026-07-21-tenant-memory-synthesis-clustering-tune:
+        # with the tuned production constants, 3 related-but-distinct episodes
+        # (pairwise cosine ~0.865) must form one cluster. This is what unblocked
+        # synthesis on realistic single-tenant volumes; it breaks if
+        # CLUSTER_MIN_SIZE reverts to 5 or CLUSTER_SIMILARITY rises above ~0.865.
+        assert CLUSTER_MIN_SIZE <= 3
+        vectors = [_blend(0, i + 1, 0.93) for i in range(3)]
+        clusters = greedy_clusters(
+            self._items(vectors),
+            similarity=CLUSTER_SIMILARITY,
+            min_size=CLUSTER_MIN_SIZE,
+        )
+        assert len(clusters) == 1
+        assert set(clusters[0]) == {UUID(int=i) for i in range(1, 4)}
 
 
 class TestCosineSimilarity:
