@@ -23,6 +23,7 @@ const hookData: { current: MergePipelineData } = {
   current: {
     proposals: [],
     prs: [],
+    mergedPrs: null,
     suggestions: [],
     gateBlocks: [],
     gateTotalBlocks: 0,
@@ -36,8 +37,14 @@ const hookData: { current: MergePipelineData } = {
 // constant the component renders — keep the real value so the empty-state
 // copy under test is the one operators see. (Literal, not a reference:
 // `vi.mock` factories are hoisted above const declarations.)
+// Records the options the component passes, so a test can assert that the
+// expensive merged-rows read is requested ONLY while its tab is open.
+const hookCalls: Array<{ includeMerged?: boolean }> = [];
 vi.mock("./useMergePipelineData", () => ({
-  useMergePipelineData: () => hookData.current,
+  useMergePipelineData: (opts: { includeMerged?: boolean } = {}) => {
+    hookCalls.push(opts);
+    return hookData.current;
+  },
   MERGED_LOOKBACK_HOURS: 48,
 }));
 const MERGED_LOOKBACK_HOURS = 48;
@@ -100,6 +107,7 @@ describe("MergePipeline", () => {
       ...hookData.current,
       proposals: [],
       prs: [],
+      mergedPrs: null,
       error: null,
     };
   });
@@ -118,7 +126,7 @@ describe("MergePipeline", () => {
     expect(screen.getByText("qontinui-web#761")).toBeInTheDocument();
   });
 
-  it("shows a green health strip when merging normally and red when stuck", () => {
+  it("green when merging normally; conflicts alone never turn the strip red", () => {
     hookData.current.prs = [pr()];
     hookData.current.proposals = [proposal()];
     const { unmount } = render(<MergePipeline />);
@@ -135,23 +143,24 @@ describe("MergePipeline", () => {
       proposal({
         proposal_id: "c1",
         status: "conflict",
-        repos: [
-          { repo: "qontinui/qontinui-web", branch: "b1", head_sha: "a" },
-        ],
+        repos: [{ repo: "qontinui/qontinui-web", branch: "b1", head_sha: "a" }],
       }),
       proposal({
         proposal_id: "c2",
         status: "conflict",
-        repos: [
-          { repo: "qontinui/qontinui-web", branch: "b2", head_sha: "b" },
-        ],
+        repos: [{ repo: "qontinui/qontinui-web", branch: "b2", head_sha: "b" }],
       }),
     ];
     render(<MergePipeline />);
+    // CONTRACT (2026-07-20): conflicted PRs are author backlog. They never
+    // enter the train, so they cannot make it stuck — they are reported, not
+    // escalated. There IS one amber reason here (both PRs conflicted means
+    // nothing is in the train), but the strip must never read "Pipeline stuck".
     expect(screen.getByTestId("pipeline-health").dataset.healthLevel).toBe(
-      "red"
+      "amber"
     );
-    expect(screen.getByText("Pipeline stuck")).toBeInTheDocument();
+    expect(screen.queryByText("Pipeline stuck")).not.toBeInTheDocument();
+    expect(screen.getByText(/2 PRs need an author rebase/)).toBeInTheDocument();
   });
 
   it("filters to needs-attention rows", () => {
@@ -192,9 +201,7 @@ describe("MergePipeline", () => {
       "https://github.com/qontinui/qontinui-web/actions/runs/9"
     );
     // The recurring confusion gets addressed in-place.
-    expect(
-      screen.getByText(/not on your branch/i)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/not on your branch/i)).toBeInTheDocument();
     // Raw ids stay available for support, in the debug footer only.
     expect(screen.getByText(/proposal p-1/)).toBeInTheDocument();
   });
@@ -269,7 +276,9 @@ describe("MergePipeline", () => {
     expect(securityRow).toBeDefined();
     expect(docsRow).toBeDefined();
     // Failed check links to its run and shows when it completed.
-    expect(within(securityRow!).getByText("View run").closest("a")).toHaveAttribute(
+    expect(
+      within(securityRow!).getByText("View run").closest("a")
+    ).toHaveAttribute(
       "href",
       "https://github.com/qontinui/qontinui-web/actions/runs/42"
     );
@@ -323,7 +332,9 @@ describe("MergePipeline", () => {
     for (const [kind, attention] of Object.entries(ATTENTION_BY_KIND)) {
       const cls = STATUS_BADGE_CLASS[kind as UnifiedStatusKind];
       expect(cls, `${kind} has no badge class`).toBeTruthy();
-      expect(/\bbg-red-/.test(cls), `${kind} red?`).toBe(attention === "author");
+      expect(/\bbg-red-/.test(cls), `${kind} red?`).toBe(
+        attention === "author"
+      );
       expect(/\bbg-amber-/.test(cls), `${kind} amber?`).toBe(
         attention === "waiting"
       );
@@ -423,6 +434,42 @@ describe("MergePipeline", () => {
 
     expect(screen.getByTestId("pipeline-empty")).toHaveTextContent(
       `Nothing merged in the last ${MERGED_LOOKBACK_HOURS} hours.`
+    );
+  });
+
+  // --------------------------------------------------------------------------
+  // The merged read is expensive — it must stay off the 2s hot poll
+  // --------------------------------------------------------------------------
+
+  it("asks for merged rows ONLY while the Merged tab is open", () => {
+    hookData.current.prs = [pr()];
+    hookCalls.length = 0;
+
+    render(<MergePipeline />);
+    // Default tab: every render so far must have opted OUT of the expensive
+    // `?include_merged=` read.
+    expect(hookCalls.length).toBeGreaterThan(0);
+    expect(hookCalls.every((c) => c.includeMerged === false)).toBe(true);
+
+    fireEvent.click(screen.getByTestId("pipeline-filter-merged"));
+    expect(hookCalls.at(-1)?.includeMerged).toBe(true);
+
+    // Leaving the tab must switch it back off — otherwise the costly read
+    // keeps running for the rest of the session.
+    fireEvent.click(screen.getByTestId("pipeline-filter-all"));
+    expect(hookCalls.at(-1)?.includeMerged).toBe(false);
+  });
+
+  it("shows a dash, not '0', for the merged count before it has looked", () => {
+    hookData.current.prs = [pr()];
+    hookData.current.mergedPrs = null;
+
+    render(<MergePipeline />);
+
+    // "0" here would assert an unknown as a fact — nothing has been fetched.
+    expect(screen.getByTestId("pipeline-filter-merged")).toHaveTextContent("–");
+    expect(screen.getByTestId("pipeline-filter-merged")).not.toHaveTextContent(
+      /Merged\s*0/
     );
   });
 });

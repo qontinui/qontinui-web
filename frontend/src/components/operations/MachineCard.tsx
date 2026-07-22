@@ -9,7 +9,15 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Monitor, Laptop, Terminal, Cpu, Circle, Pencil, Loader2 } from "lucide-react";
+import {
+  Monitor,
+  Laptop,
+  Terminal,
+  Cpu,
+  Circle,
+  Pencil,
+  Loader2,
+} from "lucide-react";
 import { httpClient } from "@/services/service-factory";
 import { machineRenameUrl, relativeTime } from "./utils";
 import { CiRunnerBadge } from "./CiRunnerBadge";

@@ -60,7 +60,7 @@ export interface UseDeviceStatusStreamResult {
  */
 export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
   const [byHostname, setByHostname] = useState<Map<string, DeviceStatus>>(
-    () => new Map(),
+    () => new Map()
   );
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -77,7 +77,7 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
   // device_id is the fallback so a row with no hostname still shows.
   const keyOf = useCallback(
     (row: DeviceStatus): string => row.hostname ?? row.device_id,
-    [],
+    []
   );
 
   const applyRow = useCallback(
@@ -88,7 +88,7 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
         return next;
       });
     },
-    [keyOf],
+    [keyOf]
   );
 
   const seedFromRest = useCallback(async (): Promise<void> => {
@@ -230,7 +230,7 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
       if (reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
         const delay = Math.min(
           1000 * Math.pow(2, reconnectAttemptsRef.current),
-          30_000,
+          30_000
         );
         reconnectTimerRef.current = setTimeout(() => {
           reconnectAttemptsRef.current += 1;

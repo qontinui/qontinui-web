@@ -5979,9 +5979,21 @@
         "title": "CiStatusResponse",
         "type": "object"
       },
-      "ClaimSynthesisJobsRequest": {
-        "description": "``POST /memory/synthesis-jobs/claim`` body.",
+      "ClaimJobsRequest": {
+        "description": "``POST /memory/jobs/claim`` body.\n\n``kinds`` is the runner's capability declaration \u2014 it only claims work\nit can actually execute, so a runner that cannot synthesize never\ntakes a synthesis job hostage for a full lease before failing it.",
         "properties": {
+          "kinds": {
+            "items": {
+              "enum": [
+                "synthesis",
+                "embedding"
+              ],
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Kinds",
+            "type": "array"
+          },
           "limit": {
             "default": 4,
             "maximum": 4.0,
@@ -5990,14 +6002,14 @@
             "type": "integer"
           }
         },
-        "title": "ClaimSynthesisJobsRequest",
+        "title": "ClaimJobsRequest",
         "type": "object"
       },
-      "ClaimSynthesisJobsResponse": {
+      "ClaimJobsResponse": {
         "properties": {
           "jobs": {
             "items": {
-              "$ref": "#/components/schemas/SynthesisJobOut"
+              "$ref": "#/components/schemas/MemoryJobOut"
             },
             "title": "Jobs",
             "type": "array"
@@ -6006,7 +6018,7 @@
         "required": [
           "jobs"
         ],
-        "title": "ClaimSynthesisJobsResponse",
+        "title": "ClaimJobsResponse",
         "type": "object"
       },
       "ClaudeSessionInfo": {
@@ -19466,6 +19478,23 @@
         "title": "FunctionStats",
         "type": "object"
       },
+      "GateDoctorSweepRequest": {
+        "description": "Body for ``POST /admin-dev/gates/doctor/sweep``.\n\nMirrors coord's ``GateDoctorSweepRequest`` defaults verbatim\n(``qontinui-coord/src/api/gate_routes.rs``): dry-run-first, and the\n``land_backfill`` sweep mode (re-clear ``failed`` ``pr_merged``-on-coord\ngates whose work actually landed). ``mode`` is passed through unvalidated\nso coord remains the single authority on the mode set \u2014 an unknown mode\nis coord's ``400`` to raise, not the web layer's.",
+        "properties": {
+          "dry_run": {
+            "default": true,
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "mode": {
+            "default": "land_backfill",
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "title": "GateDoctorSweepRequest",
+        "type": "object"
+      },
       "GateEvaluationResult": {
         "description": "Result of evaluating a gate step.",
         "properties": {
@@ -21387,6 +21416,54 @@
           "has_more"
         ],
         "title": "JobListResponse",
+        "type": "object"
+      },
+      "JobResultRequest": {
+        "description": "``POST /memory/jobs/{job_id}/result`` body.\n\nExactly one of ``result`` (success) or ``failure`` (the runner could\nnot execute the job; the reason) must be set. ``result``'s shape is\ndispatched on the JOB's ``kind`` server-side rather than on a body\ndiscriminator \u2014 the job already knows what it is, and trusting a\ncaller-supplied kind would let a runner post an embedding payload\nagainst a synthesis job.",
+        "properties": {
+          "failure": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          }
+        },
+        "title": "JobResultRequest",
+        "type": "object"
+      },
+      "JobResultResponse": {
+        "properties": {
+          "status": {
+            "enum": [
+              "applied",
+              "recorded"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "JobResultResponse",
         "type": "object"
       },
       "JobStatus": {
@@ -23975,6 +24052,47 @@
         "title": "MemoryGraphResponse",
         "type": "object"
       },
+      "MemoryJobOut": {
+        "description": "One claimed job \u2014 exactly what the runner needs to execute it.\n\n``input_texts`` is the text to compute over and ``target_ids`` the\nrows the job is about; for ``kind='embedding'`` the two are index-\naligned (``input_texts[i]`` is the content of ``target_ids[i]``) and\nthe result must come back in that same order. The runner never reads\nthe memory store directly.",
+        "properties": {
+          "input_texts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Input Texts",
+            "type": "array"
+          },
+          "job_id": {
+            "format": "uuid",
+            "title": "Job Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "synthesis",
+              "embedding"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "target_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Target Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "job_id",
+          "kind",
+          "target_ids",
+          "input_texts"
+        ],
+        "title": "MemoryJobOut",
+        "type": "object"
+      },
       "MemoryLinkIn": {
         "description": "One outbound edge declared alongside a record write.\n\n``target_ref`` names the edge's target either by ``memory_id`` (UUID\nstring) or by ``content_hash`` (sha256 hex of the target's stored\ncontent) \u2014 the write path tries the UUID interpretation first, then\nthe hash, against LIVE rows of the caller's tenant only. Unresolved\ntargets are dropped and counted, never rejected.",
         "properties": {
@@ -24149,7 +24267,7 @@
         "type": "object"
       },
       "MemoryQueryRequest": {
-        "description": "``POST /memory/query`` body \u2014 hybrid RRF retrieval parameters.",
+        "description": "``POST /memory/query`` body \u2014 hybrid RRF retrieval parameters.\n\n``query_text`` is ALWAYS required: the lexical arm is pure Postgres\n(``websearch_to_tsquery``), costs the caller nothing, and stays\nserver-side. ``query_embedding`` is the caller's own vector for the\nsemantic arm \u2014 omit it and that arm is SKIPPED (the response says so\nvia ``vector_arm``); the query degrades to FTS-only rather than\nmaking the backend embed.\n\n``query_embedding_model`` is REQUIRED whenever ``query_embedding`` is\npresent. Validating the vector's DIMENSION is not enough: every\n384-dim model would pass that check while living in a different\nspace, and the server has no other way to tell which space an\nincoming query is in.",
         "properties": {
           "as_of": {
             "anyOf": [
@@ -24206,6 +24324,31 @@
               }
             ],
             "title": "Min Importance"
+          },
+          "query_embedding": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Query Embedding"
+          },
+          "query_embedding_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Query Embedding Model"
           },
           "query_text": {
             "maxLength": 8192,
@@ -24265,6 +24408,7 @@
         "type": "object"
       },
       "MemoryQueryResponse": {
+        "description": "``POST /memory/query`` result.\n\n``vector_arm`` is REQUIRED and un-defaulted on purpose: FTS-only\nresults must never be indistinguishable from hybrid ones. Its three\nstates are the only ways a query can end:\n\n* ``hybrid`` \u2014 both arms ran and were RRF-fused.\n* ``skipped_no_embedding`` \u2014 the caller sent no ``query_embedding``,\n  so the semantic arm had no vector to run with.\n* ``skipped_migrating`` \u2014 the caller DID send a vector, but this\n  tenant still holds vectors written under a different model tag, so\n  scoring against that mixed corpus would compare across two\n  non-interchangeable spaces (Phase 0 measured min cosine 0.71 /\n  k=10 exact-order 0% between them). The arm is skipped until the\n  runner-paid reindex drains the tenant back to a single space. This\n  is driven off actual corpus state, never a timer or a flag, so it\n  clears itself the moment the last foreign-tag vector is rewritten.",
         "properties": {
           "hits": {
             "items": {
@@ -24272,21 +24416,56 @@
             },
             "title": "Hits",
             "type": "array"
+          },
+          "vector_arm": {
+            "enum": [
+              "hybrid",
+              "skipped_no_embedding",
+              "skipped_migrating"
+            ],
+            "title": "Vector Arm",
+            "type": "string"
           }
         },
         "required": [
-          "hits"
+          "hits",
+          "vector_arm"
         ],
         "title": "MemoryQueryResponse",
         "type": "object"
       },
       "MemoryRecordIn": {
-        "description": "One record in a batch write.",
+        "description": "One record in a batch write.\n\n``embedding`` is computed by the CALLER. Omit it (with\n``embedding_model``) to store the row unvectorized \u2014 it is still\nretrievable via FTS and is picked up by the reindex sweep.",
         "properties": {
           "content": {
             "minLength": 1,
             "title": "Content",
             "type": "string"
+          },
+          "embedding": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding"
+          },
+          "embedding_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Model"
           },
           "importance": {
             "default": 0.5,
@@ -33730,12 +33909,24 @@
         "type": "object"
       },
       "SetCanonicalRequest": {
-        "description": "Designate a machine as the canonical source of truth for an env.",
+        "description": "Designate a machine as the canonical source of truth for an env.\n\n``note`` is the optional \"why\" recorded alongside the who/when in\n:class:`~app.models.devenv.CanonicalChangeLog`. Changing canonical\nre-points every other machine's drift, so the reason is the part of the\naudit trail a teammate reading it later actually needs. Optional by\ndesign \u2014 an unexplained change is still fully attributable, and requiring\nprose would only produce empty ceremony.",
         "properties": {
           "machine_id": {
             "format": "uuid",
             "title": "Machine Id",
             "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
           }
         },
         "required": [
@@ -36885,12 +37076,37 @@
         "type": "object"
       },
       "SupersedeRequest": {
-        "description": "``POST /memory/records/{id}/supersede`` body.\n\n``title``/``content`` are the replacement; every omitted field is\ninherited from the record being superseded.",
+        "description": "``POST /memory/records/{id}/supersede`` body.\n\n``title``/``content`` are the replacement; every omitted field is\ninherited from the record being superseded. ``embedding`` is NOT\ninherited \u2014 it belongs to the OLD content and would be a lie about\nthe new one; omit it and the successor lands unvectorized (NULL) for\nthe reindex sweep to pick up.",
         "properties": {
           "content": {
             "minLength": 1,
             "title": "Content",
             "type": "string"
+          },
+          "embedding": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding"
+          },
+          "embedding_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Model"
           },
           "importance": {
             "anyOf": [
@@ -37110,77 +37326,6 @@
           "expires_at"
         ],
         "title": "SyncLockResponse",
-        "type": "object"
-      },
-      "SynthesisJobOut": {
-        "description": "One claimed job \u2014 exactly what the runner needs to synthesize.\n\nThe runner distills ``member_texts`` into a single mental-model text\nand posts it back to ``/synthesis-jobs/{job_id}/result``; it never\nreads the memory store directly.",
-        "properties": {
-          "job_id": {
-            "format": "uuid",
-            "title": "Job Id",
-            "type": "string"
-          },
-          "member_texts": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Member Texts",
-            "type": "array"
-          }
-        },
-        "required": [
-          "job_id",
-          "member_texts"
-        ],
-        "title": "SynthesisJobOut",
-        "type": "object"
-      },
-      "SynthesisResultRequest": {
-        "description": "``POST /memory/synthesis-jobs/{job_id}/result`` body.\n\nExactly one of ``result_text`` (success \u2014 the synthesized model) or\n``failure`` (the runner could not synthesize; the reason) must be\nset.",
-        "properties": {
-          "failure": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Failure"
-          },
-          "result_text": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Result Text"
-          }
-        },
-        "title": "SynthesisResultRequest",
-        "type": "object"
-      },
-      "SynthesisResultResponse": {
-        "properties": {
-          "status": {
-            "enum": [
-              "applied",
-              "recorded"
-            ],
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "status"
-        ],
-        "title": "SynthesisResultResponse",
         "type": "object"
       },
       "TaskRunAutomationCreate": {
@@ -47959,6 +48104,53 @@
         ]
       }
     },
+    "/api/v1/admin-dev/gates/doctor/sweep": {
+      "post": {
+        "description": "Proxy coord's ``POST /coord/gates/doctor/sweep`` (gate-doctor sweep).\n\nFires coord's gate-doctor sweep from the interactive operator console.\ncoord mounts this on its admin-role ``operator_admin_writes`` router and\nrejects non-interactive/headless callers by design \u2014 the sweep must run\nfrom a logged-in dashboard session, which is exactly the operator bearer\nthis proxy forwards (``forward_bearer=True``). The ``land_backfill`` mode\nre-clears ``failed`` ``pr_merged``-on-coord gates whose work actually\nlanded (the residue the land-aware ``pr_merged`` verdict leaves behind).\n\nAuth: ``require_admin`` (operator-only) \u2014 UNLIKE the tenant-member reads\n(``overview`` / ``prs``), this is a MUTATION on fleet-wide operator\ninfrastructure (``coord.gates``), not tenant-partitioned state. It mirrors\nthe sibling operator-only mutation (``release-verdict``): web fails fast\nwith a clean ``403`` for a non-admin rather than forwarding a doomed\nbearer for coord's admin-role router to reject opaquely. The\n``_capture_bearer_best_effort`` dependency captures the caller bearer +\ntenant-switcher selection so ``forward_bearer=True`` forwards the\noperator's real identity for coord to authorize on.\n\nBody (``GateDoctorSweepRequest``) is passed through verbatim\n(``dry_run`` default ``true``, ``mode`` default ``\"land_backfill\"``);\ncoord's ``BackfillReport`` JSON \u2014 ``{dry_run, examined, backfilled,\nleft_failed, entries[]}`` \u2014 is returned verbatim. This is a MUTATION:\nit is NOT cached/SWR'd. coord ``4xx``/``5xx`` are surfaced verbatim (a\n``403`` means the operator bearer was not forwarded/accepted \u2014 it is NOT\nswallowed into a degraded envelope).",
+        "operationId": "api_v1_admin_dev_gates_doctor_sweep_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GateDoctorSweepRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Gate Doctor Sweep Api V1 Admin Dev Gates Doctor Sweep Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Gate Doctor Sweep",
+        "tags": [
+          "admin-dev"
+        ]
+      }
+    },
     "/api/v1/admin-dev/overview": {
       "get": {
         "description": "Proxy coord's ``GET /coord/dev-overview`` (gates + rollout overview).\n\nReturns coord's JSON envelope verbatim \u2014 the\n``{generated_at, gates, rollouts}`` contract the frontend\n``admin-dev-service`` types against. The caller bearer AND the dashboard\ntenant-switcher selection (``X-Qontinui-Active-Tenant``) are forwarded,\nso coord authorizes on the operator identity and scopes the overview to\nthe selected tenant (coord's ``/coord/dev-overview`` filters every gate/\nrollout query by the effective tenant). ``tenant_key`` is the VALIDATED\neffective tenant (membership-checked selection, else home tenant) and is\nused solely as the cache key \u2014 two tenants never share a cache entry.\n``None`` (identity resolution failed) bypasses the shared cache\nentirely, never sharing an entry with anyone.\n\nCaching: a fresh successful envelope is served from a ~30s in-process\ncache; ``?refresh=1`` bypasses it (the frontend Refresh button passes\nit). Degraded ``coord_error`` envelopes are never cached.\n\nWhen coord is unreachable/degraded (connect-refused \u2192 502, timeout \u2192\n504, etc.) the endpoint returns an empty envelope annotated with\n``coord_error`` rather than re-raising the 5xx, so the dashboard renders\na clear \"coord unavailable\" state instead of a broken page. Because\nidentity resolution no longer hard-fails the request, this covers a TOTAL\ncoord outage too (not just the case where ``/admin/coord/me`` happened to\nsucceed). The Spec CI crawl, which runs without a live coord, stays green.",
@@ -56806,7 +56998,7 @@
     },
     "/api/v1/devenv/environments/{environment_id}/canonical": {
       "put": {
-        "description": "Designate a machine as the canonical source of truth for an env.\n\nValidates the machine is owned by the caller AND has reported a config\nrow for this environment (a machine with no config can't be a useful\nsource of truth). Atomic single-column update, plus an append to the\n``canonical_change_log`` audit trail (who/when/from->to) \u2014 the team-sync\nmodel requires every canonical change to be attributable. A no-op change\n(re-designating the machine that is already canonical) is not recorded.",
+        "description": "Designate a machine as the canonical source of truth for an env.\n\nValidates the machine is owned by the caller AND has reported a config\nrow for this environment (a machine with no config can't be a useful\nsource of truth). Atomic single-column update, plus an append to the\n``canonical_change_log`` audit trail (who/when/from->to, plus the\noptional ``note`` explaining why) \u2014 the team-sync model requires every\ncanonical change to be attributable. A no-op change (re-designating the\nmachine that is already canonical) is not recorded, and neither is its\nnote: there is no change for it to annotate.",
         "operationId": "api_v1_devenv_environments_environment_id_canonical_put",
         "parameters": [
           {
@@ -56865,7 +57057,7 @@
     },
     "/api/v1/devenv/environments/{environment_id}/canonical-history": {
       "get": {
-        "description": "List the environment's canonical-designation changes, newest first.\n\nAnswers \"who made this the canonical environment, and when.\" Owner-scoped\nlike every other route here (cross-owner env id -> 404).\n\nDisplay names (actor email, from/to machine names) are resolved by the\nrepository in the same query; each is ``None`` when the referenced row is\ngone, which is expected \u2014 the audit outlives machine/user deletion.",
+        "description": "List the environment's canonical-designation changes, newest first.\n\nAnswers \"who made this the canonical environment, when, and why.\"\nOwner-scoped like every other route here (cross-owner env id -> 404).\n\nPaged with the same ``limit``/``offset`` contract as the config-history\ntimeline, so a client can page BACK through an audit trail longer than one\npage instead of silently presenting the first page as the whole history.\n\nDisplay names (actor email, from/to machine names) are resolved by the\nrepository in the same query; each is ``None`` when the referenced row is\ngone, which is expected \u2014 the audit outlives machine/user deletion.",
         "operationId": "api_v1_devenv_environments_environment_id_canonical_history_get",
         "parameters": [
           {
@@ -56876,6 +57068,29 @@
               "format": "uuid",
               "title": "Environment Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
             }
           }
         ],
@@ -68330,9 +68545,121 @@
         ]
       }
     },
+    "/api/v1/memory/jobs/claim": {
+      "post": {
+        "description": "A runner claims up to ``limit`` pending jobs of ``kinds`` (tenant-bound).\n\nConcurrent claims on the same tenant split the queue via\n``FOR UPDATE SKIP LOCKED`` \u2014 no job is ever handed to two runners.\n``kinds`` is the runner's capability filter: it claims only work it\ncan execute. Each job carries what the runner needs and nothing more\n(``job_id`` / ``kind`` / ``target_ids`` / ``input_texts``); the runner\ncomputes locally and posts back to ``/jobs/{job_id}/result``, never\nreading the memory store directly.",
+        "operationId": "api_v1_memory_jobs_claim_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaimJobsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaimJobsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Claim Jobs",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/memory/jobs/{job_id}/result": {
+      "post": {
+        "description": "The runner posts a job's result (success) or a failure reason.\n\nThe ``result`` payload is validated against the JOB's own ``kind``\n(read under the row lock), never against a caller-declared one:\n\n* ``embedding`` -> ``{\"embeddings\": [[...384], ...],\n  \"embedding_model\": \"<tag>\"}``: one vector per ``input_texts`` entry\n  in the SAME ORDER (that order is the only thing mapping a vector\n  onto its row). The vectors are written onto ``target_ids``.\n* ``synthesis`` -> ``{\"result_text\": \"...\", \"embedding\": [...384],\n  \"embedding_model\": \"<tag>\"}``: the text is redacted, inserted as a\n  ``mental_model`` row (``consolidated_from`` = the cluster members,\n  importance = best member + 0.1), and the member rows superseded \u2014\n  all in one transaction.\n\nFailure (``failure``): the job is marked failed -> ``recorded``.\n\n404 when the job is not in the caller's tenant (never disclosed); 409\nwhen the job exists but is not ``'claimed'`` (already applied,\nrequeued by the reaper, or abandoned) \u2014 a runner may only post back\nfor a job it holds a live claim on; 422 on a result whose shape does\nnot match the job (wrong kind, wrong vector count, wrong dimension,\nunaccepted model tag), which leaves the job ``claimed`` so the runner\ncan still post a correct result before its lease expires.",
+        "operationId": "api_v1_memory_jobs_job_id_result_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobResultRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResultResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Submit Job Result",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
     "/api/v1/memory/query": {
       "post": {
-        "description": "Hybrid retrieval: pgvector cosine + websearch FTS, RRF-fused.\n\nBoth arms are tenant-bound and validity-filtered (tombstones out,\n``valid_from``/``valid_until`` against now() or ``as_of``).\n``agent``/``session``-scoped rows are only visible when the request\nnames those scopes AND supplies the matching ``scope_ref``.",
+        "description": "Hybrid retrieval: pgvector cosine + websearch FTS, RRF-fused.\n\nBoth arms are tenant-bound and validity-filtered (tombstones out,\n``valid_from``/``valid_until`` against now() or ``as_of``).\n``agent``/``session``-scoped rows are only visible when the request\nnames those scopes AND supplies the matching ``scope_ref``.\n\nThe semantic arm needs a vector, and this endpoint never computes\none. It runs only when the caller supplies ``query_embedding`` (with\nits ``query_embedding_model``) AND this tenant's corpus is entirely\nin the deployed space. Otherwise it is SKIPPED and the result is\nFTS-only. Which of the three happened is reported in ``vector_arm``\n\u2014 never inferred, so an FTS-only result can't pass for a hybrid one.\n\nThe mid-migration skip is what makes the model transition atomic per\ntenant: the old and new spaces are not interchangeable, so a\nnew-space query is served FTS-only rather than cosine-scored against\ndocuments the runner-paid reindex has not rewritten yet.",
         "operationId": "api_v1_memory_query_post",
         "requestBody": {
           "content": {
@@ -68486,7 +68813,7 @@
         ]
       },
       "post": {
-        "description": "Batch-write memory records (\u2264100 per request).\n\nServer-side pipeline per batch: redact \u2192 hash \u2192 quota check (BEFORE\ninsert; 429 on exceed) \u2192 embed the non-deduplicated contents in one\nfastembed batch (on a worker thread) \u2192 ONE set-based insert deduping\non ``(tenant_id, content_hash)`` against live rows only.",
+        "description": "Batch-write memory records (\u2264100 per request).\n\nServer-side pipeline per batch: redact \u2192 hash \u2192 quota check (BEFORE\ninsert; 429 on exceed) \u2192 ONE set-based insert deduping on\n``(tenant_id, content_hash)`` against live rows only. Each record\ncarries its own caller-computed ``embedding`` (+ ``embedding_model``)\nor neither, in which case that row is stored unvectorized.",
         "operationId": "api_v1_memory_records_post",
         "requestBody": {
           "content": {
@@ -68581,7 +68908,7 @@
     },
     "/api/v1/memory/records/{memory_id}/supersede": {
       "post": {
-        "description": "Replace a record: insert the successor, end the old row's validity.\n\n404 for records that don't exist in the caller's tenant (including\ncross-tenant ids \u2014 never disclosed).",
+        "description": "Replace a record: insert the successor, end the old row's validity.\n\n404 for records that don't exist in the caller's tenant (including\ncross-tenant ids \u2014 never disclosed). The successor's ``embedding`` is\nthe caller's (of the replacement content) or NULL \u2014 the old row's\nvector is never inherited, and nothing is embedded server-side.",
         "operationId": "api_v1_memory_records_memory_id_supersede_post",
         "parameters": [
           {
@@ -68666,118 +68993,6 @@
           }
         ],
         "summary": "Memory Stats",
-        "tags": [
-          "memory"
-        ]
-      }
-    },
-    "/api/v1/memory/synthesis-jobs/claim": {
-      "post": {
-        "description": "A runner claims up to ``limit`` pending synthesis jobs (tenant-bound).\n\nConcurrent claims on the same tenant split the queue via\n``FOR UPDATE SKIP LOCKED`` \u2014 no job is ever handed to two runners.\nThe response carries only ``job_id`` + ``member_texts`` per job: the\nrunner distills the texts with its own LLM and posts the result to\n``/synthesis-jobs/{job_id}/result``.",
-        "operationId": "api_v1_memory_synthesis_jobs_claim_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ClaimSynthesisJobsRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ClaimSynthesisJobsResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          },
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Claim Synthesis Jobs",
-        "tags": [
-          "memory"
-        ]
-      }
-    },
-    "/api/v1/memory/synthesis-jobs/{job_id}/result": {
-      "post": {
-        "description": "The runner posts a synthesized model (success) or a failure reason.\n\nSuccess (``result_text``): the text is redacted, embedded with the\nLOCAL model, inserted as a ``mental_model`` row (``consolidated_from``\n= the cluster members, importance = best member + 0.1), and the\nmember rows are superseded \u2014 all in one transaction \u2192 ``applied``.\nFailure (``failure``): the job is marked failed \u2192 ``recorded``.\n404 when the job is not in the caller's tenant (never disclosed); 409\nwhen the job exists but is not in ``'claimed'`` status (already applied,\nrequeued by the reaper, or abandoned) \u2014 a runner may only post back for\na job it holds a live claim on.",
-        "operationId": "api_v1_memory_synthesis_jobs_job_id_result_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "job_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Job Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SynthesisResultRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SynthesisResultResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          },
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Submit Synthesis Result",
         "tags": [
           "memory"
         ]

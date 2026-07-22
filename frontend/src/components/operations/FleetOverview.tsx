@@ -43,7 +43,8 @@ function buildMachineGroups(
 ): MachineGroup[] {
   const byHost = new Map<string, MachineGroup>();
   const ciRunners: CiRunnersByHost = fleet.ci_runners ?? {};
-  const displayNames: Record<string, string> = fleet.machine_display_names ?? {};
+  const displayNames: Record<string, string> =
+    fleet.machine_display_names ?? {};
 
   // The symbol-claims map is keyed by machine_id (UUID); the MachineGroup
   // is keyed by hostname. Symbol claims arrive from coord BEFORE the
@@ -226,7 +227,7 @@ export function FleetOverview() {
   const activeCiRunners = useMemo(() => {
     if (!fleet?.ci_runners) return 0;
     return Object.values(fleet.ci_runners).filter(
-      (ci) => ci.status !== "offline",
+      (ci) => ci.status !== "offline"
     ).length;
   }, [fleet]);
 
@@ -304,124 +305,127 @@ export function FleetOverview() {
       >
         <div className="space-y-6">
           {/* Machine cards grid */}
-        {isEmpty ? (
-          <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
-            <Server className="h-10 w-10 opacity-30" />
-            <p className="text-sm font-medium">No runners online</p>
-            <p className="text-xs max-w-sm text-center">
-              Connect a runner via Settings → Backend Connection, or launch a
-              Claude Code session on any machine to see it here.
-            </p>
-          </div>
-        ) : (
-          <div>
-            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-              Machines
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {machineGroups.map((group) => (
-                <MachineCard
-                  key={group.hostname}
-                  machine={group}
-                  onRenamed={fetchData}
-                />
-              ))}
+          {isEmpty ? (
+            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
+              <Server className="h-10 w-10 opacity-30" />
+              <p className="text-sm font-medium">No runners online</p>
+              <p className="text-xs max-w-sm text-center">
+                Connect a runner via Settings → Backend Connection, or launch a
+                Claude Code session on any machine to see it here.
+              </p>
             </div>
-          </div>
-        )}
-
-        {/* Device status broadcast (qontinui-coord Phase 6 Item 3) */}
-        <DeviceStatusTile stream={deviceStatus} />
-
-        {/* Summary stats row */}
-        <div className="flex flex-wrap items-center gap-3">
-          <StatBadge
-            icon={Server}
-            label="Runners"
-            value={fleet?.total_runners ?? 0}
-          />
-          <StatBadge
-            icon={HeartPulse}
-            label="Healthy"
-            value={fleet?.total_healthy ?? 0}
-            variant={
-              fleet && fleet.total_healthy < fleet.total_runners
-                ? "warning"
-                : "success"
-            }
-          />
-          <StatBadge
-            icon={Play}
-            label="Running Tasks"
-            value={fleet?.total_running_tasks ?? 0}
-          />
-          <StatBadge
-            icon={Terminal}
-            label="CC Sessions"
-            value={fleet?.total_claude_sessions ?? 0}
-          />
-          {totalCiRunners > 0 && (
-            <StatBadge
-              icon={Cog}
-              label="CI Runners"
-              value={`${activeCiRunners}/${totalCiRunners}`}
-              variant={activeCiRunners > 0 ? "success" : "outline"}
-            />
+          ) : (
+            <div>
+              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+                Machines
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {machineGroups.map((group) => (
+                  <MachineCard
+                    key={group.hostname}
+                    machine={group}
+                    onRenamed={fetchData}
+                  />
+                ))}
+              </div>
+            </div>
           )}
 
-          {/* Refresh indicator */}
-          <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
-            <RefreshCw
-              className="h-3 w-3 animate-spin"
-              style={{ animationDuration: "3s" }}
-            />
-            <span>
-              Updated{" "}
-              {lastUpdated ? relativeTime(lastUpdated.toISOString()) : "--"}
-            </span>
-            {error && (
-              <Badge variant="destructive" className="text-[10px]">
-                partial error
-              </Badge>
-            )}
-          </div>
-        </div>
+          {/* Device status broadcast (qontinui-coord Phase 6 Item 3) */}
+          <DeviceStatusTile stream={deviceStatus} />
 
-        {/* Active workflows */}
-        {runningTasks.length > 0 && (
-          <div>
-            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-              Active Workflows ({runningTasks.length})
-            </h2>
-            <div className="space-y-3">
-              {runningTasks.map((task) => (
-                <TaskRunCard key={`${task.runner_id}-${task.id}`} task={task} />
-              ))}
+          {/* Summary stats row */}
+          <div className="flex flex-wrap items-center gap-3">
+            <StatBadge
+              icon={Server}
+              label="Runners"
+              value={fleet?.total_runners ?? 0}
+            />
+            <StatBadge
+              icon={HeartPulse}
+              label="Healthy"
+              value={fleet?.total_healthy ?? 0}
+              variant={
+                fleet && fleet.total_healthy < fleet.total_runners
+                  ? "warning"
+                  : "success"
+              }
+            />
+            <StatBadge
+              icon={Play}
+              label="Running Tasks"
+              value={fleet?.total_running_tasks ?? 0}
+            />
+            <StatBadge
+              icon={Terminal}
+              label="CC Sessions"
+              value={fleet?.total_claude_sessions ?? 0}
+            />
+            {totalCiRunners > 0 && (
+              <StatBadge
+                icon={Cog}
+                label="CI Runners"
+                value={`${activeCiRunners}/${totalCiRunners}`}
+                variant={activeCiRunners > 0 ? "success" : "outline"}
+              />
+            )}
+
+            {/* Refresh indicator */}
+            <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
+              <RefreshCw
+                className="h-3 w-3 animate-spin"
+                style={{ animationDuration: "3s" }}
+              />
+              <span>
+                Updated{" "}
+                {lastUpdated ? relativeTime(lastUpdated.toISOString()) : "--"}
+              </span>
+              {error && (
+                <Badge variant="destructive" className="text-[10px]">
+                  partial error
+                </Badge>
+              )}
             </div>
           </div>
-        )}
 
-        {/* All tasks (including completed/non-running) */}
-        {tasks && tasks.task_runs.length > runningTasks.length && (
-          <div>
-            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-              All Task Runs ({tasks.total})
-            </h2>
-            <div className="space-y-3">
-              {tasks.task_runs
-                .filter((t) => {
-                  const s = t.status.toLowerCase();
-                  return s !== "running" && s !== "in_progress";
-                })
-                .map((task) => (
+          {/* Active workflows */}
+          {runningTasks.length > 0 && (
+            <div>
+              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+                Active Workflows ({runningTasks.length})
+              </h2>
+              <div className="space-y-3">
+                {runningTasks.map((task) => (
                   <TaskRunCard
                     key={`${task.runner_id}-${task.id}`}
                     task={task}
                   />
                 ))}
+              </div>
             </div>
-          </div>
-        )}
+          )}
+
+          {/* All tasks (including completed/non-running) */}
+          {tasks && tasks.task_runs.length > runningTasks.length && (
+            <div>
+              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+                All Task Runs ({tasks.total})
+              </h2>
+              <div className="space-y-3">
+                {tasks.task_runs
+                  .filter((t) => {
+                    const s = t.status.toLowerCase();
+                    return s !== "running" && s !== "in_progress";
+                  })
+                  .map((task) => (
+                    <TaskRunCard
+                      key={`${task.runner_id}-${task.id}`}
+                      task={task}
+                    />
+                  ))}
+              </div>
+            </div>
+          )}
         </div>
       </CollapsiblePanel>
     </TooltipProvider>

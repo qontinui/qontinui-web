@@ -11,6 +11,8 @@
 
 import { test, expect } from "@playwright/test";
 
+import { stubRunnerRelease } from "../helpers/runner-release-stub";
+
 test.describe("Homepage (/)", () => {
   // The homepage's AuthProvider auto-redirects authenticated users away from
   // `/` (superusers go to `/admin`, normal users to `/build/workflows`). The
@@ -237,9 +239,7 @@ test.describe("Runner Page (/runner)", () => {
       timeout: 10000,
     });
 
-    await expect(
-      page.getByText(/SignPath Foundation/i).first()
-    ).toBeVisible();
+    await expect(page.getByText(/SignPath Foundation/i).first()).toBeVisible();
   });
 
   test("has bottom CTA section", async ({ page }) => {
@@ -258,55 +258,12 @@ test.describe("Runner Page (/runner)", () => {
 });
 
 test.describe("Runner Download Page (/runner/download)", () => {
-  // The download page resolves its asset list dynamically from the
-  // GitHub-backed release endpoint (`/api/v1/releases/runner/latest`); the
-  // installer labels ("Windows Installer (MSI)" etc.) are rendered ONLY from
-  // real assets. In CI that endpoint can't reach GitHub and degrades to an
-  // empty asset list, so those labels were absent and the assertions below
-  // rotted (red on main since 2026-06-24). Stub the endpoint so the dynamic
-  // render is deterministic regardless of GitHub reachability. Windows-only
-  // assets are intentional: macOS/Linux then exercise the build-from-source
-  // fallback (no prebuilt binaries yet), matching the real release contents.
-  const RUNNER_RELEASE_STUB = {
-    version: "1.0.0-beta.1",
-    tag: "v1.0.0-beta.1",
-    name: "Qontinui Runner v1.0.0-beta.1",
-    published_at: "2026-06-01T00:00:00Z",
-    html_url:
-      "https://github.com/qontinui/qontinui-runner/releases/tag/v1.0.0-beta.1",
-    prerelease: true,
-    available: true,
-    reason: null,
-    assets: [
-      {
-        name: "Qontinui.Runner_1.0.0-beta.1_x64_en-US.msi",
-        url: "https://example.test/runner.msi",
-        size: 12_000_000,
-        content_type: "application/octet-stream",
-        platform: "windows",
-        kind: "msi",
-        arch: "x64",
-      },
-      {
-        name: "Qontinui.Runner_1.0.0-beta.1_x64-setup.exe",
-        url: "https://example.test/runner-setup.exe",
-        size: 11_000_000,
-        content_type: "application/octet-stream",
-        platform: "windows",
-        kind: "exe",
-        arch: "x64",
-      },
-    ],
-  };
-
+  // The download page renders installer labels ONLY from real release assets;
+  // without the stub, a GitHub-degraded backend response empties the asset
+  // list and the assertions below rot (red on main since 2026-06-24). See
+  // helpers/runner-release-stub.ts for the full rationale.
   test.beforeEach(async ({ page }) => {
-    await page.route("**/api/v1/releases/runner/latest", (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(RUNNER_RELEASE_STUB),
-      })
-    );
+    await stubRunnerRelease(page);
   });
 
   test("loads without 500 error", async ({ page }) => {

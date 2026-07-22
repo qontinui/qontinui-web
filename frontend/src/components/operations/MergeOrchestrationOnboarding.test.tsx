@@ -26,10 +26,7 @@ vi.mock("@/services/service-factory", () => ({
   httpClient: { fetch: (...args: unknown[]) => fetchMock(...args) },
 }));
 
-import {
-  ClaudeCodeStep,
-  PairDeviceStep,
-} from "./MergeOrchestrationOnboarding";
+import { ClaudeCodeStep, PairDeviceStep } from "./MergeOrchestrationOnboarding";
 
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -67,9 +64,7 @@ describe("<PairDeviceStep> paired-elsewhere informational note", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     const url = fetchMock.mock.calls[0][0] as string;
     expect(url).toContain("/coord/devices/pair-start");
-    await waitFor(() =>
-      expect(screen.getByText("PAIR-CODE-123")).toBeTruthy()
-    );
+    await waitFor(() => expect(screen.getByText("PAIR-CODE-123")).toBeTruthy());
   });
 
   it("degrades identically when the field is absent (older coord)", async () => {
@@ -83,9 +78,7 @@ describe("<PairDeviceStep> paired-elsewhere informational note", () => {
 
   it("shows the additive-pairing note and pair-start fires on the FIRST click (no confirmation gate)", async () => {
     fetchMock.mockResolvedValue(jsonResponse(PAIR_START_OK));
-    render(
-      <PairDeviceStep onPaired={() => {}} pairedElsewhere={ELSEWHERE} />
-    );
+    render(<PairDeviceStep onPaired={() => {}} pairedElsewhere={ELSEWHERE} />);
 
     // Informational note is visible, naming the device — additive copy,
     // no steal language.
@@ -103,9 +96,7 @@ describe("<PairDeviceStep> paired-elsewhere informational note", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     const url = fetchMock.mock.calls[0][0] as string;
     expect(url).toContain("/coord/devices/pair-start");
-    await waitFor(() =>
-      expect(screen.getByText("PAIR-CODE-123")).toBeTruthy()
-    );
+    await waitFor(() => expect(screen.getByText("PAIR-CODE-123")).toBeTruthy());
   });
 
   it("collapses repeated hostname entries (one per binding) into a counted line", () => {
@@ -164,9 +155,7 @@ describe("<ClaudeCodeStep> paired indicator", () => {
         onReady={() => {}}
       />
     );
-    expect(screen.getByTestId("paired-indicator").textContent).toContain(
-      "yes"
-    );
+    expect(screen.getByTestId("paired-indicator").textContent).toContain("yes");
   });
 
   it("degrades to 'waiting' when the field is absent (older coord)", () => {

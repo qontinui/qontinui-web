@@ -12,7 +12,10 @@
  */
 
 import { useMemo, useState } from "react";
+import { toast } from "sonner";
+import { Copy } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import {
   Table,
@@ -184,6 +187,47 @@ function GateAnchor({ gate }: { gate: GateOverviewRow }) {
   );
 }
 
+// ---- gate-id cell --------------------------------------------------------
+
+/**
+ * The gate's id on a muted sub-line under the title/anchor: short form (first 8
+ * chars, `tabular-nums`) with the full id on hover, plus a copy-to-clipboard
+ * affordance. The short form is exactly what the search box's prefix match keys
+ * on, so pasting an 8-char id (e.g. `2aeadf7c`) lands on this gate's row.
+ */
+function GateIdCell({ gate }: { gate: GateOverviewRow }) {
+  const short = gate.gate_id.slice(0, 8);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(gate.gate_id);
+      toast.success("Gate id copied");
+    } catch {
+      toast.error("Failed to copy — select and copy manually");
+    }
+  };
+  return (
+    <div
+      className="flex items-center gap-1 text-[11px] text-muted-foreground/70"
+      data-testid="gates-gate-id"
+    >
+      <span className="tabular-nums" title={gate.gate_id}>
+        {short}
+      </span>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="size-4 text-muted-foreground/70 hover:text-foreground"
+        onClick={copy}
+        aria-label={`Copy gate id ${gate.gate_id}`}
+        data-testid="gates-gate-id-copy"
+      >
+        <Copy className="size-3" />
+      </Button>
+    </div>
+  );
+}
+
 // ---- table ---------------------------------------------------------------
 
 type SortKey = "age" | "fraction" | "eta";
@@ -199,6 +243,7 @@ export function GatesTable({
    *  of truth — the page re-fetches rather than optimistically mutating). */
   onActed: () => void;
 }) {
+  const [search, setSearch] = useState("");
   const [verdictFilter, setVerdictFilter] = useState<string>(ALL);
   const [basisFilter, setBasisFilter] = useState<string>(ALL);
   const [sortKey, setSortKey] = useState<SortKey>("age");
@@ -214,6 +259,32 @@ export function GatesTable({
 
   const rows = useMemo(() => {
     let r = gates;
+
+    // Free-text search — first narrowing step so it composes with the
+    // verdict/basis dropdowns and the sort below. Case-insensitive substring
+    // match across the gate's identifying fields; `gate_id` matches on both its
+    // full value and its 8-char short form (what the table renders), so pasting
+    // a short id lands on its row. Each field is guarded for null/undefined.
+    const q = search.trim().toLowerCase();
+    if (q) {
+      r = r.filter((g) => {
+        const haystacks = [
+          g.title,
+          g.gate_id,
+          g.gate_id ? g.gate_id.slice(0, 8) : null,
+          g.plan_slug,
+          g.work_unit_slug,
+          g.work_unit_id,
+          g.phase_name,
+          g.measures,
+          g.verdict,
+        ];
+        return haystacks.some(
+          (h) => h != null && h.toLowerCase().includes(q)
+        );
+      });
+    }
+
     if (verdictFilter !== ALL)
       r = r.filter((g) => g.verdict === verdictFilter);
     if (basisFilter !== ALL)
@@ -233,11 +304,23 @@ export function GatesTable({
       return ea - eb;
     });
     return sorted;
-  }, [gates, verdictFilter, basisFilter, sortKey]);
+  }, [gates, search, verdictFilter, basisFilter, sortKey]);
 
   return (
     <div className="space-y-3" data-testid="gates-table">
       <div className="flex flex-wrap items-end gap-3">
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Search
+          <input
+            type="text"
+            className="h-8 w-56 rounded-md border border-input bg-background px-2 text-sm text-foreground"
+            placeholder="title, gate id, anchor…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            data-testid="gates-search"
+          />
+        </label>
+
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
           Verdict
           <select
@@ -324,6 +407,7 @@ export function GatesTable({
                       {g.title}
                     </div>
                     <GateAnchor gate={g} />
+                    <GateIdCell gate={g} />
                     <ShadowReapEvidence gate={g} />
                   </TableCell>
                   <TableCell className="max-w-[16rem]">

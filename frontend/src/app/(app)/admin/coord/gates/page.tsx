@@ -32,7 +32,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Archive, Gauge, Pause, Play, RefreshCw, Skull } from "lucide-react";
+import {
+  Archive,
+  Gauge,
+  Pause,
+  Play,
+  RefreshCw,
+  Skull,
+  Wrench,
+} from "lucide-react";
 import {
   adminDevService,
   type DevOverview,
@@ -41,6 +49,7 @@ import { SummaryCards } from "./_components/SummaryCards";
 import { GatesTable } from "./_components/GatesTable";
 import { RolloutPanel } from "./_components/RolloutPanel";
 import { ShadowReapGroups } from "./_components/ShadowReap";
+import { RunSweepDialog } from "./_components/RunSweepDialog";
 
 // Auto-refresh cadence. Slightly above the backend's ~30s cache TTL so a
 // poll usually lands a fresh server-side eval rather than a cache hit.
@@ -97,6 +106,8 @@ export default function CoordGatesPage() {
   // set (shadow_reap_signal IS NOT NULL) so the operator can audit per-class
   // false-positive rates. The `counts.would_reap` tile is always shown.
   const [wouldReap, setWouldReap] = useState(false);
+  // Controls the "Run land-backfill sweep" dialog (dry-run-first, operator-only).
+  const [sweepOpen, setSweepOpen] = useState(false);
 
   // Wall-clock of the last successful load, and a 1s ticker that drives the
   // "updated Xs ago" label without re-fetching.
@@ -231,6 +242,16 @@ export default function CoordGatesPage() {
             {autoRefresh ? "Auto" : "Paused"}
           </Button>
           <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setSweepOpen(true)}
+            data-testid="gates-run-sweep"
+            title="Run the land-backfill gate-doctor sweep (dry-run first)"
+          >
+            <Wrench className="h-3.5 w-3.5 mr-1" />
+            Run land-backfill sweep
+          </Button>
+          <Button
             variant="outline"
             size="sm"
             onClick={() => load(true)}
@@ -285,6 +306,7 @@ export default function CoordGatesPage() {
         <div
           className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400"
           data-testid="gates-coord-unavailable"
+          role="status"
         >
           coord is currently unavailable ({overview.coord_error}) — showing no
           gates or rollout state. Retry with Refresh.
@@ -326,6 +348,12 @@ export default function CoordGatesPage() {
           </div>
         )
       )}
+
+      <RunSweepDialog
+        open={sweepOpen}
+        onOpenChange={setSweepOpen}
+        onCleared={() => load(true)}
+      />
     </div>
   );
 }
