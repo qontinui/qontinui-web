@@ -58,6 +58,10 @@ export function buildRemediation(report: MachineDriftReport): Remediation {
     for (const delta of section.deltas) {
       // Additive: never touch keys the target has but canonical doesn't.
       if (delta.status === "added") continue;
+      // Repo-derived keys are read from the manifest next to the capturing
+      // binary, so "set runner_crate_version to 1.0.5" is not an instruction
+      // anyone can carry out — it converges by pulling the repo.
+      if (delta.derived) continue;
       items.push({
         key: delta.key,
         // `expected` is the canonical value (present for changed/removed).

@@ -55,7 +55,11 @@ vi.mock("@/services/service-factory", () => ({
   httpClient: { fetch: (...args: unknown[]) => fetchMock(...args) },
 }));
 
-import { MergePipeline, STATUS_BADGE_CLASS } from "./MergePipeline";
+import {
+  AUTHOR_GLYPH_KINDS,
+  MergePipeline,
+  STATUS_BADGE_CLASS,
+} from "./MergePipeline";
 import { ATTENTION_BY_KIND, type UnifiedStatusKind } from "./prPipeline";
 
 function pr(overrides: Partial<PrRow> = {}): PrRow {
@@ -260,7 +264,9 @@ describe("MergePipeline", () => {
     hookData.current.prs = [failingPr()];
 
     render(<MergePipeline />);
-    fireEvent.click(screen.getByText("Checks failing"));
+    // The badge now prefixes the ✕ glyph (checks-failing is an author kind),
+    // so match on the label substring rather than the exact text node.
+    fireEvent.click(screen.getByText(/Checks failing/));
 
     await waitFor(() =>
       expect(screen.getAllByTestId("failing-check-row")).toHaveLength(2)
@@ -294,7 +300,9 @@ describe("MergePipeline", () => {
     hookData.current.prs = [failingPr()];
 
     render(<MergePipeline />);
-    fireEvent.click(screen.getByText("Checks failing"));
+    // The badge now prefixes the ✕ glyph (checks-failing is an author kind),
+    // so match on the label substring rather than the exact text node.
+    fireEvent.click(screen.getByText(/Checks failing/));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     // The block still names the checks from the row's own data...
@@ -339,6 +347,27 @@ describe("MergePipeline", () => {
         attention === "waiting"
       );
     }
+  });
+
+  it("every author-attention kind carries the colourblind-safe ✕ glyph — and only those", () => {
+    // The glyph list is a hand-maintained string set TypeScript cannot check
+    // (web#813 missed it on the first pass). The invariant: red ⇔ ✕, exactly —
+    // every `author` kind is marked, and no non-author kind is.
+    const authorKinds = (
+      Object.keys(ATTENTION_BY_KIND) as UnifiedStatusKind[]
+    ).filter((k) => ATTENTION_BY_KIND[k] === "author");
+    for (const kind of authorKinds) {
+      expect(AUTHOR_GLYPH_KINDS.has(kind), `${kind} is red but has no ✕`).toBe(
+        true
+      );
+    }
+    for (const kind of AUTHOR_GLYPH_KINDS) {
+      expect(
+        ATTENTION_BY_KIND[kind],
+        `${kind} carries ✕ but is not an author-action kind`
+      ).toBe("author");
+    }
+    expect(AUTHOR_GLYPH_KINDS.size).toBe(authorKinds.length);
   });
 
   it("in-progress checks are yellow and NOT counted as needing attention", () => {

@@ -455,7 +455,19 @@ def install_default_tasks(service: SchedulerService) -> None:
     )
     service.register(
         ScheduledTask(
-            name="memory_reindex", coro=_job_memory_reindex, cron="40 3 * * *"
+            name="memory_reindex",
+            # Every 10 minutes, NOT the daily beat cadence this was ported from.
+            # reindex ENQUEUES kind='embedding' jobs for NULL/stale-embedding rows;
+            # a runner claims and vectorizes them (the backend has no embedder).
+            # On the daily cron, an API-written record stayed unembedded for up to
+            # ~24h — invisible to BOTH clustering (memory_consolidate fetches only
+            # embedding IS NOT NULL) and retrieval. */10 makes new rows embeddable
+            # within a tick; run_at_boot sweeps promptly after every deploy. The
+            # enqueue is cheap DB work (the vectorization is runner-paid), and
+            # fetch_reindex_batch excludes in-flight jobs so ticks don't re-enqueue.
+            coro=_job_memory_reindex,
+            cron="*/10 * * * *",
+            run_at_boot=True,
         )
     )
     service.register(
