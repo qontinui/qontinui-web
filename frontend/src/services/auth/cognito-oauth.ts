@@ -75,6 +75,61 @@ export interface CognitoTokenResponse {
 }
 
 /**
+ * Why a refresh-token exchange failed.
+ *
+ * - `authoritative` — Cognito told us the session is DEAD (a 400 carrying
+ *   `error: "invalid_grant"`, i.e. the refresh token was revoked or has itself
+ *   expired, or a 401). The caller should tear the session down.
+ * - `transient` — we could not get an answer we can trust: offline, DNS/CORS
+ *   failure, an aborted fetch, a 5xx, a 429, an unparseable body. The refresh
+ *   token may well still be good, so the caller MUST keep the session and try
+ *   again later.
+ *
+ * The distinction exists because the proactive renewal fires SIX MINUTES BEFORE
+ * `exp`, while the bearer is still perfectly valid. Treating a blip there as a
+ * dead session throws away a working token and bounces the user to `/login`
+ * early — the exact logout this whole feature removes. Anything not positively
+ * known to be authoritative is therefore classified transient.
+ */
+export type CognitoRefreshFailureKind = "authoritative" | "transient";
+
+/** A failed Cognito refresh-token exchange, carrying its failure class. */
+export class CognitoRefreshError extends Error {
+  readonly kind: CognitoRefreshFailureKind;
+  /** HTTP status, or null when the request never produced a response. */
+  readonly status: number | null;
+  /** Cognito's OAuth `error` code, when the body carried one. */
+  readonly oauthError: string | null;
+
+  constructor(
+    message: string,
+    kind: CognitoRefreshFailureKind,
+    status: number | null = null,
+    oauthError: string | null = null
+  ) {
+    super(message);
+    this.name = "CognitoRefreshError";
+    this.kind = kind;
+    this.status = status;
+    this.oauthError = oauthError;
+  }
+}
+
+/**
+ * Cognito token endpoint response for the **refresh_token** grant.
+ *
+ * Deliberately has no `refresh_token`: Cognito does NOT rotate/return a refresh
+ * token on this grant, so the caller must keep the one it already holds (it
+ * stays valid for the app client's much longer `RefreshTokenValidity`).
+ */
+export interface CognitoRefreshResponse {
+  id_token: string;
+  access_token: string;
+  expires_in: number;
+  token_type: string;
+}
+
+/**
  * The redirect URI for the current origin. MUST be one of the URIs registered
  * on the Cognito app client and MUST be byte-for-byte identical between the
  * authorize request and the token exchange. Deriving it from the live origin
@@ -370,20 +425,110 @@ export async function exchangeCodeForTokens(
   });
 
   if (!response.ok) {
-    let detail = `${response.status}`;
-    try {
-      const err = (await response.json()) as {
-        error?: string;
-        error_description?: string;
-      };
-      detail = err.error_description || err.error || detail;
-    } catch {
-      // non-JSON error body — keep the status code
-    }
-    throw new Error(`Token exchange failed: ${detail}`);
+    throw new Error(`Token exchange failed: ${await tokenErrorDetail(response)}`);
   }
 
   return (await response.json()) as CognitoTokenResponse;
+}
+
+/**
+ * Exchange a stored Cognito **refresh token** for a fresh `id_token` /
+ * `access_token` — the silent renewal that keeps a session alive past the app
+ * client's `IdTokenValidity` instead of bouncing the user to `/login`.
+ *
+ * Same public-client conventions as `exchangeCodeForTokens`: form-encoded body,
+ * NO client secret / `Authorization: Basic`. The refresh grant takes no
+ * `redirect_uri` and no `code_verifier` (PKCE binds the authorization code, not
+ * the refresh token).
+ *
+ * Cognito returns NO `refresh_token` here, so callers keep the token they
+ * already hold.
+ *
+ * ALWAYS rejects with a `CognitoRefreshError` whose `kind` says whether the
+ * session is authoritatively dead (tear down) or the attempt merely failed
+ * transiently (keep the session, retry later) — see `CognitoRefreshFailureKind`.
+ */
+export async function refreshCognitoTokens(
+  refreshToken: string
+): Promise<CognitoRefreshResponse> {
+  const body = new URLSearchParams({
+    grant_type: "refresh_token",
+    client_id: COGNITO_CLIENT_ID,
+    refresh_token: refreshToken,
+  });
+
+  let response: Response;
+  try {
+    response = await fetch(TOKEN_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+    });
+  } catch (error) {
+    // Offline, DNS failure, CORS rejection, aborted fetch — no verdict from
+    // Cognito at all, so the session is NOT known to be dead.
+    throw new CognitoRefreshError(
+      `Token refresh failed: ${error instanceof Error ? error.message : String(error)}`,
+      "transient"
+    );
+  }
+
+  if (!response.ok) {
+    const { detail, error } = await tokenErrorBody(response);
+    // ONLY these two are Cognito saying the refresh token itself is no good.
+    // 5xx / 429 / anything else is an availability problem, not a verdict.
+    const authoritative =
+      response.status === 401 ||
+      (response.status === 400 && error === "invalid_grant");
+    throw new CognitoRefreshError(
+      `Token refresh failed: ${detail}`,
+      authoritative ? "authoritative" : "transient",
+      response.status,
+      error
+    );
+  }
+
+  try {
+    return (await response.json()) as CognitoRefreshResponse;
+  } catch (error) {
+    // A 200 we cannot parse (truncated response, captive-portal HTML) says
+    // nothing about the refresh token's validity.
+    throw new CognitoRefreshError(
+      `Token refresh returned an unreadable body: ${error instanceof Error ? error.message : String(error)}`,
+      "transient",
+      response.status
+    );
+  }
+}
+
+/**
+ * Best-effort read of a failed token-endpoint response body: Cognito's OAuth
+ * `error` code plus a human-readable detail (`error_description` / `error`,
+ * falling back to the bare status code for a non-JSON body).
+ */
+async function tokenErrorBody(
+  response: Response
+): Promise<{ detail: string; error: string | null }> {
+  try {
+    const err = (await response.json()) as {
+      error?: string;
+      error_description?: string;
+    };
+    return {
+      detail: err.error_description || err.error || `${response.status}`,
+      error: err.error ?? null,
+    };
+  } catch {
+    // non-JSON error body — keep the status code
+    return { detail: `${response.status}`, error: null };
+  }
+}
+
+/**
+ * Best-effort human-readable detail from a failed token-endpoint response.
+ */
+async function tokenErrorDetail(response: Response): Promise<string> {
+  return (await tokenErrorBody(response)).detail;
 }
 
 /** Clear the single-use PKCE verifier + state after the exchange completes. */
