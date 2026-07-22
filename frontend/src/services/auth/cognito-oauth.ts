@@ -75,6 +75,20 @@ export interface CognitoTokenResponse {
 }
 
 /**
+ * Cognito token endpoint response for the **refresh_token** grant.
+ *
+ * Deliberately has no `refresh_token`: Cognito does NOT rotate/return a refresh
+ * token on this grant, so the caller must keep the one it already holds (it
+ * stays valid for the app client's much longer `RefreshTokenValidity`).
+ */
+export interface CognitoRefreshResponse {
+  id_token: string;
+  access_token: string;
+  expires_in: number;
+  token_type: string;
+}
+
+/**
  * The redirect URI for the current origin. MUST be one of the URIs registered
  * on the Cognito app client and MUST be byte-for-byte identical between the
  * authorize request and the token exchange. Deriving it from the live origin
@@ -370,20 +384,64 @@ export async function exchangeCodeForTokens(
   });
 
   if (!response.ok) {
-    let detail = `${response.status}`;
-    try {
-      const err = (await response.json()) as {
-        error?: string;
-        error_description?: string;
-      };
-      detail = err.error_description || err.error || detail;
-    } catch {
-      // non-JSON error body — keep the status code
-    }
-    throw new Error(`Token exchange failed: ${detail}`);
+    throw new Error(`Token exchange failed: ${await tokenErrorDetail(response)}`);
   }
 
   return (await response.json()) as CognitoTokenResponse;
+}
+
+/**
+ * Exchange a stored Cognito **refresh token** for a fresh `id_token` /
+ * `access_token` — the silent renewal that keeps a session alive past the app
+ * client's `IdTokenValidity` instead of bouncing the user to `/login`.
+ *
+ * Same public-client conventions as `exchangeCodeForTokens`: form-encoded body,
+ * NO client secret / `Authorization: Basic`. The refresh grant takes no
+ * `redirect_uri` and no `code_verifier` (PKCE binds the authorization code, not
+ * the refresh token).
+ *
+ * Cognito returns NO `refresh_token` here, so callers keep the token they
+ * already hold. A 400 (`invalid_grant`) means the refresh token was revoked or
+ * has itself expired — genuinely dead session, and the caller should tear down.
+ */
+export async function refreshCognitoTokens(
+  refreshToken: string
+): Promise<CognitoRefreshResponse> {
+  const body = new URLSearchParams({
+    grant_type: "refresh_token",
+    client_id: COGNITO_CLIENT_ID,
+    refresh_token: refreshToken,
+  });
+
+  const response = await fetch(TOKEN_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Token refresh failed: ${await tokenErrorDetail(response)}`);
+  }
+
+  return (await response.json()) as CognitoRefreshResponse;
+}
+
+/**
+ * Best-effort human-readable detail from a failed token-endpoint response:
+ * Cognito's OAuth error body (`error_description` / `error`), falling back to
+ * the bare status code for a non-JSON body.
+ */
+async function tokenErrorDetail(response: Response): Promise<string> {
+  try {
+    const err = (await response.json()) as {
+      error?: string;
+      error_description?: string;
+    };
+    return err.error_description || err.error || `${response.status}`;
+  } catch {
+    // non-JSON error body — keep the status code
+    return `${response.status}`;
+  }
 }
 
 /** Clear the single-use PKCE verifier + state after the exchange completes. */
