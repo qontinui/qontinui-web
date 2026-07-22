@@ -37,13 +37,15 @@ function makeProfile(overrides: Record<string, unknown> = {}) {
   return {
     tenant_id: "00000000-0000-0000-0000-000000000001",
     repo: "",
-    line_budget: 500,
     min_green_dwell: 60,
     confidence_threshold: 0.85,
     auto_merge_enabled: false,
     dry_run: true,
     rulebook_overrides: null,
-    escalate_paths: [],
+    // coord's resolved EffectiveProfile reads escalate config back as typed
+    // policies (glob + category + disposition), NOT the raw `escalate_paths`
+    // string[] the PATCH body writes. Mirror the real wire shape here.
+    escalate_policies: [],
     audit_confidence_shadow_floor: 0.85,
     preferred_auditor_device_id: null,
     auto_merge_label_budget: null,
@@ -127,16 +129,14 @@ describe("<MergeOrchestrationSettings> auto_fix_red_main toggle", () => {
     });
   });
 
-  // Regression: coord returns an EffectiveProfile WITHOUT `escalate_paths` for a
-  // freshly-onboarded / unconfigured tenant (e.g. a brand-new customer tenant).
-  // The settings form used to call `profile.escalate_paths.join("\n")`
-  // unconditionally, throwing `Cannot read properties of undefined (reading
-  // 'join')` and taking the whole merge-settings page down via the error
-  // boundary. Passing `escalate_paths: undefined` drops the key on the wire
-  // (JSON.stringify), reproducing coord's default-profile shape.
-  it("renders (no crash) when coord omits escalate_paths on a default profile", async () => {
+  // Regression: coord's resolved EffectiveProfile carries escalate config in
+  // `escalate_policies` (typed), never a raw `escalate_paths` string[]. A
+  // default/unconfigured tenant can also omit the key entirely. The settings
+  // form must degrade to an empty editor rather than throwing `Cannot read
+  // properties of undefined (reading 'map')` to the error boundary.
+  it("renders (no crash) when coord omits escalate_policies on a default profile", async () => {
     fetchMock.mockImplementation((url: string) =>
-      Promise.resolve(routeGet(url, { escalate_paths: undefined }))
+      Promise.resolve(routeGet(url, { escalate_policies: undefined }))
     );
     render(<MergeOrchestrationSettings />);
 
@@ -144,5 +144,65 @@ describe("<MergeOrchestrationSettings> auto_fix_red_main toggle", () => {
     // escalate-paths editor degrades to empty rather than crashing.
     const toggle = await screen.findByTestId("settings-auto-fix-red-main");
     expect(toggle).toBeTruthy();
+    expect(
+      (screen.getByTestId("settings-escalate-paths") as HTMLTextAreaElement)
+        .value
+    ).toBe("");
+  });
+
+  // The escalate-paths editor loads the tenant's CONFIGURED globs from coord's
+  // `escalate_policies` read shape (one glob per line). Before this wiring the
+  // editor read a phantom `escalate_paths` field that coord never sends, so it
+  // was always blank — and saving then PATCHed an empty `escalate_paths`,
+  // silently WIPING the tenant's configured escalate set. This test proves the
+  // globs render and that a no-op save round-trips them back unchanged.
+  it("loads configured globs from escalate_policies and round-trips them on save", async () => {
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === "PATCH") {
+        return Promise.resolve(
+          jsonResponse({
+            tenant_id: "00000000-0000-0000-0000-000000000001",
+            profile: makeProfile(),
+          })
+        );
+      }
+      return Promise.resolve(
+        routeGet(url, {
+          escalate_policies: [
+            {
+              glob: "alembic/**",
+              category: "migrations",
+              disposition: "auto_if_provably_safe",
+            },
+            {
+              glob: "**/credentials*",
+              category: "secrets",
+              disposition: "block_hard",
+            },
+          ],
+        })
+      );
+    });
+    render(<MergeOrchestrationSettings />);
+
+    const textarea = (await screen.findByTestId(
+      "settings-escalate-paths"
+    )) as HTMLTextAreaElement;
+    // Globs render one-per-line, from escalate_policies[].glob.
+    await waitFor(() =>
+      expect(textarea.value).toBe("alembic/**\n**/credentials*")
+    );
+
+    // A no-op save must re-send exactly those globs — NOT an empty array that
+    // would wipe the tenant's configured escalate set.
+    fireEvent.click(screen.getByTestId("settings-save"));
+    await waitFor(() => {
+      const patch = fetchMock.mock.calls.find(
+        (c) => (c[1] as RequestInit | undefined)?.method === "PATCH"
+      );
+      expect(patch).toBeTruthy();
+      const body = JSON.parse((patch![1] as RequestInit).body as string);
+      expect(body.escalate_paths).toEqual(["alembic/**", "**/credentials*"]);
+    });
   });
 });
