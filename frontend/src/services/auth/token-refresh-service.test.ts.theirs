@@ -17,13 +17,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 import { TokenRefreshService } from "./token-refresh-service";
-<<<<<<< HEAD
 import { TokenValidator } from "./token-validator";
 import type { TokenManager } from "./token-manager";
 import { jwtExpiringAt } from "@/test/jwt";
-=======
-import type { TokenManager } from "./token-manager";
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
 
 const TOKEN_ENDPOINT = "https://auth.qontinui.io/oauth2/token";
 const HOUR_MS = 60 * 60 * 1000;
@@ -31,15 +27,12 @@ const HOUR_MS = 60 * 60 * 1000;
 /** Mirrors the service's MIN_PROACTIVE_DELAY_MS floor for a due-now wake-up. */
 const MIN_DELAY_MS = 10 * 1000;
 
-<<<<<<< HEAD
 /** Mirrors the service's MAX_CONSECUTIVE_TRANSIENT_FAILURES backstop. */
 const MAX_TRANSIENT_FAILURES = 5;
 
 /** The real expiry extractor, so the fake TokenManager can't be too generous. */
 const validator = new TokenValidator();
 
-=======
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
 /**
  * Override `document.visibilityState`, which jsdom exposes as a prototype
  * getter (so a plain assignment is a no-op). Returns a restore function.
@@ -88,7 +81,6 @@ function makeTokenManager(opts: {
       return left < thresholdMs && left > 0;
     }),
     setTokens: vi.fn((tokens: { access_token: string; expires_in: number }) => {
-<<<<<<< HEAD
       // Mirror the REAL TokenManager exactly: the expiry comes from the
       // bearer's own `exp` claim FIRST, `expires_in` only as a fallback. The
       // old stub derived it from `expires_in` alone — more generous than
@@ -97,11 +89,6 @@ function makeTokenManager(opts: {
       state.expiry =
         validator.extractExpiry(tokens.access_token) ??
         (tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : null);
-=======
-      // Mirror the real TokenManager: derive the new expiry so a rescheduled
-      // proactive wake-up lands on the refreshed token, not the old one.
-      state.expiry = Date.now() + tokens.expires_in * 1000;
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
     }),
     clearTokens: vi.fn(() => {
       state.refreshToken = null;
@@ -118,7 +105,6 @@ function asTokenManager(tm: FakeTokenManager): TokenManager {
   return tm as unknown as TokenManager;
 }
 
-<<<<<<< HEAD
 interface CapturedCall {
   url: string;
   body: string;
@@ -135,15 +121,6 @@ interface CapturedCall {
  */
 function stubRefreshOk(expiresIn = 10800, idToken?: string): CapturedCall[] {
   const calls: CapturedCall[] = [];
-=======
-/** Stub fetch with a Cognito refresh-grant success, capturing the request. */
-function stubRefreshOk(idToken = "new.id.token", expiresIn = 10800) {
-  const calls: {
-    url: string;
-    body: string;
-    headers: HeadersInit | undefined;
-  }[] = [];
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init?: RequestInit) => {
@@ -154,11 +131,7 @@ function stubRefreshOk(idToken = "new.id.token", expiresIn = 10800) {
       });
       return new Response(
         JSON.stringify({
-<<<<<<< HEAD
           id_token: idToken ?? jwtExpiringAt(Date.now() + expiresIn * 1000),
-=======
-          id_token: idToken,
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
           access_token: "new.access.token",
           expires_in: expiresIn,
           token_type: "Bearer",
@@ -187,7 +160,6 @@ function stubRefreshRejected() {
   );
 }
 
-<<<<<<< HEAD
 /** Stub fetch with a TRANSIENT failure: the network never reached Cognito. */
 function stubNetworkFailure(): ReturnType<typeof vi.fn> {
   const mock = vi.fn(async () => {
@@ -204,8 +176,6 @@ function stubHttpFailure(status: number, body = "<html>gateway</html>") {
   return mock;
 }
 
-=======
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
 /** Count `session-expired` window events fired while `run` executes. */
 async function countSessionExpired(run: () => Promise<void>): Promise<number> {
   let count = 0;
@@ -230,12 +200,8 @@ describe("TokenRefreshService.refreshAccessToken", () => {
   });
 
   it("exchanges the stored refresh token and stores the new ID token as the bearer", async () => {
-<<<<<<< HEAD
     const freshIdToken = jwtExpiringAt(Date.now() + 10800 * 1000);
     const calls = stubRefreshOk(10800, freshIdToken);
-=======
-    const calls = stubRefreshOk("fresh.id.token", 10800);
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
     const tm = makeTokenManager({ refreshToken: "rt-abc" });
     const service = new TokenRefreshService(asTokenManager(tm));
 
@@ -256,20 +222,13 @@ describe("TokenRefreshService.refreshAccessToken", () => {
     // refresh token is preserved — Cognito does not rotate it on this grant.
     expect(tm.setTokens).toHaveBeenCalledTimes(1);
     expect(tm.setTokens.mock.calls[0]![0]).toMatchObject({
-<<<<<<< HEAD
       access_token: freshIdToken,
-=======
-      access_token: "fresh.id.token",
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
       refresh_token: "rt-abc",
       expires_in: 10800,
     });
     expect(tm.clearTokens).not.toHaveBeenCalled();
-<<<<<<< HEAD
     // The stored expiry comes from the NEW bearer's own `exp` claim.
     expect(tm.state.expiry).toBe(validator.extractExpiry(freshIdToken));
-=======
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
   });
 
   it("does NOT move the stored refresh-token expiry (that grant returns no new refresh token)", async () => {
@@ -337,7 +296,6 @@ describe("TokenRefreshService.refreshAccessToken", () => {
     expect(events).toBe(1);
   });
 
-<<<<<<< HEAD
   /**
    * C1 — the proactive timer fires SIX MINUTES BEFORE `exp`, while the bearer
    * is still perfectly valid. Treating a blip there as a dead session throws a
@@ -472,20 +430,6 @@ describe("TokenRefreshService.refreshAccessToken", () => {
     });
 
     expect(events).toBe(1);
-=======
-  it("treats a non-JSON / network failure as an expired session", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => {
-        throw new TypeError("Failed to fetch");
-      })
-    );
-    const tm = makeTokenManager({});
-    const service = new TokenRefreshService(asTokenManager(tm));
-
-    await expect(service.refreshAccessToken()).resolves.toBe(false);
-    expect(tm.clearTokens).toHaveBeenCalledTimes(1);
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
   });
 });
 
@@ -500,15 +444,11 @@ describe("TokenRefreshService proactive refresh", () => {
   });
 
   it("renews shortly BEFORE expiry, then re-arms on the new expiry", async () => {
-<<<<<<< HEAD
     // A real, decodable ID token per exchange — exactly what Cognito returns —
     // so the re-arm is driven by the new bearer's own `exp`, the way production
     // derives it. With the old placeholder `id_token` this passed even though
     // production could not read an expiry off the token at all.
     const calls = stubRefreshOk(10800);
-=======
-    const calls = stubRefreshOk("renewed.id.token", 10800);
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
     const tm = makeTokenManager({ expiry: Date.now() + HOUR_MS });
     const service = new TokenRefreshService(asTokenManager(tm));
 
@@ -520,15 +460,9 @@ describe("TokenRefreshService proactive refresh", () => {
     // Cross into the lead window (renewal is due before `exp`, not after).
     await vi.advanceTimersByTimeAsync(30 * 60 * 1000);
     expect(calls).toHaveLength(1);
-<<<<<<< HEAD
     const renewed = tm.setTokens.mock.calls[0]![0] as { access_token: string };
     expect(validator.extractExpiry(renewed.access_token)).toBe(tm.state.expiry);
     expect(tm.state.expiry).toBeGreaterThan(Date.now() + 2 * HOUR_MS);
-=======
-    expect(tm.setTokens.mock.calls[0]![0]).toMatchObject({
-      access_token: "renewed.id.token",
-    });
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
 
     // Re-armed against the refreshed 3h expiry: renews again, and the session
     // never lapses.
@@ -623,7 +557,6 @@ describe("TokenRefreshService proactive refresh", () => {
 
     service.stop();
   });
-<<<<<<< HEAD
 
   /**
    * C1, proactive half — the wake-up lands SIX MINUTES BEFORE `exp` on a bearer
@@ -730,6 +663,4 @@ describe("TokenRefreshService proactive refresh", () => {
     expect(tm.clearTokens).not.toHaveBeenCalled();
     service.stop();
   });
-=======
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
 });
