@@ -126,6 +126,18 @@ export interface PrRow {
    * as "no evidence" and never as "not stranded".
    */
   conflict_age_secs?: number | null;
+  /**
+   * Seconds since coord last observed GitHub activity on this PR — the
+   * universal staleness clock (coord-side floor over `coord.pr_events`
+   * ingest/review rows, so a comment or review resets it; coord-authored
+   * notices do not).
+   *
+   * Optional: absent on coord deploys predating the projection, and absent on
+   * any PR with no recorded events (activity predating coord's webhook
+   * subscription, or lost webhooks). Consumers MUST treat absence as "no
+   * evidence" — never as fresh, and never as stale.
+   */
+  last_activity_secs?: number | null;
   // ---- Recently-merged enrichment ------------------------------------------
   // Present only on the rows coord appends for `?include_merged=<hours>`
   // (`query_recently_merged_prs`). Every field is optional: a coord deploy
