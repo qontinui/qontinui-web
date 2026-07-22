@@ -202,6 +202,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   /**
+   * Proactive silent token refresh.
+   *
+   * The Cognito bearer (the ID token) expires on the app client's
+   * `IdTokenValidity`; without renewal the user is bounced to `/login` the
+   * moment it lapses. Arming this while a user is signed in renews the bearer
+   * shortly BEFORE `exp`, so the session continues transparently instead of
+   * waiting for a request to 401 first.
+   *
+   * Keyed on whether a user is signed in (not the user object) so an unrelated
+   * `updateUser` doesn't churn the timer. `TokenRefreshService` owns the rest
+   * of the idleness contract: one self-rescheduling timeout, disarmed while the
+   * tab is hidden, and never armed at all while signed out.
+   */
+  const isSignedIn = !!user;
+  useEffect(() => {
+    if (!isSignedIn) return undefined;
+    authService.startProactiveRefresh();
+    return () => authService.stopProactiveRefresh();
+  }, [isSignedIn]);
+
+  /**
    * Hydrate the user via `getCurrentUser()` with a per-attempt timeout and a
    * bounded retry, so a stalled `/users/me` can't pin the app behind the
    * AuthLoadingShell forever (see BOOTSTRAP_USER_FETCH_* above). A 401/403 is
@@ -261,9 +282,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logger.debug("Is authenticated:", isAuth);
 
       if (isAuth) {
-        // Check if access token is expired - if so, try to refresh it first
-        if (authService.isAccessTokenExpired()) {
-          logger.debug("Access token is expired, attempting refresh...");
+        // Renew the bearer before hydrating the user if it is spent.
+        //
+        // `isRefreshDue()` is checked ALONGSIDE `isAccessTokenExpired()`, not
+        // instead of it, because the two cover different holes:
+        //   - isAccessTokenExpired() carries TokenValidator's 5-minute
+        //     clock-skew grace, so for five minutes after `exp` it says "not
+        //     expired" while the backend already rejects the token. Booting in
+        //     that window without refreshing means /users/me 401s and the catch
+        //     below signs the user out — the logout this whole change removes.
+        //   - isRefreshDue() is skew-free but needs a known expiry, so it
+        //     returns false when no `token_expiry` is stored; that case is
+        //     exactly what isAccessTokenExpired() reports as expired.
+        if (authService.isAccessTokenExpired() || authService.isRefreshDue()) {
+          logger.debug("Access token is spent, attempting refresh...");
           const refreshSuccess = await authService.refreshAccessToken();
 
           if (!refreshSuccess) {
