@@ -307,7 +307,9 @@ jobs:
           # re-verify on Playwright upgrades). Equal-count spans were badly
           # duration-skewed (23.8m/6.7m/8.6m/17.6m of test time → max shard
           # ~16m wall); these weights equalize measured span time (~14.2m
-          # worker-time each, ≈12m wall at workers:1). Derived from per-test
+          # each, ≈12m wall at workers:1 — span times were measured under the
+          # workers:2 trial run, so their absolute values are ~2× real; only
+          # the ratios matter for the weights). Derived from per-test
           # durations in run 29937298955's results.json artifacts; recompute
           # when the suite's shape shifts (see plan
           # 2026-07-22-web-playwright-single-worker-stale-rationale).
