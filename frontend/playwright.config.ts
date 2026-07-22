@@ -44,13 +44,17 @@ export default defineConfig({
   // Test execution settings
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  // No retries in CI. The suite is single-worker, so each retry adds another
-  // 60s timeout to the wall-clock budget for every flake; with ~300 failing
-  // tests that compounds to multi-hour runs (5h+ observed on the post-cascade
-  // unblock). Surface failures fast, fix them once, then add retries back if
-  // genuine flakes appear.
+  // CI runs 2 workers per shard. The original workers:1 rationale ("~300
+  // failing tests at 60s each → 5h+ runs") no longer holds — the suite is
+  // green (e.g. run 29916474400, all 4 shards) — but each CI runner also
+  // hosts the uvicorn backend + Postgres + Next.js dev server on 4 vCPUs,
+  // so parallelism is raised stepwise with measurement, not jumped to the
+  // vCPU count (plan 2026-07-22-web-playwright-single-worker-stale-rationale).
+  // retries stays 0 while re-baselining: a retry would add its own timeout
+  // to wall clock and give any flake two candidate causes. Revisit retries
+  // separately once the flake rate under parallelism is known.
   retries: 0,
-  workers: process.env.CI ? 1 : undefined,
+  workers: process.env.CI ? 2 : undefined,
 
   // Reporter to use
   reporter: [

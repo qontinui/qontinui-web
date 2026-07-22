@@ -182,9 +182,11 @@ jobs:
         # Run the suite in 4 parallel shards. Each matrix entry gets its
         # own runner with its own ephemeral postgres + backend + frontend,
         # so there is no shared state between shards. Wall clock ≈
-        # max(shard times), not sum. With ~309 failing tests at 60s each
-        # under retries=0, single-shard wall clock was 5h+; 4-way sharding
-        # brings that to ~1h15m.
+        # max(shard times), not sum. (Historical: while ~309 tests were
+        # failing at 60s each under retries=0, a single shard took 5h+.
+        # The suite is green now; per-shard parallelism is set in
+        # playwright.config.ts `workers` — see plan
+        # 2026-07-22-web-playwright-single-worker-stale-rationale.)
         shard: [1, 2, 3, 4]
         node-version: [20]
 
