@@ -305,6 +305,14 @@ jobs:
           COGNITO_USER_POOL_ID: spec-ci-local-pool
           COGNITO_ISSUER: http://127.0.0.1:8770
           COGNITO_ALLOWED_AUDIENCES: spec-ci-local
+          # Authenticate the backend's GitHub Releases fetch
+          # (backend/app/api/v1/endpoints/releases.py reads GITHUB_TOKEN and
+          # sends it as a Bearer). Shared Actions runner IPs exhaust the 60/hr
+          # anonymous api.github.com limit, silently degrading the release
+          # payload to an empty asset list and timing out download-page
+          # assertions (runs 29859706423 + 29696362417). The token lifts the
+          # limit to 5000/hr; read-only, public-repo metadata only.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           npx playwright test --project=chromium --shard=${{ matrix.shard }}/4
 
