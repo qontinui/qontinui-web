@@ -95,6 +95,49 @@ describe("buildRemediation", () => {
     expect(rem.sections).toEqual([]);
     expect(rem.inSync).toBe(true);
   });
+
+  it("skips repo-derived keys — they are not settable on the box", () => {
+    const rem = buildRemediation(
+      report([
+        section("versions", [
+          {
+            key: "runner_crate_version",
+            status: "changed",
+            expected: "1.0.5",
+            actual: "1.0.3",
+            severity: "info",
+            derived: true,
+          },
+          { key: "node", status: "changed", expected: "20", actual: "18", severity: "critical" },
+        ]),
+      ])
+    );
+    // Only the real, settable key survives — "set runner_crate_version to
+    // 1.0.5" is not an instruction anyone can carry out.
+    expect(rem.sections).toEqual([
+      { section: "versions", items: [{ key: "node", value: "20", secret: false }] },
+    ]);
+    expect(rem.itemCount).toBe(1);
+  });
+
+  it("drops a section whose only drift is repo-derived", () => {
+    const rem = buildRemediation(
+      report([
+        section("versions", [
+          {
+            key: "node_dep_react",
+            status: "changed",
+            expected: "19.0.0",
+            actual: "18.2.0",
+            severity: "info",
+            derived: true,
+          },
+        ]),
+      ])
+    );
+    expect(rem.sections).toEqual([]);
+    expect(rem.inSync).toBe(true);
+  });
 });
 
 describe("serializers", () => {

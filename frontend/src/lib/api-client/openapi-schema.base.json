@@ -21555,6 +21555,11 @@
             ],
             "title": "Actual"
           },
+          "derived": {
+            "default": false,
+            "title": "Derived",
+            "type": "boolean"
+          },
           "expected": {
             "anyOf": [
               {
@@ -33807,6 +33812,11 @@
             },
             "title": "Deltas",
             "type": "array"
+          },
+          "process_scoped": {
+            "default": false,
+            "title": "Process Scoped",
+            "type": "boolean"
           },
           "section": {
             "title": "Section",
