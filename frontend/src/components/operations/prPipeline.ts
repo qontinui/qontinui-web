@@ -125,9 +125,12 @@ export const ATTENTION_BY_KIND: Record<UnifiedStatusKind, Attention> = {
  * The kinds that mean "this PR has a TRUE merge conflict and the author must
  * act", derived from GitHub state rather than from a live merge proposal.
  *
- * These rows are invisible to the in-flight queue feed: `buildPipelineRows`
- * only reaches `statusFromGitHub` (the sole producer of these kinds) when the
- * row has NO active proposal, and coord's `GET /merge/queue` excludes terminal
+ * These rows are invisible to the in-flight queue feed: they arise only on
+ * rows with NO active proposal — `not-mergeable` straight from
+ * `statusFromGitHub`; `conflict-stranded` via the dwell escalation over a
+ * `conflict-deferred` that `statusFromGitHub` produced (`statusFromProposal`
+ * never emits `conflict-deferred`, so no active-proposal row can strand) —
+ * and coord's `GET /merge/queue` excludes terminal
  * proposals. So any health/severity roll-up that counts conflicts by scanning
  * active proposals alone silently reports zero for every one of them — the
  * exact defect that let a 17-strand fleet render "Merging normally".
@@ -410,6 +413,17 @@ export const STALE_ESCALATION: Partial<
 };
 
 /**
+ * The kinds that can escalate — exactly `STALE_ESCALATION`'s key set. Cap
+ * lookups take this instead of the full union so asking for a dwell cap on a
+ * kind that has none is unrepresentable, not silently defaulted.
+ */
+export type EscalatableKind = "needs-rebase" | "blocked" | "conflict-deferred";
+
+function isEscalatable(kind: UnifiedStatusKind): kind is EscalatableKind {
+  return STALE_ESCALATION[kind] !== undefined;
+}
+
+/**
  * How long a waiting kind may dwell before it escalates; per-repo where
  * economics allows.
  *
@@ -422,7 +436,7 @@ export const STALE_ESCALATION: Partial<
  * these in the train and only a full day of silence falsifies the promise.
  */
 export function waitingDwellCapMs(
-  kind: UnifiedStatusKind,
+  kind: EscalatableKind,
   repo: string,
   economics?: Record<string, MergeEconomics>
 ): number {
@@ -509,7 +523,7 @@ export function escalateStaleWaiting(
         kind: target,
         label: "Behind (stalled)",
         reason:
-          `behind its base for ${dur} with no observed activity — coord's ` +
+          `no observed activity for ${dur} while behind its base — coord's ` +
           `auto-rebase promise has expired; needs an author look`,
         attention: "author",
       };
@@ -518,7 +532,7 @@ export function escalateStaleWaiting(
         kind: target,
         label: "Blocked (stalled)",
         reason:
-          `waiting on an overlapping PR for ${dur} with no observed activity ` +
+          `no observed activity for ${dur} while waiting on an overlapping PR ` +
           `— the overlap should have cleared by now; needs an author look`,
         attention: "author",
       };
@@ -849,17 +863,18 @@ function escalateIfStale(
   pr: PrRow | null,
   economics: Record<string, MergeEconomics>
 ): UnifiedStatus {
-  if (STALE_ESCALATION[status.kind] === undefined) return status;
+  const kind = status.kind;
+  if (!isEscalatable(kind)) return status;
   const dwellMs =
     pr === null
       ? null
-      : status.kind === "conflict-deferred"
+      : kind === "conflict-deferred"
         ? conflictStrandedForMs(pr)
         : lastActivityForMs(pr);
   return escalateStaleWaiting(
     status,
     dwellMs,
-    waitingDwellCapMs(status.kind, repo, economics)
+    waitingDwellCapMs(kind, repo, economics)
   );
 }
 
@@ -938,6 +953,10 @@ export function buildPipelineRows(
     const isGroup = active.repos.length > 1;
     // Same escalation path as the PR rows, with no PrRow → no dwell clock →
     // never escalates here. Uniform code, absence-is-no-evidence semantics.
+    // NB for GROUP rows the member PRs (looked up below for `members`) DO
+    // carry clocks; not feeding them is deliberate under-escalation — the
+    // safe direction. Feeding `max(member clocks)` is a product decision,
+    // not a bug fix.
     const status = escalateIfStale(
       statusFromProposal(active),
       first.repo,
@@ -1179,9 +1198,10 @@ export function derivePipelineHealth(
   // normally": the escalation reached the row badge and the needs-attention
   // chip, but not the headline the operator actually scans.
   //
-  // The two sides are disjoint by construction: `buildPipelineRows` only calls
-  // `statusFromGitHub` (the sole producer of GITHUB_CONFLICT_KINDS) when the
-  // row has no active proposal, so nothing is double-counted.
+  // The two sides are disjoint by construction: GITHUB_CONFLICT_KINDS arise
+  // only on rows with no active proposal (`statusFromGitHub`, plus the dwell
+  // escalation over its `conflict-deferred` — `statusFromProposal` never emits
+  // that kind), so nothing is double-counted.
   // Counted as DISTINCT PRs, not rows. A multi-repo group proposal produces
   // its OWN row (keyed `repoA::b1|repoB::b2`) *and* a row per member PR, so a
   // row-wise sum reports one conflict two or three times — and this number is
@@ -1265,6 +1285,20 @@ export function derivePipelineHealth(
   if (conflicts > 0)
     authorReasons.push(
       `${conflicts} PR${conflicts === 1 ? " needs" : "s need"} an author rebase`
+    );
+  // Stale waits are the same class of author-side backlog — a `waiting`
+  // promise that outlived its dwell cap. Same headline treatment as
+  // conflicts, same non-effect on `level`: visible to the operator's scan,
+  // never a pipeline-throughput signal.
+  const staleWaits = rows.filter(
+    (r) =>
+      r.status.kind === "needs-rebase-stale" ||
+      r.status.kind === "blocked-stale"
+  ).length;
+  if (staleWaits > 0)
+    authorReasons.push(
+      `${staleWaits} stalled waiting PR${staleWaits === 1 ? "" : "s"} ` +
+        `need${staleWaits === 1 ? "s" : ""} an author look`
     );
   // Orthogonal means the conflict count is no evidence EITHER WAY — it does not
   // license asserting the positive. With backlog present and nothing at all in
