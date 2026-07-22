@@ -92,6 +92,10 @@ export const STATUS_BADGE_CLASS: Record<UnifiedStatusKind, string> = {
   // ...but only for so long. Once the deferral window lapses, coord is
   // demonstrably never reaching this PR and it goes back to red.
   "conflict-stranded": AUTHOR_RED,
+  // The other two waiting promises with an expired premise: past the dwell
+  // cap the wait is demonstrably not ending on its own — red.
+  "needs-rebase-stale": AUTHOR_RED,
+  "blocked-stale": AUTHOR_RED,
   // --- in flight / terminal, nobody is blocked → never red or amber ---------
   "awaiting-ci": CI_YELLOW,
   "checks-pending": CI_YELLOW,
@@ -114,6 +118,28 @@ function rowAccentClass(row: PipelineRow): string {
 }
 
 /**
+ * The kinds whose badge carries the colourblind-safe `✕` glyph.
+ *
+ * The rule is deliberately total: EVERY kind whose `ATTENTION_BY_KIND` value
+ * is `"author"` is listed — red ⇔ ✕, no hand-picked subset. The glyph is the
+ * colourblind-safe marker for "the author must act", and a consistent
+ * red-implies-✕ rule beats the previous curated conflict-only list (which
+ * meant `checks-failing` / `requirements` rows were red with no glyph, and
+ * which web#813 forgot to extend — this list is a string set TypeScript's
+ * exhaustive `Record`s cannot check, so a unit test enforces the invariant
+ * against `ATTENTION_BY_KIND` instead).
+ */
+export const AUTHOR_GLYPH_KINDS: ReadonlySet<UnifiedStatusKind> = new Set([
+  "conflict",
+  "not-mergeable",
+  "conflict-stranded",
+  "needs-rebase-stale",
+  "blocked-stale",
+  "checks-failing",
+  "requirements",
+]);
+
+/**
  * The badge carries its own reason as a `title`, so the "why is this PR
  * blocked?" answer is one hover away on EVERY row — including the narrow
  * viewports where the inline reason is dropped and the wide ones where it is
@@ -130,10 +156,7 @@ function StatusBadge({ row }: { row: PipelineRow }) {
       title={reason ? `${label} — ${reason}` : label}
     >
       {kind === "merged" && "✓ "}
-      {(kind === "conflict" ||
-        kind === "not-mergeable" ||
-        kind === "conflict-stranded") &&
-        "✕ "}
+      {AUTHOR_GLYPH_KINDS.has(kind) && "✕ "}
       {label}
     </Badge>
   );

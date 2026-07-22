@@ -135,12 +135,29 @@ export interface KeyDelta {
   expected: string | null;
   actual: string | null;
   severity: Severity;
+  /**
+   * Whether this key is read from the repo the capturing binary was built
+   * from rather than from the machine (`runner_crate_version`, `node_dep_*`).
+   * Reported at `info` and never counted as drift — it converges by pulling
+   * the repo, never by an apply.
+   *
+   * Optional: the frontend and the backend deploy independently, so a
+   * frontend released ahead of the backend must tolerate its absence.
+   */
+  derived?: boolean;
 }
 
 export interface SectionDrift {
   section: string;
   deltas: KeyDelta[];
   severity: Severity;
+  /**
+   * Whether this section's capture reflects the capturing process rather than
+   * the box (`env_contract`), so its deltas may be process-scope artifacts.
+   * Labelled, never suppressed — a genuinely missing value looks identical
+   * server-side. Optional for the same deploy-skew reason as {@link KeyDelta.derived}.
+   */
+  process_scoped?: boolean;
 }
 
 export interface MachineDriftReport {

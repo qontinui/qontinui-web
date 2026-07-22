@@ -43,22 +43,41 @@ import { OPERATIONS_API } from "./utils";
 const log = createLogger("MergeOrchestrationSettings");
 
 // ----------------------------------------------------------------------------
-// Wire types — mirror `qontinui-coord/src/pr_merge/settings_wire.rs`.
+// Wire types — mirror `qontinui-coord/src/pr_merge/settings.rs` (the resolved
+// `EffectiveProfile`) + `settings_wire.rs` (the PATCH bodies).
 // ----------------------------------------------------------------------------
+
+// coord's resolved `EffectiveProfile` READS escalate config back as typed
+// policies (a glob classified into a hazard category + disposition), NOT as the
+// raw `escalate_paths` string[] that the PATCH body WRITES. The read/write
+// asymmetry is intentional coord-side: you write raw globs, you read the
+// classified result. Mirrors `EscalatePolicy` in
+// `qontinui-coord/src/pr_merge/settings.rs`.
+type EscalateCategory = "secrets" | "migrations" | "infra" | "other";
+type EscalateDisposition =
+  | "block_hard"
+  | "block_soft"
+  | "auto_if_provably_safe";
+
+interface EscalatePolicy {
+  glob: string;
+  category: EscalateCategory;
+  disposition: EscalateDisposition;
+}
 
 interface EffectiveProfile {
   tenant_id: string;
   repo: string;
-  line_budget: number;
   min_green_dwell: number; // seconds
   confidence_threshold: number;
   auto_merge_enabled: boolean;
   dry_run: boolean;
   rulebook_overrides: Record<string, unknown> | null;
-  // coord omits this for a default/unconfigured tenant profile, so the wire
-  // value can be absent even though the settings_wire contract nominally types
-  // it as always-present — guard every read (see the `?? []` sites below).
-  escalate_paths?: string[];
+  // The resolved escalate config, read back as typed policies. coord returns
+  // `[]` for a default/unconfigured tenant; still guarded with `?? []` at every
+  // read site in case a future default omits it. The editor round-trips the
+  // `.glob` of each policy against the `escalate_paths` PATCH field on save.
+  escalate_policies?: EscalatePolicy[];
   audit_confidence_shadow_floor: number;
   preferred_auditor_device_id: string | null;
   auto_merge_label_budget: number | null;
@@ -169,7 +188,7 @@ function TenantDefaultsCard({
     profile.auto_fix_red_main
   );
   const [escalatePathsText, setEscalatePathsText] = useState<string>(
-    (profile.escalate_paths ?? []).join("\n")
+    (profile.escalate_policies ?? []).map((p) => p.glob).join("\n")
   );
   const [shadowFloor, setShadowFloor] = useState<string>(
     String(profile.audit_confidence_shadow_floor)
@@ -185,7 +204,9 @@ function TenantDefaultsCard({
     setAutoMerge(profile.auto_merge_enabled);
     setDryRun(profile.dry_run);
     setAutoFixRedMain(profile.auto_fix_red_main);
-    setEscalatePathsText((profile.escalate_paths ?? []).join("\n"));
+    setEscalatePathsText(
+      (profile.escalate_policies ?? []).map((p) => p.glob).join("\n")
+    );
     setShadowFloor(String(profile.audit_confidence_shadow_floor));
   }, [profile]);
 
@@ -401,9 +422,14 @@ function RepoOverrideCard({
   const [profile, setProfile] = useState<EffectiveProfile | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // Local edit state. `""` = inherit (clear/NULL); a numeric/text
-  // value = override.
-  const [lineBudgetOverride, setLineBudgetOverride] = useState<string>("");
+  // Local edit state. `""`/`"inherit"` = leave unchanged; a value = override.
+  // The card is WRITE-ONLY: coord's RepoProfileResponse returns only the
+  // RESOLVED profile, not the raw per-repo overrides, so there is nothing to
+  // preload the fields from. To avoid clobbering overrides the operator did
+  // NOT touch, we track which fields were edited (`dirty`) and PATCH only
+  // those — an omitted field is left unchanged by coord's PatchField(absent).
+  // Full visibility/preload of existing overrides needs a coord API addition
+  // (dev-notes plan 2026-07-22-merge-settings-repo-override-preload, Option A).
   const [confidenceOverride, setConfidenceOverride] = useState<string>("");
   const [escalatePathsExtraText, setEscalatePathsExtraText] =
     useState<string>("");
@@ -414,6 +440,11 @@ function RepoOverrideCard({
   const [autoFixRedMainOverride, setAutoFixRedMainOverride] = useState<
     "inherit" | "true" | "false"
   >("inherit");
+  // Body keys the operator has edited this session; only these are PATCHed.
+  const [dirty, setDirty] = useState<Set<string>>(new Set());
+  const markDirty = useCallback((field: string) => {
+    setDirty((prev) => (prev.has(field) ? prev : new Set(prev).add(field)));
+  }, []);
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -448,35 +479,46 @@ function RepoOverrideCard({
     setError(null);
     setSaving(true);
     try {
-      // Each field follows the PatchField contract: `null` = clear
-      // to inherit, value = set. Empty string in the UI maps to
-      // `null` (clear); a parsed value maps to Set.
+      // Send ONLY fields the operator edited. coord's PatchRepoProfile treats
+      // an absent field as "leave unchanged", so omitting untouched fields
+      // avoids resetting/wiping overrides the operator never touched. A sent
+      // field follows the PatchField contract: a value = Set, `null` = clear
+      // to inherit. NOTE: coord's PatchRepoProfile does NOT accept
+      // `line_budget_override` — sending it trips `deny_unknown_fields` and
+      // 400s the whole PATCH — so that field is not sent (and its input was
+      // removed; coord neither stores nor resolves a per-repo line budget).
       const body: Record<string, unknown> = {};
-      body.line_budget_override =
-        lineBudgetOverride.trim() === ""
-          ? null
-          : parseIntOrThrow("line_budget_override", lineBudgetOverride);
-      body.confidence_threshold_override =
-        confidenceOverride.trim() === ""
-          ? null
-          : parseFloatOrThrow(
-              "confidence_threshold_override",
-              confidenceOverride
-            );
-      body.escalate_paths_extra = escalatePathsExtraText
-        .split("\n")
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
-      body.auto_merge_label_budget =
-        labelBudget.trim() === ""
-          ? null
-          : parseIntOrThrow("auto_merge_label_budget", labelBudget);
-      body.dry_run_override =
-        dryRunOverride === "inherit" ? null : dryRunOverride === "true";
-      body.auto_fix_red_main =
-        autoFixRedMainOverride === "inherit"
-          ? null
-          : autoFixRedMainOverride === "true";
+      if (dirty.has("confidence_threshold_override")) {
+        body.confidence_threshold_override =
+          confidenceOverride.trim() === ""
+            ? null
+            : parseFloatOrThrow(
+                "confidence_threshold_override",
+                confidenceOverride
+              );
+      }
+      if (dirty.has("escalate_paths_extra")) {
+        body.escalate_paths_extra = escalatePathsExtraText
+          .split("\n")
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0);
+      }
+      if (dirty.has("auto_merge_label_budget")) {
+        body.auto_merge_label_budget =
+          labelBudget.trim() === ""
+            ? null
+            : parseIntOrThrow("auto_merge_label_budget", labelBudget);
+      }
+      if (dirty.has("dry_run_override")) {
+        body.dry_run_override =
+          dryRunOverride === "inherit" ? null : dryRunOverride === "true";
+      }
+      if (dirty.has("auto_fix_red_main")) {
+        body.auto_fix_red_main =
+          autoFixRedMainOverride === "inherit"
+            ? null
+            : autoFixRedMainOverride === "true";
+      }
 
       const url = `${OPERATIONS_API}/pr-merge/repos/${repoRow.repo}/profile`;
       const res = await httpClient.fetch(url, {
@@ -486,6 +528,7 @@ function RepoOverrideCard({
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
       }
+      setDirty(new Set());
       onSaved();
     } catch (err) {
       log.warn("save repo profile failed", err);
@@ -495,7 +538,7 @@ function RepoOverrideCard({
     }
   }, [
     repoRow.repo,
-    lineBudgetOverride,
+    dirty,
     confidenceOverride,
     escalatePathsExtraText,
     labelBudget,
@@ -549,22 +592,11 @@ function RepoOverrideCard({
         )}
         {profile && (
           <p className="text-xs text-muted-foreground">
-            Effective: line_budget={profile.line_budget}, dwell=
-            {profile.min_green_dwell}s, dry_run={String(profile.dry_run)}
+            Effective: dwell={profile.min_green_dwell}s, dry_run=
+            {String(profile.dry_run)}
           </p>
         )}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="space-y-1">
-            <Label>Line budget override</Label>
-            <Input
-              type="number"
-              min={0}
-              value={lineBudgetOverride}
-              onChange={(e) => setLineBudgetOverride(e.target.value)}
-              placeholder="inherit"
-              data-testid={`repo-line-budget-${repoRow.repo}`}
-            />
-          </div>
           <div className="space-y-1">
             <Label>Confidence override</Label>
             <Input
@@ -573,7 +605,10 @@ function RepoOverrideCard({
               max={1}
               step="0.01"
               value={confidenceOverride}
-              onChange={(e) => setConfidenceOverride(e.target.value)}
+              onChange={(e) => {
+                setConfidenceOverride(e.target.value);
+                markDirty("confidence_threshold_override");
+              }}
               placeholder="inherit"
               data-testid={`repo-confidence-${repoRow.repo}`}
             />
@@ -584,7 +619,10 @@ function RepoOverrideCard({
               type="number"
               min={0}
               value={labelBudget}
-              onChange={(e) => setLabelBudget(e.target.value)}
+              onChange={(e) => {
+                setLabelBudget(e.target.value);
+                markDirty("auto_merge_label_budget");
+              }}
               placeholder="inherit"
               data-testid={`repo-label-budget-${repoRow.repo}`}
             />
@@ -594,11 +632,12 @@ function RepoOverrideCard({
             <select
               className="w-full h-9 rounded-md border bg-background px-3 text-sm"
               value={dryRunOverride}
-              onChange={(e) =>
+              onChange={(e) => {
                 setDryRunOverride(
                   e.target.value as "inherit" | "true" | "false"
-                )
-              }
+                );
+                markDirty("dry_run_override");
+              }}
               data-testid={`repo-dry-run-${repoRow.repo}`}
             >
               <option value="inherit">inherit tenant</option>
@@ -611,11 +650,12 @@ function RepoOverrideCard({
             <select
               className="w-full h-9 rounded-md border bg-background px-3 text-sm"
               value={autoFixRedMainOverride}
-              onChange={(e) =>
+              onChange={(e) => {
                 setAutoFixRedMainOverride(
                   e.target.value as "inherit" | "true" | "false"
-                )
-              }
+                );
+                markDirty("auto_fix_red_main");
+              }}
               data-testid={`repo-auto-fix-red-main-${repoRow.repo}`}
             >
               <option value="inherit">inherit tenant</option>
@@ -633,7 +673,10 @@ function RepoOverrideCard({
           <Label>Escalate paths extra (one per line)</Label>
           <Textarea
             value={escalatePathsExtraText}
-            onChange={(e) => setEscalatePathsExtraText(e.target.value)}
+            onChange={(e) => {
+              setEscalatePathsExtraText(e.target.value);
+              markDirty("escalate_paths_extra");
+            }}
             rows={2}
             placeholder={"app/**/page.tsx"}
             data-testid={`repo-escalate-paths-${repoRow.repo}`}
