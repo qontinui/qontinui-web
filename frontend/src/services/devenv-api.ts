@@ -165,6 +165,68 @@ export interface EnvironmentDrift {
 }
 
 // ---------------------------------------------------------------------------
+// Config history (P2 — drift over time)
+// ---------------------------------------------------------------------------
+
+/**
+ * One capture in a machine's config-history timeline (newest-first).
+ * Metadata only — the backend deliberately omits the config body; content is
+ * reachable through the diff endpoint as a drift report.
+ */
+export interface ConfigHistoryEntry {
+  id: string;
+  captured_at: string;
+  schema_version: number;
+  source: string;
+  content_hash: string;
+}
+
+/**
+ * SELF-drift between two captures of the SAME machine over time. Same shape
+ * as `MachineDriftReport` (the `from` capture fills the expected slot, `to`
+ * the actual), extended with the identity of the two compared captures.
+ */
+export interface ConfigHistoryDiff extends MachineDriftReport {
+  from_id: string;
+  to_id: string;
+  from_captured_at: string;
+  to_captured_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// Canonical-designation audit trail
+// ---------------------------------------------------------------------------
+
+/**
+ * One audited canonical-designation change ("who made this machine canonical,
+ * and when"), newest-first in a list.
+ *
+ * **Every display name is nullable BY DESIGN, not as an edge case.**
+ * `from_machine_id`/`to_machine_id` are deliberately soft refs (NOT foreign
+ * keys) so the audit trail outlives machine deletion, and `changed_by_user_id`
+ * is an FK with `ON DELETE SET NULL`. The server resolves the names with LEFT
+ * joins, so a deleted machine or user yields `null` here while the id may
+ * still be present. Renderers MUST fall back gracefully (see
+ * `CanonicalHistoryPanel`) — a null name is never an error state.
+ */
+export interface CanonicalChange {
+  id: string;
+  environment_id: string;
+  from_machine_id: string | null;
+  to_machine_id: string | null;
+  changed_by_user_id: string | null;
+  tenant_id: string | null;
+  note: string | null;
+  changed_at: string;
+  /** Resolved from `auth.users.email`; null when the user row is gone. */
+  changed_by_email: string | null;
+  /** Resolved from `devenv.machines.name`; null when the machine is gone. */
+  from_machine_name: string | null;
+  /** Resolved from `devenv.machines.name`; null when the machine is gone. */
+  to_machine_name: string | null;
+}
+
+// ---------------------------------------------------------------------------
 // Error handling
 // ---------------------------------------------------------------------------
 
@@ -214,10 +276,7 @@ async function parseError(res: Response): Promise<DevenvApiError> {
   return new DevenvApiError(res.status, message, code);
 }
 
-async function request<T>(
-  path: string,
-  init?: RequestInit
-): Promise<T> {
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // `httpClient.fetch` attaches the Bearer token (+ credentials, CSRF, and the
   // 401-refresh / 429-5xx retry). We keep the raw Response so the devenv error
   // envelope (`{detail:{code,message}}` → DevenvApiError) is preserved rather
@@ -356,13 +415,10 @@ export function setMachineEnvironment(
   id: string,
   environmentId: string | null
 ): Promise<Machine> {
-  return request<Machine>(
-    `/machines/${encodeURIComponent(id)}/environment`,
-    {
-      method: "PUT",
-      body: JSON.stringify({ environment_id: environmentId }),
-    }
-  );
+  return request<Machine>(`/machines/${encodeURIComponent(id)}/environment`, {
+    method: "PUT",
+    body: JSON.stringify({ environment_id: environmentId }),
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -402,15 +458,29 @@ export function deleteEnvironment(id: string): Promise<void> {
   });
 }
 
+/** Longest note the API accepts (`SetCanonicalRequest.note`, max_length=500). */
+export const CANONICAL_NOTE_MAX_LEN = 500;
+
+/**
+ * Designate a machine as canonical, optionally recording WHY.
+ *
+ * `note` is stored on the audit row and rendered by `CanonicalHistoryPanel`.
+ * A blank note is sent as `null`, never `""` — the server validator enforces
+ * the same rule, so "has a note" stays a truthiness check for every reader.
+ */
 export function setCanonicalMachine(
   environmentId: string,
-  machineId: string
+  machineId: string,
+  note?: string | null
 ): Promise<Environment> {
   return request<Environment>(
     `/environments/${encodeURIComponent(environmentId)}/canonical`,
     {
       method: "PUT",
-      body: JSON.stringify({ machine_id: machineId }),
+      body: JSON.stringify({
+        machine_id: machineId,
+        note: note?.trim() || null,
+      }),
     }
   );
 }
@@ -435,5 +505,79 @@ export function getMachineDrift(
     `/environments/${encodeURIComponent(
       environmentId
     )}/drift/${encodeURIComponent(machineId)}`
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Config history
+// ---------------------------------------------------------------------------
+
+/** A machine's capture timeline for an environment, newest first (metadata only). */
+export function getConfigHistory(
+  environmentId: string,
+  machineId: string,
+  limit = 50,
+  offset = 0
+): Promise<ConfigHistoryEntry[]> {
+  const params = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  });
+  return request<ConfigHistoryEntry[]>(
+    `/environments/${encodeURIComponent(
+      environmentId
+    )}/machines/${encodeURIComponent(machineId)}/config-history?${params}`
+  );
+}
+
+/** Diff two captures of the same machine (what changed going from → to). */
+export function getConfigHistoryDiff(
+  environmentId: string,
+  machineId: string,
+  fromId: string,
+  toId: string
+): Promise<ConfigHistoryDiff> {
+  const params = new URLSearchParams({ from_id: fromId, to_id: toId });
+  return request<ConfigHistoryDiff>(
+    `/environments/${encodeURIComponent(
+      environmentId
+    )}/machines/${encodeURIComponent(machineId)}/config-history/diff?${params}`
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Canonical-designation audit trail
+// ---------------------------------------------------------------------------
+
+/**
+ * Rows per canonical-history page. Shared with the panel (and its test) so the
+ * "a full page means older rows exist" inference can never be made against a
+ * page size the request did not actually use.
+ */
+export const CANONICAL_HISTORY_PAGE_SIZE = 50;
+
+/**
+ * One page of the environment's canonical-designation changes, newest first.
+ *
+ * An EMPTY first page is the correct, expected state until the next
+ * designation — the audit only records changes made after the audit log
+ * shipped. Callers must render an explicit empty state, never an error.
+ *
+ * Paged like `getConfigHistory`: a full page means older changes may exist,
+ * fetched by advancing `offset`.
+ */
+export function getCanonicalHistory(
+  environmentId: string,
+  limit = CANONICAL_HISTORY_PAGE_SIZE,
+  offset = 0
+): Promise<CanonicalChange[]> {
+  const params = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  });
+  return request<CanonicalChange[]>(
+    `/environments/${encodeURIComponent(
+      environmentId
+    )}/canonical-history?${params}`
   );
 }

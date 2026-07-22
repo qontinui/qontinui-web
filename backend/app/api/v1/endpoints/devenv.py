@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_active_user_async
@@ -32,6 +32,7 @@ from app.models.user import User
 from app.repositories.devenv import (
     application_repo,
     canonical_log_repo,
+    config_history_repo,
     config_repo,
     environment_repo,
     machine_repo,
@@ -41,6 +42,8 @@ from app.schemas.devenv import (
     ApplicationResponse,
     ApplicationUpdate,
     CanonicalChangeResponse,
+    ConfigHistoryDiffResponse,
+    ConfigHistoryEntry,
     DispatchEnrollRequest,
     DispatchEnrollResponse,
     EnvironmentCreate,
@@ -585,9 +588,11 @@ async def set_canonical_machine(
     Validates the machine is owned by the caller AND has reported a config
     row for this environment (a machine with no config can't be a useful
     source of truth). Atomic single-column update, plus an append to the
-    ``canonical_change_log`` audit trail (who/when/from->to) — the team-sync
-    model requires every canonical change to be attributable. A no-op change
-    (re-designating the machine that is already canonical) is not recorded.
+    ``canonical_change_log`` audit trail (who/when/from->to, plus the
+    optional ``note`` explaining why) — the team-sync model requires every
+    canonical change to be attributable. A no-op change (re-designating the
+    machine that is already canonical) is not recorded, and neither is its
+    note: there is no change for it to annotate.
     """
     env = await environment_repo.get(
         db, owner_id=current_user.id, env_id=environment_id
@@ -620,6 +625,7 @@ async def set_canonical_machine(
             to_machine_id=payload.machine_id,
             changed_by_user_id=current_user.id,
             tenant_id=_best_effort_tenant_id(request),
+            note=payload.note,
         )
     await db.commit()
     return EnvironmentResponse.model_validate(env)
@@ -631,13 +637,23 @@ async def set_canonical_machine(
 )
 async def get_canonical_history(
     environment_id: UUID,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_active_user_async),
 ) -> list[CanonicalChangeResponse]:
     """List the environment's canonical-designation changes, newest first.
 
-    Answers "who made this the canonical environment, and when." Owner-scoped
-    like every other route here (cross-owner env id -> 404).
+    Answers "who made this the canonical environment, when, and why."
+    Owner-scoped like every other route here (cross-owner env id -> 404).
+
+    Paged with the same ``limit``/``offset`` contract as the config-history
+    timeline, so a client can page BACK through an audit trail longer than one
+    page instead of silently presenting the first page as the whole history.
+
+    Display names (actor email, from/to machine names) are resolved by the
+    repository in the same query; each is ``None`` when the referenced row is
+    gone, which is expected — the audit outlives machine/user deletion.
     """
     env = await environment_repo.get(
         db, owner_id=current_user.id, env_id=environment_id
@@ -645,9 +661,18 @@ async def get_canonical_history(
     if env is None:
         raise _not_found("environment")
     rows = await canonical_log_repo.list_for_environment(
-        db, environment_id=environment_id
+        db, environment_id=environment_id, limit=limit, offset=offset
     )
-    return [CanonicalChangeResponse.model_validate(r) for r in rows]
+    return [
+        CanonicalChangeResponse.model_validate(r.log).model_copy(
+            update={
+                "changed_by_email": r.changed_by_email,
+                "from_machine_name": r.from_machine_name,
+                "to_machine_name": r.to_machine_name,
+            }
+        )
+        for r in rows
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -778,4 +803,106 @@ async def get_machine_drift(
         env=env,
         canonical_config=canonical_config,
         target_machine=target_machine,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Config history (P2 — drift over time)
+# ---------------------------------------------------------------------------
+
+
+async def _resolve_env_machine_or_404(
+    db: AsyncSession, *, owner_id: UUID, environment_id: UUID, machine_id: UUID
+) -> tuple[Environment, Machine]:
+    """Resolve an owned (environment, machine) pair, 404-ing like siblings."""
+    env = await environment_repo.get(db, owner_id=owner_id, env_id=environment_id)
+    if env is None:
+        raise _not_found("environment")
+    machine = await machine_repo.get(db, owner_id=owner_id, machine_id=machine_id)
+    if machine is None:
+        raise _not_found("machine")
+    return env, machine
+
+
+@router.get(
+    "/environments/{environment_id}/machines/{machine_id}/config-history",
+    response_model=list[ConfigHistoryEntry],
+)
+async def get_config_history(
+    environment_id: UUID,
+    machine_id: UUID,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user_async),
+) -> list[ConfigHistoryEntry]:
+    """A machine's config-capture timeline for an environment, newest first.
+
+    Metadata only (no config bodies) — a long timeline stays a small payload.
+    Owner-scoped like every sibling route (cross-owner env/machine → 404).
+    Distinct-captures only: the agent write path dedups consecutive
+    identical envelopes, so each entry is an actual change point.
+    """
+    await _resolve_env_machine_or_404(
+        db,
+        owner_id=current_user.id,
+        environment_id=environment_id,
+        machine_id=machine_id,
+    )
+    rows = await config_history_repo.list_for_machine(
+        db,
+        environment_id=environment_id,
+        machine_id=machine_id,
+        limit=limit,
+        offset=offset,
+    )
+    return [ConfigHistoryEntry.model_validate(r) for r in rows]
+
+
+@router.get(
+    "/environments/{environment_id}/machines/{machine_id}/config-history/diff",
+    response_model=ConfigHistoryDiffResponse,
+)
+async def get_config_history_diff(
+    environment_id: UUID,
+    machine_id: UUID,
+    from_id: UUID = Query(),
+    to_id: UUID = Query(),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user_async),
+) -> ConfigHistoryDiffResponse:
+    """SELF-drift between two captures of the same machine over time.
+
+    Distinct from the vs-canonical drift endpoints: both envelopes belong to
+    the SAME (environment, machine), and the report reads as "what changed
+    going from ``from_id`` to ``to_id``" (``from`` fills the expected slot,
+    ``to`` the actual). A ``from_id``/``to_id`` that is missing OR belongs to
+    a different (environment, machine) pair → 404, mirroring the module's
+    never-leak-existence convention.
+    """
+    _env, machine = await _resolve_env_machine_or_404(
+        db,
+        owner_id=current_user.id,
+        environment_id=environment_id,
+        machine_id=machine_id,
+    )
+    from_row = await config_history_repo.get(
+        db, history_id=from_id, environment_id=environment_id, machine_id=machine_id
+    )
+    if from_row is None:
+        raise _not_found("config_history_entry")
+    to_row = await config_history_repo.get(
+        db, history_id=to_id, environment_id=environment_id, machine_id=machine_id
+    )
+    if to_row is None:
+        raise _not_found("config_history_entry")
+
+    report = devenv_drift.diff_envelopes(from_row.config, to_row.config)
+    report = _attach_machine_identity(report, machine)
+    return ConfigHistoryDiffResponse(
+        **report.model_dump(),
+        from_id=from_row.id,
+        to_id=to_row.id,
+        from_captured_at=from_row.captured_at,
+        to_captured_at=to_row.captured_at,
     )

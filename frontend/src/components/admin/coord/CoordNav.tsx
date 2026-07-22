@@ -51,6 +51,7 @@ import {
   Inbox,
   KeyRound,
   NotebookText,
+  Package,
   Plug,
   Rocket,
   Scale,
@@ -234,6 +235,12 @@ const GROUPS: NavGroup[] = [
         label: "Deploys",
         icon: Rocket,
         testId: "coord-nav-deploys",
+      },
+      {
+        href: "/admin/coord/releases",
+        label: "Releases",
+        icon: Package,
+        testId: "coord-nav-releases",
       },
       {
         href: "/admin/coord/git-ops",

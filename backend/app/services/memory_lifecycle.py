@@ -14,14 +14,15 @@ unit-testable in isolation (see ``tests/test_memory_lifecycle.py``):
   pairs the pgvector self-join returns.
 * :func:`greedy_clusters` — the episode-cluster builder feeding
   synthesis (seed = oldest unclustered, members by cosine similarity).
-* :func:`member_set_hash` — the order-independent dedupe key for a
-  cluster's member set. Synthesis is no longer performed in-process:
-  this backend ships no LLM client, so consolidation now ENQUEUES a
-  ``coord.memory_synthesis_jobs`` row per cluster (see
-  ``memory_store.enqueue_synthesis_jobs``) for a runner to synthesize
-  with its own warm LLM and post the result back. ``member_set_hash``
-  is the stable key that keeps a cluster from being enqueued twice while
-  a job for it is still pending/claimed/done.
+* :func:`job_input_hash` — the order-independent dedupe key for a
+  ``coord.memory_jobs`` row's input set. Neither synthesis nor embedding
+  is performed in-process: this backend ships no LLM client and (as of
+  ``2026-07-13-runner-paid-embedding``) loads no embedding model on any
+  live path, so the sweeps ENQUEUE (see ``memory_store.enqueue_jobs``)
+  for a runner to compute and post back. ``job_input_hash`` is the stable
+  key that keeps the same work from being enqueued twice while a job for
+  it is still pending/claimed/done — which is what makes the 15-minute
+  bridge and daily reindex cadences idempotent rather than accumulating.
 """
 
 from __future__ import annotations
@@ -69,11 +70,18 @@ NEAR_DUP_WINDOW_DAYS = 90
 # Max near-dup pairs considered per consolidation run per tenant.
 NEAR_DUP_PAIR_LIMIT = 500
 
-# Cosine similarity for episode-cluster membership.
-CLUSTER_SIMILARITY = 0.80
+# Cosine similarity for episode-cluster membership (seed-radius: a member is
+# any row within this cosine of the seed). 0.80 was too tight for a single
+# sparse tenant — no 5 rows sat within 0.80 of a common seed, so synthesis
+# never fired. 0.75 is still "clearly related" for MiniLM-L6 (unrelated pairs
+# sit ~0.3-0.5). See plan 2026-07-21-tenant-memory-synthesis-clustering-tune.
+CLUSTER_SIMILARITY = 0.75
 
-# Minimum members for a cluster to be synthesized.
-CLUSTER_MIN_SIZE = 5
+# Minimum members for a cluster to be synthesized. Lowered 5 -> 3: a synthesized
+# mental_model from 3 related episodes is meaningful, and 5 was unreachable at
+# realistic single-tenant episode volumes (kept above the hard floor
+# _MIN_SYNTHESIS_CLUSTER=2 so a 2-row "cluster" is still not distilled).
+CLUSTER_MIN_SIZE = 3
 
 # Max candidate rows pulled per tenant per synthesis run.
 CLUSTER_CANDIDATE_LIMIT = 1000
@@ -242,15 +250,27 @@ def greedy_clusters(
 # ---------------------------------------------------------------------------
 
 
-def member_set_hash(member_ids: list[UUID]) -> str:
-    """Stable, order-independent hash of a cluster's member set.
+def job_input_hash(target_ids: list[UUID], *, model_tag: str | None = None) -> str:
+    """Stable, order-independent hash of a job's input set.
 
-    Used as the ``coord.memory_synthesis_jobs.member_set_hash`` dedupe
-    key: the same set of member ids always hashes identically regardless
-    of order, so a cluster with a live (pending/claimed/done) job is
-    never enqueued twice. sha256 hex over the comma-joined sorted ids.
+    The ``coord.memory_jobs.input_hash`` dedupe key: the same set of
+    target ids always hashes identically regardless of order, so a job
+    whose inputs already have a live (pending/claimed/done) job is never
+    enqueued twice. sha256 hex over the comma-joined sorted ids.
+
+    ``model_tag`` (embedding jobs) is folded in so that a DEPLOYED-TAG
+    CHANGE re-opens the same rows for a fresh job. Without it, the
+    live-status dedupe spans ``done`` — so once a row set had been
+    embedded under the old tag, the reindex sweep could never enqueue
+    those same rows again under the new one, and the tag-drift class the
+    sweep exists to heal would be permanently unhealable. Synthesis
+    passes no tag, which keeps its hash byte-identical to the
+    pre-generalization ``member_set_hash`` — the values migrated across
+    from ``member_set_hash`` stay valid rather than silently missing.
     """
-    joined = ",".join(sorted(str(m) for m in member_ids))
+    joined = ",".join(sorted(str(m) for m in target_ids))
+    if model_tag is not None:
+        joined = f"{joined}|{model_tag}"
     return hashlib.sha256(joined.encode("utf-8")).hexdigest()
 
 

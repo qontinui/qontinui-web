@@ -18,7 +18,7 @@ import contextvars
 import json
 import re
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import quote
 from uuid import UUID
 
@@ -780,6 +780,15 @@ async def get_merge_proposal(
 
 @router.get("/pr-merge/prs")
 async def get_pr_merge_prs(
+    include_merged: int = Query(
+        default=0,
+        ge=0,
+        le=24 * 30,
+        description="When >0, ask coord to ALSO return PRs merged within the "
+        "last N hours (each carrying the merge stamp + per-PR deploy_state), "
+        "not just open ones. 0 (default) preserves the open-PRs-only "
+        "behavior. Backs the fleet pipeline's 'Merged' tab.",
+    ),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """PR Merge Orchestrator Phase 1 D1.6 + D1.7 -- proxy coord's
@@ -789,8 +798,51 @@ async def get_pr_merge_prs(
     Fleet-wide. Forwards the operator bearer so coord requires an
     authenticated operator — retires the pilot-anonymous posture
     (operator decision 2026-05-31), mirroring ``/merge/queue``.
+
+    ``include_merged`` is forwarded ONLY when set, so the default request is
+    byte-for-byte the legacy call (same convention as ``/admin-dev/prs``).
+    coord's response is returned verbatim — no field whitelist — so the
+    merged-row enrichment passes through unchanged.
     """
-    return await _proxy_coord_get("/pr-merge/prs", tenant_id=tenant_id)
+    params = {"include_merged": include_merged} if include_merged > 0 else None
+    return await _proxy_coord_get("/pr-merge/prs", params=params, tenant_id=tenant_id)
+
+
+# Coord path for the CI-duration-aware severity economics read
+# (``coord_query_merge_economics``). Isolated as a one-line constant because
+# the read is being added on the coord side in parallel — if coord lands it
+# under a different path (e.g. ``/pr-merge/economics``), fix it here only.
+_COORD_MERGE_ECONOMICS_PATH = "/pr-merge/merge-economics"
+
+
+@router.get("/pr-merge/merge-economics")
+async def get_pr_merge_merge_economics(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Per-repo merge economics for the fleet page's CI-duration-aware PR
+    severity model (plan 2026-07-17-fleet-ci-duration-aware-severity).
+
+    Proxies coord's NEW ``coord_query_merge_economics`` read
+    (``_COORD_MERGE_ECONOMICS_PATH``): per-repo candidate-CI p90, land rate,
+    a suggested stuck-threshold, queue depth, and per-open-PR already-landed
+    flags. The fleet page uses candidate-CI duration + queue proximity to
+    decide whether a merge conflict is "act now" (RED) or "resolve
+    just-before-merge" (AMBER).
+
+    GRACEFUL FALLBACK (required): this coord read may not be deployed yet, so a
+    404 — or a transient coord outage (502/503/504) — degrades to an empty
+    ``{}`` rather than erroring. The frontend then falls back to its hardcoded
+    thresholds + repo-name hint, so the page works today and simply gets more
+    precise once the read is live. Fleet-wide; ``tenant_id`` is resolved only
+    to forward the operator bearer (same posture as ``/merge/queue`` and
+    ``/pr-merge/prs``).
+    """
+    try:
+        return await _proxy_coord_get(_COORD_MERGE_ECONOMICS_PATH, tenant_id=tenant_id)
+    except HTTPException as exc:
+        if exc.status_code in (404, 502, 503, 504):
+            return {}
+        raise
 
 
 @router.get("/pr-merge/prs/{repo:path}/{pr_number}/checks")
@@ -1019,6 +1071,227 @@ async def post_github_clone_credential(
     except ValueError:
         content = {"detail": resp.text}
     return JSONResponse(content=content, status_code=resp.status_code)
+
+
+# ---- GitHub repo provisioning (new-project initiation) ---------------------
+#
+# Five thin proxies backing the runner's "start a new project" flow (plan
+# ``new-project-initiation-2026-07-18``, PR-C). Coord owns the GitHub App
+# credentials and performs the actual GitHub API calls; these routes only
+# authenticate the operator (``get_tenant_id`` → bearer forwarded via
+# ``_tenant_headers``) and pass coord's status code + JSON body through
+# VERBATIM — like the clone-credential proxy above — because the runner
+# branches on coord's ``error`` strings (``name_taken``, ``owner_unbound``,
+# ``user_authorization_required`` with its ``authorize_url``,
+# ``app_unconfigured``). Collapsing a coord 4xx into an ``HTTPException``
+# ``detail`` string would break that dispatch.
+
+
+async def _proxy_coord_verbatim(
+    method: str,
+    path: str,
+    *,
+    tenant_id: UUID,
+    params: dict[str, Any] | None = None,
+    json_body: dict[str, Any] | None = None,
+) -> JSONResponse:
+    """Forward a request to coord, passing status + JSON body through verbatim.
+
+    The shared transport for the repo-provisioning proxies below (the same
+    posture ``post_github_clone_credential`` and the onboarding claim proxy
+    open-code): operator bearer forwarded via ``_tenant_headers``, httpx
+    transport errors mapped like the raising helpers (ConnectError → 502,
+    TimeoutException → 504), and coord's response — success OR error —
+    echoed to the caller with its original status code and JSON body. A
+    non-JSON coord payload is wrapped as ``{"detail": <text>}``.
+    """
+    url = f"{settings.COORD_URL}{path}"
+    headers = _tenant_headers(tenant_id)
+    async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
+        try:
+            resp = await client.request(
+                method, url, params=params, json=json_body, headers=headers
+            )
+        except httpx.ConnectError:
+            raise HTTPException(status_code=502, detail="coord is not reachable")
+        except httpx.TimeoutException:
+            raise HTTPException(status_code=504, detail="timeout waiting for coord")
+    try:
+        content = resp.json()
+    except ValueError:
+        content = {"detail": resp.text}
+    return JSONResponse(content=content, status_code=resp.status_code)
+
+
+class RepoNameCheckRequest(BaseModel):
+    """Body for ``POST /operations/github/check-name`` — the GitHub account
+    login and the candidate repository name to check."""
+
+    owner: str
+    name: str
+
+
+class RepoNameCheckResponse(BaseModel):
+    """Success body for ``POST /operations/github/check-name`` (forwarded
+    verbatim from coord's ``GET /coord/repos/availability``)."""
+
+    status: Literal["available", "taken", "invalid", "owner_unbound"]
+    reason: str | None = None
+    normalized_name: str
+
+
+class RepoCreateRequest(BaseModel):
+    """Body for ``POST /operations/github/create-repo``."""
+
+    owner: str
+    name: str
+    private: bool = True
+    description: str | None = None
+
+
+class RepoCreateResponse(BaseModel):
+    """201 body for ``POST /operations/github/create-repo`` (forwarded
+    verbatim from coord's ``POST /coord/repos``)."""
+
+    full_name: str
+    clone_url: str
+    html_url: str
+    default_branch: str
+
+
+class RepoRefRequest(BaseModel):
+    """Body naming an existing repo by ``owner`` + ``name`` — shared by the
+    push-credential and enroll-repo proxies."""
+
+    owner: str
+    name: str
+
+
+class RepoPushCredentialResponse(BaseModel):
+    """Success body for ``POST /operations/github/push-credential`` — a
+    short-TTL installation token scoped to one repo."""
+
+    token: str
+    expires_at: str
+
+
+class GithubOauthStatusResponse(BaseModel):
+    """Success body for ``GET /operations/github/oauth-status``."""
+
+    authorized: bool
+    authorize_url: str | None = None
+
+
+@router.post("/github/check-name", response_model=RepoNameCheckResponse)
+async def post_github_check_name(
+    body: RepoNameCheckRequest,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Check whether ``owner/name`` is available for a new repository.
+
+    Proxies coord ``GET /coord/repos/availability?owner=&name=`` and forwards
+    the JSON verbatim: ``{status: "available"|"taken"|"invalid"|
+    "owner_unbound", reason?, normalized_name}``. POST (despite the read
+    semantics) so the runner's provisioning flow talks one verb to this
+    surface; the upstream coord call is the GET.
+    """
+    return await _proxy_coord_verbatim(
+        "GET",
+        "/coord/repos/availability",
+        params={"owner": body.owner, "name": body.name},
+        tenant_id=tenant_id,
+    )
+
+
+@router.post("/github/create-repo", response_model=RepoCreateResponse)
+async def post_github_create_repo(
+    body: RepoCreateRequest,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Create a new GitHub repository under a connected account.
+
+    Proxies coord ``POST /coord/repos``. Success is coord's ``201
+    {full_name, clone_url, html_url, default_branch}``; coord's error
+    statuses + bodies pass through VERBATIM — ``409 name_taken``,
+    ``403 owner_unbound``, ``409 user_authorization_required`` (whose body
+    carries the ``authorize_url`` the runner must surface), and
+    ``503 app_unconfigured``.
+
+    ``description`` is omitted from the forwarded body when unset so coord
+    sees an honest wire shape (mirrors the onboarding claim proxy).
+    """
+    payload: dict[str, Any] = {
+        "owner": body.owner,
+        "name": body.name,
+        "private": body.private,
+    }
+    if body.description is not None:
+        payload["description"] = body.description
+    return await _proxy_coord_verbatim(
+        "POST",
+        "/coord/repos",
+        json_body=payload,
+        tenant_id=tenant_id,
+    )
+
+
+@router.post("/github/push-credential", response_model=RepoPushCredentialResponse)
+async def post_github_push_credential(
+    body: RepoRefRequest,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Mint a repo-scoped, short-TTL push token for ``owner/name``.
+
+    Proxies coord ``POST /coord/repos/{owner}/{name}/push-credential`` →
+    ``{token, expires_at}``. The write-scoped sibling of the contents:read
+    clone-credential proxy above; coord enforces that the repo's owner is
+    bound to the caller's tenant.
+    """
+    return await _proxy_coord_verbatim(
+        "POST",
+        f"/coord/repos/{quote(body.owner, safe='')}"
+        f"/{quote(body.name, safe='')}/push-credential",
+        json_body={},
+        tenant_id=tenant_id,
+    )
+
+
+@router.post("/github/enroll-repo")
+async def post_github_enroll_repo(
+    body: RepoRefRequest,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Enroll ``owner/name`` into coord's PR-merge orchestration.
+
+    Proxies coord ``POST /coord/repos/{owner}/{name}/enroll`` and forwards
+    coord's response verbatim (status + body).
+    """
+    return await _proxy_coord_verbatim(
+        "POST",
+        f"/coord/repos/{quote(body.owner, safe='')}/{quote(body.name, safe='')}/enroll",
+        json_body={},
+        tenant_id=tenant_id,
+    )
+
+
+@router.get("/github/oauth-status", response_model=GithubOauthStatusResponse)
+async def get_github_oauth_status(
+    owner: str = Query(..., description="GitHub account login to check."),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Whether the calling operator has user-authorized the GitHub App for
+    ``owner``, for the create-repo pre-flight.
+
+    Proxies coord ``GET /coord/github/oauth/status?account=<owner>`` →
+    ``{authorized, authorize_url?}`` (``authorize_url`` present when the
+    operator still needs to complete the user-authorization flow).
+    """
+    return await _proxy_coord_verbatim(
+        "GET",
+        "/coord/github/oauth/status",
+        params={"account": owner},
+        tenant_id=tenant_id,
+    )
 
 
 @router.get("/pr-merge/repos/{repo:path}/profile")
@@ -1687,12 +1960,20 @@ async def _proxy_coord_post(
     body: Any,
     *,
     tenant_id: UUID | None = None,
+    forward_bearer: bool = False,
     timeout: httpx.Timeout | None = None,
     return_status: bool = False,
 ) -> Any:
     """Proxy a POST request to coord and return the JSON body.
 
     ``tenant_id`` — see ``_proxy_coord_get``.
+    ``forward_bearer`` — forward the captured caller bearer EVEN WHEN
+    ``tenant_id is None`` (mirrors ``_proxy_coord_get``). A fleet-wide
+    mutation that must forward the operator bearer without resolving a
+    tenant (e.g. ``/admin-dev/gates/doctor/sweep`` → coord's admin-role
+    gate-doctor sweep) sets this True so coord authorizes on the
+    operator's real identity. Default False preserves the prior behavior
+    exactly: no bearer is forwarded unless a tenant was resolved.
     ``timeout`` — optional per-route override. Defaults to ``_COORD_TIMEOUT``
     (5s) which is appropriate for short JSON-from-PG endpoints. Endpoints
     that dispatch device-side work (e.g., onboarding audit) must pass an
@@ -1706,7 +1987,9 @@ async def _proxy_coord_post(
     the prior behavior exactly (returns just the JSON body).
     """
     url = f"{settings.COORD_URL}{path}"
-    headers = _tenant_headers(tenant_id) if tenant_id is not None else None
+    headers = (
+        _tenant_headers(tenant_id) if tenant_id is not None or forward_bearer else None
+    )
     async with httpx.AsyncClient(timeout=timeout or _COORD_TIMEOUT) as client:
         try:
             resp = await client.post(url, json=body, headers=headers)
@@ -1969,6 +2252,84 @@ async def snooze_gate(
         snooze_body["until"] = until
     return await _proxy_coord_post(
         f"/coord/gates/{gate_id}/snooze", snooze_body, tenant_id=tenant_id
+    )
+
+
+# Force-clear / continuation-cancel / audience are the operator-console gate
+# management verbs (admin gates dashboard, `/admin/coord/gates`). They mirror
+# the approve/reject/mute/snooze proxies' shape exactly: operator bearer +
+# tenant-switcher selection forwarded via `require_coord_tenant_admin` →
+# `tenant_id=` (fleet-auth P2/D6), tenant derived server-side by coord's
+# `TenantId` extractor from that bearer — NEVER a client-supplied tenant_id.
+# The coord routes (`POST /coord/gates/{id}/force-clear`·`/continuation-cancel`,
+# `PATCH /coord/gates/{id}/audience`) already exist on coord main; proxying to a
+# not-yet-deployed route is fine either way — the upstream error passes through.
+
+
+@router.post("/gates/{gate_id}/force-clear")
+async def force_clear_gate(
+    gate_id: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Force-clear a gate regardless of its predicate (DESTRUCTIVE — clears an
+    open gate that has NOT met its condition; operator bearer forwarded,
+    fleet-auth P2/D6).
+
+    ``body["reason"]`` is REQUIRED by coord (the audit records why the operator
+    overrode the predicate). It is forwarded verbatim; coord owns validation and
+    rejects an empty/absent reason."""
+    clear_body: dict[str, Any] = {}
+    reason = body.get("reason")
+    if reason is not None:
+        clear_body["reason"] = reason
+    return await _proxy_coord_post(
+        f"/coord/gates/{gate_id}/force-clear", clear_body, tenant_id=tenant_id
+    )
+
+
+@router.post("/gates/{gate_id}/continuation-cancel")
+async def continuation_cancel_gate(
+    gate_id: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Cancel a gate's armed/dispatched continuation so clearing it no longer
+    spawns the follow-up session (operator bearer forwarded, fleet-auth P2/D6).
+
+    ``body["cancelled_by"]`` (audit actor) and ``body["reason"]`` are forwarded
+    verbatim; coord owns validation."""
+    cancel_body: dict[str, Any] = {}
+    cancelled_by = body.get("cancelled_by")
+    if cancelled_by is not None:
+        cancel_body["cancelled_by"] = cancelled_by
+    reason = body.get("reason")
+    if reason is not None:
+        cancel_body["reason"] = reason
+    return await _proxy_coord_post(
+        f"/coord/gates/{gate_id}/continuation-cancel",
+        cancel_body,
+        tenant_id=tenant_id,
+    )
+
+
+@router.patch("/gates/{gate_id}/audience")
+async def set_gate_audience(
+    gate_id: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Re-classify a gate's ``clearance_audience`` (``operator`` vs ``agent``;
+    operator bearer forwarded, fleet-auth P2/D6).
+
+    ``body["audience"]`` is forwarded verbatim; coord owns validation of the
+    allowed values."""
+    audience_body: dict[str, Any] = {}
+    audience = body.get("audience")
+    if audience is not None:
+        audience_body["audience"] = audience
+    return await _proxy_coord_patch(
+        f"/coord/gates/{gate_id}/audience", audience_body, tenant_id=tenant_id
     )
 
 
@@ -2362,25 +2723,45 @@ async def get_fleet_health(
 
 @router.get("/agent-questions/pending")
 async def get_pending_agent_questions(
+    gap: bool | None = Query(default=None),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
-    """Return pending agent questions awaiting an operator response."""
-    return await _proxy_coord_get("/coord/agent-questions/pending", tenant_id=tenant_id)
+    """Return pending agent questions awaiting an operator response.
+
+    ``gap`` (Phase 3 of plan 2026-07-18-policy-clause-schema-web-data-model):
+    when set, forwarded to coord as the POLICY_GAP filter —
+    ``gap=true`` returns only gap-marked rows, ``gap=false`` only non-gap rows.
+    Backs the Gaps tab on the questions inbox.
+    """
+    params: dict[str, Any] = {}
+    if gap is not None:
+        params["gap"] = gap
+    return await _proxy_coord_get(
+        "/coord/agent-questions/pending",
+        params=params or None,
+        tenant_id=tenant_id,
+    )
 
 
 @router.get("/agent-questions/answered")
 async def get_answered_agent_questions(
     limit: int | None = Query(default=None, ge=1, le=500),
+    gap: bool | None = Query(default=None),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Return recently-answered agent questions.
 
     Wave 3a — surfaces the "answered" tab on the questions inbox so
     operators can audit prior decisions without leaving the page.
+
+    ``gap`` (Phase 3): forwarded to coord as the POLICY_GAP filter so the
+    Gaps tab can list pre-answered (non-blocking) gap reports.
     """
     params: dict[str, Any] = {}
     if limit is not None:
         params["limit"] = limit
+    if gap is not None:
+        params["gap"] = gap
     return await _proxy_coord_get(
         "/coord/agent-questions/answered",
         params=params or None,
@@ -2973,6 +3354,79 @@ async def get_deploy_rollback_proposal(
     return await _proxy_coord_get(
         f"/coord/deploys/{deploy_id}/rollback-proposal", tenant_id=tenant_id
     )
+
+
+# ---- Release (Ξ_Release / GitHub-Releases) surface proxy -----------------
+#
+# Plan `twin-runner-release-surface` Phase 2 — the `/admin/coord/releases`
+# operator dashboard backend. Two read-only proxies over coord's release
+# HISTORY surface, the runner-publishing (GitHub Releases) surface of the
+# existing Ξ_Release sub-space (siblings of ECS/Vercel/npm):
+#
+# - `/operations/releases`        → coord `/coord/twin/release/history`
+# - `/operations/releases/{tag}`  → the same list, filtered to one tag
+#
+# Release observations are produced entirely server-side by coord's release
+# observer (GitHub `release`/`workflow_run` webhooks + poll); these proxies
+# only serve the dashboard read path. The operator bearer is forwarded (via
+# `_proxy_coord_get`'s `tenant_id` → `_tenant_headers`) so coord requires an
+# authenticated operator, mirroring the deploys/lands posture above. Coord's
+# `502 release_history_read_failed` passes straight through `_proxy_coord_get`
+# so the dashboard can render it as an inline message.
+#
+# Coord returns the full history list (no single-tag route), so `/{tag}`
+# filters server-side. Repo defaulting also lives coord-side
+# (`qontinui/qontinui-runner`); `repo` is forwarded only when the caller sets
+# it, keeping the multi-repo config list authoritative in coord.
+
+
+@router.get("/releases")
+async def get_releases(
+    repo: str | None = None,
+    limit: int = Query(default=100, ge=1, le=500),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """List recent runner release observations (newest-first) from coord.
+
+    Proxies coord ``GET /coord/twin/release/history``. ``repo`` (``owner/name``;
+    default coord's ``qontinui/qontinui-runner``) selects the observed surface;
+    ``limit`` (1–500, coord-clamped too) caps the history window. Returns
+    coord's ``{surface, repo, target, count, history:[...]}`` envelope
+    verbatim."""
+    params: dict[str, str] = {"limit": str(limit)}
+    if repo:
+        params["repo"] = repo
+    return await _proxy_coord_get(
+        "/coord/twin/release/history", tenant_id=tenant_id, params=params
+    )
+
+
+@router.get("/releases/{tag}")
+async def get_release(
+    tag: str,
+    repo: str | None = None,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return the single release observation matching ``tag``.
+
+    Coord's history endpoint returns the full list (it has no single-tag
+    route), so this fetches the list and filters server-side — matching ``tag``
+    against each entry's ``tag`` / ``version`` / ``published_tag``. The window
+    is fetched at coord's max (500) so a tag is not missed behind the default
+    page. Raises ``404 release_tag_not_found`` when no entry matches."""
+    params: dict[str, str] = {"limit": "500"}
+    if repo:
+        params["repo"] = repo
+    body = await _proxy_coord_get(
+        "/coord/twin/release/history", tenant_id=tenant_id, params=params
+    )
+    history = body.get("history", []) if isinstance(body, dict) else []
+    for entry in history:
+        if not isinstance(entry, dict):
+            continue
+        if tag in (entry.get("tag"), entry.get("version"), entry.get("published_tag")):
+            return entry
+    raise HTTPException(status_code=404, detail="release_tag_not_found")
 
 
 # ---- Symbol-claims surface (Phase 4.4) ----------------------------------
@@ -4735,6 +5189,32 @@ async def update_prompt_document(
     )
 
 
+@router.post("/coord/prompt-documents/{kind}")
+async def create_prompt_document(
+    kind: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> JSONResponse:
+    """Create a new hand-authored prompt document under ``kind``. Tenant-admin only.
+
+    The body is forwarded as ``{name, description?, body, format?}`` with
+    ``updated_by`` stamped from the authenticated session (see
+    :func:`_editor_identity`) — a body-supplied ``updated_by`` is ignored, so the
+    version-1 snapshot coord writes carries the real author. Coord validates the
+    kebab-case ``name`` and non-empty ``body`` (its 400 passes through) and
+    answers 409 when ``(tenant, kind, name)`` already exists; coord's 201 status
+    is echoed to the browser verbatim.
+    """
+    coord_body, status_code = await _proxy_coord_post(
+        f"/coord/prompt-documents/{kind}",
+        {**body, "updated_by": _editor_identity(current_user)},
+        tenant_id=tenant_id,
+        return_status=True,
+    )
+    return JSONResponse(content=coord_body, status_code=status_code)
+
+
 @router.get("/coord/prompt-documents/{kind}/{name}/versions")
 async def list_prompt_document_versions(
     kind: str,
@@ -4779,6 +5259,124 @@ async def restore_prompt_document_default(
     return await _proxy_coord_post(
         f"/coord/prompt-documents/{kind}/{name}/restore-default",
         {},
+        tenant_id=tenant_id,
+    )
+
+
+# Structured policy clauses (plan
+# ``2026-07-18-policy-clause-schema-web-data-model.md`` Phase 2).
+#
+# A ``policy`` prompt document can additionally be edited as a list of structured
+# clauses (``coord.policy_clauses`` — one row per clause, ordered by ``position``)
+# rather than as a single prose blob. Coord owns validation (kebab-case
+# ``clause_id``, status/tier enums, ``category == name``, UNIQUE ``clause_id`` per
+# doc → 409) and the seed importer that parses clause blocks out of the doc body.
+#
+# These proxy the coord clause routes under
+# ``/coord/prompt-documents/:kind/:name/clauses`` verbatim, mirroring the
+# READ/WRITE auth split of the prompt-document proxies above: GET reads gate on
+# tenant MEMBERSHIP (``get_tenant_id``); every mutating route gates on
+# ``require_coord_tenant_admin`` (coord re-checks admin on every write). Coord's
+# 4xx bodies (kebab-case violation, bad enum, ``category != name``, UNIQUE 409,
+# unknown clause 404) pass through verbatim via the ``_proxy_coord_*`` helpers.
+# ``kind`` must be ``policy``; coord returns its own 400 for any other kind.
+
+
+@router.get("/coord/prompt-documents/{kind}/{name}/clauses")
+async def list_prompt_document_clauses(
+    kind: str,
+    name: str,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """List the structured clauses of a policy document, ordered by ``position``.
+    Any authenticated tenant member."""
+    return await _proxy_coord_get(
+        f"/coord/prompt-documents/{kind}/{name}/clauses", tenant_id=tenant_id
+    )
+
+
+@router.post("/coord/prompt-documents/{kind}/{name}/clauses")
+async def create_prompt_document_clause(
+    kind: str,
+    name: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Create one clause on a policy document. Tenant-admin only.
+
+    Body is forwarded verbatim as the clause shape (``clause_id``, ``category``,
+    ``status``, ``tier``, ``trigger``, ``action``, ``bounds``, ``escalate_if``,
+    ``anti_triggers``, ``depends_on``, ``links``, …). Coord validates kebab-case
+    ``clause_id``, the status/tier enums, and ``category == name``, and returns a
+    409 on a duplicate ``clause_id`` — all passed through verbatim.
+    """
+    return await _proxy_coord_post(
+        f"/coord/prompt-documents/{kind}/{name}/clauses", body, tenant_id=tenant_id
+    )
+
+
+@router.patch("/coord/prompt-documents/{kind}/{name}/clauses/{clause_id}")
+async def update_prompt_document_clause(
+    kind: str,
+    name: str,
+    clause_id: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Partially update one clause. Tenant-admin only. Body forwarded verbatim;
+    coord validates changed fields and returns 404 for an unknown clause."""
+    return await _proxy_coord_patch(
+        f"/coord/prompt-documents/{kind}/{name}/clauses/{clause_id}",
+        body,
+        tenant_id=tenant_id,
+    )
+
+
+@router.delete("/coord/prompt-documents/{kind}/{name}/clauses/{clause_id}")
+async def delete_prompt_document_clause(
+    kind: str,
+    name: str,
+    clause_id: str,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Delete one clause. Tenant-admin only. Coord 404 for an unknown clause
+    passes through."""
+    return await _proxy_coord_delete(
+        f"/coord/prompt-documents/{kind}/{name}/clauses/{clause_id}",
+        tenant_id=tenant_id,
+    )
+
+
+@router.post("/coord/prompt-documents/{kind}/{name}/clauses/reorder")
+async def reorder_prompt_document_clauses(
+    kind: str,
+    name: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Set clause ``position`` from an ordered list of ``clause_id`` values.
+    Tenant-admin only. Body is ``{"clause_ids": [...]}`` (an ordered list),
+    forwarded verbatim."""
+    return await _proxy_coord_post(
+        f"/coord/prompt-documents/{kind}/{name}/clauses/reorder",
+        body,
+        tenant_id=tenant_id,
+    )
+
+
+@router.post("/coord/prompt-documents/{kind}/{name}/clauses/import")
+async def import_prompt_document_clauses(
+    kind: str,
+    name: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Seed the clause table for a policy document by parsing clause blocks out of
+    its body. Tenant-admin only. Body forwarded verbatim (coord's seed importer
+    reads the doc body itself); returns the created clause rows."""
+    return await _proxy_coord_post(
+        f"/coord/prompt-documents/{kind}/{name}/clauses/import",
+        body,
         tenant_id=tenant_id,
     )
 

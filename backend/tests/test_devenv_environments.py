@@ -226,6 +226,59 @@ class TestMachineKeyCrud:
             assert "1" not in code and "I" not in code
 
 
+class TestContentHash:
+    """:func:`app.repositories.devenv.compute_content_hash` — canonical JSON."""
+
+    def test_key_order_does_not_change_hash(self) -> None:
+        """The same envelope with different dict key order hashes identically."""
+        from app.repositories.devenv import compute_content_hash
+
+        a = {
+            "schema_version": 1,
+            "sections": {
+                "services": {"redis": "6379", "pg": "5432"},
+                "versions": {"python": "3.12"},
+            },
+        }
+        b = {
+            "sections": {
+                "versions": {"python": "3.12"},
+                "services": {"pg": "5432", "redis": "6379"},
+            },
+            "schema_version": 1,
+        }
+        assert compute_content_hash(a) == compute_content_hash(b)
+        # Shape sanity: sha256 hex.
+        digest = compute_content_hash(a)
+        assert len(digest) == 64
+        assert all(c in "0123456789abcdef" for c in digest)
+
+    def test_captured_at_excluded_from_hash(self) -> None:
+        """A re-capture of identical content dedups despite a moved timestamp."""
+        from app.repositories.devenv import compute_content_hash
+
+        sections = {"services": {"redis": "6379"}}
+        early = {
+            "schema_version": 1,
+            "captured_at": "2026-06-21T00:00:00Z",
+            "sections": sections,
+        }
+        late = {
+            "schema_version": 1,
+            "captured_at": "2026-06-21T00:15:00Z",
+            "sections": sections,
+        }
+        assert compute_content_hash(early) == compute_content_hash(late)
+
+    def test_content_change_changes_hash(self) -> None:
+        """A changed section value produces a different hash."""
+        from app.repositories.devenv import compute_content_hash
+
+        a = {"schema_version": 1, "sections": {"services": {"redis": "6379"}}}
+        b = {"schema_version": 1, "sections": {"services": {"redis": "6380"}}}
+        assert compute_content_hash(a) != compute_content_hash(b)
+
+
 class TestSectionPolicy:
     """:mod:`app.services.devenv_section_policy` — per-section apply policy."""
 
@@ -255,6 +308,80 @@ class TestSectionPolicy:
             "db_schema": "destructive_confirm",
             "zzz": "report_only",
         }
+
+
+class TestDerivedKeys:
+    """:mod:`app.services.devenv_section_policy` — per-KEY derived refinement."""
+
+    def test_versions_repo_derived_keys(self) -> None:
+        """Every repo-derived versions key is classified derived, incl. node_dep_*."""
+        from app.services import devenv_section_policy as sp
+
+        derived = sp.derived_keys_map(
+            {
+                "versions": {
+                    "runner_crate_version": "0.1.0",
+                    "node_package_version": "1.2.3",
+                    "node_package_name": "qontinui-runner",
+                    "python_constraint": ">=3.12",
+                    "tauri": "2.0.0",
+                    "node_dep_react": "19.0.0",
+                }
+            }
+        )
+        assert sorted(derived["versions"]) == [
+            "node_dep_react",
+            "node_package_name",
+            "node_package_version",
+            "python_constraint",
+            "runner_crate_version",
+            "tauri",
+        ]
+
+    def test_machine_facts_are_not_derived(self) -> None:
+        """node/python/rustc are shelled machine facts — they stay applyable."""
+        from app.services import devenv_section_policy as sp
+
+        derived = sp.derived_keys_map(
+            {"versions": {"node": "22.1.0", "python": "3.13", "rustc": "1.84.0"}}
+        )
+        assert derived == {"versions": []}
+
+    def test_other_sections_have_no_derived_keys(self) -> None:
+        """services/env_contract/db_schema classify to empty lists."""
+        from app.services import devenv_section_policy as sp
+
+        derived = sp.derived_keys_map(
+            {
+                "services": {"redis": "6379"},
+                "env_contract": {"DATABASE_URL": "present"},
+                "db_schema": {"alembic_head": "abc123"},
+            }
+        )
+        assert derived == {"services": [], "env_contract": [], "db_schema": []}
+
+    def test_unknown_key_is_not_derived(self) -> None:
+        """Conservative default: an unrecognized key keeps its section policy."""
+        from app.services import devenv_section_policy as sp
+
+        assert sp.is_derived_key("versions", "something_new") is False
+        assert sp.is_derived_key("services", "runner_crate_version") is False
+        assert sp.derived_keys_map({"versions": {"something_new": "x"}}) == {
+            "versions": []
+        }
+
+    def test_response_is_valid_without_derived_keys(self) -> None:
+        """Additive: a response built without the field still validates (empty)."""
+        from uuid import uuid4
+
+        from app.schemas.devenv import CanonicalConfigResponse
+
+        r = CanonicalConfigResponse(
+            environment_id=uuid4(),
+            sections={"versions": {"python": "3.13"}},
+            section_policy={"versions": "applyable"},
+        )
+        assert r.derived_keys == {}
 
 
 # ---------------------------------------------------------------------------
@@ -1002,6 +1129,220 @@ class TestCanonicalAuditAndPull:
             assert len(hist) == 2
 
     @pytest.mark.asyncio
+    async def test_canonical_note_round_trips(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """The optional "why" travels from the request into the audit row.
+
+        The column, the response field and the UI row all existed; nothing
+        could WRITE one until ``SetCanonicalRequest.note`` did.
+        """
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app) as client:
+            env_id, a_id, b_id, _, _ = await self._seed_env_two_enrolled_machines(
+                client
+            )
+            r = await client.put(
+                f"{API_PREFIX}/environments/{env_id}/canonical",
+                json={"machine_id": a_id, "note": "  a-box rebuilt on 3.12  "},
+            )
+            assert r.status_code == 200, r.text
+
+            # A note-less designation stays null (the field is optional).
+            r = await client.put(
+                f"{API_PREFIX}/environments/{env_id}/canonical",
+                json={"machine_id": b_id},
+            )
+            assert r.status_code == 200, r.text
+
+            hist = (
+                await client.get(
+                    f"{API_PREFIX}/environments/{env_id}/canonical-history"
+                )
+            ).json()
+            # Same-transaction rows tie on changed_at — key by transition.
+            notes = {h["to_machine_id"]: h["note"] for h in hist}
+            assert notes[a_id] == "a-box rebuilt on 3.12"  # trimmed
+            assert notes[b_id] is None
+
+    @pytest.mark.asyncio
+    async def test_blank_canonical_note_is_stored_as_null(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """A whitespace-only note is no note — never an empty string.
+
+        Readers test the note for truthiness (the UI renders the line only
+        when it is non-null); `""` would be a third state meaning nothing.
+        """
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app) as client:
+            env_id, a_id, _, _, _ = await self._seed_env_two_enrolled_machines(client)
+            r = await client.put(
+                f"{API_PREFIX}/environments/{env_id}/canonical",
+                json={"machine_id": a_id, "note": "   "},
+            )
+            assert r.status_code == 200, r.text
+            hist = (
+                await client.get(
+                    f"{API_PREFIX}/environments/{env_id}/canonical-history"
+                )
+            ).json()
+            assert len(hist) == 1
+            assert hist[0]["note"] is None
+
+    @pytest.mark.asyncio
+    async def test_overlong_canonical_note_is_rejected(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """The note is bounded — the audit trail is not a free-text dumping
+        ground, and the UI renders it inline."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app) as client:
+            env_id, a_id, _, _, _ = await self._seed_env_two_enrolled_machines(client)
+            r = await client.put(
+                f"{API_PREFIX}/environments/{env_id}/canonical",
+                json={"machine_id": a_id, "note": "x" * 501},
+            )
+            assert r.status_code == 422, r.text
+
+    @pytest.mark.asyncio
+    async def test_history_pages_without_gaps_or_repeats(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """limit/offset page the audit trail deterministically.
+
+        The load-bearing part is the ``id`` tiebreaker in the repository sort:
+        ``changed_at`` defaults to Postgres ``now()`` (transaction time), so
+        these three rows share a timestamp exactly. Ordering on the timestamp
+        alone would let the two pages skip or repeat a row.
+        """
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app) as client:
+            env_id, a_id, b_id, _, _ = await self._seed_env_two_enrolled_machines(
+                client
+            )
+            for machine_id in (a_id, b_id, a_id):
+                r = await client.put(
+                    f"{API_PREFIX}/environments/{env_id}/canonical",
+                    json={"machine_id": machine_id},
+                )
+                assert r.status_code == 200, r.text
+
+            async def page(limit: int, offset: int) -> list[str]:
+                r = await client.get(
+                    f"{API_PREFIX}/environments/{env_id}/canonical-history"
+                    f"?limit={limit}&offset={offset}"
+                )
+                assert r.status_code == 200, r.text
+                return [h["id"] for h in r.json()]
+
+            first, second = await page(2, 0), await page(2, 2)
+            assert len(first) == 2
+            assert len(second) == 1
+            # Disjoint, and together the whole history.
+            assert set(first).isdisjoint(second)
+            assert set(first) | set(second) == set(await page(50, 0))
+
+    @pytest.mark.asyncio
+    async def test_history_resolves_display_names(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """History rows carry the actor email + from/to machine names.
+
+        Resolved server-side by LEFT JOIN so the UI never renders a raw UUID
+        and never issues a per-row lookup.
+        """
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app) as client:
+            env_id, a_id, b_id, _, _ = await self._seed_env_two_enrolled_machines(
+                client
+            )
+            await client.put(
+                f"{API_PREFIX}/environments/{env_id}/canonical",
+                json={"machine_id": a_id},
+            )
+            await client.put(
+                f"{API_PREFIX}/environments/{env_id}/canonical",
+                json={"machine_id": b_id},
+            )
+            hist = (
+                await client.get(
+                    f"{API_PREFIX}/environments/{env_id}/canonical-history"
+                )
+            ).json()
+            assert len(hist) == 2
+            # Same-transaction rows share now(), so ORDER BY changed_at DESC
+            # is a tie here — assert on the SET of transitions, not position.
+            named = {(h["from_machine_name"], h["to_machine_name"]) for h in hist}
+            assert named == {(None, "machine-a"), ("machine-a", "machine-b")}
+            assert {h["changed_by_email"] for h in hist} == {test_user.email}
+
+    @pytest.mark.asyncio
+    async def test_history_survives_machine_deletion_with_null_name(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """The load-bearing case: deleting a machine must NOT drop its audit
+        rows — the ids are soft refs, so the row stays and the name is None."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app) as client:
+            env_id, a_id, b_id, _, _ = await self._seed_env_two_enrolled_machines(
+                client
+            )
+            await client.put(
+                f"{API_PREFIX}/environments/{env_id}/canonical",
+                json={"machine_id": a_id},
+            )
+            await client.put(
+                f"{API_PREFIX}/environments/{env_id}/canonical",
+                json={"machine_id": b_id},
+            )
+
+            r = await client.delete(f"{API_PREFIX}/machines/{a_id}")
+            assert r.status_code == 204, r.text
+
+            hist = (
+                await client.get(
+                    f"{API_PREFIX}/environments/{env_id}/canonical-history"
+                )
+            ).json()
+            # Both audit rows survive the deletion.
+            assert len(hist) == 2
+            # The soft-ref ids are untouched — only the resolved name is gone.
+            assert {h["to_machine_id"] for h in hist} == {a_id, b_id}
+            named = {(h["from_machine_name"], h["to_machine_name"]) for h in hist}
+            assert named == {(None, None), (None, "machine-b")}
+
+    @pytest.mark.asyncio
+    async def test_history_null_actor_yields_null_email(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """``changed_by_user_id`` is FK SET NULL — a null actor resolves to a
+        null email rather than erroring or dropping the row."""
+        from app.repositories.devenv import canonical_log_repo
+
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app) as client:
+            env_id, a_id, _, _, _ = await self._seed_env_two_enrolled_machines(client)
+            await canonical_log_repo.record(
+                async_db_session,
+                environment_id=UUID(env_id),
+                from_machine_id=None,
+                to_machine_id=UUID(a_id),
+                changed_by_user_id=None,
+            )
+            await async_db_session.commit()
+
+            hist = (
+                await client.get(
+                    f"{API_PREFIX}/environments/{env_id}/canonical-history"
+                )
+            ).json()
+            assert len(hist) == 1
+            assert hist[0]["changed_by_user_id"] is None
+            assert hist[0]["changed_by_email"] is None
+            assert hist[0]["to_machine_name"] == "machine-a"
+
+    @pytest.mark.asyncio
     async def test_audit_records_active_tenant_best_effort(
         self, async_db_session: AsyncSession, test_user
     ) -> None:
@@ -1051,6 +1392,10 @@ class TestCanonicalAuditAndPull:
             # Policy delivered alongside so the runner knows what it may apply.
             assert body["section_policy"]["versions"] == "applyable"
             assert body["section_policy"]["env_contract"] == "secret_report_only"
+            # Per-key refinement rides along: python is a machine fact, so the
+            # applyable versions section reports no derived keys here.
+            assert body["derived_keys"]["versions"] == []
+            assert body["derived_keys"]["env_contract"] == []
             # Secret-free: env_contract is present/absent, never the raw value.
             assert body["sections"]["env_contract"]["DATABASE_URL"] == "present"
             assert "topsecret" not in r.text
@@ -1104,6 +1449,147 @@ class TestCanonicalAuditAndPull:
             r = await client.get(
                 f"{API_PREFIX}/agent/environments/{env_id}/canonical-config",
                 headers={"X-Machine-Key": key_intruder},
+            )
+            assert r.status_code == 404, r.text
+            assert r.json()["detail"]["code"] == "environment_not_found"
+
+
+class TestConfigHistory:
+    """P2 — append-only config-history timeline + point-to-point diff."""
+
+    async def _seed_enrolled_machine(
+        self, client: httpx.AsyncClient
+    ) -> tuple[str, str, str]:
+        """Create env + one enrolled machine. Returns (env_id, machine_id, key)."""
+        r = await client.post(
+            f"{API_PREFIX}/environments", json={"name": "Hist", "description": None}
+        )
+        env_id = r.json()["id"]
+        r = await client.post(f"{API_PREFIX}/machines", json={"name": "hist-machine"})
+        body = r.json()
+        machine_id, code = body["id"], body["enrollment_code"]
+        r = await client.post(
+            f"{API_PREFIX}/agent/enroll",
+            json={"enrollment_code": code, "machine_id": machine_id},
+        )
+        key = r.json()["machine_key"]
+        return env_id, machine_id, key
+
+    @staticmethod
+    def _body(sections: dict, captured_at: str) -> dict:
+        return {"schema_version": 1, "captured_at": captured_at, "sections": sections}
+
+    @pytest.mark.asyncio
+    async def test_history_dedup_diff_and_prune(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """Identical re-push adds no row; a change appends; diff shows it;
+        prune caps the timeline and reports counts."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app) as client:
+            env_id, machine_id, key = await self._seed_enrolled_machine(client)
+            history_url = (
+                f"{API_PREFIX}/environments/{env_id}"
+                f"/machines/{machine_id}/config-history"
+            )
+
+            # 1. Push a config, then re-push the IDENTICAL envelope → 1 row.
+            sections_v1 = {"services": {"redis": "6379"}}
+            r = await client.put(
+                f"{API_PREFIX}/agent/environments/{env_id}/config",
+                json=self._body(sections_v1, "2026-07-01T10:00:00Z"),
+                headers={"X-Machine-Key": key},
+            )
+            assert r.status_code == 200, r.text
+            r = await client.put(
+                f"{API_PREFIX}/agent/environments/{env_id}/config",
+                json=self._body(sections_v1, "2026-07-01T10:15:00Z"),
+                headers={"X-Machine-Key": key},
+            )
+            assert r.status_code == 200, r.text
+
+            r = await client.get(history_url)
+            assert r.status_code == 200, r.text
+            hist = r.json()
+            assert len(hist) == 1
+            # Metadata only — NEVER a config body in the list payload.
+            assert "config" not in hist[0]
+            assert hist[0]["source"] == "agent"
+            assert hist[0]["schema_version"] == 1
+            assert len(hist[0]["content_hash"]) == 64
+
+            # 2. Push a CHANGED envelope → a second row, newest first.
+            sections_v2 = {"services": {"redis": "6380"}}
+            r = await client.put(
+                f"{API_PREFIX}/agent/environments/{env_id}/config",
+                json=self._body(sections_v2, "2026-07-02T10:00:00Z"),
+                headers={"X-Machine-Key": key},
+            )
+            assert r.status_code == 200, r.text
+
+            hist = (await client.get(history_url)).json()
+            assert len(hist) == 2
+            assert hist[0]["captured_at"] == "2026-07-02T10:00:00Z"
+            assert hist[1]["captured_at"] == "2026-07-01T10:00:00Z"
+            assert hist[0]["content_hash"] != hist[1]["content_hash"]
+            newer_id, older_id = hist[0]["id"], hist[1]["id"]
+
+            # 3. Diff older -> newer surfaces the changed key.
+            r = await client.get(
+                f"{history_url}/diff",
+                params={"from_id": older_id, "to_id": newer_id},
+            )
+            assert r.status_code == 200, r.text
+            diff = r.json()
+            assert diff["machine_id"] == machine_id
+            assert diff["from_id"] == older_id
+            assert diff["to_id"] == newer_id
+            assert diff["in_sync"] is False
+            delta = _find_delta(_find_section(diff, "services"), "redis")
+            assert delta["status"] == "changed"
+            assert delta["expected"] == "6379"
+            assert delta["actual"] == "6380"
+
+            # 3b. A diff id from nowhere → 404 (missing or foreign pair).
+            r = await client.get(
+                f"{history_url}/diff",
+                params={"from_id": str(uuid4()), "to_id": newer_id},
+            )
+            assert r.status_code == 404, r.text
+            assert r.json()["detail"]["code"] == "config_history_entry_not_found"
+
+            # 4. Prune with keep_per_pair=1 deletes the older row + reports it.
+            from app.repositories.devenv import config_history_repo
+
+            pruned = await config_history_repo.prune(async_db_session, keep_per_pair=1)
+            assert pruned == [(UUID(env_id), UUID(machine_id), 1)]
+
+            hist = (await client.get(history_url)).json()
+            assert len(hist) == 1
+            assert hist[0]["id"] == newer_id
+
+    @pytest.mark.asyncio
+    async def test_history_cross_owner_404(
+        self, async_db_session: AsyncSession, test_user, second_user
+    ) -> None:
+        """Another owner cannot read a machine's history (404, not 403)."""
+        app1 = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app1) as client:
+            env_id, machine_id, key = await self._seed_enrolled_machine(client)
+            r = await client.put(
+                f"{API_PREFIX}/agent/environments/{env_id}/config",
+                json=self._body(
+                    {"services": {"redis": "6379"}}, "2026-07-01T10:00:00Z"
+                ),
+                headers={"X-Machine-Key": key},
+            )
+            assert r.status_code == 200, r.text
+
+        app2 = _build_app(db_session=async_db_session, user=second_user)
+        async with _client(app2) as client:
+            r = await client.get(
+                f"{API_PREFIX}/environments/{env_id}"
+                f"/machines/{machine_id}/config-history"
             )
             assert r.status_code == 404, r.text
             assert r.json()["detail"]["code"] == "environment_not_found"

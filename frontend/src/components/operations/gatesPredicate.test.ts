@@ -17,13 +17,13 @@ import {
 describe("humanizePredicate", () => {
   it("renders pr_merged with repo + number", () => {
     expect(
-      humanizePredicate({ kind: "pr_merged", repo: "org/repo", pr_number: 42 }),
+      humanizePredicate({ kind: "pr_merged", repo: "org/repo", pr_number: 42 })
     ).toBe("pr_merged: org/repo #42");
   });
 
   it("renders operator_approval with the prompt", () => {
     expect(
-      humanizePredicate({ kind: "operator_approval", prompt: "deploy?" }),
+      humanizePredicate({ kind: "operator_approval", prompt: "deploy?" })
     ).toBe('operator_approval: "deploy?"');
   });
 
@@ -35,7 +35,7 @@ describe("humanizePredicate", () => {
         labels: { status: "idle" },
         op: "gt",
         value: 0,
-      }),
+      })
     ).toBe('metric_threshold: coord_ci_runner_count{status="idle"} > 0');
   });
 
@@ -47,7 +47,7 @@ describe("humanizePredicate", () => {
         op: "lt",
         value: 5,
         window_secs: 3_600,
-      }),
+      })
     ).toBe("metric_threshold: error_rate < 5 for 1h");
   });
 
@@ -56,13 +56,13 @@ describe("humanizePredicate", () => {
       humanizePredicate({
         kind: "plan_ready",
         plan_slug: "2026-06-05-visible-gate-continuations",
-      }),
+      })
     ).toBe("Plan ready to implement: 2026-06-05-visible-gate-continuations");
   });
 
   it("renders plan_ready without a slug as the bare label", () => {
     expect(humanizePredicate({ kind: "plan_ready" })).toBe(
-      "Plan ready to implement",
+      "Plan ready to implement"
     );
   });
 
@@ -81,13 +81,13 @@ describe("humanizePredicate", () => {
         kind: "ci_green",
         repo: "org/repo",
         head_sha: "abcdef1234567890",
-      }),
+      })
     ).toBe("ci_green: org/repo @ abcdef1");
   });
 
   it("falls back to the raw kind for an unknown predicate", () => {
     expect(humanizePredicate({ kind: "some_future_kind" })).toBe(
-      "some_future_kind",
+      "some_future_kind"
     );
   });
 
@@ -142,9 +142,7 @@ describe("gateAnchor", () => {
     // Key stays anchored on plan_id so slug-bearing and slug-less rows of the
     // same plan still collapse into one group.
     expect(anchor.key).toBe("plan:plan-uuid:Phase 2");
-    expect(anchor.label).toBe(
-      "2026-06-05-plan-gate-web-surface · Phase 2",
-    );
+    expect(anchor.label).toBe("2026-06-05-plan-gate-web-surface · Phase 2");
   });
 
   it("falls back to plan_id in the label when plan_slug is absent/empty", () => {
@@ -154,7 +152,7 @@ describe("gateAnchor", () => {
         phase_name: "Phase 1",
         claim_kind: null,
         resource_key: null,
-      }).label,
+      }).label
     ).toBe("plan-uuid · Phase 1");
     // An empty-string slug (lagging coord) also falls back, never a blank cell.
     expect(
@@ -164,7 +162,7 @@ describe("gateAnchor", () => {
         plan_slug: "",
         claim_kind: null,
         resource_key: null,
-      }).label,
+      }).label
     ).toBe("plan-uuid · Phase 1");
   });
 
@@ -195,9 +193,9 @@ describe("summarizeContinuation", () => {
       summarizeContinuation({
         target_device_id: "abcdef1234567890",
         initial_prompt: "Implement P3 of the plan",
-      }),
+      })
     ).toBe(
-      'Clearing opens a visible terminal session on abcdef12 · prompt: "Implement P3 of the plan"',
+      'Clearing opens a visible terminal session on abcdef12 · prompt: "Implement P3 of the plan"'
     );
   });
 
@@ -207,9 +205,9 @@ describe("summarizeContinuation", () => {
         target_device_id: "abcdef1234567890",
         presentation: "terminal",
         initial_prompt: "go",
-      }),
+      })
     ).toBe(
-      'Clearing opens a visible terminal session on abcdef12 · prompt: "go"',
+      'Clearing opens a visible terminal session on abcdef12 · prompt: "go"'
     );
   });
 
@@ -219,9 +217,9 @@ describe("summarizeContinuation", () => {
         target_device_id: "abcdef1234567890",
         presentation: "headless",
         initial_prompt: "run the fleet job",
-      }),
+      })
     ).toBe(
-      'Clearing spawns a headless agent session on abcdef12 · prompt: "run the fleet job"',
+      'Clearing spawns a headless agent session on abcdef12 · prompt: "run the fleet job"'
     );
   });
 
@@ -251,28 +249,30 @@ describe("summarizeContinuation", () => {
           target_device_id: "abcdef1234567890",
           initial_prompt: "go",
         },
-        () => "spaceship",
-      ),
-    ).toBe('Clearing opens a visible terminal session on spaceship · prompt: "go"');
+        () => "spaceship"
+      )
+    ).toBe(
+      'Clearing opens a visible terminal session on spaceship · prompt: "go"'
+    );
   });
 
   it("falls back to the short device id when the resolver returns null", () => {
     const out = summarizeContinuation(
       { target_device_id: "abcdef1234567890", initial_prompt: "go" },
-      () => null,
+      () => null
     );
     expect(out).toContain("on abcdef12");
   });
 
   it("omits the prompt clause when there is no prompt", () => {
     expect(
-      summarizeContinuation({ target_device_id: "abcdef1234567890" }),
+      summarizeContinuation({ target_device_id: "abcdef1234567890" })
     ).toBe("Clearing opens a visible terminal session on abcdef12");
   });
 
   it("says 'an unknown device' when no device id is present", () => {
     expect(summarizeContinuation({ initial_prompt: "go" })).toBe(
-      'Clearing opens a visible terminal session on an unknown device · prompt: "go"',
+      'Clearing opens a visible terminal session on an unknown device · prompt: "go"'
     );
   });
 
@@ -293,16 +293,12 @@ describe("summarizeContinuation", () => {
 describe("summarizeContinuationLifecycle", () => {
   // Fixed clock so the relative-age strings are deterministic.
   const NOW = Date.parse("2026-06-07T12:00:00Z");
-  const minsAgo = (m: number) =>
-    new Date(NOW - m * 60_000).toISOString();
+  const minsAgo = (m: number) => new Date(NOW - m * 60_000).toISOString();
 
   it("returns null when no continuation was ever dispatched (no chip)", () => {
     expect(summarizeContinuationLifecycle({}, NOW)).toBeNull();
     expect(
-      summarizeContinuationLifecycle(
-        { continuation_dispatched_at: null },
-        NOW,
-      ),
+      summarizeContinuationLifecycle({ continuation_dispatched_at: null }, NOW)
     ).toBeNull();
   });
 
@@ -314,7 +310,7 @@ describe("summarizeContinuationLifecycle", () => {
         continuation_cancelled_at: minsAgo(1),
         continuation_cancel_reason: "taken over by session abc",
       },
-      NOW,
+      NOW
     );
     expect(chip).toEqual({
       state: "cancelled",
@@ -329,7 +325,7 @@ describe("summarizeContinuationLifecycle", () => {
         continuation_dispatched_at: minsAgo(30),
         continuation_cancelled_at: minsAgo(1),
       },
-      NOW,
+      NOW
     );
     expect(chip?.state).toBe("cancelled");
     expect(chip?.label).toBe("cancelled");
@@ -340,10 +336,9 @@ describe("summarizeContinuationLifecycle", () => {
       {
         continuation_dispatched_at: minsAgo(5),
         continuation_consumed_at: minsAgo(4),
-        continuation_consumed_outcome:
-          "spawn_failed: terminal backend refused",
+        continuation_consumed_outcome: "spawn_failed: terminal backend refused",
       },
-      NOW,
+      NOW
     );
     expect(chip).toEqual({
       state: "spawn_failed",
@@ -358,7 +353,7 @@ describe("summarizeContinuationLifecycle", () => {
         continuation_dispatched_at: minsAgo(5),
         continuation_consumed_outcome: "spawn_failed",
       },
-      NOW,
+      NOW
     );
     expect(chip?.state).toBe("spawn_failed");
     expect(chip?.accent).toBe("error");
@@ -371,7 +366,7 @@ describe("summarizeContinuationLifecycle", () => {
         continuation_consumed_at: minsAgo(4),
         continuation_consumed_outcome: "spawned",
       },
-      NOW,
+      NOW
     );
     expect(chip).toEqual({
       state: "spawned",
@@ -386,7 +381,7 @@ describe("summarizeContinuationLifecycle", () => {
         continuation_dispatched_at: minsAgo(3),
         continuation_spawn: { target_device_id: "abcdef1234567890" },
       },
-      NOW,
+      NOW
     );
     expect(chip).toEqual({
       state: "pending",
@@ -401,13 +396,11 @@ describe("summarizeContinuationLifecycle", () => {
         continuation_dispatched_at: minsAgo(16),
         continuation_spawn: { target_device_id: "abcdef1234567890" },
       },
-      NOW,
+      NOW
     );
     expect(chip?.state).toBe("pending");
     expect(chip?.accent).toBe("warning");
-    expect(chip?.label).toBe(
-      "pending — dispatched 16m ago, target abcdef12",
-    );
+    expect(chip?.label).toBe("pending — dispatched 16m ago, target abcdef12");
   });
 
   it("pending at exactly 15m is already stale (>= threshold)", () => {
@@ -416,7 +409,7 @@ describe("summarizeContinuationLifecycle", () => {
         continuation_dispatched_at: minsAgo(15),
         continuation_spawn: { target_device_id: "abcdef1234567890" },
       },
-      NOW,
+      NOW
     );
     expect(chip?.accent).toBe("warning");
   });
@@ -424,10 +417,10 @@ describe("summarizeContinuationLifecycle", () => {
   it("pending with no target device says 'an unknown device'", () => {
     const chip = summarizeContinuationLifecycle(
       { continuation_dispatched_at: minsAgo(2) },
-      NOW,
+      NOW
     );
     expect(chip?.label).toBe(
-      "pending — dispatched 2m ago, target an unknown device",
+      "pending — dispatched 2m ago, target an unknown device"
     );
   });
 
@@ -440,7 +433,7 @@ describe("summarizeContinuationLifecycle", () => {
         continuation_consumed_outcome: null,
         continuation_spawn: { target_device_id: "abcdef1234567890" },
       },
-      NOW,
+      NOW
     );
     expect(chip?.state).toBe("pending");
   });

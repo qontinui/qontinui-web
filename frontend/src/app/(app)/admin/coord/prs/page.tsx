@@ -29,6 +29,8 @@
  * RETAINS the last-good rows for the SAME tab and shows a subtle "showing last
  * data" reconnecting hint over them (the hard banner is reserved for cold-start
  * outages with nothing to retain), polling faster (~5s) until coord recovers.
+ * Both coord banners are gated on `!loading`: the skeleton owns the body during
+ * any load/tab-switch window, so neither may describe data that isn't on screen.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -183,6 +185,19 @@ export default function CoordPrsPage() {
     return () => clearInterval(id);
   }, []);
 
+  // ---- The coord-outage banner split ----
+  // Both banners share one gate: coord is degraded AND we are not mid-load.
+  // The `!loading` half matters because this page's body skeleton is driven by
+  // `loading` ALONE (retention needs `data` to survive a tab switch, so it
+  // can't be `loading && !data` like the gates page). That makes a banner and
+  // the skeleton renderable at the same time, and a banner describing data the
+  // skeleton isn't showing is a lie. A same-tab auto-refresh never sets
+  // `loading`, so steady-state outage retention is unaffected.
+  // Which banner shows is then decided solely by whether rows are retained, so
+  // exactly one can ever render — never both, never one over the skeleton.
+  const coordOutageVisible = coordError !== null && !loading;
+  const hasRetainedRows = data !== null && data.prs.length > 0;
+
   // How many visible rows are in the transient "Recalibrating" (UNKNOWN) state.
   const recalibratingCount = data
     ? data.prs.filter((p) => isMergeStateRecalibrating(p)).length
@@ -289,8 +304,9 @@ export default function CoordPrsPage() {
       {/* ---- Reconnecting hint (coord down, last-good rows retained) ----
           A transient coord outage while we hold last-good rows for this tab:
           show a subtle hint OVER the still-rendered table and auto-recover —
-          never the hard banner below. */}
-      {coordError !== null && data !== null && data.prs.length > 0 && (
+          never the hard banner below. See the banner-split derivation above
+          for why both are gated on not-loading. */}
+      {coordOutageVisible && hasRetainedRows && (
         <div
           className="flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-1.5 text-xs text-amber-700 dark:text-amber-400"
           data-testid="prs-coord-reconnecting"
@@ -304,11 +320,16 @@ export default function CoordPrsPage() {
         </div>
       )}
 
-      {/* ---- coord-unavailable banner (cold-start outage: no rows to retain) ---- */}
-      {coordError !== null && !(data !== null && data.prs.length > 0) && (
+      {/* ---- coord-unavailable banner (cold-start outage: no rows to retain) ----
+          The other side of the split. Without the shared not-loading gate this
+          would paint "showing no PRs. Retry with Refresh." over the skeleton —
+          asserting an outage the in-flight fetch may already have disproved,
+          and pointing at a Refresh button that is `disabled` while loading. */}
+      {coordOutageVisible && !hasRetainedRows && (
         <div
           className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400"
           data-testid="prs-coord-unavailable"
+          role="status"
         >
           coord is currently unavailable ({coordError}) — showing no PRs. Retry
           with Refresh.

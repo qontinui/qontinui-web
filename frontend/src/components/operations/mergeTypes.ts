@@ -112,11 +112,94 @@ export interface PrRow {
    */
   pending_contexts?: string[];
   correlation_id: string | null;
+  /**
+   * Seconds this PR has been stuck in conflict on its CURRENT head — coord's
+   * strand clock (`MIN(created_at)` over the head's `conflict` proposals).
+   *
+   * NOT interchangeable with a proposal age: coord re-proposes a conflicting PR
+   * indefinitely, so the latest proposal is always minutes old and reports
+   * minutes for a PR stranded for weeks. This is the only field that can tell
+   * a fresh conflict from a strand.
+   *
+   * Optional: absent on coord deploys predating the projection, and absent on
+   * any PR with no conflict proposals on its head. Consumers MUST treat absence
+   * as "no evidence" and never as "not stranded".
+   */
+  conflict_age_secs?: number | null;
+  // ---- Recently-merged enrichment ------------------------------------------
+  // Present only on the rows coord appends for `?include_merged=<hours>`
+  // (`query_recently_merged_prs`). Every field is optional: a coord deploy
+  // that predates the merged-row projection omits them entirely, and the
+  // merged tab must degrade to "merge time unknown" rather than break.
+  /** RFC3339 time the PR landed on its base branch (`repo_branches.merged_at`). */
+  merged_at?: string | null;
+  /** The commit that actually landed. Non-null is coord's land-path-independent
+   *  "this PR merged" signal — a coord ff-land closes the PR with merged=false. */
+  merge_commit_sha?: string | null;
+  /** kebab-case deploy state ("has my merged PR deployed yet?"). */
+  deploy_state?: string | null;
 }
 
 export interface PrListResponse {
   prs: PrRow[];
   total: number;
+}
+
+// ============================================================================
+// Merge economics — CI-duration-aware severity inputs.
+//
+// Mirrors coord's NEW `coord_query_merge_economics` read (proxied by the web
+// backend at `/api/v1/operations/pr-merge/merge-economics`). Per-repo merge
+// timing/throughput the fleet page uses to decide whether a merge conflict is
+// "act now" (RED) or "resolve just-before-merge" (AMBER): long candidate-CI
+// DAMPENS conflict urgency, a shallow (near-front) queue AMPLIFIES it.
+//
+// EVERY field is optional. Coord may not have this read deployed yet, and even
+// once it does older deploys can omit individual fields — every consumer MUST
+// treat an absent field as "unknown" and fall back to the hardcoded thresholds
+// / repo-name hint in prPipeline.ts. The page must render identically (just
+// less precisely) with an empty `{}` economics map.
+// ============================================================================
+
+export interface MergeEconomics {
+  /**
+   * p90 of the repo's merge-candidate CI duration, in SECONDS. When present,
+   * `prPipeline` treats the repo as long-CI iff `p90 * 1000 >=
+   * LONG_CI_THRESHOLD_MS`. Absent ⇒ fall back to the static repo-name hint.
+   */
+  candidate_ci_p90_secs?: number | null;
+  /** Observed lands per hour for the repo (throughput). Advisory/informational. */
+  land_rate_per_hour?: number | null;
+  /**
+   * Coord's suggested "this is stuck" threshold in SECONDS (derived from the
+   * repo's own timing). When present, `derivePipelineHealth` uses it as the
+   * red CI-wait threshold (amber at half); absent ⇒ CI_WAIT_{AMBER,RED}_MS.
+   */
+  suggested_stuck_threshold_secs?: number | null;
+  /**
+   * Depth of the repo's land queue. A shallow queue means the merge train
+   * reaches this repo's PRs soon, so a conflict here is near-front and stays
+   * RED even on a long-CI repo. Absent ⇒ queue proximity defaults to
+   * "not-front".
+   */
+  queue_depth?: number | null;
+  /**
+   * Per-open-PR "content is already on main" flag, keyed by PR number (as a
+   * string). Surfaces the phantom-kill orphan wedge (content-on-main but the
+   * PR is still open). Optional; absent ⇒ unknown.
+   */
+  already_landed?: Record<string, boolean> | null;
+}
+
+/**
+ * Coord's `/pr-merge/merge-economics` response. The exact wire shape is coord's
+ * to finalize; the frontend fetch tolerates all of: an object keyed by
+ * `owner/name`, a `{ repos: {...} }` wrapper, or an array of
+ * `{ repo, ...MergeEconomics }`. This declared type is the wrapper form; the
+ * fetch normalizes every shape into a `Record<repo, MergeEconomics>`.
+ */
+export interface MergeEconomicsResponse {
+  repos?: Record<string, MergeEconomics>;
 }
 
 // ============================================================================

@@ -2,10 +2,19 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle, History, NotebookText, Pencil } from "lucide-react";
+import {
+  AlertTriangle,
+  History,
+  ListTree,
+  NotebookText,
+  Pencil,
+  Plus,
+} from "lucide-react";
 import { usePromptDocuments } from "../_hooks/usePromptDocuments";
+import { PromptDocumentCreateDialog } from "./PromptDocumentCreateDialog";
 import { PromptDocumentEditorDialog } from "./PromptDocumentEditorDialog";
 import { PromptDocumentHistoryDialog } from "./PromptDocumentHistoryDialog";
+import { ClauseManagerDialog } from "./ClauseManagerDialog";
 import type { PromptDocument, PromptDocumentSummary } from "../types";
 import { KIND_META, PROMPT_DOCUMENT_KINDS } from "../types";
 
@@ -29,17 +38,28 @@ export function PromptDocumentList() {
     saving,
     error,
     degraded,
+    reload,
     fetchDocument,
     fetchVersions,
     fetchVersion,
+    createDocument,
     updateDocument,
     restoreDefault,
   } = usePromptDocuments();
 
+  const [createOpen, setCreateOpen] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [clausesOpen, setClausesOpen] = useState(false);
   const [editing, setEditing] = useState<PromptDocument | null>(null);
   const [loadingBody, setLoadingBody] = useState(false);
+
+  /** Open the freshly-created document straight into the editor. */
+  const openCreated = (doc: PromptDocument) => {
+    setEditing(doc);
+    setLoadingBody(false);
+    setEditorOpen(true);
+  };
 
   /** The list carries no bodies — fetch the full document before editing. */
   const loadFull = async (
@@ -63,16 +83,33 @@ export function PromptDocumentList() {
     await loadFull(doc);
   };
 
-  if (loading && documents.length === 0) {
-    return (
-      <div className="py-10 text-center text-sm text-muted-foreground">
-        Loading documents…
-      </div>
-    );
-  }
+  const openClauses = async (doc: PromptDocumentSummary) => {
+    setClausesOpen(true);
+    await loadFull(doc);
+  };
+
+  const initialLoading = loading && documents.length === 0;
 
   return (
     <div className="space-y-6">
+      <div className="flex items-center justify-end">
+        <Button
+          size="sm"
+          className="gap-1.5"
+          onClick={() => setCreateOpen(true)}
+          data-testid="new-document"
+        >
+          <Plus className="size-4" />
+          New document
+        </Button>
+      </div>
+
+      {initialLoading && (
+        <div className="py-10 text-center text-sm text-muted-foreground">
+          Loading documents…
+        </div>
+      )}
+
       {/* Coord refused or is unreachable: we know nothing, and say so. */}
       {error && (
         <div
@@ -97,14 +134,14 @@ export function PromptDocumentList() {
         >
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
           <p className="text-sm text-muted-foreground">
-            Coord reports its prompt-document store isn&apos;t provisioned yet
-            ({degraded}). This list is empty because the documents can&apos;t be
+            Coord reports its prompt-document store isn&apos;t provisioned yet (
+            {degraded}). This list is empty because the documents can&apos;t be
             read — not because none exist.
           </p>
         </div>
       )}
 
-      {documents.length === 0 && !degraded && !error ? (
+      {documents.length === 0 && !degraded && !error && !initialLoading ? (
         <div className="rounded-lg border border-dashed border-border py-12 text-center">
           <p className="text-sm text-muted-foreground">
             No prompt documents yet.
@@ -131,6 +168,9 @@ export function PromptDocumentList() {
                     doc={doc}
                     onEdit={() => openEdit(doc)}
                     onHistory={() => openHistory(doc)}
+                    onClauses={
+                      doc.kind === "policy" ? () => openClauses(doc) : undefined
+                    }
                   />
                 ))}
               </div>
@@ -138,6 +178,14 @@ export function PromptDocumentList() {
           );
         })
       )}
+
+      <PromptDocumentCreateDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        saving={saving}
+        onCreate={createDocument}
+        onCreated={openCreated}
+      />
 
       <PromptDocumentEditorDialog
         open={editorOpen}
@@ -170,6 +218,14 @@ export function PromptDocumentList() {
         fetchVersions={fetchVersions}
         fetchVersion={fetchVersion}
       />
+
+      <ClauseManagerDialog
+        open={clausesOpen}
+        onOpenChange={setClausesOpen}
+        document={editing?.kind === "policy" ? editing : null}
+        loadingBody={loadingBody}
+        onDocsReload={reload}
+      />
     </div>
   );
 }
@@ -178,9 +234,11 @@ interface DocumentRowProps {
   doc: PromptDocumentSummary;
   onEdit: () => void;
   onHistory: () => void;
+  /** Only set for `policy` documents — opens the structured clause manager. */
+  onClauses?: () => void;
 }
 
-function DocumentRow({ doc, onEdit, onHistory }: DocumentRowProps) {
+function DocumentRow({ doc, onEdit, onHistory, onClauses }: DocumentRowProps) {
   // A document with a `default_source` has a shipped default the editor can
   // restore; one without is hand-authored with nothing to fall back to.
   const restorable = doc.default_source != null;
@@ -219,6 +277,18 @@ function DocumentRow({ doc, onEdit, onHistory }: DocumentRowProps) {
         </p>
       </div>
 
+      {onClauses && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 w-8 p-0"
+          onClick={onClauses}
+          title="Structured clauses"
+          data-testid={`doc-clauses-${doc.kind}-${doc.name}`}
+        >
+          <ListTree className="size-4" />
+        </Button>
+      )}
       <Button
         variant="ghost"
         size="sm"

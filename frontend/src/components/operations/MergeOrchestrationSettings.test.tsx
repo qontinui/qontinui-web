@@ -126,4 +126,23 @@ describe("<MergeOrchestrationSettings> auto_fix_red_main toggle", () => {
       expect(body.auto_fix_red_main).toBe(true);
     });
   });
+
+  // Regression: coord returns an EffectiveProfile WITHOUT `escalate_paths` for a
+  // freshly-onboarded / unconfigured tenant (e.g. a brand-new customer tenant).
+  // The settings form used to call `profile.escalate_paths.join("\n")`
+  // unconditionally, throwing `Cannot read properties of undefined (reading
+  // 'join')` and taking the whole merge-settings page down via the error
+  // boundary. Passing `escalate_paths: undefined` drops the key on the wire
+  // (JSON.stringify), reproducing coord's default-profile shape.
+  it("renders (no crash) when coord omits escalate_paths on a default profile", async () => {
+    fetchMock.mockImplementation((url: string) =>
+      Promise.resolve(routeGet(url, { escalate_paths: undefined }))
+    );
+    render(<MergeOrchestrationSettings />);
+
+    // The form mounts instead of throwing to the error boundary, and the
+    // escalate-paths editor degrades to empty rather than crashing.
+    const toggle = await screen.findByTestId("settings-auto-fix-red-main");
+    expect(toggle).toBeTruthy();
+  });
 });

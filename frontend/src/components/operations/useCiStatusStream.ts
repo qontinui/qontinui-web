@@ -51,9 +51,7 @@ interface UseCiStatusStreamResult {
  * `ci_status:<tenant>`); the browser just consumes frames.
  */
 export function useCiStatusStream(): UseCiStatusStreamResult {
-  const [byRepo, setByRepo] = useState<Map<string, RepoCiRow>>(
-    () => new Map(),
-  );
+  const [byRepo, setByRepo] = useState<Map<string, RepoCiRow>>(() => new Map());
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -205,7 +203,7 @@ export function useCiStatusStream(): UseCiStatusStreamResult {
       if (reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
         const delay = Math.min(
           1000 * Math.pow(2, reconnectAttemptsRef.current),
-          30_000,
+          30_000
         );
         reconnectTimerRef.current = setTimeout(() => {
           reconnectAttemptsRef.current += 1;
@@ -247,8 +245,7 @@ export function useCiStatusStream(): UseCiStatusStreamResult {
       }
     };
     document.addEventListener("visibilitychange", onVisibility);
-    return () =>
-      document.removeEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
   }, [clearReconnect, closeWs, stopPolling, seedFromRest, connectWs]);
 
   return {
