@@ -5,10 +5,7 @@ import {
   verifyStateAndExtractNext,
   isLinkModeState,
   refreshCognitoTokens,
-<<<<<<< HEAD
   CognitoRefreshError,
-=======
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
   COGNITO_CLIENT_ID,
 } from "./cognito-oauth";
 
@@ -224,7 +221,6 @@ describe("refreshCognitoTokens", () => {
     expect(req.headers["Authorization"]).toBeUndefined();
   });
 
-<<<<<<< HEAD
   /**
    * Failure CLASSIFICATION. The proactive renewal fires six minutes before the
    * bearer's `exp`, while it is still valid, so "the exchange failed" and "the
@@ -232,15 +228,11 @@ describe("refreshCognitoTokens", () => {
    * (`invalid_grant` / 401) may cost the user their session.
    */
   it("classifies a revoked refresh token as AUTHORITATIVE, surfacing Cognito's error_description", async () => {
-=======
-  it("surfaces Cognito's error_description when the refresh token is revoked", async () => {
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
     stubTokenEndpoint(400, {
       error: "invalid_grant",
       error_description: "Refresh Token has been revoked",
     });
 
-<<<<<<< HEAD
     const error = await refreshCognitoTokens("dead").catch((e: unknown) => e);
     expect(error).toBeInstanceOf(CognitoRefreshError);
     expect((error as CognitoRefreshError).kind).toBe("authoritative");
@@ -258,14 +250,6 @@ describe("refreshCognitoTokens", () => {
   });
 
   it("classifies a 502 with a non-JSON body as TRANSIENT (falling back to the status code)", async () => {
-=======
-    await expect(refreshCognitoTokens("dead")).rejects.toThrow(
-      /Refresh Token has been revoked/
-    );
-  });
-
-  it("falls back to the status code for a non-JSON error body", async () => {
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
     vi.stubGlobal(
       "fetch",
       vi.fn(
@@ -273,7 +257,6 @@ describe("refreshCognitoTokens", () => {
       )
     );
 
-<<<<<<< HEAD
     const error = await refreshCognitoTokens("rt-xyz").catch(
       (e: unknown) => e
     );
@@ -325,8 +308,5 @@ describe("refreshCognitoTokens", () => {
       (e: unknown) => e
     );
     expect((error as CognitoRefreshError).kind).toBe("transient");
-=======
-    await expect(refreshCognitoTokens("rt-xyz")).rejects.toThrow(/502/);
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
   });
 });
