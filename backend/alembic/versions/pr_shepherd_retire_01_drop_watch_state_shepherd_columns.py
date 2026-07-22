@@ -1,7 +1,7 @@
 """pr shepherd retire 01 — drop the PR-shepherd's pr_watch_state additions
 
 Revision ID: pr_shepherd_retire_01
-Revises: coord_policy_clauses_01
+Revises: auto_fix_rm_flaky_01
 Create Date: 2026-07-19
 
 Phase 2 of the runner-steward-button-and-pr-shepherd-retirement plan
@@ -62,7 +62,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "pr_shepherd_retire_01"
-down_revision: str = "coord_policy_clauses_01"
+down_revision: str = "auto_fix_rm_flaky_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
