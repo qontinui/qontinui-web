@@ -213,6 +213,20 @@ function locateElements(body: SnapshotResponse): unknown[] | null {
  * absence, and a NaN/partial Region would crash the analyzer's deserialize.
  * Every other field is left exactly as-is.
  *
+ * NEGATIVE COORDINATES: `Region`'s x/y/w/h are `u32` (unsigned). But
+ * `getBoundingClientRect()` legitimately returns NEGATIVE x/y for elements
+ * scrolled/positioned off the top or left of the viewport (a sticky header
+ * mid-scroll, an off-canvas drawer, a `left:-9999px` a11y-hidden node). A raw
+ * negative coord deserializes as `invalid value: integer -1, expected u32`,
+ * which crashed the analyzer's `Region` parse (observed on the 0.13→0.20 SDK
+ * bump when the snapshot began covering more off-viewport nodes). Since this
+ * adapter OWNS the float→u32 projection, it is responsible for conforming to
+ * the unsigned target: clamp each component to `>= 0` (the same class of
+ * impedance-fix as the non-finite drop above — an off-viewport origin projects
+ * to the viewport edge). A more principled alternative — widening `Region`'s
+ * x/y to `i32` in rust-vision-core — lives in a DIFFERENT repo and is not made
+ * here.
+ *
  * Mutates the elements in place (the caller re-serializes the same body).
  */
 function normalizeBboxes(elements: unknown[]): void {
@@ -245,11 +259,13 @@ function normalizeBboxes(elements: unknown[]): void {
       continue;
     }
 
+    // Clamp to the Rust `Region` u32 domain: getBoundingClientRect can return
+    // negative x/y for off-viewport elements, which would fail u32 deserialize.
     record.bbox = {
-      x: Math.round(x as number),
-      y: Math.round(y as number),
-      w: Math.round(width as number),
-      h: Math.round(height as number),
+      x: Math.max(0, Math.round(x as number)),
+      y: Math.max(0, Math.round(y as number)),
+      w: Math.max(0, Math.round(width as number)),
+      h: Math.max(0, Math.round(height as number)),
     };
   }
 }

@@ -17,6 +17,7 @@ import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_API, relativeTime } from "./utils";
 import { CollapsiblePanel } from "./CollapsiblePanel";
+import { unstableHasFailure } from "./prPipeline";
 import type {
   BlastRadiusBlock,
   BlastRadiusBlocksResponse,
@@ -79,7 +80,12 @@ function prStatusTint(pr: PrRow): string {
     case "CLEAN":
       return "bg-green-500/15 text-green-200 border-green-500/30";
     case "UNSTABLE":
-      return "bg-yellow-500/15 text-yellow-200 border-yellow-500/30";
+      // Two honest meanings: a non-required check actually FAILED (red — an
+      // agent/author should look) vs checks merely still running (muted
+      // yellow — just wait). Same predicate as prPipeline/PrsTable.
+      return unstableHasFailure(pr)
+        ? "bg-red-500/15 text-red-200 border-red-500/30"
+        : "bg-yellow-500/10 text-yellow-200/70 border-yellow-500/20";
     case "BEHIND":
       return "bg-orange-500/15 text-orange-200 border-orange-500/30";
     case "BLOCKED":
@@ -182,7 +188,7 @@ export function MergeTrainRow({ proposal }: { proposal: ProposalDetail }) {
 // PR Merge Orchestrator Phase 1 D1.6 -- PR Outer State row component
 // ----------------------------------------------------------------------------
 
-function PrRowDisplay({ pr }: { pr: PrRow }) {
+export function PrRowDisplay({ pr }: { pr: PrRow }) {
   const repoShort = pr.repo.includes("/")
     ? pr.repo.split("/").slice(1).join("/")
     : pr.repo;
@@ -268,7 +274,7 @@ interface SuggestionCardProps {
   ) => void;
 }
 
-function SuggestionCard({ sug, busy, onAction }: SuggestionCardProps) {
+export function SuggestionCard({ sug, busy, onAction }: SuggestionCardProps) {
   const subject = sug.detail.subject ?? sug.detail.repo ?? "";
   const rationale = sug.detail.rationale ?? sug.summary;
   const kindLabel =
@@ -402,7 +408,7 @@ function honestyBadgeClass(tone: HonestyTone): string {
   }
 }
 
-function GateDecisionRow({ block }: { block: BlastRadiusBlock }) {
+export function GateDecisionRow({ block }: { block: BlastRadiusBlock }) {
   const honesty = honestyLabel(block);
   const repoShort = block.repo.includes("/")
     ? block.repo.split("/").slice(1).join("/")
@@ -793,121 +799,119 @@ export function MergeTrain() {
         </>
       }
     >
-        {error && <p className="text-xs text-red-300 mb-2">{error}</p>}
-        {showSuggestionsSection && suggestions && (
-          <div className="mb-4">
-            <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2 flex items-center gap-1">
-              <ShieldAlert className="h-3 w-3" />
-              Suggestions
-              <Badge
-                variant="outline"
-                className="ml-2 font-mono text-[10px] normal-case"
-              >
-                {suggestions.length}
-              </Badge>
-            </h4>
-            <div className="space-y-2">
-              {suggestions.map((sug) => (
-                <SuggestionCard
-                  key={sug.alert_id}
-                  sug={sug}
-                  busy={suggestionBusy === sug.alert_id}
-                  onAction={onSuggestionAction}
-                />
-              ))}
-            </div>
-          </div>
-        )}
-        {showGateDecisionsSection && gateBlocks && (
-          <div className="mb-4" data-testid="gate-decisions">
-            <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2 flex items-center gap-1">
-              <ShieldQuestion className="h-3 w-3" />
-              Gate decisions
-              {gateTotalBlocks !== null && (
-                <Badge
-                  variant="outline"
-                  className="ml-2 font-mono text-[10px] normal-case"
-                >
-                  {gateTotalBlocks}
-                </Badge>
-              )}
-            </h4>
-            {gateBlocks.length === 0 ? (
-              <p className="text-xs text-muted-foreground">
-                No gate blocks — the blast-radius merge gate has not held any of
-                your PRs.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {gateBlocks.map((b) => (
-                  <GateDecisionRow
-                    key={`${b.repo}#${b.pr_number}@${b.at}`}
-                    block={b}
-                  />
-                ))}
-                <p className="text-[11px] text-muted-foreground pt-1">
-                  Coverage labels reflect how complete the code graph was when
-                  the gate ran — a degraded decision is never authoritative.
-                </p>
-              </div>
-            )}
-          </div>
-        )}
-        {showOuterSection && (
-          <div className="mb-4">
-            <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
-              PR Outer State
-              <Badge
-                variant="outline"
-                className="ml-2 font-mono text-[10px] normal-case"
-              >
-                {prs.length}
-              </Badge>
-            </h4>
-            <div className="space-y-2">
-              {prs.map((p) => (
-                <PrRowDisplay key={`${p.repo}#${p.pr_number}`} pr={p} />
-              ))}
-            </div>
-          </div>
-        )}
-        {proposals === null ? (
+      {error && <p className="text-xs text-red-300 mb-2">{error}</p>}
+      {showSuggestionsSection && suggestions && (
+        <div className="mb-4">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2 flex items-center gap-1">
+            <ShieldAlert className="h-3 w-3" />
+            Suggestions
+            <Badge
+              variant="outline"
+              className="ml-2 font-mono text-[10px] normal-case"
+            >
+              {suggestions.length}
+            </Badge>
+          </h4>
           <div className="space-y-2">
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-          </div>
-        ) : proposals.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            No in-flight proposals.
-          </p>
-        ) : (
-          <div className="space-y-2">
-            {proposals.map((p) => (
-              <MergeTrainRow key={p.proposal_id} proposal={p} />
+            {suggestions.map((sug) => (
+              <SuggestionCard
+                key={sug.alert_id}
+                sug={sug}
+                busy={suggestionBusy === sug.alert_id}
+                onAction={onSuggestionAction}
+              />
             ))}
           </div>
-        )}
-        {/* PR Merge Orchestrator Phase 5 D5.5 — link to the dedicated
+        </div>
+      )}
+      {showGateDecisionsSection && gateBlocks && (
+        <div className="mb-4" data-testid="gate-decisions">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2 flex items-center gap-1">
+            <ShieldQuestion className="h-3 w-3" />
+            Gate decisions
+            {gateTotalBlocks !== null && (
+              <Badge
+                variant="outline"
+                className="ml-2 font-mono text-[10px] normal-case"
+              >
+                {gateTotalBlocks}
+              </Badge>
+            )}
+          </h4>
+          {gateBlocks.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              No gate blocks — the blast-radius merge gate has not held any of
+              your PRs.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {gateBlocks.map((b) => (
+                <GateDecisionRow
+                  key={`${b.repo}#${b.pr_number}@${b.at}`}
+                  block={b}
+                />
+              ))}
+              <p className="text-[11px] text-muted-foreground pt-1">
+                Coverage labels reflect how complete the code graph was when the
+                gate ran — a degraded decision is never authoritative.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+      {showOuterSection && (
+        <div className="mb-4">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+            PR Outer State
+            <Badge
+              variant="outline"
+              className="ml-2 font-mono text-[10px] normal-case"
+            >
+              {prs.length}
+            </Badge>
+          </h4>
+          <div className="space-y-2">
+            {prs.map((p) => (
+              <PrRowDisplay key={`${p.repo}#${p.pr_number}`} pr={p} />
+            ))}
+          </div>
+        </div>
+      )}
+      {proposals === null ? (
+        <div className="space-y-2">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+        </div>
+      ) : proposals.length === 0 ? (
+        <p className="text-xs text-muted-foreground">No in-flight proposals.</p>
+      ) : (
+        <div className="space-y-2">
+          {proposals.map((p) => (
+            <MergeTrainRow key={p.proposal_id} proposal={p} />
+          ))}
+        </div>
+      )}
+      {/* PR Merge Orchestrator Phase 5 D5.5 — link to the dedicated
             cross-repo dependency DAG view. Sibling MergeDependencyGraph
             component is rendered on the same operations page below the
             MergeTrain card. */}
-        <div className="mt-4 pt-3 border-t border-border/40">
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1 flex items-center gap-1">
-            <GitBranch className="h-3 w-3" />
-            Cross-repo dependencies
-          </h4>
-          <p className="text-xs text-muted-foreground">
-            See the{" "}
-            <a
-              href="#merge-dep-graph"
-              className="underline hover:text-foreground"
-            >
-              dependency graph
-            </a>{" "}
-            below for the connected component of any PR. Topological auto-merge
-            is enforced upstream-first; cycle members are flagged red.
-          </p>
-        </div>
+      <div className="mt-4 pt-3 border-t border-border/40">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1 flex items-center gap-1">
+          <GitBranch className="h-3 w-3" />
+          Cross-repo dependencies
+        </h4>
+        <p className="text-xs text-muted-foreground">
+          See the{" "}
+          <a
+            href="#merge-dep-graph"
+            className="underline hover:text-foreground"
+          >
+            dependency graph
+          </a>{" "}
+          below for the connected component of any PR. Topological auto-merge is
+          enforced upstream-first; cycle members are flagged red.
+        </p>
+      </div>
     </CollapsiblePanel>
   );
 }

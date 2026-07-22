@@ -1,15 +1,18 @@
 """DB-backed tests for the memory lifecycle sweeps (Phase 4).
 
 Same pgvector fixture posture as ``tests/test_memory_api_db.py`` (whose
-DDL + stub embedder this module reuses): runs against the shared test
-PostgreSQL, SKIPS gracefully when Postgres or pgvector is unavailable.
-Covers:
+DDL this module reuses): runs against the shared test PostgreSQL, SKIPS
+gracefully when Postgres or pgvector is unavailable. Nothing under test
+loads an embedding model any more, so there is no embedder to stub —
+vectors are seeded directly and the sweeps only ENQUEUE
+(``2026-07-13-runner-paid-embedding`` Phase 2). Covers:
 
 * SQL/Python agreement of the decay retention-score formula,
 * the decay invalidate sweep + the grace-period prune,
 * near-duplicate merge (fold, threshold, tenant isolation),
-* the synthesis pipeline with a stub synthesizer (and the None path),
-* reindex-on-model-bump (stale tag + NULL embedding healed).
+* consolidation ENQUEUEING synthesis jobs (dedupe on re-run),
+* reindex-on-model-bump ENQUEUEING embedding jobs for stale-tag + NULL
+  rows rather than embedding them.
 """
 
 from __future__ import annotations
@@ -33,13 +36,12 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import NullPool
 
-from app.services import memory_embedder
+from app.jobs.memory_lifecycle import consolidate_tenant, decay_once, reindex_once
 from app.services import memory_store as store
-from app.services.memory_embedder import EMBEDDING_DIM, EMBEDDING_MODEL_TAG
-from app.services.memory_lifecycle import member_set_hash, retention_score
-from app.tasks.memory_lifecycle import consolidate_tenant, decay_once, reindex_once
+from app.services.memory_lifecycle import job_input_hash, retention_score
+from app.services.memory_vectors import EMBEDDING_DIM, EMBEDDING_MODEL_TAG
 from tests.conftest import TEST_DATABASE_URL
-from tests.test_memory_api_db import _SETUP_SQL, HashingStubEmbedder, _exec, _scalar
+from tests.test_memory_api_db import _SETUP_SQL, _exec, _scalar
 
 NOW = datetime(2026, 7, 10, 12, 0, 0, tzinfo=UTC)
 
@@ -68,20 +70,13 @@ def db(memory_engine: AsyncEngine) -> Generator[AsyncEngine, None, None]:
     _exec(
         memory_engine,
         [
-            "DELETE FROM coord.memory_synthesis_jobs",
+            "DELETE FROM coord.memory_jobs",
             "DELETE FROM coord.memory_records",
             "DELETE FROM coord.tenant_policies",
             "DELETE FROM coord.sessions",
         ],
     )
     yield memory_engine
-
-
-@pytest.fixture(autouse=True)
-def _stub_embedder() -> Generator[None, None, None]:
-    memory_embedder.set_embedder(HashingStubEmbedder())
-    yield
-    memory_embedder.set_embedder(None)
 
 
 def _run[T](engine: AsyncEngine, fn: Callable[[AsyncSession], Awaitable[T]]) -> T:
@@ -426,8 +421,8 @@ def _job_rows(db: AsyncEngine, tenant: UUID) -> list[dict[str, Any]]:
         async with db.connect() as conn:
             rows = await conn.execute(
                 text(
-                    "SELECT job_id, member_ids, member_texts, status, "
-                    "member_set_hash FROM coord.memory_synthesis_jobs "
+                    "SELECT job_id, kind, target_ids, input_texts, status, "
+                    "input_hash FROM coord.memory_jobs "
                     "WHERE tenant_id = :t"
                 ),
                 {"t": tenant},
@@ -450,9 +445,10 @@ class TestConsolidationEnqueue:
         assert len(jobs) == 1
         job = jobs[0]
         assert job["status"] == "pending"
-        assert {UUID(str(m)) for m in job["member_ids"]} == set(members)
-        assert len(job["member_texts"]) == 5
-        assert job["member_set_hash"] == member_set_hash(members)
+        assert {UUID(str(m)) for m in job["target_ids"]} == set(members)
+        assert len(job["input_texts"]) == 5
+        assert job["kind"] == "synthesis"
+        assert job["input_hash"] == job_input_hash(members)
 
         # Synthesis is deferred to the runner: no mental_model yet, and
         # the members are still live (not superseded).
@@ -476,7 +472,7 @@ class TestConsolidationEnqueue:
         first = _run(db, lambda s: consolidate_tenant(s, tenant, now=NOW))
         assert first["enqueued"] == 1
         second = _run(db, lambda s: consolidate_tenant(s, tenant, now=NOW))
-        # Same cluster, live job already present → member_set_hash dedupe.
+        # Same cluster, live job already present → input_hash dedupe.
         assert second["clusters"] == 1
         assert second["enqueued"] == 0
         assert len(_job_rows(db, tenant)) == 1
@@ -488,7 +484,11 @@ class TestConsolidationEnqueue:
 
 
 class TestReindex:
-    def test_stale_tag_and_null_embedding_healed(self, db: AsyncEngine) -> None:
+    """The sweep ENQUEUES; it never embeds (the runner pays for that)."""
+
+    def test_stale_tag_and_null_embedding_are_enqueued_not_embedded(
+        self, db: AsyncEngine
+    ) -> None:
         tenant = uuid4()
         stale = _seed(
             db,
@@ -508,19 +508,32 @@ class TestReindex:
         current_vec_before = _row(db, current, "CAST(embedding AS text)")
 
         stats = _run(db, lambda s: reindex_once(s, now=NOW))
-        assert stats["reindexed"] == 2
+        assert stats["enqueued_rows"] == 2
+        assert stats["enqueued_jobs"] == 1
 
-        for memory_id in (stale, null_emb):
-            assert _row(db, memory_id, "embedding_model") == EMBEDDING_MODEL_TAG
-            assert _row(db, memory_id, "embedding") is not None
-        # The current row is untouched.
+        # One embedding job covering exactly the two stale/NULL rows.
+        jobs = _job_rows(db, tenant)
+        assert len(jobs) == 1
+        assert jobs[0]["kind"] == "embedding"
+        assert jobs[0]["status"] == "pending"
+        assert {UUID(str(t)) for t in jobs[0]["target_ids"]} == {stale, null_emb}
+
+        # Nothing was embedded in-process: the rows are untouched, still
+        # carrying their old (or absent) vectors, awaiting a runner.
+        assert _row(db, null_emb, "embedding") is None
+        assert _row(db, stale, "embedding_model") == "old-model@v0"
+        # The already-current row is not enqueued and not touched.
         assert _row(db, current, "CAST(embedding AS text)") == current_vec_before
 
-        # Second run is a clean no-op.
+        # Second run is a no-op: the rows now have an in-flight job, so
+        # they are excluded from the batch entirely (this is what makes
+        # the enqueue loop terminate rather than re-select them forever).
         stats = _run(db, lambda s: reindex_once(s, now=NOW))
-        assert stats["reindexed"] == 0
+        assert stats["enqueued_rows"] == 0
+        assert stats["enqueued_jobs"] == 0
+        assert len(_job_rows(db, tenant)) == 1
 
-    def test_tombstones_never_reindexed(self, db: AsyncEngine) -> None:
+    def test_tombstones_never_enqueued(self, db: AsyncEngine) -> None:
         tenant = uuid4()
         dead = _seed(
             db,
@@ -531,5 +544,19 @@ class TestReindex:
             is_tombstone=True,
         )
         stats = _run(db, lambda s: reindex_once(s, now=NOW))
-        assert stats["reindexed"] == 0
+        assert stats["enqueued_rows"] == 0
+        assert _job_rows(db, tenant) == []
         assert _row(db, dead, "embedding") is None
+
+    def test_rows_are_enqueued_per_tenant(self, db: AsyncEngine) -> None:
+        # The batch sweep is tenant-agnostic but a claim is tenant-bound,
+        # so a batch spanning tenants must split into one job per tenant.
+        tenant_a, tenant_b = uuid4(), uuid4()
+        _seed(db, tenant_a, content="a row", embedding=None, embedding_model=None)
+        _seed(db, tenant_b, content="b row", embedding=None, embedding_model=None)
+
+        stats = _run(db, lambda s: reindex_once(s, now=NOW))
+        assert stats["enqueued_rows"] == 2
+        assert stats["enqueued_jobs"] == 2
+        assert len(_job_rows(db, tenant_a)) == 1
+        assert len(_job_rows(db, tenant_b)) == 1

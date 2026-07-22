@@ -306,18 +306,32 @@ test.describe("Admin - Coord operator console", () => {
 
     if (hasCoordHeading) {
       await expect(page.getByTestId("coord-nav")).toBeVisible();
-      // All primary tabs render — Wave 3a adds "questions" between
-      // Plans and Alerts.
+      // Nav redesign: four direct tabs + persona dropdown groups. Direct
+      // tabs render always; grouped pages surface once their menu opens.
       await expect(page.getByTestId("coord-nav-fleet")).toBeVisible();
-      await expect(page.getByTestId("coord-nav-trees")).toBeVisible();
+      await expect(page.getByTestId("coord-nav-prs")).toBeVisible();
+      await expect(page.getByTestId("coord-nav-gates")).toBeVisible();
+      await expect(page.getByTestId("coord-nav-alerts")).toBeVisible();
+
+      // Work group: Plans / Questions / Agents / History / Lands.
+      await page.getByTestId("coord-nav-group-work").click();
       await expect(page.getByTestId("coord-nav-plans")).toBeVisible();
       await expect(page.getByTestId("coord-nav-questions")).toBeVisible();
       await expect(page.getByTestId("coord-nav-agents")).toBeVisible();
-      await expect(page.getByTestId("coord-nav-alerts")).toBeVisible();
       await expect(page.getByTestId("coord-nav-history")).toBeVisible();
-      // Cross-links to existing surfaces.
+      await page.keyboard.press("Escape");
+
+      // Infra group is operator-only (this test path runs as superuser
+      // when the heading rendered).
+      await page.getByTestId("coord-nav-group-infra").click();
+      await expect(page.getByTestId("coord-nav-trees")).toBeVisible();
+      await page.keyboard.press("Escape");
+
+      // Cross-links to existing surfaces live in the Access group.
+      await page.getByTestId("coord-nav-group-access").click();
       await expect(page.getByTestId("coord-nav-claims")).toBeVisible();
       await expect(page.getByTestId("coord-nav-sessions")).toBeVisible();
+      await page.keyboard.press("Escape");
     }
   });
 
@@ -370,6 +384,8 @@ test.describe("Admin - Coord operator console", () => {
       return;
     }
 
+    // Plans lives in the Work group — open the menu, then navigate.
+    await page.getByTestId("coord-nav-group-work").click();
     await page.getByTestId("coord-nav-plans").click();
     await page.waitForURL(/\/admin\/coord\/plans/);
     await expect(page.getByTestId("coord-plans-page")).toBeVisible();
@@ -626,7 +642,9 @@ test.describe("Admin - Coord memory browser (Wave 3c)", () => {
     }
 
     await expect(page.getByTestId("coord-memory-page")).toBeVisible();
-    await expect(page.getByTestId("coord-nav-memory")).toBeVisible();
+    // Memory lives in the Infra group; the active page surfaces as the
+    // group trigger's wayfinding crumb.
+    await expect(page.getByTestId("coord-nav-memory-active")).toBeVisible();
 
     // Both rows render initially.
     const cards = page.getByTestId("coord-memory-card");

@@ -279,6 +279,84 @@ class MachineEnvironmentConfig(Base):
         )
 
 
+class MachineEnvironmentConfigHistory(Base):
+    """Append-only capture timeline for (environment, machine) configs.
+
+    ``machine_environment_configs`` keeps only the LATEST envelope per
+    (environment, machine); this table records every *distinct* capture so an
+    operator can see how a machine's config drifted over time and diff two
+    points. Written alongside the latest-snapshot upsert in the agent
+    ``report_config`` path.
+
+    Append semantics — **consecutive dedup by ``content_hash``**: the
+    ~15-min runner capture is mostly no-change noise, so a row is appended
+    only when the hash differs from the most recent history row for the pair.
+    ``content_hash`` is the sha256 hex of the canonical-JSON envelope (sorted
+    keys, compact separators, ``captured_at`` excluded — a re-capture of
+    identical content must dedup even though its timestamp moved).
+
+    FK rationale — history dies with its machine (``ON DELETE CASCADE`` on
+    ``machine_id``), unlike the canonical change log's soft machine refs: the
+    canonical log records *decisions* that must outlive the machine; this
+    records a machine's private *self-observations*, which have no audit
+    value after the machine is gone. The FKs mirror
+    :class:`MachineEnvironmentConfig` exactly, so no new ORM sort cycle is
+    introduced (see the ``environment_id`` note on :class:`Machine`).
+
+    Secret stance: stores the same post-backstop envelope as the latest
+    snapshot — secret values never enter either table.
+    """
+
+    __tablename__ = "machine_environment_config_history"
+    __table_args__ = (
+        Index(
+            "idx_devenv_config_history_env_machine_captured",
+            "environment_id",
+            "machine_id",
+            text("captured_at DESC"),
+        ),
+        {"schema": _SCHEMA},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    environment_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("devenv.environments.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    machine_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("devenv.machines.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    owner_user_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    config: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    schema_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    source: Mapped[str] = mapped_column(String(50), nullable=False)
+    captured_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+
+    def __repr__(self) -> str:
+        """Return repr."""
+        return (
+            f"<MachineEnvironmentConfigHistory(env={self.environment_id}, "
+            f"machine={self.machine_id}, captured_at={self.captured_at})>"
+        )
+
+
 class DeviceMachineCredential(Base):
     """A device-bound machine key (``devenv.device_machine_credentials``).
 
@@ -340,4 +418,67 @@ class DeviceMachineCredential(Base):
             f"<DeviceMachineCredential(id={self.id}, "
             f"device_id={self.device_id}, "
             f"revoked={self.revoked_at is not None})>"
+        )
+
+
+class CanonicalChangeLog(Base):
+    """Append-only audit of canonical-machine designations.
+
+    Written inside ``PUT /environments/{id}/canonical`` so every change to
+    which machine is the source of truth is attributable: who changed it,
+    when, and from which machine to which. This is the "records of who
+    changed it and when" the team-sync (pull-model) design requires.
+
+    ``from_machine_id`` / ``to_machine_id`` are **soft references, NOT FKs**:
+    the audit record must survive later deletion of a machine (an FK would
+    ``SET NULL`` away which machine a past change pointed at). ``tenant_id``
+    is a best-effort, nullable, soft reference to the coord tenant the change
+    was made under (tenants are a coord/identity concept, not a web table) —
+    forward-compat for tenant-scoped devenv (plan P3).
+    """
+
+    __tablename__ = "canonical_change_log"
+    __table_args__ = (
+        Index(
+            "idx_devenv_canonical_log_env_changed_at",
+            "environment_id",
+            text("changed_at DESC"),
+        ),
+        {"schema": _SCHEMA},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    environment_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("devenv.environments.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    # Soft references (NOT FKs) — see class docstring.
+    from_machine_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), nullable=True
+    )
+    to_machine_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), nullable=True
+    )
+    changed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("auth.users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), nullable=True
+    )
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    changed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+
+    def __repr__(self) -> str:
+        """Return repr."""
+        return (
+            f"<CanonicalChangeLog(env={self.environment_id}, to={self.to_machine_id})>"
         )

@@ -109,7 +109,10 @@ interface GraphResponse {
  * ``prStatusTint`` palette in MergeTrain.tsx so the colour language
  * is consistent across the two surfaces.
  */
-function nodeTint(node: GraphNode, isCycleMember: boolean): {
+function nodeTint(
+  node: GraphNode,
+  isCycleMember: boolean
+): {
   border: string;
   bg: string;
   text: string;
@@ -154,13 +157,19 @@ const NODE_HEIGHT = 80;
 
 function layoutNodes(
   nodes: Node<PrNodeData>[],
-  edges: Edge[],
+  edges: Edge[]
 ): { nodes: Node<PrNodeData>[]; edges: Edge[] } {
   const g = new dagre.graphlib.Graph();
   g.setDefaultEdgeLabel(() => ({}));
   // Left-to-right layout puts upstream PRs on the left, downstream
   // on the right — operator reading order matches merge order.
-  g.setGraph({ rankdir: "LR", marginx: 24, marginy: 24, nodesep: 40, ranksep: 80 });
+  g.setGraph({
+    rankdir: "LR",
+    marginx: 24,
+    marginy: 24,
+    nodesep: 40,
+    ranksep: 80,
+  });
 
   for (const n of nodes) {
     g.setNode(n.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
@@ -255,7 +264,9 @@ export function MergeDependencyGraph({
   initialPr,
 }: MergeDependencyGraphProps) {
   const [repo, setRepo] = useState<string>(initialRepo);
-  const [prInput, setPrInput] = useState<string>(initialPr ? String(initialPr) : "");
+  const [prInput, setPrInput] = useState<string>(
+    initialPr ? String(initialPr) : ""
+  );
   const [graph, setGraph] = useState<GraphResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
@@ -286,7 +297,9 @@ export function MergeDependencyGraph({
     setError(null);
     try {
       const params = new URLSearchParams({ repo, pr: String(prNum) });
-      const res = await httpClient.fetch(`${OPERATIONS_API}/pr-merge/graph?${params.toString()}`);
+      const res = await httpClient.fetch(
+        `${OPERATIONS_API}/pr-merge/graph?${params.toString()}`
+      );
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
       const body = (await res.json()) as GraphResponse;
       setGraph(body);
@@ -311,7 +324,7 @@ export function MergeDependencyGraph({
   const laidOut = useMemo(() => {
     if (!graph) return { nodes: [] as Node<PrNodeData>[], edges: [] as Edge[] };
     const cycleSet = new Set(
-      graph.cycle_members.map((m) => `${m.repo}#${m.pr}`),
+      graph.cycle_members.map((m) => `${m.repo}#${m.pr}`)
     );
     const rfNodes: Node[] = graph.nodes.map((n) => ({
       id: `${n.repo}#${n.pr_number}`,
@@ -329,10 +342,11 @@ export function MergeDependencyGraph({
       label: e.kind === "stacked_on" ? "stacked" : undefined,
       animated: false,
       style: {
-        stroke: cycleSet.has(`${e.from.repo}#${e.from.pr}`)
-          && cycleSet.has(`${e.to.repo}#${e.to.pr}`)
-          ? "#fca5a5"
-          : "#64748b",
+        stroke:
+          cycleSet.has(`${e.from.repo}#${e.from.pr}`) &&
+          cycleSet.has(`${e.to.repo}#${e.to.pr}`)
+            ? "#fca5a5"
+            : "#64748b",
         strokeWidth: 1.5,
       },
     }));
@@ -354,116 +368,123 @@ export function MergeDependencyGraph({
         ) : null
       }
     >
-        <div className="flex items-end gap-2 mb-4 flex-wrap">
-          <div className="flex flex-col gap-1">
-            <Label htmlFor="dep-graph-repo" className="text-xs">
-              Repo (owner/name)
-            </Label>
-            <Input
-              id="dep-graph-repo"
-              value={repo}
-              onChange={(e) => setRepo(e.target.value)}
-              placeholder="qontinui/qontinui-coord"
-              className="w-64 font-mono text-xs"
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <Label htmlFor="dep-graph-pr" className="text-xs">
-              PR #
-            </Label>
-            <Input
-              id="dep-graph-pr"
-              value={prInput}
-              onChange={(e) => setPrInput(e.target.value.replace(/[^0-9]/g, ""))}
-              placeholder="42"
-              className="w-24 font-mono text-xs"
-            />
-          </div>
-          <Button
-            onClick={() => void fetchGraph()}
-            disabled={loading || !repo || !prInput}
-            size="sm"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 mr-1 ${loading ? "animate-spin" : ""}`} />
-            Load graph
-          </Button>
+      <div className="flex items-end gap-2 mb-4 flex-wrap">
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="dep-graph-repo" className="text-xs">
+            Repo (owner/name)
+          </Label>
+          <Input
+            id="dep-graph-repo"
+            value={repo}
+            onChange={(e) => setRepo(e.target.value)}
+            placeholder="qontinui/qontinui-coord"
+            className="w-64 font-mono text-xs"
+          />
         </div>
-        {error && (
-          <p className="text-xs text-red-300 mb-2 flex items-center gap-1">
-            <AlertTriangle className="h-3 w-3" />
-            {error}
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="dep-graph-pr" className="text-xs">
+            PR #
+          </Label>
+          <Input
+            id="dep-graph-pr"
+            value={prInput}
+            onChange={(e) => setPrInput(e.target.value.replace(/[^0-9]/g, ""))}
+            placeholder="42"
+            className="w-24 font-mono text-xs"
+          />
+        </div>
+        <Button
+          onClick={() => void fetchGraph()}
+          disabled={loading || !repo || !prInput}
+          size="sm"
+        >
+          <RefreshCw
+            className={`h-3.5 w-3.5 mr-1 ${loading ? "animate-spin" : ""}`}
+          />
+          Load graph
+        </Button>
+      </div>
+      {error && (
+        <p className="text-xs text-red-300 mb-2 flex items-center gap-1">
+          <AlertTriangle className="h-3 w-3" />
+          {error}
+        </p>
+      )}
+      {graph?.cycle_detected && (
+        <div className="mb-3 p-2 border border-red-500/30 bg-red-500/15 rounded-md">
+          <p className="text-sm text-red-200 font-semibold flex items-center gap-1">
+            <AlertTriangle className="h-4 w-4" />
+            Dependency cycle detected — operator action required
           </p>
-        )}
-        {graph?.cycle_detected && (
-          <div className="mb-3 p-2 border border-red-500/30 bg-red-500/15 rounded-md">
-            <p className="text-sm text-red-200 font-semibold flex items-center gap-1">
-              <AlertTriangle className="h-4 w-4" />
-              Dependency cycle detected — operator action required
-            </p>
-            <p className="text-xs text-red-300 mt-1">
-              {graph.cycle_members.length} PR(s) form a cycle. Topological
-              auto-merge is halted for this component. Relabel one of the
-              members to break the cycle.
-            </p>
-            <div className="flex flex-wrap gap-1 mt-2">
-              {graph.cycle_members.map((m) => (
-                <Badge
-                  key={`${m.repo}#${m.pr}`}
-                  variant="outline"
-                  className="font-mono text-[10px] text-red-200 border-red-500/40"
-                >
-                  {m.repo}#{m.pr}
-                </Badge>
-              ))}
-            </div>
-          </div>
-        )}
-        {loading && !graph && (
-          <div className="space-y-2">
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-          </div>
-        )}
-        {graph && !graph.cycle_detected && graph.topo_order.length > 0 && (
-          <div className="mb-3 text-xs text-muted-foreground">
-            <span className="font-semibold">Topological order:</span>{" "}
-            {graph.topo_order.map((n, i) => (
-              <span key={`${n.repo}#${n.pr}`}>
-                <span className="font-mono">
-                  {n.repo.split("/").slice(-1)[0]}#{n.pr}
-                </span>
-                {i < graph.topo_order.length - 1 && (
-                  <span className="mx-1">→</span>
-                )}
-              </span>
+          <p className="text-xs text-red-300 mt-1">
+            {graph.cycle_members.length} PR(s) form a cycle. Topological
+            auto-merge is halted for this component. Relabel one of the members
+            to break the cycle.
+          </p>
+          <div className="flex flex-wrap gap-1 mt-2">
+            {graph.cycle_members.map((m) => (
+              <Badge
+                key={`${m.repo}#${m.pr}`}
+                variant="outline"
+                className="font-mono text-[10px] text-red-200 border-red-500/40"
+              >
+                {m.repo}#{m.pr}
+              </Badge>
             ))}
           </div>
-        )}
-        {graph && graph.nodes.length > 0 && (
-          <div
-            style={{ height: 420, width: "100%", border: "1px solid var(--border)", borderRadius: 6 }}
-            data-testid="merge-dep-graph-canvas"
+        </div>
+      )}
+      {loading && !graph && (
+        <div className="space-y-2">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+        </div>
+      )}
+      {graph && !graph.cycle_detected && graph.topo_order.length > 0 && (
+        <div className="mb-3 text-xs text-muted-foreground">
+          <span className="font-semibold">Topological order:</span>{" "}
+          {graph.topo_order.map((n, i) => (
+            <span key={`${n.repo}#${n.pr}`}>
+              <span className="font-mono">
+                {n.repo.split("/").slice(-1)[0]}#{n.pr}
+              </span>
+              {i < graph.topo_order.length - 1 && (
+                <span className="mx-1">→</span>
+              )}
+            </span>
+          ))}
+        </div>
+      )}
+      {graph && graph.nodes.length > 0 && (
+        <div
+          style={{
+            height: 420,
+            width: "100%",
+            border: "1px solid var(--border)",
+            borderRadius: 6,
+          }}
+          data-testid="merge-dep-graph-canvas"
+        >
+          <ReactFlow
+            nodes={laidOut.nodes}
+            edges={laidOut.edges}
+            nodeTypes={nodeTypes}
+            fitView
+            proOptions={{ hideAttribution: true }}
+            nodesDraggable={false}
+            nodesConnectable={false}
+            elementsSelectable={false}
           >
-            <ReactFlow
-              nodes={laidOut.nodes}
-              edges={laidOut.edges}
-              nodeTypes={nodeTypes}
-              fitView
-              proOptions={{ hideAttribution: true }}
-              nodesDraggable={false}
-              nodesConnectable={false}
-              elementsSelectable={false}
-            >
-              <Background gap={20} />
-              <Controls showInteractive={false} />
-            </ReactFlow>
-          </div>
-        )}
-        {graph && graph.nodes.length === 1 && !graph.cycle_detected && (
-          <p className="text-xs text-muted-foreground mt-2">
-            This PR has no cross-repo dependencies — single-node component.
-          </p>
-        )}
+            <Background gap={20} />
+            <Controls showInteractive={false} />
+          </ReactFlow>
+        </div>
+      )}
+      {graph && graph.nodes.length === 1 && !graph.cycle_detected && (
+        <p className="text-xs text-muted-foreground mt-2">
+          This PR has no cross-repo dependencies — single-node component.
+        </p>
+      )}
     </CollapsiblePanel>
   );
 }

@@ -19,7 +19,13 @@
   --accent: #252529;
   --accent-foreground: #ffffff;
   --destructive: #e5534b;
-  --destructive-foreground: #e5534b;
+  /* Was #e5534b — identical to --destructive, i.e. red text on a red fill,
+     which rendered every `text-destructive-foreground` element invisible.
+     Every other *-foreground in this block is #ffffff; this was a
+     copy-paste of the line above. The app theme (globals.css) has no such
+     token at all — shadcn dropped it, and its components hardcode
+     `text-white` — so this exists only for the marketing tree. */
+  --destructive-foreground: #ffffff;
   --border: #2a2a30;
   --input: #1e1e22;
   --ring: #4a90d9;

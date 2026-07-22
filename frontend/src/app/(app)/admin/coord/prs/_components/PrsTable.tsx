@@ -32,6 +32,10 @@ import type {
   PrMergeStatus,
   PrDeployState,
 } from "@/services/admin-dev-service";
+import {
+  formatContextNames,
+  unstableHasFailure,
+} from "@/components/operations/prPipeline";
 
 // ---- formatting helpers --------------------------------------------------
 
@@ -89,8 +93,9 @@ type BadgeTone =
 
 /**
  * Severity/color map by merge_status. The "stuck" states the operator most
- * needs to see — `ready-but-unlanded` and `awaiting-specialist-review` — are
- * deliberately LOUD (destructive red / warning orange). Calm states
+ * needs to see — `ready-but-unlanded`, `repo-unreachable`, and
+ * `awaiting-specialist-review` — are deliberately LOUD (destructive red /
+ * warning orange). Calm states
  * (`ready`/`queued`) read green/blue; `draft` and `unknown` are muted; the
  * actionable-but-not-stuck blockers (ci/conflicts/behind/review/blast-radius)
  * are warning-colored.
@@ -98,6 +103,7 @@ type BadgeTone =
 const MERGE_STATUS_TONE: Record<PrMergeStatus, BadgeTone> = {
   // LOUD — genuinely stuck, needs an operator.
   "ready-but-unlanded": "destructive",
+  "repo-unreachable": "destructive",
   "awaiting-specialist-review": "warning",
   // Warning — a concrete blocker the PR author can act on.
   "ci-failed": "destructive",
@@ -170,25 +176,23 @@ function CiCell({ pr }: { pr: PrRow }) {
  * window where GitHub is still recomputing mergeability after `main` moved).
  * Keys mirror the full GitHub enum.
  */
-const MERGE_STATE_META: Record<
-  string,
-  { tone: BadgeTone; label?: string; hint: string }
-> = {
+type MergeStateMeta = { tone: BadgeTone; label?: string; hint: string };
+
+const STATIC_MERGE_STATE_META = {
   CLEAN: {
     tone: "success",
     hint: "Mergeable and all required checks pass — ready to merge.",
   },
-  UNSTABLE: {
-    tone: "warning",
-    hint: "Mergeable, but a non-required check is failing or still running.",
-  },
+  // UNSTABLE deliberately absent: it has TWO honest meanings and is derived
+  // per-row by `unstableMeta` below (failed non-required check vs checks
+  // still running).
   BEHIND: {
     tone: "warning",
     hint: "Head is behind the base branch — update/rebase before merging.",
   },
   BLOCKED: {
     tone: "destructive",
-    hint: "Blocked by branch protection (required review or check not satisfied).",
+    hint: "Blocked by ruleset/branch-protection requirements (required review or required check not satisfied).",
   },
   DIRTY: {
     tone: "destructive",
@@ -207,18 +211,71 @@ const MERGE_STATE_META: Record<
     label: "Recalibrating",
     hint: "GitHub is still recomputing mergeability (it resets every time the base branch moves). This resolves on its own; the row auto-refreshes until it settles.",
   },
+} satisfies Record<string, MergeStateMeta>;
+
+const MERGE_STATE_META: Record<string, MergeStateMeta | undefined> =
+  STATIC_MERGE_STATE_META;
+
+/**
+ * UNSTABLE is the one merge state whose meaning is DERIVED from the row, not
+ * looked up statically: GitHub reports UNSTABLE both when a non-required
+ * check FAILED (worth a look — warning) and when non-required checks are
+ * merely STILL RUNNING (just wait — muted info). The split predicate is
+ * shared with prPipeline/MergeTrain via `unstableHasFailure` so the surfaces
+ * never drift. Exported for PrsTable.test.tsx.
+ */
+export const UNSTABLE_FAILED_META = {
+  tone: "warning" as BadgeTone,
+  hint: "Mergeable, but a non-required check failed — worth a look; it does not block the merge.",
+};
+export const UNSTABLE_PENDING_META = {
+  tone: "info" as BadgeTone,
+  hint: "Mergeable; non-required checks still running — no action needed.",
 };
 
-/** Order for the header legend — calm → loud → transient. */
-const MERGE_STATE_LEGEND: readonly string[] = [
-  "CLEAN",
-  "UNSTABLE",
-  "BEHIND",
-  "BLOCKED",
-  "DIRTY",
-  "HAS_HOOKS",
-  "DRAFT",
-  "UNKNOWN",
+function unstableMeta(
+  pr: Pick<PrRow, "failing_contexts" | "ci_conclusion">,
+): MergeStateMeta {
+  return unstableHasFailure(pr) ? UNSTABLE_FAILED_META : UNSTABLE_PENDING_META;
+}
+
+/**
+ * Order for the header legend — calm → loud → transient. The legend is the
+ * operator's contract: BOTH derived UNSTABLE variants appear even though
+ * only one renders per row. Exported for PrsTable.test.tsx.
+ */
+export const MERGE_STATE_LEGEND: readonly {
+  key: string;
+  badge: string;
+  tone: BadgeTone;
+  hint: string;
+  label?: string;
+}[] = [
+  { key: "CLEAN", badge: "CLEAN", ...STATIC_MERGE_STATE_META.CLEAN },
+  {
+    key: "UNSTABLE-failed",
+    badge: "UNSTABLE",
+    ...UNSTABLE_FAILED_META,
+  },
+  {
+    key: "UNSTABLE-pending",
+    badge: "UNSTABLE",
+    ...UNSTABLE_PENDING_META,
+  },
+  { key: "BEHIND", badge: "BEHIND", ...STATIC_MERGE_STATE_META.BEHIND },
+  { key: "BLOCKED", badge: "BLOCKED", ...STATIC_MERGE_STATE_META.BLOCKED },
+  { key: "DIRTY", badge: "DIRTY", ...STATIC_MERGE_STATE_META.DIRTY },
+  {
+    key: "HAS_HOOKS",
+    badge: "HAS_HOOKS",
+    ...STATIC_MERGE_STATE_META.HAS_HOOKS,
+  },
+  { key: "DRAFT", badge: "DRAFT", ...STATIC_MERGE_STATE_META.DRAFT },
+  {
+    key: "UNKNOWN",
+    badge: STATIC_MERGE_STATE_META.UNKNOWN.label,
+    ...STATIC_MERGE_STATE_META.UNKNOWN,
+  },
 ];
 
 /** Normalize the raw wire value to an uppercase enum key (UNKNOWN when null). */
@@ -240,17 +297,31 @@ export function isMergeStateRecalibrating(
 
 function MergeStateCell({ pr }: { pr: PrRow }) {
   const state = normalizeMergeState(pr.merge_state_status);
-  const meta = MERGE_STATE_META[state] ?? {
-    tone: "outline" as BadgeTone,
-    hint: "Unrecognized merge state reported by GitHub.",
-  };
+  const meta =
+    state === "UNSTABLE"
+      ? unstableMeta(pr)
+      : (MERGE_STATE_META[state] ?? {
+          tone: "outline" as BadgeTone,
+          hint: "Unrecognized merge state reported by GitHub.",
+        });
+
+  // Tooltip = GitHub's lens (hint + named failing checks + mergeable) plus
+  // coord's lens (blocking_summary) side by side. The coord-lens BADGE is
+  // already the neighboring "Blocking reason" column — only the summary text
+  // rides along here, never a duplicate badge.
+  const failing = pr.failing_contexts ?? [];
+  const titleLines = [meta.hint];
+  if (failing.length > 0) {
+    titleLines.push(`failing checks: ${formatContextNames(failing)}`);
+  }
+  if (pr.blocking_summary) {
+    titleLines.push(`coord: ${pr.blocking_summary}`);
+  }
+  titleLines.push(`mergeable: ${String(pr.mergeable)}`);
 
   return (
     <div className="flex flex-col gap-0.5">
-      <Badge
-        variant={meta.tone}
-        title={`${meta.hint}\nmergeable: ${String(pr.mergeable)}`}
-      >
+      <Badge variant={meta.tone} title={titleLines.join("\n")}>
         {meta.label ?? state}
       </Badge>
       {pr.review_decision && (
@@ -283,20 +354,16 @@ function MergeStateHeader() {
             GitHub merge state (from mergeStateStatus)
           </p>
           <ul className="space-y-1.5">
-            {MERGE_STATE_LEGEND.map((state) => {
-              const meta = MERGE_STATE_META[state];
-              if (!meta) return null;
-              return (
-                <li key={state} className="flex items-start gap-2">
-                  <Badge variant={meta.tone} className="shrink-0">
-                    {meta.label ?? state}
-                  </Badge>
-                  <span className="text-xs text-muted-foreground">
-                    {meta.hint}
-                  </span>
-                </li>
-              );
-            })}
+            {MERGE_STATE_LEGEND.map((entry) => (
+              <li key={entry.key} className="flex items-start gap-2">
+                <Badge variant={entry.tone} className="shrink-0">
+                  {entry.badge}
+                </Badge>
+                <span className="text-xs text-muted-foreground">
+                  {entry.hint}
+                </span>
+              </li>
+            ))}
           </ul>
         </TooltipContent>
       </Tooltip>

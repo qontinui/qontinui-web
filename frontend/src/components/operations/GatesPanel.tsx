@@ -62,7 +62,7 @@ const log = createLogger("GatesPanel");
 // ---------------------------------------------------------------------------
 
 function verdictVariant(
-  verdict: GateVerdict,
+  verdict: GateVerdict
 ): "outline" | "success" | "destructive" {
   switch (verdict) {
     case "cleared":
@@ -80,7 +80,7 @@ function verdictVariant(
  *  (a stale-pending continuation the operator should look at), `neutral` →
  *  `outline` (cancelled / spawned / fresh-pending — informational). */
 function lifecycleBadgeVariant(
-  accent: ContinuationLifecycleAccent,
+  accent: ContinuationLifecycleAccent
 ): "destructive" | "warning" | "outline" {
   switch (accent) {
     case "error":
@@ -209,7 +209,7 @@ function GateRowView({ gate, onActed }: GateRowProps) {
 
   const predicateText = useMemo(
     () => humanizePredicate(gate.predicate),
-    [gate.predicate],
+    [gate.predicate]
   );
 
   // The full condition text the operator is attesting. `gate.predicate.prompt`
@@ -225,7 +225,7 @@ function GateRowView({ gate, onActed }: GateRowProps) {
   // fabricated signal — an honest omission is correct.
   const continuationSummary = useMemo(
     () => summarizeContinuation(gate.continuation_spawn),
-    [gate.continuation_spawn],
+    [gate.continuation_spawn]
   );
 
   // The runtime lifecycle of a dispatched continuation (cancelled / spawn_failed
@@ -238,7 +238,7 @@ function GateRowView({ gate, onActed }: GateRowProps) {
   // (the 15m warning threshold flips on the next poll-driven re-render).
   const continuationLifecycle = useMemo(
     () => summarizeContinuationLifecycle(gate),
-    [gate],
+    [gate]
   );
 
   const isSnoozed = useMemo(() => {
@@ -288,7 +288,7 @@ function GateRowView({ gate, onActed }: GateRowProps) {
         return false;
       }
     },
-    [onActed],
+    [onActed]
   );
 
   // Mark-met: clear the gate via approve, then offer an Undo toast that
@@ -328,7 +328,7 @@ function GateRowView({ gate, onActed }: GateRowProps) {
         until: snoozeUntilIso(secs),
       });
     },
-    [runAction, gate.gate_id],
+    [runAction, gate.gate_id]
   );
 
   const busy = action.kind === "busy";
@@ -606,20 +606,32 @@ function groupGates(gates: GateRow[]): GroupedGates[] {
  * caller's own gates.
  */
 export function GatesPanel() {
-  const { gates, error, refetch } = useGatesStream();
+  // Hide-orphans toggle (plan `2026-07-15-coord-cleanup-closed-pr-gates`
+  // Phase 4). DEFAULT hides ORPHANED gates — `pr_merged` gates whose PR is
+  // known-closed and `ci_green` gates on superseded SHAs (no longer any open
+  // PR's head); neither can ever clear, so the clean panel is the
+  // predictable default. The header checkbox ("Show orphaned gates",
+  // unchecked) is the discoverable, reversible opt-in to the raw view;
+  // checking it drops `exclude_orphans=1` from the list fetch and refetches
+  // immediately (the hook's fetch callback is keyed on the option).
+  // Deliberately local + non-persisted state: the raw view is a diagnostic
+  // peek, not a layout preference.
+  const [showOrphanedGates, setShowOrphanedGates] = useState(false);
+  const { gates, error, refetch } = useGatesStream({
+    excludeOrphans: !showOrphanedGates,
+  });
 
   const onActed = useCallback(() => {
     void refetch();
   }, [refetch]);
 
-  const groups = useMemo(
-    () => (gates ? groupGates(gates) : []),
-    [gates],
-  );
+  const groups = useMemo(() => (gates ? groupGates(gates) : []), [gates]);
 
   const loading = gates === null && error === null;
   const count = gates?.length ?? 0;
-  const failedCount = (gates ?? []).filter((g) => g.verdict === "failed").length;
+  const failedCount = (gates ?? []).filter(
+    (g) => g.verdict === "failed"
+  ).length;
 
   return (
     <CollapsiblePanel
@@ -647,56 +659,76 @@ export function GatesPanel() {
           )}
         </>
       }
+      // Rendered OUTSIDE the collapse trigger (same header row as the count
+      // badges) so toggling never folds the panel — and an <input> inside the
+      // trigger <button> would be invalid nested-interactive HTML. The label
+      // is always visible (even collapsed), which is what makes the hidden
+      // default state discoverable.
+      headerActions={
+        <label
+          className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none whitespace-nowrap"
+          title="Gates for closed PRs or superseded CI SHAs, hidden by default (they can never clear). Check to include them."
+          data-ui-bridge-id="operations.gates-show-orphaned"
+        >
+          <input
+            type="checkbox"
+            checked={showOrphanedGates}
+            onChange={(e) => setShowOrphanedGates(e.target.checked)}
+            className="rounded border-border-subtle"
+          />
+          Show orphaned gates
+        </label>
+      }
     >
-        {/* Error state — surfaced honestly, polling continues underneath. */}
-        {error && (
-          <p className="text-xs text-red-300 mb-2 flex items-center gap-1">
-            <AlertTriangle className="h-3 w-3" />
-            Couldn&apos;t load gates: {error}
-          </p>
-        )}
+      {/* Error state — surfaced honestly, polling continues underneath. */}
+      {error && (
+        <p className="text-xs text-red-300 mb-2 flex items-center gap-1">
+          <AlertTriangle className="h-3 w-3" />
+          Couldn&apos;t load gates: {error}
+        </p>
+      )}
 
-        {/* Loading state — first fetch hasn't resolved. */}
-        {loading ? (
-          <p className="text-xs text-muted-foreground">Loading gates…</p>
-        ) : count === 0 ? (
-          /* Empty state. data-content-id gives the registry a stable anchor
+      {/* Loading state — first fetch hasn't resolved. */}
+      {loading ? (
+        <p className="text-xs text-muted-foreground">Loading gates…</p>
+      ) : count === 0 ? (
+        /* Empty state. data-content-id gives the registry a stable anchor
              (the text is long + may be reworded); this is what Spec-CI's
              hermetic EMPTY-database run asserts, since no gate rows exist. */
-          <p
-            className="text-xs text-muted-foreground"
-            data-content-id="gates-empty-state"
-          >
-            No gates registered. Defer a plan phase or arm an observation from
-            a runner session to see it tracked here.
-          </p>
-        ) : (
-          <div className="space-y-4">
-            {groups.map((group) => (
-              <div key={group.key} className="space-y-2">
-                <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                  <SignpostBig className="h-3.5 w-3.5" />
-                  <span className="truncate font-mono">{group.label}</span>
-                  <Badge
-                    variant="outline"
-                    className="text-[10px] uppercase tracking-wide"
-                  >
-                    {group.kind}
-                  </Badge>
-                </div>
-                <div className="space-y-2">
-                  {group.gates.map((gate) => (
-                    <GateRowView
-                      key={gate.gate_id}
-                      gate={gate}
-                      onActed={onActed}
-                    />
-                  ))}
-                </div>
+        <p
+          className="text-xs text-muted-foreground"
+          data-content-id="gates-empty-state"
+        >
+          No gates registered. Defer a plan phase or arm an observation from a
+          runner session to see it tracked here.
+        </p>
+      ) : (
+        <div className="space-y-4">
+          {groups.map((group) => (
+            <div key={group.key} className="space-y-2">
+              <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <SignpostBig className="h-3.5 w-3.5" />
+                <span className="truncate font-mono">{group.label}</span>
+                <Badge
+                  variant="outline"
+                  className="text-[10px] uppercase tracking-wide"
+                >
+                  {group.kind}
+                </Badge>
               </div>
-            ))}
-          </div>
-        )}
+              <div className="space-y-2">
+                {group.gates.map((gate) => (
+                  <GateRowView
+                    key={gate.gate_id}
+                    gate={gate}
+                    onActed={onActed}
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </CollapsiblePanel>
   );
 }

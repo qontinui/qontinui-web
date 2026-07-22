@@ -203,10 +203,14 @@ export function DBErrorHandler() {
     };
   }, []);
 
-  // Show a persistent banner if storage is corrupted
+  // Show a persistent banner if storage is corrupted.
+  //
+  // Colors are literal, NOT `bg-destructive text-destructive-foreground`:
+  // this app's theme defines no `--destructive-foreground`, so that class
+  // emitted no rule and the banner text was invisible (see RedMainBanner).
   if (showBanner) {
     return (
-      <div className="fixed top-0 left-0 right-0 z-50 bg-destructive/90 text-destructive-foreground px-4 py-2 flex items-center justify-between text-sm">
+      <div className="fixed top-0 left-0 right-0 z-50 bg-red-900 text-white px-4 py-2 flex items-center justify-between text-sm">
         <div className="flex items-center gap-2">
           <span className="font-medium">Browser Storage Error:</span>
           <span>
@@ -216,7 +220,7 @@ export function DBErrorHandler() {
         </div>
         <button
           onClick={() => setShowBanner(false)}
-          className="ml-4 px-2 py-1 bg-destructive-foreground/20 rounded hover:bg-destructive-foreground/30 transition-colors"
+          className="ml-4 px-2 py-1 bg-white/20 rounded hover:bg-white/30 transition-colors"
         >
           Dismiss
         </button>

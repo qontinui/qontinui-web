@@ -104,14 +104,14 @@
         },
         {
           "id": "coord-trees-shell-elem-2",
-          "description": "'Trees' nav link (data-testid coord-nav-trees) — the active section.",
+          "description": "'Trees' wayfinding crumb (data-testid coord-nav-trees-active) on the Infra group trigger — the grouped nav surfaces the active section on its group button.",
           "category": "navigation",
           "severity": "warning",
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "coord-nav-trees" },
-            "label": "Trees nav link"
+            "criteria": { "id": "coord-nav-trees-active" },
+            "label": "Trees wayfinding crumb"
           },
           "source": "ai-generated",
           "reviewed": false,
@@ -119,14 +119,14 @@
         },
         {
           "id": "coord-trees-shell-elem-3",
-          "description": "'Pull Decisions' nav link (data-testid coord-nav-pull-decisions) — cross-link to the sibling decision feed the TreeCard verdict badges deep-link into.",
+          "description": "The 'Merge' nav group trigger (data-testid coord-nav-group-merge) — Pull Decisions, the sibling decision feed TreeCard verdict badges deep-link into, lives inside this menu.",
           "category": "navigation",
           "severity": "warning",
           "assertionType": "exists",
           "target": {
             "type": "search",
-            "criteria": { "id": "coord-nav-pull-decisions" },
-            "label": "Pull Decisions nav link"
+            "criteria": { "id": "coord-nav-group-merge" },
+            "label": "Merge group trigger"
           },
           "source": "ai-generated",
           "reviewed": false,

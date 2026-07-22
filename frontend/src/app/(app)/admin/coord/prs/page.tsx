@@ -23,6 +23,14 @@
  * (24h)" (calls `getPrs({ includeMerged: 24 })`, surfacing a Deploy badge
  * column answering "has my PR deployed yet?"). Switching tabs re-fetches; the
  * auto-refresh / "updated Xs ago" machinery is shared across both.
+ *
+ * Coord-down resilience: the web proxy converts a coord outage into a 200
+ * `{prs: [], coord_error}` envelope. Instead of blanking to "No PRs", the page
+ * RETAINS the last-good rows for the SAME tab and shows a subtle "showing last
+ * data" reconnecting hint over them (the hard banner is reserved for cold-start
+ * outages with nothing to retain), polling faster (~5s) until coord recovers.
+ * Both coord banners are gated on `!loading`: the skeleton owns the body during
+ * any load/tab-switch window, so neither may describe data that isn't on screen.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -44,6 +52,10 @@ import { DeployStatusStrip } from "./_components/DeployStatusStrip";
 
 // Auto-refresh cadence — matches the gates dashboard.
 const AUTO_REFRESH_MS = 45_000;
+// Faster cadence while coord is unavailable (degraded `coord_error` envelope):
+// poll every ~5s so the page recovers promptly the moment coord is back, then
+// drop back to AUTO_REFRESH_MS on a healthy response. Matches the gates page.
+const RECONNECT_REFRESH_MS = 5_000;
 
 // When any row is "Recalibrating" (GitHub's UNKNOWN merge state), poll on this
 // much tighter cadence with a FORCED refresh (`?refresh=1`) so coord re-reads
@@ -76,6 +88,11 @@ export default function CoordPrsPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Coord-side degradation from the latest envelope (`coord_error`). Non-null
+  // while coord is unavailable; drives the banner split + fast reconnect poll.
+  // Tracked separately from `data` because a RETAINED `data` is a healthy
+  // envelope with no coord_error on it.
+  const [coordError, setCoordError] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
 
   // Wall-clock of the last successful load, and a 1s ticker that drives the
@@ -85,6 +102,13 @@ export default function CoordPrsPage() {
 
   // Guards against overlapping fetches (a slow request + a fired interval).
   const inFlight = useRef(false);
+
+  // Synchronous mirror of the last APPLIED response (+ the tab it was fetched
+  // for). `load` is memoized on `[tab]`, so reading the `data` state there
+  // would hit a stale closure; the `inFlight` guard means fetches never
+  // overlap, so this ref always reads fresh. The tab is recorded so a degraded
+  // fetch for a DIFFERENT tab never retains the other tab's rows.
+  const dataRef = useRef<{ tab: PrTab; resp: PrListResponse } | null>(null);
 
   // Bounded-retry counter for the fast "recalibration" poll. Reset to 0 the
   // moment no row is recalibrating (a fresh UNKNOWN episode gets its own budget).
@@ -102,9 +126,25 @@ export default function CoordPrsPage() {
             ? { includeMerged: MERGED_LOOKBACK_HOURS }
             : {}),
         });
-        setData(resp);
+        setCoordError(resp.coord_error ?? null);
+        // Retain the last-good rows when coord degrades to an empty
+        // `coord_error` envelope, so a transient outage never blanks the page
+        // to "No PRs". Only retain for the SAME tab and only when we actually
+        // have rows to keep; otherwise apply the response as-is.
+        const prev = dataRef.current;
+        const retain =
+          !!resp.coord_error &&
+          prev !== null &&
+          prev.tab === tab &&
+          prev.resp.prs.length > 0;
+        if (!retain) {
+          dataRef.current = { tab, resp };
+          setData(resp);
+          // Only a healthy response counts as "updated" — a degraded envelope
+          // carries no fresh data, so the staleness stamp keeps aging.
+          if (!resp.coord_error) setUpdatedAt(Date.now());
+        }
         setError(null);
-        setUpdatedAt(Date.now());
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       } finally {
@@ -116,28 +156,47 @@ export default function CoordPrsPage() {
     [tab],
   );
 
-  // Initial load + reload whenever the active tab changes. Clear stale rows
-  // first so the other tab's content doesn't flash before the refetch lands.
+  // Initial load + reload whenever the active tab changes. `loading` drives
+  // the body skeleton so the other tab's content doesn't flash before the
+  // refetch lands. `data`/`dataRef` are deliberately NOT cleared here —
+  // retention across a same-tab coord outage depends on them surviving.
   useEffect(() => {
     setLoading(true);
-    setData(null);
     load(false);
   }, [load]);
 
-  // Auto-refresh interval (cleaned up on unmount / toggle off).
+  // Auto-refresh interval (cleaned up on unmount / toggle off). While coord is
+  // unavailable (`coordError`), poll faster so the page recovers promptly the
+  // moment coord is back; a healthy response clears the flag and the effect
+  // re-runs at the normal cadence.
   useEffect(() => {
     if (!autoRefresh) return;
+    const intervalMs =
+      coordError !== null ? RECONNECT_REFRESH_MS : AUTO_REFRESH_MS;
     const id = setInterval(() => {
       load(false);
-    }, AUTO_REFRESH_MS);
+    }, intervalMs);
     return () => clearInterval(id);
-  }, [autoRefresh, load]);
+  }, [autoRefresh, coordError, load]);
 
   // 1s ticker for the relative "updated Xs ago" stamp.
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
+
+  // ---- The coord-outage banner split ----
+  // Both banners share one gate: coord is degraded AND we are not mid-load.
+  // The `!loading` half matters because this page's body skeleton is driven by
+  // `loading` ALONE (retention needs `data` to survive a tab switch, so it
+  // can't be `loading && !data` like the gates page). That makes a banner and
+  // the skeleton renderable at the same time, and a banner describing data the
+  // skeleton isn't showing is a lie. A same-tab auto-refresh never sets
+  // `loading`, so steady-state outage retention is unaffected.
+  // Which banner shows is then decided solely by whether rows are retained, so
+  // exactly one can ever render — never both, never one over the skeleton.
+  const coordOutageVisible = coordError !== null && !loading;
+  const hasRetainedRows = data !== null && data.prs.length > 0;
 
   // How many visible rows are in the transient "Recalibrating" (UNKNOWN) state.
   const recalibratingCount = data
@@ -242,14 +301,38 @@ export default function CoordPrsPage() {
         </div>
       )}
 
-      {/* ---- coord-unavailable banner (proxy degraded to an empty envelope) ---- */}
-      {data?.coord_error && (
+      {/* ---- Reconnecting hint (coord down, last-good rows retained) ----
+          A transient coord outage while we hold last-good rows for this tab:
+          show a subtle hint OVER the still-rendered table and auto-recover —
+          never the hard banner below. See the banner-split derivation above
+          for why both are gated on not-loading. */}
+      {coordOutageVisible && hasRetainedRows && (
+        <div
+          className="flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-1.5 text-xs text-amber-700 dark:text-amber-400"
+          data-testid="prs-coord-reconnecting"
+          role="status"
+        >
+          <RefreshCw className="h-3.5 w-3.5 shrink-0 animate-spin" />
+          <span>
+            coord is currently unavailable ({coordError}) — showing last data (
+            {relativeAgoLabel(updatedAt, now)}). Retries automatically.
+          </span>
+        </div>
+      )}
+
+      {/* ---- coord-unavailable banner (cold-start outage: no rows to retain) ----
+          The other side of the split. Without the shared not-loading gate this
+          would paint "showing no PRs. Retry with Refresh." over the skeleton —
+          asserting an outage the in-flight fetch may already have disproved,
+          and pointing at a Refresh button that is `disabled` while loading. */}
+      {coordOutageVisible && !hasRetainedRows && (
         <div
           className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400"
           data-testid="prs-coord-unavailable"
+          role="status"
         >
-          coord is currently unavailable ({data.coord_error}) — showing no PRs.
-          Retry with Refresh.
+          coord is currently unavailable ({coordError}) — showing no PRs. Retry
+          with Refresh.
         </div>
       )}
 
@@ -270,8 +353,13 @@ export default function CoordPrsPage() {
         {/* Both tabs share one data source (the active-tab fetch). Render the
             same body under whichever tab is active; the empty-state copy and
             the table's Deploy column adapt to `merged`. */}
+        {/* `loading` (not `loading && !data`) drives the skeleton: a tab
+            switch keeps the previous tab's `data` for outage retention, so the
+            skeleton is what prevents its rows flashing under the new tab's
+            header. Auto-refresh never sets `loading`, so it can't blank the
+            table. */}
         <TabsContent value={tab} className="mt-3">
-          {loading && !data ? (
+          {loading ? (
             <div className="space-y-4" data-testid="prs-loading">
               <Skeleton className="h-10 w-full" />
               <Skeleton className="h-64 w-full" />

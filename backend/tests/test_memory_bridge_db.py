@@ -19,6 +19,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -27,11 +28,10 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import NullPool
 
-from app.services import memory_embedder
+from app.jobs.memory_bridge import bridge_sync_once
 from app.services import memory_store as store
-from app.tasks.memory_bridge import bridge_sync_once
 from tests.conftest import TEST_DATABASE_URL
-from tests.test_memory_api_db import _SETUP_SQL, HashingStubEmbedder, _exec, _scalar
+from tests.test_memory_api_db import _SETUP_SQL, _exec, _scalar
 
 # Mirrors alembic ``coord_memories`` (+ the tenant_id column and the
 # tenant-aware view projection from ``coord_tenant_scope_columns``).
@@ -92,17 +92,11 @@ def db(memory_engine: AsyncEngine) -> Generator[AsyncEngine, None, None]:
         [
             "DELETE FROM coord.memory_records",
             "DELETE FROM coord.tenant_policies",
+            "DELETE FROM coord.memory_jobs",
             "DELETE FROM coord.memories",
         ],
     )
     yield memory_engine
-
-
-@pytest.fixture(autouse=True)
-def _stub_embedder() -> Generator[None, None, None]:
-    memory_embedder.set_embedder(HashingStubEmbedder())
-    yield
-    memory_embedder.set_embedder(None)
 
 
 def _run[T](engine: AsyncEngine, fn: Callable[[AsyncSession], Awaitable[T]]) -> T:
@@ -168,6 +162,24 @@ def _record_field(engine: AsyncEngine, memory_id: UUID, column: str) -> Any:
     )
 
 
+def _job_rows(engine: AsyncEngine, tenant_id: UUID) -> list[dict[str, Any]]:
+    """The tenant's queued jobs — what the bridge now produces instead of
+    vectors."""
+
+    async def _go() -> list[dict[str, Any]]:
+        async with engine.connect() as conn:
+            rows = await conn.execute(
+                text(
+                    "SELECT job_id, kind, target_ids, input_texts, status "
+                    "FROM coord.memory_jobs WHERE tenant_id = :t"
+                ),
+                {"t": tenant_id},
+            )
+            return [dict(r) for r in rows.mappings()]
+
+    return asyncio.run(_go())
+
+
 class TestBridgeUpsert:
     def test_initial_mirror_and_idempotent_rerun(self, db: AsyncEngine) -> None:
         tenant = uuid4()
@@ -175,7 +187,7 @@ class TestBridgeUpsert:
         _write_memory(db, tenant, "feedback_beta", 1, "beta memory body")
 
         stats = _sync(db)
-        assert stats == {"upserted": 2, "superseded": 0, "tombstoned": 0}
+        assert stats == {"upserted": 2, "superseded": 0, "tombstoned": 0, "enqueued": 1}
 
         bridged = {r["name"]: r for r in _bridged(db, tenant)}
         assert set(bridged) == {"proj_alpha_notes", "feedback_beta"}
@@ -189,17 +201,75 @@ class TestBridgeUpsert:
             _record_field(db, record_id, "source->>'memory_name'") == "proj_alpha_notes"
         )
         assert _record_field(db, record_id, "source->>'version'") == "1"
-        assert _record_field(db, record_id, "embedding") is not None
+        # Bridged rows land UNVECTORIZED — the bridge loads no embedding
+        # model. The vector arrives later, from a runner draining the
+        # embedding job this pass enqueued.
+        assert _record_field(db, record_id, "embedding") is None
+        assert _record_field(db, record_id, "embedding_model") is None
 
         # Re-run: nothing to do, and no duplicate rows.
         stats = _sync(db)
-        assert stats == {"upserted": 0, "superseded": 0, "tombstoned": 0}
+        assert stats == {"upserted": 0, "superseded": 0, "tombstoned": 0, "enqueued": 0}
         count = _scalar(
             db,
             "SELECT count(*) FROM coord.memory_records WHERE tenant_id = :t",
             t=tenant,
         )
         assert count == 2
+
+    def test_landed_rows_are_null_embedding_and_enqueued(self, db: AsyncEngine) -> None:
+        """The bridge lands unvectorized rows + one embedding job.
+
+        The vector is the runner's to pay for: this job loads no model.
+        The rows stay FTS-retrievable meanwhile.
+        """
+        tenant = uuid4()
+        _write_memory(db, tenant, "proj_alpha_notes", 1, "alpha memory body")
+        _write_memory(db, tenant, "feedback_beta", 1, "beta memory body")
+
+        stats = _sync(db)
+        assert stats["upserted"] == 2
+        assert stats["enqueued"] == 1
+
+        landed = {r["memory_id"] for r in _bridged(db, tenant)}
+        for memory_id in landed:
+            assert _record_field(db, memory_id, "embedding") is None
+
+        jobs = _job_rows(db, tenant)
+        assert len(jobs) == 1
+        assert jobs[0]["kind"] == "embedding"
+        assert jobs[0]["status"] == "pending"
+        assert {UUID(str(t)) for t in jobs[0]["target_ids"]} == landed
+        assert sorted(jobs[0]["input_texts"]) == [
+            "alpha memory body",
+            "beta memory body",
+        ]
+
+    def test_repeated_tick_does_not_reenqueue(self, db: AsyncEngine) -> None:
+        """The 15-minute cadence must not pile up duplicate embedding jobs.
+
+        The compare-first pass returns early on an in-sync run, and the
+        queue's live-status `input_hash` dedupe backstops the case where a
+        run that upserts ANY name re-walks that tenant's whole list.
+        """
+        tenant = uuid4()
+        _write_memory(db, tenant, "proj_alpha_notes", 1, "alpha memory body")
+        assert _sync(db)["enqueued"] == 1
+
+        # Tick 2: fully in sync → nothing enqueued.
+        assert _sync(db)["enqueued"] == 0
+
+        # Tick 3: a NEW name forces the tenant's list to be re-walked. The
+        # already-queued row must not be enqueued a second time — only the
+        # new row's job appears.
+        _write_memory(db, tenant, "feedback_beta", 1, "beta memory body")
+        assert _sync(db)["enqueued"] == 1
+
+        jobs = _job_rows(db, tenant)
+        assert len(jobs) == 2
+        queued_targets = [t for j in jobs for t in j["target_ids"]]
+        # No row is covered by two live jobs.
+        assert len(queued_targets) == len(set(queued_targets))
 
     def test_version_bump_supersedes_prior_record(self, db: AsyncEngine) -> None:
         tenant = uuid4()
@@ -235,7 +305,7 @@ class TestBridgeUpsert:
 
         # Converged: the next run is a no-op.
         stats = _sync(db)
-        assert stats == {"upserted": 0, "superseded": 0, "tombstoned": 0}
+        assert stats == {"upserted": 0, "superseded": 0, "tombstoned": 0, "enqueued": 0}
 
     def test_tenants_are_isolated(self, db: AsyncEngine) -> None:
         tenant_a, tenant_b = uuid4(), uuid4()
@@ -274,7 +344,7 @@ class TestBridgeTombstone:
 
         # Idempotent afterwards.
         stats = _sync(db)
-        assert stats == {"upserted": 0, "superseded": 0, "tombstoned": 0}
+        assert stats == {"upserted": 0, "superseded": 0, "tombstoned": 0, "enqueued": 0}
 
 
 class TestBridgeRedaction:
@@ -302,13 +372,18 @@ class TestBridgeRedaction:
         assert stored_hash == hashlib.sha256(str(content).encode("utf-8")).hexdigest()
 
         # Converged: the next run is a no-op (the version stamp matches).
-        assert _sync(db) == {"upserted": 0, "superseded": 0, "tombstoned": 0}
+        assert _sync(db) == {
+            "upserted": 0,
+            "superseded": 0,
+            "tombstoned": 0,
+            "enqueued": 0,
+        }
 
 
 class TestBridgeSkips:
     def test_null_tenant_memories_are_skipped(self, db: AsyncEngine) -> None:
         _write_memory(db, None, "unbound_memory", 1, "no tenant binding")
         stats = _sync(db)
-        assert stats == {"upserted": 0, "superseded": 0, "tombstoned": 0}
+        assert stats == {"upserted": 0, "superseded": 0, "tombstoned": 0, "enqueued": 0}
         count = _scalar(db, "SELECT count(*) FROM coord.memory_records")
         assert count == 0

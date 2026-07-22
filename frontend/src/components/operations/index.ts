@@ -10,6 +10,7 @@ export { DevActionsTile } from "./DevActionsTile";
 export { MergeDependencyGraph } from "./MergeDependencyGraph";
 export { MigrationQueueTile } from "./MigrationQueueTile";
 export { MergeOrchestrationOnboarding } from "./MergeOrchestrationOnboarding";
+export { MergePipeline } from "./MergePipeline";
 export { MergeTrain } from "./MergeTrain";
 export { TaskRunCard } from "./TaskRunCard";
 export { OutputViewer } from "./OutputViewer";
