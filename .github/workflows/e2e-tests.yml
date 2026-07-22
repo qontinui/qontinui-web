@@ -6,17 +6,21 @@ on:
   push:
     # merge-candidate/** refs are pushed by coord's autonomous merge scheduler
     # (plan 2026-06-06-coord-ci-runner-autonomous-green-merge, Phase 4). The
-    # required E2E gate must run on them so a candidate proposal gets a real
-    # CI verdict instead of hanging in awaiting-ci. Validation-only; no deploy.
+    # workflow must still trigger on them so the required `Test Summary` +
+    # `Backend E2E Tests` contexts report and a candidate proposal gets a real
+    # CI verdict instead of hanging in awaiting-ci — but the Playwright
+    # frontend-tests shards are skipped there (see that job's `if:`); Spec CI
+    # is the merge gate for candidates. Validation-only; no deploy.
     branches:
       - main
       - develop
       - 'merge-candidate/**'
       - 'merge-candidate-spec/**'
       - 'merge-candidate-batch/**'
-  # Run the full sharded E2E suite nightly. The on-PR smoke job is the
-  # gating signal for merging; this scheduled run catches regressions the
-  # smoke set doesn't cover, without ever blocking a PR.
+  # Run the full sharded E2E suite nightly. Spec CI (spec-ci.yml) is the
+  # merge gate; this scheduled run — plus the `push: main` trigger above —
+  # catches regressions Spec CI doesn't cover, without ever blocking a PR
+  # or a merge-candidate proposal.
   schedule:
     - cron: '0 4 * * *'
   workflow_dispatch:
@@ -130,16 +134,29 @@ jobs:
           path: ./backend/test-results/
           retention-days: 30
 
-  # Full 4-shard suite. Runs on direct push to main, on the nightly
-  # schedule, and on workflow_dispatch — never on PR. The on-PR merge gate
-  # is Spec CI (.github/workflows/spec-ci.yml); the Playwright E2E smoke job
-  # that used to gate PRs here was retired 2026-05-25 once Spec CI gained a
-  # default-on console-error invariant (see spec-ci/console-policy.ts) that
-  # subsumed its last unique guarantee. This sharded suite remains the deeper
-  # nightly/on-push backstop.
+  # Full 4-shard suite. Runs on pushes to main/develop, on the nightly schedule,
+  # and on workflow_dispatch — never on PRs and never on coord's merge-candidate*
+  # candidate refs (Spec CI gates both; see the comment on the `if:` below for
+  # the candidate-ref rationale). The merge gate is Spec CI
+  # (.github/workflows/spec-ci.yml); the Playwright E2E smoke job that used to
+  # gate PRs here was retired 2026-05-25 once Spec CI gained a default-on
+  # console-error invariant (see spec-ci/console-policy.ts) that subsumed its
+  # last unique guarantee. This sharded suite remains the deeper
+  # nightly/on-main-push backstop.
   frontend-tests:
     name: Frontend E2E Tests (shard ${{ matrix.shard }}/4)
-    if: github.event_name != 'pull_request'
+    # Candidate refs (merge-candidate/**, -spec/**, -batch/**) are coord's
+    # proposal-validation pushes. Spec CI is the merge gate; this suite is the
+    # deeper nightly net. Running it per-candidate cost ~16m wall / ~87m compute
+    # per proposal (coord pushes TWO candidate refs per proposal, which run
+    # concurrently), for a suite that is by design not the gate. `push: main`
+    # is retained, so every LAND still runs it — detection lag is one merge,
+    # not one day. Test Summary (the required check) treats `skipped` as
+    # non-failing (see its result loop), so candidate proposals still get a
+    # green required context instead of hanging in awaiting-ci.
+    if: >-
+      github.event_name != 'pull_request' &&
+      !startsWith(github.ref, 'refs/heads/merge-candidate')
     runs-on: ubuntu-latest
 
     services:
@@ -165,9 +182,12 @@ jobs:
         # Run the suite in 4 parallel shards. Each matrix entry gets its
         # own runner with its own ephemeral postgres + backend + frontend,
         # so there is no shared state between shards. Wall clock ≈
-        # max(shard times), not sum. With ~309 failing tests at 60s each
-        # under retries=0, single-shard wall clock was 5h+; 4-way sharding
-        # brings that to ~1h15m.
+        # max(shard times), not sum. Shard spans are duration-balanced via
+        # PWTEST_SHARD_WEIGHTS on the test step below. (Historical: while
+        # ~309 tests were failing at 60s each under retries=0, a single
+        # shard took 5h+. The suite is green now; per-shard parallelism is
+        # set in playwright.config.ts `workers` — see plan
+        # 2026-07-22-web-playwright-single-worker-stale-rationale.)
         shard: [1, 2, 3, 4]
         node-version: [20]
 
@@ -298,6 +318,19 @@ jobs:
         env:
           CI: true
           PLAYWRIGHT_BASE_URL: http://localhost:3001
+          # Duration-balanced shard weights (colon-separated ints; Playwright's
+          # filterForShard sizes each shard's test-count span proportionally —
+          # parse: cli/testActions.js resolveShardWeightsOption, semi-internal,
+          # re-verify on Playwright upgrades). Equal-count spans were badly
+          # duration-skewed (23.8m/6.7m/8.6m/17.6m of test time → max shard
+          # ~16m wall); these weights equalize measured span time (~14.2m
+          # each, ≈12m wall at workers:1 — span times were measured under the
+          # workers:2 trial run, so their absolute values are ~2× real; only
+          # the ratios matter for the weights). Derived from per-test
+          # durations in run 29937298955's results.json artifacts; recompute
+          # when the suite's shape shifts (see plan
+          # 2026-07-22-web-playwright-single-worker-stale-rationale).
+          PWTEST_SHARD_WEIGHTS: "92:168:218:115"
           # Hermetic-auth backend config. global-setup.ts spawns uvicorn with
           # `...process.env`, so these reach the backend's Cognito verifier:
           # it trusts the run-local issuer above and fetches its JWKS from
@@ -378,11 +411,11 @@ jobs:
       # this, `if: always()` means Test Summary stays GREEN even when a
       # frontend shard or the backend job goes red, so push/nightly reds are
       # invisible on the required `Test Summary` check. We treat `skipped` as
-      # OK so the on-PR case (where `frontend-tests` is skipped via its
-      # `if: github.event_name != 'pull_request'` guard) does not fail the
-      # summary — only a job that actually RAN and ended `failure`/`cancelled`
-      # turns this red. `needs.<job>.result` for a matrix job aggregates
-      # across shards: it is `failure` if ANY shard failed.
+      # OK so the cases where `frontend-tests` is skipped by its `if:` guard
+      # (PRs, and coord's merge-candidate* proposal-validation refs) do not
+      # fail the summary — only a job that actually RAN and ended
+      # `failure`/`cancelled` turns this red. `needs.<job>.result` for a
+      # matrix job aggregates across shards: it is `failure` if ANY shard failed.
       - name: Fail if any needed job failed
         env:
           BACKEND_RESULT: ${{ needs.backend-tests.result }}
