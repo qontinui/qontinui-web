@@ -1,7 +1,7 @@
 """drop coord.policy_documents — prompt_documents cutover complete
 
 Revision ID: coord_prompt_docs_02_drop
-Revises: coord_prompt_docs_01
+Revises: auto_fix_rm_flaky_01
 Create Date: 2026-07-17
 
 The teardown half of the session-autonomy-fabric Phase 2 chain
@@ -40,7 +40,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_prompt_docs_02_drop"
-down_revision: str = "coord_prompt_docs_01"
+down_revision: str = "auto_fix_rm_flaky_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
