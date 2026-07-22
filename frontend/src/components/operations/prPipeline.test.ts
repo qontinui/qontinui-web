@@ -1165,6 +1165,25 @@ describe("buildPipelineRows — dwell escalation covers both derivation paths", 
     );
     expect(derivePipelineHealth(blockedFresh, NOW).needsAttention).toBe(0);
   });
+
+  it("stale rows reach the headline DETAIL, not just the counter", () => {
+    // Counters alone were not the web#813 lesson — the operator scans the
+    // detail string. A stalled wait must say so there.
+    const behindStale = buildPipelineRows(
+      [pr({ merge_state_status: "BEHIND", last_activity_secs: THREE_DAYS_SECS })],
+      []
+    );
+    expect(derivePipelineHealth(behindStale, NOW).detail).toContain(
+      "1 stalled waiting PR needs an author look"
+    );
+    const behindFresh = buildPipelineRows(
+      [pr({ merge_state_status: "BEHIND", last_activity_secs: ONE_HOUR_SECS })],
+      []
+    );
+    expect(derivePipelineHealth(behindFresh, NOW).detail ?? "").not.toContain(
+      "stalled waiting"
+    );
+  });
 });
 
 describe("derivePipelineHealth — per-repo CI-wait thresholds", () => {
