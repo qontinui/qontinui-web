@@ -1165,7 +1165,6 @@ describe("buildPipelineRows — dwell escalation covers both derivation paths", 
     );
     expect(derivePipelineHealth(blockedFresh, NOW).needsAttention).toBe(0);
   });
-<<<<<<< HEAD
 
   it("stale rows reach the headline DETAIL, not just the counter", () => {
     // Counters alone were not the web#813 lesson — the operator scans the
@@ -1185,8 +1184,6 @@ describe("buildPipelineRows — dwell escalation covers both derivation paths", 
       "stalled waiting"
     );
   });
-=======
->>>>>>> f03bb7a2 (feat: dwell caps escalate every stale waiting state on the fleet page)
 });
 
 describe("derivePipelineHealth — per-repo CI-wait thresholds", () => {
