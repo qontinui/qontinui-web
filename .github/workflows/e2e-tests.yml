@@ -182,10 +182,11 @@ jobs:
         # Run the suite in 4 parallel shards. Each matrix entry gets its
         # own runner with its own ephemeral postgres + backend + frontend,
         # so there is no shared state between shards. Wall clock ≈
-        # max(shard times), not sum. (Historical: while ~309 tests were
-        # failing at 60s each under retries=0, a single shard took 5h+.
-        # The suite is green now; per-shard parallelism is set in
-        # playwright.config.ts `workers` — see plan
+        # max(shard times), not sum. Shard spans are duration-balanced via
+        # PWTEST_SHARD_WEIGHTS on the test step below. (Historical: while
+        # ~309 tests were failing at 60s each under retries=0, a single
+        # shard took 5h+. The suite is green now; per-shard parallelism is
+        # set in playwright.config.ts `workers` — see plan
         # 2026-07-22-web-playwright-single-worker-stale-rationale.)
         shard: [1, 2, 3, 4]
         node-version: [20]
@@ -317,6 +318,17 @@ jobs:
         env:
           CI: true
           PLAYWRIGHT_BASE_URL: http://localhost:3001
+          # Duration-balanced shard weights (colon-separated ints; Playwright's
+          # filterForShard sizes each shard's test-count span proportionally —
+          # parse: cli/testActions.js resolveShardWeightsOption, semi-internal,
+          # re-verify on Playwright upgrades). Equal-count spans were badly
+          # duration-skewed (23.8m/6.7m/8.6m/17.6m of test time → max shard
+          # ~16m wall); these weights equalize measured span time (~14.2m
+          # worker-time each, ≈12m wall at workers:1). Derived from per-test
+          # durations in run 29937298955's results.json artifacts; recompute
+          # when the suite's shape shifts (see plan
+          # 2026-07-22-web-playwright-single-worker-stale-rationale).
+          PWTEST_SHARD_WEIGHTS: "92:168:218:115"
           # Hermetic-auth backend config. global-setup.ts spawns uvicorn with
           # `...process.env`, so these reach the backend's Cognito verifier:
           # it trusts the run-local issuer above and fetches its JWKS from
