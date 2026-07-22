@@ -181,6 +181,87 @@ describe("AuthProvider boot-time hydration resilience", () => {
 });
 
 /**
+ * The proactive-refresh arm/disarm contract.
+ *
+ * `AuthProvider` is the ONLY thing that arms `TokenRefreshService`'s pre-expiry
+ * timer, so if the effect stopped calling it the silent refresh would simply
+ * never happen and every user would be back to a hard logout at `exp` — with
+ * nothing else in the suite noticing. Previously these spies were wired up but
+ * never asserted.
+ */
+describe("AuthProvider proactive-refresh arming", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    purgeStaleSession.mockReturnValue(false);
+    isAuthenticated.mockReturnValue(true);
+    isAccessTokenExpired.mockReturnValue(false);
+    isRefreshDue.mockReturnValue(false);
+    logout.mockResolvedValue(undefined);
+  });
+
+  it("arms the proactive refresh once a user is signed in, and disarms on unmount", async () => {
+    getCurrentUser.mockResolvedValue(fakeUser);
+
+    const { unmount } = render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("user").textContent).toBe("ci-bot");
+    });
+    await waitFor(() => {
+      expect(startProactiveRefresh).toHaveBeenCalledTimes(1);
+    });
+    expect(stopProactiveRefresh).not.toHaveBeenCalled();
+
+    unmount();
+    expect(stopProactiveRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("never arms the proactive refresh while signed out", async () => {
+    // Anonymous visitor: no marker, and the cookie-restore probe 401s.
+    isAuthenticated.mockReturnValue(false);
+    getCurrentUser.mockRejectedValue(
+      new Error("Failed to get user info: 401 - ")
+    );
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("loading").textContent).toBe("false");
+    });
+    expect(screen.getByTestId("user").textContent).toBe("none");
+    expect(startProactiveRefresh).not.toHaveBeenCalled();
+  });
+
+  it("disarms the proactive refresh when the session expires", async () => {
+    getCurrentUser.mockResolvedValue(fakeUser);
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    );
+    await waitFor(() => {
+      expect(startProactiveRefresh).toHaveBeenCalledTimes(1);
+    });
+
+    // `session-expired` drops the user, which tears the arming effect down —
+    // no timer must survive to hammer the token endpoint for a dead session.
+    window.dispatchEvent(new Event("session-expired"));
+    await waitFor(() => {
+      expect(stopProactiveRefresh).toHaveBeenCalledTimes(1);
+    });
+  });
+});
+
+/**
  * Regression tests for the /login session-expired redirect loop
  * (prod outage 2026-06-07).
  *
