@@ -1,7 +1,7 @@
 """coord.footprint_drift_events (Ξ_Worktree Phase 7.6 — declared-vs-actual footprint honesty oplog)
 
 Revision ID: coord_footprint_drift_events
-Revises: coord_sessions_role_01
+Revises: auto_fix_rm_flaky_01
 Create Date: 2026-07-18
 
 Phase 7.6 of ``2026-06-06-twin-worktree-phase7-informed-isolation.md``.
@@ -68,7 +68,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_footprint_drift_events"
-down_revision: str | Sequence[str] | None = "coord_sessions_role_01"
+down_revision: str | Sequence[str] | None = "auto_fix_rm_flaky_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
