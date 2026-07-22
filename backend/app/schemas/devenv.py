@@ -454,6 +454,16 @@ class KeyDelta(BaseSchema):
     expected: str | None = None
     actual: str | None = None
     severity: SeverityT
+    derived: bool = False
+    """Whether this key's value is repo-derived rather than machine state.
+
+    A derived key (``runner_crate_version``, ``node_dep_*``, …) is parsed from
+    the ``Cargo.toml``/``package.json`` next to the capturing binary, so it
+    measures *which source tree captured the config*, not the box. It converges
+    by pulling the repo and can never be applied — so it is reported at ``info``
+    and does not make a machine out-of-sync. See
+    ``services/devenv_section_policy.is_derived_key``.
+    """
 
 
 class SectionDrift(BaseSchema):
@@ -462,6 +472,15 @@ class SectionDrift(BaseSchema):
     section: str
     deltas: list[KeyDelta] = Field(default_factory=list)
     severity: SeverityT
+    process_scoped: bool = False
+    """Whether this section's capture reflects the capturing PROCESS, not the box.
+
+    ``env_contract`` is read from the capturing process's own environment, so a
+    runner-supervisor capture and a plain-shell capture legitimately disagree on
+    the same machine. Deltas here may be process-scope artifacts rather than real
+    drift — but they may equally be genuinely missing values, which is
+    indistinguishable server-side, so they are LABELLED and never suppressed.
+    """
 
 
 class MachineDriftReport(BaseSchema):
