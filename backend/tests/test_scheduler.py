@@ -162,8 +162,9 @@ class TestCronNextFire:
         [
             # memory_decay — daily 03:10 UTC.
             ("10 3 * * *", datetime(2026, 7, 14, 3, 10, tzinfo=UTC)),
-            # memory_reindex — daily 03:40 UTC.
-            ("40 3 * * *", datetime(2026, 7, 14, 3, 40, tzinfo=UTC)),
+            # memory_reindex — every 10 minutes (was daily 03:40; corrected so
+            # API-written rows get embedded within a tick, not up to ~24h later).
+            ("*/10 * * * *", datetime(2026, 7, 13, 12, 10, tzinfo=UTC)),
             # memory_consolidate — every 10 minutes (was weekly Sundays 04:20;
             # corrected so the memory feedback loop stays prompt).
             ("*/10 * * * *", datetime(2026, 7, 13, 12, 10, tzinfo=UTC)),
