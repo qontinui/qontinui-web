@@ -5,6 +5,7 @@ import {
   verifyStateAndExtractNext,
   isLinkModeState,
   refreshCognitoTokens,
+  CognitoRefreshError,
   COGNITO_CLIENT_ID,
 } from "./cognito-oauth";
 
@@ -220,18 +221,35 @@ describe("refreshCognitoTokens", () => {
     expect(req.headers["Authorization"]).toBeUndefined();
   });
 
-  it("surfaces Cognito's error_description when the refresh token is revoked", async () => {
+  /**
+   * Failure CLASSIFICATION. The proactive renewal fires six minutes before the
+   * bearer's `exp`, while it is still valid, so "the exchange failed" and "the
+   * session is dead" must not be the same thing: only a verdict from Cognito
+   * (`invalid_grant` / 401) may cost the user their session.
+   */
+  it("classifies a revoked refresh token as AUTHORITATIVE, surfacing Cognito's error_description", async () => {
     stubTokenEndpoint(400, {
       error: "invalid_grant",
       error_description: "Refresh Token has been revoked",
     });
 
-    await expect(refreshCognitoTokens("dead")).rejects.toThrow(
-      /Refresh Token has been revoked/
-    );
+    const error = await refreshCognitoTokens("dead").catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(CognitoRefreshError);
+    expect((error as CognitoRefreshError).kind).toBe("authoritative");
+    expect((error as CognitoRefreshError).oauthError).toBe("invalid_grant");
+    expect((error as Error).message).toMatch(/Refresh Token has been revoked/);
   });
 
-  it("falls back to the status code for a non-JSON error body", async () => {
+  it("classifies a 401 as AUTHORITATIVE", async () => {
+    stubTokenEndpoint(401, { error: "invalid_client" });
+
+    const error = await refreshCognitoTokens("rt-xyz").catch(
+      (e: unknown) => e
+    );
+    expect((error as CognitoRefreshError).kind).toBe("authoritative");
+  });
+
+  it("classifies a 502 with a non-JSON body as TRANSIENT (falling back to the status code)", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(
@@ -239,6 +257,56 @@ describe("refreshCognitoTokens", () => {
       )
     );
 
-    await expect(refreshCognitoTokens("rt-xyz")).rejects.toThrow(/502/);
+    const error = await refreshCognitoTokens("rt-xyz").catch(
+      (e: unknown) => e
+    );
+    expect(error).toBeInstanceOf(CognitoRefreshError);
+    // A gateway error is NOT Cognito saying the refresh token is bad.
+    expect((error as CognitoRefreshError).kind).toBe("transient");
+    expect((error as CognitoRefreshError).status).toBe(502);
+    expect((error as Error).message).toMatch(/502/);
+  });
+
+  it("classifies a network failure as TRANSIENT", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("Failed to fetch");
+      })
+    );
+
+    const error = await refreshCognitoTokens("rt-xyz").catch(
+      (e: unknown) => e
+    );
+    expect((error as CognitoRefreshError).kind).toBe("transient");
+    expect((error as CognitoRefreshError).status).toBeNull();
+  });
+
+  it("classifies a 429 and a non-invalid_grant 400 as TRANSIENT", async () => {
+    stubTokenEndpoint(429, { error: "slow_down" });
+    await expect(
+      refreshCognitoTokens("rt-xyz").catch(
+        (e: CognitoRefreshError) => e.kind
+      )
+    ).resolves.toBe("transient");
+
+    stubTokenEndpoint(400, { error: "temporarily_unavailable" });
+    await expect(
+      refreshCognitoTokens("rt-xyz").catch(
+        (e: CognitoRefreshError) => e.kind
+      )
+    ).resolves.toBe("transient");
+  });
+
+  it("classifies an unreadable 200 body as TRANSIENT", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("not json", { status: 200 }))
+    );
+
+    const error = await refreshCognitoTokens("rt-xyz").catch(
+      (e: unknown) => e
+    );
+    expect((error as CognitoRefreshError).kind).toBe("transient");
   });
 });

@@ -20,7 +20,16 @@ export class TokenManager {
    * Store new tokens (in memory for Authorization header, plus expiry in localStorage)
    */
   setTokens(tokens: TokenResponse): void {
-    const expiry = this.validator.extractExpiry(tokens.access_token);
+    // Expiry source order: the bearer's own `exp` claim first (authoritative,
+    // and immune to a sibling tab's shared timestamp), then the issuer's
+    // `expires_in`. The fallback is load-bearing: without it an undecodable
+    // bearer left the PREVIOUS token's `token_expiry` in place — so the
+    // staleness predicates answered for a token no longer held, and (once it
+    // was in the past) the proactive scheduler re-fired on its floor every ten
+    // seconds, spending a Cognito token exchange each time.
+    const expiry =
+      this.validator.extractExpiry(tokens.access_token) ??
+      (tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : null);
 
     // Calculate refresh token expiry from expires_in and refresh_expires_in
     const refreshExpiry = tokens.refresh_expires_in
@@ -29,8 +38,12 @@ export class TokenManager {
 
     this.storage.saveAccessToken(tokens.access_token);
     this.storage.saveRefreshToken(tokens.refresh_token);
-    if (expiry) {
+    if (expiry !== null) {
       this.storage.saveTokenExpiry(expiry);
+    } else {
+      // Neither source yielded one — drop the stale value rather than letting
+      // it speak for a token it does not describe.
+      this.storage.clearTokenExpiry();
     }
     if (refreshExpiry) {
       this.storage.saveRefreshTokenExpiry(refreshExpiry);
