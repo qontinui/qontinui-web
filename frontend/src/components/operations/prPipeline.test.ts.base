@@ -15,25 +15,19 @@ import {
   ATTENTION_BY_KIND,
   buildPipelineRows,
   derivePipelineHealth,
-  escalateStaleWaiting,
-  formatDurationShort,
-  lastActivityForMs,
   matchesFilter,
   matchesQuery,
   pickActiveProposal,
   type PipelineRow,
-  type UnifiedStatus,
   type UnifiedStatusKind,
   CI_WAIT_AMBER_MS,
   CI_WAIT_RED_MS,
   STALL_RED_MS,
   CONFLICT_DEFERRAL_MAX_MS,
+  conflictDeferralMaxMs,
   conflictStrandedForMs,
   GITHUB_CONFLICT_KINDS,
   LAND_RECENCY_MS,
-  STALE_ESCALATION,
-  WAITING_STALE_MAX_MS,
-  waitingDwellCapMs,
 } from "./prPipeline";
 
 const NOW = new Date("2026-07-15T12:00:00Z").getTime();
@@ -780,21 +774,15 @@ describe("statusFromGitHub — CI-duration-aware conflict severity", () => {
   });
 
   it("deferral window is per-repo: max(floor, 2 x candidate p90)", () => {
-    // (Mechanically relocated from `conflictDeferralMaxMs`, which the shared
-    // `waitingDwellCapMs` absorbed — same kind, same caps, same behavior.)
     // No economics → the floor.
-    expect(waitingDwellCapMs("conflict-deferred", RUNNER)).toBe(
-      CONFLICT_DEFERRAL_MAX_MS
-    );
+    expect(conflictDeferralMaxMs(RUNNER)).toBe(CONFLICT_DEFERRAL_MAX_MS);
     // Fast repo → floor still wins (a grace window, not an instant flip).
     expect(
-      waitingDwellCapMs("conflict-deferred", WEB, {
-        [WEB]: { candidate_ci_p90_secs: 5 * 60 },
-      })
+      conflictDeferralMaxMs(WEB, { [WEB]: { candidate_ci_p90_secs: 5 * 60 } })
     ).toBe(CONFLICT_DEFERRAL_MAX_MS);
     // Slow repo → two full worst-case runs.
     expect(
-      waitingDwellCapMs("conflict-deferred", RUNNER, {
+      conflictDeferralMaxMs(RUNNER, {
         [RUNNER]: { candidate_ci_p90_secs: 5 * 60 * 60 },
       })
     ).toBe(10 * 60 * 60 * 1000);
@@ -902,291 +890,6 @@ describe("statusFromGitHub — CI-duration-aware conflict severity", () => {
     expect(row.status.kind).toBe("checks-failing");
     expect(row.status.attention).toBe("author");
   });
-});
-
-// ---------------------------------------------------------------------------
-// Stale-waiting dwell caps (plan 2026-07-20-fleet-waiting-state-dwell-caps).
-// Every `waiting` kind is a promise about the near future with no expiry —
-// past its per-repo dwell cap, with a live clock, it escalates to a stale
-// sibling carrying `attention: "author"`. Absence of a clock is never
-// evidence, in either direction.
-// ---------------------------------------------------------------------------
-describe("escalateStaleWaiting — dwell caps expire every waiting promise", () => {
-  const ESCALATABLE = Object.keys(STALE_ESCALATION) as UnifiedStatusKind[];
-
-  const STALE_LABEL: Record<string, string> = {
-    "needs-rebase-stale": "Behind (stalled)",
-    "blocked-stale": "Blocked (stalled)",
-    "conflict-stranded": "Conflict (stranded)",
-  };
-
-  /** A hand-built waiting status of the given kind (unit-level fixture). */
-  function waiting(kind: UnifiedStatusKind): UnifiedStatus {
-    return { kind, label: "x", reason: "y", attention: "waiting" };
-  }
-
-  it("covers exactly the three waiting kinds", () => {
-    expect(ESCALATABLE.sort()).toEqual([
-      "blocked",
-      "conflict-deferred",
-      "needs-rebase",
-    ]);
-    // ...and every base kind actually IS a waiting kind, every target an
-    // author kind — the map cannot escalate a running check or de-escalate.
-    for (const base of ESCALATABLE) {
-      expect(ATTENTION_BY_KIND[base]).toBe("waiting");
-      expect(ATTENTION_BY_KIND[STALE_ESCALATION[base]!]).toBe("author");
-    }
-  });
-
-  it("per kind: within cap → unchanged; past cap → stale kind + author", () => {
-    for (const base of ESCALATABLE) {
-      const s = waiting(base);
-      const cap = waitingDwellCapMs(base, "qontinui/qontinui-web");
-      // At or under the cap the promise is still live — identity, unchanged.
-      expect(escalateStaleWaiting(s, cap - 60_000, cap)).toBe(s);
-      expect(escalateStaleWaiting(s, cap, cap)).toBe(s);
-      // Past the cap: escalated kind, author attention, honest duration.
-      const dwell = cap + 3 * 24 * 60 * 60 * 1000;
-      const out = escalateStaleWaiting(s, dwell, cap);
-      expect(out.kind, base).toBe(STALE_ESCALATION[base]);
-      expect(out.attention, base).toBe("author");
-      expect(out.label, base).toBe(STALE_LABEL[out.kind]);
-      expect(out.reason, base).toContain(formatDurationShort(dwell));
-    }
-  });
-
-  it("absence: null / undefined / NaN / negative dwell → unchanged, every kind", () => {
-    for (const base of ESCALATABLE) {
-      const s = waiting(base);
-      expect(escalateStaleWaiting(s, null, 1000)).toBe(s);
-      expect(escalateStaleWaiting(s, Number.NaN, 1000)).toBe(s);
-      expect(escalateStaleWaiting(s, -5, 1000)).toBe(s);
-      expect(escalateStaleWaiting(s, Number.POSITIVE_INFINITY, 1000)).toBe(s);
-    }
-    // The activity-clock reader turns undefined/null/nonsense into null ("no
-    // evidence") — same hygiene as its sibling `conflictStrandedForMs`.
-    expect(lastActivityForMs({ last_activity_secs: undefined })).toBeNull();
-    expect(lastActivityForMs({ last_activity_secs: null })).toBeNull();
-    expect(lastActivityForMs({ last_activity_secs: Number.NaN })).toBeNull();
-    expect(lastActivityForMs({ last_activity_secs: -5 })).toBeNull();
-    expect(lastActivityForMs({ last_activity_secs: 90 })).toBe(90_000);
-  });
-
-  it("never touches a non-waiting status — no downgrade, never from 'none'", () => {
-    const huge = 400 * 24 * 60 * 60 * 1000;
-    // attention "none": a running check is not a stale promise. Hand-built
-    // with an escalatable kind to isolate the attention gate from the map.
-    const none: UnifiedStatus = {
-      kind: "needs-rebase",
-      label: "x",
-      reason: "y",
-      attention: "none",
-    };
-    expect(escalateStaleWaiting(none, huge, 1000)).toBe(none);
-    // Already-author: escalation only ever moves waiting → author.
-    const author: UnifiedStatus = {
-      kind: "conflict-deferred",
-      label: "x",
-      reason: "y",
-      attention: "author",
-    };
-    expect(escalateStaleWaiting(author, huge, 1000)).toBe(author);
-    // Kinds outside the map never change regardless of dwell.
-    const ready: UnifiedStatus = {
-      kind: "ready",
-      label: "Ready",
-      reason: "r",
-      attention: "none",
-    };
-    expect(escalateStaleWaiting(ready, huge, 1000)).toBe(ready);
-  });
-
-  it("caps: max(24h, 4 × p90) for the non-conflict kinds, per-repo", () => {
-    const RUNNER = "qontinui/qontinui-runner";
-    // No economics → the 24h floor.
-    expect(waitingDwellCapMs("needs-rebase", RUNNER)).toBe(
-      WAITING_STALE_MAX_MS
-    );
-    expect(waitingDwellCapMs("blocked", RUNNER)).toBe(WAITING_STALE_MAX_MS);
-    // Fast repo → the floor still wins.
-    expect(
-      waitingDwellCapMs("needs-rebase", RUNNER, {
-        [RUNNER]: { candidate_ci_p90_secs: 5 * 60 },
-      })
-    ).toBe(WAITING_STALE_MAX_MS);
-    // Slow repo → four full worst-case candidate runs.
-    expect(
-      waitingDwellCapMs("blocked", RUNNER, {
-        [RUNNER]: { candidate_ci_p90_secs: 10 * 60 * 60 },
-      })
-    ).toBe(40 * 60 * 60 * 1000);
-  });
-});
-
-describe("buildPipelineRows — dwell escalation covers both derivation paths", () => {
-  const THREE_DAYS_SECS = 3 * 24 * 60 * 60;
-  const ONE_HOUR_SECS = 60 * 60;
-
-  it("needs-rebase from statusFromGitHub (BEHIND, no proposal) escalates — the 6-of-16 guard", () => {
-    const row = buildPipelineRows(
-      [
-        pr({
-          merge_state_status: "BEHIND",
-          last_activity_secs: THREE_DAYS_SECS,
-        }),
-      ],
-      []
-    )[0];
-    expect(row.status.kind).toBe("needs-rebase-stale");
-    expect(row.status.label).toBe("Behind (stalled)");
-    expect(row.status.attention).toBe("author");
-    expect(row.status.reason).toContain("3d");
-    expect(row.status.reason).toContain("author");
-  });
-
-  it("blocked from statusFromProposal (active blocked-by-overlap) escalates the same way", () => {
-    const row = buildPipelineRows(
-      [pr({ last_activity_secs: THREE_DAYS_SECS })],
-      [proposal({ status: "blocked-by-overlap" })]
-    )[0];
-    expect(row.activeProposal).not.toBeNull();
-    expect(row.status.kind).toBe("blocked-stale");
-    expect(row.status.label).toBe("Blocked (stalled)");
-    expect(row.status.attention).toBe("author");
-    expect(row.status.reason).toContain("3d");
-  });
-
-  it("within the cap both stay waiting, unescalated", () => {
-    const behind = buildPipelineRows(
-      [pr({ merge_state_status: "BEHIND", last_activity_secs: ONE_HOUR_SECS })],
-      []
-    )[0];
-    expect(behind.status.kind).toBe("needs-rebase");
-    expect(behind.status.attention).toBe("waiting");
-    const blocked = buildPipelineRows(
-      [pr({ last_activity_secs: ONE_HOUR_SECS })],
-      [proposal({ status: "blocked-by-overlap" })]
-    )[0];
-    expect(blocked.status.kind).toBe("blocked");
-    expect(blocked.status.attention).toBe("waiting");
-  });
-
-  it("absent clock → rendered exactly as today, for both kinds", () => {
-    // No `last_activity_secs` at all (older coord deploy / no events): the
-    // rows must not escalate — absence is never evidence of staleness.
-    const behind = buildPipelineRows(
-      [pr({ merge_state_status: "BEHIND" })],
-      []
-    )[0];
-    expect(behind.status.kind).toBe("needs-rebase");
-    const blocked = buildPipelineRows(
-      [pr()],
-      [proposal({ status: "blocked-by-overlap" })]
-    )[0];
-    expect(blocked.status.kind).toBe("blocked");
-  });
-
-  it("the cap is per-repo: a slow repo's longer leash defers escalation", () => {
-    const RUNNER = "qontinui/qontinui-runner";
-    // p90 = 10h → cap = 40h. 30h of silence is within it; 41h is past it.
-    const econ: Record<string, MergeEconomics> = {
-      [RUNNER]: { candidate_ci_p90_secs: 10 * 60 * 60 },
-    };
-    const within = buildPipelineRows(
-      [
-        pr({
-          repo: RUNNER,
-          merge_state_status: "BEHIND",
-          last_activity_secs: 30 * 60 * 60,
-        }),
-      ],
-      [],
-      econ
-    )[0];
-    expect(within.status.kind).toBe("needs-rebase");
-    const past = buildPipelineRows(
-      [
-        pr({
-          repo: RUNNER,
-          merge_state_status: "BEHIND",
-          last_activity_secs: 41 * 60 * 60,
-        }),
-      ],
-      [],
-      econ
-    )[0];
-    expect(past.status.kind).toBe("needs-rebase-stale");
-  });
-
-  it("a proposal-only row (no PrRow) routes through the helper and never escalates", () => {
-    const row = buildPipelineRows(
-      [],
-      [
-        proposal({
-          status: "blocked-by-overlap",
-          repos: [repoDetail({ branch: "agent/x" })],
-        }),
-      ]
-    )[0];
-    expect(row.prNumber).toBeNull();
-    // No PrRow → no dwell clock → the waiting promise stays unexpired.
-    expect(row.status.kind).toBe("blocked");
-    expect(row.status.attention).toBe("waiting");
-  });
-
-  it("stale rows reach derivePipelineHealth's counters — each new kind", () => {
-    // web#813 shipped the row-badge-only version of this exact bug: the
-    // escalation reached the badge but not the headline the operator scans.
-    const behindStale = buildPipelineRows(
-      [
-        pr({
-          merge_state_status: "BEHIND",
-          last_activity_secs: THREE_DAYS_SECS,
-        }),
-      ],
-      []
-    );
-    expect(derivePipelineHealth(behindStale, NOW).needsAttention).toBe(1);
-    const behindFresh = buildPipelineRows(
-      [pr({ merge_state_status: "BEHIND", last_activity_secs: ONE_HOUR_SECS })],
-      []
-    );
-    expect(derivePipelineHealth(behindFresh, NOW).needsAttention).toBe(0);
-
-    const blockedStale = buildPipelineRows(
-      [pr({ last_activity_secs: THREE_DAYS_SECS })],
-      [proposal({ status: "blocked-by-overlap" })]
-    );
-    expect(derivePipelineHealth(blockedStale, NOW).needsAttention).toBe(1);
-    const blockedFresh = buildPipelineRows(
-      [pr({ last_activity_secs: ONE_HOUR_SECS })],
-      [proposal({ status: "blocked-by-overlap" })]
-    );
-    expect(derivePipelineHealth(blockedFresh, NOW).needsAttention).toBe(0);
-  });
-<<<<<<< HEAD
-
-  it("stale rows reach the headline DETAIL, not just the counter", () => {
-    // Counters alone were not the web#813 lesson — the operator scans the
-    // detail string. A stalled wait must say so there.
-    const behindStale = buildPipelineRows(
-      [pr({ merge_state_status: "BEHIND", last_activity_secs: THREE_DAYS_SECS })],
-      []
-    );
-    expect(derivePipelineHealth(behindStale, NOW).detail).toContain(
-      "1 stalled waiting PR needs an author look"
-    );
-    const behindFresh = buildPipelineRows(
-      [pr({ merge_state_status: "BEHIND", last_activity_secs: ONE_HOUR_SECS })],
-      []
-    );
-    expect(derivePipelineHealth(behindFresh, NOW).detail ?? "").not.toContain(
-      "stalled waiting"
-    );
-  });
-=======
->>>>>>> f03bb7a2 (feat: dwell caps escalate every stale waiting state on the fleet page)
 });
 
 describe("derivePipelineHealth — per-repo CI-wait thresholds", () => {
@@ -1324,27 +1027,6 @@ describe("ATTENTION_BY_KIND — the color/attention contract", () => {
             queue_depth: 9,
           },
         }
-      )[0],
-    },
-    // The stale escalations of the two non-conflict waiting kinds: a PR whose
-    // last observed activity is older than the 24h dwell floor.
-    {
-      what: "needs-rebase-stale",
-      row: buildPipelineRows(
-        [
-          pr({
-            merge_state_status: "BEHIND",
-            last_activity_secs: 3 * 24 * 60 * 60,
-          }),
-        ],
-        []
-      )[0],
-    },
-    {
-      what: "blocked-stale",
-      row: buildPipelineRows(
-        [pr({ last_activity_secs: 3 * 24 * 60 * 60 })],
-        [proposal({ status: "blocked-by-overlap" })]
       )[0],
     },
     ...(
