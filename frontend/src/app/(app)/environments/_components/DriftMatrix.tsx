@@ -213,9 +213,20 @@ function MachineDriftCard({
             Fully in sync with the canonical machine.
           </p>
         ) : (
-          report.sections.map((section) => (
-            <SectionRow key={section.section} section={section} />
-          ))
+          <>
+            {/* in_sync with deltas still listed means every difference is
+                repo-derived — real, but not this machine's state. Say so, or
+                the panel reads as contradicting the in-sync badge. */}
+            {report.in_sync && (
+              <p className="text-xs text-muted-foreground">
+                In sync with the canonical machine — the differences below are
+                repo-derived, not machine state.
+              </p>
+            )}
+            {report.sections.map((section) => (
+              <SectionRow key={section.section} section={section} />
+            ))}
+          </>
         )}
 
         {report.has_config && (
@@ -263,6 +274,13 @@ function SectionRow({ section }: { section: SectionDrift }) {
 
       {open && (
         <div className="border-t border-border px-3 py-2 space-y-2">
+          {section.process_scoped && (
+            <p className="text-xs text-muted-foreground">
+              This section reflects the environment of the process that captured
+              it, so differences here may be process-scope artifacts rather than
+              real drift.
+            </p>
+          )}
           {section.deltas.length === 0 ? (
             <p className="text-xs text-muted-foreground">No deltas.</p>
           ) : (
@@ -282,6 +300,14 @@ function DeltaRow({ delta }: { delta: KeyDelta }) {
       <div className="flex items-center justify-between gap-2">
         <span className="text-xs font-mono font-medium truncate">
           {delta.key}
+          {delta.derived && (
+            <span
+              className="ml-1.5 font-sans font-normal text-muted-foreground"
+              title="Read from the repo the capturing binary was built from, not from this machine — it converges by pulling the repo, never by an apply."
+            >
+              (repo-derived)
+            </span>
+          )}
         </span>
         <span
           className={`text-[10px] uppercase tracking-wide font-semibold ${deltaSeverityClass(
