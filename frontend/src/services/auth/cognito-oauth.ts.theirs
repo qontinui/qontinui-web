@@ -75,7 +75,6 @@ export interface CognitoTokenResponse {
 }
 
 /**
-<<<<<<< HEAD
  * Why a refresh-token exchange failed.
  *
  * - `authoritative` — Cognito told us the session is DEAD (a 400 carrying
@@ -117,8 +116,6 @@ export class CognitoRefreshError extends Error {
 }
 
 /**
-=======
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
  * Cognito token endpoint response for the **refresh_token** grant.
  *
  * Deliberately has no `refresh_token`: Cognito does NOT rotate/return a refresh
@@ -445,16 +442,11 @@ export async function exchangeCodeForTokens(
  * the refresh token).
  *
  * Cognito returns NO `refresh_token` here, so callers keep the token they
-<<<<<<< HEAD
  * already hold.
  *
  * ALWAYS rejects with a `CognitoRefreshError` whose `kind` says whether the
  * session is authoritatively dead (tear down) or the attempt merely failed
  * transiently (keep the session, retry later) — see `CognitoRefreshFailureKind`.
-=======
- * already hold. A 400 (`invalid_grant`) means the refresh token was revoked or
- * has itself expired — genuinely dead session, and the caller should tear down.
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
  */
 export async function refreshCognitoTokens(
   refreshToken: string
@@ -465,7 +457,6 @@ export async function refreshCognitoTokens(
     refresh_token: refreshToken,
   });
 
-<<<<<<< HEAD
   let response: Response;
   try {
     response = await fetch(TOKEN_ENDPOINT, {
@@ -518,33 +509,11 @@ export async function refreshCognitoTokens(
 async function tokenErrorBody(
   response: Response
 ): Promise<{ detail: string; error: string | null }> {
-=======
-  const response = await fetch(TOKEN_ENDPOINT, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body,
-  });
-
-  if (!response.ok) {
-    throw new Error(`Token refresh failed: ${await tokenErrorDetail(response)}`);
-  }
-
-  return (await response.json()) as CognitoRefreshResponse;
-}
-
-/**
- * Best-effort human-readable detail from a failed token-endpoint response:
- * Cognito's OAuth error body (`error_description` / `error`), falling back to
- * the bare status code for a non-JSON body.
- */
-async function tokenErrorDetail(response: Response): Promise<string> {
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
   try {
     const err = (await response.json()) as {
       error?: string;
       error_description?: string;
     };
-<<<<<<< HEAD
     return {
       detail: err.error_description || err.error || `${response.status}`,
       error: err.error ?? null,
@@ -562,15 +531,6 @@ async function tokenErrorDetail(response: Response): Promise<string> {
   return (await tokenErrorBody(response)).detail;
 }
 
-=======
-    return err.error_description || err.error || `${response.status}`;
-  } catch {
-    // non-JSON error body — keep the status code
-    return `${response.status}`;
-  }
-}
-
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
 /** Clear the single-use PKCE verifier + state after the exchange completes. */
 export function consumePkceState(): void {
   sessionStorage.removeItem(PKCE_VERIFIER_KEY);
