@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "base_sha": "7745b76ddb61a4b4e063fb81d0decc85561e066d",
+  "ours_sha": "28432e5bfc79217fa18ea42d3f4a0406323de8b4",
+  "theirs_sha": "1c429956bb7452a86e9d174e06d8bd726e0bc289",
+  "entries": [
+    {
+      "path": "frontend/src/components/operations/prPipeline.test.ts",
+      "base_oid": "d39f6bb937b1935e180655e79feb468832ecd080",
+      "ours_oid": "ab561548c9a409aef8cd8fb81859d89669133b57",
+      "theirs_oid": "13c5613be8cd4d7df100c30873102fa7b3962373",
+      "base_path": "frontend/src/components/operations/prPipeline.test.ts.base",
+      "ours_path": "frontend/src/components/operations/prPipeline.test.ts.ours",
+      "theirs_path": "frontend/src/components/operations/prPipeline.test.ts.theirs",
+      "hunks": [
+        "<<<<<<< HEAD\n\n  it(\"stale rows reach the headline DETAIL, not just the counter\", () => {\n    // Counters alone were not the web#813 lesson — the operator scans the\n    // detail string. A stalled wait must say so there.\n    const behindStale = buildPipelineRows(\n      [pr({ merge_state_status: \"BEHIND\", last_activity_secs: THREE_DAYS_SECS })],\n      []\n    );\n    expect(derivePipelineHealth(behindStale, NOW).detail).toContain(\n      \"1 stalled waiting PR needs an author look\"\n    );\n    const behindFresh = buildPipelineRows(\n      [pr({ merge_state_status: \"BEHIND\", last_activity_secs: ONE_HOUR_SECS })],\n      []\n    );\n    expect(derivePipelineHealth(behindFresh, NOW).detail ?? \"\").not.toContain(\n      \"stalled waiting\"\n    );\n  });\n=======\n>>>>>>> f03bb7a2 (feat: dwell caps escalate every stale waiting state on the fleet page)\n"
+      ]
+    },
+    {
+      "path": "frontend/src/components/operations/prPipeline.ts",
+      "base_oid": "12e999e5c58fce20e7cf940d959923cfad81c916",
+      "ours_oid": "711d474e47887a4cd817ff8adcad0a01ea0ca357",
+      "theirs_oid": "d6d6e1cfdede4505fd72d2cda15d566d5926f568",
+      "base_path": "frontend/src/components/operations/prPipeline.ts.base",
+      "ours_path": "frontend/src/components/operations/prPipeline.ts.ours",
+      "theirs_path": "frontend/src/components/operations/prPipeline.ts.theirs",
+      "hunks": [
+        "<<<<<<< HEAD\n * The kinds that can escalate — exactly `STALE_ESCALATION`'s key set. Cap\n * lookups take this instead of the full union so asking for a dwell cap on a\n * kind that has none is unrepresentable, not silently defaulted.\n */\nexport type EscalatableKind = \"needs-rebase\" | \"blocked\" | \"conflict-deferred\";\n\nfunction isEscalatable(kind: UnifiedStatusKind): kind is EscalatableKind {\n  return STALE_ESCALATION[kind] !== undefined;\n}\n\n/**\n=======\n>>>>>>> f03bb7a2 (feat: dwell caps escalate every stale waiting state on the fleet page)\n",
+        "<<<<<<< HEAD\n  kind: EscalatableKind,\n=======\n  kind: UnifiedStatusKind,\n>>>>>>> f03bb7a2 (feat: dwell caps escalate every stale waiting state on the fleet page)\n",
+        "<<<<<<< HEAD\n          `no observed activity for ${dur} while behind its base — coord's ` +\n=======\n          `behind its base for ${dur} with no observed activity — coord's ` +\n>>>>>>> f03bb7a2 (feat: dwell caps escalate every stale waiting state on the fleet page)\n",
+        "<<<<<<< HEAD\n          `no observed activity for ${dur} while waiting on an overlapping PR ` +\n=======\n          `waiting on an overlapping PR for ${dur} with no observed activity ` +\n>>>>>>> f03bb7a2 (feat: dwell caps escalate every stale waiting state on the fleet page)\n",
+        "<<<<<<< HEAD\n  const kind = status.kind;\n  if (!isEscalatable(kind)) return status;\n  const dwellMs =\n    pr === null\n      ? null\n      : kind === \"conflict-deferred\"\n=======\n  if (STALE_ESCALATION[status.kind] === undefined) return status;\n  const dwellMs =\n    pr === null\n      ? null\n      : status.kind === \"conflict-deferred\"\n>>>>>>> f03bb7a2 (feat: dwell caps escalate every stale waiting state on the fleet page)\n",
+        "<<<<<<< HEAD\n    waitingDwellCapMs(kind, repo, economics)\n=======\n    waitingDwellCapMs(status.kind, repo, economics)\n>>>>>>> f03bb7a2 (feat: dwell caps escalate every stale waiting state on the fleet page)\n",
+        "<<<<<<< HEAD\n    // NB for GROUP rows the member PRs (looked up below for `members`) DO\n    // carry clocks; not feeding them is deliberate under-escalation — the\n    // safe direction. Feeding `max(member clocks)` is a product decision,\n    // not a bug fix.\n=======\n>>>>>>> f03bb7a2 (feat: dwell caps escalate every stale waiting state on the fleet page)\n"
+      ]
+    }
+  ]
+}
