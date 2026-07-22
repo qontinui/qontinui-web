@@ -1,7 +1,9 @@
 name: Spec CI
 
 # Spec CI replaces Playwright E2E as the on-PR merge gate. Playwright E2E
-# moves to nightly-only via the matching change in e2e-tests.yml.
+# (e2e-tests.yml, frontend-tests) runs on main/develop pushes and nightly —
+# not on PRs and not on coord's merge-candidate* candidate refs, both of
+# which are gated by Spec CI + the backend E2E job instead.
 #
 # HERMETIC since 2026-06-04: the entire stack — Postgres, Redis, the FastAPI
 # backend, a run-local token issuer — boots inside this job. The previous
