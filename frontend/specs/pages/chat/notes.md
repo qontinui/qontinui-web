@@ -1,3 +1,0 @@
-# ChatPage
-
-_(notes)_

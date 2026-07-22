@@ -353,7 +353,6 @@ describe("HttpClient reactive refresh on 401", () => {
     return fetchMock;
   }
 
-<<<<<<< HEAD
   /** Stub fetch: always 401 (a bearer the backend keeps rejecting). */
   function mockAlwaysUnauthorized(): ReturnType<typeof vi.fn> {
     const fetchMock = vi.fn(
@@ -373,11 +372,6 @@ describe("HttpClient reactive refresh on 401", () => {
       refreshWithOutcome: vi.fn(async () => outcome),
       refreshAccessToken: vi.fn(async () => outcome === "refreshed"),
     };
-=======
-  /** A TokenRefreshService stand-in with a controllable outcome. */
-  function makeRefreshService(ok: boolean) {
-    return { refreshAccessToken: vi.fn(async () => ok) };
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
   }
 
   beforeEach(() => {
@@ -394,11 +388,7 @@ describe("HttpClient reactive refresh on 401", () => {
       getAccessToken: vi.fn(() => "expired"),
       isAccessTokenExpired: vi.fn(() => true),
     });
-<<<<<<< HEAD
     const refreshService = makeRefreshService("refreshed");
-=======
-    const refreshService = makeRefreshService(true);
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
     const client = new HttpClient(
       tm as unknown as TokenManager,
       undefined,
@@ -409,11 +399,7 @@ describe("HttpClient reactive refresh on 401", () => {
 
     const r = await client.fetch("https://api.test/api/v1/operations/fleet");
 
-<<<<<<< HEAD
     expect(refreshService.refreshWithOutcome).toHaveBeenCalledTimes(1);
-=======
-    expect(refreshService.refreshAccessToken).toHaveBeenCalledTimes(1);
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
     expect(fetchMock).toHaveBeenCalledTimes(2); // original + replay
     expect(r.status).toBe(200);
     expect(onExpired).not.toHaveBeenCalled();
@@ -431,11 +417,7 @@ describe("HttpClient reactive refresh on 401", () => {
       isAccessTokenExpired: vi.fn(() => false),
       isAccessTokenExpiringSoon: vi.fn(() => false),
     });
-<<<<<<< HEAD
     const refreshService = makeRefreshService("refreshed");
-=======
-    const refreshService = makeRefreshService(true);
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
     const client = new HttpClient(
       tm as unknown as TokenManager,
       undefined,
@@ -444,11 +426,7 @@ describe("HttpClient reactive refresh on 401", () => {
 
     const r = await client.fetch("https://api.test/api/v1/operations/fleet");
 
-<<<<<<< HEAD
     expect(refreshService.refreshWithOutcome).toHaveBeenCalledTimes(1);
-=======
-    expect(refreshService.refreshAccessToken).toHaveBeenCalledTimes(1);
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(r.status).toBe(200);
   });
@@ -461,11 +439,7 @@ describe("HttpClient reactive refresh on 401", () => {
       getAccessToken: vi.fn(() => "expired"),
       isAccessTokenExpired: vi.fn(() => true),
     });
-<<<<<<< HEAD
     const refreshService = makeRefreshService("expired");
-=======
-    const refreshService = makeRefreshService(false);
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
     const client = new HttpClient(
       tm as unknown as TokenManager,
       undefined,
@@ -487,11 +461,7 @@ describe("HttpClient reactive refresh on 401", () => {
   it("does not refresh a 401 while the bearer is genuinely still valid", async () => {
     mockUnauthorizedThenOk();
     const tm = makeTokenManager({ getAccessToken: vi.fn(() => "valid") });
-<<<<<<< HEAD
     const refreshService = makeRefreshService("refreshed");
-=======
-    const refreshService = makeRefreshService(true);
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
     const client = new HttpClient(
       tm as unknown as TokenManager,
       undefined,
@@ -500,7 +470,6 @@ describe("HttpClient reactive refresh on 401", () => {
 
     const r = await client.fetch("https://api.test/api/v1/operations/fleet");
 
-<<<<<<< HEAD
     expect(refreshService.refreshWithOutcome).not.toHaveBeenCalled();
     expect(r.status).toBe(401);
   });
@@ -700,9 +669,4 @@ describe("HttpClient reactive refresh on 401", () => {
     }
     expect(onExpired).not.toHaveBeenCalled();
   });
-=======
-    expect(refreshService.refreshAccessToken).not.toHaveBeenCalled();
-    expect(r.status).toBe(401);
-  });
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
 });
