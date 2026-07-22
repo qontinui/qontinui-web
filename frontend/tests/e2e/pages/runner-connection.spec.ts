@@ -7,6 +7,8 @@
 
 import { test, expect } from "../fixtures";
 
+import { stubRunnerRelease } from "../helpers/runner-release-stub";
+
 test.describe("Connect Runner Page", () => {
   test("loads without errors and shows heading", async ({ page }) => {
     await page.goto("/connect-runner");
@@ -50,6 +52,16 @@ test.describe("Connect Runner Page", () => {
 });
 
 test.describe("Download Page", () => {
+  // /download resolves its file list from the GitHub-backed release endpoint;
+  // download buttons and the "Recommended" badge render ONLY from real assets.
+  // Under CI's shared-IP anonymous rate limit the backend degrades to an empty
+  // asset list, timing out the assertions below (red main runs 29859706423 +
+  // 29696362417). Stub the endpoint so the render is deterministic — see
+  // helpers/runner-release-stub.ts.
+  test.beforeEach(async ({ page }) => {
+    await stubRunnerRelease(page);
+  });
+
   test("loads without errors and shows heading", async ({ page }) => {
     await page.goto("/download");
     await page.waitForLoadState("domcontentloaded");
@@ -157,9 +169,9 @@ test.describe("Runners Management Page", () => {
     await page.waitForLoadState("domcontentloaded");
 
     // Devices tab should be visible (unified-devices rename, PR #159)
-    await expect(
-      page.getByRole("tab", { name: /Devices/i })
-    ).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole("tab", { name: /Devices/i })).toBeVisible({
+      timeout: 15000,
+    });
 
     // Session History tab should be visible
     await expect(
