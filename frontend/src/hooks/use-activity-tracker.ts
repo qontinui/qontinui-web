@@ -5,19 +5,23 @@ import { createLogger } from "@/lib/logger";
 
 const log = createLogger("ActivityTracker");
 
-const INACTIVITY_TIMEOUT = 60 * 60 * 1000; // 1 hour in milliseconds
-// REMOVED: REFRESH_INTERVAL - Frontend no longer proactively refreshes tokens
-// Backend sliding window middleware handles all proactive refreshes (5min threshold)
+// Matches the Cognito app client's IdTokenValidity (3h) so an idle-timeout
+// sign-out can't fire earlier than the session it is meant to bound.
+const INACTIVITY_TIMEOUT = 3 * 60 * 60 * 1000; // 3 hours in milliseconds
 const WARN_BEFORE_TIMEOUT = 3 * 60 * 1000; // Warn 3 minutes before timeout
 
 /**
  * Activity Tracker Hook
  *
- * Token Refresh Strategy (Aligned with Backend):
- * - REMOVED proactive token refresh interval (previously every 5 minutes)
- * - Backend sliding window middleware handles all proactive refreshes (5min threshold)
- * - Frontend only tracks user activity for inactivity warnings
- * - This prevents race conditions where both frontend and backend try to refresh simultaneously
+ * CURRENTLY UNMOUNTED: `<ActivityTracker />` is rendered by no layout, so this
+ * hook is dead code today. The constants are kept in sync with the live session
+ * length anyway, so mounting it later doesn't silently reintroduce a 1-hour
+ * sign-out.
+ *
+ * Token Refresh Strategy:
+ * - This hook does NOT refresh tokens. `TokenRefreshService` owns both the
+ *   proactive (pre-expiry) and reactive (401) refresh paths, single-flighted.
+ * - Frontend only tracks user activity here, for inactivity warnings.
  */
 export function useActivityTracker() {
   const lastActivityRef = useRef<number>(Date.now());
