@@ -416,6 +416,12 @@ async def _job_scheduled_dispatch() -> Any:
     return await poll_and_dispatch_due()
 
 
+async def _job_devenv_config_history_prune() -> Any:
+    from app.jobs.devenv_history_prune import prune_config_history
+
+    return await prune_config_history()
+
+
 async def _job_connection_cleanup() -> Any:
     from app.jobs.connection_cleanup import cleanup_stale_connections
 
@@ -455,9 +461,18 @@ def install_default_tasks(service: SchedulerService) -> None:
     service.register(
         ScheduledTask(
             name="memory_consolidate",
+            # Every 10 minutes, NOT the weekly beat cadence this was ported from.
+            # Consolidation is what clusters new episodes into synthesis jobs; a
+            # weekly cadence meant a mental_model surfaced up to 7 days after the
+            # episodes that formed it (and, combined with sub-hourly redeploys,
+            # the Sunday slot was perpetually skipped — it had NEVER run). This
+            # is the memory feedback loop, so it must be prompt. `run_at_boot`
+            # additionally guarantees a sweep shortly after every deploy so a
+            # redeploy can never strand the cadence.
             coro=_job_memory_consolidate,
-            cron="20 4 * * 0",
+            cron="*/10 * * * *",
             timeout_seconds=600.0,
+            run_at_boot=True,
         )
     )
     service.register(
@@ -465,6 +480,17 @@ def install_default_tasks(service: SchedulerService) -> None:
             name="memory_bridge_sync",
             coro=_job_memory_bridge_sync,
             cron="*/15 * * * *",
+        )
+    )
+
+    # Devenv config-history retention — daily cap of the append-only capture
+    # timeline at the newest 500 rows per (environment, machine) pair. Off-peak
+    # like the other daily crons, offset so it never contends with them.
+    service.register(
+        ScheduledTask(
+            name="devenv_config_history_prune",
+            coro=_job_devenv_config_history_prune,
+            cron="25 4 * * *",
         )
     )
 

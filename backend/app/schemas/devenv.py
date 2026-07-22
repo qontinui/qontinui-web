@@ -242,9 +242,28 @@ class EnvironmentResponse(BaseORMSchema):
 
 
 class SetCanonicalRequest(BaseSchema):
-    """Designate a machine as the canonical source of truth for an env."""
+    """Designate a machine as the canonical source of truth for an env.
+
+    ``note`` is the optional "why" recorded alongside the who/when in
+    :class:`~app.models.devenv.CanonicalChangeLog`. Changing canonical
+    re-points every other machine's drift, so the reason is the part of the
+    audit trail a teammate reading it later actually needs. Optional by
+    design — an unexplained change is still fully attributable, and requiring
+    prose would only produce empty ceremony.
+    """
 
     machine_id: UUID
+    note: str | None = Field(default=None, max_length=500)
+
+    @field_validator("note")
+    @classmethod
+    def _blank_note_is_none(cls, v: str | None) -> str | None:
+        """Trim, and treat a whitespace-only note as no note at all.
+
+        Keeps `""` out of the audit trail, so "has a note" is a truthiness
+        check for every reader (the UI renders the row only when non-null).
+        """
+        return (v or "").strip() or None
 
 
 class CanonicalChangeResponse(BaseORMSchema):
@@ -253,6 +272,13 @@ class CanonicalChangeResponse(BaseORMSchema):
     The "records of who changed it and when" for the team-sync model:
     ``changed_by_user_id`` + ``changed_at`` + the ``from``/``to`` machine.
     ``tenant_id`` is best-effort (the active-tenant context of the change).
+
+    The ``*_email`` / ``*_name`` fields are display labels resolved
+    server-side by LEFT JOIN (one query, no client N+1). They are **always
+    nullable**: the machine ids are soft references so an audit row outlives
+    the machine it names, and the actor FK is ``ON DELETE SET NULL``. A UI
+    must fall back (e.g. "deleted machine" / a short id prefix) rather than
+    assume a name is present.
     """
 
     id: UUID
@@ -260,9 +286,27 @@ class CanonicalChangeResponse(BaseORMSchema):
     from_machine_id: UUID | None = None
     to_machine_id: UUID | None = None
     changed_by_user_id: UUID | None = None
+    changed_by_email: str | None = None
+    from_machine_name: str | None = None
+    to_machine_name: str | None = None
     tenant_id: UUID | None = None
     note: str | None = None
     changed_at: IsoDatetime
+
+
+class ConfigHistoryEntry(BaseORMSchema):
+    """One capture in a machine's config-history timeline (newest-first).
+
+    Metadata only — deliberately NO config body, so a long timeline stays a
+    small payload. The body is reachable through the diff endpoint (as a
+    drift report), never dumped raw.
+    """
+
+    id: UUID
+    captured_at: IsoDatetime
+    schema_version: int
+    source: str
+    content_hash: str
 
 
 # ---------------------------------------------------------------------------
@@ -374,6 +418,14 @@ class CanonicalConfigResponse(BaseSchema):
     to what a pulling runner may do with it (apply / report secrets only /
     stop on destructive) — see :mod:`app.services.devenv_section_policy`.
 
+    ``derived_keys`` refines that per-SECTION policy down to the KEY level:
+    ``section -> keys that are repo-derived``. A repo-derived key measures the
+    source tree the capturing binary was built from, not the box, so it is not
+    independently settable (you cannot install your way to a crate version) and
+    must never be counted actionable — regardless of its section policy. The
+    field is additive: absent/empty means "no per-key refinement", i.e. exactly
+    the pre-existing behavior, so already-deployed runners are unaffected.
+
     ``canonical_machine_id`` is ``None`` (and ``sections`` empty) only if no
     canonical is set — the endpoint 422s that case before building this, so in
     practice these are always populated.
@@ -386,6 +438,7 @@ class CanonicalConfigResponse(BaseSchema):
     captured_at: IsoDatetime | None = None
     sections: dict[str, dict[str, str]] = Field(default_factory=dict)
     section_policy: dict[str, SectionPolicyT] = Field(default_factory=dict)
+    derived_keys: dict[str, list[str]] = Field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -423,6 +476,24 @@ class MachineDriftReport(BaseSchema):
     expected_schema_version: int | None = None
     actual_schema_version: int | None = None
     has_config: bool = True
+
+
+class ConfigHistoryDiffResponse(MachineDriftReport):
+    """SELF-drift between two captures of the SAME machine over time.
+
+    The same drift-report shape as the vs-canonical endpoints (sections of
+    key deltas + severity rollup), produced by
+    :func:`app.services.devenv_drift.diff_envelopes` with the ``from``
+    capture in the canonical slot ("expected") and the ``to`` capture in the
+    target slot ("actual") — the report reads as "what changed going from
+    ``from`` to ``to``".
+    Extends the base shape with the identity of the two compared captures.
+    """
+
+    from_id: UUID
+    to_id: UUID
+    from_captured_at: IsoDatetime
+    to_captured_at: IsoDatetime
 
 
 class EnvironmentDriftResponse(BaseSchema):

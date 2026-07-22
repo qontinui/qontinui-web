@@ -27,8 +27,7 @@ function FeatureCard({
   feature: DemoFeature;
   landedAt: number | null;
 }) {
-  const justLanded =
-    landedAt !== null && Date.now() - landedAt < HIGHLIGHT_MS;
+  const justLanded = landedAt !== null && Date.now() - landedAt < HIGHLIGHT_MS;
 
   return (
     <div
@@ -65,9 +64,7 @@ function FeatureCard({
           />
         ) : (
           <div className="h-64 flex items-center justify-center">
-            <p className="text-xs text-muted-foreground">
-              Pending merge…
-            </p>
+            <p className="text-xs text-muted-foreground">Pending merge…</p>
           </div>
         )}
       </div>
@@ -98,7 +95,7 @@ export function LandedFeaturesPanel() {
       const res = await httpClient.fetch(`${OPERATIONS_API}/merge/queue`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = (await res.json()) as QueueResponse | ProposalDetail[];
-      const list = Array.isArray(body) ? body : body.proposals ?? [];
+      const list = Array.isArray(body) ? body : (body.proposals ?? []);
 
       if (cleanedUpRef.current) return;
 
@@ -151,23 +148,23 @@ export function LandedFeaturesPanel() {
       icon={<Sparkles className="h-4 w-4" />}
       title="Live features"
     >
-        {loading ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Skeleton className="h-72" />
-            <Skeleton className="h-72" />
-            <Skeleton className="h-72" />
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {DEMO_FEATURES.map((f) => (
-              <FeatureCard
-                key={f.slug}
-                feature={f}
-                landedAt={landedAt[f.slug] ?? null}
-              />
-            ))}
-          </div>
-        )}
+      {loading ? (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Skeleton className="h-72" />
+          <Skeleton className="h-72" />
+          <Skeleton className="h-72" />
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {DEMO_FEATURES.map((f) => (
+            <FeatureCard
+              key={f.slug}
+              feature={f}
+              landedAt={landedAt[f.slug] ?? null}
+            />
+          ))}
+        </div>
+      )}
     </CollapsiblePanel>
   );
 }

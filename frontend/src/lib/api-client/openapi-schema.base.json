@@ -4376,11 +4376,22 @@
         "type": "object"
       },
       "CanonicalChangeResponse": {
-        "description": "One audited canonical-designation change (newest-first in a list).\n\nThe \"records of who changed it and when\" for the team-sync model:\n``changed_by_user_id`` + ``changed_at`` + the ``from``/``to`` machine.\n``tenant_id`` is best-effort (the active-tenant context of the change).",
+        "description": "One audited canonical-designation change (newest-first in a list).\n\nThe \"records of who changed it and when\" for the team-sync model:\n``changed_by_user_id`` + ``changed_at`` + the ``from``/``to`` machine.\n``tenant_id`` is best-effort (the active-tenant context of the change).\n\nThe ``*_email`` / ``*_name`` fields are display labels resolved\nserver-side by LEFT JOIN (one query, no client N+1). They are **always\nnullable**: the machine ids are soft references so an audit row outlives\nthe machine it names, and the actor FK is ``ON DELETE SET NULL``. A UI\nmust fall back (e.g. \"deleted machine\" / a short id prefix) rather than\nassume a name is present.",
         "properties": {
           "changed_at": {
             "title": "Changed At",
             "type": "string"
+          },
+          "changed_by_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Changed By Email"
           },
           "changed_by_user_id": {
             "anyOf": [
@@ -4410,6 +4421,17 @@
               }
             ],
             "title": "From Machine Id"
+          },
+          "from_machine_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Machine Name"
           },
           "id": {
             "format": "uuid",
@@ -4450,6 +4472,17 @@
               }
             ],
             "title": "To Machine Id"
+          },
+          "to_machine_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Machine Name"
           }
         },
         "required": [
@@ -4461,7 +4494,7 @@
         "type": "object"
       },
       "CanonicalConfigResponse": {
-        "description": "The canonical config a runner PULLS to reconcile its own box toward.\n\nSecret-free by construction (the stored envelope already coerced\n``env_contract`` to present/absent). ``section_policy`` maps each section\nto what a pulling runner may do with it (apply / report secrets only /\nstop on destructive) \u2014 see :mod:`app.services.devenv_section_policy`.\n\n``canonical_machine_id`` is ``None`` (and ``sections`` empty) only if no\ncanonical is set \u2014 the endpoint 422s that case before building this, so in\npractice these are always populated.",
+        "description": "The canonical config a runner PULLS to reconcile its own box toward.\n\nSecret-free by construction (the stored envelope already coerced\n``env_contract`` to present/absent). ``section_policy`` maps each section\nto what a pulling runner may do with it (apply / report secrets only /\nstop on destructive) \u2014 see :mod:`app.services.devenv_section_policy`.\n\n``derived_keys`` refines that per-SECTION policy down to the KEY level:\n``section -> keys that are repo-derived``. A repo-derived key measures the\nsource tree the capturing binary was built from, not the box, so it is not\nindependently settable (you cannot install your way to a crate version) and\nmust never be counted actionable \u2014 regardless of its section policy. The\nfield is additive: absent/empty means \"no per-key refinement\", i.e. exactly\nthe pre-existing behavior, so already-deployed runners are unaffected.\n\n``canonical_machine_id`` is ``None`` (and ``sections`` empty) only if no\ncanonical is set \u2014 the endpoint 422s that case before building this, so in\npractice these are always populated.",
         "properties": {
           "canonical_machine_id": {
             "anyOf": [
@@ -4496,6 +4529,16 @@
               }
             ],
             "title": "Captured At"
+          },
+          "derived_keys": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Derived Keys",
+            "type": "object"
           },
           "environment_id": {
             "format": "uuid",
@@ -5936,9 +5979,21 @@
         "title": "CiStatusResponse",
         "type": "object"
       },
-      "ClaimSynthesisJobsRequest": {
-        "description": "``POST /memory/synthesis-jobs/claim`` body.",
+      "ClaimJobsRequest": {
+        "description": "``POST /memory/jobs/claim`` body.\n\n``kinds`` is the runner's capability declaration \u2014 it only claims work\nit can actually execute, so a runner that cannot synthesize never\ntakes a synthesis job hostage for a full lease before failing it.",
         "properties": {
+          "kinds": {
+            "items": {
+              "enum": [
+                "synthesis",
+                "embedding"
+              ],
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Kinds",
+            "type": "array"
+          },
           "limit": {
             "default": 4,
             "maximum": 4.0,
@@ -5947,14 +6002,14 @@
             "type": "integer"
           }
         },
-        "title": "ClaimSynthesisJobsRequest",
+        "title": "ClaimJobsRequest",
         "type": "object"
       },
-      "ClaimSynthesisJobsResponse": {
+      "ClaimJobsResponse": {
         "properties": {
           "jobs": {
             "items": {
-              "$ref": "#/components/schemas/SynthesisJobOut"
+              "$ref": "#/components/schemas/MemoryJobOut"
             },
             "title": "Jobs",
             "type": "array"
@@ -5963,7 +6018,7 @@
         "required": [
           "jobs"
         ],
-        "title": "ClaimSynthesisJobsResponse",
+        "title": "ClaimJobsResponse",
         "type": "object"
       },
       "ClaudeSessionInfo": {
@@ -7597,6 +7652,149 @@
           "captured_at"
         ],
         "title": "ConfigEnvelope",
+        "type": "object"
+      },
+      "ConfigHistoryDiffResponse": {
+        "description": "SELF-drift between two captures of the SAME machine over time.\n\nThe same drift-report shape as the vs-canonical endpoints (sections of\nkey deltas + severity rollup), produced by\n:func:`app.services.devenv_drift.diff_envelopes` with the ``from``\ncapture in the canonical slot (\"expected\") and the ``to`` capture in the\ntarget slot (\"actual\") \u2014 the report reads as \"what changed going from\n``from`` to ``to``\".\nExtends the base shape with the identity of the two compared captures.",
+        "properties": {
+          "actual_schema_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Schema Version"
+          },
+          "expected_schema_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Schema Version"
+          },
+          "from_captured_at": {
+            "title": "From Captured At",
+            "type": "string"
+          },
+          "from_id": {
+            "format": "uuid",
+            "title": "From Id",
+            "type": "string"
+          },
+          "has_config": {
+            "default": true,
+            "title": "Has Config",
+            "type": "boolean"
+          },
+          "in_sync": {
+            "title": "In Sync",
+            "type": "boolean"
+          },
+          "machine_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Machine Id"
+          },
+          "machine_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Machine Name"
+          },
+          "schema_version_mismatch": {
+            "default": false,
+            "title": "Schema Version Mismatch",
+            "type": "boolean"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/SectionDrift"
+            },
+            "title": "Sections",
+            "type": "array"
+          },
+          "severity": {
+            "enum": [
+              "info",
+              "warning",
+              "critical"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "to_captured_at": {
+            "title": "To Captured At",
+            "type": "string"
+          },
+          "to_id": {
+            "format": "uuid",
+            "title": "To Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "severity",
+          "in_sync",
+          "from_id",
+          "to_id",
+          "from_captured_at",
+          "to_captured_at"
+        ],
+        "title": "ConfigHistoryDiffResponse",
+        "type": "object"
+      },
+      "ConfigHistoryEntry": {
+        "description": "One capture in a machine's config-history timeline (newest-first).\n\nMetadata only \u2014 deliberately NO config body, so a long timeline stays a\nsmall payload. The body is reachable through the diff endpoint (as a\ndrift report), never dumped raw.",
+        "properties": {
+          "captured_at": {
+            "title": "Captured At",
+            "type": "string"
+          },
+          "content_hash": {
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "captured_at",
+          "schema_version",
+          "source",
+          "content_hash"
+        ],
+        "title": "ConfigHistoryEntry",
         "type": "object"
       },
       "ConflictChange": {
@@ -19280,6 +19478,23 @@
         "title": "FunctionStats",
         "type": "object"
       },
+      "GateDoctorSweepRequest": {
+        "description": "Body for ``POST /admin-dev/gates/doctor/sweep``.\n\nMirrors coord's ``GateDoctorSweepRequest`` defaults verbatim\n(``qontinui-coord/src/api/gate_routes.rs``): dry-run-first, and the\n``land_backfill`` sweep mode (re-clear ``failed`` ``pr_merged``-on-coord\ngates whose work actually landed). ``mode`` is passed through unvalidated\nso coord remains the single authority on the mode set \u2014 an unknown mode\nis coord's ``400`` to raise, not the web layer's.",
+        "properties": {
+          "dry_run": {
+            "default": true,
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "mode": {
+            "default": "land_backfill",
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "title": "GateDoctorSweepRequest",
+        "type": "object"
+      },
       "GateEvaluationResult": {
         "description": "Result of evaluating a gate step.",
         "properties": {
@@ -19358,6 +19573,31 @@
           "bounding_box"
         ],
         "title": "GenerateDescriptionRequest",
+        "type": "object"
+      },
+      "GithubOauthStatusResponse": {
+        "description": "Success body for ``GET /operations/github/oauth-status``.",
+        "properties": {
+          "authorize_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authorize Url"
+          },
+          "authorized": {
+            "title": "Authorized",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "authorized"
+        ],
+        "title": "GithubOauthStatusResponse",
         "type": "object"
       },
       "GuiActionTypeConfigCreate": {
@@ -21178,6 +21418,54 @@
         "title": "JobListResponse",
         "type": "object"
       },
+      "JobResultRequest": {
+        "description": "``POST /memory/jobs/{job_id}/result`` body.\n\nExactly one of ``result`` (success) or ``failure`` (the runner could\nnot execute the job; the reason) must be set. ``result``'s shape is\ndispatched on the JOB's ``kind`` server-side rather than on a body\ndiscriminator \u2014 the job already knows what it is, and trusting a\ncaller-supplied kind would let a runner post an embedding payload\nagainst a synthesis job.",
+        "properties": {
+          "failure": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          }
+        },
+        "title": "JobResultRequest",
+        "type": "object"
+      },
+      "JobResultResponse": {
+        "properties": {
+          "status": {
+            "enum": [
+              "applied",
+              "recorded"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "JobResultResponse",
+        "type": "object"
+      },
       "JobStatus": {
         "description": "Status of an embedding generation job.",
         "enum": [
@@ -22496,6 +22784,35 @@
         "title": "ListFilesResponse",
         "type": "object"
       },
+      "ListRecordsResponse": {
+        "description": "``GET /memory/records`` \u2014 one keyset page, newest-first-stable.",
+        "properties": {
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryRecordOut"
+            },
+            "title": "Records",
+            "type": "array"
+          }
+        },
+        "required": [
+          "records",
+          "next_cursor"
+        ],
+        "title": "ListRecordsResponse",
+        "type": "object"
+      },
       "LocalExportRequest": {
         "description": "Request schema for local filesystem export endpoint.",
         "properties": {
@@ -23567,6 +23884,298 @@
         "title": "MatchLocation",
         "type": "object"
       },
+      "MemoryGraphEdge": {
+        "description": "One ``coord.memory_links`` edge among the visited nodes.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "link_id": {
+            "format": "uuid",
+            "title": "Link Id",
+            "type": "string"
+          },
+          "relation": {
+            "title": "Relation",
+            "type": "string"
+          },
+          "source_id": {
+            "format": "uuid",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "link_id",
+          "source_id",
+          "target_id",
+          "relation",
+          "description",
+          "created_at"
+        ],
+        "title": "MemoryGraphEdge",
+        "type": "object"
+      },
+      "MemoryGraphNode": {
+        "description": "One record visited by the traversal (query-hit field shape).",
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "importance": {
+            "title": "Importance",
+            "type": "number"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "memory_id": {
+            "format": "uuid",
+            "title": "Memory Id",
+            "type": "string"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "source": {
+            "additionalProperties": true,
+            "title": "Source",
+            "type": "object"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "memory_id",
+          "title",
+          "content",
+          "kind",
+          "scope",
+          "importance",
+          "created_at",
+          "source"
+        ],
+        "title": "MemoryGraphNode",
+        "type": "object"
+      },
+      "MemoryGraphRequest": {
+        "description": "``POST /memory/graph`` body \u2014 bounded outbound traversal.",
+        "properties": {
+          "depth": {
+            "default": 3,
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Depth",
+            "type": "integer"
+          },
+          "relation_filter": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "depends_on",
+                    "implements",
+                    "supersedes",
+                    "related"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relation Filter"
+          },
+          "root_memory_id": {
+            "format": "uuid",
+            "title": "Root Memory Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "root_memory_id"
+        ],
+        "title": "MemoryGraphRequest",
+        "type": "object"
+      },
+      "MemoryGraphResponse": {
+        "properties": {
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryGraphEdge"
+            },
+            "title": "Edges",
+            "type": "array"
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryGraphNode"
+            },
+            "title": "Nodes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "nodes",
+          "edges"
+        ],
+        "title": "MemoryGraphResponse",
+        "type": "object"
+      },
+      "MemoryJobOut": {
+        "description": "One claimed job \u2014 exactly what the runner needs to execute it.\n\n``input_texts`` is the text to compute over and ``target_ids`` the\nrows the job is about; for ``kind='embedding'`` the two are index-\naligned (``input_texts[i]`` is the content of ``target_ids[i]``) and\nthe result must come back in that same order. The runner never reads\nthe memory store directly.",
+        "properties": {
+          "input_texts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Input Texts",
+            "type": "array"
+          },
+          "job_id": {
+            "format": "uuid",
+            "title": "Job Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "synthesis",
+              "embedding"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "target_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Target Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "job_id",
+          "kind",
+          "target_ids",
+          "input_texts"
+        ],
+        "title": "MemoryJobOut",
+        "type": "object"
+      },
+      "MemoryLinkIn": {
+        "description": "One outbound edge declared alongside a record write.\n\n``target_ref`` names the edge's target either by ``memory_id`` (UUID\nstring) or by ``content_hash`` (sha256 hex of the target's stored\ncontent) \u2014 the write path tries the UUID interpretation first, then\nthe hash, against LIVE rows of the caller's tenant only. Unresolved\ntargets are dropped and counted, never rejected.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "relation": {
+            "enum": [
+              "depends_on",
+              "implements",
+              "supersedes",
+              "related"
+            ],
+            "title": "Relation",
+            "type": "string"
+          },
+          "target_ref": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Target Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_ref",
+          "relation"
+        ],
+        "title": "MemoryLinkIn",
+        "type": "object"
+      },
+      "MemoryLinkOut": {
+        "description": "One outbound edge hydrated onto a listed record.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "link_id": {
+            "format": "uuid",
+            "title": "Link Id",
+            "type": "string"
+          },
+          "relation": {
+            "title": "Relation",
+            "type": "string"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "link_id",
+          "target_id",
+          "relation",
+          "description",
+          "created_at"
+        ],
+        "title": "MemoryLinkOut",
+        "type": "object"
+      },
       "MemoryQueryHit": {
         "description": "One fused retrieval hit.",
         "properties": {
@@ -23658,7 +24267,7 @@
         "type": "object"
       },
       "MemoryQueryRequest": {
-        "description": "``POST /memory/query`` body \u2014 hybrid RRF retrieval parameters.",
+        "description": "``POST /memory/query`` body \u2014 hybrid RRF retrieval parameters.\n\n``query_text`` is ALWAYS required: the lexical arm is pure Postgres\n(``websearch_to_tsquery``), costs the caller nothing, and stays\nserver-side. ``query_embedding`` is the caller's own vector for the\nsemantic arm \u2014 omit it and that arm is SKIPPED (the response says so\nvia ``vector_arm``); the query degrades to FTS-only rather than\nmaking the backend embed.\n\n``query_embedding_model`` is REQUIRED whenever ``query_embedding`` is\npresent. Validating the vector's DIMENSION is not enough: every\n384-dim model would pass that check while living in a different\nspace, and the server has no other way to tell which space an\nincoming query is in.",
         "properties": {
           "as_of": {
             "anyOf": [
@@ -23683,7 +24292,8 @@
                     "episode",
                     "feedback",
                     "reference",
-                    "rule"
+                    "rule",
+                    "library"
                   ],
                   "type": "string"
                 },
@@ -23714,6 +24324,31 @@
               }
             ],
             "title": "Min Importance"
+          },
+          "query_embedding": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Query Embedding"
+          },
+          "query_embedding_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Query Embedding Model"
           },
           "query_text": {
             "maxLength": 8192,
@@ -23773,6 +24408,7 @@
         "type": "object"
       },
       "MemoryQueryResponse": {
+        "description": "``POST /memory/query`` result.\n\n``vector_arm`` is REQUIRED and un-defaulted on purpose: FTS-only\nresults must never be indistinguishable from hybrid ones. Its three\nstates are the only ways a query can end:\n\n* ``hybrid`` \u2014 both arms ran and were RRF-fused.\n* ``skipped_no_embedding`` \u2014 the caller sent no ``query_embedding``,\n  so the semantic arm had no vector to run with.\n* ``skipped_migrating`` \u2014 the caller DID send a vector, but this\n  tenant still holds vectors written under a different model tag, so\n  scoring against that mixed corpus would compare across two\n  non-interchangeable spaces (Phase 0 measured min cosine 0.71 /\n  k=10 exact-order 0% between them). The arm is skipped until the\n  runner-paid reindex drains the tenant back to a single space. This\n  is driven off actual corpus state, never a timer or a flag, so it\n  clears itself the moment the last foreign-tag vector is rewritten.",
         "properties": {
           "hits": {
             "items": {
@@ -23780,21 +24416,56 @@
             },
             "title": "Hits",
             "type": "array"
+          },
+          "vector_arm": {
+            "enum": [
+              "hybrid",
+              "skipped_no_embedding",
+              "skipped_migrating"
+            ],
+            "title": "Vector Arm",
+            "type": "string"
           }
         },
         "required": [
-          "hits"
+          "hits",
+          "vector_arm"
         ],
         "title": "MemoryQueryResponse",
         "type": "object"
       },
       "MemoryRecordIn": {
-        "description": "One record in a batch write.",
+        "description": "One record in a batch write.\n\n``embedding`` is computed by the CALLER. Omit it (with\n``embedding_model``) to store the row unvectorized \u2014 it is still\nretrievable via FTS and is picked up by the reindex sweep.",
         "properties": {
           "content": {
             "minLength": 1,
             "title": "Content",
             "type": "string"
+          },
+          "embedding": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding"
+          },
+          "embedding_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Model"
           },
           "importance": {
             "default": 0.5,
@@ -23811,10 +24482,26 @@
               "episode",
               "feedback",
               "reference",
-              "rule"
+              "rule",
+              "library"
             ],
             "title": "Kind",
             "type": "string"
+          },
+          "links": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/MemoryLinkIn"
+                },
+                "maxItems": 32,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Links"
           },
           "scope": {
             "default": "tenant",
@@ -23857,6 +24544,89 @@
           "kind"
         ],
         "title": "MemoryRecordIn",
+        "type": "object"
+      },
+      "MemoryRecordOut": {
+        "description": "One record in a ``GET /memory/records`` page.\n\nThe query-hit field shape plus sync-relevant extras\n(``scope_ref`` / ``content_hash`` / ``updated_at``) and the record's\noutbound ``links``.",
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "content_hash": {
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "importance": {
+            "title": "Importance",
+            "type": "number"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "links": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryLinkOut"
+            },
+            "title": "Links",
+            "type": "array"
+          },
+          "memory_id": {
+            "format": "uuid",
+            "title": "Memory Id",
+            "type": "string"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "scope_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Ref"
+          },
+          "source": {
+            "additionalProperties": true,
+            "title": "Source",
+            "type": "object"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "memory_id",
+          "title",
+          "content",
+          "kind",
+          "scope",
+          "scope_ref",
+          "importance",
+          "content_hash",
+          "created_at",
+          "updated_at",
+          "source",
+          "links"
+        ],
+        "title": "MemoryRecordOut",
         "type": "object"
       },
       "MemoryRestoreRequest": {
@@ -25000,8 +25770,19 @@
         "type": "object"
       },
       "OnboardingClaimRequest": {
-        "description": "Body for ``POST /pr-merge/onboarding/claim``.\n\n``code`` \u2014 the short-lived GitHub OAuth code from the Setup-URL redirect.\n``installation_id`` \u2014 the GitHub App installation id from the same\nredirect. Both are echoed verbatim to coord's claim endpoint.\n``bind_only`` \u2014 when true, coord binds the account WITHOUT enrolling its\nrepos (no bootstrap PRs); for the clone-only path. Defaults false =\nbind + enroll (today's behavior).",
+        "description": "Body for ``POST /pr-merge/onboarding/claim``.\n\n``code`` \u2014 the short-lived GitHub OAuth code. Comes from EITHER the\nSetup-URL post-install redirect (fresh install) OR the\n``login/oauth/authorize`` user-authorization callback (the only way to get\na code for an org whose App is ALREADY installed \u2014 GitHub issues no\nSetup-URL code on a re-visit).\n\n``installation_id`` / ``account_login`` \u2014 which installation to claim. The\nSetup-URL redirect carries ``installation_id``; the authorize callback\ncarries neither, so that path names the org via ``account_login`` and coord\nresolves the id from the caller's own ``/user/installations``. Exactly one\nis required (coord 400s ``target_required`` otherwise); ``installation_id``\nwins if both are sent. NEITHER selects a tenant \u2014 the tenant always comes\nfrom the caller's auth \u2014 and coord 403s ``installation_not_administered``\nfor an installation the caller doesn't administer, whichever key is used.\n\n``bind_only`` \u2014 when true, coord binds the account WITHOUT enrolling its\nrepos (no bootstrap PRs); for the clone-only path. Defaults false =\nbind + enroll (today's behavior).",
         "properties": {
+          "account_login": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Login"
+          },
           "bind_only": {
             "default": false,
             "title": "Bind Only",
@@ -25012,13 +25793,19 @@
             "type": "string"
           },
           "installation_id": {
-            "title": "Installation Id",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installation Id"
           }
         },
         "required": [
-          "code",
-          "installation_id"
+          "code"
         ],
         "title": "OnboardingClaimRequest",
         "type": "object"
@@ -30777,6 +31564,163 @@
         "title": "RepoCiRow",
         "type": "object"
       },
+      "RepoCreateRequest": {
+        "description": "Body for ``POST /operations/github/create-repo``.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          },
+          "private": {
+            "default": true,
+            "title": "Private",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "owner",
+          "name"
+        ],
+        "title": "RepoCreateRequest",
+        "type": "object"
+      },
+      "RepoCreateResponse": {
+        "description": "201 body for ``POST /operations/github/create-repo`` (forwarded\nverbatim from coord's ``POST /coord/repos``).",
+        "properties": {
+          "clone_url": {
+            "title": "Clone Url",
+            "type": "string"
+          },
+          "default_branch": {
+            "title": "Default Branch",
+            "type": "string"
+          },
+          "full_name": {
+            "title": "Full Name",
+            "type": "string"
+          },
+          "html_url": {
+            "title": "Html Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "full_name",
+          "clone_url",
+          "html_url",
+          "default_branch"
+        ],
+        "title": "RepoCreateResponse",
+        "type": "object"
+      },
+      "RepoNameCheckRequest": {
+        "description": "Body for ``POST /operations/github/check-name`` \u2014 the GitHub account\nlogin and the candidate repository name to check.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          }
+        },
+        "required": [
+          "owner",
+          "name"
+        ],
+        "title": "RepoNameCheckRequest",
+        "type": "object"
+      },
+      "RepoNameCheckResponse": {
+        "description": "Success body for ``POST /operations/github/check-name`` (forwarded\nverbatim from coord's ``GET /coord/repos/availability``).",
+        "properties": {
+          "normalized_name": {
+            "title": "Normalized Name",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "status": {
+            "enum": [
+              "available",
+              "taken",
+              "invalid",
+              "owner_unbound"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "normalized_name"
+        ],
+        "title": "RepoNameCheckResponse",
+        "type": "object"
+      },
+      "RepoPushCredentialResponse": {
+        "description": "Success body for ``POST /operations/github/push-credential`` \u2014 a\nshort-TTL installation token scoped to one repo.",
+        "properties": {
+          "expires_at": {
+            "title": "Expires At",
+            "type": "string"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "expires_at"
+        ],
+        "title": "RepoPushCredentialResponse",
+        "type": "object"
+      },
+      "RepoRefRequest": {
+        "description": "Body naming an existing repo by ``owner`` + ``name`` \u2014 shared by the\npush-credential and enroll-repo proxies.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          }
+        },
+        "required": [
+          "owner",
+          "name"
+        ],
+        "title": "RepoRefRequest",
+        "type": "object"
+      },
       "ResendDeviceVerificationRequest": {
         "description": "Request to resend device verification email.",
         "properties": {
@@ -32965,12 +33909,24 @@
         "type": "object"
       },
       "SetCanonicalRequest": {
-        "description": "Designate a machine as the canonical source of truth for an env.",
+        "description": "Designate a machine as the canonical source of truth for an env.\n\n``note`` is the optional \"why\" recorded alongside the who/when in\n:class:`~app.models.devenv.CanonicalChangeLog`. Changing canonical\nre-points every other machine's drift, so the reason is the part of the\naudit trail a teammate reading it later actually needs. Optional by\ndesign \u2014 an unexplained change is still fully attributable, and requiring\nprose would only produce empty ceremony.",
         "properties": {
           "machine_id": {
             "format": "uuid",
             "title": "Machine Id",
             "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
           }
         },
         "required": [
@@ -36120,12 +37076,37 @@
         "type": "object"
       },
       "SupersedeRequest": {
-        "description": "``POST /memory/records/{id}/supersede`` body.\n\n``title``/``content`` are the replacement; every omitted field is\ninherited from the record being superseded.",
+        "description": "``POST /memory/records/{id}/supersede`` body.\n\n``title``/``content`` are the replacement; every omitted field is\ninherited from the record being superseded. ``embedding`` is NOT\ninherited \u2014 it belongs to the OLD content and would be a lie about\nthe new one; omit it and the successor lands unvectorized (NULL) for\nthe reindex sweep to pick up.",
         "properties": {
           "content": {
             "minLength": 1,
             "title": "Content",
             "type": "string"
+          },
+          "embedding": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding"
+          },
+          "embedding_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Model"
           },
           "importance": {
             "anyOf": [
@@ -36150,7 +37131,8 @@
                   "episode",
                   "feedback",
                   "reference",
-                  "rule"
+                  "rule",
+                  "library"
                 ],
                 "type": "string"
               },
@@ -36344,77 +37326,6 @@
           "expires_at"
         ],
         "title": "SyncLockResponse",
-        "type": "object"
-      },
-      "SynthesisJobOut": {
-        "description": "One claimed job \u2014 exactly what the runner needs to synthesize.\n\nThe runner distills ``member_texts`` into a single mental-model text\nand posts it back to ``/synthesis-jobs/{job_id}/result``; it never\nreads the memory store directly.",
-        "properties": {
-          "job_id": {
-            "format": "uuid",
-            "title": "Job Id",
-            "type": "string"
-          },
-          "member_texts": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Member Texts",
-            "type": "array"
-          }
-        },
-        "required": [
-          "job_id",
-          "member_texts"
-        ],
-        "title": "SynthesisJobOut",
-        "type": "object"
-      },
-      "SynthesisResultRequest": {
-        "description": "``POST /memory/synthesis-jobs/{job_id}/result`` body.\n\nExactly one of ``result_text`` (success \u2014 the synthesized model) or\n``failure`` (the runner could not synthesize; the reason) must be\nset.",
-        "properties": {
-          "failure": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Failure"
-          },
-          "result_text": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Result Text"
-          }
-        },
-        "title": "SynthesisResultRequest",
-        "type": "object"
-      },
-      "SynthesisResultResponse": {
-        "properties": {
-          "status": {
-            "enum": [
-              "applied",
-              "recorded"
-            ],
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "status"
-        ],
-        "title": "SynthesisResultResponse",
         "type": "object"
       },
       "TaskRunAutomationCreate": {
@@ -45605,6 +46516,11 @@
             "title": "Deduped Count",
             "type": "integer"
           },
+          "dropped_links_count": {
+            "default": 0,
+            "title": "Dropped Links Count",
+            "type": "integer"
+          },
           "records": {
             "items": {
               "$ref": "#/components/schemas/WriteRecordResult"
@@ -47185,6 +48101,53 @@
         "summary": "List feedback scores for an action",
         "tags": [
           "feedback-scores"
+        ]
+      }
+    },
+    "/api/v1/admin-dev/gates/doctor/sweep": {
+      "post": {
+        "description": "Proxy coord's ``POST /coord/gates/doctor/sweep`` (gate-doctor sweep).\n\nFires coord's gate-doctor sweep from the interactive operator console.\ncoord mounts this on its admin-role ``operator_admin_writes`` router and\nrejects non-interactive/headless callers by design \u2014 the sweep must run\nfrom a logged-in dashboard session, which is exactly the operator bearer\nthis proxy forwards (``forward_bearer=True``). The ``land_backfill`` mode\nre-clears ``failed`` ``pr_merged``-on-coord gates whose work actually\nlanded (the residue the land-aware ``pr_merged`` verdict leaves behind).\n\nAuth: ``require_admin`` (operator-only) \u2014 UNLIKE the tenant-member reads\n(``overview`` / ``prs``), this is a MUTATION on fleet-wide operator\ninfrastructure (``coord.gates``), not tenant-partitioned state. It mirrors\nthe sibling operator-only mutation (``release-verdict``): web fails fast\nwith a clean ``403`` for a non-admin rather than forwarding a doomed\nbearer for coord's admin-role router to reject opaquely. The\n``_capture_bearer_best_effort`` dependency captures the caller bearer +\ntenant-switcher selection so ``forward_bearer=True`` forwards the\noperator's real identity for coord to authorize on.\n\nBody (``GateDoctorSweepRequest``) is passed through verbatim\n(``dry_run`` default ``true``, ``mode`` default ``\"land_backfill\"``);\ncoord's ``BackfillReport`` JSON \u2014 ``{dry_run, examined, backfilled,\nleft_failed, entries[]}`` \u2014 is returned verbatim. This is a MUTATION:\nit is NOT cached/SWR'd. coord ``4xx``/``5xx`` are surfaced verbatim (a\n``403`` means the operator bearer was not forwarded/accepted \u2014 it is NOT\nswallowed into a degraded envelope).",
+        "operationId": "api_v1_admin_dev_gates_doctor_sweep_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GateDoctorSweepRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Gate Doctor Sweep Api V1 Admin Dev Gates Doctor Sweep Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Gate Doctor Sweep",
+        "tags": [
+          "admin-dev"
         ]
       }
     },
@@ -56035,7 +56998,7 @@
     },
     "/api/v1/devenv/environments/{environment_id}/canonical": {
       "put": {
-        "description": "Designate a machine as the canonical source of truth for an env.\n\nValidates the machine is owned by the caller AND has reported a config\nrow for this environment (a machine with no config can't be a useful\nsource of truth). Atomic single-column update, plus an append to the\n``canonical_change_log`` audit trail (who/when/from->to) \u2014 the team-sync\nmodel requires every canonical change to be attributable. A no-op change\n(re-designating the machine that is already canonical) is not recorded.",
+        "description": "Designate a machine as the canonical source of truth for an env.\n\nValidates the machine is owned by the caller AND has reported a config\nrow for this environment (a machine with no config can't be a useful\nsource of truth). Atomic single-column update, plus an append to the\n``canonical_change_log`` audit trail (who/when/from->to, plus the\noptional ``note`` explaining why) \u2014 the team-sync model requires every\ncanonical change to be attributable. A no-op change (re-designating the\nmachine that is already canonical) is not recorded, and neither is its\nnote: there is no change for it to annotate.",
         "operationId": "api_v1_devenv_environments_environment_id_canonical_put",
         "parameters": [
           {
@@ -56094,7 +57057,7 @@
     },
     "/api/v1/devenv/environments/{environment_id}/canonical-history": {
       "get": {
-        "description": "List the environment's canonical-designation changes, newest first.\n\nAnswers \"who made this the canonical environment, and when.\" Owner-scoped\nlike every other route here (cross-owner env id -> 404).",
+        "description": "List the environment's canonical-designation changes, newest first.\n\nAnswers \"who made this the canonical environment, when, and why.\"\nOwner-scoped like every other route here (cross-owner env id -> 404).\n\nPaged with the same ``limit``/``offset`` contract as the config-history\ntimeline, so a client can page BACK through an audit trail longer than one\npage instead of silently presenting the first page as the whole history.\n\nDisplay names (actor email, from/to machine names) are resolved by the\nrepository in the same query; each is ``None`` when the referenced row is\ngone, which is expected \u2014 the audit outlives machine/user deletion.",
         "operationId": "api_v1_devenv_environments_environment_id_canonical_history_get",
         "parameters": [
           {
@@ -56105,6 +57068,29 @@
               "format": "uuid",
               "title": "Environment Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
             }
           }
         ],
@@ -56248,6 +57234,171 @@
           }
         ],
         "summary": "Get Machine Drift",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/v1/devenv/environments/{environment_id}/machines/{machine_id}/config-history": {
+      "get": {
+        "description": "A machine's config-capture timeline for an environment, newest first.\n\nMetadata only (no config bodies) \u2014 a long timeline stays a small payload.\nOwner-scoped like every sibling route (cross-owner env/machine \u2192 404).\nDistinct-captures only: the agent write path dedups consecutive\nidentical envelopes, so each entry is an actual change point.",
+        "operationId": "api_v1_devenv_environments_environment_id_machines_machine_id_config_history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Environment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "machine_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Machine Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ConfigHistoryEntry"
+                  },
+                  "title": "Response Get Config History Api V1 Devenv Environments  Environment Id  Machines  Machine Id  Config History Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Config History",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/v1/devenv/environments/{environment_id}/machines/{machine_id}/config-history/diff": {
+      "get": {
+        "description": "SELF-drift between two captures of the same machine over time.\n\nDistinct from the vs-canonical drift endpoints: both envelopes belong to\nthe SAME (environment, machine), and the report reads as \"what changed\ngoing from ``from_id`` to ``to_id``\" (``from`` fills the expected slot,\n``to`` the actual). A ``from_id``/``to_id`` that is missing OR belongs to\na different (environment, machine) pair \u2192 404, mirroring the module's\nnever-leak-existence convention.",
+        "operationId": "api_v1_devenv_environments_environment_id_machines_machine_id_config_history_diff_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Environment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "machine_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Machine Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "From Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "To Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigHistoryDiffResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Config History Diff",
         "tags": [
           "environments"
         ]
@@ -58164,6 +59315,33 @@
         "summary": "List Running Tasks",
         "tags": [
           "device-chat"
+        ]
+      }
+    },
+    "/api/v1/digital-twin/catalog": {
+      "get": {
+        "description": "The coord-owned queryable-surface catalog \u2014 the single-source index of the\nfleet-wide ``coord_query_*`` twin observers (agent Q&A meta-answer Phase 2).\n\nThe catalog content is fleet-global static metadata, but coord's\n``GET /coord/twin/catalog`` is auth-gated via ``TenantId`` (read-auth\ncontract), so the operator bearer is forwarded (``forward_bearer=True``).\nThe bearer capture is best-effort (never raises) rather than a hard\n``get_tenant_id`` dependency, mirroring ``get_release_verdict``'s posture:\nwhen coord is unreachable (connect-refused \u2192 502, timeout \u2192 504, etc.) the\nendpoint returns an empty ``{entries: [], total: 0, coord_error}`` envelope\nrather than re-raising the 5xx, so neither the Spec CI crawl gate (which\nruns without a live coord) nor the dashboard ever sees a 5xx. Returns\n``{entries: [...], total: N}``.",
+        "operationId": "api_v1_digital_twin_catalog_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Twin Catalog Api V1 Digital Twin Catalog Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Twin Catalog",
+        "tags": [
+          "digital-twin"
         ]
       }
     },
@@ -67317,9 +68495,171 @@
         ]
       }
     },
+    "/api/v1/memory/graph": {
+      "post": {
+        "description": "Bounded outbound traversal of the memory graph from a root record.\n\nOne tenant-bound ``WITH RECURSIVE`` walk over ``coord.memory_links``\n(see :func:`store.graph_edges`): outbound edges from the root, then\nfrom each reached target, up to ``depth`` (\u22645) levels \u2014\n``relation_filter`` narrows which relations are followed. Cycles are\nsafe (the depth cap terminates the recursion; duplicate edges\ncollapse). 404 when the root does not exist in the caller's tenant\n(cross-tenant ids are never disclosed).",
+        "operationId": "api_v1_memory_graph_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryGraphRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryGraphResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Memory Graph",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/memory/jobs/claim": {
+      "post": {
+        "description": "A runner claims up to ``limit`` pending jobs of ``kinds`` (tenant-bound).\n\nConcurrent claims on the same tenant split the queue via\n``FOR UPDATE SKIP LOCKED`` \u2014 no job is ever handed to two runners.\n``kinds`` is the runner's capability filter: it claims only work it\ncan execute. Each job carries what the runner needs and nothing more\n(``job_id`` / ``kind`` / ``target_ids`` / ``input_texts``); the runner\ncomputes locally and posts back to ``/jobs/{job_id}/result``, never\nreading the memory store directly.",
+        "operationId": "api_v1_memory_jobs_claim_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaimJobsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaimJobsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Claim Jobs",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/memory/jobs/{job_id}/result": {
+      "post": {
+        "description": "The runner posts a job's result (success) or a failure reason.\n\nThe ``result`` payload is validated against the JOB's own ``kind``\n(read under the row lock), never against a caller-declared one:\n\n* ``embedding`` -> ``{\"embeddings\": [[...384], ...],\n  \"embedding_model\": \"<tag>\"}``: one vector per ``input_texts`` entry\n  in the SAME ORDER (that order is the only thing mapping a vector\n  onto its row). The vectors are written onto ``target_ids``.\n* ``synthesis`` -> ``{\"result_text\": \"...\", \"embedding\": [...384],\n  \"embedding_model\": \"<tag>\"}``: the text is redacted, inserted as a\n  ``mental_model`` row (``consolidated_from`` = the cluster members,\n  importance = best member + 0.1), and the member rows superseded \u2014\n  all in one transaction.\n\nFailure (``failure``): the job is marked failed -> ``recorded``.\n\n404 when the job is not in the caller's tenant (never disclosed); 409\nwhen the job exists but is not ``'claimed'`` (already applied,\nrequeued by the reaper, or abandoned) \u2014 a runner may only post back\nfor a job it holds a live claim on; 422 on a result whose shape does\nnot match the job (wrong kind, wrong vector count, wrong dimension,\nunaccepted model tag), which leaves the job ``claimed`` so the runner\ncan still post a correct result before its lease expires.",
+        "operationId": "api_v1_memory_jobs_job_id_result_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobResultRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResultResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Submit Job Result",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
     "/api/v1/memory/query": {
       "post": {
-        "description": "Hybrid retrieval: pgvector cosine + websearch FTS, RRF-fused.\n\nBoth arms are tenant-bound and validity-filtered (tombstones out,\n``valid_from``/``valid_until`` against now() or ``as_of``).\n``agent``/``session``-scoped rows are only visible when the request\nnames those scopes AND supplies the matching ``scope_ref``.",
+        "description": "Hybrid retrieval: pgvector cosine + websearch FTS, RRF-fused.\n\nBoth arms are tenant-bound and validity-filtered (tombstones out,\n``valid_from``/``valid_until`` against now() or ``as_of``).\n``agent``/``session``-scoped rows are only visible when the request\nnames those scopes AND supplies the matching ``scope_ref``.\n\nThe semantic arm needs a vector, and this endpoint never computes\none. It runs only when the caller supplies ``query_embedding`` (with\nits ``query_embedding_model``) AND this tenant's corpus is entirely\nin the deployed space. Otherwise it is SKIPPED and the result is\nFTS-only. Which of the three happened is reported in ``vector_arm``\n\u2014 never inferred, so an FTS-only result can't pass for a hybrid one.\n\nThe mid-migration skip is what makes the model transition atomic per\ntenant: the old and new spaces are not interchangeable, so a\nnew-space query is served FTS-only rather than cosine-scored against\ndocuments the runner-paid reindex has not rewritten yet.",
         "operationId": "api_v1_memory_query_post",
         "requestBody": {
           "content": {
@@ -67368,8 +68708,112 @@
       }
     },
     "/api/v1/memory/records": {
+      "get": {
+        "description": "Keyset-paginated list of the tenant's LIVE records, newest first.\n\nThe runner's sync-pull surface (``POST /query`` requires query_text,\ncaps at 50, and relevance-ranks \u2014 unusable for a full mirror).\n``kinds`` is repeatable and/or CSV; ``since`` filters on the\nfreshest of updated/created; ``cursor`` is the opaque\n``(created_at, memory_id)`` keyset token from the previous page.\nEach record carries its outbound ``links``. Ordering is\n``created_at DESC, memory_id DESC`` \u2014 stable under concurrent\nwrites (new rows only ever prepend).",
+        "operationId": "api_v1_memory_records_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "kinds",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kinds"
+            }
+          },
+          {
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Since"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListRecordsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Records",
+        "tags": [
+          "memory"
+        ]
+      },
       "post": {
-        "description": "Batch-write memory records (\u2264100 per request).\n\nServer-side pipeline per batch: redact \u2192 hash \u2192 quota check (BEFORE\ninsert; 429 on exceed) \u2192 embed the non-deduplicated contents in one\nfastembed batch (on a worker thread) \u2192 ONE set-based insert deduping\non ``(tenant_id, content_hash)`` against live rows only.",
+        "description": "Batch-write memory records (\u2264100 per request).\n\nServer-side pipeline per batch: redact \u2192 hash \u2192 quota check (BEFORE\ninsert; 429 on exceed) \u2192 ONE set-based insert deduping on\n``(tenant_id, content_hash)`` against live rows only. Each record\ncarries its own caller-computed ``embedding`` (+ ``embedding_model``)\nor neither, in which case that row is stored unvectorized.",
         "operationId": "api_v1_memory_records_post",
         "requestBody": {
           "content": {
@@ -67464,7 +68908,7 @@
     },
     "/api/v1/memory/records/{memory_id}/supersede": {
       "post": {
-        "description": "Replace a record: insert the successor, end the old row's validity.\n\n404 for records that don't exist in the caller's tenant (including\ncross-tenant ids \u2014 never disclosed).",
+        "description": "Replace a record: insert the successor, end the old row's validity.\n\n404 for records that don't exist in the caller's tenant (including\ncross-tenant ids \u2014 never disclosed). The successor's ``embedding`` is\nthe caller's (of the replacement content) or NULL \u2014 the old row's\nvector is never inherited, and nothing is embedded server-side.",
         "operationId": "api_v1_memory_records_memory_id_supersede_post",
         "parameters": [
           {
@@ -67549,118 +68993,6 @@
           }
         ],
         "summary": "Memory Stats",
-        "tags": [
-          "memory"
-        ]
-      }
-    },
-    "/api/v1/memory/synthesis-jobs/claim": {
-      "post": {
-        "description": "A runner claims up to ``limit`` pending synthesis jobs (tenant-bound).\n\nConcurrent claims on the same tenant split the queue via\n``FOR UPDATE SKIP LOCKED`` \u2014 no job is ever handed to two runners.\nThe response carries only ``job_id`` + ``member_texts`` per job: the\nrunner distills the texts with its own LLM and posts the result to\n``/synthesis-jobs/{job_id}/result``.",
-        "operationId": "api_v1_memory_synthesis_jobs_claim_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ClaimSynthesisJobsRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ClaimSynthesisJobsResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          },
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Claim Synthesis Jobs",
-        "tags": [
-          "memory"
-        ]
-      }
-    },
-    "/api/v1/memory/synthesis-jobs/{job_id}/result": {
-      "post": {
-        "description": "The runner posts a synthesized model (success) or a failure reason.\n\nSuccess (``result_text``): the text is redacted, embedded with the\nLOCAL model, inserted as a ``mental_model`` row (``consolidated_from``\n= the cluster members, importance = best member + 0.1), and the\nmember rows are superseded \u2014 all in one transaction \u2192 ``applied``.\nFailure (``failure``): the job is marked failed \u2192 ``recorded``.\n404 when the job is not in the caller's tenant (never disclosed); 409\nwhen the job exists but is not in ``'claimed'`` status (already applied,\nrequeued by the reaper, or abandoned) \u2014 a runner may only post back for\na job it holds a live claim on.",
-        "operationId": "api_v1_memory_synthesis_jobs_job_id_result_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "job_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Job Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SynthesisResultRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SynthesisResultResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          },
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Submit Synthesis Result",
         "tags": [
           "memory"
         ]
@@ -68275,7 +69607,7 @@
     },
     "/api/v1/operations/agent-questions/answered": {
       "get": {
-        "description": "Return recently-answered agent questions.\n\nWave 3a \u2014 surfaces the \"answered\" tab on the questions inbox so\noperators can audit prior decisions without leaving the page.",
+        "description": "Return recently-answered agent questions.\n\nWave 3a \u2014 surfaces the \"answered\" tab on the questions inbox so\noperators can audit prior decisions without leaving the page.\n\n``gap`` (Phase 3): forwarded to coord as the POLICY_GAP filter so the\nGaps tab can list pre-answered (non-blocking) gap reports.",
         "operationId": "api_v1_operations_agent_questions_answered_get",
         "parameters": [
           {
@@ -68294,6 +69626,22 @@
                 }
               ],
               "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "gap",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Gap"
             }
           }
         ],
@@ -68380,8 +69728,26 @@
     },
     "/api/v1/operations/agent-questions/pending": {
       "get": {
-        "description": "Return pending agent questions awaiting an operator response.",
+        "description": "Return pending agent questions awaiting an operator response.\n\n``gap`` (Phase 3 of plan 2026-07-18-policy-clause-schema-web-data-model):\nwhen set, forwarded to coord as the POLICY_GAP filter \u2014\n``gap=true`` returns only gap-marked rows, ``gap=false`` only non-gap rows.\nBacks the Gaps tab on the questions inbox.",
         "operationId": "api_v1_operations_agent_questions_pending_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "gap",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Gap"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -68392,6 +69758,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "security": [
@@ -70443,6 +71819,54 @@
         ]
       }
     },
+    "/api/v1/operations/coord/policies/{policy_id}/restore-default": {
+      "post": {
+        "description": "Re-seed a policy rule's action/payload from its ``default_source`` code\ndefault (agent Q&A meta-answer). Tenant-admin only.\n\nOnly rows carrying a ``default_source`` (e.g. the catch-all meta-answer rule\nstamped ``agent_meta_answer/v1``) can be restored; coord 4xx (no default,\nunknown rule) passes through. No request body \u2014 coord derives the default\nfrom the row's own ``default_source``.",
+        "operationId": "api_v1_operations_coord_policies_policy_id_restore_default_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "policy_id",
+            "required": true,
+            "schema": {
+              "title": "Policy Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Restore Coord Policy Default Api V1 Operations Coord Policies  Policy Id  Restore Default Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Restore Coord Policy Default",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/priority-sets": {
       "get": {
         "description": "List the tenant's priority sets. Tenant-admin only.",
@@ -70618,6 +72042,827 @@
           }
         ],
         "summary": "Update Priority Set",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/prompt-documents": {
+      "get": {
+        "description": "List the tenant's prompt documents (no bodies), optionally filtered to a\nsingle ``kind``. Any authenticated tenant member.\n\nCoord's list route seeds the canonical documents on first touch, so a fresh\ntenant sees the full set immediately. An unknown ``kind`` is coord's 400.",
+        "operationId": "api_v1_operations_coord_prompt_documents_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response List Prompt Documents Api V1 Operations Coord Prompt Documents Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Prompt Documents",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/prompt-documents/{kind}": {
+      "post": {
+        "description": "Create a new hand-authored prompt document under ``kind``. Tenant-admin only.\n\nThe body is forwarded as ``{name, description?, body, format?}`` with\n``updated_by`` stamped from the authenticated session (see\n:func:`_editor_identity`) \u2014 a body-supplied ``updated_by`` is ignored, so the\nversion-1 snapshot coord writes carries the real author. Coord validates the\nkebab-case ``name`` and non-empty ``body`` (its 400 passes through) and\nanswers 409 when ``(tenant, kind, name)`` already exists; coord's 201 status\nis echoed to the browser verbatim.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Create Prompt Document",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/prompt-documents/{kind}/{name}": {
+      "get": {
+        "description": "Fetch one prompt document (with body) by ``(kind, name)``. Any\nauthenticated tenant member.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Prompt Document Api V1 Operations Coord Prompt Documents  Kind   Name  Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Prompt Document",
+        "tags": [
+          "operations"
+        ]
+      },
+      "patch": {
+        "description": "Edit a prompt document's description/body. Tenant-admin only.\n\nThe body is forwarded as ``{description?, body?, change_description?}`` with\n``updated_by`` stamped from the authenticated session (see\n:func:`_editor_identity`) \u2014 a body-supplied ``updated_by`` is ignored, so the\nversion snapshot coord writes carries the real editor. Coord creates a new\nimmutable version on every successful edit; nothing is overwritten in place.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Update Prompt Document Api V1 Operations Coord Prompt Documents  Kind   Name  Patch"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update Prompt Document",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/prompt-documents/{kind}/{name}/clauses": {
+      "get": {
+        "description": "List the structured clauses of a policy document, ordered by ``position``.\nAny authenticated tenant member.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_clauses_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response List Prompt Document Clauses Api V1 Operations Coord Prompt Documents  Kind   Name  Clauses Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Prompt Document Clauses",
+        "tags": [
+          "operations"
+        ]
+      },
+      "post": {
+        "description": "Create one clause on a policy document. Tenant-admin only.\n\nBody is forwarded verbatim as the clause shape (``clause_id``, ``category``,\n``status``, ``tier``, ``trigger``, ``action``, ``bounds``, ``escalate_if``,\n``anti_triggers``, ``depends_on``, ``links``, \u2026). Coord validates kebab-case\n``clause_id``, the status/tier enums, and ``category == name``, and returns a\n409 on a duplicate ``clause_id`` \u2014 all passed through verbatim.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_clauses_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Create Prompt Document Clause Api V1 Operations Coord Prompt Documents  Kind   Name  Clauses Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Create Prompt Document Clause",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/prompt-documents/{kind}/{name}/clauses/import": {
+      "post": {
+        "description": "Seed the clause table for a policy document by parsing clause blocks out of\nits body. Tenant-admin only. Body forwarded verbatim (coord's seed importer\nreads the doc body itself); returns the created clause rows.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_clauses_import_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Import Prompt Document Clauses Api V1 Operations Coord Prompt Documents  Kind   Name  Clauses Import Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Import Prompt Document Clauses",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/prompt-documents/{kind}/{name}/clauses/reorder": {
+      "post": {
+        "description": "Set clause ``position`` from an ordered list of ``clause_id`` values.\nTenant-admin only. Body is ``{\"clause_ids\": [...]}`` (an ordered list),\nforwarded verbatim.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_clauses_reorder_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Reorder Prompt Document Clauses Api V1 Operations Coord Prompt Documents  Kind   Name  Clauses Reorder Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Reorder Prompt Document Clauses",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/prompt-documents/{kind}/{name}/clauses/{clause_id}": {
+      "delete": {
+        "description": "Delete one clause. Tenant-admin only. Coord 404 for an unknown clause\npasses through.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_clauses_clause_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "clause_id",
+            "required": true,
+            "schema": {
+              "title": "Clause Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Delete Prompt Document Clause Api V1 Operations Coord Prompt Documents  Kind   Name  Clauses  Clause Id  Delete"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Prompt Document Clause",
+        "tags": [
+          "operations"
+        ]
+      },
+      "patch": {
+        "description": "Partially update one clause. Tenant-admin only. Body forwarded verbatim;\ncoord validates changed fields and returns 404 for an unknown clause.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_clauses_clause_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "clause_id",
+            "required": true,
+            "schema": {
+              "title": "Clause Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Update Prompt Document Clause Api V1 Operations Coord Prompt Documents  Kind   Name  Clauses  Clause Id  Patch"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update Prompt Document Clause",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/prompt-documents/{kind}/{name}/restore-default": {
+      "post": {
+        "description": "Re-seed a prompt document's body from its code default. Tenant-admin only.\n\nOnly documents carrying a ``default_source`` can be restored; coord 4xx (no\ndefault, unknown document) passes through. The restore is itself an edit \u2014\ncoord snapshots a new version \u2014 so it is reversible from the history view.\nNo request body.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_restore_default_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Restore Prompt Document Default Api V1 Operations Coord Prompt Documents  Kind   Name  Restore Default Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Restore Prompt Document Default",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/prompt-documents/{kind}/{name}/versions": {
+      "get": {
+        "description": "Version-history metadata for one prompt document (newest first, no\nbodies). Any authenticated tenant member.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_versions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response List Prompt Document Versions Api V1 Operations Coord Prompt Documents  Kind   Name  Versions Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Prompt Document Versions",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/prompt-documents/{kind}/{name}/versions/{version}": {
+      "get": {
+        "description": "One immutable version snapshot (with body) of a prompt document \u2014 the\nleft-hand side of the editor's diff view. Any authenticated tenant member.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_versions_version_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Prompt Document Version Api V1 Operations Coord Prompt Documents  Kind   Name  Versions  Version  Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Prompt Document Version",
         "tags": [
           "operations"
         ]
@@ -71753,6 +73998,186 @@
         ]
       }
     },
+    "/api/v1/operations/gates/{gate_id}/audience": {
+      "patch": {
+        "description": "Re-classify a gate's ``clearance_audience`` (``operator`` vs ``agent``;\noperator bearer forwarded, fleet-auth P2/D6).\n\n``body[\"audience\"]`` is forwarded verbatim; coord owns validation of the\nallowed values.",
+        "operationId": "api_v1_operations_gates_gate_id_audience_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "gate_id",
+            "required": true,
+            "schema": {
+              "title": "Gate Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Set Gate Audience Api V1 Operations Gates  Gate Id  Audience Patch"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Set Gate Audience",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/gates/{gate_id}/continuation-cancel": {
+      "post": {
+        "description": "Cancel a gate's armed/dispatched continuation so clearing it no longer\nspawns the follow-up session (operator bearer forwarded, fleet-auth P2/D6).\n\n``body[\"cancelled_by\"]`` (audit actor) and ``body[\"reason\"]`` are forwarded\nverbatim; coord owns validation.",
+        "operationId": "api_v1_operations_gates_gate_id_continuation_cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "gate_id",
+            "required": true,
+            "schema": {
+              "title": "Gate Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Continuation Cancel Gate Api V1 Operations Gates  Gate Id  Continuation Cancel Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Continuation Cancel Gate",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/gates/{gate_id}/force-clear": {
+      "post": {
+        "description": "Force-clear a gate regardless of its predicate (DESTRUCTIVE \u2014 clears an\nopen gate that has NOT met its condition; operator bearer forwarded,\nfleet-auth P2/D6).\n\n``body[\"reason\"]`` is REQUIRED by coord (the audit records why the operator\noverrode the predicate). It is forwarded verbatim; coord owns validation and\nrejects an empty/absent reason.",
+        "operationId": "api_v1_operations_gates_gate_id_force_clear_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "gate_id",
+            "required": true,
+            "schema": {
+              "title": "Gate Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Force Clear Gate Api V1 Operations Gates  Gate Id  Force Clear Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Force Clear Gate",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/gates/{gate_id}/mute": {
       "post": {
         "description": "Mute a gate so the sweep skips it (reversible \u2014 operator bearer\nforwarded, fleet-auth P2/D6).",
@@ -72194,6 +74619,53 @@
         ]
       }
     },
+    "/api/v1/operations/github/check-name": {
+      "post": {
+        "description": "Check whether ``owner/name`` is available for a new repository.\n\nProxies coord ``GET /coord/repos/availability?owner=&name=`` and forwards\nthe JSON verbatim: ``{status: \"available\"|\"taken\"|\"invalid\"|\n\"owner_unbound\", reason?, normalized_name}``. POST (despite the read\nsemantics) so the runner's provisioning flow talks one verb to this\nsurface; the upstream coord call is the GET.",
+        "operationId": "api_v1_operations_github_check_name_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RepoNameCheckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepoNameCheckResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Github Check Name",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/github/clone-credential": {
       "post": {
         "description": "Mint a repo-scoped, short-TTL, contents:read clone token for a single\nrepo. Proxies coord ``POST /coord/onboarding/installations/clone-credential``.\n\nPasses coord's status + JSON body through verbatim (like the onboarding\nclaim proxy) so the runner sees a clean ``403 repo_owner_not_connected`` when\nthe repo's owner isn't a GitHub account connected to the caller's workspace.",
@@ -72234,6 +74706,195 @@
           }
         ],
         "summary": "Post Github Clone Credential",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/github/create-repo": {
+      "post": {
+        "description": "Create a new GitHub repository under a connected account.\n\nProxies coord ``POST /coord/repos``. Success is coord's ``201\n{full_name, clone_url, html_url, default_branch}``; coord's error\nstatuses + bodies pass through VERBATIM \u2014 ``409 name_taken``,\n``403 owner_unbound``, ``409 user_authorization_required`` (whose body\ncarries the ``authorize_url`` the runner must surface), and\n``503 app_unconfigured``.\n\n``description`` is omitted from the forwarded body when unset so coord\nsees an honest wire shape (mirrors the onboarding claim proxy).",
+        "operationId": "api_v1_operations_github_create_repo_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RepoCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepoCreateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Github Create Repo",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/github/enroll-repo": {
+      "post": {
+        "description": "Enroll ``owner/name`` into coord's PR-merge orchestration.\n\nProxies coord ``POST /coord/repos/{owner}/{name}/enroll`` and forwards\ncoord's response verbatim (status + body).",
+        "operationId": "api_v1_operations_github_enroll_repo_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RepoRefRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Github Enroll Repo",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/github/oauth-status": {
+      "get": {
+        "description": "Whether the calling operator has user-authorized the GitHub App for\n``owner``, for the create-repo pre-flight.\n\nProxies coord ``GET /coord/github/oauth/status?account=<owner>`` \u2192\n``{authorized, authorize_url?}`` (``authorize_url`` present when the\noperator still needs to complete the user-authorization flow).",
+        "operationId": "api_v1_operations_github_oauth_status_get",
+        "parameters": [
+          {
+            "description": "GitHub account login to check.",
+            "in": "query",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "description": "GitHub account login to check.",
+              "title": "Owner",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GithubOauthStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Github Oauth Status",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/github/push-credential": {
+      "post": {
+        "description": "Mint a repo-scoped, short-TTL push token for ``owner/name``.\n\nProxies coord ``POST /coord/repos/{owner}/{name}/push-credential`` \u2192\n``{token, expires_at}``. The write-scoped sibling of the contents:read\nclone-credential proxy above; coord enforces that the repo's owner is\nbound to the caller's tenant.",
+        "operationId": "api_v1_operations_github_push_credential_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RepoRefRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepoPushCredentialResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Github Push Credential",
         "tags": [
           "operations"
         ]
@@ -73516,6 +76177,33 @@
         ]
       }
     },
+    "/api/v1/operations/pr-merge/merge-economics": {
+      "get": {
+        "description": "Per-repo merge economics for the fleet page's CI-duration-aware PR\nseverity model (plan 2026-07-17-fleet-ci-duration-aware-severity).\n\nProxies coord's NEW ``coord_query_merge_economics`` read\n(``_COORD_MERGE_ECONOMICS_PATH``): per-repo candidate-CI p90, land rate,\na suggested stuck-threshold, queue depth, and per-open-PR already-landed\nflags. The fleet page uses candidate-CI duration + queue proximity to\ndecide whether a merge conflict is \"act now\" (RED) or \"resolve\njust-before-merge\" (AMBER).\n\nGRACEFUL FALLBACK (required): this coord read may not be deployed yet, so a\n404 \u2014 or a transient coord outage (502/503/504) \u2014 degrades to an empty\n``{}`` rather than erroring. The frontend then falls back to its hardcoded\nthresholds + repo-name hint, so the page works today and simply gets more\nprecise once the read is live. Fleet-wide; ``tenant_id`` is resolved only\nto forward the operator bearer (same posture as ``/merge/queue`` and\n``/pr-merge/prs``).",
+        "operationId": "api_v1_operations_pr_merge_merge_economics_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Pr Merge Merge Economics Api V1 Operations Pr Merge Merge Economics Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Pr Merge Merge Economics",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/pr-merge/onboarding/accept": {
       "post": {
         "description": "UPSERT ``coord.tenant_repo_profiles`` with\n``profile_source='audit'`` + the (possibly hand-edited) starter\nprofile. Stamps ``coord.operator_audit`` + publishes settings cache\ninvalidation.",
@@ -73689,7 +76377,7 @@
     },
     "/api/v1/operations/pr-merge/onboarding/claim": {
       "post": {
-        "description": "Self-serve onboarding: exchange the GitHub OAuth code + bind/enroll.\n\nProxies coord's ``POST /coord/onboarding/github-accounts/claim`` (coord\nPR #901). Reuses the doctor proxy's auth exactly: ``get_tenant_id``\nresolves the operator and captures the caller's bearer, which\n``_tenant_headers`` forwards to coord so coord binds the GitHub account\nto the operator's own Cognito tenant.\n\nUnlike the raising ``_proxy_coord_post`` helper (which collapses a coord\n4xx/5xx into an ``HTTPException`` whose body is a stringified ``detail``),\nthis handler passes coord's status code AND JSON body through verbatim so\nthe onboarding-status page can render a status-specific message:\n``400 code_exchange_failed`` / ``403 installation_not_administered`` /\n``409 account_already_bound`` / ``500 oauth_not_configured``. httpx\ntransport errors mirror the shared helpers (ConnectError \u2192 502,\nTimeoutException \u2192 504).",
+        "description": "Self-serve onboarding: exchange the GitHub OAuth code + bind/enroll.\n\nProxies coord's ``POST /coord/onboarding/github-accounts/claim`` (coord\nPR #901). Reuses the doctor proxy's auth exactly: ``get_tenant_id``\nresolves the operator and captures the caller's bearer, which\n``_tenant_headers`` forwards to coord so coord binds the GitHub account\nto the operator's own Cognito tenant.\n\nUnlike the raising ``_proxy_coord_post`` helper (which collapses a coord\n4xx/5xx into an ``HTTPException`` whose body is a stringified ``detail``),\nthis handler passes coord's status code AND JSON body through verbatim so\nthe onboarding-status page can render a status-specific message:\n``400 code_exchange_failed`` / ``400 target_required`` /\n``403 installation_not_administered`` / ``409 account_already_bound`` /\n``500 oauth_not_configured``. httpx transport errors mirror the shared\nhelpers (ConnectError \u2192 502, TimeoutException \u2192 504).",
         "operationId": "api_v1_operations_pr_merge_onboarding_claim_post",
         "requestBody": {
           "content": {
@@ -73782,6 +76470,33 @@
         ]
       }
     },
+    "/api/v1/operations/pr-merge/onboarding/github-app": {
+      "get": {
+        "description": "The GitHub App's public identity, for building an authorize URL.\n\nProxies coord's ``GET /coord/onboarding/github-app``. Response envelope\n(coord-owned): ``{\"app_slug\", \"client_id\", \"oauth_configured\"}``, where\n``client_id`` may be null and ``oauth_configured`` is false when coord has\nno OAuth creds \u2014 the UI hides the connect action rather than sending users\ninto a flow that would 500 ``oauth_not_configured``.\n\nReturns no tenant-scoped data, but stays ``get_tenant_id``-gated like its\nonboarding siblings so the App's identity isn't served to anonymous callers.",
+        "operationId": "api_v1_operations_pr_merge_onboarding_github_app_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Pr Merge Onboarding Github App Api V1 Operations Pr Merge Onboarding Github App Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Pr Merge Onboarding Github App",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/pr-merge/onboarding/precondition-status": {
       "get": {
         "description": "Return ``{paired, claude_code_available, ready, paired_elsewhere}``\nfor the calling tenant. Drives the onboarding wizard's polling loop on\nstep 2 (the \"Sign into Claude Code on your device\" verification step).\n\n``X-Qontinui-User-Id`` is forwarded (same attribution header as the\npair paths in ``devices.py``) so coord can compute\n``paired_elsewhere`` \u2014 devices the CALLING USER has paired to a\nDIFFERENT tenant, which a re-pair here would silently steal. Older\ncoord ignores the header and omits the field; the wizard treats a\nmissing ``paired_elsewhere`` as ``[]`` (plan\n2026-07-02-multi-tenant-device-pairing-reconsideration Phase 1b).",
@@ -73811,8 +76526,24 @@
     },
     "/api/v1/operations/pr-merge/prs": {
       "get": {
-        "description": "PR Merge Orchestrator Phase 1 D1.6 + D1.7 -- proxy coord's\n``GET /pr-merge/prs`` (read-only list of all open PRs joined to\nper-(repo, head_sha) CI lifecycle).\n\nFleet-wide. Forwards the operator bearer so coord requires an\nauthenticated operator \u2014 retires the pilot-anonymous posture\n(operator decision 2026-05-31), mirroring ``/merge/queue``.",
+        "description": "PR Merge Orchestrator Phase 1 D1.6 + D1.7 -- proxy coord's\n``GET /pr-merge/prs`` (read-only list of all open PRs joined to\nper-(repo, head_sha) CI lifecycle).\n\nFleet-wide. Forwards the operator bearer so coord requires an\nauthenticated operator \u2014 retires the pilot-anonymous posture\n(operator decision 2026-05-31), mirroring ``/merge/queue``.\n\n``include_merged`` is forwarded ONLY when set, so the default request is\nbyte-for-byte the legacy call (same convention as ``/admin-dev/prs``).\ncoord's response is returned verbatim \u2014 no field whitelist \u2014 so the\nmerged-row enrichment passes through unchanged.",
         "operationId": "api_v1_operations_pr_merge_prs_get",
+        "parameters": [
+          {
+            "description": "When >0, ask coord to ALSO return PRs merged within the last N hours (each carrying the merge stamp + per-PR deploy_state), not just open ones. 0 (default) preserves the open-PRs-only behavior. Backs the fleet pipeline's 'Merged' tab.",
+            "in": "query",
+            "name": "include_merged",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "When >0, ask coord to ALSO return PRs merged within the last N hours (each carrying the merge stamp + per-PR deploy_state), not just open ones. 0 (default) preserves the open-PRs-only behavior. Backs the fleet pipeline's 'Merged' tab.",
+              "maximum": 720,
+              "minimum": 0,
+              "title": "Include Merged",
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -73823,6 +76554,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "security": [
@@ -74396,6 +77137,137 @@
           }
         ],
         "summary": "Post Pr Merge Suggestion Reject",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/releases": {
+      "get": {
+        "description": "List recent runner release observations (newest-first) from coord.\n\nProxies coord ``GET /coord/twin/release/history``. ``repo`` (``owner/name``;\ndefault coord's ``qontinui/qontinui-runner``) selects the observed surface;\n``limit`` (1\u2013500, coord-clamped too) caps the history window. Returns\ncoord's ``{surface, repo, target, count, history:[...]}`` envelope\nverbatim.",
+        "operationId": "api_v1_operations_releases_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "repo",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Repo"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Releases Api V1 Operations Releases Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Releases",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/releases/{tag}": {
+      "get": {
+        "description": "Return the single release observation matching ``tag``.\n\nCoord's history endpoint returns the full list (it has no single-tag\nroute), so this fetches the list and filters server-side \u2014 matching ``tag``\nagainst each entry's ``tag`` / ``version`` / ``published_tag``. The window\nis fetched at coord's max (500) so a tag is not missed behind the default\npage. Raises ``404 release_tag_not_found`` when no entry matches.",
+        "operationId": "api_v1_operations_releases_tag_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tag",
+            "required": true,
+            "schema": {
+              "title": "Tag",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "repo",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Repo"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Release Api V1 Operations Releases  Tag  Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Release",
         "tags": [
           "operations"
         ]

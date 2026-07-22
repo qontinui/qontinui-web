@@ -12,7 +12,13 @@ federated memories participate in the tenant's hybrid retrieval:
   path — bridged content must never land secrets in the store),
 * ``content_hash`` over the REDACTED memory content (re-runs dedup
   naturally, and dedup keys match API-written rows),
-* embedded via the standard embedder.
+* landed with ``embedding = NULL`` and ENQUEUED as a ``kind='embedding'``
+  ``coord.memory_jobs`` row. This job loads no embedding model: a
+  NULL-embedding row is immediately FTS-retrievable, and a runner claims
+  the job, embeds locally, and posts the vectors back
+  (``2026-07-13-runner-paid-embedding``). The queue's live-status
+  ``input_hash`` dedupe is what keeps the 15-minute cadence from
+  re-enqueueing the same rows.
 
 Sync semantics per run:
 
@@ -42,7 +48,6 @@ have no tenant store to land in.
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 from datetime import UTC, datetime
 from typing import Any
@@ -52,8 +57,8 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.services import memory_store as store
-from app.services.memory_embedder import ensure_embedding_dims, get_embedder
 from app.services.memory_redaction import log_redactions, redact_text
+from app.services.memory_vectors import EMBEDDING_MODEL_TAG
 
 logger = structlog.get_logger(__name__)
 
@@ -100,10 +105,11 @@ async def bridge_sync_once(
 
     if not to_upsert and not to_tombstone:
         logger.debug("memory_bridge_in_sync", source_count=len(source_keys))
-        return {"upserted": 0, "superseded": 0, "tombstoned": 0}
+        return {"upserted": 0, "superseded": 0, "tombstoned": 0, "enqueued": 0}
 
     upserted = 0
     superseded = 0
+    enqueued = 0
     for tenant_id, names in to_upsert.items():
         contents = await store.fetch_bridge_source_contents(session, tenant_id, names)
         ordered = [name for name in names if name in contents]
@@ -125,16 +131,13 @@ async def bridge_sync_once(
             redacted[name] = (version, rt.text, rc.text)
         log_redactions("memory_bridge", redaction_counts)
 
-        # Offload to a thread: embed_texts is a synchronous, CPU-bound ONNX call.
-        # This job now runs inside uvicorn (not a Celery worker process), so
-        # blocking the event loop here would stall every in-flight request and
-        # /health — every 15 minutes. Same idiom as the request path
-        # (app/services/memory_store.py:1505).
-        embeddings = await asyncio.to_thread(
-            get_embedder().embed_texts, [redacted[name][2] for name in ordered]
-        )
-        ensure_embedding_dims(embeddings)
-        for name, embedding in zip(ordered, embeddings, strict=True):
+        # Bridged rows land UNVECTORIZED. This job loads no embedding
+        # model — nothing in this backend does any more
+        # (``2026-07-13-runner-paid-embedding``). A NULL-embedding row is
+        # immediately FTS-retrievable and is vectorized by the runner via
+        # the embedding job enqueued below.
+        to_embed: list[tuple[UUID, str]] = []
+        for name in ordered:
             version, title, content = redacted[name]
             bridge_source = _bridge_source(name, version)
             memory_id, deduped = await store.insert_record(
@@ -146,17 +149,24 @@ async def bridge_sync_once(
                 title=title,
                 content=content,
                 content_hash=_content_hash(content),
-                embedding=embedding,
+                embedding=None,
+                embedding_model=None,
                 importance=BRIDGE_IMPORTANCE,
                 source=bridge_source,
             )
             if deduped:
                 # Same content already stored (typically the prior
                 # bridged record after a content-neutral version bump):
-                # refresh its bridge stamp so the key sets converge.
+                # refresh its bridge stamp so the key sets converge. NOT
+                # queued for embedding — this row predates the bridge pass
+                # and owns whatever vector state it already has; if it is
+                # genuinely unvectorized the reindex sweep will queue it.
                 await store.merge_record_source(
                     session, tenant_id, memory_id, bridge_source, now=now
                 )
+            else:
+                # A fresh insert, which always lands with embedding=NULL.
+                to_embed.append((memory_id, content))
             prior = bridged.get((tenant_id, name))
             if prior is not None and prior[0] != memory_id:
                 await store.mark_superseded(
@@ -168,6 +178,21 @@ async def bridge_sync_once(
                 superseded += 1
             upserted += 1
 
+        # One embedding job per tenant per pass, for the rows just landed.
+        # The queue's live-status `input_hash` dedupe is what keeps this
+        # 15-minute cadence from piling up work: an identical target set
+        # with a live (pending/claimed/done) job is a no-op insert. The
+        # compare-first pass above already makes an in-sync run return
+        # before reaching here, so this is belt AND braces — the braces
+        # matter because a run that upserts ANY name re-walks that
+        # tenant's whole `ordered` list.
+        if to_embed:
+            enqueued += await store.enqueue_jobs(
+                session,
+                tenant_id,
+                [store.embedding_job_input(to_embed, model_tag=EMBEDDING_MODEL_TAG)],
+            )
+
     tombstoned = 0
     for tenant_id, memory_id in to_tombstone:
         if await store.tombstone_record(session, tenant_id, memory_id):
@@ -178,11 +203,13 @@ async def bridge_sync_once(
         upserted=upserted,
         superseded=superseded,
         tombstoned=tombstoned,
+        enqueued=enqueued,
     )
     return {
         "upserted": upserted,
         "superseded": superseded,
         "tombstoned": tombstoned,
+        "enqueued": enqueued,
     }
 
 

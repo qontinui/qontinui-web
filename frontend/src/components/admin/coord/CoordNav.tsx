@@ -50,6 +50,8 @@ import {
   History as HistoryIcon,
   Inbox,
   KeyRound,
+  NotebookText,
+  Package,
   Plug,
   Rocket,
   Scale,
@@ -196,6 +198,12 @@ const GROUPS: NavGroup[] = [
         testId: "coord-nav-automation-rules",
       },
       {
+        href: "/admin/coord/prompt-documents",
+        label: "Prompt Documents",
+        icon: NotebookText,
+        testId: "coord-nav-prompt-documents",
+      },
+      {
         href: "/admin/coord/merge-settings",
         label: "Merge Settings",
         icon: GitMerge,
@@ -227,6 +235,12 @@ const GROUPS: NavGroup[] = [
         label: "Deploys",
         icon: Rocket,
         testId: "coord-nav-deploys",
+      },
+      {
+        href: "/admin/coord/releases",
+        label: "Releases",
+        icon: Package,
+        testId: "coord-nav-releases",
       },
       {
         href: "/admin/coord/git-ops",

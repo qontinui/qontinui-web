@@ -3,9 +3,10 @@
 /**
  * DeployStatusStrip — always-visible "is prod current?" strip atop /admin/coord/prs.
  *
- * Renders one compact chip per deploy surface (ecs / vercel / npm) with its
- * surface-level drift state, short deployed sha, and lag — glanceable context
- * above the PRs tabs.
+ * Renders one compact chip per deploy surface (ecs / vercel / npm, plus the
+ * runner GitHub-Releases surface shown as "Runner") with its surface-level
+ * drift state, short deployed sha, and lag — glanceable context above the PRs
+ * tabs.
  *
  * Data: `GET /api/v1/admin-dev/release-verdict` (the admin-dev proxy of coord
  * `GET /coord/twin/release/verdict`). That proxy degrades to a 200 empty
@@ -20,24 +21,39 @@
  * cleanup. It does NOT use @tanstack/react-query, so the strip has no
  * QueryClientProvider dependency.
  *
- * Degrade gracefully: any fetch error / coord-down / empty surfaces → a small
- * muted one-liner. Loading → a thin skeleton. Never throws, never blocks the page.
+ * Coord-down resilience (mirrors the page, web#770): a degraded 200 carries
+ * `coord_error` with EMPTY surfaces. Applying that envelope would collapse the
+ * strip to "deploy status unavailable" on every transient blip — directly above
+ * a PRs table that correctly retains its rows. So instead: when a fetch degrades
+ * (a `coord_error` envelope OR a thrown fetch error — both mean "what's on
+ * screen may be stale") and we hold last-good surfaces, RETAIN them, dimmed,
+ * with a subtle "reconnecting" marker carrying the reason, and poll faster until
+ * coord recovers. The muted one-liner is reserved for a cold start with nothing
+ * to retain. Loading → a thin skeleton. Never throws, never blocks the page.
  */
 
-import { useEffect, useRef, useState } from "react";
-import { Rocket } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { RefreshCw, Rocket } from "lucide-react";
 import { httpClient } from "@/services/service-factory";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import type {
-  ReleaseSurfaceComponents,
-  ReleaseVerdictResponse,
+import {
+  normalizeDriftClass,
+  surfaceLabel,
+  type ReleaseSurfaceComponents,
+  type ReleaseVerdictResponse,
 } from "./release-verdict";
 
 const RELEASE_RAW_URL = "/api/v1/admin-dev/release-verdict";
 
 // Light refetch cadence — this is glanceable context, not the primary table.
 const REFRESH_MS = 60_000;
+
+// Faster cadence while degraded, so retained (stale) chips are corrected soon
+// after coord recovers. Deliberately NOT the page's 5s: this strip is secondary
+// glanceable context (see the doc comment above), so 15s recovers promptly
+// without adding a 12x poll multiplier for a decoration.
+const RECONNECT_REFRESH_MS = 15_000;
 
 type BadgeTone =
   | "default"
@@ -115,14 +131,17 @@ function lagLabel(lagSeconds: number | null | undefined): string {
 }
 
 function SurfaceChip({ c }: { c: ReleaseSurfaceComponents }) {
-  const meta = driftMeta(c.drift_class);
-  const surface = (c.surface ?? "?").toString();
+  // Normalize the runner surface's namespaced `release:*` sub-classes to the
+  // shared canonical tokens the tone/label map is keyed on.
+  const meta = driftMeta(normalizeDriftClass(c.drift_class));
+  const rawSurface = (c.surface ?? "?").toString();
+  const surface = surfaceLabel(rawSurface);
   const target = shortTarget(c.target);
   const sha = shortSha(c.deployed_sha);
   const lag = lagLabel(c.lag_seconds);
 
   const title = [
-    `surface: ${surface}`,
+    `surface: ${rawSurface}`,
     c.target ? `target: ${c.target}` : null,
     `drift: ${c.drift_class ?? "unknown"}`,
     c.deployed_sha ? `deployed: ${c.deployed_sha}` : null,
@@ -136,7 +155,9 @@ function SurfaceChip({ c }: { c: ReleaseSurfaceComponents }) {
     <div
       className="flex items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1"
       title={title}
-      data-testid={`deploy-surface-${surface}`}
+      // testid keyed on the RAW surface token (a stable selector); the visible
+      // label uses the friendly `surfaceLabel` map.
+      data-testid={`deploy-surface-${rawSurface}`}
     >
       <span className="text-xs font-medium uppercase text-foreground">
         {surface}
@@ -164,47 +185,98 @@ export function DeployStatusStrip() {
     null,
   );
   const [loading, setLoading] = useState(true);
-  const [failed, setFailed] = useState(false);
+  // Why the data on screen may be stale — the coord_error from a degraded 200,
+  // or a thrown fetch error's message. Non-null drives the retention decision,
+  // the reconnecting marker and the fast poll. Replaces the old `failed`
+  // boolean, which conflated "coord is down" with "we have nothing to show".
+  const [degraded, setDegraded] = useState<string | null>(null);
   const inFlight = useRef(false);
 
+  // Synchronous mirror of the last APPLIED surfaces. `load` is memoized with no
+  // deps, so reading the `surfaces` STATE inside it would always see the initial
+  // `null` (a stale closure) and never retain. The `inFlight` guard means
+  // fetches never overlap, so this ref always reads fresh.
+  const surfacesRef = useRef<ReleaseSurfaceComponents[] | null>(null);
+
+  // Unmount safety for the async setState calls (replaces the old per-effect
+  // `cancelled` flag, which can't span the split load/poll effects).
+  const mounted = useRef(true);
   useEffect(() => {
-    let cancelled = false;
-
-    const load = async () => {
-      if (inFlight.current) return;
-      inFlight.current = true;
-      try {
-        const resp = await httpClient.get<ReleaseVerdictResponse>(
-          RELEASE_RAW_URL,
-        );
-        if (cancelled) return;
-        const list = (resp?.verdict?.surfaces ?? [])
-          .map((s) => s?.components)
-          .filter(
-            (c): c is ReleaseSurfaceComponents =>
-              c != null && typeof c === "object",
-          );
-        setSurfaces(list);
-        setFailed(false);
-      } catch {
-        if (cancelled) return;
-        setFailed(true);
-      } finally {
-        if (!cancelled) setLoading(false);
-        inFlight.current = false;
-      }
-    };
-
-    load();
-    const id = setInterval(load, REFRESH_MS);
+    mounted.current = true;
     return () => {
-      cancelled = true;
-      clearInterval(id);
+      mounted.current = false;
     };
   }, []);
 
+  const load = useCallback(async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+
+    // Apply one fetch's outcome under the retention rule. `degradedReason` is
+    // the coord_error (success path) or the thrown error's message (catch
+    // path) — both mean the same thing to the strip.
+    const applyResult = (
+      list: ReleaseSurfaceComponents[],
+      degradedReason: string | null,
+    ) => {
+      // Retain the last-good chips when this fetch degraded and we actually
+      // have something to keep; otherwise apply the response as-is.
+      const prev = surfacesRef.current;
+      const retain =
+        degradedReason !== null && prev !== null && prev.length > 0;
+      if (!retain) {
+        surfacesRef.current = list;
+        setSurfaces(list);
+      }
+      // Always reflect the LATEST fetch, so the marker and poll cadence track
+      // reality even while the chips themselves are retained.
+      setDegraded(degradedReason);
+    };
+
+    try {
+      const resp = await httpClient.get<ReleaseVerdictResponse>(
+        RELEASE_RAW_URL,
+      );
+      if (!mounted.current) return;
+      const list = (resp?.verdict?.surfaces ?? [])
+        .map((s) => s?.components)
+        .filter(
+          (c): c is ReleaseSurfaceComponents =>
+            c != null && typeof c === "object",
+        );
+      applyResult(list, resp?.coord_error ?? null);
+    } catch (e) {
+      if (!mounted.current) return;
+      // A thrown fetch error degrades on exactly the same rule as a coord_error
+      // envelope: retain the chips if we have any, otherwise fall through to
+      // the cold-start one-liner.
+      applyResult([], e instanceof Error ? e.message : String(e));
+    } finally {
+      if (mounted.current) setLoading(false);
+      inFlight.current = false;
+    }
+  }, []);
+
+  // Initial fetch. `surfaces`/`surfacesRef` are deliberately never cleared —
+  // retention across an outage depends on them surviving.
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  // Poll. While degraded, poll faster so retained chips are corrected soon
+  // after coord recovers; a healthy response clears `degraded` and this effect
+  // re-runs at the normal cadence.
+  useEffect(() => {
+    const intervalMs =
+      degraded !== null ? RECONNECT_REFRESH_MS : REFRESH_MS;
+    const id = setInterval(() => {
+      load();
+    }, intervalMs);
+    return () => clearInterval(id);
+  }, [degraded, load]);
+
   // Loading (first paint) → a thin skeleton.
-  if (loading && surfaces === null && !failed) {
+  if (loading && surfaces === null && degraded === null) {
     return (
       <div data-testid="deploy-strip-loading">
         <Skeleton className="h-8 w-full" />
@@ -212,12 +284,16 @@ export function DeployStatusStrip() {
     );
   }
 
-  // Error / coord-down / empty → small muted one-liner. Never block the page.
-  if (failed || !surfaces || surfaces.length === 0) {
+  // COLD START ONLY — genuinely nothing to show (empty surfaces, and nothing
+  // retained). A degraded fetch with last-good chips renders those chips + the
+  // reconnecting marker below instead of collapsing to this. The reason, if
+  // any, rides the tooltip rather than cluttering the strip.
+  if (!surfaces || surfaces.length === 0) {
     return (
       <div
         className="text-xs text-muted-foreground italic"
         data-testid="deploy-strip-unavailable"
+        title={degraded ?? undefined}
       >
         deploy status unavailable
       </div>
@@ -233,9 +309,30 @@ export function DeployStatusStrip() {
         <Rocket className="h-3.5 w-3.5" />
         Deploy status
       </div>
-      {surfaces.map((c, i) => (
-        <SurfaceChip key={`${c.surface ?? "s"}-${c.target ?? i}`} c={c} />
-      ))}
+      {/* Reconnecting marker — coord is down and these chips are last-good.
+          Deliberately NO relative "X ago" label: the strip has no 1s ticker
+          (the page's `now` ticker is page-local), so a computed age would
+          freeze between polls and lie. The marker + tooltip is the honest
+          signal; each chip's own lag/sha carries the data. */}
+      {degraded !== null && (
+        <span
+          className="inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/5 px-1.5 py-0.5 text-[11px] text-amber-700 dark:text-amber-400"
+          data-testid="deploy-strip-reconnecting"
+          role="status"
+          title={`coord is currently unavailable (${degraded}) — showing last known deploy status. Retries automatically.`}
+        >
+          <RefreshCw className="h-3 w-3 animate-spin" />
+          reconnecting
+        </span>
+      )}
+      {/* Dim the retained chips so staleness reads visually, not just textually. */}
+      <div
+        className={`flex flex-wrap items-center gap-2 ${degraded !== null ? "opacity-70" : ""}`}
+      >
+        {surfaces.map((c, i) => (
+          <SurfaceChip key={`${c.surface ?? "s"}-${c.target ?? i}`} c={c} />
+        ))}
+      </div>
     </div>
   );
 }

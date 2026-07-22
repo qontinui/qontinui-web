@@ -237,6 +237,35 @@ export interface PrListResponse {
   coord_error?: string;
 }
 
+// ---- Gate-doctor sweep ---------------------------------------------------
+
+/**
+ * One gate the `land_backfill` sweep examined. Mirrors coord's
+ * `BackfillEntry` (`qontinui-coord/src/gate_doctor.rs`) verbatim (snake_case):
+ * `gate_id` is a UUID string, `pr_number` an i32 (always present — coord does
+ * not null it), `action` is `"backfilled"` (cleared) or `"left_failed"`.
+ */
+export interface BackfillEntry {
+  gate_id: string;
+  repo: string;
+  pr_number: number;
+  action: string;
+}
+
+/**
+ * The `land_backfill` gate-doctor sweep report — coord's `BackfillReport`
+ * (`qontinui-coord/src/gate_doctor.rs`) passed through the web proxy verbatim
+ * (snake_case). `dry_run` echoes the request; the counts are over all `failed`
+ * `pr_merged`-on-coord gates examined; `entries` carries the per-gate detail.
+ */
+export interface BackfillReport {
+  dry_run: boolean;
+  examined: number;
+  backfilled: number;
+  left_failed: number;
+  entries: BackfillEntry[];
+}
+
 // ---- Top-level envelope --------------------------------------------------
 
 export interface DevOverview {
@@ -329,6 +358,33 @@ class AdminDevService {
       p.set("include_merged", String(opts.includeMerged));
     const qs = p.toString();
     return httpClient.get<PrListResponse>(`${API}/prs${qs ? `?${qs}` : ""}`);
+  }
+
+  /**
+   * Fire coord's `land_backfill` gate-doctor sweep (via the web proxy
+   * `POST /api/v1/admin-dev/gates/doctor/sweep` → coord
+   * `POST /coord/gates/doctor/sweep`). Operator-only: the web route is
+   * `require_admin` and forwards the operator's Cognito bearer so coord's
+   * admin-role router authorizes on the operator's real identity.
+   *
+   * Dry-run-first is the guardrail: `dryRun: true` reports what would clear
+   * without mutating; `dryRun: false` is the explicit live mutation.
+   * Throws on a non-2xx response (`httpClient.post` rejects with an Error whose
+   * message embeds the status + coord's response text) so the caller can
+   * surface coord's error verbatim — a 403 means the bearer wasn't
+   * forwarded/accepted; do NOT swallow it.
+   */
+  async runGateDoctorSweep({
+    dryRun,
+    mode = "land_backfill",
+  }: {
+    dryRun: boolean;
+    mode?: string;
+  }): Promise<BackfillReport> {
+    return httpClient.post<BackfillReport>(`${API}/gates/doctor/sweep`, {
+      dry_run: dryRun,
+      mode,
+    });
   }
 }
 

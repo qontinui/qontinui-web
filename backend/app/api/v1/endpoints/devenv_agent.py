@@ -28,14 +28,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_async_db
 from app.crud import devenv_machine_crud
 from app.models.devenv import Machine
-from app.repositories.devenv import config_repo, environment_repo, machine_repo
+from app.repositories.devenv import (
+    config_history_repo,
+    config_repo,
+    environment_repo,
+    machine_repo,
+)
 from app.schemas.devenv import (
     CanonicalConfigResponse,
     ConfigEnvelope,
     EnrollRequest,
     EnrollResponse,
 )
-from app.services.devenv_section_policy import policy_map
+from app.services.devenv_section_policy import derived_keys_map, policy_map
 
 logger = structlog.get_logger(__name__)
 
@@ -219,12 +224,27 @@ async def report_config(
         source="agent",
         captured_at=envelope.captured_at,
     )
+    # P2 (config history): append to the capture timeline alongside the
+    # latest-snapshot upsert. Consecutive-dedup by content hash — the ~15-min
+    # runner re-report of unchanged content adds no row. Same post-backstop
+    # envelope as the snapshot, so nothing new to sanitize.
+    history_appended = await config_history_repo.append_if_changed(
+        db,
+        owner_user_id=machine.owner_user_id,
+        environment_id=environment_id,
+        machine_id=machine.id,
+        config=stored,
+        schema_version=envelope.schema_version,
+        source="agent",
+        captured_at=envelope.captured_at,
+    )
     await db.commit()
     logger.info(
         "devenv_agent_config_reported",
         machine_id=str(machine.id),
         environment_id=str(environment_id),
         sections=list(envelope.sections.keys()),
+        history_appended=history_appended,
     )
     return {
         "ok": True,
@@ -306,4 +326,5 @@ async def get_canonical_config(
         captured_at=config_row.captured_at,
         sections=sections,
         section_policy=policy_map(list(sections.keys())),
+        derived_keys=derived_keys_map(sections),
     )

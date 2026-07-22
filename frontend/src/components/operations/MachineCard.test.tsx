@@ -62,7 +62,9 @@ describe("MachineCard — device-hardware-only render", () => {
   it("renders the hostname and runner row", () => {
     const { getByText, container } = renderCard(baseGroup());
     expect(getByText("test-host")).not.toBeNull();
-    expect(container.querySelector("[data-operations-machine-card]")).not.toBeNull();
+    expect(
+      container.querySelector("[data-operations-machine-card]")
+    ).not.toBeNull();
   });
 
   it("does NOT render the Phase 1.3 current-activity sub-line", () => {

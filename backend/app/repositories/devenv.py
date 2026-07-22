@@ -12,12 +12,17 @@ machine_id) DO UPDATE`` so an agent re-reporting its config for the same
 
 from __future__ import annotations
 
+import hashlib
+import json
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.models.devenv import (
     Application,
@@ -25,7 +30,9 @@ from app.models.devenv import (
     Environment,
     Machine,
     MachineEnvironmentConfig,
+    MachineEnvironmentConfigHistory,
 )
+from app.models.user import User
 
 # ---------------------------------------------------------------------------
 # Applications
@@ -390,8 +397,195 @@ class MachineEnvironmentConfigRepository:
 
 
 # ---------------------------------------------------------------------------
+# Machine-environment config history (append-only capture timeline)
+# ---------------------------------------------------------------------------
+
+
+def compute_content_hash(config: dict[str, Any]) -> str:
+    """Sha256 hex of the canonical-JSON envelope, ``captured_at`` excluded.
+
+    Canonical JSON = sorted keys + compact separators, so semantically
+    identical envelopes hash identically regardless of dict key order.
+    The top-level ``captured_at`` is excluded because it moves on EVERY
+    capture — including it would defeat the consecutive-dedup this hash
+    exists for (the ~15-min runner re-capture of unchanged content).
+    """
+    hashable = {k: v for k, v in config.items() if k != "captured_at"}
+    canonical = json.dumps(hashable, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+class MachineEnvironmentConfigHistoryRepository:
+    """Append-only history for ``devenv.machine_environment_config_history``.
+
+    Like :class:`CanonicalChangeLogRepository`, reads are not owner-filtered
+    here — callers resolve+authorize the (environment, machine) pair first
+    and then query by ids.
+    """
+
+    async def append_if_changed(
+        self,
+        db: AsyncSession,
+        *,
+        owner_user_id: UUID,
+        environment_id: UUID,
+        machine_id: UUID,
+        config: dict[str, Any],
+        schema_version: int,
+        source: str,
+        captured_at: datetime,
+    ) -> bool:
+        """Append a history row iff the envelope content actually changed.
+
+        Consecutive dedup: compares ``content_hash`` against the most recent
+        history row for the (environment, machine) pair and inserts only when
+        the hash differs (or no prior row exists). Returns whether a row was
+        appended.
+
+        **Concurrency invariant — call only AFTER**
+        :meth:`MachineEnvironmentConfigRepository.upsert` **for the same
+        (environment, machine) in the same transaction.** The dedup here is a
+        plain read-then-insert with no lock of its own; its race safety is
+        positional: the upsert's ``INSERT ... ON CONFLICT`` takes a row lock
+        on the (environment, machine) snapshot row, serializing concurrent
+        reporters for the pair until commit, which is what keeps two
+        simultaneous reports from both passing the hash check and appending
+        duplicates. A future call site that skips the upsert (or runs in a
+        separate transaction) silently reintroduces that race — add explicit
+        locking here first.
+        """
+        content_hash = compute_content_hash(config)
+        stmt = (
+            select(MachineEnvironmentConfigHistory.content_hash)
+            .where(
+                MachineEnvironmentConfigHistory.environment_id == environment_id,
+                MachineEnvironmentConfigHistory.machine_id == machine_id,
+            )
+            .order_by(
+                MachineEnvironmentConfigHistory.captured_at.desc(),
+                MachineEnvironmentConfigHistory.created_at.desc(),
+            )
+            .limit(1)
+        )
+        latest_hash = (await db.execute(stmt)).scalar_one_or_none()
+        if latest_hash == content_hash:
+            return False
+        row = MachineEnvironmentConfigHistory(
+            owner_user_id=owner_user_id,
+            environment_id=environment_id,
+            machine_id=machine_id,
+            config=config,
+            schema_version=schema_version,
+            source=source,
+            captured_at=captured_at,
+            content_hash=content_hash,
+        )
+        db.add(row)
+        await db.flush()
+        return True
+
+    async def list_for_machine(
+        self,
+        db: AsyncSession,
+        *,
+        environment_id: UUID,
+        machine_id: UUID,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[MachineEnvironmentConfigHistory]:
+        """List an (environment, machine)'s captures, newest first."""
+        stmt = (
+            select(MachineEnvironmentConfigHistory)
+            .where(
+                MachineEnvironmentConfigHistory.environment_id == environment_id,
+                MachineEnvironmentConfigHistory.machine_id == machine_id,
+            )
+            .order_by(
+                MachineEnvironmentConfigHistory.captured_at.desc(),
+                MachineEnvironmentConfigHistory.created_at.desc(),
+            )
+            .limit(limit)
+            .offset(offset)
+        )
+        return list((await db.execute(stmt)).scalars().all())
+
+    async def get(
+        self,
+        db: AsyncSession,
+        *,
+        history_id: UUID,
+        environment_id: UUID,
+        machine_id: UUID,
+    ) -> MachineEnvironmentConfigHistory | None:
+        """Get one history row, scoped to its (environment, machine) pair.
+
+        The pair scoping means a valid history id from ANOTHER pair resolves
+        to ``None`` (the endpoint layer turns that into a 404).
+        """
+        stmt = select(MachineEnvironmentConfigHistory).where(
+            MachineEnvironmentConfigHistory.id == history_id,
+            MachineEnvironmentConfigHistory.environment_id == environment_id,
+            MachineEnvironmentConfigHistory.machine_id == machine_id,
+        )
+        return (await db.execute(stmt)).scalar_one_or_none()
+
+    async def prune(
+        self, db: AsyncSession, *, keep_per_pair: int = 500
+    ) -> list[tuple[UUID, UUID, int]]:
+        """Delete rows beyond the newest ``keep_per_pair`` per (env, machine).
+
+        Uses a window-function DELETE (``row_number() OVER (PARTITION BY
+        environment_id, machine_id ORDER BY captured_at DESC)``). Returns
+        ``(environment_id, machine_id, deleted_count)`` per pruned pair so
+        the caller can log every pair it capped — no silent cap.
+        """
+        result = await db.execute(
+            text(
+                """
+                WITH ranked AS (
+                    SELECT id,
+                           row_number() OVER (
+                               PARTITION BY environment_id, machine_id
+                               ORDER BY captured_at DESC, created_at DESC
+                           ) AS rn
+                    FROM devenv.machine_environment_config_history
+                ),
+                doomed AS (
+                    DELETE FROM devenv.machine_environment_config_history h
+                    USING ranked r
+                    WHERE h.id = r.id AND r.rn > :keep
+                    RETURNING h.environment_id, h.machine_id
+                )
+                SELECT environment_id, machine_id, count(*) AS deleted
+                FROM doomed
+                GROUP BY environment_id, machine_id
+                """
+            ),
+            {"keep": keep_per_pair},
+        )
+        return [
+            (row.environment_id, row.machine_id, int(row.deleted))
+            for row in result.fetchall()
+        ]
+
+
+# ---------------------------------------------------------------------------
 # Canonical change log (audit)
 # ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class CanonicalChangeRow:
+    """One audit row plus its LEFT-JOIN-resolved display names.
+
+    Every name is ``None``-able by design — the machine ids are soft refs so
+    the audit survives machine deletion, and the actor FK is ``SET NULL``.
+    """
+
+    log: CanonicalChangeLog
+    changed_by_email: str | None
+    from_machine_name: str | None
+    to_machine_name: str | None
 
 
 class CanonicalChangeLogRepository:
@@ -432,16 +626,57 @@ class CanonicalChangeLogRepository:
         db: AsyncSession,
         *,
         environment_id: UUID,
-        limit: int = 100,
-    ) -> list[CanonicalChangeLog]:
-        """List an environment's canonical changes, newest first."""
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[CanonicalChangeRow]:
+        """List an environment's canonical changes, newest first.
+
+        Resolves the display names (actor email, from/to machine names) in
+        the SAME query via LEFT JOINs — a per-row lookup by the caller would
+        be an N+1 that grows with history length.
+
+        Every joined name is nullable **by design**: the machine ids are soft
+        references (see :class:`~app.models.devenv.CanonicalChangeLog`) so the
+        audit row outlives machine deletion, and ``changed_by_user_id`` is an
+        FK with ``ON DELETE SET NULL``. LEFT joins keep the audit row; the
+        name simply comes back ``None``.
+
+        The sort carries an ``id`` tiebreaker because ``changed_at`` defaults
+        to Postgres ``now()`` — *transaction* time — so several designations
+        made in one transaction share a timestamp exactly. Without it the cut
+        between pages would be nondeterministic and paging could skip or
+        repeat a row.
+        """
+        from_machine = aliased(Machine)
+        to_machine = aliased(Machine)
         stmt = (
-            select(CanonicalChangeLog)
+            select(
+                CanonicalChangeLog,
+                User.email.label("changed_by_email"),
+                from_machine.name.label("from_machine_name"),
+                to_machine.name.label("to_machine_name"),
+            )
+            .outerjoin(User, User.id == CanonicalChangeLog.changed_by_user_id)
+            .outerjoin(
+                from_machine, from_machine.id == CanonicalChangeLog.from_machine_id
+            )
+            .outerjoin(to_machine, to_machine.id == CanonicalChangeLog.to_machine_id)
             .where(CanonicalChangeLog.environment_id == environment_id)
-            .order_by(CanonicalChangeLog.changed_at.desc())
+            .order_by(
+                CanonicalChangeLog.changed_at.desc(), CanonicalChangeLog.id.desc()
+            )
             .limit(limit)
+            .offset(offset)
         )
-        return list((await db.execute(stmt)).scalars().all())
+        return [
+            CanonicalChangeRow(
+                log=row[0],
+                changed_by_email=row[1],
+                from_machine_name=row[2],
+                to_machine_name=row[3],
+            )
+            for row in (await db.execute(stmt)).all()
+        ]
 
 
 # Singleton instances.
@@ -449,4 +684,5 @@ application_repo = ApplicationRepository()
 machine_repo = MachineRepository()
 environment_repo = EnvironmentRepository()
 config_repo = MachineEnvironmentConfigRepository()
+config_history_repo = MachineEnvironmentConfigHistoryRepository()
 canonical_log_repo = CanonicalChangeLogRepository()

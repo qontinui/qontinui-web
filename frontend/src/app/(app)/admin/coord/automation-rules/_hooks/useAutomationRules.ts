@@ -95,6 +95,26 @@ export function useAutomationRules() {
     }
   };
 
+  const restoreDefault = async (policyId: string): Promise<boolean> => {
+    try {
+      setSaving(true);
+      await httpClient.post(
+        `${API}/coord/policies/${encodeURIComponent(policyId)}/restore-default`,
+        {}
+      );
+      toast.success("Restored to default");
+      await loadRules();
+      return true;
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to restore default"
+      );
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const deleteRule = async (policyId: string): Promise<boolean> => {
     try {
       setSaving(true);
@@ -172,6 +192,7 @@ export function useAutomationRules() {
     reload: loadRules,
     createRule,
     updateRule,
+    restoreDefault,
     deleteRule,
     overrideRule,
     revertOverride,
