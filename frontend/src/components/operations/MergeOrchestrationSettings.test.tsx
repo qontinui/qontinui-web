@@ -206,3 +206,108 @@ describe("<MergeOrchestrationSettings> auto_fix_red_main toggle", () => {
     });
   });
 });
+
+describe("<MergeOrchestrationSettings> RepoOverrideCard save", () => {
+  const REPO = "acme/app";
+
+  beforeEach(() => {
+    fetchMock.mockReset();
+  });
+
+  /** Route the top-level fetches PLUS the per-repo profile fetch + PATCH. */
+  function routeRepoCard(url: string, init?: RequestInit) {
+    if (init?.method === "PATCH") {
+      return jsonResponse({
+        tenant_id: "00000000-0000-0000-0000-000000000001",
+        repo: REPO,
+        profile: makeProfile({ repo: REPO }),
+      });
+    }
+    // The per-repo profile fetch — must be matched BEFORE the repos-list URL.
+    if (url.includes(`/pr-merge/repos/${REPO}/profile`)) {
+      return jsonResponse({
+        tenant_id: "00000000-0000-0000-0000-000000000001",
+        repo: REPO,
+        profile: makeProfile({ repo: REPO }),
+      });
+    }
+    if (url.includes("/pr-merge/repos")) {
+      return jsonResponse({
+        repos: [
+          {
+            repo: REPO,
+            role: "owner",
+            framework_signals: [],
+            profile_source: null,
+            profile_version: null,
+          },
+        ],
+        total: 1,
+      });
+    }
+    return routeGet(url, {});
+  }
+
+  function patchBody(): Record<string, unknown> {
+    const patch = fetchMock.mock.calls.find(
+      (c) => (c[1] as RequestInit | undefined)?.method === "PATCH"
+    );
+    expect(patch).toBeTruthy();
+    return JSON.parse((patch![1] as RequestInit).body as string);
+  }
+
+  it("never renders a line-budget-override input (coord rejects the field)", async () => {
+    fetchMock.mockImplementation((url: string, init?: RequestInit) =>
+      Promise.resolve(routeRepoCard(url, init))
+    );
+    render(<MergeOrchestrationSettings />);
+    await screen.findByTestId(`repo-card-${REPO}`);
+    // The `line_budget_override` input is gone — sending it trips coord's
+    // PatchRepoProfile `deny_unknown_fields` and 400s the whole save.
+    expect(screen.queryByTestId(`repo-line-budget-${REPO}`)).toBeNull();
+  });
+
+  it("PATCHes ONLY the edited field, and never sends line_budget_override", async () => {
+    fetchMock.mockImplementation((url: string, init?: RequestInit) =>
+      Promise.resolve(routeRepoCard(url, init))
+    );
+    render(<MergeOrchestrationSettings />);
+    await screen.findByTestId(`repo-card-${REPO}`);
+
+    // Edit ONLY the confidence override; leave every other field untouched.
+    fireEvent.change(screen.getByTestId(`repo-confidence-${REPO}`), {
+      target: { value: "0.9" },
+    });
+    fireEvent.click(screen.getByTestId(`repo-save-${REPO}`));
+
+    await waitFor(() => {
+      const body = patchBody();
+      // Only the edited field is present...
+      expect(body.confidence_threshold_override).toBe(0.9);
+      expect(Object.keys(body)).toEqual(["confidence_threshold_override"]);
+      // ...and the untouched overrides are NOT reset/wiped, and the
+      // coord-rejected line_budget_override is never sent.
+      expect("line_budget_override" in body).toBe(false);
+      expect("escalate_paths_extra" in body).toBe(false);
+      expect("auto_merge_label_budget" in body).toBe(false);
+      expect("dry_run_override" in body).toBe(false);
+      expect("auto_fix_red_main" in body).toBe(false);
+    });
+  });
+
+  it("sends an EMPTY body on a no-op save (touches nothing, wipes nothing)", async () => {
+    fetchMock.mockImplementation((url: string, init?: RequestInit) =>
+      Promise.resolve(routeRepoCard(url, init))
+    );
+    render(<MergeOrchestrationSettings />);
+    await screen.findByTestId(`repo-card-${REPO}`);
+
+    // Save without editing anything — the old form sent every field
+    // (resetting untouched overrides + wiping escalate_paths_extra to []).
+    fireEvent.click(screen.getByTestId(`repo-save-${REPO}`));
+
+    await waitFor(() => {
+      expect(Object.keys(patchBody())).toEqual([]);
+    });
+  });
+});
