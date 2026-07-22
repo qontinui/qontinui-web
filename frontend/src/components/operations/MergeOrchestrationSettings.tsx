@@ -43,22 +43,41 @@ import { OPERATIONS_API } from "./utils";
 const log = createLogger("MergeOrchestrationSettings");
 
 // ----------------------------------------------------------------------------
-// Wire types — mirror `qontinui-coord/src/pr_merge/settings_wire.rs`.
+// Wire types — mirror `qontinui-coord/src/pr_merge/settings.rs` (the resolved
+// `EffectiveProfile`) + `settings_wire.rs` (the PATCH bodies).
 // ----------------------------------------------------------------------------
+
+// coord's resolved `EffectiveProfile` READS escalate config back as typed
+// policies (a glob classified into a hazard category + disposition), NOT as the
+// raw `escalate_paths` string[] that the PATCH body WRITES. The read/write
+// asymmetry is intentional coord-side: you write raw globs, you read the
+// classified result. Mirrors `EscalatePolicy` in
+// `qontinui-coord/src/pr_merge/settings.rs`.
+type EscalateCategory = "secrets" | "migrations" | "infra" | "other";
+type EscalateDisposition =
+  | "block_hard"
+  | "block_soft"
+  | "auto_if_provably_safe";
+
+interface EscalatePolicy {
+  glob: string;
+  category: EscalateCategory;
+  disposition: EscalateDisposition;
+}
 
 interface EffectiveProfile {
   tenant_id: string;
   repo: string;
-  line_budget: number;
   min_green_dwell: number; // seconds
   confidence_threshold: number;
   auto_merge_enabled: boolean;
   dry_run: boolean;
   rulebook_overrides: Record<string, unknown> | null;
-  // coord omits this for a default/unconfigured tenant profile, so the wire
-  // value can be absent even though the settings_wire contract nominally types
-  // it as always-present — guard every read (see the `?? []` sites below).
-  escalate_paths?: string[];
+  // The resolved escalate config, read back as typed policies. coord returns
+  // `[]` for a default/unconfigured tenant; still guarded with `?? []` at every
+  // read site in case a future default omits it. The editor round-trips the
+  // `.glob` of each policy against the `escalate_paths` PATCH field on save.
+  escalate_policies?: EscalatePolicy[];
   audit_confidence_shadow_floor: number;
   preferred_auditor_device_id: string | null;
   auto_merge_label_budget: number | null;
@@ -169,7 +188,7 @@ function TenantDefaultsCard({
     profile.auto_fix_red_main
   );
   const [escalatePathsText, setEscalatePathsText] = useState<string>(
-    (profile.escalate_paths ?? []).join("\n")
+    (profile.escalate_policies ?? []).map((p) => p.glob).join("\n")
   );
   const [shadowFloor, setShadowFloor] = useState<string>(
     String(profile.audit_confidence_shadow_floor)
@@ -185,7 +204,9 @@ function TenantDefaultsCard({
     setAutoMerge(profile.auto_merge_enabled);
     setDryRun(profile.dry_run);
     setAutoFixRedMain(profile.auto_fix_red_main);
-    setEscalatePathsText((profile.escalate_paths ?? []).join("\n"));
+    setEscalatePathsText(
+      (profile.escalate_policies ?? []).map((p) => p.glob).join("\n")
+    );
     setShadowFloor(String(profile.audit_confidence_shadow_floor));
   }, [profile]);
 
@@ -549,8 +570,8 @@ function RepoOverrideCard({
         )}
         {profile && (
           <p className="text-xs text-muted-foreground">
-            Effective: line_budget={profile.line_budget}, dwell=
-            {profile.min_green_dwell}s, dry_run={String(profile.dry_run)}
+            Effective: dwell={profile.min_green_dwell}s, dry_run=
+            {String(profile.dry_run)}
           </p>
         )}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
