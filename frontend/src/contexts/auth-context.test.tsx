@@ -29,19 +29,25 @@ import { AuthProvider, useAuth } from "./auth-context";
 const getCurrentUser = vi.fn();
 const isAuthenticated = vi.fn();
 const isAccessTokenExpired = vi.fn();
+const isRefreshDue = vi.fn(() => false);
 const refreshAccessToken = vi.fn();
 const logout = vi.fn();
 const setAuthenticated = vi.fn();
 const purgeStaleSession = vi.fn();
+const startProactiveRefresh = vi.fn();
+const stopProactiveRefresh = vi.fn();
 
 vi.mock("@/services/service-factory", () => ({
   authService: {
     getCurrentUser: (...a: unknown[]) => getCurrentUser(...a),
     isAuthenticated: () => isAuthenticated(),
     isAccessTokenExpired: () => isAccessTokenExpired(),
+    isRefreshDue: () => isRefreshDue(),
     refreshAccessToken: () => refreshAccessToken(),
     logout: (...a: unknown[]) => logout(...a),
     setAuthenticated: () => setAuthenticated(),
+    startProactiveRefresh: () => startProactiveRefresh(),
+    stopProactiveRefresh: () => stopProactiveRefresh(),
     tokenManager: { purgeStaleSession: () => purgeStaleSession() },
   },
 }));
@@ -79,6 +85,7 @@ describe("AuthProvider boot-time hydration resilience", () => {
     purgeStaleSession.mockReturnValue(false);
     isAuthenticated.mockReturnValue(true);
     isAccessTokenExpired.mockReturnValue(false);
+    isRefreshDue.mockReturnValue(false);
     logout.mockResolvedValue(undefined);
   });
 
@@ -106,6 +113,30 @@ describe("AuthProvider boot-time hydration resilience", () => {
     // It retried rather than giving up on the first stall.
     expect(getCurrentUser).toHaveBeenCalledTimes(2);
     // A stall is NOT a logout — the valid session must be preserved.
+    expect(logout).not.toHaveBeenCalled();
+  });
+
+  it("refreshes at boot inside the clock-skew window, where isAccessTokenExpired() still says false", async () => {
+    // The bearer is past `exp` but inside TokenValidator's 5-minute skew grace,
+    // so isAccessTokenExpired() reports false while the backend already rejects
+    // the token. Booting without a refresh here 401'd /users/me and signed the
+    // user out — so isRefreshDue() must drive the refresh too.
+    isAccessTokenExpired.mockReturnValue(false);
+    isRefreshDue.mockReturnValue(true);
+    refreshAccessToken.mockResolvedValue(true);
+    getCurrentUser.mockResolvedValue(fakeUser);
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("loading").textContent).toBe("false");
+    });
+    expect(refreshAccessToken).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("user").textContent).toBe("ci-bot");
     expect(logout).not.toHaveBeenCalled();
   });
 

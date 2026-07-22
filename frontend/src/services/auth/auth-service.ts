@@ -104,6 +104,34 @@ export class AuthService {
   }
 
   /**
+   * Arm the proactive silent-refresh timer (renew the Cognito bearer shortly
+   * before it expires). The auth context calls this while a user is signed in;
+   * see `TokenRefreshService.start()` for the visibility/idle semantics.
+   */
+  startProactiveRefresh(): void {
+    this.refreshService.start();
+  }
+
+  /** Disarm the proactive silent-refresh timer. */
+  stopProactiveRefresh(): void {
+    this.refreshService.stop();
+  }
+
+  /**
+   * Whether the bearer should be renewed right now — it is inside the
+   * pre-expiry lead window, or already past `exp`.
+   *
+   * The boot path needs this IN ADDITION to `isAccessTokenExpired()`, which
+   * carries TokenValidator's 5-minute clock-skew grace and therefore reports
+   * "not expired" for five minutes AFTER `exp` — a window in which the backend
+   * already rejects the token, so skipping the refresh means the very next
+   * `/users/me` 401s and signs the user out.
+   */
+  isRefreshDue(): boolean {
+    return this.refreshService.isRefreshDue();
+  }
+
+  /**
    * Check if user is authenticated
    */
   isAuthenticated(): boolean {

@@ -18,6 +18,7 @@ import type { TokenManager } from "./auth/token-manager";
 interface FakeTokenManager {
   getAccessToken: ReturnType<typeof vi.fn>;
   getRefreshToken: ReturnType<typeof vi.fn>;
+  getAccessTokenExpiry: ReturnType<typeof vi.fn>;
   isAccessTokenExpired: ReturnType<typeof vi.fn>;
   isAccessTokenExpiringSoon: ReturnType<typeof vi.fn>;
   isAuthenticated: ReturnType<typeof vi.fn>;
@@ -28,6 +29,9 @@ function makeTokenManager(overrides: Partial<Record<keyof FakeTokenManager, unkn
   return {
     getAccessToken: vi.fn(() => "tok"),
     getRefreshToken: vi.fn(() => "refresh"),
+    // Default: an hour of life left, so the staleness predicate's "past `exp`"
+    // clause is false unless a test says otherwise.
+    getAccessTokenExpiry: vi.fn(() => Date.now() + 60 * 60 * 1000),
     isAccessTokenExpired: vi.fn(() => false),
     isAccessTokenExpiringSoon: vi.fn(() => false),
     isAuthenticated: vi.fn(() => true),
@@ -300,5 +304,131 @@ describe("HttpClient X-Qontinui-Active-Tenant forwarding", () => {
       skipAuth: true,
     });
     expect(captured.current["X-Qontinui-Active-Tenant"]).toBeUndefined();
+  });
+});
+
+/**
+ * The reactive half of the silent-refresh fix: a 401 on a spent bearer must
+ * delegate to the shared TokenRefreshService and, when it succeeds, replay the
+ * request — instead of tearing the session down and bouncing to /login.
+ */
+describe("HttpClient reactive refresh on 401", () => {
+  /** Stub fetch: 401 for the first call, 200 for every one after. */
+  function mockUnauthorizedThenOk(): ReturnType<typeof vi.fn> {
+    let calls = 0;
+    const fetchMock = vi.fn(async () => {
+      calls++;
+      return new Response(JSON.stringify({}), {
+        status: calls === 1 ? 401 : 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  /** A TokenRefreshService stand-in with a controllable outcome. */
+  function makeRefreshService(ok: boolean) {
+    return { refreshAccessToken: vi.fn(async () => ok) };
+  }
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("refreshes and replays the request when the bearer is expired", async () => {
+    const fetchMock = mockUnauthorizedThenOk();
+    const tm = makeTokenManager({
+      getAccessToken: vi.fn(() => "expired"),
+      isAccessTokenExpired: vi.fn(() => true),
+    });
+    const refreshService = makeRefreshService(true);
+    const client = new HttpClient(
+      tm as unknown as TokenManager,
+      undefined,
+      refreshService as never
+    );
+    const onExpired = vi.fn();
+    client.setSessionExpiredHandler(onExpired);
+
+    const r = await client.fetch("https://api.test/api/v1/operations/fleet");
+
+    expect(refreshService.refreshAccessToken).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2); // original + replay
+    expect(r.status).toBe(200);
+    expect(onExpired).not.toHaveBeenCalled();
+  });
+
+  it("refreshes inside the clock-skew window, where neither staleness predicate fires", async () => {
+    // Past `exp` but within TokenValidator's 5-minute grace: isAccessTokenExpired()
+    // is false and isAccessTokenExpiringSoon() needs time REMAINING, so without
+    // the explicit past-`exp` clause this 401 was misread as a still-valid-token
+    // feature error and never refreshed.
+    const fetchMock = mockUnauthorizedThenOk();
+    const tm = makeTokenManager({
+      getAccessToken: vi.fn(() => "just-lapsed"),
+      getAccessTokenExpiry: vi.fn(() => Date.now() - 60 * 1000),
+      isAccessTokenExpired: vi.fn(() => false),
+      isAccessTokenExpiringSoon: vi.fn(() => false),
+    });
+    const refreshService = makeRefreshService(true);
+    const client = new HttpClient(
+      tm as unknown as TokenManager,
+      undefined,
+      refreshService as never
+    );
+
+    const r = await client.fetch("https://api.test/api/v1/operations/fleet");
+
+    expect(refreshService.refreshAccessToken).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(r.status).toBe(200);
+  });
+
+  it("does not double-fire session-expiry when the refresh is rejected", async () => {
+    // TokenRefreshService already cleared the tokens and dispatched
+    // `session-expired`; HttpClient must not fan the same teardown out again.
+    mockUnauthorizedThenOk();
+    const tm = makeTokenManager({
+      getAccessToken: vi.fn(() => "expired"),
+      isAccessTokenExpired: vi.fn(() => true),
+    });
+    const refreshService = makeRefreshService(false);
+    const client = new HttpClient(
+      tm as unknown as TokenManager,
+      undefined,
+      refreshService as never
+    );
+    const onExpired = vi.fn();
+    client.setSessionExpiredHandler(onExpired);
+
+    const r = await client.fetch("https://api.test/api/v1/operations/fleet");
+
+    expect(r.status).toBe(401);
+    expect(onExpired).not.toHaveBeenCalled();
+
+    // And a subsequent 401/403 poll stays debounced too.
+    await client.fetch("https://api.test/api/v1/operations/merge/queue");
+    expect(onExpired).not.toHaveBeenCalled();
+  });
+
+  it("does not refresh a 401 while the bearer is genuinely still valid", async () => {
+    mockUnauthorizedThenOk();
+    const tm = makeTokenManager({ getAccessToken: vi.fn(() => "valid") });
+    const refreshService = makeRefreshService(true);
+    const client = new HttpClient(
+      tm as unknown as TokenManager,
+      undefined,
+      refreshService as never
+    );
+
+    const r = await client.fetch("https://api.test/api/v1/operations/fleet");
+
+    expect(refreshService.refreshAccessToken).not.toHaveBeenCalled();
+    expect(r.status).toBe(401);
   });
 });

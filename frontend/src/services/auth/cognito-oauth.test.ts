@@ -1,9 +1,11 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 import {
   buildLoginState,
   verifyStateAndExtractNext,
   isLinkModeState,
+  refreshCognitoTokens,
+  COGNITO_CLIENT_ID,
 } from "./cognito-oauth";
 
 /**
@@ -133,5 +135,110 @@ describe("link-mode state", () => {
     expect(() => verifyStateAndExtractNext(state)).not.toThrow();
     // No `.` separator → no next path.
     expect(verifyStateAndExtractNext(state)).toBeNull();
+  });
+});
+
+/**
+ * The `grant_type=refresh_token` exchange behind silent session renewal.
+ *
+ * Cognito's refresh grant takes only `client_id` + `refresh_token` (no
+ * `redirect_uri`, no `code_verifier` — PKCE binds the AUTHORIZATION CODE, not
+ * the refresh token) and returns NO new refresh token, so the caller keeps the
+ * one it holds.
+ */
+describe("refreshCognitoTokens", () => {
+  interface CapturedRequest {
+    url: string;
+    method: string | undefined;
+    headers: Record<string, string>;
+    body: URLSearchParams;
+  }
+
+  /** Stub fetch with the given response, capturing the outgoing request. */
+  function stubTokenEndpoint(
+    status: number,
+    payload: unknown
+  ): { current: CapturedRequest | null } {
+    const captured: { current: CapturedRequest | null } = { current: null };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        captured.current = {
+          url,
+          method: init?.method,
+          headers: (init?.headers as Record<string, string>) ?? {},
+          body: new URLSearchParams(String(init?.body ?? "")),
+        };
+        return new Response(JSON.stringify(payload), {
+          status,
+          headers: { "Content-Type": "application/json" },
+        });
+      })
+    );
+    return captured;
+  }
+
+  const OK_PAYLOAD = {
+    id_token: "new.id.token",
+    access_token: "new.access.token",
+    expires_in: 10800,
+    token_type: "Bearer",
+  };
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("POSTs a form-encoded refresh grant to the token endpoint", async () => {
+    const captured = stubTokenEndpoint(200, OK_PAYLOAD);
+
+    await expect(refreshCognitoTokens("rt-xyz")).resolves.toEqual(OK_PAYLOAD);
+
+    const req = captured.current!;
+    expect(req.url).toMatch(/\/oauth2\/token$/);
+    expect(req.method).toBe("POST");
+    expect(req.headers["Content-Type"]).toBe(
+      "application/x-www-form-urlencoded"
+    );
+    expect(req.body.get("grant_type")).toBe("refresh_token");
+    expect(req.body.get("client_id")).toBe(COGNITO_CLIENT_ID);
+    expect(req.body.get("refresh_token")).toBe("rt-xyz");
+  });
+
+  it("sends no client secret, redirect_uri or code_verifier (public client, code-grant-only PKCE)", async () => {
+    const captured = stubTokenEndpoint(200, OK_PAYLOAD);
+
+    await refreshCognitoTokens("rt-xyz");
+
+    const req = captured.current!;
+    expect(req.body.get("client_secret")).toBeNull();
+    expect(req.body.get("redirect_uri")).toBeNull();
+    expect(req.body.get("code_verifier")).toBeNull();
+    expect(req.headers["Authorization"]).toBeUndefined();
+  });
+
+  it("surfaces Cognito's error_description when the refresh token is revoked", async () => {
+    stubTokenEndpoint(400, {
+      error: "invalid_grant",
+      error_description: "Refresh Token has been revoked",
+    });
+
+    await expect(refreshCognitoTokens("dead")).rejects.toThrow(
+      /Refresh Token has been revoked/
+    );
+  });
+
+  it("falls back to the status code for a non-JSON error body", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () => new Response("<html>gateway</html>", { status: 502 })
+      )
+    );
+
+    await expect(refreshCognitoTokens("rt-xyz")).rejects.toThrow(/502/);
   });
 });

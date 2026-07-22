@@ -107,8 +107,15 @@ export class ServiceFactory {
       this.tokenRefreshService
     );
 
-    // Initialize other services
-    this.httpClient = new HttpClient(this.tokenManager);
+    // Initialize other services. The HttpClient shares the SAME
+    // TokenRefreshService as the AuthService so the reactive (401) and
+    // proactive (pre-expiry) refresh paths de-duplicate onto one in-flight
+    // Cognito token exchange instead of each spending the refresh token.
+    this.httpClient = new HttpClient(
+      this.tokenManager,
+      undefined,
+      this.tokenRefreshService
+    );
     this.projectService = new ProjectService(this.httpClient);
     this.fileUploadService = new FileUploadService(this.tokenManager);
     this.profileService = new ProfileService(this.httpClient);
