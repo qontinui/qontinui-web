@@ -1,4 +1,5 @@
 import { createLogger } from "@/lib/logger";
+import { decodeJwtClaims } from "./jwt-claims";
 
 const log = createLogger("TokenValidator");
 
@@ -18,21 +19,21 @@ export class TokenValidator {
   private readonly CLOCK_SKEW_TOLERANCE_MS = 5 * 60 * 1000;
 
   /**
-   * Decode JWT token and extract payload
+   * Decode JWT token and extract payload.
+   *
+   * Delegates to the shared `decodeJwtClaims` helper so this is NOT a second
+   * (base64url-blind) decoder: `atob` throws on the `-` / `_` a JWT payload can
+   * legitimately contain, and a throw here surfaced as "no expiry" — which the
+   * proactive refresh scheduler read as "renew now", spinning the Cognito token
+   * endpoint every 10 seconds. See `jwt-claims.ts`.
    */
   decodeToken(token: string): TokenPayload | null {
-    try {
-      const parts = token.split(".");
-      if (parts.length !== 3) {
-        log.error("Invalid token format");
-        return null;
-      }
-      const payload = JSON.parse(atob(parts[1]!));
-      return payload;
-    } catch (error) {
-      log.error("Failed to decode token:", error);
+    const payload = decodeJwtClaims(token);
+    if (!payload) {
+      log.error("Failed to decode token (malformed or non-JWT)");
       return null;
     }
+    return payload as TokenPayload;
   }
 
   /**
@@ -40,7 +41,12 @@ export class TokenValidator {
    */
   extractExpiry(token: string): number | null {
     const payload = this.decodeToken(token);
-    if (!payload?.exp) return null;
+    // `exp` must be a finite number of seconds; anything else (absent, a
+    // string, NaN) yields no usable expiry rather than a NaN timestamp that
+    // silently poisons every downstream comparison.
+    if (typeof payload?.exp !== "number" || !Number.isFinite(payload.exp)) {
+      return null;
+    }
     return payload.exp * 1000; // Convert to milliseconds
   }
 

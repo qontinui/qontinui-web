@@ -20,7 +20,16 @@ export class TokenManager {
    * Store new tokens (in memory for Authorization header, plus expiry in localStorage)
    */
   setTokens(tokens: TokenResponse): void {
-    const expiry = this.validator.extractExpiry(tokens.access_token);
+    // Expiry source order: the bearer's own `exp` claim first (authoritative,
+    // and immune to a sibling tab's shared timestamp), then the issuer's
+    // `expires_in`. The fallback is load-bearing: without it an undecodable
+    // bearer left the PREVIOUS token's `token_expiry` in place — so the
+    // staleness predicates answered for a token no longer held, and (once it
+    // was in the past) the proactive scheduler re-fired on its floor every ten
+    // seconds, spending a Cognito token exchange each time.
+    const expiry =
+      this.validator.extractExpiry(tokens.access_token) ??
+      (tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : null);
 
     // Calculate refresh token expiry from expires_in and refresh_expires_in
     const refreshExpiry = tokens.refresh_expires_in
@@ -29,8 +38,12 @@ export class TokenManager {
 
     this.storage.saveAccessToken(tokens.access_token);
     this.storage.saveRefreshToken(tokens.refresh_token);
-    if (expiry) {
+    if (expiry !== null) {
       this.storage.saveTokenExpiry(expiry);
+    } else {
+      // Neither source yielded one — drop the stale value rather than letting
+      // it speak for a token it does not describe.
+      this.storage.clearTokenExpiry();
     }
     if (refreshExpiry) {
       this.storage.saveRefreshTokenExpiry(refreshExpiry);
@@ -80,9 +93,35 @@ export class TokenManager {
   }
 
   /**
-   * Get token expiry timestamp
+   * Get the persisted token expiry timestamp (raw localStorage read).
+   *
+   * Prefer `getAccessTokenExpiry()` for any refresh/staleness decision — see
+   * the cross-tab caveat documented there.
    */
   getTokenExpiry(): number | null {
+    return this.storage.getTokenExpiry();
+  }
+
+  /**
+   * Expiry of the bearer THIS TAB actually holds, decoded from the token's own
+   * `exp` claim, falling back to the persisted timestamp when no token is in
+   * hand (e.g. a cookie-restored session).
+   *
+   * The distinction is load-bearing for silent refresh: `token_expiry` lives in
+   * localStorage and is therefore SHARED between tabs, while the bearer itself
+   * lives in tab-scoped sessionStorage. Once a sibling tab renews its own
+   * bearer it pushes a far-future `token_expiry` into the shared store, which
+   * would otherwise convince this tab that its older, genuinely-expiring token
+   * is still fresh — so it would neither renew proactively nor treat its 401s
+   * as refreshable, and would 401 forever. Reading the claim off the token in
+   * hand is immune to that.
+   */
+  getAccessTokenExpiry(): number | null {
+    const token = this.storage.getAccessToken();
+    if (token) {
+      const derived = this.validator.extractExpiry(token);
+      if (derived !== null) return derived;
+    }
     return this.storage.getTokenExpiry();
   }
 
@@ -127,10 +166,14 @@ export class TokenManager {
   }
 
   /**
-   * Check if access token is expired
+   * Check if access token is expired.
+   *
+   * Keyed on `getAccessTokenExpiry()` (the token in hand) rather than the
+   * shared localStorage timestamp, so a sibling tab's refresh cannot mask this
+   * tab's own expiry.
    */
   isAccessTokenExpired(): boolean {
-    const expiry = this.storage.getTokenExpiry();
+    const expiry = this.getAccessTokenExpiry();
     if (!expiry) return true;
     return this.validator.isTokenExpired(expiry);
   }
@@ -139,7 +182,7 @@ export class TokenManager {
    * Check if access token will expire soon
    */
   isAccessTokenExpiringSoon(thresholdMs: number = 60000): boolean {
-    const expiry = this.storage.getTokenExpiry();
+    const expiry = this.getAccessTokenExpiry();
     if (!expiry) return false;
     return this.validator.isTokenExpiringSoon(expiry, thresholdMs);
   }
@@ -148,7 +191,7 @@ export class TokenManager {
    * Get time until access token expires
    */
   getTimeUntilExpiry(): number {
-    const expiry = this.storage.getTokenExpiry();
+    const expiry = this.getAccessTokenExpiry();
     if (!expiry) return 0;
     return this.validator.getTimeUntilExpiry(expiry);
   }
