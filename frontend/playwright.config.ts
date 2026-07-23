@@ -44,11 +44,21 @@ export default defineConfig({
   // Test execution settings
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  // No retries in CI. The suite is single-worker, so each retry adds another
-  // 60s timeout to the wall-clock budget for every flake; with ~300 failing
-  // tests that compounds to multi-hour runs (5h+ observed on the post-cascade
-  // unblock). Surface failures fast, fix them once, then add retries back if
-  // genuine flakes appear.
+  // CI stays at 1 worker per shard — but for a MEASURED reason, not the
+  // original one. The old rationale ("~300 failing tests at 60s each → 5h+
+  // runs") is obsolete: the suite is green (run 29916474400, all 4 shards).
+  // A measured workers:2 trial (runs 29937298955 + 29938533765, branch
+  // e2e/workers-2-measure, 2026-07-22) showed (a) per-test durations ~2×
+  // — each 4-vCPU runner also hosts uvicorn + Postgres + the Next.js dev
+  // server, so the box is already CPU-saturated and extra workers buy ~no
+  // wall clock — and (b) assertion-shaped cross-test interference failures
+  // (admin.spec.ts, ai-tasks-pages.spec.ts): specs share one seeded user +
+  // backend + DB and are not parallel-safe. Do not raise workers again
+  // until specs get data isolation. Wall clock is instead balanced across
+  // shards via PWTEST_SHARD_WEIGHTS in e2e-tests.yml (see plan
+  // 2026-07-22-web-playwright-single-worker-stale-rationale).
+  // retries stays 0: a retry would add its own timeout to wall clock and
+  // give any flake two candidate causes.
   retries: 0,
   workers: process.env.CI ? 1 : undefined,
 

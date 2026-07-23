@@ -23,39 +23,27 @@
  * path after a reload.)
  */
 import { ApiConfig } from "../api-config";
+// The single base64url-aware JWT payload decoder for the auth stack. The
+// signature is NOT verified — only the backend can verify; this exists so the
+// client can read its own `sub` / `jti` etc. without a backend round-trip.
+// (The SDK's per-user tab scoping via `registrationMetadata` is the primary
+// consumer; the relay re-verifies the same token server-side at the auth gate,
+// so a client that lies about its claims here is caught there.)
+import { decodeJwtClaims } from "./jwt-claims";
 
 /**
- * Decode the payload (middle segment) of a JWT and return its claims as
- * a plain object. The signature is NOT verified — only the backend can
- * verify; this helper exists so the client can read its own `sub` /
- * `jti` etc. without a backend round-trip. Returns null for any malformed
- * input (missing segments, non-base64url payload, non-JSON, etc).
+ * Parse a stored millisecond timestamp, rejecting anything non-numeric.
  *
- * Note: the SDK's per-user tab scoping (`registrationMetadata`) is the
- * primary consumer. The relay re-verifies the same token on the server
- * via the auth gate, so a client that lies about its claims here is
- * caught at the gate — this is purely for ergonomic identity reads.
+ * `parseInt` on a corrupted/hand-edited localStorage value returns NaN, and a
+ * NaN expiry poisons every downstream comparison: `expiry > Date.now()` is
+ * false, `isTokenExpired` is false, `getTimeUntilExpiry` is NaN — the session
+ * lands in a state that is simultaneously "not expired" and "no time left".
+ * Treating it as absent routes it down the existing no-expiry paths instead.
  */
-function decodeJwtClaims(token: string | null): Record<string, unknown> | null {
-  if (!token) return null;
-  const parts = token.split(".");
-  if (parts.length !== 3) return null;
-  try {
-    // JWT uses base64url; convert to base64 then decode.
-    const base64url = parts[1];
-    if (!base64url) return null;
-    const base64 = base64url.replace(/-/g, "+").replace(/_/g, "/");
-    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "=");
-    if (typeof atob !== "function") return null;
-    const json = atob(padded);
-    const parsed = JSON.parse(json);
-    if (parsed && typeof parsed === "object") {
-      return parsed as Record<string, unknown>;
-    }
-    return null;
-  } catch {
-    return null;
-  }
+function parseStoredTimestamp(raw: string | null): number | null {
+  if (raw === null) return null;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 export class TokenStorage {
@@ -177,6 +165,18 @@ export class TokenStorage {
   }
 
   /**
+   * Drop the persisted bearer expiry.
+   *
+   * Called when a freshly-stored bearer yields NO usable expiry at all: leaving
+   * the PREVIOUS token's timestamp behind would have the staleness predicates
+   * answering for a token that is no longer held.
+   */
+  clearTokenExpiry(): void {
+    if (typeof window === "undefined") return;
+    localStorage.removeItem(this.TOKEN_EXPIRY_KEY);
+  }
+
+  /**
    * Get access token for the Authorization header. Restored from
    * sessionStorage on construction, so it survives a page reload; null only
    * when genuinely signed out.
@@ -229,8 +229,7 @@ export class TokenStorage {
    */
   getTokenExpiry(): number | null {
     if (typeof window === "undefined") return null;
-    const expiry = localStorage.getItem(this.TOKEN_EXPIRY_KEY);
-    return expiry ? parseInt(expiry) : null;
+    return parseStoredTimestamp(localStorage.getItem(this.TOKEN_EXPIRY_KEY));
   }
 
   /**
@@ -246,8 +245,9 @@ export class TokenStorage {
    */
   getRefreshTokenExpiry(): number | null {
     if (typeof window === "undefined") return null;
-    const expiry = localStorage.getItem(this.REFRESH_TOKEN_EXPIRY_KEY);
-    return expiry ? parseInt(expiry) : null;
+    return parseStoredTimestamp(
+      localStorage.getItem(this.REFRESH_TOKEN_EXPIRY_KEY)
+    );
   }
 
   /**
