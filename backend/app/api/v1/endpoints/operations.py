@@ -1747,6 +1747,94 @@ async def post_pr_merge_onboarding_claim(
     return JSONResponse(content=content, status_code=resp.status_code)
 
 
+# ---- Zero-touch onboarding: enroll an already-connected installation ------
+#
+# The "Enroll / Sync repositories" button on the Connected Organizations card.
+# The claim path (above) only fires for a FRESH GitHub App install (the Setup-URL
+# `?code=` redirect), so an org whose App is already installed has no UI trigger
+# to enroll its repos — it dead-ends at "connected · no repositories enrolled
+# yet". This proxy fronts coord's already-existing enroll endpoint so that org
+# can be enrolled (or re-synced to pick up newly-added repos) in one click.
+#
+# Coord's `POST /coord/onboarding/installations/:installation_id/enroll` runs its
+# authorization prologue SYNCHRONOUSLY (it verifies the installation is mapped to
+# the caller's active tenant BEFORE any side effect — fail-closed), then
+# `tokio::spawn`s the per-repo enrollment (signature probes, dry-run profile
+# writes, `tenant_repos` upserts, the one-time "🍕 Enable qontinui" bootstrap PR
+# — all idempotent) and returns `202 {"enrolled": "spawned", "tenant_id", "installation_id"}`
+# IMMEDIATELY. There is deliberately NO `repos` array — the list isn't known at
+# response time; the UI re-polls the accounts endpoint to learn the enrolled
+# repos. Error shapes surface with their own status: `403 installation_not_
+# owned_by_tenant`, `404 installation_not_mapped`, `500`.
+COORD_ENROLL_PATH = "/coord/onboarding/installations/{installation_id}/enroll"
+
+
+@router.post("/pr-merge/onboarding/installations/{installation_id}/enroll")
+async def post_pr_merge_onboarding_enroll(
+    installation_id: int,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> JSONResponse:
+    """Enroll (or re-sync) an already-connected GitHub App installation's repos.
+
+    Proxies coord's ``POST /coord/onboarding/installations/{installation_id}/enroll``,
+    substituting ``installation_id`` into the coord path. Backs the
+    "Enroll / Sync repositories" button on the Connected Organizations card,
+    which closes the "connected · no repositories enrolled yet" dead end for an
+    org whose App is already installed (the Setup-URL ``?code=`` claim can never
+    fire for it) and doubles as a manual re-sync to pick up newly-added repos.
+
+    Authz — ``require_coord_tenant_admin`` (admin in the ACTIVE tenant), NOT the
+    looser ``get_tenant_id``: enrolling opens bootstrap PRs and writes repo
+    profiles, a consequential write, matching the settings-write posture. coord
+    re-validates the active-tenant override server-side (defense-in-depth).
+
+    Contract — coord's authz prologue runs synchronously, then it spawns the
+    per-repo enrollment and returns immediately, so this handler keeps the
+    default 5s ``_COORD_TIMEOUT`` (no per-route bump — the slow per-repo GitHub
+    round-trips happen off-connection):
+      * ``202 {"enrolled": "spawned", "tenant_id", "installation_id"}`` — spawned;
+        the UI re-polls ``GET /pr-merge/onboarding/accounts`` to see the repos.
+        There is NO ``repos`` array in this response.
+      * ``403 installation_not_owned_by_tenant`` — the installation is bound to a
+        different tenant.
+      * ``404 installation_not_mapped`` — the installation isn't bound to any
+        tenant (connect it first).
+      * ``500`` — coord-side failure.
+
+    Like the claim proxy, this passes coord's status code AND JSON body through
+    VERBATIM (not via ``_proxy_coord_post``, which stringifies a ≥400 body into
+    ``HTTPException.detail`` and would rewrite the ``202`` to ``200``) so the
+    frontend can render coord's ``error`` code and keep the ``202`` distinct.
+    httpx transport errors mirror the shared helpers (ConnectError → 502,
+    TimeoutException → 504).
+    """
+    url = (
+        f"{settings.COORD_URL}"
+        f"{COORD_ENROLL_PATH.format(installation_id=installation_id)}"
+    )
+    headers = _tenant_headers(tenant_id)
+    async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
+        try:
+            resp = await client.post(url, headers=headers)
+        except httpx.ConnectError:
+            raise HTTPException(
+                status_code=502,
+                detail="coord is not reachable",
+            )
+        except httpx.TimeoutException:
+            raise HTTPException(
+                status_code=504,
+                detail="timeout waiting for coord",
+            )
+    # Pass coord's status code + JSON body straight through. Fall back to a
+    # wrapped raw body if coord ever returns a non-JSON payload.
+    try:
+        content = resp.json()
+    except ValueError:
+        content = {"detail": resp.text}
+    return JSONResponse(content=content, status_code=resp.status_code)
+
+
 # ---- Coord device pairing — Step 1 of the onboarding wizard -------------
 #
 # The wizard's Pair Device step (``MergeOrchestrationOnboarding.tsx``,
