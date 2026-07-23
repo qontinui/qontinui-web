@@ -376,7 +376,8 @@ function TenantDefaultsCard({
               <Label htmlFor="rollout-state">Rollout state</Label>
               <p className="text-xs text-muted-foreground">
                 dry-run: full pipeline, no GitHub mutations. shadow: verdicts
-                recorded, nothing merges. live: full auto-merge.
+                recorded, nothing merges. live: full auto-merge. Promoting to
+                live requires passing through shadow first.
               </p>
             </div>
             <select
@@ -485,6 +486,14 @@ function RepoOverrideCard({
   const markDirty = useCallback((field: string) => {
     setDirty((prev) => (prev.has(field) ? prev : new Set(prev).add(field)));
   }, []);
+  const unmarkDirty = useCallback((field: string) => {
+    setDirty((prev) => {
+      if (!prev.has(field)) return prev;
+      const next = new Set(prev);
+      next.delete(field);
+      return next;
+    });
+  }, []);
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -556,13 +565,18 @@ function RepoOverrideCard({
             : autoFixRedMainOverride === "true";
       }
 
-      const url = `${OPERATIONS_API}/pr-merge/repos/${repoRow.repo}/profile`;
-      const res = await httpClient.fetch(url, {
-        method: "PATCH",
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
+      // Skip the PATCH entirely when no profile field changed (e.g. a
+      // rollout-only save) — an empty body is a wasted round-trip and
+      // needlessly couples the rollout POST to the PATCH succeeding.
+      if (Object.keys(body).length > 0) {
+        const url = `${OPERATIONS_API}/pr-merge/repos/${repoRow.repo}/profile`;
+        const res = await httpClient.fetch(url, {
+          method: "PATCH",
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
       }
       // Rollout state is NOT a profile-PATCH field — a concrete selection
       // POSTs the audited rollout route with a repo scope. "inherit" is the
@@ -692,10 +706,16 @@ function RepoOverrideCard({
               className="w-full h-9 rounded-md border bg-background px-3 text-sm"
               value={rolloutOverride}
               onChange={(e) => {
-                setRolloutOverride(
-                  e.target.value as "inherit" | RolloutState
-                );
-                markDirty("rollout_state");
+                const v = e.target.value as "inherit" | RolloutState;
+                setRolloutOverride(v);
+                // "inherit" performs no write (the rollout route has no
+                // clear-to-inherit form), so it must not arm the save
+                // button as if it would.
+                if (v === "inherit") {
+                  unmarkDirty("rollout_state");
+                } else {
+                  markDirty("rollout_state");
+                }
               }}
               data-testid={`repo-rollout-state-${repoRow.repo}`}
             >
@@ -706,7 +726,9 @@ function RepoOverrideCard({
             </select>
             <p className="text-xs text-muted-foreground">
               Saved via the audited rollout route. Promoting to live requires
-              passing through shadow first.
+              passing through shadow first. &quot;inherit tenant&quot; performs
+              no write: it leaves any existing per-repo override in place
+              (clearing an override needs a coord API addition).
             </p>
           </div>
           <div className="space-y-1">

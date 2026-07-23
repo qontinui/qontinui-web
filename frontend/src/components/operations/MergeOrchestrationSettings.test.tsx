@@ -417,12 +417,17 @@ describe("<MergeOrchestrationSettings> RepoOverrideCard save", () => {
       const body = JSON.parse((rollout![1] as RequestInit).body as string);
       expect(body.scope).toBe(`repo:${REPO}`);
       expect(body.state).toBe("shadow");
-      // The profile PATCH must NOT carry any rollout/dry-run field.
-      expect(patchBody()).toEqual({});
+      // A rollout-only save must not fire the profile PATCH at all —
+      // no profile field changed, so an empty-body PATCH would be a
+      // wasted round-trip.
+      const patch = fetchMock.mock.calls.find(
+        (c) => (c[1] as RequestInit | undefined)?.method === "PATCH"
+      );
+      expect(patch).toBeFalsy();
     });
   });
 
-  it("sends an EMPTY body on a no-op save (touches nothing, wipes nothing)", async () => {
+  it("makes NO requests on a no-op save (touches nothing, wipes nothing)", async () => {
     fetchMock.mockImplementation((url: string, init?: RequestInit) =>
       Promise.resolve(routeRepoCard(url, init))
     );
@@ -430,11 +435,44 @@ describe("<MergeOrchestrationSettings> RepoOverrideCard save", () => {
     await screen.findByTestId(`repo-card-${REPO}`);
 
     // Save without editing anything — the old form sent every field
-    // (resetting untouched overrides + wiping escalate_paths_extra to []).
+    // (resetting untouched overrides + wiping escalate_paths_extra to []);
+    // now an untouched save skips both the PATCH and the rollout POST.
     fireEvent.click(screen.getByTestId(`repo-save-${REPO}`));
 
     await waitFor(() => {
-      expect(Object.keys(patchBody())).toEqual([]);
+      const writes = fetchMock.mock.calls.filter((c) => {
+        const m = (c[1] as RequestInit | undefined)?.method;
+        return m === "PATCH" || m === "POST";
+      });
+      expect(writes).toEqual([]);
+    });
+  });
+
+  it("selecting 'inherit' performs no write (no rollout POST, no PATCH)", async () => {
+    fetchMock.mockImplementation((url: string, init?: RequestInit) =>
+      Promise.resolve(routeRepoCard(url, init))
+    );
+    render(<MergeOrchestrationSettings />);
+    await screen.findByTestId(`repo-card-${REPO}`);
+
+    // Arm a concrete selection, then change back to inherit: the dirty
+    // flag must clear, and the save must send nothing — "inherit" cannot
+    // clear an existing override (the rollout route has no
+    // clear-to-inherit form), so it must not pretend to act.
+    fireEvent.change(screen.getByTestId(`repo-rollout-state-${REPO}`), {
+      target: { value: "shadow" },
+    });
+    fireEvent.change(screen.getByTestId(`repo-rollout-state-${REPO}`), {
+      target: { value: "inherit" },
+    });
+    fireEvent.click(screen.getByTestId(`repo-save-${REPO}`));
+
+    await waitFor(() => {
+      const writes = fetchMock.mock.calls.filter((c) => {
+        const m = (c[1] as RequestInit | undefined)?.method;
+        return m === "PATCH" || m === "POST";
+      });
+      expect(writes).toEqual([]);
     });
   });
 });
