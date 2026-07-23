@@ -8,6 +8,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
+from sqlalchemy.exc import InterfaceError, OperationalError
+from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 # Cloud-control side-effect import — must run before api_router is built so
@@ -38,6 +40,8 @@ from app.middleware.database_timing import (
 from app.middleware.error_handler import (
     AppError,
     app_exception_handler,
+    db_operational_exception_handler,
+    db_timeout_exception_handler,
     general_exception_handler,
     http_exception_handler,
     validation_exception_handler,
@@ -69,6 +73,18 @@ app = FastAPI(
 app.add_exception_handler(AppError, app_exception_handler)  # type: ignore
 app.add_exception_handler(RequestValidationError, validation_exception_handler)  # type: ignore
 app.add_exception_handler(StarletteHTTPException, http_exception_handler)  # type: ignore
+# DB-unavailable 503s (pool saturation / connection failure) MUST be TYPED
+# handlers, never an ``Exception`` catch-all: typed handlers run inside
+# ExceptionMiddleware (inside CORSMiddleware) so the 503 carries CORS headers;
+# a catch-all runs in ServerErrorMiddleware (outside CORS) and browsers
+# misreport the failure as a CORS error (2026-07-21 prod incident).
+app.add_exception_handler(SQLAlchemyTimeoutError, db_timeout_exception_handler)  # type: ignore
+app.add_exception_handler(OperationalError, db_operational_exception_handler)  # type: ignore
+# asyncpg reality (review HIGH-2): the async request path surfaces DB-down as
+# builtin ConnectionRefusedError (connect / pre-ping) or InterfaceError
+# (statement-time drop) — OperationalError only covers the sync engine.
+app.add_exception_handler(InterfaceError, db_operational_exception_handler)  # type: ignore
+app.add_exception_handler(ConnectionRefusedError, db_operational_exception_handler)  # type: ignore
 if settings.ENVIRONMENT == "development":
     app.add_exception_handler(Exception, general_exception_handler)
 
@@ -492,6 +508,17 @@ async def health_check():
             logger.warning("health_check_redis_error", error=str(e))
     else:
         health_status["redis"] = "disabled"
+
+    # DB connection-pool gauges (checked-out / overflow / capacity /
+    # occupancy) — the same snapshot MetricsMiddleware samples per request,
+    # exposed here for pollers (ELB health checks, CloudWatch scrapes).
+    try:
+        from app.core.db_pool_metrics import observe_async_engine_pool
+
+        health_status["db_pool"] = observe_async_engine_pool()
+    except Exception as e:  # noqa: BLE001 - health must never 500
+        health_status["db_pool"] = {"error": str(e)}
+        logger.warning("health_check_db_pool_error", error=str(e))
 
     # In-process scheduler. Every registered task is reported even if it has
     # never run — a never-run task shows null last_run_at rather than being
