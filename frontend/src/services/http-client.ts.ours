@@ -1,12 +1,5 @@
 import { TokenManager } from "./auth/token-manager";
-<<<<<<< HEAD
-import {
-  TokenRefreshService,
-  type RefreshOutcome,
-} from "./auth/token-refresh-service";
-=======
 import { TokenRefreshService } from "./auth/token-refresh-service";
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
 import { ApiConfig } from "./api-config";
 import { csrfService } from "./csrf-service";
 import { RetryStrategy } from "./retry-strategy";
@@ -83,17 +76,6 @@ export interface HttpOptions extends RequestInit {
  */
 export const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
 
-/**
- * Consecutive 401/403s on a request replayed with a FRESHLY refreshed bearer
- * before the session is declared dead.
- *
- * The replay returns straight to the caller, bypassing the auth-rejection
- * block, so without a bound a token the backend keeps rejecting leaves every
- * caller getting a bare 401 forever with no teardown and no recovery. Two lets
- * a single racing/late-propagating token through while still terminating.
- */
-const MAX_POST_REFRESH_UNAUTHORIZED = 2;
-
 export class HttpClient {
   private tokenManager: TokenManager;
   private retryStrategy: RetryStrategy;
@@ -104,9 +86,6 @@ export class HttpClient {
   // 401/403 within the same tick fire the redirect exactly once instead
   // of a storm of session-expired events.
   private sessionExpiryHandled = false;
-  // Consecutive 401/403s seen on a replay performed with a freshly refreshed
-  // bearer. Reset by any replay that is not an auth rejection.
-  private postRefreshUnauthorizedCount = 0;
 
   constructor(
     tokenManager: TokenManager,
@@ -181,13 +160,6 @@ export class HttpClient {
   private maybeHandleAuthRejection(
     status: number,
     skipAuth: boolean,
-    /**
-     * Skip the "is the locally-held token unusable" clause. Set only by the
-     * post-refresh-replay backstop, where the bearer IS locally fresh (we just
-     * minted it) yet the backend keeps rejecting it — so the usual predicate
-     * would never fire and the caller would 401 forever.
-     */
-    tokenKnownRejected = false,
   ): void {
     if (skipAuth) return;
     if (status !== 401 && status !== 403) return;
@@ -197,12 +169,12 @@ export class HttpClient {
     const tokenUnusable =
       !this.tokenManager.getAccessToken() ||
       this.tokenManager.isAccessTokenExpired();
-    if (!tokenUnusable && !tokenKnownRejected) return;
+    if (!tokenUnusable) return;
 
     this.sessionExpiryHandled = true;
     console.warn(
-      `[HttpClient] ${status} with an expired/absent (or server-rejected) access ` +
-        "token — treating as session expiry and halting (redirecting to re-auth) " +
+      `[HttpClient] ${status} with an expired/absent access token — ` +
+        "treating as session expiry and halting (redirecting to re-auth) " +
         "rather than letting polling loops retry-storm.",
     );
     this.tokenManager.clearTokens();
@@ -276,42 +248,17 @@ export class HttpClient {
       console.warn(
         "[HttpClient] Received 401 with a stale access token, attempting token refresh..."
       );
-      const outcome = await this.attemptRefresh();
-
-      if (outcome === "refreshed") {
+      const refreshed = await this.refreshAccessToken();
+      if (refreshed) {
         log.debug("Token refresh successful, retrying request");
-        return this.replayAfterRefresh(url, options, skipAuth, timeoutMs);
+        return this.executeSingleRequest(url, options, skipAuth, timeoutMs);
       }
-<<<<<<< HEAD
-
-      if (outcome === "transient") {
-        // The token endpoint could not be reached (offline / 5xx / 429). The
-        // session is NOT known to be dead and the refresh service deliberately
-        // kept the tokens, so surface the 401 to the caller and let a later
-        // attempt recover instead of tearing a live session down on a blip.
-        console.warn(
-          "[HttpClient] token refresh failed transiently — surfacing the 401 " +
-            "and leaving the session intact for a later attempt"
-        );
-        return response;
-      }
-
-      // "expired" (the Cognito refresh grant was authoritatively rejected, or
-      // there was no refresh token to spend) or "not-authenticated" (no refresh
-      // was even attempted, and nothing was cleared). Either way a stale-token
-      // 401 that can't refresh is a dead session: halt and route to re-auth
-      // once instead of letting the dashboard's polling loops retry-storm this
-      // endpoint on every tick. (No-op when `attemptRefresh` already marked the
-      // expiry handled — which it does NOT do for "not-authenticated", so that
-      // path still fires the teardown exactly once here.)
-=======
       // The Cognito refresh grant was rejected (revoked/expired refresh token)
       // or there was no refresh token to spend, so a stale-token 401 that
       // can't refresh is a dead session: halt and route to re-auth once
       // instead of letting the dashboard's polling loops retry-storm this
       // endpoint on every tick. (No-op when `refreshAccessToken` already
       // marked the expiry handled.)
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
       this.maybeHandleAuthRejection(response.status, skipAuth);
       return response;
     }
@@ -428,79 +375,6 @@ export class HttpClient {
    * Delegates to the shared `TokenRefreshService`, which owns both the
    * single-flight mutex (so a burst of concurrent 401s from the dashboard's
    * polling loops spends the Cognito refresh token exactly once) and the
-<<<<<<< HEAD
-   * teardown when the refresh grant is authoritatively rejected.
-   *
-   * Returns the service's outcome, plus `"not-authenticated"` for the case
-   * where no refresh was attempted at all.
-   */
-  private async attemptRefresh(): Promise<
-    RefreshOutcome | "not-authenticated"
-  > {
-    if (!this.tokenManager.isAuthenticated()) {
-      log.debug("Not authenticated - skipping token refresh");
-      // Deliberately does NOT set `sessionExpiryHandled`: nothing was cleared
-      // and no `session-expired` was dispatched on this path, so the caller
-      // MUST be allowed to fall through to `maybeHandleAuthRejection()` and
-      // fire the teardown once. Marking it handled here dead-ended the client
-      // into "401ing forever, no teardown, no recovery" for the life of the
-      // page — the flag is never reset.
-      return "not-authenticated";
-    }
-
-    const outcome = await this.refreshService.refreshWithOutcome();
-    if (outcome === "expired") {
-      // The refresh service already cleared local tokens and dispatched
-      // `session-expired` — the same event `onSessionExpired` would fan out —
-      // so re-invoking the handler here would only double-fire it. Just mark
-      // the expiry handled so a concurrent/subsequent poll that also 401/403s
-      // doesn't re-enter the session-expired path via
-      // `maybeHandleAuthRejection`.
-      this.sessionExpiryHandled = true;
-    }
-    // "transient" is deliberately NOT marked handled: the session is still
-    // alive, so a genuine expiry later on must still be able to announce itself.
-    return outcome;
-  }
-
-  /**
-   * Replay a request with the freshly refreshed bearer, bounding the case where
-   * the backend rejects the new token too.
-   *
-   * The replay's response goes straight back to the caller (it must — a 200 is
-   * the whole point), which means it bypasses the auth-rejection block. Without
-   * this counter a token the backend keeps rejecting produces a bare 401 on
-   * every call forever, with no teardown and no route back to re-auth.
-   */
-  private async replayAfterRefresh(
-    url: string,
-    options: RequestInit,
-    skipAuth: boolean,
-    timeoutMs: number
-  ): Promise<Response> {
-    const replay = await this.executeSingleRequest(
-      url,
-      options,
-      skipAuth,
-      timeoutMs
-    );
-
-    if (replay.status !== 401 && replay.status !== 403) {
-      this.postRefreshUnauthorizedCount = 0;
-      return replay;
-    }
-
-    this.postRefreshUnauthorizedCount++;
-    if (this.postRefreshUnauthorizedCount >= MAX_POST_REFRESH_UNAUTHORIZED) {
-      console.warn(
-        `[HttpClient] ${this.postRefreshUnauthorizedCount} consecutive ${replay.status}s on a ` +
-          "freshly refreshed bearer — treating as session expiry rather than " +
-          "leaving the caller to 401 forever."
-      );
-      this.maybeHandleAuthRejection(replay.status, skipAuth, true);
-    }
-    return replay;
-=======
    * teardown when the refresh grant is rejected.
    */
   private async refreshAccessToken(): Promise<boolean> {
@@ -520,7 +394,6 @@ export class HttpClient {
       this.sessionExpiryHandled = true;
     }
     return refreshed;
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
   }
 
   /**

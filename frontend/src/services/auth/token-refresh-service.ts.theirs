@@ -1,15 +1,10 @@
 import { TokenManager } from "./token-manager";
-<<<<<<< HEAD
 import { CognitoRefreshError, refreshCognitoTokens } from "./cognito-oauth";
-=======
-import { refreshCognitoTokens } from "./cognito-oauth";
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
 import { createLogger } from "@/lib/logger";
 
 const log = createLogger("TokenRefresh");
 
 /**
-<<<<<<< HEAD
  * Outcome of one refresh attempt.
  *
  * `expired` and `transient` both mean "no fresh bearer", but they are NOT
@@ -71,26 +66,6 @@ const MAX_CONSECUTIVE_TRANSIENT_FAILURES = 5;
 /**
  * TokenRefreshService - Single Responsibility: keep the bearer token fresh.
  *
-=======
- * Renew this many ms BEFORE the bearer's `exp`. Sized well above the request
- * timeout so an in-flight call started just before the wake-up still carries a
- * token the backend accepts, and above `TokenValidator`'s 5-minute clock-skew
- * tolerance so a client clock that runs fast can't push the renewal past the
- * point where the backend already considers the token dead.
- */
-const PROACTIVE_REFRESH_LEAD_MS = 6 * 60 * 1000;
-
-/**
- * Floor for a scheduled wake-up. Guards against a pathological expiry (already
- * inside the lead window, or a clock jump) arming a zero-delay timer that
- * re-fires in a tight loop.
- */
-const MIN_PROACTIVE_DELAY_MS = 10 * 1000;
-
-/**
- * TokenRefreshService - Single Responsibility: keep the bearer token fresh.
- *
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
  * Authentication is Cognito-only. The bearer is the Cognito **ID token** (not
  * the access token — only the ID token carries the identity claims the backend
  * provisions from; see `/auth/callback`), and the hosted-UI Authorization Code
@@ -105,7 +80,6 @@ const MIN_PROACTIVE_DELAY_MS = 10 * 1000;
  *  - reactive: `HttpClient` on a 401 with a stale bearer,
  *  - proactive: `start()` arms a timer that renews shortly before `exp`.
  *
-<<<<<<< HEAD
  * Only an AUTHORITATIVE rejection tears the session down — Cognito answering
  * `invalid_grant`/401, or there being no refresh token to spend at all. A
  * transient failure (offline, DNS/CORS, 5xx, 429, aborted fetch) leaves the
@@ -113,12 +87,6 @@ const MIN_PROACTIVE_DELAY_MS = 10 * 1000;
  * proactive timer fires while the bearer is STILL VALID, so discarding it on a
  * network blip would log the user out six minutes early — the very logout this
  * service exists to prevent.
-=======
- * When the refresh grant fails (revoked/expired refresh token, no refresh token
- * at all) the session really is dead: local token state is cleared and
- * `session-expired` is dispatched, which the auth context handles by routing
- * the user back through the hosted UI.
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
  */
 export class TokenRefreshService {
   private tokenManager: TokenManager;
@@ -128,11 +96,7 @@ export class TokenRefreshService {
    * the duration of one exchange. This is the ONLY refresh mutex in the auth
    * stack — `HttpClient` delegates here rather than keeping its own.
    */
-<<<<<<< HEAD
   private refreshPromise: Promise<RefreshOutcome> | null = null;
-=======
-  private refreshPromise: Promise<boolean> | null = null;
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
 
   /** Handle of the armed proactive-refresh timer, or null when disarmed. */
   private proactiveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -140,7 +104,6 @@ export class TokenRefreshService {
   /** Whether `start()` has armed the proactive path (idempotence guard). */
   private proactiveStarted = false;
 
-<<<<<<< HEAD
   /**
    * Consecutive transient failures since the last successful refresh. Drives
    * the retry backoff and the `MAX_CONSECUTIVE_TRANSIENT_FAILURES` backstop.
@@ -169,8 +132,6 @@ export class TokenRefreshService {
    */
   private lastRefreshedExpiry: number | null = null;
 
-=======
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
   constructor(tokenManager: TokenManager) {
     this.tokenManager = tokenManager;
   }
@@ -183,7 +144,6 @@ export class TokenRefreshService {
    * loops that all 401 within the same tick once the bearer lapses).
    */
   async refreshAccessToken(): Promise<boolean> {
-<<<<<<< HEAD
     return (await this.refreshWithOutcome()) === "refreshed";
   }
 
@@ -196,8 +156,6 @@ export class TokenRefreshService {
    * Same single-flight promise as `refreshAccessToken()`.
    */
   async refreshWithOutcome(): Promise<RefreshOutcome> {
-=======
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
     if (this.refreshPromise) {
       log.debug("Refresh already in flight — joining it");
       return this.refreshPromise;
@@ -232,13 +190,10 @@ export class TokenRefreshService {
   start(): void {
     if (typeof window === "undefined" || this.proactiveStarted) return;
     this.proactiveStarted = true;
-<<<<<<< HEAD
     // A live session is being armed, so any earlier teardown is history — re-arm
     // the fire-once guard so a genuine future expiry is still announced.
     this.sessionExpiryDispatched = false;
     this.consecutiveTransientFailures = 0;
-=======
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
     document.addEventListener("visibilitychange", this.handleVisibilityChange);
     this.scheduleProactiveRefresh();
   }
@@ -255,7 +210,6 @@ export class TokenRefreshService {
   }
 
   /**
-<<<<<<< HEAD
    * Spend the refresh token on a new ID token.
    *
    * Failure is classified, not lumped together:
@@ -268,22 +222,11 @@ export class TokenRefreshService {
    *    does eventually tear down, so nothing can get stuck unrenewable.
    */
   private async doRefresh(): Promise<RefreshOutcome> {
-=======
-   * Spend the refresh token on a new ID token. On failure — no refresh token,
-   * or Cognito rejecting it as revoked/expired — tear the session down so an
-   * actually-dead session still logs the user out.
-   */
-  private async doRefresh(): Promise<boolean> {
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
     const refreshToken = this.tokenManager.getRefreshToken();
     if (!refreshToken) {
       log.debug("No Cognito refresh token stored — session expired");
       this.expireSession();
-<<<<<<< HEAD
       return "expired";
-=======
-      return false;
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
     }
 
     try {
@@ -307,7 +250,6 @@ export class TokenRefreshService {
       });
 
       log.debug("Cognito bearer refreshed silently");
-<<<<<<< HEAD
       this.consecutiveTransientFailures = 0;
       // A live bearer again: re-arm the teardown announcement for a future,
       // genuine expiry.
@@ -342,20 +284,12 @@ export class TokenRefreshService {
         error
       );
       return "transient";
-=======
-      return true;
-    } catch (error) {
-      log.warn("Cognito refresh-token exchange failed:", error);
-      this.expireSession();
-      return false;
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
     }
   }
 
   /**
    * Clear local token state and signal session expiry, so the auth context
    * routes the user back through the Cognito hosted UI.
-<<<<<<< HEAD
    *
    * Fires the `session-expired` event AT MOST ONCE per live session. The token
    * clear itself is idempotent and repeated on every call, so a late caller
@@ -373,12 +307,6 @@ export class TokenRefreshService {
       return;
     }
     this.sessionExpiryDispatched = true;
-=======
-   */
-  private expireSession(): void {
-    this.tokenManager.clearTokens();
-    this.clearProactiveTimer();
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
 
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("session-expired"));
@@ -387,7 +315,6 @@ export class TokenRefreshService {
 
   /**
    * Arm the next proactive wake-up, or leave the timer disarmed when there is
-<<<<<<< HEAD
    * nothing to renew (signed out, nothing to spend, or a hidden tab — the
    * visibility listener re-arms on return).
    */
@@ -411,20 +338,6 @@ export class TokenRefreshService {
       }
       return;
     }
-=======
-   * nothing to renew (signed out, no known expiry, or a hidden tab — the
-   * visibility listener re-arms on return).
-   */
-  private scheduleProactiveRefresh(): void {
-    this.clearProactiveTimer();
-
-    if (typeof window === "undefined" || !this.proactiveStarted) return;
-    if (!this.tokenManager.isAuthenticated()) return;
-    if (document.visibilityState === "hidden") return;
-
-    const expiry = this.tokenManager.getAccessTokenExpiry();
-    if (expiry === null) return;
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
 
     const remaining = this.tokenManager.getTimeUntilExpiry();
     const delay = Math.max(
@@ -437,7 +350,6 @@ export class TokenRefreshService {
           remaining / 2,
       MIN_PROACTIVE_DELAY_MS
     );
-<<<<<<< HEAD
     this.armProactiveTimer(delay);
   }
 
@@ -466,33 +378,16 @@ export class TokenRefreshService {
    * Refresh if the bearer needs renewing, then re-arm. A wake-up on a
    * still-fresh token (a clock jump, or a visibility change well before expiry)
    * just re-arms without spending the refresh token.
-=======
-    this.proactiveTimer = setTimeout(() => {
-      this.proactiveTimer = null;
-      void this.runProactiveRefresh();
-    }, delay);
-  }
-
-  /**
-   * Refresh if the bearer is inside the lead window, then re-arm. A wake-up on
-   * a still-fresh token (a clock jump, or a visibility change well before
-   * expiry) just re-arms without spending the refresh token.
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
    */
   private async runProactiveRefresh(): Promise<void> {
     if (!this.proactiveStarted) return;
     if (!this.tokenManager.isAuthenticated()) return;
 
-<<<<<<< HEAD
     if (!this.isRenewalNeeded()) {
-=======
-    if (!this.isRefreshDue()) {
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
       this.scheduleProactiveRefresh();
       return;
     }
 
-<<<<<<< HEAD
     const outcome = await this.refreshWithOutcome();
 
     if (outcome === "expired") {
@@ -554,14 +449,6 @@ export class TokenRefreshService {
       this.tokenManager.getAccessTokenExpiry() === null &&
       !!this.tokenManager.getRefreshToken()
     );
-=======
-    const refreshed = await this.refreshAccessToken();
-    if (refreshed) {
-      // New `exp` => new wake-up. On failure the session was torn down, so
-      // there is nothing left to schedule.
-      this.scheduleProactiveRefresh();
-    }
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
   }
 
   /**
