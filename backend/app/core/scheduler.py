@@ -390,6 +390,12 @@ async def _job_memory_decay() -> Any:
     return await _run_committed(decay_once)
 
 
+async def _job_memory_reap() -> Any:
+    from app.jobs.memory_lifecycle import reap_once
+
+    return await _run_committed(reap_once)
+
+
 async def _job_memory_reindex() -> Any:
     from app.jobs.memory_lifecycle import reindex_once
 
@@ -452,6 +458,25 @@ def install_default_tasks(service: SchedulerService) -> None:
     # Tenant agentic-memory lifecycle + MEMORY.md bridge (formerly celery beat).
     service.register(
         ScheduledTask(name="memory_decay", coro=_job_memory_decay, cron="10 3 * * *")
+    )
+    service.register(
+        ScheduledTask(
+            name="memory_reap",
+            # Every 10 minutes, NOT the daily cadence it had while bundled into
+            # memory_decay. The reaper requeues job claims a runner abandoned,
+            # and it is the queue's ONLY self-healing path: a claimed row is
+            # handed to nobody (claim_jobs selects status='pending') and blocks
+            # re-enqueue (enqueue_jobs counts 'claimed' as live), so until this
+            # runs, one halted runner strands that cluster's synthesis entirely.
+            # Observed 2026-07-23: a synthesis job claimed at 13:34 was stale at
+            # 14:04 (JOB_CLAIM_STALE_MINUTES=30) but unreachable until the next
+            # 03:10 decay sweep — ~13h of dead queue for a 30-min staleness bound.
+            # The sweep is a cheap claimed_at-bounded UPDATE; run_at_boot clears
+            # anything a deploy-time kill stranded mid-claim.
+            coro=_job_memory_reap,
+            cron="*/10 * * * *",
+            run_at_boot=True,
+        )
     )
     service.register(
         ScheduledTask(

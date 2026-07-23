@@ -37,6 +37,7 @@ from app.core.scheduler import (
     ScheduledTask,
     SchedulerService,
     _env_token,
+    install_default_tasks,
     scheduler_status,
 )
 
@@ -154,6 +155,31 @@ async def _wait_for(predicate, *, timeout: float = 5.0) -> bool:
 # ---------------------------------------------------------------------------
 
 
+class TestQueueLivenessCadence:
+    """The job reaper must never inherit a retention cadence.
+
+    It is the only path that returns an abandoned ``claimed`` job to the
+    queue — nothing hands out a claimed row and nothing re-enqueues over
+    it — so a slow cadence silently strands work rather than merely
+    delaying cleanup.
+    """
+
+    def test_memory_reap_is_registered_frequently_and_at_boot(self) -> None:
+        service = SchedulerService()
+        install_default_tasks(service)
+
+        task = service._tasks["memory_reap"]
+
+        assert task.cron == "*/10 * * * *", (
+            "memory_reap fell back to a slow cadence — an abandoned claim "
+            "blocks both claim and re-enqueue until it is reaped"
+        )
+        assert task.run_at_boot, (
+            "a deploy that kills a runner mid-claim must not need a full "
+            "cron slot before the queue self-heals"
+        )
+
+
 class TestCronNextFire:
     """``compute_next`` must reproduce the former Celery beat schedule exactly."""
 
@@ -167,6 +193,10 @@ class TestCronNextFire:
             ("*/10 * * * *", datetime(2026, 7, 13, 12, 10, tzinfo=UTC)),
             # memory_consolidate — every 10 minutes (was weekly Sundays 04:20;
             # corrected so the memory feedback loop stays prompt).
+            ("*/10 * * * *", datetime(2026, 7, 13, 12, 10, tzinfo=UTC)),
+            # memory_reap — every 10 minutes (was bundled into the daily
+            # memory_decay; split out so an abandoned claim is requeued within
+            # a tick of going stale rather than up to ~24h later).
             ("*/10 * * * *", datetime(2026, 7, 13, 12, 10, tzinfo=UTC)),
             # memory_bridge_sync — every 15 minutes.
             ("*/15 * * * *", datetime(2026, 7, 13, 12, 15, tzinfo=UTC)),
