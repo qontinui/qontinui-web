@@ -46,10 +46,15 @@
  * LOUDLY with a clear message rather than writing an empty/misleading snapshot.
  */
 
-import { test, expect, type Page, type APIRequestContext } from "@playwright/test";
+import {
+  test,
+  expect,
+  type Page,
+  type APIRequestContext,
+} from "@playwright/test";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { enrichElements } from "./normalize";
+import { enrichElements, normalizeBboxes } from "./normalize";
 import { STORAGE_STATE_PATH } from "../auth.constants";
 
 /** A single gated route as declared in `routes.json`. */
@@ -176,105 +181,22 @@ function countElements(body: SnapshotResponse): number {
 function locateElements(body: SnapshotResponse): unknown[] | null {
   if (Array.isArray(body.elements)) return body.elements;
   if (Array.isArray(body.data)) return body.data;
-  if (body.data && Array.isArray((body.data as { elements?: unknown[] }).elements)) {
+  if (
+    body.data &&
+    Array.isArray((body.data as { elements?: unknown[] }).elements)
+  ) {
     return (body.data as { elements: unknown[] }).elements;
   }
   return null;
 }
 
 /**
- * Bbox-normalization adapter — the ONE shape transform between the web SDK's
- * snapshot and the Rust analyzer.
- *
- * WHY this exists:
- *   - The web UI-Bridge SDK emits each element's bbox as
- *     `{ x, y, width, height }` with FLOAT values
- *     (`ui-bridge/packages/ui-bridge/src/control/types.ts:454`).
- *   - The Rust analyzer's `Region`
- *     (`qontinui-schemas/rust-vision-core/src/frame.rs:63-67`) requires exactly
- *     `{ x, y, w, h }` as `u32` — no serde aliases, no rename. A verbatim bbox
- *     therefore fails deserialization with `missing field 'w'`.
- *   - The Rust `Element`
- *     (`qontinui-schemas/rust-vision-core/src/element_snapshot.rs:38-51`) has NO
- *     `deny_unknown_fields` and only `id` is required (every other field is
- *     `#[serde(default)]`/Option, and the SDK always supplies `id`). So the
- *     SDK's extra fields are harmlessly ignored and `bbox` is the ONLY shape
- *     that must be transformed — nothing else is touched.
- *
- * This corrects the original plan's "write the snapshot verbatim — it's a
- * byte-identical runner-native shape" assumption, which was wrong about the
- * bbox field names (`width`/`height` -> `w`/`h`) and value type (float -> u32).
- *
- * Transform: for each element that HAS a bbox (bbox is optional — bbox-less
- * elements are left untouched, matching `Region`'s `Option`), replace
- * `{ x, y, width, height }` (floats) with `{ x, y, w, h }` (rounded ints).
- * A malformed/partial bbox (missing any of x/y/width/height, or a non-finite
- * value) is DROPPED rather than written as NaN — `bbox: Option<Region>` accepts
- * absence, and a NaN/partial Region would crash the analyzer's deserialize.
- * Every other field is left exactly as-is.
- *
- * NEGATIVE COORDINATES: `Region`'s x/y/w/h are `u32` (unsigned). But
- * `getBoundingClientRect()` legitimately returns NEGATIVE x/y for elements
- * scrolled/positioned off the top or left of the viewport (a sticky header
- * mid-scroll, an off-canvas drawer, a `left:-9999px` a11y-hidden node). A raw
- * negative coord deserializes as `invalid value: integer -1, expected u32`,
- * which crashed the analyzer's `Region` parse (observed on the 0.13→0.20 SDK
- * bump when the snapshot began covering more off-viewport nodes). Since this
- * adapter OWNS the float→u32 projection, it is responsible for conforming to
- * the unsigned target: clamp each component to `>= 0` (the same class of
- * impedance-fix as the non-finite drop above — an off-viewport origin projects
- * to the viewport edge). A more principled alternative — widening `Region`'s
- * x/y to `i32` in rust-vision-core — lives in a DIFFERENT repo and is not made
- * here.
- *
- * Mutates the elements in place (the caller re-serializes the same body).
- */
-function normalizeBboxes(elements: unknown[]): void {
-  for (const el of elements) {
-    if (!el || typeof el !== "object") continue;
-    const record = el as Record<string, unknown>;
-    if (!("bbox" in record)) continue; // bbox is optional — leave as-is.
-
-    const bbox = record.bbox;
-    if (!bbox || typeof bbox !== "object") {
-      // Present but not an object -> malformed; drop so it can't crash the
-      // analyzer (an Option<Region> tolerates absence).
-      delete record.bbox;
-      continue;
-    }
-
-    const { x, y, width, height } = bbox as {
-      x?: unknown;
-      y?: unknown;
-      width?: unknown;
-      height?: unknown;
-    };
-    const vals = [x, y, width, height];
-    const allFinite = vals.every(
-      (v) => typeof v === "number" && Number.isFinite(v)
-    );
-    if (!allFinite) {
-      // Missing or non-finite component -> drop rather than emit NaN.
-      delete record.bbox;
-      continue;
-    }
-
-    // Clamp to the Rust `Region` u32 domain: getBoundingClientRect can return
-    // negative x/y for off-viewport elements, which would fail u32 deserialize.
-    record.bbox = {
-      x: Math.max(0, Math.round(x as number)),
-      y: Math.max(0, Math.round(y as number)),
-      w: Math.max(0, Math.round(width as number)),
-      h: Math.max(0, Math.round(height as number)),
-    };
-  }
-}
-
-/**
  * Normalize a parsed snapshot body for the analyzer and return the
  * re-serialized JSON ready to write. Two transforms, in order:
- *   1. `normalizeBboxes` — map the SDK's `{x,y,width,height}` floats to the Rust
- *      `Region` `{x,y,w,h}` u32 (the one geometry transform).
+ *   1. `normalizeBboxes` (tests/e2e/style-gate/normalize.ts) — map the SDK's
+ *      `{x,y,width,height}` floats to the Rust `Region` `{x,y,w,h}`: signed
+ *      i32 origin (true negatives preserved), unsigned u32 extent (the one
+ *      geometry transform).
  *   2. `enrichElements` (tests/e2e/style-gate/normalize.ts) — derive the
  *      analyzer's visual/interactivity fields (`interactable`, `fg_color`,
  *      `bg_color`, `font_size_px`, `font_family`, `line_height_px`, `text`,
@@ -339,9 +261,10 @@ async function enableCoPilotPreference(
     headers: { Accept: "application/json" },
   });
   if (verify.ok()) {
-    const prefs = (await verify
-      .json()
-      .catch(() => null)) as Record<string, unknown> | null;
+    const prefs = (await verify.json().catch(() => null)) as Record<
+      string,
+      unknown
+    > | null;
     if (prefs && prefs[CO_PILOT_PREFERENCE_KEY] !== true) {
       throw new Error(
         `[style-gate] The co-pilot preference PUT returned ${res.status()} but ` +
@@ -531,14 +454,19 @@ const LOGIN_HEADING_TEXT = "Sign in to Qontinui";
 
 async function assertNotLoginSurface(
   page: Page,
-  route: StyleGateRoute,
+  route: StyleGateRoute
 ): Promise<void> {
   // 1. Parked on /login (route guard redirected an unauthenticated visit).
-  const onLoginRoute = /\/login(\b|\/|\?|#|$)/.test(new URL(page.url()).pathname);
+  const onLoginRoute = /\/login(\b|\/|\?|#|$)/.test(
+    new URL(page.url()).pathname
+  );
 
   // 2. The email field the sign-in form renders.
   const hasEmailInput =
-    (await page.locator(LOGIN_EMAIL_SELECTOR).count().catch(() => 0)) > 0;
+    (await page
+      .locator(LOGIN_EMAIL_SELECTOR)
+      .count()
+      .catch(() => 0)) > 0;
 
   // 3. The canonical sign-in heading copy (case-insensitive, substring).
   const hasSignInHeading =
@@ -565,7 +493,7 @@ async function assertNotLoginSurface(
         `style-gate workflow mints a hermetic id token (QONTINUI_TEST_ID_TOKEN) ` +
         `that auth.setup.ts seeds; verify the run-local JWKS server is up, ` +
         `COGNITO_ISSUER/COGNITO_ALLOWED_AUDIENCES match the token, and the backend ` +
-        `JIT-provisioned the ci-bot user. See tests/e2e/style-gate/README.md.`,
+        `JIT-provisioned the ci-bot user. See tests/e2e/style-gate/README.md.`
     );
   }
 }
@@ -608,8 +536,7 @@ async function fetchSnapshotOnce(page: Page): Promise<RelayPollResult> {
   // 503 NO_BROWSER_CONNECTED -> relay client not attached yet; keep polling.
   const notConnected =
     result.status === 503 || parsed.code === "NO_BROWSER_CONNECTED";
-  const attached =
-    !notConnected && result.status >= 200 && result.status < 300;
+  const attached = !notConnected && result.status >= 200 && result.status < 300;
   return { attached, raw: result.text, body: parsed, status: result.status };
 }
 
@@ -1004,7 +931,11 @@ for (const route of AUTHED_ROUTES) {
     // required — see `normalizeSnapshotForAnalyzer`). All other fields pass
     // through unchanged (the Rust `Element` has no `deny_unknown_fields`).
     const snapshotToWrite = normalizeSnapshotForAnalyzer(raw, body);
-    writeFileSync(join(SNAPSHOTS_DIR, `${route.id}.json`), snapshotToWrite, "utf8");
+    writeFileSync(
+      join(SNAPSHOTS_DIR, `${route.id}.json`),
+      snapshotToWrite,
+      "utf8"
+    );
 
     // Deterministic frame: fixed viewport, fullPage:false (viewport-clipped so
     // height is stable run-to-run regardless of scroll content).
