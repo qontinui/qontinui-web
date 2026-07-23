@@ -79362,6 +79362,84 @@
         ]
       }
     },
+    "/api/v1/operations/prs/{owner}/{repo}/{number}/draft-state": {
+      "post": {
+        "description": "Set a PR's GitHub draft state (operator release valve).\n\nProxies coord's ``POST /coord/repos/{owner}/{repo}/pull-requests/{number}/draft-state``\n(plan 2026-07-23-operator-set-pr-draft-state). The body is ``{\"draft\": bool}``:\n``false`` marks the PR ready-for-review (releasing it to the merge train),\n``true`` converts it back to draft (the documented hold mechanism).\n\nAuth mirrors the gate-action stack (approve/reject): the operator's Cognito\nbearer is forwarded (``require_coord_tenant_admin`` \u2192 ``tenant_id=`` \u2192\nfleet-auth P2/D6) and coord derives the tenant + validates repo authority\nserver-side. Releasing a draft-required (security-surface) PR is an operator\njudgment, so this is operator-authed \u2014 never an agent JWT.\n\nOnly the ``draft`` boolean is forwarded; any other keys the client sends are\ndropped so the wire body to coord is exactly its ``{\"draft\": bool}`` contract.\ncoord's status codes + ``{\"error\", \"message\"}`` bodies pass through verbatim\nvia ``_proxy_coord_post`` (400 invalid_input, 404 repo_not_registered_to_tenant\n/ pr_not_found, 429 rate_limited, 503 github_app_unconfigured,\n502 github_draft_state_failed, 500 internal).",
+        "operationId": "api_v1_operations_prs_owner_repo_number_draft_state_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "title": "Owner",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "title": "Repo",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "number",
+            "required": true,
+            "schema": {
+              "title": "Number",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Set Pr Draft State Api V1 Operations Prs  Owner   Repo   Number  Draft State Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Set Pr Draft State",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/releases": {
       "get": {
         "description": "List recent runner release observations (newest-first) from coord.\n\nProxies coord ``GET /coord/twin/release/history``. ``repo`` (``owner/name``;\ndefault coord's ``qontinui/qontinui-runner``) selects the observed surface;\n``limit`` (1\u2013500, coord-clamped too) caps the history window. Returns\ncoord's ``{surface, repo, target, count, history:[...]}`` envelope\nverbatim.",
