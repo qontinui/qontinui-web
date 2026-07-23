@@ -78671,6 +78671,52 @@
         ]
       }
     },
+    "/api/v1/operations/pr-merge/onboarding/installations/{installation_id}/enroll": {
+      "post": {
+        "description": "Enroll (or re-sync) an already-connected GitHub App installation's repos.\n\nProxies coord's ``POST /coord/onboarding/installations/{installation_id}/enroll``,\nsubstituting ``installation_id`` into the coord path. Backs the\n\"Enroll / Sync repositories\" button on the Connected Organizations card,\nwhich closes the \"connected \u00b7 no repositories enrolled yet\" dead end for an\norg whose App is already installed (the Setup-URL ``?code=`` claim can never\nfire for it) and doubles as a manual re-sync to pick up newly-added repos.\n\nAuthz \u2014 ``require_coord_tenant_admin`` (admin in the ACTIVE tenant), NOT the\nlooser ``get_tenant_id``: enrolling opens bootstrap PRs and writes repo\nprofiles, a consequential write, matching the settings-write posture. coord\nre-validates the active-tenant override server-side (defense-in-depth).\n\nContract \u2014 coord's authz prologue runs synchronously, then it spawns the\nper-repo enrollment and returns immediately, so this handler keeps the\ndefault 5s ``_COORD_TIMEOUT`` (no per-route bump \u2014 the slow per-repo GitHub\nround-trips happen off-connection):\n  * ``202 {\"enrolled\": \"spawned\", \"tenant_id\", \"installation_id\"}`` \u2014 spawned;\n    the UI re-polls ``GET /pr-merge/onboarding/accounts`` to see the repos.\n    There is NO ``repos`` array in this response.\n  * ``403 installation_not_owned_by_tenant`` \u2014 the installation is bound to a\n    different tenant.\n  * ``404 installation_not_mapped`` \u2014 the installation isn't bound to any\n    tenant (connect it first).\n  * ``500`` \u2014 coord-side failure.\n\nLike the claim proxy, this passes coord's status code AND JSON body through\nVERBATIM (not via ``_proxy_coord_post``, which stringifies a \u2265400 body into\n``HTTPException.detail`` and would rewrite the ``202`` to ``200``) so the\nfrontend can render coord's ``error`` code and keep the ``202`` distinct.\nhttpx transport errors mirror the shared helpers (ConnectError \u2192 502,\nTimeoutException \u2192 504).",
+        "operationId": "api_v1_operations_pr_merge_onboarding_installations_installation_id_enroll_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "installation_id",
+            "required": true,
+            "schema": {
+              "title": "Installation Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Pr Merge Onboarding Enroll",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/pr-merge/onboarding/precondition-status": {
       "get": {
         "description": "Return ``{paired, claude_code_available, ready, paired_elsewhere}``\nfor the calling tenant. Drives the onboarding wizard's polling loop on\nstep 2 (the \"Sign into Claude Code on your device\" verification step).\n\n``X-Qontinui-User-Id`` is forwarded (same attribution header as the\npair paths in ``devices.py``) so coord can compute\n``paired_elsewhere`` \u2014 devices the CALLING USER has paired to a\nDIFFERENT tenant, which a re-pair here would silently steal. Older\ncoord ignores the header and omits the field; the wizard treats a\nmissing ``paired_elsewhere`` as ``[]`` (plan\n2026-07-02-multi-tenant-device-pairing-reconsideration Phase 1b).",
