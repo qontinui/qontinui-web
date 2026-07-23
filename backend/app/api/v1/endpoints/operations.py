@@ -808,6 +808,47 @@ async def get_pr_merge_prs(
     return await _proxy_coord_get("/pr-merge/prs", params=params, tenant_id=tenant_id)
 
 
+@router.post("/prs/{owner}/{repo}/{number}/draft-state")
+async def set_pr_draft_state(
+    owner: str,
+    repo: str,
+    number: int,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Set a PR's GitHub draft state (operator release valve).
+
+    Proxies coord's ``POST /coord/repos/{owner}/{repo}/pull-requests/{number}/draft-state``
+    (plan 2026-07-23-operator-set-pr-draft-state). The body is ``{"draft": bool}``:
+    ``false`` marks the PR ready-for-review (releasing it to the merge train),
+    ``true`` converts it back to draft (the documented hold mechanism).
+
+    Auth mirrors the gate-action stack (approve/reject): the operator's Cognito
+    bearer is forwarded (``require_coord_tenant_admin`` → ``tenant_id=`` →
+    fleet-auth P2/D6) and coord derives the tenant + validates repo authority
+    server-side. Releasing a draft-required (security-surface) PR is an operator
+    judgment, so this is operator-authed — never an agent JWT.
+
+    Only the ``draft`` boolean is forwarded; any other keys the client sends are
+    dropped so the wire body to coord is exactly its ``{"draft": bool}`` contract.
+    coord's status codes + ``{"error", "message"}`` bodies pass through verbatim
+    via ``_proxy_coord_post`` (400 invalid_input, 404 repo_not_registered_to_tenant
+    / pr_not_found, 429 rate_limited, 503 github_app_unconfigured,
+    502 github_draft_state_failed, 500 internal).
+    """
+    draft = body.get("draft")
+    if not isinstance(draft, bool):
+        raise HTTPException(
+            status_code=400,
+            detail="draft-state body requires a boolean `draft` field",
+        )
+    return await _proxy_coord_post(
+        f"/coord/repos/{owner}/{repo}/pull-requests/{number}/draft-state",
+        {"draft": draft},
+        tenant_id=tenant_id,
+    )
+
+
 # Coord path for the CI-duration-aware severity economics read
 # (``coord_query_merge_economics``). Isolated as a one-line constant because
 # the read is being added on the coord side in parallel — if coord lands it
