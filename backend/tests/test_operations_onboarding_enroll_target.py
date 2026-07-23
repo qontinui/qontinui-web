@@ -125,11 +125,7 @@ def test_forwards_to_coord_enroll_path_with_installation_id(
     assert res.json()["enrolled"] == "spawned"
     # The mocked coord POST targeted the installation enroll route with the id.
     url = client.post.call_args.args[0]
-    assert (
-        url.endswith(
-            f"/coord/onboarding/installations/{INSTALLATION_ID}/enroll"
-        )
-    )
+    assert url.endswith(f"/coord/onboarding/installations/{INSTALLATION_ID}/enroll")
     # No JSON body is sent — the enroll takes no payload.
     assert "json" not in client.post.call_args.kwargs
 
