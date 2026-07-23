@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "base_sha": "4702873dc8b75bcc7bb33335146e2822f58834cc",
+  "ours_sha": "d95ab0ced93f45057b3cb7f1165ce1dc5d88a3de",
+  "theirs_sha": "1b1cf0e825105ff8349aad1cce4117c7057ce232",
+  "entries": [
+    {
+      "path": "backend/tests/test_operations_onboarding_enroll_target.py",
+      "base_oid": null,
+      "ours_oid": "5c3654fc42e9c704f011afa0bfa7829553bdb293",
+      "theirs_oid": "0a2b0e3b3c80a30484e75eded5030760284c8684",
+      "base_path": null,
+      "ours_path": "backend/tests/test_operations_onboarding_enroll_target.py.ours",
+      "theirs_path": "backend/tests/test_operations_onboarding_enroll_target.py.theirs",
+      "hunks": [
+        "<<<<<<< HEAD\n    assert url.endswith(f\"/coord/onboarding/installations/{INSTALLATION_ID}/enroll\")\n=======\n    assert (\n        url.endswith(\n            f\"/coord/onboarding/installations/{INSTALLATION_ID}/enroll\"\n        )\n    )\n>>>>>>> 2873518c (feat: Enroll/Sync repositories button on Connected Organizations card)\n"
+      ]
+    }
+  ]
+}
