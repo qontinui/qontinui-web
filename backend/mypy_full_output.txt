@@ -1,2 +1,0 @@
-app\services\json_validator.py:463: error: Item "None" of "Any | None" has no attribute "__iter__" (not iterable)  [union-attr]
-Found 1 error in 1 file (checked 291 source files)
