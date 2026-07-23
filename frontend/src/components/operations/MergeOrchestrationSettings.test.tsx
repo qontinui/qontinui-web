@@ -40,7 +40,9 @@ function makeProfile(overrides: Record<string, unknown> = {}) {
     min_green_dwell: 60,
     confidence_threshold: 0.85,
     auto_merge_enabled: false,
+    // Derived mirror of rollout_state (true iff dry_run) — read-only.
     dry_run: true,
+    rollout_state: "dry_run",
     rulebook_overrides: null,
     // coord's resolved EffectiveProfile reads escalate config back as typed
     // policies (glob + category + disposition), NOT the raw `escalate_paths`
@@ -126,6 +128,9 @@ describe("<MergeOrchestrationSettings> auto_fix_red_main toggle", () => {
       expect(patch).toBeTruthy();
       const body = JSON.parse((patch![1] as RequestInit).body as string);
       expect(body.auto_fix_red_main).toBe(true);
+      // The legacy dry_run boolean is retired: coord's PatchTenantSettings
+      // is deny_unknown_fields, so sending it would 400 the whole PATCH.
+      expect("dry_run" in body).toBe(false);
     });
   });
 
@@ -204,6 +209,89 @@ describe("<MergeOrchestrationSettings> auto_fix_red_main toggle", () => {
       const body = JSON.parse((patch![1] as RequestInit).body as string);
       expect(body.escalate_paths).toEqual(["alembic/**", "**/credentials*"]);
     });
+  });
+});
+
+describe("<MergeOrchestrationSettings> tenant rollout_state select", () => {
+  beforeEach(() => {
+    fetchMock.mockReset();
+  });
+
+  it("reflects the resolved rollout_state on load", async () => {
+    fetchMock.mockImplementation((url: string) =>
+      Promise.resolve(routeGet(url, { rollout_state: "shadow" }))
+    );
+    render(<MergeOrchestrationSettings />);
+
+    const select = (await screen.findByTestId(
+      "settings-rollout-state"
+    )) as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe("shadow"));
+  });
+
+  it("POSTs /pr-merge/rollout (scope=tenant) when the state changed on save", async () => {
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === "PATCH" || init?.method === "POST") {
+        return Promise.resolve(
+          jsonResponse({
+            scope: "tenant",
+            state: "shadow",
+            affected_repos: [],
+          })
+        );
+      }
+      return Promise.resolve(routeGet(url, { rollout_state: "dry_run" }));
+    });
+    render(<MergeOrchestrationSettings />);
+
+    const select = (await screen.findByTestId(
+      "settings-rollout-state"
+    )) as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: "shadow" } });
+    fireEvent.click(screen.getByTestId("settings-save"));
+
+    await waitFor(() => {
+      const rollout = fetchMock.mock.calls.find(
+        (c) =>
+          (c[1] as RequestInit | undefined)?.method === "POST" &&
+          String(c[0]).includes("/pr-merge/rollout")
+      );
+      expect(rollout).toBeTruthy();
+      const body = JSON.parse((rollout![1] as RequestInit).body as string);
+      expect(body.scope).toBe("tenant");
+      expect(body.state).toBe("shadow");
+    });
+  });
+
+  it("does NOT POST the rollout route when the state is unchanged", async () => {
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === "PATCH") {
+        return Promise.resolve(
+          jsonResponse({
+            tenant_id: "00000000-0000-0000-0000-000000000001",
+            profile: makeProfile(),
+          })
+        );
+      }
+      return Promise.resolve(routeGet(url, {}));
+    });
+    render(<MergeOrchestrationSettings />);
+
+    await screen.findByTestId("settings-rollout-state");
+    fireEvent.click(screen.getByTestId("settings-save"));
+
+    await waitFor(() => {
+      const patch = fetchMock.mock.calls.find(
+        (c) => (c[1] as RequestInit | undefined)?.method === "PATCH"
+      );
+      expect(patch).toBeTruthy();
+    });
+    const rollout = fetchMock.mock.calls.find(
+      (c) =>
+        (c[1] as RequestInit | undefined)?.method === "POST" &&
+        String(c[0]).includes("/pr-merge/rollout")
+    );
+    expect(rollout).toBeFalsy();
   });
 });
 
@@ -290,8 +378,47 @@ describe("<MergeOrchestrationSettings> RepoOverrideCard save", () => {
       expect("line_budget_override" in body).toBe(false);
       expect("escalate_paths_extra" in body).toBe(false);
       expect("auto_merge_label_budget" in body).toBe(false);
+      // The legacy per-repo dry_run_override boolean is retired — coord's
+      // PatchRepoProfile is deny_unknown_fields, so it must never be sent.
       expect("dry_run_override" in body).toBe(false);
+      expect("rollout_state" in body).toBe(false);
       expect("auto_fix_red_main" in body).toBe(false);
+    });
+  });
+
+  it("POSTs /pr-merge/rollout (scope=repo:<repo>) for a rollout-state selection", async () => {
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === "POST" && url.includes("/pr-merge/rollout")) {
+        return Promise.resolve(
+          jsonResponse({
+            scope: `repo:${REPO}`,
+            state: "shadow",
+            affected_repos: [REPO],
+          })
+        );
+      }
+      return Promise.resolve(routeRepoCard(url, init));
+    });
+    render(<MergeOrchestrationSettings />);
+    await screen.findByTestId(`repo-card-${REPO}`);
+
+    fireEvent.change(screen.getByTestId(`repo-rollout-state-${REPO}`), {
+      target: { value: "shadow" },
+    });
+    fireEvent.click(screen.getByTestId(`repo-save-${REPO}`));
+
+    await waitFor(() => {
+      const rollout = fetchMock.mock.calls.find(
+        (c) =>
+          (c[1] as RequestInit | undefined)?.method === "POST" &&
+          String(c[0]).includes("/pr-merge/rollout")
+      );
+      expect(rollout).toBeTruthy();
+      const body = JSON.parse((rollout![1] as RequestInit).body as string);
+      expect(body.scope).toBe(`repo:${REPO}`);
+      expect(body.state).toBe("shadow");
+      // The profile PATCH must NOT carry any rollout/dry-run field.
+      expect(patchBody()).toEqual({});
     });
   });
 

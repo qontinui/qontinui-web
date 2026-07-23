@@ -65,13 +65,21 @@ interface EscalatePolicy {
   disposition: EscalateDisposition;
 }
 
+type RolloutState = "dry_run" | "shadow" | "live";
+
 interface EffectiveProfile {
   tenant_id: string;
   repo: string;
   min_green_dwell: number; // seconds
   confidence_threshold: number;
   auto_merge_enabled: boolean;
+  // DERIVED from `rollout_state` at resolve time (true iff dry_run) — the
+  // legacy writable booleans were retired; rollout_state is the sole
+  // representation. Read-only convenience mirror of coord's EffectiveProfile.
   dry_run: boolean;
+  // The resolved rollout state — the one canonical rollout field. Writes go
+  // through POST /pr-merge/rollout (never the settings PATCH).
+  rollout_state: RolloutState;
   rulebook_overrides: Record<string, unknown> | null;
   // The resolved escalate config, read back as typed policies. coord returns
   // `[]` for a default/unconfigured tenant; still guarded with `?? []` at every
@@ -183,7 +191,9 @@ function TenantDefaultsCard({
   const [autoMerge, setAutoMerge] = useState<boolean>(
     profile.auto_merge_enabled
   );
-  const [dryRun, setDryRun] = useState<boolean>(profile.dry_run);
+  const [rolloutState, setRolloutState] = useState<RolloutState>(
+    profile.rollout_state
+  );
   const [autoFixRedMain, setAutoFixRedMain] = useState<boolean>(
     profile.auto_fix_red_main
   );
@@ -202,7 +212,7 @@ function TenantDefaultsCard({
     setMinDwell(String(profile.min_green_dwell));
     setConfidence(String(profile.confidence_threshold));
     setAutoMerge(profile.auto_merge_enabled);
-    setDryRun(profile.dry_run);
+    setRolloutState(profile.rollout_state);
     setAutoFixRedMain(profile.auto_fix_red_main);
     setEscalatePathsText(
       (profile.escalate_policies ?? []).map((p) => p.glob).join("\n")
@@ -228,7 +238,6 @@ function TenantDefaultsCard({
           confidence
         ),
         auto_merge_enabled: autoMerge,
-        dry_run: dryRun,
         auto_fix_red_main: autoFixRedMain,
         audit_confidence_shadow_floor: parseFloatOrThrow(
           "audit_confidence_shadow_floor",
@@ -249,6 +258,28 @@ function TenantDefaultsCard({
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
       }
+      // Rollout state is NOT a settings-PATCH field — it goes through the
+      // rollout route (which audits the flip and enforces the shadow→live
+      // guard). Only fire it when the operator actually changed the value.
+      if (rolloutState !== profile.rollout_state) {
+        const rolloutRes = await httpClient.fetch(
+          `${OPERATIONS_API}/pr-merge/rollout`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              scope: "tenant",
+              state: rolloutState,
+              reason: "dashboard: tenant settings save",
+            }),
+          }
+        );
+        if (!rolloutRes.ok) {
+          const detail = await rolloutRes.text().catch(() => "");
+          throw new Error(
+            `rollout: HTTP ${rolloutRes.status}${detail ? `: ${detail}` : ""}`
+          );
+        }
+      }
       onSaved();
     } catch (err) {
       log.warn("save tenant settings failed", err);
@@ -260,7 +291,8 @@ function TenantDefaultsCard({
     minDwell,
     confidence,
     autoMerge,
-    dryRun,
+    rolloutState,
+    profile.rollout_state,
     autoFixRedMain,
     shadowFloor,
     escalatePathsText,
@@ -339,19 +371,25 @@ function TenantDefaultsCard({
               data-testid="settings-auto-merge"
             />
           </div>
-          <div className="flex items-center justify-between rounded-md border px-3 py-2">
+          <div className="flex items-center justify-between rounded-md border px-3 py-2 gap-3">
             <div>
-              <Label htmlFor="dry-run">Dry-run mode</Label>
+              <Label htmlFor="rollout-state">Rollout state</Label>
               <p className="text-xs text-muted-foreground">
-                Full pipeline, no GitHub mutations.
+                dry-run: full pipeline, no GitHub mutations. shadow: verdicts
+                recorded, nothing merges. live: full auto-merge.
               </p>
             </div>
-            <Switch
-              id="dry-run"
-              checked={dryRun}
-              onCheckedChange={setDryRun}
-              data-testid="settings-dry-run"
-            />
+            <select
+              id="rollout-state"
+              className="h-9 rounded-md border bg-background px-3 text-sm"
+              value={rolloutState}
+              onChange={(e) => setRolloutState(e.target.value as RolloutState)}
+              data-testid="settings-rollout-state"
+            >
+              <option value="dry_run">dry-run</option>
+              <option value="shadow">shadow</option>
+              <option value="live">live</option>
+            </select>
           </div>
         </div>
         <div className="flex items-start justify-between gap-3 rounded-md border border-amber-500/40 px-3 py-2">
@@ -434,8 +472,10 @@ function RepoOverrideCard({
   const [escalatePathsExtraText, setEscalatePathsExtraText] =
     useState<string>("");
   const [labelBudget, setLabelBudget] = useState<string>("");
-  const [dryRunOverride, setDryRunOverride] = useState<
-    "inherit" | "true" | "false"
+  // Per-repo rollout state. "inherit" = leave the per-repo tier unset (no
+  // write); a concrete state POSTs /pr-merge/rollout with scope=repo:<repo>.
+  const [rolloutOverride, setRolloutOverride] = useState<
+    "inherit" | RolloutState
   >("inherit");
   const [autoFixRedMainOverride, setAutoFixRedMainOverride] = useState<
     "inherit" | "true" | "false"
@@ -509,10 +549,6 @@ function RepoOverrideCard({
             ? null
             : parseIntOrThrow("auto_merge_label_budget", labelBudget);
       }
-      if (dirty.has("dry_run_override")) {
-        body.dry_run_override =
-          dryRunOverride === "inherit" ? null : dryRunOverride === "true";
-      }
       if (dirty.has("auto_fix_red_main")) {
         body.auto_fix_red_main =
           autoFixRedMainOverride === "inherit"
@@ -528,6 +564,29 @@ function RepoOverrideCard({
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
       }
+      // Rollout state is NOT a profile-PATCH field — a concrete selection
+      // POSTs the audited rollout route with a repo scope. "inherit" is the
+      // untouched default and sends nothing (the rollout route has no
+      // clear-to-inherit form).
+      if (dirty.has("rollout_state") && rolloutOverride !== "inherit") {
+        const rolloutRes = await httpClient.fetch(
+          `${OPERATIONS_API}/pr-merge/rollout`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              scope: `repo:${repoRow.repo}`,
+              state: rolloutOverride,
+              reason: "dashboard: per-repo override save",
+            }),
+          }
+        );
+        if (!rolloutRes.ok) {
+          const detail = await rolloutRes.text().catch(() => "");
+          throw new Error(
+            `rollout: HTTP ${rolloutRes.status}${detail ? `: ${detail}` : ""}`
+          );
+        }
+      }
       setDirty(new Set());
       onSaved();
     } catch (err) {
@@ -542,7 +601,7 @@ function RepoOverrideCard({
     confidenceOverride,
     escalatePathsExtraText,
     labelBudget,
-    dryRunOverride,
+    rolloutOverride,
     autoFixRedMainOverride,
     onSaved,
   ]);
@@ -592,8 +651,8 @@ function RepoOverrideCard({
         )}
         {profile && (
           <p className="text-xs text-muted-foreground">
-            Effective: dwell={profile.min_green_dwell}s, dry_run=
-            {String(profile.dry_run)}
+            Effective: dwell={profile.min_green_dwell}s, rollout=
+            {profile.rollout_state}
           </p>
         )}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -628,22 +687,27 @@ function RepoOverrideCard({
             />
           </div>
           <div className="space-y-1">
-            <Label>Dry-run override</Label>
+            <Label>Rollout state override</Label>
             <select
               className="w-full h-9 rounded-md border bg-background px-3 text-sm"
-              value={dryRunOverride}
+              value={rolloutOverride}
               onChange={(e) => {
-                setDryRunOverride(
-                  e.target.value as "inherit" | "true" | "false"
+                setRolloutOverride(
+                  e.target.value as "inherit" | RolloutState
                 );
-                markDirty("dry_run_override");
+                markDirty("rollout_state");
               }}
-              data-testid={`repo-dry-run-${repoRow.repo}`}
+              data-testid={`repo-rollout-state-${repoRow.repo}`}
             >
               <option value="inherit">inherit tenant</option>
-              <option value="true">true (dry-run)</option>
-              <option value="false">false (live)</option>
+              <option value="dry_run">dry-run</option>
+              <option value="shadow">shadow</option>
+              <option value="live">live</option>
             </select>
+            <p className="text-xs text-muted-foreground">
+              Saved via the audited rollout route. Promoting to live requires
+              passing through shadow first.
+            </p>
           </div>
           <div className="space-y-1">
             <Label>Auto-fix red main override</Label>
