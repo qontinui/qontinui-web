@@ -47,6 +47,16 @@ export type UnifiedStatusKind =
   // label says to fix it — it just sits, marked "waiting", excluded from the
   // needs-attention count. Past the deferral window we re-escalate to red.
   | "conflict-stranded"
+  // A `needs-rebase` whose premise expired. "coord auto-rebases it in the
+  // train" is a promise about the near future; past the dwell cap with no
+  // observed GitHub activity the train has demonstrably not arrived, and the
+  // amber "no action needed" would be a lie — so we re-escalate to red.
+  | "needs-rebase-stale"
+  // A `blocked` whose premise expired. "lands after the other PR" holds only
+  // while the overlapping PR is actually moving; past the dwell cap the
+  // overlap has demonstrably not cleared and the waiting promise is dead —
+  // re-escalated to red for an author look.
+  | "blocked-stale"
   | "requirements"
   | "checks-failing"
   | "checks-pending"
@@ -82,6 +92,8 @@ export type Attention = "author" | "waiting" | "none";
  * | needs-rebase     | BEHIND; coord auto-rebases in train  | no — waits   |
  * | conflict-deferred| true conflict, but far from merging  | no — waits   |
  * | conflict-stranded| deferred so long the premise expired | YES          |
+ * | needs-rebase-stale| BEHIND so long the promise expired  | YES          |
+ * | blocked-stale    | blocked so long the promise expired  | YES          |
  * | conflict         | rebase/candidate CI failed           | YES          |
  * | not-mergeable    | conflicts, and it blocks now         | YES          |
  * | checks-failing   | a check reported failure             | YES          |
@@ -101,6 +113,8 @@ export const ATTENTION_BY_KIND: Record<UnifiedStatusKind, Attention> = {
   "needs-rebase": "waiting",
   "conflict-deferred": "waiting",
   "conflict-stranded": "author",
+  "needs-rebase-stale": "author",
+  "blocked-stale": "author",
   conflict: "author",
   "not-mergeable": "author",
   "checks-failing": "author",
@@ -111,9 +125,12 @@ export const ATTENTION_BY_KIND: Record<UnifiedStatusKind, Attention> = {
  * The kinds that mean "this PR has a TRUE merge conflict and the author must
  * act", derived from GitHub state rather than from a live merge proposal.
  *
- * These rows are invisible to the in-flight queue feed: `buildPipelineRows`
- * only reaches `statusFromGitHub` (the sole producer of these kinds) when the
- * row has NO active proposal, and coord's `GET /merge/queue` excludes terminal
+ * These rows are invisible to the in-flight queue feed: they arise only on
+ * rows with NO active proposal — `not-mergeable` straight from
+ * `statusFromGitHub`; `conflict-stranded` via the dwell escalation over a
+ * `conflict-deferred` that `statusFromGitHub` produced (`statusFromProposal`
+ * never emits `conflict-deferred`, so no active-proposal row can strand) —
+ * and coord's `GET /merge/queue` excludes terminal
  * proposals. So any health/severity roll-up that counts conflicts by scanning
  * active proposals alone silently reports zero for every one of them — the
  * exact defect that let a 17-strand fleet render "Merging normally".
@@ -275,7 +292,7 @@ export const FRONT_QUEUE_DEPTH_THRESHOLD = 2;
 /**
  * Floor for how long a TRUE conflict may stay de-escalated to amber before it
  * re-escalates to red. Per-repo the real cutoff is `max(this, 2 × candidate-CI
- * p90)` — see `conflictDeferralMaxMs`.
+ * p90)` — see `waitingDwellCapMs`.
  *
  * Why a hatch is needed at all: `conflict-deferred` says "resolve this at
  * merge", which is sound ONLY while "coord reaches this PR soon" holds. coord
@@ -369,19 +386,67 @@ export function isMergedPr(pr: Pick<PrRow, "pr_state">): boolean {
 }
 
 /**
- * How long this repo may defer a true conflict: two full worst-case candidate
- * runs (long enough that a genuinely-queued PR would have been reached), with
- * `CONFLICT_DEFERRAL_MAX_MS` as the floor so a fast repo still gets a grace
- * window rather than flipping red the moment a conflict appears.
+ * Floor for how long the other two waiting kinds (`needs-rebase`, `blocked`)
+ * may sit with no observed activity before their promise reads as expired.
+ * 24h, deliberately conservative: coord rebases at land and overlaps clear
+ * within a few land cycles, so a full day of silence means the train is
+ * demonstrably not reaching this PR — while the goal is catching 340-hour
+ * lies, not nagging at hour seven. Per-repo the real cutoff is
+ * `max(this, 4 × candidate-CI p90)` — see `waitingDwellCapMs`.
  */
-export function conflictDeferralMaxMs(
+export const WAITING_STALE_MAX_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Base kind → the kind it escalates to once its dwell cap is exceeded.
+ *
+ * Every `waiting` kind is a promise about the near future ("coord rebases it",
+ * "lands after the other PR", "resolve at merge") that decays into a falsehood
+ * when the future doesn't arrive — so every one of them gets an expiry here.
+ * A kind absent from this map never escalates.
+ */
+export const STALE_ESCALATION: Partial<
+  Record<UnifiedStatusKind, UnifiedStatusKind>
+> = {
+  "needs-rebase": "needs-rebase-stale",
+  blocked: "blocked-stale",
+  "conflict-deferred": "conflict-stranded",
+};
+
+/**
+ * The kinds that can escalate — exactly `STALE_ESCALATION`'s key set. Cap
+ * lookups take this instead of the full union so asking for a dwell cap on a
+ * kind that has none is unrepresentable, not silently defaulted.
+ */
+export type EscalatableKind = "needs-rebase" | "blocked" | "conflict-deferred";
+
+function isEscalatable(kind: UnifiedStatusKind): kind is EscalatableKind {
+  return STALE_ESCALATION[kind] !== undefined;
+}
+
+/**
+ * How long a waiting kind may dwell before it escalates; per-repo where
+ * economics allows.
+ *
+ * `conflict-deferred`: two full worst-case candidate runs (long enough that a
+ * genuinely-queued PR would have been reached), floored at
+ * `CONFLICT_DEFERRAL_MAX_MS` so a fast repo still gets a grace window rather
+ * than flipping red the moment a conflict appears — unchanged from web#813.
+ * `needs-rebase` / `blocked`: four candidate runs, floored at
+ * `WAITING_STALE_MAX_MS` — a longer leash, since coord genuinely services
+ * these in the train and only a full day of silence falsifies the promise.
+ */
+export function waitingDwellCapMs(
+  kind: EscalatableKind,
   repo: string,
   economics?: Record<string, MergeEconomics>
 ): number {
   const econ = economicsFor(repo, economics);
   const p90Ms =
     econ?.candidate_ci_p90_secs != null ? econ.candidate_ci_p90_secs * 1000 : 0;
-  return Math.max(CONFLICT_DEFERRAL_MAX_MS, 2 * p90Ms);
+  if (kind === "conflict-deferred") {
+    return Math.max(CONFLICT_DEFERRAL_MAX_MS, 2 * p90Ms);
+  }
+  return Math.max(WAITING_STALE_MAX_MS, 4 * p90Ms);
 }
 
 /**
@@ -404,6 +469,85 @@ export function conflictStrandedForMs(
   const secs = pr.conflict_age_secs;
   if (secs == null || !Number.isFinite(secs) || secs < 0) return null;
   return secs * 1000;
+}
+
+/**
+ * How long since coord last observed GitHub activity on this PR, in ms, or
+ * `null` when nothing can say.
+ *
+ * Reads coord's universal staleness clock (`last_activity_secs` — a
+ * `pr_events` ingest/review floor, so a comment or review resets it) and
+ * nothing else. This is the dwell clock for the non-conflict waiting kinds;
+ * `conflict-deferred` keeps its more precise per-conflict sibling
+ * `conflictStrandedForMs`.
+ *
+ * `null` means "no evidence" and the caller must keep the existing amber
+ * rather than invent a stall. Absence is not proof of freshness — an older
+ * coord deploy omits the field entirely, and so does a PR with no recorded
+ * events.
+ */
+export function lastActivityForMs(
+  pr: Pick<PrRow, "last_activity_secs">
+): number | null {
+  const secs = pr.last_activity_secs;
+  if (secs == null || !Number.isFinite(secs) || secs < 0) return null;
+  return secs * 1000;
+}
+
+/**
+ * The single decision point for dwell-cap escalation. Pure.
+ *
+ * Returns the input status unchanged unless ALL of: the kind has an
+ * escalation target in `STALE_ESCALATION`, the status is actually `waiting`
+ * (a running check is not a stale promise, and escalation only ever moves
+ * `waiting → author` — never the reverse, never from `none`), and `dwellMs`
+ * is finite evidence past the cap. Absence of a clock (`null`, `NaN`,
+ * negative) is never evidence of staleness — the row renders exactly as it
+ * does today.
+ */
+export function escalateStaleWaiting(
+  status: UnifiedStatus,
+  dwellMs: number | null,
+  cap: number
+): UnifiedStatus {
+  const target = STALE_ESCALATION[status.kind];
+  if (target === undefined) return status;
+  if (status.attention !== "waiting") return status;
+  if (dwellMs === null || !Number.isFinite(dwellMs) || dwellMs <= cap) {
+    return status;
+  }
+  const dur = formatDurationShort(dwellMs);
+  switch (target) {
+    case "needs-rebase-stale":
+      return {
+        kind: target,
+        label: "Behind (stalled)",
+        reason:
+          `no observed activity for ${dur} while behind its base — coord's ` +
+          `auto-rebase promise has expired; needs an author look`,
+        attention: "author",
+      };
+    case "blocked-stale":
+      return {
+        kind: target,
+        label: "Blocked (stalled)",
+        reason:
+          `no observed activity for ${dur} while waiting on an overlapping PR ` +
+          `— the overlap should have cleared by now; needs an author look`,
+        attention: "author",
+      };
+    case "conflict-stranded":
+      return {
+        kind: target,
+        label: "Conflict (stranded)",
+        reason:
+          `conflict unresolved for ${dur} — coord cannot ` +
+          `rebase past it and will not reach it on its own; needs an author rebase`,
+        attention: "author",
+      };
+    default:
+      return status;
+  }
 }
 
 /**
@@ -468,26 +612,14 @@ function statusFromGitHub(
         attention: "author",
       };
     }
-    // RED again — the deferral premise EXPIRED. Everything below assumes coord
-    // reaches this PR soon; past the per-repo deferral window that assumption is
-    // falsified by the clock, and the honest report is that nobody is coming.
-    const strandedMs = conflictStrandedForMs(pr);
-    const deferralMaxMs = conflictDeferralMaxMs(pr.repo, economics);
-    if (strandedMs !== null && strandedMs > deferralMaxMs) {
-      return {
-        kind: "conflict-stranded",
-        label: "Conflict (stranded)",
-        reason:
-          `conflict unresolved for ${formatDurationShort(strandedMs)} — coord cannot ` +
-          `rebase past it and will not reach it on its own; needs an author rebase`,
-        attention: "author",
-      };
-    }
     // AMBER — "resolve just-before-merge": long-CI repo, not near the front.
     // coord only rebases this candidate right before it merges it, so resolving
     // the conflict now would just go stale. De-escalated: NOT counted as
     // "needs attention" (that count stays true-urgency only). Bounded by the
-    // hatch above so this can never become a permanent parking state.
+    // shared dwell-cap escalation in `buildPipelineRows` (deferred →
+    // conflict-stranded past the per-repo window, on the precise
+    // `conflictStrandedForMs` clock), so this can never become a permanent
+    // parking state.
     const econ = economicsFor(pr.repo, economics);
     const ciMs =
       econ?.candidate_ci_p90_secs != null
@@ -713,6 +845,39 @@ function pickMergedAt(
   return pr?.merged_at ?? newestProposalMerge;
 }
 
+/**
+ * Apply the dwell-cap escalation exactly once, at the end of the status
+ * derivation — the shared exit BOTH `statusFromProposal` and
+ * `statusFromGitHub` flow through, so every waiting kind is covered no matter
+ * which side produced it (`blocked` comes from proposals; the other two from
+ * GitHub — a hatch in only one of them is the 6-of-16 miss this generalizes).
+ *
+ * Clock selection: `conflict-deferred` keeps its precise per-conflict clock
+ * (`conflict_age_secs`); the other kinds read the universal activity clock
+ * (`last_activity_secs`). A proposal-only row has no PrRow, hence no clock,
+ * hence never escalates — by design, since absence is not evidence.
+ */
+function escalateIfStale(
+  status: UnifiedStatus,
+  repo: string,
+  pr: PrRow | null,
+  economics: Record<string, MergeEconomics>
+): UnifiedStatus {
+  const kind = status.kind;
+  if (!isEscalatable(kind)) return status;
+  const dwellMs =
+    pr === null
+      ? null
+      : kind === "conflict-deferred"
+        ? conflictStrandedForMs(pr)
+        : lastActivityForMs(pr);
+  return escalateStaleWaiting(
+    status,
+    dwellMs,
+    waitingDwellCapMs(kind, repo, economics)
+  );
+}
+
 export function buildPipelineRows(
   prs: PrRow[],
   proposals: ProposalDetail[],
@@ -747,9 +912,14 @@ export function buildPipelineRows(
     const attempts = byKey.get(key) ?? [];
     if (attempts.length > 0) consumedProposalKeys.add(key);
     const active = pickActiveProposal(attempts);
-    const status = active
-      ? statusFromProposal(active)
-      : statusFromGitHub(pr, economicsByRepo);
+    const status = escalateIfStale(
+      active
+        ? statusFromProposal(active)
+        : statusFromGitHub(pr, economicsByRepo),
+      pr.repo,
+      pr,
+      economicsByRepo
+    );
     rows.push({
       key,
       repo: pr.repo,
@@ -781,7 +951,18 @@ export function buildPipelineRows(
     const first = active.repos[0];
     if (!first) continue; // unreachable: zero-repo proposals never enter byKey
     const isGroup = active.repos.length > 1;
-    const status = statusFromProposal(active);
+    // Same escalation path as the PR rows, with no PrRow → no dwell clock →
+    // never escalates here. Uniform code, absence-is-no-evidence semantics.
+    // NB for GROUP rows the member PRs (looked up below for `members`) DO
+    // carry clocks; not feeding them is deliberate under-escalation — the
+    // safe direction. Feeding `max(member clocks)` is a product decision,
+    // not a bug fix.
+    const status = escalateIfStale(
+      statusFromProposal(active),
+      first.repo,
+      null,
+      economicsByRepo
+    );
     rows.push({
       key,
       repo: first.repo,
@@ -844,6 +1025,10 @@ const KIND_RANK: Record<UnifiedStatusKind, number> = {
   // A strand is act-now by definition — it has already waited longer than the
   // deferral window, so it sorts with the other author-blocked rows.
   "conflict-stranded": 0,
+  // Same for the expired waiting promises: each has already dwelled past its
+  // cap, so both sort with the author-blocked cluster.
+  "needs-rebase-stale": 0,
+  "blocked-stale": 0,
   "not-mergeable": 0,
   requirements: 0,
   "checks-failing": 0,
@@ -1013,9 +1198,10 @@ export function derivePipelineHealth(
   // normally": the escalation reached the row badge and the needs-attention
   // chip, but not the headline the operator actually scans.
   //
-  // The two sides are disjoint by construction: `buildPipelineRows` only calls
-  // `statusFromGitHub` (the sole producer of GITHUB_CONFLICT_KINDS) when the
-  // row has no active proposal, so nothing is double-counted.
+  // The two sides are disjoint by construction: GITHUB_CONFLICT_KINDS arise
+  // only on rows with no active proposal (`statusFromGitHub`, plus the dwell
+  // escalation over its `conflict-deferred` — `statusFromProposal` never emits
+  // that kind), so nothing is double-counted.
   // Counted as DISTINCT PRs, not rows. A multi-repo group proposal produces
   // its OWN row (keyed `repoA::b1|repoB::b2`) *and* a row per member PR, so a
   // row-wise sum reports one conflict two or three times — and this number is
@@ -1099,6 +1285,20 @@ export function derivePipelineHealth(
   if (conflicts > 0)
     authorReasons.push(
       `${conflicts} PR${conflicts === 1 ? " needs" : "s need"} an author rebase`
+    );
+  // Stale waits are the same class of author-side backlog — a `waiting`
+  // promise that outlived its dwell cap. Same headline treatment as
+  // conflicts, same non-effect on `level`: visible to the operator's scan,
+  // never a pipeline-throughput signal.
+  const staleWaits = rows.filter(
+    (r) =>
+      r.status.kind === "needs-rebase-stale" ||
+      r.status.kind === "blocked-stale"
+  ).length;
+  if (staleWaits > 0)
+    authorReasons.push(
+      `${staleWaits} stalled waiting PR${staleWaits === 1 ? "" : "s"} ` +
+        `need${staleWaits === 1 ? "s" : ""} an author look`
     );
   // Orthogonal means the conflict count is no evidence EITHER WAY — it does not
   // license asserting the positive. With backlog present and nothing at all in

@@ -390,6 +390,12 @@ async def _job_memory_decay() -> Any:
     return await _run_committed(decay_once)
 
 
+async def _job_memory_reap() -> Any:
+    from app.jobs.memory_lifecycle import reap_once
+
+    return await _run_committed(reap_once)
+
+
 async def _job_memory_reindex() -> Any:
     from app.jobs.memory_lifecycle import reindex_once
 
@@ -455,7 +461,38 @@ def install_default_tasks(service: SchedulerService) -> None:
     )
     service.register(
         ScheduledTask(
-            name="memory_reindex", coro=_job_memory_reindex, cron="40 3 * * *"
+            name="memory_reap",
+            # Every 10 minutes, NOT the daily cadence it had while bundled into
+            # memory_decay. The reaper requeues job claims a runner abandoned,
+            # and it is the queue's ONLY self-healing path: a claimed row is
+            # handed to nobody (claim_jobs selects status='pending') and blocks
+            # re-enqueue (enqueue_jobs counts 'claimed' as live), so until this
+            # runs, one halted runner strands that cluster's synthesis entirely.
+            # Observed 2026-07-23: a synthesis job claimed at 13:34 was stale at
+            # 14:04 (JOB_CLAIM_STALE_MINUTES=30) but unreachable until the next
+            # 03:10 decay sweep — ~13h of dead queue for a 30-min staleness bound.
+            # The sweep is a cheap claimed_at-bounded UPDATE; run_at_boot clears
+            # anything a deploy-time kill stranded mid-claim.
+            coro=_job_memory_reap,
+            cron="*/10 * * * *",
+            run_at_boot=True,
+        )
+    )
+    service.register(
+        ScheduledTask(
+            name="memory_reindex",
+            # Every 10 minutes, NOT the daily beat cadence this was ported from.
+            # reindex ENQUEUES kind='embedding' jobs for NULL/stale-embedding rows;
+            # a runner claims and vectorizes them (the backend has no embedder).
+            # On the daily cron, an API-written record stayed unembedded for up to
+            # ~24h — invisible to BOTH clustering (memory_consolidate fetches only
+            # embedding IS NOT NULL) and retrieval. */10 makes new rows embeddable
+            # within a tick; run_at_boot sweeps promptly after every deploy. The
+            # enqueue is cheap DB work (the vectorization is runner-paid), and
+            # fetch_reindex_batch excludes in-flight jobs so ticks don't re-enqueue.
+            coro=_job_memory_reindex,
+            cron="*/10 * * * *",
+            run_at_boot=True,
         )
     )
     service.register(

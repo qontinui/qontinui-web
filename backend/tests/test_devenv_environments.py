@@ -132,6 +132,107 @@ class TestDiffEnvelopes:
         assert report.severity == "critical"
         assert report.in_sync is False
 
+    def test_repo_derived_key_change_is_info_and_flagged(self) -> None:
+        """A repo-derived key in the CRITICAL ``versions`` section → info + derived.
+
+        ``runner_crate_version`` is parsed from the ``Cargo.toml`` next to the
+        capturing binary, so it reports which source tree captured the config,
+        not what the box is. Two binaries on one machine legitimately disagree,
+        so calling it critical drift asserts something false.
+        """
+        canonical = _envelope({"versions": {"runner_crate_version": "1.0.5"}})
+        actual = _envelope({"versions": {"runner_crate_version": "1.0.3"}})
+        report = devenv_drift.diff_envelopes(canonical, actual)
+
+        delta = _delta(_section(report, "versions"), "runner_crate_version")
+        assert delta.status == "changed"
+        assert delta.derived is True
+        assert delta.severity == "info"
+        assert report.severity == "info"
+
+    def test_derived_key_prefix_is_also_derived(self) -> None:
+        """The ``node_dep_*`` prefix rule applies here too, not just on pull."""
+        canonical = _envelope({"versions": {"node_dep_react": "19.0.0"}})
+        actual = _envelope({"versions": {"node_dep_react": "18.2.0"}})
+        report = devenv_drift.diff_envelopes(canonical, actual)
+
+        assert _delta(_section(report, "versions"), "node_dep_react").derived is True
+
+    def test_removed_derived_key_is_not_critical(self) -> None:
+        """``removed`` is normally always critical — derived keys are the exception."""
+        canonical = _envelope({"versions": {"tauri": "2.0.0"}})
+        actual = _envelope({"versions": {}})
+        report = devenv_drift.diff_envelopes(canonical, actual)
+
+        delta = _delta(_section(report, "versions"), "tauri")
+        assert delta.status == "removed"
+        assert delta.derived is True
+        assert delta.severity == "info"
+
+    def test_derived_only_difference_stays_in_sync(self) -> None:
+        """A machine differing ONLY in derived keys is in sync.
+
+        This is the canonical-box-diffs-dirty-against-itself case: the drift is
+        visible but it is not machine drift, so it must not fail the oracle.
+        """
+        canonical = _envelope({"versions": {"node_package_version": "1.0.5"}})
+        actual = _envelope({"versions": {"node_package_version": "1.0.3"}})
+        report = devenv_drift.diff_envelopes(canonical, actual)
+
+        assert report.in_sync is True
+        # Still reported — visible, just not drift.
+        assert _section(report, "versions") is not None
+
+    def test_observed_toolchain_key_is_not_derived(self) -> None:
+        """``python``/``node``/``rustc`` are shelled --version reads → real drift."""
+        canonical = _envelope({"versions": {"python": "3.12"}})
+        actual = _envelope({"versions": {"python": "3.11"}})
+        report = devenv_drift.diff_envelopes(canonical, actual)
+
+        delta = _delta(_section(report, "versions"), "python")
+        assert delta.derived is False
+        assert delta.severity == "critical"
+        assert report.in_sync is False
+
+    def test_mixed_section_keeps_real_drift(self) -> None:
+        """A derived key must not mask a real one sharing its section."""
+        canonical = _envelope(
+            {"versions": {"python": "3.12", "runner_crate_version": "1.0.5"}}
+        )
+        actual = _envelope(
+            {"versions": {"python": "3.11", "runner_crate_version": "1.0.3"}}
+        )
+        report = devenv_drift.diff_envelopes(canonical, actual)
+
+        section = _section(report, "versions")
+        assert _delta(section, "python").severity == "critical"
+        assert _delta(section, "runner_crate_version").severity == "info"
+        assert section.severity == "critical"
+        assert report.in_sync is False
+
+    def test_env_contract_is_flagged_process_scoped_not_suppressed(self) -> None:
+        """``env_contract`` deltas are LABELLED, never downgraded or hidden.
+
+        Server-side, a process-scope artifact and a genuinely missing value are
+        indistinguishable — so suppressing would hide real missing config.
+        """
+        canonical = _envelope({"env_contract": {"QONTINUI_API_URL": "present"}})
+        actual = _envelope({"env_contract": {}})
+        report = devenv_drift.diff_envelopes(canonical, actual)
+
+        section = _section(report, "env_contract")
+        assert section.process_scoped is True
+        assert _delta(section, "QONTINUI_API_URL").severity == "critical"
+        assert report.in_sync is False
+
+    def test_non_env_contract_sections_are_not_process_scoped(self) -> None:
+        """The process-scope flag must not leak onto machine-scoped sections."""
+        canonical = _envelope({"services": {"redis": "6379"}})
+        actual = _envelope({"services": {"redis": "6380"}})
+        report = devenv_drift.diff_envelopes(canonical, actual)
+
+        assert _section(report, "services").process_scoped is False
+
     def test_identical_envelopes_in_sync(self) -> None:
         """Identical envelopes → in_sync, no section deltas."""
         env = _envelope(
