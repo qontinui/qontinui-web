@@ -130,8 +130,10 @@ class TestTenantGateFailClosed:
 
         assert resp.status_code != 200
         assert resp.status_code == 401
-        # The gate actually consulted coord's /me (the route is gated, not open).
-        assert any(
+        # No-bearer requests 401 locally WITHOUT an outbound coord call —
+        # otherwise unauthenticated scanners could drive load against
+        # coord's /admin/coord/me (amplification, review finding Low-1).
+        assert not any(
             call.args[0].endswith("/admin/coord/me") for call in stub.get.call_args_list
         )
 
