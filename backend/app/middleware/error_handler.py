@@ -6,6 +6,7 @@ import structlog
 from fastapi import HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.config import settings
@@ -110,6 +111,87 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         status_code=exc.status_code,
         content=content,
         headers=exc.headers,
+    )
+
+
+# Hint clients send with the DB-unavailable 503s below.
+DB_UNAVAILABLE_RETRY_AFTER_SECONDS = "5"
+
+
+def _db_unavailable_response(request: Request, message: str) -> JSONResponse:
+    """Build the standardized DB-unavailable 503 with a Retry-After header."""
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={
+            "error": ErrorCode.SERVICE_UNAVAILABLE.value,
+            "message": message,
+            "timestamp": time.time(),
+            "path": str(request.url),
+        },
+        headers={"Retry-After": DB_UNAVAILABLE_RETRY_AFTER_SECONDS},
+    )
+
+
+async def db_timeout_exception_handler(
+    request: Request, exc: SQLAlchemyTimeoutError
+) -> JSONResponse:
+    """Handle DB connection-pool checkout timeouts with an honest 503.
+
+    ``sqlalchemy.exc.TimeoutError`` is what QueuePool raises when
+    ``pool_timeout`` elapses with every connection checked out (pool
+    saturation). It MUST stay a TYPED handler: per-class handlers are
+    dispatched by ExceptionMiddleware INSIDE the middleware stack, so the
+    response passes through CORSMiddleware and reaches browsers with
+    ``Access-Control-Allow-Origin``. A generic ``Exception`` catch-all runs
+    in ServerErrorMiddleware, OUTSIDE CORSMiddleware — browsers then
+    misreport the failure as a CORS error (2026-07-21 prod incident).
+    """
+    logger.error(
+        "db_pool_exhausted",
+        error=str(exc),
+        error_type=type(exc).__name__,
+        method=request.method,
+        path=request.url.path,
+    )
+    return _db_unavailable_response(
+        request,
+        "Database connection pool is saturated; please retry shortly",
+    )
+
+
+async def db_operational_exception_handler(
+    request: Request, exc: Exception
+) -> JSONResponse:
+    """Handle DB connectivity failures (unreachable/refused/dropped) as 503.
+
+    Registered for the classes the app's drivers ACTUALLY raise (verified
+    against SQLAlchemy 2.0 + asyncpg — the asyncpg dialect never translates
+    to ``OperationalError``):
+
+    - ``OperationalError`` — psycopg2/sync-engine connectivity failures.
+    - ``InterfaceError`` — asyncpg statement-time dropped connections.
+    - builtin ``ConnectionRefusedError`` — asyncpg CONNECT-time refusal
+      (DB down/unreachable, including the ``pool_pre_ping`` reconnect
+      path); it escapes SQLAlchemy untranslated. Outbound HTTP/Redis
+      clients wrap their refusals in library-specific classes
+      (``httpx.ConnectError``, ``redis.exceptions.ConnectionError``), so a
+      bare ``ConnectionRefusedError`` reaching app level is, in practice,
+      the DB connect path.
+
+    Same typed-handler requirement as ``db_timeout_exception_handler`` —
+    the 503 must be produced inside the middleware stack to carry CORS
+    headers.
+    """
+    logger.error(
+        "db_unavailable",
+        error=str(exc),
+        error_type=type(exc).__name__,
+        method=request.method,
+        path=request.url.path,
+    )
+    return _db_unavailable_response(
+        request,
+        "Database is temporarily unavailable; please retry shortly",
     )
 
 
