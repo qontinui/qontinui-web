@@ -5,15 +5,10 @@ import { createLogger } from "@/lib/logger";
 
 const log = createLogger("ActivityTracker");
 
-<<<<<<< HEAD
 // Matches the Cognito app client's IdTokenValidity, which was raised from AWS's
 // 60-minute default to 3h on the `qontinui-web` app client out-of-band (console
 // change, not visible in this repo) — so an idle-timeout sign-out can't fire
 // earlier than the session it is meant to bound.
-=======
-// Matches the Cognito app client's IdTokenValidity (3h) so an idle-timeout
-// sign-out can't fire earlier than the session it is meant to bound.
->>>>>>> d798222e (feat: silent Cognito token refresh so sessions stop expiring hourly)
 const INACTIVITY_TIMEOUT = 3 * 60 * 60 * 1000; // 3 hours in milliseconds
 const WARN_BEFORE_TIMEOUT = 3 * 60 * 1000; // Warn 3 minutes before timeout
 
