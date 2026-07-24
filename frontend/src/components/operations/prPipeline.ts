@@ -1106,6 +1106,13 @@ export function matchesFilter(row: PipelineRow, f: PipelineFilter): boolean {
     case "attention":
       return row.status.attention !== "none";
     case "in-flight": {
+      // A landed PR is never in flight, whatever its proposal still says. The
+      // proposal can lag the land — a PR merged by the merge button leaves
+      // coord's proposal sitting `queued` until the reconcile sweep — and
+      // since a merged row now reports `merged` rather than the proposal's
+      // state, keying this arm on the proposal alone would file the same row
+      // under both "Merged" and "In flight".
+      if (row.status.kind === "merged") return false;
       const s = row.activeProposal?.status;
       return s !== undefined && !TERMINAL.has(s);
     }

@@ -389,6 +389,7 @@ async def get_prs(
     include_merged: int = Query(
         default=0,
         ge=0,
+        le=24 * 30,
         description="When >0, ask coord to include recently-merged PRs (with "
         "per-PR deploy_state) in the list, not just open PRs. 0 (default) "
         "preserves the open-PRs-only behavior. coord honors this only after "
