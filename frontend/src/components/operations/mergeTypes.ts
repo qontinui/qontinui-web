@@ -155,6 +155,13 @@ export interface PrRow {
 export interface PrListResponse {
   prs: PrRow[];
   total: number;
+  /**
+   * How many PRs landed inside the `?merged_count_hours=` window — the count
+   * alone, without the expensive per-PR deploy classification `include_merged`
+   * pays for. Absent when we didn't ask, and also when coord's count failed or
+   * the deploy predates the param: absent means UNKNOWN, never zero.
+   */
+  merged_recent_count?: number | null;
 }
 
 // ============================================================================

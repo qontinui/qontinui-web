@@ -24,6 +24,7 @@ const hookData: { current: MergePipelineData } = {
     proposals: [],
     prs: [],
     mergedPrs: null,
+    mergedCount: null,
     suggestions: [],
     gateBlocks: [],
     gateTotalBlocks: 0,
@@ -112,6 +113,7 @@ describe("MergePipeline", () => {
       proposals: [],
       prs: [],
       mergedPrs: null,
+      mergedCount: null,
       error: null,
     };
   });
@@ -489,16 +491,83 @@ describe("MergePipeline", () => {
     expect(hookCalls.at(-1)?.includeMerged).toBe(false);
   });
 
-  it("shows a dash, not '0', for the merged count before it has looked", () => {
+  it("labels the Merged tab from coord's cheap count before the tab is opened", () => {
     hookData.current.prs = [pr()];
+    // The expensive rows read has not run — but the hot poll's cheap count has.
     hookData.current.mergedPrs = null;
+    hookData.current.mergedCount = 7;
 
     render(<MergePipeline />);
 
-    // "0" here would assert an unknown as a fact — nothing has been fetched.
+    expect(screen.getByTestId("pipeline-filter-merged")).toHaveTextContent(
+      /Merged\s*7/
+    );
+    expect(screen.getByTestId("pipeline-filter-merged")).not.toHaveTextContent(
+      "–"
+    );
+  });
+
+  it("shows a dash, not '0', when coord cannot answer the merged count", () => {
+    hookData.current.prs = [pr()];
+    hookData.current.mergedPrs = null;
+    hookData.current.mergedCount = null;
+
+    render(<MergePipeline />);
+
+    // "0" here would assert an unknown as a fact — nothing has been counted.
     expect(screen.getByTestId("pipeline-filter-merged")).toHaveTextContent("–");
     expect(screen.getByTestId("pipeline-filter-merged")).not.toHaveTextContent(
       /Merged\s*0/
     );
+  });
+
+  it("prefers the fetched rows over the count once the tab is open", () => {
+    hookData.current.prs = [pr()];
+    hookData.current.mergedPrs = [mergedPr(1, 5, "aaaaaaa1111")];
+    // A stale count from an earlier poll must not outrank what we now hold.
+    hookData.current.mergedCount = 7;
+
+    render(<MergePipeline />);
+
+    expect(screen.getByTestId("pipeline-filter-merged")).toHaveTextContent(
+      /Merged\s*1/
+    );
+  });
+
+  // --------------------------------------------------------------------------
+  // Phantom-open ff-lands: in BOTH lists at once
+  // --------------------------------------------------------------------------
+
+  it("renders a landed PR once, as merged, when the open poll still has it", () => {
+    // coord's ff-land pushes a rebased sha, so GitHub never auto-closes the
+    // PR: the open poll still reports it `open` while the merged read reports
+    // it landed. The merged row is the truthful one.
+    const phantom = {
+      pr_number: 55,
+      branch: "feat/phantom",
+      repo: "qontinui/qontinui-web",
+    };
+    hookData.current.prs = [pr({ ...phantom, pr_state: "open" })];
+    hookData.current.mergedPrs = [
+      pr({
+        ...phantom,
+        pr_state: "open",
+        merge_commit_sha: "ccccccc3333",
+        merged_at: new Date(Date.now() - 60_000).toISOString(),
+      }),
+    ];
+
+    render(<MergePipeline />);
+
+    // Not in the live list, and counted exactly once in the merged tab.
+    expect(screen.queryAllByTestId("pipeline-row")).toHaveLength(0);
+    expect(screen.getByTestId("pipeline-filter-merged")).toHaveTextContent(
+      /Merged\s*1/
+    );
+
+    fireEvent.click(screen.getByTestId("pipeline-filter-merged"));
+    const rows = screen.getAllByTestId("pipeline-row");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toHaveTextContent("qontinui-web#55");
   });
 });
