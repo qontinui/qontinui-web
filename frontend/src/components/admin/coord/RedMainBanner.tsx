@@ -17,20 +17,54 @@
  * on the same poll cadence.
  *
  * Deliberately NOT dismissable and NOT a toast — it clears only when the
- * alert row resolves. Read-only in Phase 1: the "Spawn fix session"
- * button arrives with the auto-spawn phase (Phase 4).
+ * alert row resolves.
+ *
+ * Phase 4b adds the "Spawn fix session" button: an operator-driven
+ * remediation lane that opens a visible fix session on the operator's
+ * device for the repo's current red episode. Its enabled/disabled state is
+ * derived SOLELY from the same alert row (`detail.fix_session` +
+ * `detail.auto_fix_red_main`), so the button can never disagree with coord
+ * about whether a remediation is already in flight.
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Loader2 } from "lucide-react";
 import type { CoordAlertRow } from "@/components/admin/coord/AlertCard";
 import { httpClient } from "@/services/service-factory";
+import { redMainSpawnFixUrl } from "@/components/operations/utils";
 
 const API = "/api/v1/operations";
 /** Same cadence as the coord alerts page. */
 const POLL_INTERVAL_MS = 10_000;
 
 const RED_MAIN_KEY_PREFIX = "red_main:";
+
+const SPAWN_LABEL = "Spawn fix session";
+const RETRY_LABEL = "Retry fix session";
+const RUNNING_LABEL = "fix session running";
+const SELF_HEAL_LABEL = "auto-rerun in flight";
+
+/**
+ * Normalized view of a red-main episode's remediation, parsed from the
+ * alert row's `detail.fix_session`. That field is one of:
+ *   - the string `"none"` — no remediation active;
+ *   - an object `{state:"running"|"stalled"|"failed", agent_id, spawned_at}`
+ *     — a spawned fix session in that state;
+ *   - a self-heal string like `"auto-rerun-failed-jobs:<run_id>"` — coord's
+ *     own infra-cancel re-run is in flight (any non-`"none"` string).
+ * Anything missing or malformed normalizes to `{kind:"none"}` so a bad
+ * payload can never hide the manual spawn control (coord still 409-guards a
+ * duplicate).
+ */
+export interface FixSessionState {
+  kind: "none" | "self_heal" | "running" | "stalled" | "failed";
+  /** Spawned-session agent id (object form only). */
+  agentId?: string;
+  /** Spawn timestamp (object form only). */
+  spawnedAt?: string;
+  /** Raw self-heal reference, e.g. `auto-rerun-failed-jobs:<run_id>`. */
+  raw?: string;
+}
 
 /** One red-main episode, parsed from its `coord.alerts` row. */
 export interface RedMainAlert {
@@ -42,6 +76,70 @@ export interface RedMainAlert {
   blockedPrCount: number;
   /** Episode start — the alert row's own `first_seen_at`. */
   since?: string;
+  /** Remediation state (alert `detail.fix_session`). */
+  fixSession: FixSessionState;
+  /**
+   * Resolved `auto_fix_red_main` opt-in for this repo (alert
+   * `detail.auto_fix_red_main`). When off (or absent), the operator is the
+   * only remediation path, so the manual spawn button is always available.
+   */
+  autoFixRedMain: boolean;
+}
+
+/**
+ * Normalize `detail.fix_session` into a {@link FixSessionState}. Pure —
+ * exported for the vitest suite.
+ */
+export function parseFixSession(raw: unknown): FixSessionState {
+  if (typeof raw === "string") {
+    // Any non-"none" string is an active self-heal (auto-rerun reference).
+    return raw === "none" ? { kind: "none" } : { kind: "self_heal", raw };
+  }
+  if (raw && typeof raw === "object") {
+    const o = raw as Record<string, unknown>;
+    if (o.state === "running" || o.state === "stalled" || o.state === "failed") {
+      return {
+        kind: o.state,
+        agentId: typeof o.agent_id === "string" ? o.agent_id : undefined,
+        spawnedAt: typeof o.spawned_at === "string" ? o.spawned_at : undefined,
+      };
+    }
+  }
+  // Missing / malformed → no active remediation (button stays available).
+  return { kind: "none" };
+}
+
+/**
+ * Derive the spawn button's base state (before any in-flight/optimistic
+ * local override) from an alert. Pure — exported for the vitest suite.
+ *
+ * ENABLED when `auto_fix_red_main` is off for the repo (the operator is the
+ * only lane), OR no remediation is active (`fix_session` = "none"), OR a
+ * prior session has `stalled`/`failed` (a retry is warranted). DISABLED with
+ * an explanatory label while a session is `running` or coord's own auto-rerun
+ * is in flight.
+ */
+export function fixButtonState(a: RedMainAlert): {
+  enabled: boolean;
+  label: string;
+} {
+  if (!a.autoFixRedMain) return { enabled: true, label: SPAWN_LABEL };
+  switch (a.fixSession.kind) {
+    case "none":
+      return { enabled: true, label: SPAWN_LABEL };
+    case "stalled":
+    case "failed":
+      return { enabled: true, label: RETRY_LABEL };
+    case "running":
+      return { enabled: false, label: RUNNING_LABEL };
+    case "self_heal":
+      return { enabled: false, label: SELF_HEAL_LABEL };
+  }
+}
+
+/** Compact display form of a fix-session agent id. */
+export function truncateAgentId(id: string): string {
+  return id.length <= 12 ? id : `${id.slice(0, 8)}…`;
 }
 
 /**
@@ -77,6 +175,8 @@ export function parseRedMainAlerts(alerts: unknown): RedMainAlert[] {
       workflows,
       blockedPrCount,
       since: a.first_seen_at,
+      fixSession: parseFixSession(detail.fix_session),
+      autoFixRedMain: detail.auto_fix_red_main === true,
     });
   }
   // Stable per-repo order so the banner stack never reshuffles between polls.
@@ -112,6 +212,112 @@ export function redMainHeadline(a: RedMainAlert, nowMs: number): string {
   return (
     `🔴 ${a.repo} main is RED${since} — ` +
     `${a.blockedPrCount} ${prs} blocked, no merges will land until fixed`
+  );
+}
+
+/**
+ * Best-effort extraction of a human message from coord's error response.
+ * Coord's 409 body is JSON like `{"error":"fix session already running"}`;
+ * fall back to the raw text (or a status line) when it isn't parseable.
+ */
+function errorMessage(status: number, body: string): string {
+  const text = body.trim();
+  if (text.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(text) as Record<string, unknown>;
+      const msg = parsed.error ?? parsed.detail ?? parsed.message;
+      if (typeof msg === "string" && msg.length > 0) return msg;
+    } catch {
+      // fall through to raw text
+    }
+  }
+  return text.length > 0 ? text : `HTTP ${status}`;
+}
+
+/**
+ * The operator-driven "Spawn fix session" control for one red episode.
+ * POSTs through the web→coord operations proxy (same mechanism as the
+ * sibling merge-orchestration mutation controls). On success it optimistically
+ * shows the running state + truncated agent id until the next alert poll
+ * reflects the persisted `fix_session`; on a 409/error it surfaces coord's
+ * message inline and re-enables.
+ */
+function SpawnFixButton({ alert }: { alert: RedMainAlert }) {
+  const [submitting, setSubmitting] = useState(false);
+  const [spawnedAgentId, setSpawnedAgentId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleClick = useCallback(async () => {
+    setError(null);
+    setSubmitting(true);
+    try {
+      const res = await httpClient.fetch(redMainSpawnFixUrl(alert.repo), {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        throw new Error(errorMessage(res.status, body));
+      }
+      const data = (await res.json()) as { agent_id?: string };
+      // Optimistic: the alert row won't carry the new `fix_session` until the
+      // next poll, so pin the running state locally in the meantime.
+      setSpawnedAgentId(typeof data.agent_id === "string" ? data.agent_id : "");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }, [alert.repo]);
+
+  // Optimistic success — show the running badge + truncated id.
+  if (spawnedAgentId !== null) {
+    return (
+      <span
+        className="badge badge-warning"
+        data-testid="red-main-fix-running"
+        role="status"
+      >
+        {RUNNING_LABEL}
+        {spawnedAgentId ? ` · ${truncateAgentId(spawnedAgentId)}` : ""}
+      </span>
+    );
+  }
+
+  const base = fixButtonState(alert);
+  const disabled = submitting || !base.enabled;
+  const label = submitting ? "Spawning…" : base.label;
+
+  return (
+    <span className="inline-flex items-center gap-2">
+      <button
+        type="button"
+        className="btn-primary btn-sm"
+        onClick={handleClick}
+        disabled={disabled}
+        aria-disabled={disabled}
+        data-testid="red-main-spawn-fix"
+        title={
+          base.enabled
+            ? undefined
+            : base.label === SELF_HEAL_LABEL
+              ? "Coord's automatic re-run is already remediating this episode."
+              : "A fix session is already running for this red episode."
+        }
+      >
+        {submitting && <Loader2 className="h-3 w-3 animate-spin" aria-hidden />}
+        {label}
+      </button>
+      {error && (
+        <span
+          className="badge badge-warning"
+          data-testid="red-main-spawn-fix-error"
+          role="alert"
+        >
+          {error}
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -177,6 +383,9 @@ export function RedMainBanner() {
               failing: {a.workflows.join(", ")}
             </span>
           )}
+          <span className="ml-auto">
+            <SpawnFixButton alert={a} />
+          </span>
         </div>
       ))}
     </div>

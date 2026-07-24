@@ -96,6 +96,20 @@ export function ciStatusWsUrl(token: string): string {
 export const CI_STATUS_POLL_FALLBACK_MS = 5_000;
 
 /**
+ * POST endpoint that spawns a red-main fix session for a repo (red-main
+ * auto-remediation Phase 4b). The web backend forwards to coord's
+ * `POST /pr-merge/red-main/:repo/spawn-fix`, which opens a visible fix
+ * session on the operator's device for the repo's current red episode.
+ * Coord 409s when a fix session is already running for that episode or the
+ * repo has no live red-main alert. `repo` is `owner/name` and is inlined
+ * inside the path (the backend route captures it as `{repo:path}`, the same
+ * shape as `/pr-merge/repos/:repo/profile`).
+ */
+export function redMainSpawnFixUrl(repo: string): string {
+  return `${OPERATIONS_API}/pr-merge/red-main/${repo}/spawn-fix`;
+}
+
+/**
  * REST + action endpoints for the gates panel (plan
  * `2026-06-05-plan-gate-web-surface-and-productization` Phase 2). All
  * tenant-scoped server-side via the operator → tenant_id resolver (coord
