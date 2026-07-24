@@ -1520,6 +1520,9 @@ describe("merged rows", () => {
     expect(rows[0].status.kind).toBe("merged");
     expect(matchesFilter(rows[0], "merged")).toBe(true);
     expect(matchesFilter(rows[0], "all")).toBe(false);
+    // ...and NOT still in flight. The proposal lags the land, so keying the
+    // in-flight arm on the proposal alone would file one row under two tabs.
+    expect(matchesFilter(rows[0], "in-flight")).toBe(false);
   });
 });
 

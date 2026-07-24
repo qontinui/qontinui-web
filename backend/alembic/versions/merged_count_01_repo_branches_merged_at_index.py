@@ -14,36 +14,49 @@ partial WHERE keeps the index to landed rows only — a small fraction of the
 table, since every open PR row and every pre-``d7e8f9a0b1c2`` row has NULL
 there. ``merged_at DESC`` matches the newest-first window scan.
 
+``CREATE INDEX CONCURRENTLY`` (not plain ``CREATE INDEX``), following
+``coord_pg_overload_idx_01``: ``coord.repo_branches`` is UPSERTed by every
+``pull_request`` webhook, so an in-transaction build would take a
+write-blocking ``SHARE`` lock across the build. CONCURRENTLY cannot run inside
+a transaction, hence ``op.get_context().autocommit_block()``. On a CI fresh DB
+the table is tiny and the build is instant. Additive / forward-only:
+``upgrade`` creates ``IF NOT EXISTS``, ``downgrade`` drops ``IF EXISTS``.
+
+Note on a killed CONCURRENTLY build: a partial build leaves an INVALID index of
+the same name, which ``IF NOT EXISTS`` would then skip. If that happens, ``DROP
+INDEX`` the invalid index manually and re-run.
+
 Revision ID: merged_count_01_merged_at_idx
-Revises: served_sha_01_devices_columns
+Revises: dry_run_retire_02_drop_bools
 Create Date: 2026-07-24
 
 """
 
 from collections.abc import Sequence
 
-import sqlalchemy as sa
-
 from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "merged_count_01_merged_at_idx"
-down_revision: str | None = "served_sha_01_devices_columns"
+down_revision: str | None = "dry_run_retire_02_drop_bools"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-_INDEX_NAME = "idx_repo_branches_merged_at"
-
 
 def upgrade() -> None:
-    op.create_index(
-        _INDEX_NAME,
-        "repo_branches",
-        [sa.text("merged_at DESC")],
-        schema="coord",
-        postgresql_where=sa.text("merge_commit_sha IS NOT NULL"),
-    )
+    with op.get_context().autocommit_block():
+        op.execute(
+            """
+            CREATE INDEX CONCURRENTLY IF NOT EXISTS
+                idx_repo_branches_merged_at
+            ON coord.repo_branches (merged_at DESC)
+            WHERE merge_commit_sha IS NOT NULL
+            """
+        )
 
 
 def downgrade() -> None:
-    op.drop_index(_INDEX_NAME, table_name="repo_branches", schema="coord")
+    with op.get_context().autocommit_block():
+        op.execute(
+            "DROP INDEX CONCURRENTLY IF EXISTS coord.idx_repo_branches_merged_at"
+        )

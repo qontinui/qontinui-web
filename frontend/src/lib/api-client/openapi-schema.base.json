@@ -48282,6 +48282,7 @@
             "schema": {
               "default": 0,
               "description": "When >0, ask coord to include recently-merged PRs (with per-PR deploy_state) in the list, not just open PRs. 0 (default) preserves the open-PRs-only behavior. coord honors this only after its own per-PR-deploy-state PR lands; forwarding it is harmless before then.",
+              "maximum": 720,
               "minimum": 0,
               "title": "Include Merged",
               "type": "integer"
