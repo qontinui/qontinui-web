@@ -171,6 +171,26 @@ export function gateContinuationCancelUrl(gateId: string): string {
 export const GATES_POLL_MS = 15_000;
 
 /**
+ * POST endpoint that sets a PR's GitHub draft state (plan
+ * `2026-07-23-operator-set-pr-draft-state`). Body `{draft: bool}`: `false`
+ * marks the PR ready-for-review (releasing it to the merge train), `true`
+ * converts it back to draft (the documented hold). The web backend forwards
+ * the operator's Cognito bearer to coord's
+ * `POST /coord/repos/{owner}/{repo}/pull-requests/{number}/draft-state`; the
+ * caller never passes a tenant_id. `owner`/`repo` come from splitting the
+ * row's `owner/name` repo string.
+ */
+export function prDraftStateUrl(
+  owner: string,
+  repo: string,
+  number: number
+): string {
+  return `${OPERATIONS_API}/prs/${encodeURIComponent(owner)}/${encodeURIComponent(
+    repo
+  )}/${number}/draft-state`;
+}
+
+/**
  * REST endpoint for the Phase 4.4 symbol-claims surface. Proxies coord's
  * `/coord/claims/list?kind=symbol` so the dashboard can render the
  * per-machine "currently editing" sub-line without the browser hitting

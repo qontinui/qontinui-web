@@ -30,6 +30,7 @@ const hookData: { current: MergePipelineData } = {
     error: null,
     suggestionBusy: null,
     onSuggestionAction: () => {},
+    refetch: () => {},
   },
 };
 
@@ -53,6 +54,17 @@ const MERGED_LOOKBACK_HOURS = 48;
 const fetchMock = vi.fn();
 vi.mock("@/services/service-factory", () => ({
   httpClient: { fetch: (...args: unknown[]) => fetchMock(...args) },
+}));
+
+// The draft-state toggle surfaces success/error via sonner; stub it so the
+// gating tests never render real toasts and can assert what was signalled.
+const toastSuccess = vi.fn();
+const toastError = vi.fn();
+vi.mock("sonner", () => ({
+  toast: Object.assign(vi.fn(), {
+    success: (...a: unknown[]) => toastSuccess(...a),
+    error: (...a: unknown[]) => toastError(...a),
+  }),
 }));
 
 import {
@@ -500,5 +512,67 @@ describe("MergePipeline", () => {
     expect(screen.getByTestId("pipeline-filter-merged")).not.toHaveTextContent(
       /Merged\s*0/
     );
+  });
+
+  // Draft-state toggle (plan 2026-07-23-operator-set-pr-draft-state). The
+  // control is gated on the row's pr_state and lives in the expanded detail.
+  describe("draft-state toggle", () => {
+    it("offers 'Ready for review' (not 'Convert to draft') on a draft PR", () => {
+      hookData.current.prs = [
+        pr({ pr_number: 900, pr_state: "draft", merge_state_status: "DRAFT" }),
+      ];
+
+      render(<MergePipeline />);
+      fireEvent.click(screen.getByText("qontinui-web#900"));
+
+      expect(screen.getByTestId("pr-ready-for-review")).toBeInTheDocument();
+      expect(
+        screen.queryByTestId("pr-convert-to-draft")
+      ).not.toBeInTheDocument();
+    });
+
+    it("offers 'Convert to draft' (not 'Ready for review') on an open PR", () => {
+      hookData.current.prs = [pr({ pr_number: 901 })]; // default pr_state "open"
+
+      render(<MergePipeline />);
+      fireEvent.click(screen.getByText("qontinui-web#901"));
+
+      expect(screen.getByTestId("pr-convert-to-draft")).toBeInTheDocument();
+      expect(
+        screen.queryByTestId("pr-ready-for-review")
+      ).not.toBeInTheDocument();
+    });
+
+    it("confirms the release-to-train consequence before undrafting", async () => {
+      fetchMock.mockResolvedValue({ ok: true, json: async () => ({}) });
+      hookData.current.prs = [
+        pr({ pr_number: 900, pr_state: "draft", merge_state_status: "DRAFT" }),
+      ];
+
+      render(<MergePipeline />);
+      fireEvent.click(screen.getByText("qontinui-web#900"));
+
+      // Clicking the button must NOT fire the mutation directly — it opens a
+      // confirm whose copy names the auto-land consequence.
+      fireEvent.click(screen.getByTestId("pr-ready-for-review"));
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(
+        screen.getByText(/Release #900 to the merge train\?/)
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(/coord will land it automatically/i)
+      ).toBeInTheDocument();
+
+      // Confirming POSTs draft:false to the draft-state proxy.
+      fireEvent.click(screen.getByText("Release to merge train"));
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+      const [url, init] = fetchMock.mock.calls[0] as [
+        string,
+        { method: string; body: string },
+      ];
+      expect(url).toContain("/prs/qontinui/qontinui-web/900/draft-state");
+      expect(init.method).toBe("POST");
+      expect(JSON.parse(init.body)).toEqual({ draft: false });
+    });
   });
 });

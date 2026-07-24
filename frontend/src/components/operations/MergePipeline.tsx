@@ -17,10 +17,20 @@
 //   - the actionable side-channels (suggestions, gate decisions) and the raw
 //     proposal stream demoted to a collapsed "Merge internals" section.
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   AlertTriangle,
   ChevronDown,
@@ -28,14 +38,19 @@ import {
   ExternalLink,
   GitMerge,
   GitPullRequest,
+  PenLine,
   RotateCcw,
+  Send,
   ShieldAlert,
   ShieldQuestion,
 } from "lucide-react";
 import Link from "next/link";
+import { toast } from "sonner";
+import { createLogger } from "@/lib/logger";
+import { httpClient } from "@/services/service-factory";
 import { CollapsiblePanel } from "./CollapsiblePanel";
 import { GateDecisionRow, MergeTrainRow, SuggestionCard } from "./MergeTrain";
-import { relativeTime } from "./utils";
+import { prDraftStateUrl, relativeTime } from "./utils";
 import {
   MERGED_LOOKBACK_HOURS,
   useMergePipelineData,
@@ -203,6 +218,148 @@ function RowTime({ row }: { row: PipelineRow }) {
 
 function prHref(repo: string, prNumber: number): string {
   return `https://github.com/${repo}/pull/${prNumber}`;
+}
+
+const log = createLogger("MergePipeline");
+
+/**
+ * Split a row's full `owner/name` repo string into `[owner, name]`.
+ * The draft-state coord route addresses the repo by owner + name segments,
+ * but the pipeline row carries them joined. Returns null when the string
+ * isn't `owner/name` shaped, so the caller can hide the control rather than
+ * POST a malformed path.
+ */
+function splitOwnerRepo(repo: string): [string, string] | null {
+  const slash = repo.indexOf("/");
+  if (slash <= 0 || slash >= repo.length - 1) return null;
+  return [repo.slice(0, slash), repo.slice(slash + 1)];
+}
+
+/**
+ * Operator draft-state toggle for a single PR row.
+ *
+ * Gated on the PR's `pr_state`:
+ *   - `draft` → "Ready for review" (POST `{draft:false}`), which RELEASES the
+ *     PR to coord's merge train. Because that consequence is a surprise for a
+ *     draft-required (security-surface) PR, it's behind a confirm dialog that
+ *     names the release-to-train outcome.
+ *   - `open`  → "Convert to draft" (POST `{draft:true}`), the safe hold; no
+ *     confirm needed.
+ *   - anything else (merged / closed / unknown) → the control renders nothing.
+ *
+ * On success it fires a debounced `onActed` refetch so the row's status
+ * follows the twin once the `ready_for_review` / `converted_to_draft` webhook
+ * reconciles `pr_state`.
+ */
+function DraftStateButton({
+  row,
+  onActed,
+}: {
+  row: PipelineRow;
+  onActed: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  const prState = row.pr?.pr_state;
+  const owner = splitOwnerRepo(row.repo);
+
+  const submit = useCallback(
+    async (draft: boolean) => {
+      if (row.prNumber === null || owner === null) return;
+      const [ownerName, repoName] = owner;
+      setBusy(true);
+      try {
+        const res = await httpClient.fetch(
+          prDraftStateUrl(ownerName, repoName, row.prNumber),
+          { method: "POST", body: JSON.stringify({ draft }) }
+        );
+        if (!res.ok) {
+          const text = await res.text();
+          log.warn("draft-state action failed", res.status, text);
+          toast.error(
+            draft
+              ? `Couldn't convert #${row.prNumber} to draft (HTTP ${res.status})`
+              : `Couldn't release #${row.prNumber} (HTTP ${res.status})`
+          );
+          return;
+        }
+        toast.success(
+          draft
+            ? `#${row.prNumber} converted to draft — held out of the merge train.`
+            : `#${row.prNumber} marked ready for review — coord will land it once CI is green.`
+        );
+        onActed();
+      } catch (err) {
+        log.warn("draft-state action threw", err);
+        toast.error(err instanceof Error ? err.message : String(err));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [row.prNumber, owner, onActed]
+  );
+
+  // Only surface the toggle when we can act: a real PR number, a splittable
+  // `owner/name`, and a draft/open state (never merged/closed).
+  if (row.prNumber === null || owner === null) return null;
+
+  if (prState === "draft") {
+    return (
+      <>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy}
+          onClick={() => setConfirmOpen(true)}
+          data-testid="pr-ready-for-review"
+        >
+          <Send className="h-3.5 w-3.5" />
+          Ready for review
+        </Button>
+        <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                Release #{row.prNumber} to the merge train?
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                Marking {row.repoShort}#{row.prNumber} ready for review removes
+                the draft hold. Once CI is green, coord will land it
+                automatically — there is no further review step.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                disabled={busy}
+                onClick={() => void submit(false)}
+              >
+                Release to merge train
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </>
+    );
+  }
+
+  if (prState === "open") {
+    return (
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={busy}
+        onClick={() => void submit(true)}
+        data-testid="pr-convert-to-draft"
+      >
+        <PenLine className="h-3.5 w-3.5" />
+        Convert to draft
+      </Button>
+    );
+  }
+
+  return null;
 }
 
 // ----------------------------------------------------------------------------
@@ -378,7 +535,13 @@ function FailingChecks({ row }: { row: PipelineRow }) {
   );
 }
 
-function RowDetail({ row }: { row: PipelineRow }) {
+function RowDetail({
+  row,
+  onActed,
+}: {
+  row: PipelineRow;
+  onActed: () => void;
+}) {
   const active = row.activeProposal;
   const earlier = row.attempts.filter(
     (a) => a.proposal_id !== active?.proposal_id
@@ -431,6 +594,7 @@ function RowDetail({ row }: { row: PipelineRow }) {
             </Link>
           </Button>
         )}
+        <DraftStateButton row={row} onActed={onActed} />
       </div>
 
       {/* CI-on-candidate education — the #1 recurring confusion */}
@@ -525,10 +689,12 @@ function PipelineRowDisplay({
   row,
   expanded,
   onToggle,
+  onActed,
 }: {
   row: PipelineRow;
   expanded: boolean;
   onToggle: () => void;
+  onActed: () => void;
 }) {
   const Chevron = expanded ? ChevronDown : ChevronRight;
   return (
@@ -580,7 +746,7 @@ function PipelineRowDisplay({
       </button>
       {expanded && (
         <>
-          <RowDetail row={row} />
+          <RowDetail row={row} onActed={onActed} />
           <GroupMembers row={row} />
         </>
       )}
@@ -623,6 +789,7 @@ export function MergePipeline() {
     error,
     suggestionBusy,
     onSuggestionAction,
+    refetch,
   } = useMergePipelineData({ includeMerged: filter === "merged" });
 
   const [query, setQuery] = useState("");
@@ -730,6 +897,7 @@ export function MergePipeline() {
               onToggle={() =>
                 setExpandedKey((k) => (k === row.key ? null : row.key))
               }
+              onActed={refetch}
             />
           ))}
         </div>
