@@ -205,10 +205,12 @@ export function useMergePipelineData(
   // of magnitude more expensive server-side.
   //
   // It does, however, carry `?merged_count_hours=` — coord's cheap merged
-  // COUNT (one indexed count(*), no per-PR deploy classification). That rides
-  // here deliberately: it answers "how many landed?" for the Merged tab's
-  // label without a sixth request in the batch, and without dragging in the
-  // read that took the API down on 2026-07-21.
+  // COUNT (one count over the `idx_repo_branches_merged_at` partial index, no
+  // per-PR deploy classification). That rides here deliberately: it answers
+  // "how many landed?" for the Merged tab's label without a sixth request in
+  // the batch — so the request budget, and therefore the backend connection
+  // budget this file's header is about, is unchanged — and without dragging in
+  // the read that took the API down on 2026-07-21.
   const fetchPrs = useCallback(async () => {
     try {
       const res = await httpClient.fetch(
@@ -223,13 +225,17 @@ export function useMergePipelineData(
       }
       const body = (await res.json()) as PrListResponse | PrRow[];
       const list = Array.isArray(body) ? body : (body.prs ?? []);
-      // Absent (old coord deploy, or its count errored) leaves the last known
-      // value rather than asserting 0 — the count is advisory, and a blank tab
-      // label beats a wrong one.
+      // Absent means UNKNOWN — a coord too old to answer, or one whose count
+      // failed and was omitted rather than failing the listing. That resets to
+      // null (the caller renders a dash) instead of leaving the last number on
+      // screen: a stale count carries no staleness signal, so it would read as
+      // a current fact forever. Note 0 is a fact and survives; only absence is
+      // unknown. This is the SUCCESS path only — a failed request keeps
+      // whatever we last knew, same as the PR list below.
       const count = Array.isArray(body) ? undefined : body.merged_recent_count;
       if (!cleanedUpRef.current) {
         setPrs(list);
-        if (typeof count === "number") setMergedCount(count);
+        setMergedCount(typeof count === "number" ? count : null);
       }
     } catch (err) {
       // Keep the last known-good list. This endpoint is slow enough on a

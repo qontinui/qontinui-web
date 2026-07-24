@@ -795,7 +795,8 @@ async def get_pr_merge_prs(
         le=24 * 30,
         description="When >0, ask coord to add `merged_recent_count` (how many "
         "PRs landed in the last N hours) to the envelope. This is the CHEAP "
-        "half of `include_merged`: one indexed count, no per-PR deploy "
+        "half of `include_merged`: a single count over the partial index "
+        "`idx_repo_branches_merged_at`, with none of the per-PR deploy "
         "classification, so the fleet pipeline can label its 'Merged' tab "
         "without paying for the rows. Independent of `include_merged`.",
     ),
