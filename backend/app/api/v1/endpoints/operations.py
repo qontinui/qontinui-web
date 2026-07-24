@@ -789,6 +789,17 @@ async def get_pr_merge_prs(
         "not just open ones. 0 (default) preserves the open-PRs-only "
         "behavior. Backs the fleet pipeline's 'Merged' tab.",
     ),
+    merged_count_hours: int = Query(
+        default=0,
+        ge=0,
+        le=24 * 30,
+        description="When >0, ask coord to add `merged_recent_count` (how many "
+        "PRs landed in the last N hours) to the envelope. This is the CHEAP "
+        "half of `include_merged`: a single count over the partial index "
+        "`idx_repo_branches_merged_at`, with none of the per-PR deploy "
+        "classification, so the fleet pipeline can label its 'Merged' tab "
+        "without paying for the rows. Independent of `include_merged`.",
+    ),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """PR Merge Orchestrator Phase 1 D1.6 + D1.7 -- proxy coord's
@@ -799,13 +810,21 @@ async def get_pr_merge_prs(
     authenticated operator — retires the pilot-anonymous posture
     (operator decision 2026-05-31), mirroring ``/merge/queue``.
 
-    ``include_merged`` is forwarded ONLY when set, so the default request is
-    byte-for-byte the legacy call (same convention as ``/admin-dev/prs``).
-    coord's response is returned verbatim — no field whitelist — so the
-    merged-row enrichment passes through unchanged.
+    ``include_merged`` and ``merged_count_hours`` are forwarded ONLY when
+    set, so the default request is byte-for-byte the legacy call (same
+    convention as ``/admin-dev/prs``). coord's response is returned verbatim
+    — no field whitelist — so the merged-row enrichment and the
+    ``merged_recent_count`` field pass through unchanged. A coord deploy that
+    predates either param simply ignores it and omits the field.
     """
-    params = {"include_merged": include_merged} if include_merged > 0 else None
-    return await _proxy_coord_get("/pr-merge/prs", params=params, tenant_id=tenant_id)
+    params: dict[str, Any] = {}
+    if include_merged > 0:
+        params["include_merged"] = include_merged
+    if merged_count_hours > 0:
+        params["merged_count_hours"] = merged_count_hours
+    return await _proxy_coord_get(
+        "/pr-merge/prs", params=params or None, tenant_id=tenant_id
+    )
 
 
 # Coord path for the CI-duration-aware severity economics read

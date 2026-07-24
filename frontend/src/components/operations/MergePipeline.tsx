@@ -47,6 +47,7 @@ import {
   derivePipelineHealth,
   matchesFilter,
   matchesQuery,
+  singleKey,
   unstableHasFailure,
   type PipelineFilter,
   type PipelineRow,
@@ -616,6 +617,7 @@ export function MergePipeline() {
     proposals,
     prs,
     mergedPrs,
+    mergedCount,
     economicsByRepo,
     suggestions,
     gateBlocks,
@@ -629,15 +631,29 @@ export function MergePipeline() {
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   const loaded = proposals !== null && prs !== null;
-  const rows = useMemo(
-    () =>
-      buildPipelineRows(
-        [...(prs ?? []), ...(mergedPrs ?? [])],
-        proposals ?? [],
-        economicsByRepo
-      ),
-    [prs, mergedPrs, proposals, economicsByRepo]
-  );
+  const rows = useMemo(() => {
+    // The merged read returns landed rows the open poll can ALSO be carrying:
+    // an ff-landed PR sits "phantom-open" (GitHub never auto-closed it) until
+    // coord's straggler sweep, so it is in both lists at once. The merged row
+    // is the truthful one — it knows the PR landed — so it wins, and the open
+    // copy is dropped. Without this the same PR renders twice, once as live
+    // work, under a colliding row key.
+    //
+    // Keyed by `singleKey` — the SAME identity buildPipelineRows gives the row
+    // and React renders it under, so what is collapsed here is exactly what
+    // would collide there. (PR number is the tempting key and the wrong one:
+    // it is not what collides.)
+    const merged = mergedPrs ?? [];
+    const landed = new Set(merged.map((p) => singleKey(p.repo, p.branch)));
+    const open = (prs ?? []).filter(
+      (p) => !landed.has(singleKey(p.repo, p.branch))
+    );
+    return buildPipelineRows(
+      [...open, ...merged],
+      proposals ?? [],
+      economicsByRepo
+    );
+  }, [prs, mergedPrs, proposals, economicsByRepo]);
   const counts = useMemo(
     () =>
       Object.fromEntries(
@@ -684,10 +700,23 @@ export function MergePipeline() {
                   : "text-muted-foreground"
               }`}
             >
-              {/* The merged set is only fetched while its tab is open, so
-                  before that a count would be a lie ("0 merged") rather than
-                  a fact. Show a dash until we've actually looked. */}
-              {f.id === "merged" && mergedPrs === null ? "–" : counts[f.id]}
+              {/* The merged ROWS are only fetched while this tab is open, so
+                  until then `counts.merged` is 0 for want of looking, not
+                  because nothing landed. coord answers the cheap half —
+                  `merged_recent_count` — on the hot poll, so the label is a
+                  real number from the first render. A dash remains for the
+                  genuinely unknown case: coord too old to answer, or its
+                  count failed.
+
+                  The two numbers count the same landings but not the same
+                  things: coord counts landed PRs, `counts.merged` counts
+                  RENDERED rows, and a landed MULTI-REPO proposal renders a
+                  summary row on top of its member PR rows. So opening the tab
+                  can nudge the number up by the number of such groups —
+                  pre-existing row-model behavior, not a stale count. */}
+              {f.id === "merged" && mergedPrs === null
+                ? (mergedCount ?? "–")
+                : counts[f.id]}
             </span>
           </Button>
         ))}
