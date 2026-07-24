@@ -1,7 +1,7 @@
 """Drop retired legacy dry-run boolean columns
 
 Revision ID: dry_run_retire_02_drop_bools
-Revises: dry_run_retire_01_backfill
+Revises: served_sha_01_devices_columns
 Create Date: 2026-07-24
 
 Phase 6 of the dry_run_override audit + legacy-bool retirement plan
@@ -41,7 +41,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "dry_run_retire_02_drop_bools"
-down_revision: str = "dry_run_retire_01_backfill"
+down_revision: str = "served_sha_01_devices_columns"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
