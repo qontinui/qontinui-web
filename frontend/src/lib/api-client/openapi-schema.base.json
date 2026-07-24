@@ -72242,7 +72242,7 @@
         ]
       },
       "patch": {
-        "description": "Edit a prompt document's description/body. Tenant-admin only.\n\nThe body is forwarded as ``{description?, body?, change_description?}`` with\n``updated_by`` stamped from the authenticated session (see\n:func:`_editor_identity`) \u2014 a body-supplied ``updated_by`` is ignored, so the\nversion snapshot coord writes carries the real editor. Coord creates a new\nimmutable version on every successful edit; nothing is overwritten in place.",
+        "description": "Edit a prompt document's description/body/attrs. Tenant-admin only.\n\nThe body is forwarded as ``{description?, body?, attrs?,\nchange_description?}`` with ``updated_by`` stamped from the authenticated\nsession (see :func:`_editor_identity`) \u2014 a body-supplied ``updated_by`` is\nignored, so the version snapshot coord writes carries the real editor. Coord\ncreates a new immutable version on every successful description/body edit;\nnothing is overwritten in place. A supplied ``attrs`` REPLACES the stored\nattrs object wholesale (the client merges before sending), and an attrs-only\nedit is document configuration, not content \u2014 coord updates it in place\nwithout creating a version.",
         "operationId": "api_v1_operations_coord_prompt_documents_kind_name_patch",
         "parameters": [
           {

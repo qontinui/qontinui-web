@@ -297,6 +297,31 @@ class TestUpdatePromptDocument:
             == f"user:{TEST_USER_ID}"
         )
 
+    def test_attrs_only_patch_forwarded_with_identity(self, auth_client: TestClient):
+        """An attrs-only edit (the category default-tier editor's payload) is a
+        legal PATCH: the proxy is an untyped passthrough, so ``attrs`` reaches
+        coord verbatim with ``updated_by`` stamped — never rejected locally for
+        lacking ``description``/``body``."""
+        attrs = {"default_tier": "ask-first"}
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.patch.return_value = _mock_response(json_data=_doc(attrs=attrs))
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.patch(
+                f"{API_PREFIX}/coord/prompt-documents/policy/engineering-priorities",
+                json={"attrs": attrs},
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["attrs"] == attrs
+        sent = instance.patch.call_args.kwargs["json"]
+        assert sent["attrs"] == attrs
+        assert sent["updated_by"] == TEST_USER_EMAIL
+        # attrs-only means exactly that — the proxy invents no content fields.
+        assert "description" not in sent
+        assert "body" not in sent
+
     def test_coord_400_passed_through(self, auth_client: TestClient):
         with _patch_httpx() as MockClient:
             instance = AsyncMock()
