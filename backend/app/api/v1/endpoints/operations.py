@@ -173,7 +173,6 @@ def _extract_caller_token(request: Request) -> str | None:
 
 async def get_tenant_id(
     request: Request,
-    current_user: UserModel = Depends(get_current_active_user_async),
 ) -> UUID:
     """Dependency: resolve the current user's home tenant_id (UUID).
 

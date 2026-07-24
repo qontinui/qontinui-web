@@ -230,9 +230,13 @@ async def get_coord_identity(request: Request) -> CoordIdentity:
     cached = getattr(request.state, _REQUEST_STATE_KEY, None)
     if isinstance(cached, CoordIdentity):
         return cached
-    identity = await _fetch_identity(
-        _extract_bearer(request), _extract_active_tenant(request)
-    )
+    bearer = _extract_bearer(request)
+    if bearer is None:
+        # Local short-circuit: coord would 401 this anyway, but making the
+        # round-trip lets unauthenticated scanners drive outbound load
+        # against coord's /admin/coord/me (5s timeout budget per call).
+        raise HTTPException(status_code=401, detail="not_authenticated")
+    identity = await _fetch_identity(bearer, _extract_active_tenant(request))
     setattr(request.state, _REQUEST_STATE_KEY, identity)
     return identity
 
