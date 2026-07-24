@@ -91,7 +91,7 @@ export function parseCssColor(input: unknown): Rgb | null {
 
   // rgb()/rgba() — tolerate both comma and space (CSS Color 4) separators.
   const rgbMatch = s.match(
-    /^rgba?\(\s*([0-9.]+)[ ,]+([0-9.]+)[ ,]+([0-9.]+)(?:\s*[,/]\s*([0-9.%]+))?\s*\)$/,
+    /^rgba?\(\s*([0-9.]+)[ ,]+([0-9.]+)[ ,]+([0-9.]+)(?:\s*[,/]\s*([0-9.%]+))?\s*\)$/
   );
   if (rgbMatch) {
     const r = Math.round(Number(rgbMatch[1]));
@@ -237,7 +237,7 @@ export function enrichElement(el: Record<string, unknown>): void {
       "";
     const trimmed = candidate.trim();
     if (trimmed) el.text = trimmed;
-    else if (el.text === "" ) delete el.text; // drop empty-string text
+    else if (el.text === "") delete el.text; // drop empty-string text
   }
 
   // role — el.role, then state.role. Omit absent.
@@ -277,7 +277,9 @@ export function enrichElement(el: Record<string, unknown>): void {
       el.font_family === undefined &&
       typeof (computed as Record<string, unknown>).fontFamily === "string"
     ) {
-      const ff = ((computed as Record<string, unknown>).fontFamily as string).trim();
+      const ff = (
+        (computed as Record<string, unknown>).fontFamily as string
+      ).trim();
       if (ff) el.font_family = ff;
     }
   }
@@ -290,5 +292,87 @@ export function enrichElements(elements: unknown[]): void {
   for (const el of elements) {
     const rec = asRecord(el);
     if (rec) enrichElement(rec);
+  }
+}
+
+/**
+ * Bbox-normalization adapter — the ONE shape transform between the web SDK's
+ * snapshot and the Rust analyzer.
+ *
+ * WHY this exists:
+ *   - The web UI-Bridge SDK emits each element's bbox as
+ *     `{ x, y, width, height }` with FLOAT values
+ *     (`ui-bridge/packages/ui-bridge/src/control/types.ts:454`).
+ *   - The Rust analyzer's `Region`
+ *     (`qontinui-schemas/rust-vision-core/src/frame.rs`) requires exactly
+ *     `{ x, y, w, h }` — no serde aliases, no rename. A verbatim bbox
+ *     therefore fails deserialization with `missing field 'w'`.
+ *   - The Rust `Element`
+ *     (`qontinui-schemas/rust-vision-core/src/element_snapshot.rs`) has NO
+ *     `deny_unknown_fields` and only `id` is required (every other field is
+ *     `#[serde(default)]`/Option, and the SDK always supplies `id`). So the
+ *     SDK's extra fields are harmlessly ignored and `bbox` is the ONLY shape
+ *     that must be transformed — nothing else is touched.
+ *
+ * Transform: for each element that HAS a bbox (bbox is optional — bbox-less
+ * elements are left untouched, matching `Region`'s `Option`), replace
+ * `{ x, y, width, height }` (floats) with `{ x, y, w, h }` (rounded ints).
+ * A malformed/partial bbox (missing any of x/y/width/height, or a non-finite
+ * value) is DROPPED rather than written as NaN — `bbox: Option<Region>` accepts
+ * absence, and a NaN/partial Region would crash the analyzer's deserialize.
+ * Every other field is left exactly as-is.
+ *
+ * SIGNS: `Region`'s ORIGIN (`x`/`y`) is `i32` — SIGNED — and the true
+ * coordinate is emitted verbatim. `getBoundingClientRect()` legitimately
+ * returns NEGATIVE x/y for elements scrolled or positioned off the top/left of
+ * the viewport (a sticky header mid-scroll, an off-canvas drawer, a
+ * `left:-9999px` a11y-hidden node), and that negative value is real geometry
+ * the analyzer needs: clamping it to 0 used to report every off-screen element
+ * as sitting flush against the viewport edge, fabricating overlaps against
+ * whatever really lives at the origin and hiding genuine off-screen placement.
+ * The EXTENT (`w`/`h`) is `u32` — UNSIGNED — because a negative width or
+ * height is meaningless; the `Math.max(0, …)` on those two is a real
+ * domain guard and stays.
+ *
+ * Mutates the elements in place (the caller re-serializes the same body).
+ */
+export function normalizeBboxes(elements: unknown[]): void {
+  for (const el of elements) {
+    if (!el || typeof el !== "object") continue;
+    const record = el as Record<string, unknown>;
+    if (!("bbox" in record)) continue; // bbox is optional — leave as-is.
+
+    const bbox = record.bbox;
+    if (!bbox || typeof bbox !== "object") {
+      // Present but not an object -> malformed; drop so it can't crash the
+      // analyzer (an Option<Region> tolerates absence).
+      delete record.bbox;
+      continue;
+    }
+
+    const { x, y, width, height } = bbox as {
+      x?: unknown;
+      y?: unknown;
+      width?: unknown;
+      height?: unknown;
+    };
+    const vals = [x, y, width, height];
+    const allFinite = vals.every(
+      (v) => typeof v === "number" && Number.isFinite(v)
+    );
+    if (!allFinite) {
+      // Missing or non-finite component -> drop rather than emit NaN.
+      delete record.bbox;
+      continue;
+    }
+
+    record.bbox = {
+      // Signed origin — emit the TRUE coordinate, negatives included.
+      x: Math.round(x as number),
+      y: Math.round(y as number),
+      // Unsigned extent — a negative w/h is meaningless, so floor at 0.
+      w: Math.max(0, Math.round(width as number)),
+      h: Math.max(0, Math.round(height as number)),
+    };
   }
 }
