@@ -76,7 +76,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "contstall_01_gates_continuation_expiry"
-down_revision: str | Sequence[str] | None = "coord_session_handles"
+down_revision: str | Sequence[str] | None = "dry_run_retire_02_drop_bools"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
