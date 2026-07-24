@@ -38,16 +38,16 @@ export function useLandingPage() {
     setPlatform(detectPlatform());
   }, []);
 
-  // The co-pilot is the logged-in Home surface (web #390 plan §"Home"). Home
-  // IS the co-pilot: the `prompt-home` nav item renders the co-pilot surface at
-  // `/prompt-home` (matching the runner; there is no separate co-pilot page).
-  // `/` itself stays the public marketing landing for anonymous visitors, but
-  // an authenticated user who lands on `/` is forwarded to the co-pilot Home —
-  // otherwise `/` shows marketing and the co-pilot Home is unreachable at the
-  // root. Mirrors the /dashboard redirect shim.
+  // `/` stays the public marketing landing for anonymous visitors, but an
+  // authenticated user who lands on `/` is forwarded to the authenticated
+  // home. That home is the Coord Console (`/admin/coord` → Fleet tab) — the
+  // same destination `/login` and `/auth/callback` use, so a returning user
+  // with a live session sees the coordination dashboard rather than a
+  // different surface depending on how they arrived. The co-pilot surface
+  // stays available at `/prompt-home` via the sidebar.
   useEffect(() => {
     if (user) {
-      router.replace("/prompt-home");
+      router.replace("/admin/coord");
     }
   }, [user, router]);
 
