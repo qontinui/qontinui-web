@@ -140,8 +140,9 @@ export interface PromptDocumentUpdate {
   /** Change note recorded on the version snapshot (not the doc description). */
   change_description?: string;
   /**
-   * Free-form attributes to merge onto the document (the category header editor
-   * writes `{ default_tier }` here). Forwarded verbatim by the PATCH proxy.
+   * The complete replacement attrs object (the category header editor merges
+   * `document.attrs` client-side before setting `default_tier`). Forwarded
+   * verbatim by the PATCH proxy; the server replaces stored attrs wholesale.
    */
   attrs?: PromptDocumentAttrs;
 }
