@@ -24,13 +24,14 @@
  * Admin-gating + CoordNav come from the /admin/coord layout.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
   consumeNonce,
   parseConnectState,
 } from "@/lib/onboarding-connect-state";
+import { Button } from "@/components/ui/button";
 import { ConnectedOrgs } from "@/components/operations/ConnectedOrgs";
 import { OnboardingDoctor } from "@/components/operations/OnboardingDoctor";
 import { OPERATIONS_API } from "@/components/operations/utils";
@@ -49,7 +50,30 @@ interface ClaimResponse {
   enrolled?: unknown;
 }
 
-type ClaimPhase = "claiming" | "success" | "error";
+type ClaimPhase = "claiming" | "success" | "error" | "handoff";
+
+/** The claim target — exactly one of the two shapes GitHub's redirects allow. */
+type ClaimTarget = { installation_id: number } | { account_login: string };
+
+/**
+ * The P2 runner-native return: hand the OAuth code back to the desktop runner,
+ * which validates the nonce (single-use, time-bounded) and claims with its OWN
+ * Cognito bearer — binding to the runner's tenant, not the browser session's.
+ * Mirrors `wake_handler.rs`'s `github-connected` host contract.
+ */
+function buildRunnerDeepLink(
+  code: string,
+  target: ClaimTarget,
+  runnerState: string,
+): string {
+  const params = new URLSearchParams({ code, state: runnerState });
+  if ("installation_id" in target) {
+    params.set("installation_id", String(target.installation_id));
+  } else {
+    params.set("account_login", target.account_login);
+  }
+  return `qontinui://github-connected?${params.toString()}`;
+}
 
 /**
  * Map coord's pass-through status code (+ body) to an operator-facing message.
@@ -125,13 +149,70 @@ export default function OnboardingStatusPage() {
   // code and fall through to the doctor.
   const hasClaimParams = !!code && (!!installationIdRaw || !!stateLogin);
 
+  // P2 native hand-off: when the connect flow was started by a deep-link-capable
+  // runner, `state` carries the runner's return nonce and the code goes BACK to
+  // the runner (which claims with its own bearer) instead of being spent here.
+  const runnerState = connectState?.runnerState ?? null;
+
   const [phase, setPhase] = useState<ClaimPhase | null>(
     hasClaimParams ? "claiming" : null,
   );
   const [claim, setClaim] = useState<ClaimResponse | null>(null);
   const [claimError, setClaimError] = useState<string | null>(null);
+  const [deepLink, setDeepLink] = useState<string | null>(null);
   // Fire the claim POST exactly once per mount (belt to the URL-strip braces).
   const firedRef = useRef(false);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+  // The (code, target) captured for the hand-off fallback: the OAuth code is
+  // single-use, so EITHER the runner claims it (deep link) or the browser does
+  // (fallback button) — never both automatically.
+  const pendingClaimRef = useRef<{ code: string; target: ClaimTarget } | null>(
+    null,
+  );
+
+  const fireBrowserClaim = useCallback(
+    async (claimCode: string, target: ClaimTarget) => {
+      setPhase("claiming");
+      try {
+        const res = await httpClient.fetch(
+          `${OPERATIONS_API}/pr-merge/onboarding/claim`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              code: claimCode,
+              ...target,
+              // Clone-picker connect binds only — no repo enrollment / PRs.
+              ...(isRunnerClone ? { bind_only: true } : {}),
+            }),
+          },
+        );
+        const body = await res
+          .json()
+          .catch(() => ({}) as Record<string, unknown>);
+        if (!mountedRef.current) return;
+        if (!res.ok) {
+          setClaimError(messageForClaimError(res.status, body));
+          setPhase("error");
+          return;
+        }
+        setClaim(body as ClaimResponse);
+        setPhase("success");
+        // The code is single-use — drop it so a refresh can't re-submit it.
+        stripSpentCodeFromUrl();
+      } catch (e) {
+        if (!mountedRef.current) return;
+        setClaimError(e instanceof Error ? e.message : String(e));
+        setPhase("error");
+      }
+    },
+    [isRunnerClone],
+  );
 
   useEffect(() => {
     if (!hasClaimParams || firedRef.current) return;
@@ -151,7 +232,7 @@ export default function OnboardingStatusPage() {
 
     // Exactly one target: the id GitHub named (fresh install), else the org from
     // `state` (authorize path — no installation_id exists there).
-    let target: { installation_id: number } | { account_login: string };
+    let target: ClaimTarget;
     if (installationIdRaw) {
       const installationId = Number(installationIdRaw);
       if (!Number.isInteger(installationId)) {
@@ -166,52 +247,30 @@ export default function OnboardingStatusPage() {
       target = { account_login: stateLogin as string };
     }
 
-    let cancelled = false;
-    setPhase("claiming");
-    (async () => {
-      try {
-        const res = await httpClient.fetch(
-          `${OPERATIONS_API}/pr-merge/onboarding/claim`,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              code,
-              ...target,
-              // Clone-picker connect binds only — no repo enrollment / PRs.
-              ...(isRunnerClone ? { bind_only: true } : {}),
-            }),
-          },
-        );
-        const body = await res
-          .json()
-          .catch(() => ({}) as Record<string, unknown>);
-        if (cancelled) return;
-        if (!res.ok) {
-          setClaimError(messageForClaimError(res.status, body));
-          setPhase("error");
-          return;
-        }
-        setClaim(body as ClaimResponse);
-        setPhase("success");
-        // The code is single-use — drop it so a refresh can't re-submit it.
-        stripSpentCodeFromUrl();
-      } catch (e) {
-        if (cancelled) return;
-        setClaimError(e instanceof Error ? e.message : String(e));
-        setPhase("error");
-      }
-    })();
+    if (runnerState && code) {
+      // P2: hand the code to the runner instead of spending it here. Keep the
+      // (code, target) around for the explicit browser fallback, and strip the
+      // code from the address bar so a refresh can't replay the hand-off.
+      const link = buildRunnerDeepLink(code, target, runnerState);
+      pendingClaimRef.current = { code, target };
+      setDeepLink(link);
+      setPhase("handoff");
+      stripSpentCodeFromUrl();
+      // Same-tab nav to the custom scheme: the OS opens the runner; the page
+      // stays put (custom-scheme navigations don't unload the document).
+      window.location.href = link;
+      return;
+    }
 
-    return () => {
-      cancelled = true;
-    };
+    void fireBrowserClaim(code as string, target);
   }, [
     hasClaimParams,
     code,
     installationIdRaw,
-    isRunnerClone,
     stateLogin,
     connectState,
+    runnerState,
+    fireBrowserClaim,
   ]);
 
   return (
@@ -235,6 +294,47 @@ export default function OnboardingStatusPage() {
           zero enrolled repos reads as success here (closing the empty-org
           dead-end); each repo links to `?repo=` which loads the doctor below. */}
       {phase === null && !repo && <ConnectedOrgs />}
+
+      {phase === "handoff" && (
+        <Card data-testid="onboarding-claim-handoff">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              Finishing in your Qontinui runner…
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              GitHub approved the connection. Your runner should have opened to
+              complete it — once it does, your repositories appear in the clone
+              picker automatically.
+            </p>
+          </CardHeader>
+          <CardContent className="flex flex-wrap items-center gap-3">
+            {deepLink && (
+              <a
+                href={deepLink}
+                data-testid="onboarding-claim-handoff-open"
+                className="text-sm underline underline-offset-4"
+              >
+                Nothing happened? Open the runner
+              </a>
+            )}
+            {/* The OAuth code is single-use: this spends it in the browser
+                instead (the pre-P2 behavior), for the cross-device case where
+                the runner isn't on this machine. */}
+            <Button
+              variant="outline"
+              size="sm"
+              data-testid="onboarding-claim-handoff-fallback"
+              onClick={() => {
+                const pending = pendingClaimRef.current;
+                if (pending) void fireBrowserClaim(pending.code, pending.target);
+              }}
+            >
+              Complete in this browser instead
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {phase === "claiming" && (
         <Card data-testid="onboarding-claim-claiming">
@@ -300,7 +400,7 @@ export default function OnboardingStatusPage() {
         post-claim follow-up in success/error. It is hidden only WHILE the
         claim POST is in flight so the operator sees a single clear state.
       */}
-      {phase !== "claiming" && !isRunnerClone && (
+      {phase !== "claiming" && phase !== "handoff" && !isRunnerClone && (
         <OnboardingDoctor key={repo ?? "bare"} />
       )}
     </div>

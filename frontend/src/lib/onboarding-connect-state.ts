@@ -26,10 +26,21 @@
  * tricked into connecting an org they already own), not the primary gate.
  *
  * ## Wire format
- * `<flow>~<login>~<nonce>` — `~` is safe as a separator because GitHub logins
- * are alphanumeric + hyphen only. A bare `runner-clone` is also accepted: the
- * shipped desktop runner sends exactly that, and those installs are fresh (they
- * carry `installation_id`), so they need no login and predate the nonce.
+ * `<flow>~<login>~<nonce>[~<runnerState>]` — `~` is safe as a separator because
+ * GitHub logins are alphanumeric + hyphen only. A bare `runner-clone` is also
+ * accepted: the shipped desktop runner sends exactly that, and those installs
+ * are fresh (they carry `installation_id`), so they need no login and predate
+ * the nonce.
+ *
+ * The optional 4th field is the **runner-minted return nonce** (P2 native
+ * hand-off): when `/connect-runner-github` is opened with `?state=<nonce>` by a
+ * deep-link-capable runner, the nonce rides the whole GitHub round-trip here,
+ * and the callback deep-links `qontinui://github-connected?…&state=<nonce>`
+ * back to the runner instead of claiming in the browser — the runner then
+ * claims with its OWN Cognito bearer, so the bind lands on the runner's tenant
+ * regardless of which account the browser happens to be logged into. The
+ * runner validates the nonce (single-use, time-bounded) before claiming, so a
+ * crafted deep link cannot make it bind an attacker-chosen org.
  */
 
 export type ConnectFlow = "connect" | "runner-clone";
@@ -39,6 +50,8 @@ export interface ConnectState {
   /** Target org login — present only on the authorize (already-installed) path. */
   login: string | null;
   nonce: string | null;
+  /** Runner-minted return nonce — present only on the P2 native hand-off path. */
+  runnerState: string | null;
 }
 
 const SEP = "~";
@@ -54,11 +67,28 @@ function randomNonce(): string {
 }
 
 /**
+ * A runner return nonce is hex the runner minted (256-bit today; bounds are
+ * loose for forward-compat). Validated at every ingress so arbitrary text can
+ * never ride into the `qontinui://` deep link we later construct from it.
+ */
+export function isValidRunnerState(value: string | null): value is string {
+  return !!value && /^[0-9a-fA-F]{16,128}$/.test(value);
+}
+
+/**
  * Build the `state` for an outbound connect nav and persist its nonce so the
  * callback can verify it. sessionStorage (not localStorage) because the nonce
  * is scoped to this tab's round-trip and should not outlive it.
+ *
+ * `runnerState` (P2): the runner's return nonce to carry through the GitHub
+ * round-trip; appended only when present so states without it keep the exact
+ * legacy 3-field shape.
  */
-export function beginConnectState(flow: ConnectFlow, login: string): string {
+export function beginConnectState(
+  flow: ConnectFlow,
+  login: string,
+  runnerState?: string | null,
+): string {
   const nonce = randomNonce();
   try {
     sessionStorage.setItem(NONCE_STORAGE_KEY, nonce);
@@ -66,21 +96,34 @@ export function beginConnectState(flow: ConnectFlow, login: string): string {
     // Private-mode / storage-disabled: proceed without the CSRF check rather
     // than dead-end the user. Coord's org-admin gate is the real protection.
   }
-  return [flow, login.trim(), nonce].join(SEP);
+  const parts = [flow, login.trim(), nonce];
+  if (isValidRunnerState(runnerState ?? null)) {
+    parts.push(runnerState as string);
+  }
+  return parts.join(SEP);
 }
 
 /** Parse a returned `state`. Returns null when absent/unrecognized. */
 export function parseConnectState(raw: string | null): ConnectState | null {
   if (!raw) return null;
   if (raw === LEGACY_RUNNER_CLONE) {
-    return { flow: LEGACY_RUNNER_CLONE, login: null, nonce: null };
+    return {
+      flow: LEGACY_RUNNER_CLONE,
+      login: null,
+      nonce: null,
+      runnerState: null,
+    };
   }
-  const [flow, login, nonce] = raw.split(SEP);
+  const [flow, login, nonce, runnerState] = raw.split(SEP);
   if (flow !== "connect" && flow !== LEGACY_RUNNER_CLONE) return null;
+  const trimmedRunnerState = runnerState?.trim() ?? null;
   return {
     flow,
     login: login?.trim() ? login.trim() : null,
     nonce: nonce?.trim() ? nonce.trim() : null,
+    runnerState: isValidRunnerState(trimmedRunnerState)
+      ? trimmedRunnerState
+      : null,
   };
 }
 
