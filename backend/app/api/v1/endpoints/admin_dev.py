@@ -395,6 +395,15 @@ async def get_prs(
         "its own per-PR-deploy-state PR lands; forwarding it is harmless "
         "before then.",
     ),
+    merged_count_hours: int = Query(
+        default=0,
+        ge=0,
+        description="When >0, ask coord to add `merged_recent_count` (how many "
+        "PRs landed in the last N hours) to the envelope — the cheap count "
+        "without the expensive per-PR deploy classification `include_merged` "
+        "does. Independent of `include_merged`; harmless against a coord that "
+        "predates it (the field is simply absent).",
+    ),
     _tenant_key: str | None = Depends(_capture_bearer_best_effort),
     _user: User = Depends(
         get_current_active_user_async
@@ -425,19 +434,22 @@ async def get_prs(
     Unlike the overview, this list is NOT cached: it reflects fast-moving PR
     + CI state where stale data is misleading on a merge-readiness dashboard.
     """
-    # Forward `include_merged` to coord only when set (>0) so the default
-    # request is byte-for-byte the legacy open-PRs-only call. The shared
+    # Forward each param to coord only when set (>0) so the default request is
+    # byte-for-byte the legacy open-PRs-only call. The shared
     # `_proxy_coord_get` threads `params` onto the query string. coord adds
     # `deploy_state`/`deploy_lag_secs`/`deployed_surface` to each PR row when
-    # honoring it; this proxy returns coord's envelope verbatim (no field
-    # whitelist/rename), so those enriched fields pass through unchanged.
-    params: dict[str, Any] | None = None
+    # honoring `include_merged`, and a top-level `merged_recent_count` when
+    # honoring `merged_count_hours`; this proxy returns coord's envelope
+    # verbatim (no field whitelist/rename), so both pass through unchanged.
+    params: dict[str, Any] = {}
     if include_merged > 0:
-        params = {"include_merged": include_merged}
+        params["include_merged"] = include_merged
+    if merged_count_hours > 0:
+        params["merged_count_hours"] = merged_count_hours
     try:
         envelope = await _proxy_coord_get(
             "/pr-merge/prs",
-            params=params,
+            params=params or None,
             forward_bearer=True,
         )
     except HTTPException as exc:
