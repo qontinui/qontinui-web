@@ -375,14 +375,28 @@ export function hasPendingChecks(
  * `merge_commit_sha IS NOT NULL` — so a closed row here has landed, whether
  * or not the sha is serialized in the payload.
  *
- * Gating on `merge_commit_sha` instead would be correct only against a coord
- * that projects it; against every older deploy the ff-landed rows would fail
- * the check, fall through to the GitHub derivation, and pollute the LIVE
- * list with closed PRs rendered as "Ready". The sha is used for the reason
- * text and nothing else.
+ * A merge sha counts too, and it is the signal that catches what `pr_state`
+ * cannot: coord's ff-land pushes a REBASED sha to the base branch, so GitHub's
+ * merge-detection never fires and the PR sits "phantom-open" — landed, with
+ * `pr_state` still `open` — until the reconcile straggler sweep closes it.
+ * Those rows are exactly what coord's `query_recently_merged_prs` deliberately
+ * stopped gating on `pr_state` to surface, and reading them as live work made
+ * a just-landed PR look unfinished for the whole window.
+ *
+ * The two clauses are an OR, not a replacement: the open-PR listing never
+ * projects `merge_commit_sha`, so this can only fire on a row from the merged
+ * read, and gating on the sha ALONE would miss any coord deploy that does not
+ * serialize it (older deploys did not) — there the ff-landed rows would fall
+ * through to the GitHub derivation and pollute the LIVE list as "Ready".
  */
-export function isMergedPr(pr: Pick<PrRow, "pr_state">): boolean {
-  return pr.pr_state === "merged" || pr.pr_state === "closed";
+export function isMergedPr(
+  pr: Pick<PrRow, "pr_state" | "merge_commit_sha">
+): boolean {
+  return (
+    pr.pr_state === "merged" ||
+    pr.pr_state === "closed" ||
+    pr.merge_commit_sha != null
+  );
 }
 
 /**
