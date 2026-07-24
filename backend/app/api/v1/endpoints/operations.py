@@ -1300,11 +1300,18 @@ async def get_pr_merge_repo_profile(
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Resolved per-(tenant, repo) settings — three-tier
-    (global → tenant → repo) layered. The ``repo`` is the
-    ``owner/name`` form; the ``:path`` converter lets FastAPI accept
-    the ``/`` inline without URL-encoding."""
+    (global → tenant → repo) layered.
+
+    ``repo`` is the ``owner/name`` form and the ``:path`` converter lets
+    FastAPI accept the ``/`` inline. Coord's ``:repo`` param is a SINGLE
+    path segment, though, so the slug is re-encoded on the way out
+    (``qontinui/qontinui-runner`` → ``qontinui%2Fqontinui-runner``) —
+    same as ``/pr-merge/prs/{repo}/{pr}/checks`` above. Forwarding the
+    raw ``/`` makes coord see four path segments, match no route, and
+    return 404, which surfaces in the Merge Settings per-repo card as a
+    bare ``HTTP 404`` where the resolved profile should be."""
     return await _proxy_coord_get(
-        f"/pr-merge/repos/{repo}/profile", tenant_id=tenant_id
+        f"/pr-merge/repos/{quote(repo, safe='')}/profile", tenant_id=tenant_id
     )
 
 
@@ -1316,9 +1323,13 @@ async def patch_pr_merge_repo_profile(
 ) -> Any:
     """UPSERT the per-repo override row. Coord stamps
     ``profile_source='user_edit'``, audits the change, and publishes
-    invalidation. Returns the post-write EffectiveProfile."""
+    invalidation. Returns the post-write EffectiveProfile.
+
+    Same single-segment re-encoding as the GET above — without it the
+    PATCH 404s too, so "Save override" in the Merge Settings card
+    silently fails to write."""
     return await _proxy_coord_patch(
-        f"/pr-merge/repos/{repo}/profile", body, tenant_id=tenant_id
+        f"/pr-merge/repos/{quote(repo, safe='')}/profile", body, tenant_id=tenant_id
     )
 
 
