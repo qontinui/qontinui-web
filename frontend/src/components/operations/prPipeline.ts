@@ -799,7 +799,13 @@ function shortRepo(repo: string): string {
   return repo.includes("/") ? repo.split("/").slice(1).join("/") : repo;
 }
 
-function singleKey(repo: string, branch: string): string {
+/**
+ * The identity of a single-repo pipeline row, and the React key it renders
+ * under. Exported so a caller de-duplicating rows BEFORE they are built (the
+ * open list and the merged list can carry the same PR at once) collapses on
+ * exactly the key that would otherwise collide.
+ */
+export function singleKey(repo: string, branch: string): string {
   return `${repo}::${branch}`;
 }
 
@@ -926,8 +932,14 @@ export function buildPipelineRows(
     const attempts = byKey.get(key) ?? [];
     if (attempts.length > 0) consumedProposalKeys.add(key);
     const active = pickActiveProposal(attempts);
+    // A landed PR is terminal, and terminal outranks any proposal state. The
+    // proposal branch used to win unconditionally, so a PR merged by the merge
+    // button while a coord proposal still sat `queued`/`conflict` rendered as
+    // unfinished work — and, once the merged tab's count came from coord, as a
+    // landing the tab claimed but did not show. `statusFromGitHub` already
+    // encodes "merged wins"; this just stops the proposal from pre-empting it.
     const status = escalateIfStale(
-      active
+      active && !isMergedPr(pr)
         ? statusFromProposal(active)
         : statusFromGitHub(pr, economicsByRepo),
       pr.repo,

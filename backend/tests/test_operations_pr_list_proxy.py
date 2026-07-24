@@ -125,3 +125,61 @@ class TestGetPrMergePrs:
             resp = client.get(f"{API_PREFIX}/pr-merge/prs?merged_count_hours=48")
 
         assert resp.status_code == 502
+
+
+class TestAdminDevPrsMirror:
+    """``/admin-dev/prs`` proxies the same coord route and must not drift.
+
+    The two proxies exist for different auth postures (this one degrades to an
+    empty envelope when coord is down) but share a contract; the merged params
+    were added to both, and a param that silently stops being forwarded here is
+    invisible until someone reads the dashboard's numbers.
+    """
+
+    @pytest.fixture()
+    def admin_client(self) -> TestClient:
+        from app.api.deps import get_current_active_user_async
+        from app.api.v1.endpoints.admin_dev import router as admin_dev_router
+
+        test_app = FastAPI()
+        mock_user = MagicMock()
+        mock_user.id = uuid4()
+        mock_user.is_active = True
+        test_app.dependency_overrides[get_current_active_user_async] = lambda: mock_user
+        test_app.include_router(admin_dev_router, prefix="/api/v1")
+        return TestClient(test_app)
+
+    def test_merged_count_hours_forwarded(self, admin_client: TestClient):
+        mock_resp = _mock_response(json_data=_COORD_PAYLOAD)
+        # `admin_dev` re-uses `operations._proxy_coord_get` (via
+        # `app.api.coord_proxy`), so the httpx patch target stays `operations`
+        # — see that module's docstring on why the bodies were not relocated.
+        with patch("app.api.v1.endpoints.operations.httpx.AsyncClient") as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = mock_resp
+            instance.__aenter__ = AsyncMock(return_value=instance)
+            instance.__aexit__ = AsyncMock(return_value=False)
+            MockClient.return_value = instance
+
+            resp = admin_client.get("/api/v1/admin-dev/prs?merged_count_hours=48")
+
+        assert resp.status_code == 200
+        assert instance.get.call_args.kwargs["params"] == {"merged_count_hours": 48}
+        assert resp.json()["merged_recent_count"] == 12
+
+    def test_default_request_sends_no_merged_params(self, admin_client: TestClient):
+        mock_resp = _mock_response(json_data={"prs": [], "total": 0})
+        # `admin_dev` re-uses `operations._proxy_coord_get` (via
+        # `app.api.coord_proxy`), so the httpx patch target stays `operations`
+        # — see that module's docstring on why the bodies were not relocated.
+        with patch("app.api.v1.endpoints.operations.httpx.AsyncClient") as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = mock_resp
+            instance.__aenter__ = AsyncMock(return_value=instance)
+            instance.__aexit__ = AsyncMock(return_value=False)
+            MockClient.return_value = instance
+
+            resp = admin_client.get("/api/v1/admin-dev/prs")
+
+        assert resp.status_code == 200
+        assert instance.get.call_args.kwargs["params"] is None
