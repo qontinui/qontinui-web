@@ -5289,13 +5289,17 @@ async def update_prompt_document(
     tenant_id: UUID = Depends(require_coord_tenant_admin),
     current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
-    """Edit a prompt document's description/body. Tenant-admin only.
+    """Edit a prompt document's description/body/attrs. Tenant-admin only.
 
-    The body is forwarded as ``{description?, body?, change_description?}`` with
-    ``updated_by`` stamped from the authenticated session (see
-    :func:`_editor_identity`) — a body-supplied ``updated_by`` is ignored, so the
-    version snapshot coord writes carries the real editor. Coord creates a new
-    immutable version on every successful edit; nothing is overwritten in place.
+    The body is forwarded as ``{description?, body?, attrs?,
+    change_description?}`` with ``updated_by`` stamped from the authenticated
+    session (see :func:`_editor_identity`) — a body-supplied ``updated_by`` is
+    ignored, so the version snapshot coord writes carries the real editor. Coord
+    creates a new immutable version on every successful description/body edit;
+    nothing is overwritten in place. A supplied ``attrs`` REPLACES the stored
+    attrs object wholesale (the client merges before sending), and an attrs-only
+    edit is document configuration, not content — coord updates it in place
+    without creating a version.
     """
     return await _proxy_coord_patch(
         f"/coord/prompt-documents/{kind}/{name}",
