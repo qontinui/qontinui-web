@@ -398,6 +398,7 @@ async def get_prs(
     merged_count_hours: int = Query(
         default=0,
         ge=0,
+        le=24 * 30,
         description="When >0, ask coord to add `merged_recent_count` (how many "
         "PRs landed in the last N hours) to the envelope — the cheap count "
         "without the expensive per-PR deploy classification `include_merged` "

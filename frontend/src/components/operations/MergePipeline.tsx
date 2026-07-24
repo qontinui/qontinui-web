@@ -47,6 +47,7 @@ import {
   derivePipelineHealth,
   matchesFilter,
   matchesQuery,
+  singleKey,
   unstableHasFailure,
   type PipelineFilter,
   type PipelineRow,
@@ -637,10 +638,15 @@ export function MergePipeline() {
     // is the truthful one — it knows the PR landed — so it wins, and the open
     // copy is dropped. Without this the same PR renders twice, once as live
     // work, under a colliding row key.
+    //
+    // Keyed by `singleKey` — the SAME identity buildPipelineRows gives the row
+    // and React renders it under, so what is collapsed here is exactly what
+    // would collide there. (PR number is the tempting key and the wrong one:
+    // it is not what collides.)
     const merged = mergedPrs ?? [];
-    const landed = new Set(merged.map((p) => `${p.repo}#${p.pr_number}`));
+    const landed = new Set(merged.map((p) => singleKey(p.repo, p.branch)));
     const open = (prs ?? []).filter(
-      (p) => !landed.has(`${p.repo}#${p.pr_number}`)
+      (p) => !landed.has(singleKey(p.repo, p.branch))
     );
     return buildPipelineRows(
       [...open, ...merged],
@@ -700,7 +706,14 @@ export function MergePipeline() {
                   `merged_recent_count` — on the hot poll, so the label is a
                   real number from the first render. A dash remains for the
                   genuinely unknown case: coord too old to answer, or its
-                  count failed. */}
+                  count failed.
+
+                  The two numbers count the same landings but not the same
+                  things: coord counts landed PRs, `counts.merged` counts
+                  RENDERED rows, and a landed MULTI-REPO proposal renders a
+                  summary row on top of its member PR rows. So opening the tab
+                  can nudge the number up by the number of such groups —
+                  pre-existing row-model behavior, not a stale count. */}
               {f.id === "merged" && mergedPrs === null
                 ? (mergedCount ?? "–")
                 : counts[f.id]}
