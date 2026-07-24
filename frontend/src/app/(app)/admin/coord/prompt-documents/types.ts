@@ -101,14 +101,19 @@ export interface PromptDocumentSummary {
   current_version: number;
   updated_by: string | null;
   updated_at: string;
-  /** Free-form attributes (policy docs carry `{ default_tier, description }`). */
-  attrs: PromptDocumentAttrs | null;
 }
 
 /** A full `coord.prompt_documents` row, body included (the get-one shape). */
 export interface PromptDocument extends PromptDocumentSummary {
   tenant_id: string;
   body: string;
+  /**
+   * Free-form attributes (policy docs carry `{ default_tier, description }`).
+   * Only the get-one shape carries this — coord's list summaries never return
+   * `attrs`, so it deliberately lives here rather than on
+   * `PromptDocumentSummary`.
+   */
+  attrs: PromptDocumentAttrs | null;
 }
 
 /**
@@ -142,8 +147,9 @@ export interface PromptDocumentUpdate {
   /** Change note recorded on the version snapshot (not the doc description). */
   change_description?: string;
   /**
-   * Free-form attributes to merge onto the document (the category header editor
-   * writes `{ default_tier }` here). Forwarded verbatim by the PATCH proxy.
+   * The complete replacement attrs object (the category header editor merges
+   * `document.attrs` client-side before setting `default_tier`). Forwarded
+   * verbatim by the PATCH proxy; the server replaces stored attrs wholesale.
    */
   attrs?: PromptDocumentAttrs;
 }
