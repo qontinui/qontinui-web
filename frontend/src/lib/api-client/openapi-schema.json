@@ -78854,6 +78854,54 @@
         ]
       }
     },
+    "/api/v1/operations/pr-merge/red-main/{repo}/spawn-fix": {
+      "post": {
+        "description": "Operator-driven red-main remediation (red-main auto-remediation\nPhase 4b). Spawn a visible fix session on the operator's device for\n``repo``'s current red episode, proxying coord's\n``POST /pr-merge/red-main/:repo/spawn-fix``.\n\n``repo`` is ``owner/name`` and is captured inline via ``{repo:path}``\n(the same shape as ``/pr-merge/repos/:repo/profile``). No request body\nis required \u2014 coord resolves the live red episode + tenant from the\nforwarded operator bearer.\n\nCoord returns ``200 {\"agent_id\": \"<uuid>\"}`` on success, or ``409`` when\na fix session is already running for the current red episode or the repo\nhas no live red-main alert. ``_proxy_coord_post`` re-raises coord's\nstatus + JSON body so the banner can surface the 409 message inline.",
+        "operationId": "api_v1_operations_pr_merge_red_main_repo_spawn_fix_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "title": "Repo",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Pr Merge Red Main Spawn Fix Api V1 Operations Pr Merge Red Main  Repo  Spawn Fix Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Pr Merge Red Main Spawn Fix",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/pr-merge/repos": {
       "get": {
         "description": "List the tenant's repos with framework-signal chips +\nprofile_source provenance. Drives the per-repo override-card list\non the Merge Orchestration \u2192 Settings page.",

@@ -2043,6 +2043,33 @@ async def get_pr_merge_slo(
     )
 
 
+@router.post("/pr-merge/red-main/{repo:path}/spawn-fix")
+async def post_pr_merge_red_main_spawn_fix(
+    repo: str,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Operator-driven red-main remediation (red-main auto-remediation
+    Phase 4b). Spawn a visible fix session on the operator's device for
+    ``repo``'s current red episode, proxying coord's
+    ``POST /pr-merge/red-main/:repo/spawn-fix``.
+
+    ``repo`` is ``owner/name`` and is captured inline via ``{repo:path}``
+    (the same shape as ``/pr-merge/repos/:repo/profile``). No request body
+    is required — coord resolves the live red episode + tenant from the
+    forwarded operator bearer.
+
+    Coord returns ``200 {"agent_id": "<uuid>"}`` on success, or ``409`` when
+    a fix session is already running for the current red episode or the repo
+    has no live red-main alert. ``_proxy_coord_post`` re-raises coord's
+    status + JSON body so the banner can surface the 409 message inline.
+    """
+    return await _proxy_coord_post(
+        f"/pr-merge/red-main/{repo}/spawn-fix",
+        {},
+        tenant_id=tenant_id,
+    )
+
+
 async def _proxy_coord_post(
     path: str,
     body: Any,
