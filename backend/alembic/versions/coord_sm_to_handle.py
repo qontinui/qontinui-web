@@ -1,7 +1,7 @@
 """coord.session_messages to_handle/from_handle + parked-delivery columns (fabric Phase 2)
 
 Revision ID: coord_sm_to_handle
-Revises: coord_prompt_docs_02
+Revises: contstall_01_gates_continuation_expiry
 Create Date: 2026-07-24
 
 Phase 2 (web slice) of plan
@@ -33,7 +33,7 @@ Columns:
   row past this instant is never delivered; ``expires_at`` continues to govern
   post-delivery drain visibility.
 
-Index:
+Indexes:
 
 * ``idx_session_messages_to_handle`` — ``(to_handle)`` partial on
   ``acked_at IS NULL`` — keeps the hot UNION-drain inbox path index-backed
@@ -41,13 +41,23 @@ Index:
   other arm of the OR; the existing ``idx_session_messages_address`` on
   ``(to_address) WHERE to_session IS NULL`` continues to back the parked
   scan).
+* ``idx_session_messages_park_pending`` — ``(park_expires_at)`` partial on
+  ``park_expires_at IS NOT NULL`` (review F3) — backs the Phase-6
+  parked-messages gauge's live-parked count (and any park-TTL reaper scan)
+  so a ``/metrics`` scrape never seq-scans the mailbox: only parked rows
+  enter the index, which is tiny by construction (short park TTL).
+* ``idx_session_messages_park_copy`` — partial expression index ``((1))``
+  on ``action ? 'park_source_id'`` (review F3) — marks delivered fan-out
+  COPIES (coord stamps ``action.park_source_id`` on each ``resource:``
+  copy-on-deliver), backing the gauge's delivered-copies count with an
+  index-only candidate set instead of a seq scan over ``action`` JSONB.
 
 Idempotency: ``ADD COLUMN IF NOT EXISTS`` / ``CREATE INDEX IF NOT EXISTS``
 (``coord_session_messages`` posture). NOT in coord's boot ``require_table``
 gate — the bus degrades gracefully.
 
-Chains off the current single head ``coord_prompt_docs_02``
-(origin/main head 2026-07-24).
+Chains off the current single head ``contstall_01_gates_continuation_expiry``
+(origin/main head 2026-07-24, re-pointed twice as main moved during review).
 """
 
 from collections.abc import Sequence
@@ -56,7 +66,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_sm_to_handle"
-down_revision: str | Sequence[str] | None = "coord_prompt_docs_02"
+down_revision: str | Sequence[str] | None = "contstall_01_gates_continuation_expiry"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -95,10 +105,31 @@ def upgrade() -> None:
             WHERE acked_at IS NULL
         """
     )
+    # Review F3: live-parked rows (the parked-messages gauge / park-TTL
+    # scans) — only parked rows enter the index.
+    op.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_session_messages_park_pending
+            ON coord.session_messages (park_expires_at)
+            WHERE park_expires_at IS NOT NULL
+        """
+    )
+    # Review F3: delivered fan-out copies (rows carrying the
+    # action.park_source_id dedup marker) — a constant-expression partial
+    # index; the predicate does the work, the indexed expression is inert.
+    op.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_session_messages_park_copy
+            ON coord.session_messages ((1))
+            WHERE action ? 'park_source_id'
+        """
+    )
 
 
 def downgrade() -> None:
-    """Drop the Phase-2 columns + index."""
+    """Drop the Phase-2 columns + indexes."""
+    op.execute("DROP INDEX IF EXISTS coord.idx_session_messages_park_copy")
+    op.execute("DROP INDEX IF EXISTS coord.idx_session_messages_park_pending")
     op.execute("DROP INDEX IF EXISTS coord.idx_session_messages_to_handle")
     op.execute(
         "ALTER TABLE coord.session_messages DROP COLUMN IF EXISTS park_expires_at"
