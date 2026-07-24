@@ -94,14 +94,19 @@ export interface PromptDocumentSummary {
   current_version: number;
   updated_by: string | null;
   updated_at: string;
-  /** Free-form attributes (policy docs carry `{ default_tier, description }`). */
-  attrs: PromptDocumentAttrs | null;
 }
 
 /** A full `coord.prompt_documents` row, body included (the get-one shape). */
 export interface PromptDocument extends PromptDocumentSummary {
   tenant_id: string;
   body: string;
+  /**
+   * Free-form attributes (policy docs carry `{ default_tier, description }`).
+   * Only the get-one shape carries this — coord's list summaries never return
+   * `attrs`, so it deliberately lives here rather than on
+   * `PromptDocumentSummary`.
+   */
+  attrs: PromptDocumentAttrs | null;
 }
 
 /**
