@@ -3,6 +3,7 @@
 Loads configuration from environment variables and .env file.
 """
 
+import ipaddress
 import json
 import warnings
 from typing import Any, cast
@@ -474,11 +475,32 @@ class Settings(BaseSettings):
 
     @property
     def cognito_issuer_is_loopback(self) -> bool:
-        """True when COGNITO_ISSUER points at a loopback/local host."""
-        host = (urlparse(self.COGNITO_ISSUER).hostname or "").lower()
+        """True when COGNITO_ISSUER points at a loopback/local host.
+
+        Deliberately broad — this backs the prod guardrail, so it must catch
+        loopback-equivalent forms, not just the exact strings used by the dev
+        flow: the named set (0.0.0.0, host.docker.internal), any ``.localhost``
+        name (RFC 6761), a trailing-dot FQDN, and every IP form the stdlib
+        recognises as loopback (127.0.0.0/8, ``::1`` in any expansion, and the
+        IPv4-mapped ``::ffff:127.0.0.1``).
+        """
+        # urlparse strips IPv6 brackets; normalise case and a trailing dot.
+        host = (urlparse(self.COGNITO_ISSUER).hostname or "").lower().rstrip(".")
         if not host:
             return False
-        return host in _LOOPBACK_ISSUER_HOSTS or host.startswith("127.")
+        if host in _LOOPBACK_ISSUER_HOSTS:
+            return True
+        if host == "localhost" or host.endswith(".localhost"):
+            return True
+        try:
+            ip = ipaddress.ip_address(host)
+        except ValueError:
+            return False
+        if ip.is_loopback:
+            return True
+        # IPv4-mapped IPv6 (e.g. ::ffff:127.0.0.1) — unwrap and re-check.
+        mapped = getattr(ip, "ipv4_mapped", None)
+        return bool(mapped is not None and mapped.is_loopback)
 
     @staticmethod
     def _database_name(database_url: str) -> str:
@@ -528,7 +550,7 @@ class Settings(BaseSettings):
                 )
 
         if self.QONTINUI_DEV_LOCAL_AUTH:
-            db_name = self._database_name(str(self.DATABASE_URL))
+            db_name = self._database_name(str(self.DATABASE_URL)).lower()
             if db_name in _SHARED_DEV_DB_NAMES:
                 raise ValueError(
                     "Refusing to boot: QONTINUI_DEV_LOCAL_AUTH=1 must run "

@@ -76,8 +76,15 @@ class TestProdGuardrail:
         [
             "http://localhost:8770",
             "http://127.0.0.1:8770",
+            "http://127.0.0.2:8770",  # anywhere in 127.0.0.0/8
             "http://host.docker.internal:8770",
             "http://0.0.0.0:8770",
+            "http://LOCALHOST:8770",  # case-insensitive
+            "http://localhost.:8770",  # trailing-dot FQDN
+            "http://app.localhost:8770",  # RFC 6761 .localhost subdomain
+            "http://[::1]:8770",  # IPv6 loopback
+            "http://[0:0:0:0:0:0:0:1]:8770",  # expanded IPv6 loopback
+            "http://[::ffff:127.0.0.1]:8770",  # IPv4-mapped IPv6 loopback
         ],
     )
     def test_loopback_host_variants_all_caught(self, issuer: str) -> None:
@@ -87,6 +94,22 @@ class TestProdGuardrail:
                 COGNITO_ISSUER=issuer,
                 DATABASE_URL=_ISOLATED_DB,
             )
+
+    @pytest.mark.parametrize(
+        "issuer",
+        [
+            _REAL_ISSUER,
+            "https://accounts.example.com/pool",
+            "http://10.0.0.5:8770",  # private but NOT loopback
+        ],
+    )
+    def test_non_loopback_issuers_boot_in_prod(self, issuer: str) -> None:
+        settings = Settings(
+            ENVIRONMENT="production",
+            COGNITO_ISSUER=issuer,
+            DATABASE_URL="postgresql://u:p@db.internal:5432/qontinui_prod",
+        )
+        assert settings.cognito_issuer_is_loopback is False
 
     def test_prod_posture_with_real_cognito_boots(self) -> None:
         """Normal prod posture (real issuer, flag off) is unaffected."""
@@ -145,6 +168,7 @@ class TestDevPostureAllowsLocalAuth:
         [
             "postgresql://qontinui_user:pw@localhost:5433/qontinui_db",
             "postgresql://u:p@localhost/db",
+            "postgresql://u:p@localhost:5433/QONTINUI_DB",  # case-insensitive
         ],
     )
     def test_dev_local_auth_against_shared_db_refuses(self, shared_db: str) -> None:
