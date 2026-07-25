@@ -78,4 +78,46 @@ describe("consumeDevLocalAuthToken", () => {
     // ...and the one-shot handoff key is gone so it never re-fires on reload.
     expect(localStorage.getItem(DEV_LOCAL_AUTH_TOKEN_KEY)).toBeNull();
   });
+
+  it("does NOT store an already-expired handoff token (skips setTokens)", () => {
+    // L1: a token whose `exp` is in the past must not be replayed as fresh —
+    // that would seed a session that 401s on the first API call. A fresh mint
+    // is expected; the handoff is skipped and the one-shot key is still cleared.
+    vi.stubEnv("NEXT_PUBLIC_ENABLE_DEV_LOCAL_AUTH", "1");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const manager = makeManager();
+    const setTokens = vi.spyOn(manager, "setTokens");
+    const expiredToken = jwtExpiringAt(Date.now() - HOUR_MS);
+    localStorage.setItem(DEV_LOCAL_AUTH_TOKEN_KEY, expiredToken);
+
+    const consumed = consumeDevLocalAuthToken(manager);
+
+    expect(consumed).toBe(false);
+    // The stale token was NOT handed off to the real session path.
+    expect(setTokens).not.toHaveBeenCalled();
+    expect(manager.getAccessToken()).toBeNull();
+    // One-shot: the key is consumed/cleared so it never retries on reload.
+    expect(localStorage.getItem(DEV_LOCAL_AUTH_TOKEN_KEY)).toBeNull();
+    // A dev-visible warning explains the skip.
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it("still stores a non-JWT handoff token via the fallback TTL", () => {
+    // A handoff string with NO decodable `exp` is assumed freshly minted and
+    // uses the fallback TTL — the expired-token guard must not regress this.
+    vi.stubEnv("NEXT_PUBLIC_ENABLE_DEV_LOCAL_AUTH", "1");
+    const manager = makeManager();
+    const setTokens = vi.spyOn(manager, "setTokens");
+    const opaque = "not-a-decodable-jwt";
+    localStorage.setItem(DEV_LOCAL_AUTH_TOKEN_KEY, opaque);
+
+    const consumed = consumeDevLocalAuthToken(manager);
+
+    expect(consumed).toBe(true);
+    expect(setTokens).toHaveBeenCalledTimes(1);
+    expect(setTokens).toHaveBeenCalledWith(
+      expect.objectContaining({ access_token: opaque, expires_in: 3600 })
+    );
+    expect(localStorage.getItem(DEV_LOCAL_AUTH_TOKEN_KEY)).toBeNull();
+  });
 });

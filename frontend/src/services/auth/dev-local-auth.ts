@@ -48,15 +48,22 @@ export function isDevLocalAuthEnabled(): boolean {
   return process.env.NEXT_PUBLIC_ENABLE_DEV_LOCAL_AUTH === "1";
 }
 
-/** Seconds until the JWT `exp`, or the fallback TTL for an undecodable token. */
-function deriveExpiresInSeconds(token: string): number {
+/**
+ * Seconds until the JWT `exp`:
+ *   - a positive number when the token carries a future `exp`;
+ *   - the fallback TTL when the token carries NO decodable `exp` (a non-JWT
+ *     handoff string) — a real, freshly-minted token is assumed;
+ *   - `null` when the token DOES carry an `exp` that is already in the PAST.
+ *     An already-expired token must NOT be stored as fresh (the old 3600
+ *     fallback did exactly that, seeding a session that 401s on its first API
+ *     call); the caller skips the handoff instead.
+ */
+function deriveExpiresInSeconds(token: string): number | null {
   const claims = decodeJwtClaims(token);
   const exp = claims && typeof claims.exp === "number" ? claims.exp : null;
-  if (exp !== null) {
-    const secondsRemaining = Math.floor(exp - Date.now() / 1000);
-    if (secondsRemaining > 0) return secondsRemaining;
-  }
-  return DEV_FALLBACK_EXPIRES_IN_SECONDS;
+  if (exp === null) return DEV_FALLBACK_EXPIRES_IN_SECONDS;
+  const secondsRemaining = Math.floor(exp - Date.now() / 1000);
+  return secondsRemaining > 0 ? secondsRemaining : null;
 }
 
 /**
@@ -77,13 +84,29 @@ export function consumeDevLocalAuthToken(tokenManager: TokenManager): boolean {
   if (!token) return false;
 
   // One-shot: drop the key up front so a later failure can't loop-consume it.
+  // This clears the key even for an already-expired token below — it has been
+  // consumed/discarded, and a re-seed writes a fresh value rather than us
+  // retrying a stale one on every reload.
   window.localStorage.removeItem(DEV_LOCAL_AUTH_TOKEN_KEY);
+
+  const expiresIn = deriveExpiresInSeconds(token);
+  if (expiresIn === null) {
+    // The handoff token is ALREADY expired. Do not replay a stale bearer as
+    // if it were fresh — that would establish a session that 401s on the
+    // first API call and mask the real cause. A fresh mint is expected here
+    // (the harness re-seeds); skip the handoff and let auth fall through to
+    // the normal /login path.
+    console.warn(
+      "[dev-local-auth] handoff token is already expired; skipping session " +
+        "handoff. Re-seed a freshly minted dev token.",
+    );
+    return false;
+  }
 
   // Mirror the shape completeExternalLogin() passes for a Cognito ID token:
   // opaque/absent refresh (dev re-auths by re-seeding, not a refresh grant),
   // and an expiry derived from the token's own `exp` (fallback for a
   // non-JWT). This is the SAME setTokens API a real login calls.
-  const expiresIn = deriveExpiresInSeconds(token);
   tokenManager.setTokens({
     access_token: token,
     refresh_token: "",
