@@ -132,6 +132,7 @@ else:
         "http://localhost:3002",
         "http://localhost:3003",
         "http://localhost:3004",
+        "http://localhost:3011",  # dev-local-auth verify-web frontend (/verify-web on-ramp)
         "http://localhost:1420",  # qontinui-runner Tauri app
         "tauri://localhost",  # Tauri custom protocol
         "https://tauri.localhost",  # Tauri HTTPS protocol
