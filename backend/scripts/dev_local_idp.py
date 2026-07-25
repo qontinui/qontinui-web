@@ -87,7 +87,9 @@ class _JwksOnlyHandler(BaseHTTPRequestHandler):
         sys.stderr.write(f"[dev-local-idp] {self.address_string()} - {format % args}\n")
 
 
-def _print_banner(*, issuer: str, audience: str, token_path: Path, bind_port: int) -> None:
+def _print_banner(
+    *, issuer: str, audience: str, token_path: Path, bind_port: int
+) -> None:
     issuer_port = urlparse(issuer).port or bind_port
     lines = [
         "[dev-local-idp] hermetic dev IdP is up.",
@@ -152,7 +154,9 @@ def main() -> int:
     parser.add_argument("--ttl-seconds", type=int, default=7200)
     args = parser.parse_args()
 
-    bind_port = args.port if args.port is not None else (urlparse(args.issuer).port or DEV_PORT)
+    bind_port = (
+        args.port if args.port is not None else (urlparse(args.issuer).port or DEV_PORT)
+    )
 
     out_dir = (
         Path(args.out_dir)

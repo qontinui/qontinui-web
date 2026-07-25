@@ -44,9 +44,7 @@ class TestProdGuardrail:
         assert "QONTINUI_DEV_LOCAL_AUTH is set" in msg
 
     @pytest.mark.parametrize("environment", ["staging", "production"])
-    def test_prod_posture_with_loopback_issuer_refuses(
-        self, environment: str
-    ) -> None:
+    def test_prod_posture_with_loopback_issuer_refuses(self, environment: str) -> None:
         with pytest.raises(ValidationError) as exc:
             Settings(
                 ENVIRONMENT=environment,
