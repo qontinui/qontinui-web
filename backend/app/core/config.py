@@ -6,9 +6,37 @@ Loads configuration from environment variables and .env file.
 import json
 import warnings
 from typing import Any, cast
+from urllib.parse import urlparse
 
-from pydantic import AnyHttpUrl, Field, PostgresDsn, field_validator
+from pydantic import (
+    AnyHttpUrl,
+    Field,
+    PostgresDsn,
+    field_validator,
+    model_validator,
+)
 from pydantic_settings import BaseSettings
+
+# ENVIRONMENT values that carry a *production* trust posture. Prod runs with
+# ENVIRONMENT=staging (a cosmetic staging->prod migration leftover — see the
+# root CLAUDE.md), so "staging" is treated as production here: the dev-local-auth
+# on-ramp must never be enable-able under either. Only "development" is a genuine
+# local/dev posture that may trust the hermetic local IdP.
+_PRODUCTION_POSTURE_ENVIRONMENTS = frozenset({"staging", "production"})
+
+# Hosts that mean "an issuer served from this machine / the local dev box".
+# A production-posture backend that trusts a loopback/local Cognito issuer would
+# be trusting a token any local process can mint — the exact thing the guardrail
+# forbids. host.docker.internal is included because a container reaches the host
+# dev IdP through it.
+_LOOPBACK_ISSUER_HOSTS = frozenset(
+    {"127.0.0.1", "localhost", "0.0.0.0", "::1", "host.docker.internal"}  # noqa: S104
+)
+
+# Database names that belong to the SHARED dev database. When dev-local-auth is
+# enabled the JIT-provisioned dev user must not land here, so the guardrail
+# refuses to boot against these and forces an isolated DATABASE_URL.
+_SHARED_DEV_DB_NAMES = frozenset({"qontinui_db", "db"})
 
 
 class Settings(BaseSettings):
@@ -242,6 +270,25 @@ class Settings(BaseSettings):
             if a.strip()
         ]
 
+    # Dev-local-auth on-ramp (local web UI-Bridge verification on-ramp, Phase 1).
+    # Master gate for the hermetic local-IdP login flow. When set, the backend is
+    # expected to run with COGNITO_ISSUER pointed at the local IdP
+    # (scripts/dev_local_idp.py / spec_ci_local_idp.py, http://127.0.0.1:8770) and
+    # COGNITO_ALLOWED_AUDIENCES=qontinui-web-local, so an injected UI-Bridge tab can
+    # present a locally-minted, Cognito-shaped token that the REAL verifier accepts
+    # and JIT-provisions. This is a DEV-ONLY seam and mirrors how
+    # NEXT_PUBLIC_ENABLE_SPEC_CI gates the frontend spec-CI path. The prod
+    # guardrail below (`_enforce_dev_local_auth_safety`) makes it structurally
+    # impossible to enable under a production-posture ENVIRONMENT.
+    QONTINUI_DEV_LOCAL_AUTH: bool = Field(
+        default=False,
+        description=(
+            "Master dev flag for the hermetic local-IdP auth on-ramp. Dev/local "
+            "only — the backend REFUSES TO BOOT if this is set while "
+            "ENVIRONMENT is a production posture (staging/production)."
+        ),
+    )
+
     # Stripe
     STRIPE_SECRET_KEY: str | None = Field(default=None, description="Stripe secret key")
     STRIPE_PUBLISHABLE_KEY: str | None = Field(
@@ -414,6 +461,85 @@ class Settings(BaseSettings):
         if "postgresql" not in v.lower():
             raise ValueError("Only PostgreSQL is supported for DATABASE_URL")
         return v
+
+    @property
+    def is_production_posture(self) -> bool:
+        """True when ENVIRONMENT carries a production trust posture.
+
+        Prod runs with ENVIRONMENT=staging (cosmetic migration leftover), so
+        both ``staging`` and ``production`` count; only ``development`` is a
+        genuine local/dev posture that may enable dev-local-auth.
+        """
+        return self.ENVIRONMENT in _PRODUCTION_POSTURE_ENVIRONMENTS
+
+    @property
+    def cognito_issuer_is_loopback(self) -> bool:
+        """True when COGNITO_ISSUER points at a loopback/local host."""
+        host = (urlparse(self.COGNITO_ISSUER).hostname or "").lower()
+        if not host:
+            return False
+        return host in _LOOPBACK_ISSUER_HOSTS or host.startswith("127.")
+
+    @staticmethod
+    def _database_name(database_url: str) -> str:
+        """Extract the database name from a PostgreSQL DSN (path, no query)."""
+        path = urlparse(database_url).path.lstrip("/")
+        # Strip anything after a "?" that urlparse may leave when the DSN is
+        # not fully URL-shaped.
+        return path.split("?", 1)[0]
+
+    @model_validator(mode="after")
+    def _enforce_dev_local_auth_safety(self) -> "Settings":
+        """Fail-fast guardrail around the dev-local-auth on-ramp.
+
+        Two structural protections, both enforced at settings-instantiation time
+        (before the app can boot):
+
+        1. **Prod guardrail (the security core).** Under a production-posture
+           ENVIRONMENT (staging/production), REFUSE TO BOOT if either the
+           ``QONTINUI_DEV_LOCAL_AUTH`` master flag is set OR ``COGNITO_ISSUER``
+           resolves to a loopback/local host. Both would let a locally-minted
+           token be trusted in prod — impossible by construction now.
+
+        2. **Isolated dev DB (anomaly fix).** When dev-local-auth IS enabled
+           (only reachable under a dev posture, per protection 1), refuse to run
+           against the shared dev database so the JIT-provisioned dev user cannot
+           pollute it — force an explicit isolated ``DATABASE_URL``.
+        """
+        if self.is_production_posture:
+            reasons: list[str] = []
+            if self.QONTINUI_DEV_LOCAL_AUTH:
+                reasons.append("QONTINUI_DEV_LOCAL_AUTH is set")
+            if self.cognito_issuer_is_loopback:
+                reasons.append(
+                    "COGNITO_ISSUER resolves to a loopback/local host "
+                    f"({self.COGNITO_ISSUER!r})"
+                )
+            if reasons:
+                raise ValueError(
+                    "Refusing to boot: dev-local-auth is forbidden under a "
+                    f"production-posture ENVIRONMENT={self.ENVIRONMENT!r} "
+                    "(staging is treated as production) because "
+                    + " and ".join(reasons)
+                    + ". The hermetic local IdP must NEVER be trusted in "
+                    "production. Unset QONTINUI_DEV_LOCAL_AUTH and point "
+                    "COGNITO_ISSUER at the real Cognito issuer, or run with "
+                    "ENVIRONMENT=development for local-auth."
+                )
+
+        if self.QONTINUI_DEV_LOCAL_AUTH:
+            db_name = self._database_name(str(self.DATABASE_URL))
+            if db_name in _SHARED_DEV_DB_NAMES:
+                raise ValueError(
+                    "Refusing to boot: QONTINUI_DEV_LOCAL_AUTH=1 must run "
+                    f"against an ISOLATED database, but DATABASE_URL names "
+                    f"the shared dev database {db_name!r}. The dev-local-auth "
+                    "flow JIT-provisions a synthetic dev user; set "
+                    "DATABASE_URL to a dedicated database (e.g. "
+                    "'qontinui_local_auth') so it cannot pollute shared dev data."
+                )
+
+        return self
 
     class Config:
         """Pydantic configuration for Settings class."""
