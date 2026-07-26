@@ -6,6 +6,7 @@
 import { describe, expect, it } from "vitest";
 import {
   beginConnectState,
+  isValidLogin,
   isValidRunnerState,
   parseConnectState,
 } from "./onboarding-connect-state";
@@ -28,6 +29,37 @@ describe("isValidRunnerState", () => {
     // qontinui:// deep link later.
     expect(isValidRunnerState("abcd1234?x=1&y=2")).toBe(false);
     expect(isValidRunnerState("runner-clone")).toBe(false);
+  });
+});
+
+describe("isValidLogin", () => {
+  it("accepts valid GitHub logins", () => {
+    expect(isValidLogin("portofino-pizzeria")).toBe(true);
+    expect(isValidLogin("a")).toBe(true);
+    expect(isValidLogin("Qontinui")).toBe(true);
+  });
+
+  it("rejects null, metacharacters, leading/trailing/double hyphens, overlong", () => {
+    expect(isValidLogin(null)).toBe(false);
+    expect(isValidLogin("")).toBe(false);
+    expect(isValidLogin("-org")).toBe(false);
+    expect(isValidLogin("org-")).toBe(false);
+    expect(isValidLogin("or--g")).toBe(false);
+    // metacharacters that would corrupt the qontinui:// deep link
+    expect(isValidLogin("org&installation_id=999")).toBe(false);
+    expect(isValidLogin("org?x=1")).toBe(false);
+    expect(isValidLogin("a".repeat(40))).toBe(false);
+  });
+});
+
+describe("parseConnectState login validation", () => {
+  it("drops a malformed login to null instead of propagating it", () => {
+    expect(
+      parseConnectState("connect~org&evil=1~deadbeef"),
+    ).toMatchObject({ login: null });
+    expect(parseConnectState("connect~good-org~deadbeef")).toMatchObject({
+      login: "good-org",
+    });
   });
 });
 

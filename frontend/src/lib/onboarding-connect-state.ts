@@ -76,6 +76,20 @@ export function isValidRunnerState(value: string | null): value is string {
 }
 
 /**
+ * A GitHub org/user login: alphanumeric with single interior hyphens, ≤39
+ * chars. Validated here because the returned `login` from `state` flows into
+ * the `qontinui://` deep link and the claim body — a value failing this is
+ * dropped to null rather than propagated, so no metacharacter or overlong
+ * string rides downstream. (Mirrors `LOGIN_RE` on the outbound side; the
+ * authoritative admin check is still coord's `/user/installations` gate.)
+ */
+export function isValidLogin(value: string | null): value is string {
+  return (
+    !!value && /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/.test(value)
+  );
+}
+
+/**
  * Build the `state` for an outbound connect nav and persist its nonce so the
  * callback can verify it. sessionStorage (not localStorage) because the nonce
  * is scoped to this tab's round-trip and should not outlive it.
@@ -116,10 +130,11 @@ export function parseConnectState(raw: string | null): ConnectState | null {
   }
   const [flow, login, nonce, runnerState] = raw.split(SEP);
   if (flow !== "connect" && flow !== LEGACY_RUNNER_CLONE) return null;
+  const trimmedLogin = login?.trim() ?? null;
   const trimmedRunnerState = runnerState?.trim() ?? null;
   return {
     flow,
-    login: login?.trim() ? login.trim() : null,
+    login: isValidLogin(trimmedLogin) ? trimmedLogin : null,
     nonce: nonce?.trim() ? nonce.trim() : null,
     runnerState: isValidRunnerState(trimmedRunnerState)
       ? trimmedRunnerState

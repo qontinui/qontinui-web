@@ -247,7 +247,12 @@ export default function OnboardingStatusPage() {
       target = { account_login: stateLogin as string };
     }
 
-    if (runnerState && code) {
+    if (isRunnerClone && runnerState && code) {
+      // Gate the hand-off on the flow marker, not just the presence of a
+      // runnerState (review gap 4a): only the runner-clone flow is ever meant
+      // to hand a code back to a runner. A crafted `connect~…~<hex>` state can
+      // carry a runnerState on a non-runner flow — routing that to a runner is
+      // never intended, so it falls through to the browser claim instead.
       // P2: hand the code to the runner instead of spending it here. Keep the
       // (code, target) around for the explicit browser fallback, and strip the
       // code from the address bar so a refresh can't replay the hand-off.
