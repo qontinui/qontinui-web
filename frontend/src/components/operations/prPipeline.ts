@@ -13,6 +13,7 @@
 // Everything here is pure and side-effect free (timestamps are passed in),
 // so the status table and health heuristics are unit-testable without a DOM.
 
+import { redactSecrets } from "./mergeTypes";
 import type {
   MergeEconomics,
   PrRow,
@@ -203,8 +204,10 @@ function statusFromProposal(p: ProposalDetail): UnifiedStatus {
       return {
         kind: "conflict",
         label: "Conflict",
+        // Redacted: coord stores the failing git command verbatim in
+        // `merge_proposals.error`, credentials included.
         reason: p.error
-          ? p.error
+          ? redactSecrets(p.error)
           : "rebase or candidate CI failed — expand for details",
         attention: "author",
       };
@@ -216,7 +219,10 @@ function statusFromProposal(p: ProposalDetail): UnifiedStatus {
         reason:
           paths.length > 0
             ? `overlapping files: ${paths.slice(0, 2).join(", ")}${paths.length > 2 ? "…" : ""}`
-            : (p.error ?? "overlapping files — lands after the other PR"),
+            // `||` not `??` — an empty-string error is not nullish and would
+              // otherwise win, yielding a blank reason instead of this copy.
+              : (redactSecrets(p.error) ||
+              "overlapping files — lands after the other PR"),
         attention: "waiting",
       };
     }
@@ -1095,7 +1101,25 @@ function compareRows(a: PipelineRow, b: PipelineRow): number {
 // Filtering
 // ----------------------------------------------------------------------------
 
-export type PipelineFilter = "all" | "attention" | "in-flight" | "merged";
+/**
+ * The pipeline's tabs.
+ *
+ * `train` is the odd one out: it is NOT a filter over `PipelineRow`s. It
+ * selects a row-per-REPO view of the merge train itself (see
+ * `MergeTrainActivity`), because the questions it answers — what phase is the
+ * train in, and why are the gaps between merges so long — are properties of
+ * the train, not of any PR. `matchesFilter` therefore never sees it; the
+ * caller branches on it before filtering.
+ */
+export type PipelineFilter =
+  | "all"
+  | "attention"
+  | "in-flight"
+  | "merged"
+  | "train";
+
+/** The tabs that ARE per-PR filters. `train` is excluded by construction. */
+export type RowPipelineFilter = Exclude<PipelineFilter, "train">;
 
 export function matchesFilter(row: PipelineRow, f: PipelineFilter): boolean {
   switch (f) {
@@ -1118,6 +1142,10 @@ export function matchesFilter(row: PipelineRow, f: PipelineFilter): boolean {
     }
     case "merged":
       return row.status.kind === "merged";
+    // Not a per-PR filter — the Train tab renders its own component. Returning
+    // false keeps any accidental caller from silently rendering the full list.
+    case "train":
+      return false;
   }
 }
 

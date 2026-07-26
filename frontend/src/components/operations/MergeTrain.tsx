@@ -18,6 +18,7 @@ import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_API, relativeTime } from "./utils";
 import { CollapsiblePanel } from "./CollapsiblePanel";
 import { unstableHasFailure } from "./prPipeline";
+import { redactSecrets } from "./mergeTypes";
 import type {
   BlastRadiusBlock,
   BlastRadiusBlocksResponse,
@@ -58,8 +59,28 @@ function statusTint(status: ProposalStatus): string {
     case "conflict":
     case "blocked-by-overlap":
       return "bg-red-500/15 text-red-200 border-red-500/30";
+    case "speculative-ci":
+      // Candidate CI on a speculative tip stacked on an unlanded predecessor —
+      // coord testing, same family as dry-rebasing, never red.
+      return "bg-purple-500/15 text-purple-200 border-purple-500/30";
+    case "shadow-landed":
     case "cancelled":
+      // Terminal and inert. `shadow-landed` completed every phase but parked
+      // instead of pushing (COORD_MERGE_DRY_LAND=1) — NOT a landing, so it must
+      // not borrow `merged`'s green.
       return "bg-muted/40 text-muted-foreground border-border line-through";
+    default:
+      // `ProposalStatus` is a coord enum this frontend does not control; a
+      // status added there must render inertly rather than emit
+      // `class="… undefined"`.
+      //
+      // TRADE-OFF, stated because it is not free: with every member now
+      // handled, this arm is unreachable per the type, so it PERMANENTLY gives
+      // up the non-exhaustive-switch error — which is exactly the signal that
+      // caught this file when `speculative-ci` and `shadow-landed` were added.
+      // Runtime safety is worth more here than that compile-time tripwire,
+      // but a new coord status will now land silently as grey.
+      return "bg-muted text-muted-foreground border-border";
   }
 }
 
@@ -147,7 +168,7 @@ export function MergeTrainRow({ proposal }: { proposal: ProposalDetail }) {
         {proposal.error && (
           <p className="text-xs text-red-300 flex items-center gap-1 mt-0.5">
             <AlertTriangle className="h-3 w-3" />
-            {proposal.error}
+            {redactSecrets(proposal.error)}
           </p>
         )}
       </div>

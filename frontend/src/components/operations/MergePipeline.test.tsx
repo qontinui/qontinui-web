@@ -570,4 +570,91 @@ describe("MergePipeline", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toHaveTextContent("qontinui-web#55");
   });
+
+  // --------------------------------------------------------------------------
+  // The Train tab. Unlike every other tab it is NOT a filter over the PR rows
+  // — it swaps in a row-per-REPO view of the merge train itself. These cover
+  // the integration seam (tab order, the swap, the health read's gating);
+  // the derivation is covered in trainActivity.test.ts and the presentation in
+  // MergeTrainActivity.test.tsx.
+  // --------------------------------------------------------------------------
+
+  it("offers the Train tab immediately after Merged", () => {
+    render(<MergePipeline />);
+    const tabs = screen
+      .getAllByTestId(/^pipeline-filter-/)
+      .map((el) => el.dataset.testid ?? el.getAttribute("data-testid"));
+    expect(tabs).toEqual([
+      "pipeline-filter-all",
+      "pipeline-filter-attention",
+      "pipeline-filter-in-flight",
+      "pipeline-filter-merged",
+      "pipeline-filter-train",
+    ]);
+  });
+
+  it("swaps the PR list for the per-repo train view", () => {
+    hookData.current.prs = [pr()];
+    hookData.current.proposals = [proposal({ status: "landing" })];
+
+    render(<MergePipeline />);
+    expect(screen.getAllByTestId("pipeline-row").length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByTestId("pipeline-filter-train"));
+
+    expect(screen.getByTestId("merge-train-activity")).toBeInTheDocument();
+    // The per-PR rows are gone — this tab is a different question.
+    expect(screen.queryByTestId("pipeline-row")).not.toBeInTheDocument();
+    const row = screen.getByTestId("train-row-qontinui/qontinui-web");
+    expect(row).toHaveAttribute("data-activity", "landing");
+  });
+
+  it("counts repos the train is working, not PRs", () => {
+    // Two PRs, one repo, one in-flight proposal ⇒ the Train tab reads 1.
+    hookData.current.prs = [pr({ pr_number: 1 }), pr({ pr_number: 2 })];
+    hookData.current.proposals = [proposal({ status: "landing" })];
+
+    render(<MergePipeline />);
+    expect(screen.getByTestId("pipeline-filter-train")).toHaveTextContent(
+      /Train\s*1/
+    );
+  });
+
+  it("only reads coord health while the Train tab is open", () => {
+    // The health read scales with the ready-unmerged backlog and every
+    // dashboard request pins a backend DB connection, so it must not ride
+    // along on the other tabs.
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ last_merged_at: new Date().toISOString() }),
+    });
+
+    render(<MergePipeline />);
+    const healthCalls = () =>
+      fetchMock.mock.calls.filter((c) =>
+        String(c[0]).includes("/pr-merge/health")
+      ).length;
+    expect(healthCalls()).toBe(0);
+
+    fireEvent.click(screen.getByTestId("pipeline-filter-train"));
+    expect(healthCalls()).toBeGreaterThan(0);
+  });
+
+  it("still renders the train view when the health read is unavailable", async () => {
+    // coord deploy predating /pr-merge/health, or a transient outage.
+    fetchMock.mockResolvedValue({ ok: false, status: 404, json: async () => ({}) });
+    hookData.current.proposals = [proposal({ status: "awaiting-ci" })];
+
+    render(<MergePipeline />);
+    fireEvent.click(screen.getByTestId("pipeline-filter-train"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("train-health-missing")).toBeInTheDocument()
+    );
+    // Per-repo activity is still derived from the queue.
+    expect(
+      screen.getByTestId("train-row-qontinui/qontinui-web")
+    ).toHaveAttribute("data-activity", "awaiting-ci");
+  });
 });
