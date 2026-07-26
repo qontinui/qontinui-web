@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "base_sha": "af7ef8311fafc90f8d483d458024cf25580226ad",
+  "ours_sha": "ea37330be5ec9d8224917f154142674f127cfdf6",
+  "theirs_sha": "ca45ec15cd340f669aa8af3645e30219d5372747",
+  "entries": [
+    {
+      "path": "backend/tests/test_operations_tenant_gate.py",
+      "base_oid": "cb20fe0783739f978ccda52f9d1f164e3ee56096",
+      "ours_oid": "b19813126c206330368d775f6dd88bcc201a2304",
+      "theirs_oid": "2c11ad9777b0fa9b47b0e22d4c514ac1646b997c",
+      "base_path": "backend/tests/test_operations_tenant_gate.py.base",
+      "ours_path": "backend/tests/test_operations_tenant_gate.py.ours",
+      "theirs_path": "backend/tests/test_operations_tenant_gate.py.theirs",
+      "hunks": [
+        "<<<<<<< HEAD\n    def test_member_bearer_happy_path_body_still_functions(self) -> None:\n        \"\"\"A member bearer reaches each body post-param-removal.\n\n        Proves the removal did not break the handler body (each route's\n        coord re-fetch / response synthesis still runs). ``/agent-status``\n        and ``/sessions`` return the coord payload directly; the\n        ``/coord/next-step-settings`` body indexes the coord dict to add\n        ``can_edit`` (``is_admin`` from the cached ``/me``), so it is stubbed\n        with a dict payload.\n        \"\"\"\n        for route, payload in (\n            (\"/agent-status\", []),\n            (\"/sessions\", []),\n            (\"/coord/next-step-settings\", {\"master_enabled\": True, \"domains\": []}),\n        ):\n            cm, _ = _patch_transport(proxy_payload=payload)\n            with cm:\n                client = TestClient(_build_app())\n                resp = client.get(\n                    f\"{API_PREFIX}{route}\", headers={\"Authorization\": \"Bearer tok\"}\n                )\n            assert resp.status_code == 200, route\n            if route == \"/coord/next-step-settings\":\n                # can_edit synthesised from the member's is_admin (default\n                # _me_payload includes \"admin\").\n                assert resp.json()[\"can_edit\"] is True\n\n    @pytest.mark.parametrize(\"route\", _VESTIGIAL_SWEEP_ROUTES)\n    def test_request_checks_out_zero_pool_connections(self, route: str) -> None:\n        \"\"\"Each swept route holds ZERO pooled DB connections across the\n        coord round-trip — the same regression guard applied to\n        ``/merge/queue``, now covering the routes whose direct\n        ``current_user`` (the only DB-touching dependency they had) was\n        deleted.\"\"\"\n        from sqlalchemy import event\n        from sqlalchemy.pool import QueuePool\n\n        from app.db.session import async_engine\n\n        payload: Any = (\n            {\"master_enabled\": True, \"domains\": []}\n            if route == \"/coord/next-step-settings\"\n            else []\n        )\n        checkouts: list[Any] = []\n\n        def _on_checkout(dbapi_conn: Any, rec: Any, proxy: Any) -> None:\n            checkouts.append(rec)\n\n        event.listen(async_engine.sync_engine, \"checkout\", _on_checkout)\n        try:\n            cm, _ = _patch_transport(me_delay=0.05, proxy_payload=payload)\n            with cm:\n                client = TestClient(_build_app())\n                resp = client.get(\n                    f\"{API_PREFIX}{route}\", headers={\"Authorization\": \"Bearer tok\"}\n                )\n        finally:\n            event.remove(async_engine.sync_engine, \"checkout\", _on_checkout)\n\n        assert resp.status_code == 200\n        assert checkouts == []\n        assert isinstance(async_engine.pool, QueuePool)\n        assert async_engine.pool.checkedout() == 0\n\n=======\n>>>>>>> 8af2a57f (fix(operations): drop vestigial current_user dep from 3 more get_tenant_id routes)\n"
+      ]
+    }
+  ]
+}

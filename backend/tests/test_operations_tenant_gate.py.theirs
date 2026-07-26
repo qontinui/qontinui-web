@@ -246,7 +246,6 @@ class TestVestigialSweepRoutesStillGated:
 
         assert resp.status_code == 502
 
-<<<<<<< HEAD
     def test_member_bearer_happy_path_body_still_functions(self) -> None:
         """A member bearer reaches each body post-param-removal.
 
@@ -312,8 +311,6 @@ class TestVestigialSweepRoutesStillGated:
         assert isinstance(async_engine.pool, QueuePool)
         assert async_engine.pool.checkedout() == 0
 
-=======
->>>>>>> 8af2a57f (fix(operations): drop vestigial current_user dep from 3 more get_tenant_id routes)
 
 # ---------------------------------------------------------------------------
 # require_coord_tenant_admin is deliberately NOT touched by this change —
