@@ -78812,6 +78812,33 @@
         ]
       }
     },
+    "/api/v1/operations/pr-merge/health": {
+      "get": {
+        "description": "Merge-train liveness \u2014 proxies coord's ``GET /pr-merge/health``.\n\nBacks the fleet pipeline's \"Train\" tab, which answers \"what is the merge\ntrain doing per repo, and why is it pausing\". This read carries the three\nsignals that per-PR data CANNOT explain, because they are properties of\nthe train itself rather than of any one PR:\n\n- ``last_merged_at`` \u2014 the pause clock. A frozen value with an ADVANCING\n  ``last_predicate_eval_at`` is the signature of a suppressed train\n  (the engine is evaluating; nothing is landing).\n- ``leader`` \u2014 the ``coord.leader_lease`` row. ``lease_fresh=false`` means\n  leadership is lapsing, which stalls every repo at once.\n- ``dry_run`` \u2014 repos frozen in ``rollout_state=dry_run`` (coord issue\n  #776). A silently frozen tenant merges nothing and, before this field\n  existed, produced no signal at all.\n\nIt also returns ``ready_unmerged.prs[]`` \u2014 green + CLEAN + unlanded PRs\nwith a readiness-onset age and the latest proposal's ``status``/``error``\nat the PR's CURRENT head. That per-repo backlog is the direct answer to\n\"why has nothing merged for the last hour\".\n\nGRACEFUL FALLBACK (required): mirrors ``/pr-merge/merge-economics`` \u2014 a 404\n(coord deploy predating the route) or a transient coord outage\n(502/503/504) degrades to ``{}`` rather than erroring, so the Train tab\nstill renders whatever it can derive from ``/merge/queue`` +\n``/pr-merge/prs`` and simply omits the fleet-level banner.\n\nTenant note: UNLIKE the fleet-wide ``/merge/queue`` and ``/pr-merge/prs``,\ncoord scopes this route's ``ready_unmerged`` and ``dry_run`` sections to\nthe bearer's tenant (its handler takes ``TenantId``, not\n``FleetPrincipal``). ``tenant_id`` is still resolved only to trigger\nbearer-forwarding; coord derives the scope from the bearer itself.",
+        "operationId": "api_v1_operations_pr_merge_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Pr Merge Health Api V1 Operations Pr Merge Health Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Pr Merge Health",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/pr-merge/kill-switch": {
       "post": {
         "description": "Emergency-stop: flip the calling tenant's rollout_state to\n``dry_run``. Body shape::\n\n    {\n        \"scope\": \"tenant\" | \"repo:<owner/name>\",\n        \"reason\": \"<operator's stated reason>\"\n    }\n\nCoord:\n1. Verifies the tenant owns the repo (when scope=repo).\n2. UPDATE ``coord.tenant_merge_settings.rollout_state='dry_run'``\n   (scope=tenant) or ``coord.tenant_repo_profiles.rollout_state=\n   'dry_run'`` (scope=repo).\n3. Invalidates the settings cache (process-local + Redis pubsub).\n4. INSERTs a ``coord.user_overrides(override_kind=\n   'kill_switch_activated')`` row.\n5. INSERTs a ``coord.alerts(kind='kill_switch_fired',\n   severity='warning')`` row.\n6. Stamps ``auth_sso::audit_mutation``.\n\nReturns ``{ \"scope\", \"previous_state\", \"new_state\", \"affected_repos\" }``.",
