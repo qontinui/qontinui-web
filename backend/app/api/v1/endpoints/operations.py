@@ -2275,7 +2275,6 @@ async def get_claims_list(
 async def get_agent_status(
     correlation_topic: str | None = None,
     tenant_id: UUID = Depends(get_tenant_id),
-    current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
     """List active (non-expired) agent_status rows for the caller's tenant.
 
@@ -4349,7 +4348,6 @@ async def list_coord_sessions(
     # single-tenant path. The returned UUID is otherwise unused on the
     # wire here (the `scope=all` path computes its own `tenant_ids`).
     tenant_id: UUID = Depends(get_tenant_id),
-    current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
     """List active (default) or all sessions across one or all tenants
     the caller belongs to.
@@ -5050,7 +5048,6 @@ async def deregister_repo(
 async def get_next_step_settings(
     request: Request,
     tenant_id: UUID = Depends(get_tenant_id),
-    current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
     """Per-tenant read of the decision-engine autonomy settings.
 

@@ -70343,11 +70343,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Agent Status",
         "tags": [
           "operations"
@@ -71803,11 +71798,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Next Step Settings",
         "tags": [
           "operations"
@@ -77632,11 +77622,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "List Coord Sessions",
         "tags": [
           "operations"
