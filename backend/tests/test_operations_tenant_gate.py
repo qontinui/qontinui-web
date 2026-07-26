@@ -22,6 +22,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
 import httpx
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -183,6 +184,66 @@ class TestTenantGateFailClosed:
 
         assert resp.status_code == 200
         assert resp.json() == []
+
+
+# ---------------------------------------------------------------------------
+# Follow-up sweep: three more get_tenant_id-gated routes had a vestigial
+# direct ``current_user`` parameter (never referenced in the body) removed,
+# so they too stop pinning a DB connection across the coord round-trip. Each
+# must still be fail-closed via the SAME coord gate — this guards against the
+# routes reading as "public" (their OpenAPI security[] declaration is stripped
+# with the fastapi-users dep) actually meaning unauthenticated at runtime.
+# ---------------------------------------------------------------------------
+
+_VESTIGIAL_SWEEP_ROUTES = [
+    "/agent-status",
+    "/sessions",
+    "/coord/next-step-settings",
+]
+
+
+class TestVestigialSweepRoutesStillGated:
+    @pytest.mark.parametrize("route", _VESTIGIAL_SWEEP_ROUTES)
+    def test_no_bearer_is_rejected_without_coord_call(self, route: str) -> None:
+        """No bearer -> local 401, and NO outbound coord /me call.
+
+        The route is NOT open after its ``current_user`` param was deleted —
+        ``get_tenant_id`` short-circuits a no-bearer request to 401 before the
+        coord round-trip (same amplification guard as the merge/queue gate).
+        """
+        cm, stub = _patch_transport()
+        with cm:
+            client = TestClient(_build_app())
+            resp = client.get(f"{API_PREFIX}{route}")
+
+        assert resp.status_code == 401
+        assert not any(
+            call.args[0].endswith("/admin/coord/me") for call in stub.get.call_args_list
+        )
+
+    @pytest.mark.parametrize("route", _VESTIGIAL_SWEEP_ROUTES)
+    def test_non_member_gets_403(self, route: str) -> None:
+        """A valid bearer whose operator is not a tenant member -> 403."""
+        cm, _ = _patch_transport(me_status=403)
+        with cm:
+            client = TestClient(_build_app())
+            resp = client.get(
+                f"{API_PREFIX}{route}", headers={"Authorization": "Bearer tok"}
+            )
+
+        assert resp.status_code == 403
+        assert resp.json()["detail"] == "tenant_not_resolved"
+
+    @pytest.mark.parametrize("route", _VESTIGIAL_SWEEP_ROUTES)
+    def test_coord_unreachable_returns_502(self, route: str) -> None:
+        cm, _ = _patch_transport(me_exc=httpx.ConnectError("refused"))
+        with cm:
+            client = TestClient(_build_app())
+            resp = client.get(
+                f"{API_PREFIX}{route}", headers={"Authorization": "Bearer tok"}
+            )
+
+        assert resp.status_code == 502
 
 
 # ---------------------------------------------------------------------------
