@@ -76269,11 +76269,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Pr Merge Health",
         "tags": [
           "operations"
