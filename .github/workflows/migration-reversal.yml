@@ -150,6 +150,7 @@ jobs:
           # `grep -c` prints "0" AND exits 1, so `|| echo 0` fired too and the
           # value became the two-line string "0\n0" — which makes `[ -gt ]` a
           # usage error that `if` reads as false. The guard could not fire at all.
+
           # Prove the toolchain works BEFORE the guard below starts reading a
           # non-zero `alembic heads` as "chain not consolidated". Otherwise a
           # broken poetry env or an unresolvable alembic entrypoint would take
