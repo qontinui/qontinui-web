@@ -553,7 +553,13 @@ export function buildTrainSummary(
     }
     // Orthogonal to global saturation: free slots + starved repos is the case
     // operators consistently misread as "coord is broken".
-    const atCap = slots.repos_at_cap ?? [];
+    // Derived from `repos[]` when coord omits the summary list: both fields are
+    // optional on the wire, and keying the banner off one while the per-repo
+    // reason keys off the other means a deploy that sends only one gives half
+    // the signal.
+    const atCap =
+      slots.repos_at_cap ??
+      (slots.repos ?? []).filter((r) => r.at_repo_cap).map((r) => r.repo);
     if (atCap.length > 0 && slots.available > 0) {
       banners.push({
         code: "repo-cap-starved",
@@ -771,6 +777,7 @@ export function buildRepoTrainRows(
       hasInFlight: inFlight.length > 0,
       slots,
       repoSlots,
+      queuedLegs: inFlight.filter((l) => l.proposal.status === "queued").length,
       proposalByHead,
     });
 
@@ -944,6 +951,9 @@ function deriveReasons(args: {
   hasInFlight: boolean;
   slots: SlotSaturation | null;
   repoSlots: RepoSlotSaturation | null;
+  /** Count of this repo's `queued` legs seen in the merge queue — the
+   *  fallback when coord omits the per-repo slot breakdown. */
+  queuedLegs: number;
   proposalByHead: Map<string, LinkedProposal>;
 }): PauseReason[] {
   const {
@@ -953,9 +963,16 @@ function deriveReasons(args: {
     hasInFlight,
     slots,
     repoSlots,
+    queuedLegs,
     proposalByHead,
   } = args;
   const reasons: PauseReason[] = [];
+
+  // `slots.repos` is optional on the wire. When coord omits it we still know
+  // this repo's queued legs from the merge queue, so a saturated fleet is not
+  // silently reported as "this repo has nothing waiting" — absence of the
+  // per-repo breakdown must not read as absence of a backlog.
+  const queuedHere = repoSlots?.queued ?? queuedLegs;
 
   // Capacity first — when the train has no room for this repo, the per-PR
   // states below are not what is holding it up.
@@ -981,7 +998,7 @@ function deriveReasons(args: {
       oldestSecs: repoSlots.oldest_queued_wait_seconds ?? null,
       prNumbers: [],
     });
-  } else if (slots?.saturated && (repoSlots?.queued ?? 0) > 0) {
+  } else if (slots?.saturated && queuedHere > 0) {
     reasons.push({
       code: "slots-saturated",
       severity: "waiting",
@@ -989,10 +1006,10 @@ function deriveReasons(args: {
       detail:
         `All ${slots.effective_cap} global merge slot` +
         `${slots.effective_cap === 1 ? " is" : "s are"} occupied, so this ` +
-        `repo's ${repoSlots?.queued ?? 0} queued proposal` +
-        `${(repoSlots?.queued ?? 0) === 1 ? "" : "s"} cannot be dispatched. ` +
+        `repo's ${queuedHere} queued proposal` +
+        `${queuedHere === 1 ? "" : "s"} cannot be dispatched. ` +
         `Fleet queue depth is ${slots.queued_depth}.`,
-      prCount: repoSlots?.queued ?? 0,
+      prCount: queuedHere,
       oldestSecs: repoSlots?.oldest_queued_wait_seconds ?? null,
       prNumbers: [],
     });
@@ -1035,10 +1052,19 @@ function deriveReasons(args: {
     push(buckets, code, pr);
   }
 
-  for (const [code, prsIn] of buckets) {
+  for (const [code, bucketPrs] of buckets) {
+    let prsIn = bucketPrs;
     // The orchestrator-stalled bucket is enriched below from health, which has
-    // a real readiness-onset clock; skip the generic path for it.
-    if (code === "orchestrator-stalled" && ready.length > 0) continue;
+    // a real readiness-onset clock. Skip the generic path only for the PRs
+    // health ALREADY covers — coord's `ready_unmerged` is tenant-scoped and
+    // may be narrower than this bucket, and dropping the whole bucket made
+    // those extra PRs vanish from the reasons entirely rather than merge.
+    if (code === "orchestrator-stalled" && ready.length > 0) {
+      const covered = new Set(ready.map((r) => r.pr_number));
+      const uncovered = prsIn.filter((p) => !covered.has(p.pr_number));
+      if (uncovered.length === 0) continue;
+      prsIn = uncovered;
+    }
     const meta =
       code === "orchestrator-stalled"
         ? { label: "Ready but unlanded", severity: "blocking" as PauseSeverity }
@@ -1204,7 +1230,15 @@ function headlineFor(
 /**
  * Busiest and most-broken first: a repo the train is actively working sorts
  * above one that is merely blocked, and blocking reasons sort above waiting
- * ones. Within a tie, the longer something has been that way, the higher.
+ * ones.
+ *
+ * Within a tie, active rows order by phase dwell. IDLE rows order by the top
+ * reason's age where one exists — but most reasons now carry no age at all
+ * (only the conflict buckets and the capacity/health-derived ones have a real
+ * clock; reporting a hydration timestamp as an age was worse than reporting
+ * none), so idle ties commonly fall through to the repo name. That is
+ * deliberate: a stable alphabetical order beats one keyed on a number that
+ * does not mean what it says.
  */
 function compareRepoRows(a: RepoTrainRow, b: RepoTrainRow): number {
   const active = Number(b.activity.kind !== "idle") - Number(a.activity.kind !== "idle");
