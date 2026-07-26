@@ -12,5 +12,6 @@ export { MigrationQueueTile } from "./MigrationQueueTile";
 export { MergeOrchestrationOnboarding } from "./MergeOrchestrationOnboarding";
 export { MergePipeline } from "./MergePipeline";
 export { MergeTrain } from "./MergeTrain";
+export { MergeTrainActivity } from "./MergeTrainActivity";
 export { TaskRunCard } from "./TaskRunCard";
 export { OutputViewer } from "./OutputViewer";

@@ -35,12 +35,16 @@ import {
 import Link from "next/link";
 import { CollapsiblePanel } from "./CollapsiblePanel";
 import { GateDecisionRow, MergeTrainRow, SuggestionCard } from "./MergeTrain";
+import { MergeTrainActivity } from "./MergeTrainActivity";
 import { relativeTime } from "./utils";
 import {
   MERGED_LOOKBACK_HOURS,
   useMergePipelineData,
 } from "./useMergePipelineData";
+import { useTrainHealth } from "./useTrainHealth";
 import { usePrCheckDetails } from "./usePrCheckDetails";
+import { buildRepoTrainRows, buildTrainSummary } from "./trainActivity";
+import { redactSecrets } from "./mergeTypes";
 import type { MergeEconomics } from "./mergeTypes";
 import {
   buildPipelineRows,
@@ -395,7 +399,7 @@ function RowDetail({ row }: { row: PipelineRow }) {
       {active?.error && active.error !== row.status.reason && (
         <p className="text-xs text-red-300 flex items-center gap-1 m-0">
           <AlertTriangle className="h-3 w-3 shrink-0" />
-          {active.error}
+          {redactSecrets(active.error)}
         </p>
       )}
 
@@ -600,6 +604,10 @@ const FILTERS: Array<{ id: PipelineFilter; label: string }> = [
   // Landing history, newest-merge-first. Populated from coord's
   // `?include_merged=<hours>` rows (see MERGED_LOOKBACK_HOURS).
   { id: "merged", label: "Merged" },
+  // Row-per-REPO view of the merge train itself — see MergeTrainActivity.
+  // Not a filter over the PR rows, so it renders its own component and its
+  // tab count is repos-with-activity, not PRs.
+  { id: "train", label: "Train" },
 ];
 // A "My PRs" tab needs pr_author from coord's /pr-merge/prs join (today the
 // queue only carries agent_id) — backend follow-up per the redesign report §4.
@@ -630,6 +638,14 @@ export function MergePipeline() {
   const [query, setQuery] = useState("");
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
+  // Merge-train liveness — its own hook on its own slower cadence, and only
+  // while the Train tab is open (coord's health read scales with the
+  // ready-unmerged backlog, and every dashboard request pins a backend DB
+  // connection for its whole lifetime).
+  const { health: trainHealth, loaded: trainHealthLoaded } = useTrainHealth(
+    filter === "train"
+  );
+
   const loaded = proposals !== null && prs !== null;
   const rows = useMemo(() => {
     // The merged read returns landed rows the open poll can ALSO be carrying:
@@ -654,15 +670,32 @@ export function MergePipeline() {
       economicsByRepo
     );
   }, [prs, mergedPrs, proposals, economicsByRepo]);
+
+  // Row-per-repo train state. Derived from the SAME queue + PR data the other
+  // tabs use (plus health), so opening the tab costs one extra read, not a
+  // second copy of the pipeline.
+  const trainRows = useMemo(
+    () => buildRepoTrainRows(proposals ?? [], prs ?? [], trainHealth),
+    [proposals, prs, trainHealth]
+  );
+  const trainSummary = useMemo(
+    () => buildTrainSummary(trainHealth, trainRows),
+    [trainHealth, trainRows]
+  );
+
   const counts = useMemo(
     () =>
       Object.fromEntries(
         FILTERS.map((f) => [
           f.id,
-          rows.filter((r) => matchesFilter(r, f.id)).length,
+          // The Train tab counts repos the train is actively working, not PRs
+          // — a PR count there would be meaningless against a per-repo list.
+          f.id === "train"
+            ? trainRows.filter((r) => r.activity.kind !== "idle").length
+            : rows.filter((r) => matchesFilter(r, f.id)).length,
         ])
       ) as Record<PipelineFilter, number>,
-    [rows]
+    [rows, trainRows]
   );
   const visible = useMemo(
     () =>
@@ -731,8 +764,17 @@ export function MergePipeline() {
 
       {error && <p className="text-xs text-red-300">{error}</p>}
 
-      {/* the unified list */}
-      {!loaded ? (
+      {/* The Train tab is a row-per-REPO view of the merge train itself, not a
+          filter over the PR rows — so it replaces the list entirely. */}
+      {filter === "train" ? (
+        <MergeTrainActivity
+          summary={trainSummary}
+          rows={trainRows}
+          loaded={loaded}
+          healthLoaded={trainHealthLoaded}
+          query={query}
+        />
+      ) : !loaded ? (
         <div className="space-y-2">
           <Skeleton className="h-10 w-full" />
           <Skeleton className="h-10 w-full" />
