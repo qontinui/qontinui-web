@@ -1,7 +1,7 @@
 """coord.footprint_drift_events (Ξ_Worktree Phase 7.6 — declared-vs-actual footprint honesty oplog)
 
 Revision ID: coord_footprint_drift_events
-Revises: auto_fix_rm_flaky_01
+Revises: coord_sm_to_handle
 Create Date: 2026-07-18
 
 Phase 7.6 of ``2026-06-06-twin-worktree-phase7-informed-isolation.md``.
@@ -55,10 +55,31 @@ order without a boot-gate crash-loop (the ungated-inverse trap: a coord read
 of a not-yet-migrated object is guarded here by best-effort, not by a hard
 require).
 
-Chains off ``coord_sessions_role_01`` (the live single head of the coord
-alembic chain on main at authoring time). If a concurrent head-race moves the
-head before this lands, re-point ``down_revision`` onto the new head (or let
-coord's auto-rebase reconcile the fork).
+Chains off ``coord_sm_to_handle``, the single live head of the alembic chain on
+``main``. This revision is the FIRST link of a three-PR re-parenting chain
+authored 2026-07-26 to clear the ``alembic-heads-pr`` gate on three PRs that had
+each forked the chain:
+
+    coord_sm_to_handle            (main head)
+      -> coord_footprint_drift_events   (this revision, PR #789)
+      -> merged_count_01_merged_at_idx  (PR #861)
+      -> design_policies_01             (PR #706)
+
+The three migrations have no data dependency on each other (distinct tables in
+distinct schemas), so the order is purely a landing order. It is chosen so the
+largest, highest-CI-risk PR gates the fewest others: this one is the smallest
+(a single migration file, no app code) and goes first, #706 is by far the
+largest and oldest and goes last.
+
+The order is self-enforcing, so no coord dep labels are needed (and per fleet
+policy must not be added) — the ``down_revision`` chain IS the ordering. A
+downstream PR names a parent that only exists once that parent has landed on
+``main``, so until then its tree cannot resolve the chain and its required
+checks are red. See the note in ``merged_count_01_repo_branches_merged_at_index``
+for exactly which checks go red and why the failure text is misleading.
+
+If a concurrent head-race moves ``main``'s head before this lands, re-point
+``down_revision`` onto the new head.
 """
 
 from collections.abc import Sequence
@@ -68,7 +89,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_footprint_drift_events"
-down_revision: str | Sequence[str] | None = "auto_fix_rm_flaky_01"
+down_revision: str | Sequence[str] | None = "coord_sm_to_handle"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
