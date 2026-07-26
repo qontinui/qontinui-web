@@ -168,7 +168,12 @@ function TrainHeader({
         <Stat
           label="In flight"
           value={String(summary.inFlightCount)}
-          hint={`${summary.activeRepoCount} repo${
+          // Scope is called out because the stats beside this one are NOT
+          // fleet-wide: coord tenant-scopes /pr-merge/health's ready-unmerged
+          // and per-repo slot sections, while /merge/queue is fleet-wide. Two
+          // differently-scoped numbers sitting side by side invite the reading
+          // that one explains the other.
+          hint={`Fleet-wide, from the merge queue — ${summary.activeRepoCount} repo${
             summary.activeRepoCount === 1 ? "" : "s"
           } actively being worked`}
         />
@@ -192,9 +197,11 @@ function TrainHeader({
               : undefined
           }
           hint={
-            summary.readyUnmergedMaxAgeSecs != null
-              ? `oldest ready ${formatDuration(summary.readyUnmergedMaxAgeSecs)} ago`
-              : "PRs coord judges landable that have not landed"
+            "PRs coord judges landable that have not landed. Scoped to YOUR " +
+            "tenant's repos (unlike In flight, which is fleet-wide)" +
+            (summary.readyUnmergedMaxAgeSecs != null
+              ? ` — oldest ready ${formatDuration(summary.readyUnmergedMaxAgeSecs)} ago`
+              : "")
           }
         />
         {/* Capacity. Rendered as occupied/cap so a full train is legible at a
@@ -211,9 +218,11 @@ function TrainHeader({
                   : undefined
               }
               hint={
-                summary.slots.dynamic
+                (summary.slots.dynamic
                   ? `Cap clamped to ${summary.slots.online_ci_runners ?? "?"} online CI runners (configured ${summary.slots.configured_cap})`
-                  : `COORD_MERGE_SLOTS=${summary.slots.configured_cap}; per-repo cap ${summary.slots.per_repo_cap}`
+                  : `COORD_MERGE_SLOTS=${summary.slots.configured_cap}; per-repo cap ${summary.slots.per_repo_cap}`) +
+                ". Occupancy and cap are fleet-wide (the semaphore is); the " +
+                "per-repo breakdown below is scoped to your tenant."
               }
             />
             <Stat
