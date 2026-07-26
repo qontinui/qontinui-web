@@ -815,6 +815,65 @@ describe("slot-cap saturation", () => {
     expect(rows.map((r) => r.repo)).toContain("org/starved");
   });
 
+  it("still reports a slot wait when coord omits the per-repo breakdown", () => {
+    // `slots.repos` is optional. Keying the reason off it alone made a
+    // saturated fleet read as "this repo has nothing waiting" — the queued
+    // legs are already in hand from the merge queue.
+    const rows = buildRepoTrainRows(
+      [proposal({ status: "queued" }), proposal({ proposal_id: "q2", status: "queued" })],
+      [],
+      { slots: slots({ repos: undefined, repos_at_cap: undefined }) },
+      NOW
+    );
+    const r = rows[0]!.reasons.find((x) => x.code === "slots-saturated");
+    expect(r).toBeDefined();
+    expect(r!.prCount).toBe(2);
+  });
+
+  it("derives the at-cap banner from repos[] when the summary list is absent", () => {
+    // Both fields are optional; a deploy sending only one must not give half
+    // the signal.
+    const s = buildTrainSummary(
+      {
+        slots: slots({
+          occupied: 2,
+          available: 1,
+          saturated: false,
+          repos_at_cap: undefined,
+          repos: [
+            { repo: "qontinui/web", in_flight: 2, queued: 3, at_repo_cap: true },
+          ],
+        }),
+      },
+      [],
+      NOW
+    );
+    const b = s.banners.find((x) => x.code === "repo-cap-starved");
+    expect(b?.detail).toContain("web");
+  });
+
+  it("merges the ready-unmerged bucket rather than replacing it", () => {
+    // coord's ready_unmerged is tenant-scoped and can be narrower than the
+    // locally-derived bucket; the extra PRs must not vanish from the reasons.
+    const rows = buildRepoTrainRows(
+      [],
+      [pr({ pr_number: 1 }), pr({ pr_number: 2 })],
+      {
+        ready_unmerged: {
+          count: 1,
+          prs: [{ repo: "qontinui/web", pr_number: 1, age_seconds: 900 }],
+        },
+      },
+      NOW
+    );
+    const stalls = rows[0]!.reasons.filter(
+      (r) => r.code === "orchestrator-stalled"
+    );
+    const covered = stalls.flatMap((r) => r.prNumbers);
+    expect(covered).toContain(1);
+    expect(covered).toContain(2);
+  });
+
   it("treats absent slot data as unknown, never as not-saturated", () => {
     const s = buildTrainSummary({ last_merged_at: ago(60) }, [], NOW);
     expect(s.slots).toBeNull();
