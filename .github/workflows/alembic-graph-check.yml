@@ -81,6 +81,9 @@ jobs:
               print('HEAD=' + h)
           " | tee heads.txt
           count=$(grep -c '^HEAD=' heads.txt || true)
+          # grep exiting 2 (hard error) leaves count empty, which would make the
+          # `[ -gt ]` below a usage error rather than a comparison. Normalise.
+          count=${count:-0}
           echo "count=$count" >> "$GITHUB_OUTPUT"
           if [ "$count" -gt 1 ]; then
             heads_list=$(grep '^HEAD=' heads.txt | sed 's/^HEAD=//' | tr '\n' ' ')
