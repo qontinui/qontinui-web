@@ -4,11 +4,28 @@ name: Migration Reversal Test
 # alembic migration is REVERSIBLE (up → down → up on an ephemeral Postgres) so the
 # coord escalate-path gate on `alembic/versions/**` can be retired.
 #
-# REQUIRED-CHECK SAFE: this runs on EVERY PR (no `paths:` filter) and always emits
-# the `Migration Reversal Gate` check, so it can be a required status check without
-# wedging PRs that don't touch migrations (the path-filtered-required-check footgun).
-# The expensive job (`reverse`) only runs when alembic/versions changed; the always-run
-# `gate` job is the one to mark required.
+# ⚠️ NOT A REQUIRED-CHECK CANDIDATE — do NOT mark `Migration Reversal Gate` required.
+#
+# This workflow is `paths:`-filtered to `backend/alembic/versions/**` (below). On a PR
+# that touches no migration the workflow never starts, so the `gate` job never emits its
+# check at all. Marking that context required would make every non-migration PR wait
+# forever on a check that structurally cannot appear — the phantom-required-context wedge.
+#
+# `gate` does carry `if: always()` (see the job), which makes it emit unconditionally
+# *within a run*. That is not the same property as emitting on every PR, and only the
+# latter is what a required context needs. The two are easy to conflate; this workflow
+# has exactly one of them.
+#
+# This is a deliberate, already-litigated decision, not an oversight:
+#   b1566b78  created path-filtered
+#   dd8233ac  dropped the filter to make it "a phantom-free required-check candidate"
+#   d419d387  RESTORED the filter — "red-CI model, not a required context"
+# `d419d387` is the standing decision. The old required-check-safe header survived it and
+# claimed the opposite for weeks, three lines above the `paths:` filter that refuted it.
+# If you want this required, you must first delete the filter and re-litigate d419d387 —
+# editing this comment is not enough.
+#
+# The expensive job (`reverse`) is additionally gated on `needs.detect.outputs.relevant`.
 
 on:
   pull_request:
