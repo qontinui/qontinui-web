@@ -60,6 +60,7 @@ def _patch_transport(
     me_payload: dict[str, Any] | None = None,
     me_exc: Exception | None = None,
     me_delay: float = 0.0,
+    proxy_payload: Any = None,
 ):
     """Patch ``httpx.AsyncClient`` with a URL-dispatching coord stub.
 
@@ -87,7 +88,7 @@ def _patch_transport(
                 return _response(me_status, text="forbidden")
             payload = me_payload if me_payload is not None else _me_payload()
             return _response(200, json_data=payload)
-        return _response(200, json_data=[])
+        return _response(200, json_data=[] if proxy_payload is None else proxy_payload)
 
     client = MagicMock()
     client.get = AsyncMock(side_effect=_handle)
@@ -244,6 +245,71 @@ class TestVestigialSweepRoutesStillGated:
             )
 
         assert resp.status_code == 502
+
+    def test_member_bearer_happy_path_body_still_functions(self) -> None:
+        """A member bearer reaches each body post-param-removal.
+
+        Proves the removal did not break the handler body (each route's
+        coord re-fetch / response synthesis still runs). ``/agent-status``
+        and ``/sessions`` return the coord payload directly; the
+        ``/coord/next-step-settings`` body indexes the coord dict to add
+        ``can_edit`` (``is_admin`` from the cached ``/me``), so it is stubbed
+        with a dict payload.
+        """
+        for route, payload in (
+            ("/agent-status", []),
+            ("/sessions", []),
+            ("/coord/next-step-settings", {"master_enabled": True, "domains": []}),
+        ):
+            cm, _ = _patch_transport(proxy_payload=payload)
+            with cm:
+                client = TestClient(_build_app())
+                resp = client.get(
+                    f"{API_PREFIX}{route}", headers={"Authorization": "Bearer tok"}
+                )
+            assert resp.status_code == 200, route
+            if route == "/coord/next-step-settings":
+                # can_edit synthesised from the member's is_admin (default
+                # _me_payload includes "admin").
+                assert resp.json()["can_edit"] is True
+
+    @pytest.mark.parametrize("route", _VESTIGIAL_SWEEP_ROUTES)
+    def test_request_checks_out_zero_pool_connections(self, route: str) -> None:
+        """Each swept route holds ZERO pooled DB connections across the
+        coord round-trip — the same regression guard applied to
+        ``/merge/queue``, now covering the routes whose direct
+        ``current_user`` (the only DB-touching dependency they had) was
+        deleted."""
+        from sqlalchemy import event
+        from sqlalchemy.pool import QueuePool
+
+        from app.db.session import async_engine
+
+        payload: Any = (
+            {"master_enabled": True, "domains": []}
+            if route == "/coord/next-step-settings"
+            else []
+        )
+        checkouts: list[Any] = []
+
+        def _on_checkout(dbapi_conn: Any, rec: Any, proxy: Any) -> None:
+            checkouts.append(rec)
+
+        event.listen(async_engine.sync_engine, "checkout", _on_checkout)
+        try:
+            cm, _ = _patch_transport(me_delay=0.05, proxy_payload=payload)
+            with cm:
+                client = TestClient(_build_app())
+                resp = client.get(
+                    f"{API_PREFIX}{route}", headers={"Authorization": "Bearer tok"}
+                )
+        finally:
+            event.remove(async_engine.sync_engine, "checkout", _on_checkout)
+
+        assert resp.status_code == 200
+        assert checkouts == []
+        assert isinstance(async_engine.pool, QueuePool)
+        assert async_engine.pool.checkedout() == 0
 
 
 # ---------------------------------------------------------------------------
