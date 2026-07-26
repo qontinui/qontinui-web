@@ -100,8 +100,8 @@ jobs:
           # `|| true`, NOT `|| echo 0`: on no-match `grep -c` already prints "0"
           # and exits 1, so `|| echo 0` appends a SECOND "0" and count becomes the
           # two-line string "0\n0" — which writes a malformed multi-line value
-          # into $GITHUB_OUTPUT and makes `[ -gt ]` a usage error. Matches the
-          # idiom alembic-graph-check.yml already uses.
+          # into $GITHUB_OUTPUT and makes `[ -gt ]` a usage error. Matches (and
+          # hardens) the idiom alembic-graph-check.yml already uses.
           count=$(grep -c '^HEAD=' heads.txt || true)
           count=${count:-0}
           echo "count=$count" >> "$GITHUB_OUTPUT"

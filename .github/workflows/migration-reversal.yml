@@ -150,16 +150,41 @@ jobs:
           # `grep -c` prints "0" AND exits 1, so `|| echo 0` fired too and the
           # value became the two-line string "0\n0" — which makes `[ -gt ]` a
           # usage error that `if` reads as false. The guard could not fire at all.
+          # Prove the toolchain works BEFORE the guard below starts reading a
+          # non-zero `alembic heads` as "chain not consolidated". Otherwise a
+          # broken poetry env or an unresolvable alembic entrypoint would take
+          # the skip-and-pass path and silently green a REQUIRED gate. This line
+          # runs under `set -e`, so infra breakage stays loud.
+          poetry run alembic --version >/dev/null
+
+          # Capture stderr to a file rather than letting it interleave: Actions
+          # does not guarantee stdout/stderr ordering within a step, and the
+          # cause must appear immediately above the skip message to be useful.
           set +e
-          HEADS_OUT=$(poetry run alembic heads)
+          HEADS_OUT=$(poetry run alembic heads 2>heads.err)
           HEADS_RC=$?
           set -e
+          cat heads.err >&2 || true
+          rm -f heads.err
           if [ "$HEADS_RC" -ne 0 ]; then
-            echo "alembic heads exited $HEADS_RC — the revision chain does not resolve in this checkout"
-            echo "(typically a migration whose down_revision lives on a parent PR that has not landed yet)."
-            echo "Chain consolidation is the alembic-heads-pr gate's job, not a reversibility failure. Skipping (pass)."
+            # Deliberately NOT narrowed by matching alembic's error prose. Any
+            # other non-zero cause (migration SyntaxError, graph cycle, duplicate
+            # revision id) still hard-fails on `alembic upgrade heads` in
+            # spec-ci.yml, which is required and runs on every PR with no path
+            # filter — so nothing here is the only thing standing between a
+            # broken chain and main. Grepping stderr text would trade that
+            # backstopped risk for a brittle one: an alembic wording change would
+            # turn this into a FALSE RED on exactly the legitimately-waiting
+            # stacked PRs this guard exists to let through. `::warning::` keeps
+            # the skip visible in the checks UI so a skipped gate is never
+            # mistaken for a passed one.
+            echo "::warning::alembic heads exited $HEADS_RC — the revision chain does not resolve in this checkout (cause above). Deferring to the alembic-heads-pr gate; skipping the reversibility test (pass)."
             exit 0
           fi
+          # `|| true`, NOT `|| echo 0`: on no-match `grep -c` already prints "0"
+          # and exits 1, so `|| echo 0` would append a SECOND "0" and make this a
+          # two-line string. Every degenerate path lands on 0, which falls through
+          # to RUNNING the test — the fail-safe direction.
           HEADS=$(printf '%s\n' "$HEADS_OUT" | grep -c '(head)' || true)
           HEADS=${HEADS:-0}
           if [ "$HEADS" -gt 1 ]; then
