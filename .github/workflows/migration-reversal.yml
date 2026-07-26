@@ -159,8 +159,11 @@ jobs:
           poetry run alembic --version >/dev/null
 
           # Capture stderr to a file rather than letting it interleave: Actions
-          # does not guarantee stdout/stderr ordering within a step, and the
-          # cause must appear immediately above the skip message to be useful.
+          # drains stdout and stderr with independent handlers, so the cause must
+          # be emitted immediately before the skip message AND on the same stream
+          # to be reliably adjacent to it. Both go to stderr (the runner parses
+          # workflow commands from stderr identically — see the `::error::`
+          # precedent in alembic-graph-pr.yml).
           set +e
           HEADS_OUT=$(poetry run alembic heads 2>heads.err)
           HEADS_RC=$?
@@ -179,7 +182,7 @@ jobs:
             # stacked PRs this guard exists to let through. `::warning::` keeps
             # the skip visible in the checks UI so a skipped gate is never
             # mistaken for a passed one.
-            echo "::warning::alembic heads exited $HEADS_RC — the revision chain does not resolve in this checkout (cause above). Deferring to the alembic-heads-pr gate; skipping the reversibility test (pass)."
+            echo "::warning::alembic heads exited $HEADS_RC — the revision chain does not resolve in this checkout (cause above). Deferring to the alembic-heads-pr gate; skipping the reversibility test (pass)." >&2
             exit 0
           fi
           # `|| true`, NOT `|| echo 0`: on no-match `grep -c` already prints "0"
