@@ -852,3 +852,41 @@ class TestReaper:
         assert counts == {"requeued": 0, "failed": 1}
         assert _job_field(db, job_id, "status") == "failed"
         assert _job_field(db, job_id, "attempt") == 4
+
+
+class TestReaperIsNotBundledIntoDecay:
+    """The reaper runs on its own frequent cadence, not the daily sweep.
+
+    A claimed row is invisible to both sides of the queue (``claim_jobs``
+    hands out only ``pending``; ``enqueue_jobs`` counts ``claimed`` as
+    live), so the reaper is the queue's only self-healing path. While it
+    was bundled into the daily ``memory_decay`` pass, a job abandoned by a
+    halted runner stayed stranded for up to ~24h despite a 30-minute
+    staleness bound.
+    """
+
+    def test_reap_once_requeues_stale_claim(self, db: AsyncEngine) -> None:
+        from app.jobs.memory_lifecycle import reap_once
+
+        tenant = uuid4()
+        job_id = _seed_job(
+            db, tenant, [uuid4()], status="claimed", claimed_minutes_ago=45
+        )
+
+        stats = _run(db, lambda s: reap_once(s, now=NOW))
+
+        assert stats == {"requeued": 1, "failed": 0}
+        assert _job_field(db, job_id, "status") == "pending"
+
+    def test_decay_once_no_longer_reaps(self, db: AsyncEngine) -> None:
+        from app.jobs.memory_lifecycle import decay_once
+
+        tenant = uuid4()
+        job_id = _seed_job(
+            db, tenant, [uuid4()], status="claimed", claimed_minutes_ago=45
+        )
+
+        stats = _run(db, lambda s: decay_once(s, now=NOW))
+
+        assert "synthesis_requeued" not in stats
+        assert _job_field(db, job_id, "status") == "claimed"

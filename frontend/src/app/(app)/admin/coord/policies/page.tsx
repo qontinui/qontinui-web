@@ -1,16 +1,19 @@
 "use client";
 
 /**
- * /admin/coord/policies — read-only operator/fleet view of autonomous
- * next-step policy state.
+ * /admin/coord/policies — coordination + design policy surface.
  *
- * Plan `2026-05-30-decision-engine-tenant-ui.md` Phase 2 (§6.4).
+ * Two parts:
+ *  - Design Policies (EDITABLE): tenant-scoped, user-authored UX/design
+ *    policies backed by `project.design_policies` and read tool-agnostically
+ *    by AI agents over `GET /api/v1/design-policies`. Writes gated server-side
+ *    by tenant admin.
+ *  - Autonomous next-step state (READ-ONLY): platform master-flag
+ *    (master_enabled) + fleet table of tenants with non-default
+ *    autonomy_level opt-ins. Plan `2026-05-30-decision-engine-tenant-ui.md`
+ *    Phase 2 (§6.4).
  *
- * Shows:
- *  - Platform master-flag state (master_enabled)
- *  - Fleet table of tenants with non-default autonomy_level opt-ins
- *
- * No write controls. Gated by is_superuser via the coord admin layout.
+ * Page gated by is_superuser via the coord admin layout.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -28,6 +31,7 @@ import {
 } from "@/components/ui/table";
 import { RefreshCw, Scale } from "lucide-react";
 import { httpClient } from "@/services/service-factory";
+import { DesignPoliciesSection } from "./_components/DesignPoliciesSection";
 
 const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 30_000;
@@ -135,7 +139,8 @@ export default function CoordPoliciesPage() {
             Coordination Policies
           </h2>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Read-only operator view of autonomous next-step state.
+            User-defined design policies, plus a read-only view of autonomous
+            next-step state.
           </p>
         </div>
         <Button
@@ -153,6 +158,9 @@ export default function CoordPoliciesPage() {
           Failed to load: {error}
         </p>
       )}
+
+      {/* Design policies — user-editable, tool-agnostic source of truth */}
+      <DesignPoliciesSection />
 
       {/* Master flag panel */}
       <Card data-testid="coord-policies-master-flag">

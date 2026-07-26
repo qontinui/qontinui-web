@@ -17,6 +17,7 @@ import {
   derivePipelineHealth,
   escalateStaleWaiting,
   formatDurationShort,
+  isMergedPr,
   lastActivityForMs,
   matchesFilter,
   matchesQuery,
@@ -1170,7 +1171,12 @@ describe("buildPipelineRows — dwell escalation covers both derivation paths", 
     // Counters alone were not the web#813 lesson — the operator scans the
     // detail string. A stalled wait must say so there.
     const behindStale = buildPipelineRows(
-      [pr({ merge_state_status: "BEHIND", last_activity_secs: THREE_DAYS_SECS })],
+      [
+        pr({
+          merge_state_status: "BEHIND",
+          last_activity_secs: THREE_DAYS_SECS,
+        }),
+      ],
       []
     );
     expect(derivePipelineHealth(behindStale, NOW).detail).toContain(
@@ -1459,6 +1465,64 @@ describe("merged rows", () => {
     // health strip read "last merged never" on a perfectly healthy fleet.
     const h = derivePipelineHealth(buildPipelineRows([MERGED_B], []), NOW);
     expect(h.lastMergedAt).toBe(ago(5));
+  });
+
+  // --- isMergedPr: the predicate the merged tab's contents rest on -----------
+
+  it("isMergedPr: an open row with no merge sha is NOT merged", () => {
+    // The whole safety argument for accepting a merge sha as a land signal is
+    // that a live PR never carries one — coord's open-PR query does not even
+    // project the column. If this ever flips, open PRs start rendering as
+    // landed and vanish from the live list.
+    expect(isMergedPr(pr())).toBe(false);
+    expect(isMergedPr(pr({ pr_state: "draft" }))).toBe(false);
+    expect(isMergedPr(pr({ pr_state: "open", merge_commit_sha: null }))).toBe(
+      false
+    );
+  });
+
+  it("isMergedPr: a phantom-open ff-land IS merged", () => {
+    // coord's ff-land pushes a rebased sha, so GitHub never auto-closes the
+    // PR: pr_state stays 'open' while the row is landed. pr_state alone misses
+    // it; the sha is the land-path-independent signal.
+    const phantom = pr({ pr_state: "open", merge_commit_sha: "ccccccc3333" });
+    expect(isMergedPr(phantom)).toBe(true);
+    expect(buildPipelineRows([phantom], [])[0].status.kind).toBe("merged");
+  });
+
+  it("isMergedPr: both terminal pr_states still count with no sha", () => {
+    expect(isMergedPr(pr({ pr_state: "merged" }))).toBe(true);
+    expect(isMergedPr(pr({ pr_state: "closed" }))).toBe(true);
+  });
+
+  it("a landed PR reads as merged even with a live proposal attached", () => {
+    // Terminal outranks the proposal lifecycle. A PR merged by the merge
+    // button while coord's proposal still sits `queued` used to render as
+    // queued — unfinished work that had in fact landed, and a landing the
+    // merged tab's count claimed but did not show.
+    const landed = pr({
+      pr_number: 20,
+      branch: "b-landed",
+      pr_state: "merged",
+      merged_at: ago(2),
+      merge_commit_sha: "ddddddd4444",
+    });
+    const rows = buildPipelineRows(
+      [landed],
+      [
+        proposal({
+          status: "queued",
+          repos: [repoDetail({ branch: "b-landed" })],
+        }),
+      ]
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status.kind).toBe("merged");
+    expect(matchesFilter(rows[0], "merged")).toBe(true);
+    expect(matchesFilter(rows[0], "all")).toBe(false);
+    // ...and NOT still in flight. The proposal lags the land, so keying the
+    // in-flight arm on the proposal alone would file one row under two tabs.
+    expect(matchesFilter(rows[0], "in-flight")).toBe(false);
   });
 });
 

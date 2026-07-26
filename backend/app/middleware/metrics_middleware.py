@@ -6,6 +6,7 @@ import structlog
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from app.core.db_pool_metrics import observe_async_engine_pool
 from app.db.session import AsyncSessionLocal
 from app.services.metrics_service import metrics_service
 
@@ -24,6 +25,21 @@ class MetricsMiddleware(BaseHTTPMiddleware):
     ]
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        # Sample DB pool occupancy on EVERY request — before the exclusion
+        # early-return below (whose "/" startswith-entry matches every path,
+        # so nothing after it ever runs) and before call_next, so saturation
+        # is observed while load is applied rather than after stalled
+        # requests finish their up-to-30s pool wait. Emits a debounced
+        # db_pool_high_occupancy WARNING when the pool runs hot (>70% of
+        # size + max_overflow) — the early signal before checkout timeouts
+        # start surfacing as 503s. Observability must never fail a request.
+        try:
+            observe_async_engine_pool()
+        except Exception as e:  # noqa: BLE001 - best-effort observability
+            logger.debug(
+                "db_pool_observe_failed", error=str(e), error_type=type(e).__name__
+            )
+
         # Skip metrics for excluded paths
         if any(request.url.path.startswith(path) for path in self.EXCLUDED_PATHS):
             response: Response = await call_next(request)
