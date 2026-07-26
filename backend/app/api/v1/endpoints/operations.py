@@ -863,6 +863,51 @@ async def get_pr_merge_merge_economics(
         raise
 
 
+@router.get("/pr-merge/health")
+async def get_pr_merge_health(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Merge-train liveness — proxies coord's ``GET /pr-merge/health``.
+
+    Backs the fleet pipeline's "Train" tab, which answers "what is the merge
+    train doing per repo, and why is it pausing". This read carries the three
+    signals that per-PR data CANNOT explain, because they are properties of
+    the train itself rather than of any one PR:
+
+    - ``last_merged_at`` — the pause clock. A frozen value with an ADVANCING
+      ``last_predicate_eval_at`` is the signature of a suppressed train
+      (the engine is evaluating; nothing is landing).
+    - ``leader`` — the ``coord.leader_lease`` row. ``lease_fresh=false`` means
+      leadership is lapsing, which stalls every repo at once.
+    - ``dry_run`` — repos frozen in ``rollout_state=dry_run`` (coord issue
+      #776). A silently frozen tenant merges nothing and, before this field
+      existed, produced no signal at all.
+
+    It also returns ``ready_unmerged.prs[]`` — green + CLEAN + unlanded PRs
+    with a readiness-onset age and the latest proposal's ``status``/``error``
+    at the PR's CURRENT head. That per-repo backlog is the direct answer to
+    "why has nothing merged for the last hour".
+
+    GRACEFUL FALLBACK (required): mirrors ``/pr-merge/merge-economics`` — a 404
+    (coord deploy predating the route) or a transient coord outage
+    (502/503/504) degrades to ``{}`` rather than erroring, so the Train tab
+    still renders whatever it can derive from ``/merge/queue`` +
+    ``/pr-merge/prs`` and simply omits the fleet-level banner.
+
+    Tenant note: UNLIKE the fleet-wide ``/merge/queue`` and ``/pr-merge/prs``,
+    coord scopes this route's ``ready_unmerged`` and ``dry_run`` sections to
+    the bearer's tenant (its handler takes ``TenantId``, not
+    ``FleetPrincipal``). ``tenant_id`` is still resolved only to trigger
+    bearer-forwarding; coord derives the scope from the bearer itself.
+    """
+    try:
+        return await _proxy_coord_get("/pr-merge/health", tenant_id=tenant_id)
+    except HTTPException as exc:
+        if exc.status_code in (404, 502, 503, 504):
+            return {}
+        raise
+
+
 @router.get("/pr-merge/prs/{repo:path}/{pr_number}/checks")
 async def get_pr_merge_pr_checks(
     repo: str,
