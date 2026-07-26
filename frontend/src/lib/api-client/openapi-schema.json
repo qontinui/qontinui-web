@@ -56345,11 +56345,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "List Condition Groups",
         "tags": [
           "conditions"
@@ -56392,11 +56387,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Create Condition Group",
         "tags": [
           "conditions"
@@ -56440,11 +56430,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Delete Condition Group",
         "tags": [
           "conditions"
@@ -56486,11 +56471,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Condition Group",
         "tags": [
           "conditions"
@@ -56544,11 +56524,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Update Condition Group",
         "tags": [
           "conditions"
@@ -56604,11 +56579,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Add Condition",
         "tags": [
           "conditions"
@@ -56664,11 +56634,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Reorder Conditions",
         "tags": [
           "conditions"
@@ -56730,11 +56695,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Run Condition Group",
         "tags": [
           "conditions"
@@ -56778,11 +56738,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "List Condition Group Runs",
         "tags": [
           "conditions"
@@ -56826,11 +56781,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Delete Condition",
         "tags": [
           "conditions"
@@ -56884,11 +56834,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Update Condition",
         "tags": [
           "conditions"
@@ -56932,11 +56877,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Condition Run",
         "tags": [
           "conditions"
@@ -62105,11 +62045,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Delivery Verdict",
         "tags": [
           "digital-twin"
@@ -62153,11 +62088,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Twin Subspace Raw",
         "tags": [
           "digital-twin"
@@ -72105,11 +72035,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Agent Logs By Agent",
         "tags": [
           "operations"
@@ -72187,11 +72112,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Agent Logs By Session",
         "tags": [
           "operations"
@@ -72278,11 +72198,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Agent Logs Recent",
         "tags": [
           "operations"
@@ -72351,11 +72266,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Answered Agent Questions",
         "tags": [
           "operations"
@@ -72399,11 +72309,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Agent Questions By Session",
         "tags": [
           "operations"
@@ -72454,11 +72359,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Pending Agent Questions",
         "tags": [
           "operations"
@@ -72502,11 +72402,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Agent Question",
         "tags": [
           "operations"
@@ -72562,11 +72457,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Post Agent Question Response",
         "tags": [
           "operations"
@@ -72763,11 +72653,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Agent",
         "tags": [
           "operations"
@@ -72844,11 +72729,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Coord Alerts",
         "tags": [
           "operations"
@@ -72871,11 +72751,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Ci Status",
         "tags": [
           "operations"
@@ -72918,11 +72793,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Post Ci Status Notify When Green",
         "tags": [
           "operations"
@@ -72945,11 +72815,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Claims Alerts",
         "tags": [
           "operations"
@@ -73019,11 +72884,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Claims List",
         "tags": [
           "operations"
@@ -73074,11 +72934,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Recent Conflicts",
         "tags": [
           "operations"
@@ -73129,11 +72984,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Recent Expirations",
         "tags": [
           "operations"
@@ -73200,11 +73050,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Claims Steals",
         "tags": [
           "operations"
@@ -73563,11 +73408,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "List Composition Rules",
         "tags": [
           "operations"
@@ -73765,11 +73605,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Post Coord Devices Pair Start",
         "tags": [
           "operations"
@@ -74233,11 +74068,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "List Coord Policies",
         "tags": [
           "operations"
@@ -74775,11 +74605,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "List Prompt Documents",
         "tags": [
           "operations"
@@ -74890,11 +74715,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Prompt Document",
         "tags": [
           "operations"
@@ -75014,11 +74834,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "List Prompt Document Clauses",
         "tags": [
           "operations"
@@ -75475,11 +75290,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "List Prompt Document Versions",
         "tags": [
           "operations"
@@ -75541,11 +75351,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Prompt Document Version",
         "tags": [
           "operations"
@@ -75646,11 +75451,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Pull Decisions",
         "tags": [
           "operations"
@@ -75728,11 +75528,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Deploys",
         "tags": [
           "operations"
@@ -75777,11 +75572,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Deploy",
         "tags": [
           "operations"
@@ -75826,11 +75616,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Deploy Rollback Proposal",
         "tags": [
           "operations"
@@ -75913,11 +75698,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Dev Actions Recent",
         "tags": [
           "operations"
@@ -75961,11 +75741,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Dev Action Detail",
         "tags": [
           "operations"
@@ -76018,11 +75793,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Device Status",
         "tags": [
           "operations"
@@ -76134,11 +75904,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Federation Reports",
         "tags": [
           "operations"
@@ -76183,11 +75948,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Federation Report Detail",
         "tags": [
           "operations"
@@ -76239,11 +75999,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Fleet Health",
         "tags": [
           "operations"
@@ -76623,11 +76378,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Gates List",
         "tags": [
           "operations"
@@ -77146,11 +76896,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Git Ops Branches",
         "tags": [
           "operations"
@@ -77194,11 +76939,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Git Ops By Session",
         "tags": [
           "operations"
@@ -77292,11 +77032,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Git Ops List",
         "tags": [
           "operations"
@@ -77339,11 +77074,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Post Github Check Name",
         "tags": [
           "operations"
@@ -77384,11 +77114,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Post Github Clone Credential",
         "tags": [
           "operations"
@@ -77431,11 +77156,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Post Github Create Repo",
         "tags": [
           "operations"
@@ -77476,11 +77196,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Post Github Enroll Repo",
         "tags": [
           "operations"
@@ -77526,11 +77241,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Github Oauth Status",
         "tags": [
           "operations"
@@ -77573,11 +77283,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Post Github Push Credential",
         "tags": [
           "operations"
@@ -77600,11 +77305,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Github Installation Repos",
         "tags": [
           "operations"
@@ -77708,11 +77408,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Lands",
         "tags": [
           "operations"
@@ -77735,11 +77430,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Lands Precision",
         "tags": [
           "operations"
@@ -77792,11 +77482,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Lands Preview",
         "tags": [
           "operations"
@@ -77841,11 +77526,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Lands Verifications",
         "tags": [
           "operations"
@@ -77890,11 +77570,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Lineage Recent",
         "tags": [
           "operations"
@@ -77939,11 +77614,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Lineage Session Commits",
         "tags": [
           "operations"
@@ -77966,11 +77636,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Lineage Stats",
         "tags": [
           "operations"
@@ -77993,11 +77658,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Memory List",
         "tags": [
           "operations"
@@ -78134,11 +77794,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Memory Entry",
         "tags": [
           "operations"
@@ -78249,11 +77904,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Memory Version",
         "tags": [
           "operations"
@@ -78276,11 +77926,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Merge Queue",
         "tags": [
           "operations"
@@ -78324,11 +77969,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Merge Proposal",
         "tags": [
           "operations"
@@ -78382,11 +78022,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Migrations Queue",
         "tags": [
           "operations"
@@ -78457,11 +78092,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "List Coord Plans",
         "tags": [
           "operations"
@@ -78505,11 +78135,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Coord Plan",
         "tags": [
           "operations"
@@ -78553,11 +78178,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Coord Plan History",
         "tags": [
           "operations"
@@ -78678,11 +78298,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Pr Merge Blast Radius Blocks",
         "tags": [
           "operations"
@@ -78744,11 +78359,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Pr Merge Decisions",
         "tags": [
           "operations"
@@ -78801,11 +78411,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Pr Merge Graph",
         "tags": [
           "operations"
@@ -78904,11 +78509,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Pr Merge Merge Economics",
         "tags": [
           "operations"
@@ -78953,11 +78553,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Post Pr Merge Onboarding Accept",
         "tags": [
           "operations"
@@ -78980,11 +78575,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Pr Merge Onboarding Accounts",
         "tags": [
           "operations"
@@ -79027,11 +78617,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Post Pr Merge Onboarding Audit",
         "tags": [
           "operations"
@@ -79075,11 +78660,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Pr Merge Onboarding Audit Status",
         "tags": [
           "operations"
@@ -79120,11 +78700,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Post Pr Merge Onboarding Claim",
         "tags": [
           "operations"
@@ -79170,11 +78745,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Pr Merge Onboarding Doctor",
         "tags": [
           "operations"
@@ -79197,11 +78767,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Pr Merge Onboarding Github App",
         "tags": [
           "operations"
@@ -79337,11 +78902,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Pr Merge Prs",
         "tags": [
           "operations"
@@ -79394,11 +78954,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Pr Merge Pr Checks",
         "tags": [
           "operations"
@@ -79469,11 +79024,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Pr Merge Repos",
         "tags": [
           "operations"
@@ -79517,11 +79067,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Pr Merge Repo Profile",
         "tags": [
           "operations"
@@ -79651,11 +79196,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Pr Merge Settings",
         "tags": [
           "operations"
@@ -79725,11 +79265,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Pr Merge Slo",
         "tags": [
           "operations"
@@ -79752,11 +79287,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Pr Merge Suggestions",
         "tags": [
           "operations"
@@ -80017,11 +79547,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Releases",
         "tags": [
           "operations"
@@ -80081,11 +79606,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Release",
         "tags": [
           "operations"
@@ -80131,11 +79651,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Deregister Repo",
         "tags": [
           "operations"
@@ -80156,11 +79671,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "List Repos",
         "tags": [
           "operations"
@@ -80203,11 +79713,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Register Repo",
         "tags": [
           "operations"
@@ -80392,11 +79897,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Coord Session",
         "tags": [
           "operations"
@@ -80441,11 +79941,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Session Agent Status",
         "tags": [
           "operations"
@@ -80490,11 +79985,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Session Claims",
         "tags": [
           "operations"
@@ -80539,11 +80029,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Stream Coord Session Events",
         "tags": [
           "operations"
@@ -80649,11 +80134,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Session Lineage",
         "tags": [
           "operations"
@@ -80752,11 +80232,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Coord Session Output",
         "tags": [
           "operations"
@@ -80801,11 +80276,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Coord Session Restore Record",
         "tags": [
           "operations"
@@ -80937,11 +80407,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Symbol Claims",
         "tags": [
           "operations"
@@ -81014,11 +80479,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Trees By Device",
         "tags": [
           "operations"
@@ -81041,11 +80501,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Trees Contention",
         "tags": [
           "operations"
