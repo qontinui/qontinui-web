@@ -118,15 +118,50 @@ jobs:
         run: |
           cd backend
           set -euo pipefail
-          # Defer multi-head chains to the alembic-heads-pr gate. A PR that is
-          # behind main with an un-repointed migration has >1 head, which makes
+          # Defer un-consolidated chains to the alembic-heads-pr gate. A PR that
+          # is behind main with an un-repointed migration has >1 head, which makes
           # `alembic upgrade head` ambiguous — that's a chain-consolidation
           # problem (alembic-heads-pr's job), NOT a reversibility problem. Failing
           # here would be a false positive that blocks an otherwise-reversible
-          # migration. A multi-head PR can't merge anyway (alembic-heads-pr is
+          # migration. Such a PR can't merge anyway (alembic-heads-pr is
           # required), and once it re-points to a single head this test runs for
-          # real. So skip-and-pass on multi-head.
-          HEADS=$(poetry run alembic heads 2>/dev/null | grep -c '(head)' || echo 0)
+          # real. So skip-and-pass.
+          #
+          # There are TWO distinct un-consolidated states, and they look nothing
+          # alike, so detect each EXPLICITLY rather than inferring both from one
+          # count:
+          #
+          #   (a) `alembic heads` FAILS (non-zero, empty stdout). Happens when a
+          #       migration names a down_revision that does not exist in this
+          #       checkout — the normal shape of a stacked PR whose parent has
+          #       not landed yet. alembic raises during revision-map construction
+          #       and prints nothing to stdout; the cause is on stderr only.
+          #       This state can never present as ">1 head", so a `(head)` counter
+          #       is structurally blind to it.
+          #   (b) `alembic heads` SUCCEEDS and lists >1 head — sibling heads that
+          #       both resolve. This is the case the original counter aimed at.
+          #
+          # Both are alembic-heads-pr's problem, so both skip-and-pass here.
+          # Anything else (exactly one head) is a real, resolvable chain and the
+          # reversibility test below runs for real.
+          #
+          # Do NOT reintroduce `alembic heads 2>/dev/null | grep -c '(head)' || echo 0`.
+          # It suppressed the only signal state (a) emits, and on empty input
+          # `grep -c` prints "0" AND exits 1, so `|| echo 0` fired too and the
+          # value became the two-line string "0\n0" — which makes `[ -gt ]` a
+          # usage error that `if` reads as false. The guard could not fire at all.
+          set +e
+          HEADS_OUT=$(poetry run alembic heads)
+          HEADS_RC=$?
+          set -e
+          if [ "$HEADS_RC" -ne 0 ]; then
+            echo "alembic heads exited $HEADS_RC — the revision chain does not resolve in this checkout"
+            echo "(typically a migration whose down_revision lives on a parent PR that has not landed yet)."
+            echo "Chain consolidation is the alembic-heads-pr gate's job, not a reversibility failure. Skipping (pass)."
+            exit 0
+          fi
+          HEADS=$(printf '%s\n' "$HEADS_OUT" | grep -c '(head)' || true)
+          HEADS=${HEADS:-0}
           if [ "$HEADS" -gt 1 ]; then
             echo "Multiple alembic heads ($HEADS) — reversibility deferred to the alembic-heads-pr gate. Skipping (pass)."
             exit 0
