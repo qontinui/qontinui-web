@@ -52,6 +52,7 @@ import {
   matchesFilter,
   matchesQuery,
   singleKey,
+  UNKNOWN_DWELL_NOTE,
   unstableHasFailure,
   type PipelineFilter,
   type PipelineRow,
@@ -145,6 +146,30 @@ export const AUTHOR_GLYPH_KINDS: ReadonlySet<UnifiedStatusKind> = new Set([
 ]);
 
 /**
+ * The marker for an amber row whose dwell clock DOES NOT EXIST — the third
+ * glyph, joining `✓` (landed) and `✕` (the author must act). It reads
+ * "coord cannot say how long this has been waiting", never "this is fine" and
+ * never "this is broken".
+ *
+ * A glyph, and specifically a glyph in the channel the page already uses, is
+ * the choice the UX priorities force. The signal has to survive the SCAN — a
+ * hover title alone is invisible to an operator sweeping twenty rows for work,
+ * which is precisely how nine month-old conflicts were skipped every time. But
+ * the row must not change colour, kind, sort rank or attention, because none
+ * of those may move on the absence of evidence. A prefix glyph plus a dashed
+ * border is the only channel left that is visible at scan distance, costs no
+ * layout, and asserts nothing about severity.
+ */
+const UNKNOWN_DWELL_GLYPH = "? ";
+
+/**
+ * The dashed treatment layered over the amber a `waiting` row already earns.
+ * Same hue (attention has not changed), but the border no longer reads as a
+ * firm measurement — the same "provisional" vocabulary `draft` already uses.
+ */
+const UNKNOWN_DWELL_CLASS = "border-dashed";
+
+/**
  * The badge carries its own reason as a `title`, so the "why is this PR
  * blocked?" answer is one hover away on EVERY row — including the narrow
  * viewports where the inline reason is dropped and the wide ones where it is
@@ -152,16 +177,28 @@ export const AUTHOR_GLYPH_KINDS: ReadonlySet<UnifiedStatusKind> = new Set([
  * accessibility tree and needs no provider.
  */
 function StatusBadge({ row }: { row: PipelineRow }) {
-  const { kind, label, reason } = row.status;
+  const { kind, label, reason, dwellEvidence } = row.status;
+  const isUnknown = dwellEvidence === "unknown";
+  const base = reason ? `${label} — ${reason}` : label;
   return (
     <Badge
       variant="outline"
-      className={`text-[11px] font-semibold whitespace-nowrap ${STATUS_BADGE_CLASS[kind]}`}
+      className={[
+        "text-[11px] font-semibold whitespace-nowrap",
+        STATUS_BADGE_CLASS[kind],
+        isUnknown ? UNKNOWN_DWELL_CLASS : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
       data-status-kind={kind}
-      title={reason ? `${label} — ${reason}` : label}
+      // Absent when the question does not arise, so a reader can tell "not
+      // applicable" from "measured" from "unknown" — the whole point.
+      data-dwell-evidence={dwellEvidence}
+      title={isUnknown ? `${base} (${UNKNOWN_DWELL_NOTE})` : base}
     >
       {kind === "merged" && "✓ "}
       {AUTHOR_GLYPH_KINDS.has(kind) && "✕ "}
+      {isUnknown && UNKNOWN_DWELL_GLYPH}
       {label}
     </Badge>
   );
@@ -394,6 +431,18 @@ function RowDetail({ row }: { row: PipelineRow }) {
       {row.status.reason && (
         <p className="text-[13px] text-foreground/85 m-0">
           {row.status.reason}
+        </p>
+      )}
+      {/* The four-word inline marker, spelled out. The glyph is what survives
+          the scan; this is what the operator reads once it has earned a
+          click. Muted, not red — an unknown age accuses nobody. */}
+      {row.status.dwellEvidence === "unknown" && (
+        <p
+          className="text-xs text-muted-foreground flex items-center gap-1 m-0"
+          data-testid="unknown-dwell-note"
+        >
+          <ShieldQuestion className="h-3 w-3 shrink-0" />
+          {UNKNOWN_DWELL_NOTE}
         </p>
       )}
       {active?.error && active.error !== row.status.reason && (
