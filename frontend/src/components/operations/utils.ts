@@ -440,7 +440,13 @@ export function summarizeClearanceProvenance(
     : "cleared";
   const parts: string[] = [verb];
   if (agent) parts.push(`by agent ${shortId(agent)}`);
-  if (device) parts.push(agent ? `on ${shortId(device)}` : `by ${shortId(device)}`);
+  if (device) {
+    // "on <device>" when the sentence already names an actor (an agent id, or
+    // a verb that itself says "by …" — operator/sweep); "by <device>" only
+    // when the device IS the actor. Avoids "cleared by operator by <id>".
+    const actorNamed = agent !== null || verb.includes(" by ");
+    parts.push(actorNamed ? `on ${shortId(device)}` : `by ${shortId(device)}`);
+  }
   if (rule) parts.push(`under rule ${shortId(rule)}`);
   return parts.join(" ");
 }
