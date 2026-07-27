@@ -375,3 +375,78 @@ export function truncate(text: string, maxLen: number): string {
   if (text.length <= maxLen) return text;
   return text.slice(0, maxLen) + "...";
 }
+
+// ---------------------------------------------------------------------------
+// Gate clearance provenance (plan
+// `2026-07-27-configurable-gate-clearance-authority` Phase 6)
+// ---------------------------------------------------------------------------
+
+/**
+ * The clearance-provenance fields coord stamps when a gate reaches a terminal
+ * verdict (columns added by web migration `gates_clearance_provenance_01`).
+ * Every field is optional + nullable: a coord predating the provenance deploy
+ * omits them all, and the summary is simply not rendered.
+ */
+export interface ClearanceProvenance {
+  /** Which door moved the gate: `operator_route | agent_attest | agent_reject
+   *  | withdraw | force_clear | sweep` (free text — future values render). */
+  cleared_via?: string | null;
+  /** Device UUID of the caller that moved the gate. */
+  cleared_by_device_id?: string | null;
+  /** Agent UUID of the caller (agent-token sessions only). */
+  cleared_by_agent_id?: string | null;
+  /** `policy_rules.policy_id` of the `gate_clearance` rule that authorized
+   *  the action; null for operator routes and the no-rule defaults. */
+  cleared_under_rule?: string | null;
+}
+
+/** Verb rendered for each known `cleared_via` door. Unknown non-null values
+ *  degrade to "cleared via <value>" — never a crash, never a hidden row. */
+const CLEARED_VIA_VERBS: Record<string, string> = {
+  operator_route: "cleared by operator",
+  agent_attest: "attested",
+  agent_reject: "rejected",
+  withdraw: "withdrawn",
+  force_clear: "force-cleared",
+  sweep: "cleared by sweep",
+};
+
+/** UUID → 8-char short form for display (full value belongs in a title). */
+function shortId(id: string): string {
+  return id.slice(0, 8);
+}
+
+/**
+ * Human-readable clearance-provenance sentence, e.g.
+ * `"attested by agent 6f2a91c3 on 1b2c3d4e under rule 9e8d7c6b"`.
+ *
+ * Composes from whichever fields are present (each independently optional —
+ * a device-JWT clearance has no agent id; operator routes have no rule).
+ * Returns `null` when NO provenance field is set, so callers can render
+ * nothing — the panel must look identical to today against a coord that does
+ * not emit the columns yet.
+ */
+export function summarizeClearanceProvenance(
+  p: ClearanceProvenance
+): string | null {
+  const via = p.cleared_via ?? null;
+  const agent = p.cleared_by_agent_id ?? null;
+  const device = p.cleared_by_device_id ?? null;
+  const rule = p.cleared_under_rule ?? null;
+  if (!via && !agent && !device && !rule) return null;
+
+  const verb = via
+    ? (CLEARED_VIA_VERBS[via] ?? `cleared via ${via}`)
+    : "cleared";
+  const parts: string[] = [verb];
+  if (agent) parts.push(`by agent ${shortId(agent)}`);
+  if (device) {
+    // "on <device>" when the sentence already names an actor (an agent id, or
+    // a verb that itself says "by …" — operator/sweep); "by <device>" only
+    // when the device IS the actor. Avoids "cleared by operator by <id>".
+    const actorNamed = agent !== null || verb.includes(" by ");
+    parts.push(actorNamed ? `on ${shortId(device)}` : `by ${shortId(device)}`);
+  }
+  if (rule) parts.push(`under rule ${shortId(rule)}`);
+  return parts.join(" ");
+}

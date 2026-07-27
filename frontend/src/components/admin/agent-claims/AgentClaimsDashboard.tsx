@@ -216,6 +216,11 @@ function verdictVariant(
       return "secondary"; // green/success
     case "failed":
       return "destructive"; // red
+    // `withdrawn` (registrant cancelled its own request) tones like `failed`
+    // — consistent with GatesPanel / the admin GatesTable — but keeps its own
+    // label (the badge renders the verdict text verbatim).
+    case "withdrawn":
+      return "destructive";
     default:
       return "outline";
   }
@@ -228,6 +233,8 @@ function verdictClassName(verdict: string): string {
     case "cleared":
       return "bg-green-100 text-green-800 border-green-300";
     case "failed":
+      return "bg-red-100 text-red-800 border-red-300";
+    case "withdrawn":
       return "bg-red-100 text-red-800 border-red-300";
     default:
       return "";

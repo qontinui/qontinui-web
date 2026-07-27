@@ -210,8 +210,16 @@ export interface NotifyWhenGreenResponse {
 // `POST /operations/gates/{id}/{approve,mute,unmute,snooze}` actions.
 // ---------------------------------------------------------------------------
 
-/** A gate's evaluation verdict (coord `GateVerdict`). */
-export type GateVerdict = "open" | "cleared" | "failed";
+/** A gate's evaluation verdict (coord `GateVerdict`). `misconfigured` =
+ *  the predicate references something unevaluable (loud misconfiguration);
+ *  `withdrawn` = the registrant cancelled its own request (terminal,
+ *  non-clear — plan `2026-07-27-configurable-gate-clearance-authority`). */
+export type GateVerdict =
+  | "open"
+  | "cleared"
+  | "failed"
+  | "misconfigured"
+  | "withdrawn";
 
 /**
  * The typed predicate JSON coord evaluates. Serde-tagged on `kind`
@@ -303,6 +311,30 @@ export interface GateRow {
   verdict: GateVerdict;
   verdict_reason: string | null;
   registered_by: string | null;
+  /** Agent UUID of the registrant when the registering token carried one
+   *  (agent-token sessions only; device JWTs carry no agent_id by design).
+   *  Optional + nullable: a coord predating the clearance-authority deploy
+   *  omits it (plan `2026-07-27-configurable-gate-clearance-authority`). */
+  registered_by_agent_id?: string | null;
+  /** Registrant self-classified gate class (e.g. `security-surface`,
+   *  `routine-review`, `ops-confirm` — free vocabulary, no closed union so a
+   *  future class still renders). NULL/absent = unclassified (strictest
+   *  default authority coord-side). Optional: a lagging coord omits it. */
+  gate_class?: string | null;
+  // Clearance provenance (columns from web migration
+  // `gates_clearance_provenance_01`; stamped by coord's clear/fail/withdraw
+  // paths). ALL optional + nullable — a coord predating the deploy omits
+  // them and the panel renders no provenance line (never a crash).
+  /** Device UUID of the caller that moved the gate to a terminal verdict. */
+  cleared_by_device_id?: string | null;
+  /** Agent UUID of the caller (agent-token sessions only). */
+  cleared_by_agent_id?: string | null;
+  /** Which door moved the gate: `operator_route | agent_attest |
+   *  agent_reject | withdraw | force_clear | sweep` (free text). */
+  cleared_via?: string | null;
+  /** `policy_rules.policy_id` of the `gate_clearance` rule that authorized
+   *  the action; NULL for operator routes and the no-rule defaults. */
+  cleared_under_rule?: string | null;
   tenant_id: string;
   created_at: string;
   evaluated_at: string | null;
