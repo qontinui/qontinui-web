@@ -20,9 +20,11 @@ unit-testable in isolation (see ``tests/test_memory_lifecycle.py``):
   ``2026-07-13-runner-paid-embedding``) loads no embedding model on any
   live path, so the sweeps ENQUEUE (see ``memory_store.enqueue_jobs``)
   for a runner to compute and post back. ``job_input_hash`` is the stable
-  key that keeps the same work from being enqueued twice while a job for
-  it is still pending/claimed/done — which is what makes the 15-minute
-  bridge and daily reindex cadences idempotent rather than accumulating.
+  key that keeps the same work from being enqueued twice while a live job
+  for it exists — an in-flight (pending/claimed) job of either kind, plus
+  a done SYNTHESIS job (a done embedding does not dedupe; see the
+  kind-aware ``enqueue_jobs``). This is what makes the 15-minute bridge
+  and reindex cadences idempotent rather than accumulating.
 """
 
 from __future__ import annotations
@@ -255,18 +257,21 @@ def job_input_hash(target_ids: list[UUID], *, model_tag: str | None = None) -> s
 
     The ``coord.memory_jobs.input_hash`` dedupe key: the same set of
     target ids always hashes identically regardless of order, so a job
-    whose inputs already have a live (pending/claimed/done) job is never
-    enqueued twice. sha256 hex over the comma-joined sorted ids.
+    whose inputs already have a live job (an in-flight pending/claimed job
+    of either kind, or a done SYNTHESIS job — the kind-aware
+    ``enqueue_jobs`` dedupe) is never enqueued twice. sha256 hex over the
+    comma-joined sorted ids.
 
-    ``model_tag`` (embedding jobs) is folded in so that a DEPLOYED-TAG
-    CHANGE re-opens the same rows for a fresh job. Without it, the
-    live-status dedupe spans ``done`` — so once a row set had been
-    embedded under the old tag, the reindex sweep could never enqueue
-    those same rows again under the new one, and the tag-drift class the
-    sweep exists to heal would be permanently unhealable. Synthesis
-    passes no tag, which keeps its hash byte-identical to the
-    pre-generalization ``member_set_hash`` — the values migrated across
-    from ``member_set_hash`` stay valid rather than silently missing.
+    ``model_tag`` (embedding jobs) is folded in so a job's dedupe key is
+    scoped to the tag it will be embedded under: a DEPLOYED-TAG CHANGE
+    yields a distinct hash and so a distinct job regardless of any earlier
+    same-rows job. (A done embedding job no longer participates in the
+    live-input index at all — the kind-aware fix lets a done-but-unapplied
+    embedding re-queue under the SAME tag too — but keeping the tag in the
+    key keeps distinct-tag jobs cleanly distinct.) Synthesis passes no
+    tag, which keeps its hash byte-identical to the pre-generalization
+    ``member_set_hash`` — the values migrated across from
+    ``member_set_hash`` stay valid rather than silently missing.
     """
     joined = ",".join(sorted(str(m) for m in target_ids))
     if model_tag is not None:

@@ -76,6 +76,22 @@ _LIVE_DEDUP_PREDICATE = (
     "is_tombstone = false AND superseded_by IS NULL AND valid_until IS NULL"
 )
 
+# The KIND-AWARE liveness predicate of the ``uq_memory_jobs_live_input``
+# partial unique index (see the ``memory_jobs_02_kind_aware_dedupe``
+# migration). An in-flight (pending/claimed) job of either kind dedupes, and
+# a DONE synthesis job keeps deduping (a completed cluster must never be
+# redone) — but a DONE embedding job does NOT, so a done-but-unapplied
+# embedding can re-queue (``fetch_reindex_batch`` gates the re-embed). The
+# ``enqueue_jobs`` ON CONFLICT ... WHERE clause MUST match this index
+# predicate exactly, so both read from this one constant. (The migration
+# carries its own textual copy — a migration cannot import runtime code — but
+# it is token-for-token identical modulo whitespace, which is all Postgres's
+# partial-index arbiter compares. The test-setup DDL interpolates THIS very
+# constant, so it can never drift.)
+_LIVE_JOB_INPUT_DEDUP_PREDICATE = (
+    "status IN ('pending', 'claimed') OR (status = 'done' AND kind = 'synthesis')"
+)
+
 
 def format_pgvector(vector: list[float]) -> str:
     """Render a vector as pgvector's text literal (``[v1,v2,...]``)."""
@@ -1513,9 +1529,16 @@ async def fetch_reindex_batch(
     until a runner drains it, and without this exclusion every batch in
     the loop — and every subsequent daily run — would re-select the same
     oldest rows forever. ``done`` is deliberately NOT excluded here: a
-    done job means the vectors were written, so the row drops out of this
-    query on its own merits; if it somehow did not, it genuinely needs
-    re-embedding and the tag-scoped ``input_hash`` lets it be re-queued.
+    row that was actually embedded now has a non-NULL ``embedding`` at the
+    deployed tag, so it drops out of this query on its own merits
+    regardless of any ``done`` job. A ``done``-BUT-UNAPPLIED embedding job
+    (the runner marked the job done without writing vectors, so the row's
+    ``embedding`` is still NULL / at the wrong tag) legitimately
+    re-selects here — and the kind-aware ``enqueue_jobs`` dedupe (a done
+    embedding no longer participates in the live-input index) is what lets
+    it be re-queued, even under the SAME tag. Excluding only in-flight
+    jobs here is therefore the exact complement of that dedupe: together
+    they let a stuck row heal without ever double-queuing a live one.
     """
     rows = await session.execute(
         text(
@@ -1826,32 +1849,51 @@ async def enqueue_jobs(
 ) -> int:
     """Insert one pending job per input, deduped by ``input_hash``.
 
-    A job whose ``(tenant, kind, input set)`` already has a live (pending
-    / claimed / done) job is skipped via ``ON CONFLICT DO NOTHING``
-    against the ``uq_memory_jobs_live_input`` partial unique index.
+    The dedupe is KIND-AWARE, via the ``uq_memory_jobs_live_input``
+    partial unique index (predicate ``status IN ('pending','claimed') OR
+    (status = 'done' AND kind = 'synthesis')``). The ``ON CONFLICT ...
+    WHERE`` clause below MUST match that index predicate verbatim — a
+    partial-index conflict target restates the index predicate exactly.
 
-    **This dedupe is what makes the enqueuers idempotent, and they lean on
-    it hard**: ``memory_bridge_sync`` runs every 15 minutes and
-    ``memory_reindex`` daily, and each enqueues whatever it finds
-    outstanding. Without the guard, every tick would pile up another copy
-    of the same work between runner drains. ``kind`` is IN the key, so the
-    same rows under a different kind are a distinct job. A ``failed`` job
-    sits outside the partial index and so does NOT block re-enqueue —
-    a permanent failure can be retried. Returns the number of jobs
-    actually inserted.
+    Why kind-aware:
+
+    * An in-flight (``pending`` / ``claimed``) job of EITHER kind blocks a
+      duplicate enqueue — that is what makes the enqueuers idempotent, and
+      they lean on it hard: ``memory_bridge_sync`` runs every 15 minutes
+      and ``memory_reindex`` every 10, each enqueuing whatever it finds
+      outstanding. Without the guard every tick would pile up another copy
+      of the same work between runner drains.
+    * A ``done`` **synthesis** job STILL blocks re-enqueue: a completed
+      synthesis already inserted its ``mental_model`` and superseded its
+      members, so redoing it would double-insert and re-supersede.
+    * A ``done`` **embedding** job does NOT block re-enqueue. A
+      done-but-unapplied embedding job (its vectors were never written, so
+      the row's ``embedding`` is still NULL) would otherwise deadlock the
+      row forever: ``fetch_reindex_batch`` re-fetches it every run (it
+      only excludes rows with an IN-FLIGHT embedding job), but the
+      re-enqueue was deduped against the stale ``done`` job → the row was
+      fetched yet never re-queued and never embedded. Letting the
+      embedding kind re-queue after ``done`` is safe precisely because
+      ``fetch_reindex_batch`` gates re-embedding on the row still being
+      un-embedded, so no duplicate embedding work can accumulate.
+
+    ``kind`` is IN the key, so the same rows under a different kind are a
+    distinct job. A ``failed`` job sits outside the partial index and so
+    does NOT block re-enqueue — a permanent failure can be retried.
+    Returns the number of jobs actually inserted.
     """
     inserted = 0
     for job in jobs:
         result = await session.execute(
             text(
-                """
+                f"""
                 INSERT INTO coord.memory_jobs
                     (tenant_id, kind, target_ids, input_texts, input_hash)
                 VALUES
                     (:tenant_id, :kind, CAST(:target_ids AS uuid[]),
                      CAST(:input_texts AS jsonb), :input_hash)
                 ON CONFLICT (tenant_id, kind, input_hash)
-                    WHERE status IN ('pending', 'claimed', 'done')
+                    WHERE {_LIVE_JOB_INPUT_DEDUP_PREDICATE}
                     DO NOTHING
                 RETURNING job_id
                 """
