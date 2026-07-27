@@ -29,6 +29,7 @@ import type {
   GateOverviewRow,
   ProgressBasis,
 } from "@/services/admin-dev-service";
+import { summarizeClearanceProvenance } from "@/components/operations/utils";
 import { ShadowReapEvidence } from "./ShadowReap";
 import { GateActions } from "./GateActions";
 
@@ -83,7 +84,16 @@ function verdictTone(verdict: string): VerdictTone {
   const v = verdict.toLowerCase();
   if (v === "pass" || v === "passed" || v === "cleared" || v === "ready")
     return "default";
-  if (v === "fail" || v === "failed" || v === "error" || v === "veto")
+  // `withdrawn` (registrant cancelled its own request) tones like `failed` —
+  // destructive terminal — but keeps its own label (the badge renders the
+  // verdict text verbatim), so the two stay visually distinct.
+  if (
+    v === "fail" ||
+    v === "failed" ||
+    v === "error" ||
+    v === "veto" ||
+    v === "withdrawn"
+  )
     return "destructive";
   if (v === "pending" || v === "queued" || v === "evaluating")
     return "secondary";
@@ -224,6 +234,29 @@ function GateIdCell({ gate }: { gate: GateOverviewRow }) {
       >
         <Copy className="size-3" />
       </Button>
+    </div>
+  );
+}
+
+// ---- clearance provenance cell -------------------------------------------
+
+/**
+ * Sub-line under the verdict badge: who moved the gate to a terminal verdict,
+ * via which door, under which rule — e.g. "attested by agent <id> on <device>
+ * under rule <id>" (plan `2026-07-27-configurable-gate-clearance-authority`
+ * Phase 6). Renders nothing when coord doesn't emit the provenance columns
+ * yet (pre-deploy), so the cell stays byte-identical to today.
+ */
+function ClearanceProvenanceLine({ gate }: { gate: GateOverviewRow }) {
+  const summary = summarizeClearanceProvenance(gate);
+  if (!summary) return null;
+  return (
+    <div
+      className="text-[11px] text-muted-foreground/70 mt-1 max-w-[14rem] truncate"
+      title={summary}
+      data-testid="gates-clearance-provenance"
+    >
+      {summary}
     </div>
   );
 }
@@ -431,6 +464,7 @@ export function GatesTable({
                     >
                       {g.verdict}
                     </Badge>
+                    <ClearanceProvenanceLine gate={g} />
                   </TableCell>
                   <TableCell className="text-sm whitespace-nowrap tabular-nums">
                     {formatAge(g.age_secs)}
@@ -463,6 +497,18 @@ export function GatesTable({
                           title={`until ${formatAbsolute(g.snoozed_until)}`}
                         >
                           snoozed
+                        </Badge>
+                      )}
+                      {/* Gate-class chip — registrant self-classification
+                          (free vocabulary; NULL/absent = unclassified → no
+                          chip, identical to today). */}
+                      {g.gate_class && (
+                        <Badge
+                          variant="outline"
+                          className="font-mono"
+                          data-testid="gates-gate-class"
+                        >
+                          {g.gate_class}
                         </Badge>
                       )}
                     </div>

@@ -11461,6 +11461,308 @@
         "title": "DeficiencyUpdate",
         "type": "object"
       },
+      "DesignPolicyCreate": {
+        "description": "Schema for creating a design policy.",
+        "properties": {
+          "applies_to": {
+            "default": "",
+            "maxLength": 255,
+            "title": "Applies To",
+            "type": "string"
+          },
+          "category": {
+            "default": "",
+            "maxLength": 50,
+            "title": "Category",
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "enforcement": {
+            "default": "",
+            "title": "Enforcement",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 255,
+            "title": "Name",
+            "type": "string"
+          },
+          "principle": {
+            "default": "",
+            "title": "Principle",
+            "type": "string"
+          },
+          "rationale": {
+            "default": "",
+            "title": "Rationale",
+            "type": "string"
+          },
+          "severity": {
+            "default": "info",
+            "enum": [
+              "info",
+              "warning",
+              "error"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "slug": {
+            "maxLength": 100,
+            "title": "Slug",
+            "type": "string"
+          },
+          "sort_order": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Sort Order",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "slug",
+          "name"
+        ],
+        "title": "DesignPolicyCreate",
+        "type": "object"
+      },
+      "DesignPolicyListResponse": {
+        "description": "List response for design policies.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DesignPolicyResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "count"
+        ],
+        "title": "DesignPolicyListResponse",
+        "type": "object"
+      },
+      "DesignPolicyResponse": {
+        "description": "Response schema for a design policy.",
+        "properties": {
+          "applies_to": {
+            "default": "",
+            "maxLength": 255,
+            "title": "Applies To",
+            "type": "string"
+          },
+          "category": {
+            "default": "",
+            "maxLength": 50,
+            "title": "Category",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "enforcement": {
+            "default": "",
+            "title": "Enforcement",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_built_in": {
+            "title": "Is Built In",
+            "type": "boolean"
+          },
+          "name": {
+            "maxLength": 255,
+            "title": "Name",
+            "type": "string"
+          },
+          "principle": {
+            "default": "",
+            "title": "Principle",
+            "type": "string"
+          },
+          "rationale": {
+            "default": "",
+            "title": "Rationale",
+            "type": "string"
+          },
+          "severity": {
+            "default": "info",
+            "enum": [
+              "info",
+              "warning",
+              "error"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "slug": {
+            "maxLength": 100,
+            "title": "Slug",
+            "type": "string"
+          },
+          "sort_order": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Sort Order",
+            "type": "integer"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "name",
+          "id",
+          "tenant_id",
+          "is_built_in",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "DesignPolicyResponse",
+        "type": "object"
+      },
+      "DesignPolicyUpdate": {
+        "description": "Schema for updating a design policy (all fields optional).",
+        "properties": {
+          "applies_to": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applies To"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "enforcement": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enforcement"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "principle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Principle"
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rationale"
+          },
+          "severity": {
+            "anyOf": [
+              {
+                "enum": [
+                  "info",
+                  "warning",
+                  "error"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Severity"
+          },
+          "sort_order": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort Order"
+          }
+        },
+        "title": "DesignPolicyUpdate",
+        "type": "object"
+      },
       "DetectedIssueCreate": {
         "description": "Schema for creating a detected issue.",
         "properties": {
@@ -48282,8 +48584,23 @@
             "schema": {
               "default": 0,
               "description": "When >0, ask coord to include recently-merged PRs (with per-PR deploy_state) in the list, not just open PRs. 0 (default) preserves the open-PRs-only behavior. coord honors this only after its own per-PR-deploy-state PR lands; forwarding it is harmless before then.",
+              "maximum": 720,
               "minimum": 0,
               "title": "Include Merged",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "When >0, ask coord to add `merged_recent_count` (how many PRs landed in the last N hours) to the envelope \u2014 the cheap count without the expensive per-PR deploy classification `include_merged` does. Independent of `include_merged`; harmless against a coord that predates it (the field is simply absent).",
+            "in": "query",
+            "name": "merged_count_hours",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "When >0, ask coord to add `merged_recent_count` (how many PRs landed in the last N hours) to the envelope \u2014 the cheap count without the expensive per-PR deploy classification `include_merged` does. Independent of `include_merged`; harmless against a coord that predates it (the field is simply absent).",
+              "maximum": 720,
+              "minimum": 0,
+              "title": "Merged Count Hours",
               "type": "integer"
             }
           }
@@ -53864,11 +54181,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "List Condition Groups",
         "tags": [
           "conditions"
@@ -53911,11 +54223,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Create Condition Group",
         "tags": [
           "conditions"
@@ -53959,11 +54266,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Delete Condition Group",
         "tags": [
           "conditions"
@@ -54005,11 +54307,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Condition Group",
         "tags": [
           "conditions"
@@ -54063,11 +54360,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Update Condition Group",
         "tags": [
           "conditions"
@@ -54123,11 +54415,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Add Condition",
         "tags": [
           "conditions"
@@ -54183,11 +54470,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Reorder Conditions",
         "tags": [
           "conditions"
@@ -54249,11 +54531,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Run Condition Group",
         "tags": [
           "conditions"
@@ -54297,11 +54574,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "List Condition Group Runs",
         "tags": [
           "conditions"
@@ -54345,11 +54617,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Delete Condition",
         "tags": [
           "conditions"
@@ -54403,11 +54670,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Update Condition",
         "tags": [
           "conditions"
@@ -54451,11 +54713,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Condition Run",
         "tags": [
           "conditions"
@@ -56399,6 +56656,199 @@
         "summary": "Get Confidence Histogram",
         "tags": [
           "training-datasets"
+        ]
+      }
+    },
+    "/api/v1/design-policies/": {
+      "get": {
+        "operationId": "api_v1_design_policies_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesignPolicyListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List design policies for the caller's tenant",
+        "tags": [
+          "design-policies"
+        ]
+      },
+      "post": {
+        "operationId": "api_v1_design_policies_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DesignPolicyCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesignPolicyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Create a custom design policy",
+        "tags": [
+          "design-policies"
+        ]
+      }
+    },
+    "/api/v1/design-policies/reset": {
+      "post": {
+        "operationId": "api_v1_design_policies_reset_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesignPolicyListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Reset design policies to the built-in defaults",
+        "tags": [
+          "design-policies"
+        ]
+      }
+    },
+    "/api/v1/design-policies/{policy_id}": {
+      "delete": {
+        "operationId": "api_v1_design_policies_policy_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "policy_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Policy Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete a custom design policy",
+        "tags": [
+          "design-policies"
+        ]
+      },
+      "put": {
+        "operationId": "api_v1_design_policies_policy_id_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "policy_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Policy Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DesignPolicyUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesignPolicyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update a design policy",
+        "tags": [
+          "design-policies"
         ]
       }
     },
@@ -59431,11 +59881,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Delivery Verdict",
         "tags": [
           "digital-twin"
@@ -59479,11 +59924,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Twin Subspace Raw",
         "tags": [
           "digital-twin"
@@ -69431,11 +69871,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Agent Logs By Agent",
         "tags": [
           "operations"
@@ -69513,11 +69948,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Agent Logs By Session",
         "tags": [
           "operations"
@@ -69604,11 +70034,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Agent Logs Recent",
         "tags": [
           "operations"
@@ -69677,11 +70102,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Answered Agent Questions",
         "tags": [
           "operations"
@@ -69725,11 +70145,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Agent Questions By Session",
         "tags": [
           "operations"
@@ -69780,11 +70195,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Pending Agent Questions",
         "tags": [
           "operations"
@@ -69828,11 +70238,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Agent Question",
         "tags": [
           "operations"
@@ -69888,11 +70293,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Post Agent Question Response",
         "tags": [
           "operations"
@@ -69943,11 +70343,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Agent Status",
         "tags": [
           "operations"
@@ -70089,11 +70484,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Agent",
         "tags": [
           "operations"
@@ -70170,11 +70560,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Coord Alerts",
         "tags": [
           "operations"
@@ -70197,11 +70582,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Ci Status",
         "tags": [
           "operations"
@@ -70244,11 +70624,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Post Ci Status Notify When Green",
         "tags": [
           "operations"
@@ -70271,11 +70646,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Claims Alerts",
         "tags": [
           "operations"
@@ -70345,11 +70715,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Claims List",
         "tags": [
           "operations"
@@ -70400,11 +70765,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Recent Conflicts",
         "tags": [
           "operations"
@@ -70455,11 +70815,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Recent Expirations",
         "tags": [
           "operations"
@@ -70526,11 +70881,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Claims Steals",
         "tags": [
           "operations"
@@ -70889,11 +71239,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "List Composition Rules",
         "tags": [
           "operations"
@@ -71091,11 +71436,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Post Coord Devices Pair Start",
         "tags": [
           "operations"
@@ -71458,11 +71798,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Next Step Settings",
         "tags": [
           "operations"
@@ -71559,11 +71894,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "List Coord Policies",
         "tags": [
           "operations"
@@ -72101,11 +72431,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "List Prompt Documents",
         "tags": [
           "operations"
@@ -72216,18 +72541,13 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Prompt Document",
         "tags": [
           "operations"
         ]
       },
       "patch": {
-        "description": "Edit a prompt document's description/body. Tenant-admin only.\n\nThe body is forwarded as ``{description?, body?, change_description?}`` with\n``updated_by`` stamped from the authenticated session (see\n:func:`_editor_identity`) \u2014 a body-supplied ``updated_by`` is ignored, so the\nversion snapshot coord writes carries the real editor. Coord creates a new\nimmutable version on every successful edit; nothing is overwritten in place.",
+        "description": "Edit a prompt document's description/body/attrs. Tenant-admin only.\n\nThe body is forwarded as ``{description?, body?, attrs?,\nchange_description?}`` with ``updated_by`` stamped from the authenticated\nsession (see :func:`_editor_identity`) \u2014 a body-supplied ``updated_by`` is\nignored, so the version snapshot coord writes carries the real editor. Coord\ncreates a new immutable version on every successful description/body edit;\nnothing is overwritten in place. A supplied ``attrs`` REPLACES the stored\nattrs object wholesale (the client merges before sending), and an attrs-only\nedit is document configuration, not content \u2014 coord updates it in place\nwithout creating a version.",
         "operationId": "api_v1_operations_coord_prompt_documents_kind_name_patch",
         "parameters": [
           {
@@ -72340,11 +72660,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "List Prompt Document Clauses",
         "tags": [
           "operations"
@@ -72801,11 +73116,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "List Prompt Document Versions",
         "tags": [
           "operations"
@@ -72867,11 +73177,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Prompt Document Version",
         "tags": [
           "operations"
@@ -72972,11 +73277,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Pull Decisions",
         "tags": [
           "operations"
@@ -73054,11 +73354,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Deploys",
         "tags": [
           "operations"
@@ -73103,11 +73398,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Deploy",
         "tags": [
           "operations"
@@ -73152,11 +73442,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Deploy Rollback Proposal",
         "tags": [
           "operations"
@@ -73239,11 +73524,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Dev Actions Recent",
         "tags": [
           "operations"
@@ -73287,11 +73567,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Dev Action Detail",
         "tags": [
           "operations"
@@ -73344,11 +73619,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Device Status",
         "tags": [
           "operations"
@@ -73460,11 +73730,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Federation Reports",
         "tags": [
           "operations"
@@ -73509,11 +73774,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Federation Report Detail",
         "tags": [
           "operations"
@@ -73565,11 +73825,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Fleet Health",
         "tags": [
           "operations"
@@ -73949,11 +74204,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Gates List",
         "tags": [
           "operations"
@@ -74472,11 +74722,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Git Ops Branches",
         "tags": [
           "operations"
@@ -74520,11 +74765,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Git Ops By Session",
         "tags": [
           "operations"
@@ -74618,11 +74858,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Git Ops List",
         "tags": [
           "operations"
@@ -74665,11 +74900,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Post Github Check Name",
         "tags": [
           "operations"
@@ -74710,11 +74940,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Post Github Clone Credential",
         "tags": [
           "operations"
@@ -74757,11 +74982,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Post Github Create Repo",
         "tags": [
           "operations"
@@ -74802,11 +75022,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Post Github Enroll Repo",
         "tags": [
           "operations"
@@ -74852,11 +75067,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Github Oauth Status",
         "tags": [
           "operations"
@@ -74899,11 +75109,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Post Github Push Credential",
         "tags": [
           "operations"
@@ -74926,11 +75131,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Github Installation Repos",
         "tags": [
           "operations"
@@ -75034,11 +75234,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Lands",
         "tags": [
           "operations"
@@ -75061,11 +75256,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Lands Precision",
         "tags": [
           "operations"
@@ -75118,11 +75308,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Lands Preview",
         "tags": [
           "operations"
@@ -75167,11 +75352,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Lands Verifications",
         "tags": [
           "operations"
@@ -75216,11 +75396,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Lineage Recent",
         "tags": [
           "operations"
@@ -75265,11 +75440,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Lineage Session Commits",
         "tags": [
           "operations"
@@ -75292,11 +75462,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Lineage Stats",
         "tags": [
           "operations"
@@ -75319,11 +75484,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Memory List",
         "tags": [
           "operations"
@@ -75460,11 +75620,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Memory Entry",
         "tags": [
           "operations"
@@ -75575,11 +75730,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Memory Version",
         "tags": [
           "operations"
@@ -75602,11 +75752,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Merge Queue",
         "tags": [
           "operations"
@@ -75650,11 +75795,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Merge Proposal",
         "tags": [
           "operations"
@@ -75708,11 +75848,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Migrations Queue",
         "tags": [
           "operations"
@@ -75783,11 +75918,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "List Coord Plans",
         "tags": [
           "operations"
@@ -75831,11 +75961,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Coord Plan",
         "tags": [
           "operations"
@@ -75879,11 +76004,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Coord Plan History",
         "tags": [
           "operations"
@@ -76004,11 +76124,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Pr Merge Blast Radius Blocks",
         "tags": [
           "operations"
@@ -76070,11 +76185,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Pr Merge Decisions",
         "tags": [
           "operations"
@@ -76127,12 +76237,29 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Pr Merge Graph",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/pr-merge/health": {
+      "get": {
+        "description": "Merge-train liveness \u2014 proxies coord's ``GET /pr-merge/health``.\n\nBacks the fleet pipeline's \"Train\" tab, which answers \"what is the merge\ntrain doing per repo, and why is it pausing\". This read carries the three\nsignals that per-PR data CANNOT explain, because they are properties of\nthe train itself rather than of any one PR:\n\n- ``last_merged_at`` \u2014 the pause clock. A frozen value with an ADVANCING\n  ``last_predicate_eval_at`` is the signature of a suppressed train\n  (the engine is evaluating; nothing is landing).\n- ``leader`` \u2014 the ``coord.leader_lease`` row. ``lease_fresh=false`` means\n  leadership is lapsing, which stalls every repo at once.\n- ``dry_run`` \u2014 repos frozen in ``rollout_state=dry_run`` (coord issue\n  #776). A silently frozen tenant merges nothing and, before this field\n  existed, produced no signal at all.\n\nIt also returns ``ready_unmerged.prs[]`` \u2014 green + CLEAN + unlanded PRs\nwith a readiness-onset age and the latest proposal's ``status``/``error``\nat the PR's CURRENT head. That per-repo backlog is the direct answer to\n\"why has nothing merged for the last hour\".\n\nGRACEFUL FALLBACK (required): mirrors ``/pr-merge/merge-economics`` \u2014 a 404\n(coord deploy predating the route) or a transient coord outage\n(502/503/504) degrades to ``{}`` rather than erroring, so the Train tab\nstill renders whatever it can derive from ``/merge/queue`` +\n``/pr-merge/prs`` and simply omits the fleet-level banner.\n\nTenant note: UNLIKE the fleet-wide ``/merge/queue`` and ``/pr-merge/prs``,\ncoord scopes this route's ``ready_unmerged`` and ``dry_run`` sections to\nthe bearer's tenant (its handler takes ``TenantId``, not\n``FleetPrincipal``). ``tenant_id`` is still resolved only to trigger\nbearer-forwarding; coord derives the scope from the bearer itself.",
+        "operationId": "api_v1_operations_pr_merge_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Pr Merge Health Api V1 Operations Pr Merge Health Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Pr Merge Health",
         "tags": [
           "operations"
         ]
@@ -76203,11 +76330,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Pr Merge Merge Economics",
         "tags": [
           "operations"
@@ -76252,11 +76374,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Post Pr Merge Onboarding Accept",
         "tags": [
           "operations"
@@ -76279,11 +76396,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Pr Merge Onboarding Accounts",
         "tags": [
           "operations"
@@ -76326,11 +76438,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Post Pr Merge Onboarding Audit",
         "tags": [
           "operations"
@@ -76374,11 +76481,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Pr Merge Onboarding Audit Status",
         "tags": [
           "operations"
@@ -76419,11 +76521,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Post Pr Merge Onboarding Claim",
         "tags": [
           "operations"
@@ -76469,11 +76566,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Pr Merge Onboarding Doctor",
         "tags": [
           "operations"
@@ -76496,12 +76588,53 @@
             "description": "Successful Response"
           }
         },
+        "summary": "Get Pr Merge Onboarding Github App",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/pr-merge/onboarding/installations/{installation_id}/enroll": {
+      "post": {
+        "description": "Enroll (or re-sync) an already-connected GitHub App installation's repos.\n\nProxies coord's ``POST /coord/onboarding/installations/{installation_id}/enroll``,\nsubstituting ``installation_id`` into the coord path. Backs the\n\"Enroll / Sync repositories\" button on the Connected Organizations card,\nwhich closes the \"connected \u00b7 no repositories enrolled yet\" dead end for an\norg whose App is already installed (the Setup-URL ``?code=`` claim can never\nfire for it) and doubles as a manual re-sync to pick up newly-added repos.\n\nAuthz \u2014 ``require_coord_tenant_admin`` (admin in the ACTIVE tenant), NOT the\nlooser ``get_tenant_id``: enrolling opens bootstrap PRs and writes repo\nprofiles, a consequential write, matching the settings-write posture. coord\nre-validates the active-tenant override server-side (defense-in-depth).\n\nContract \u2014 coord's authz prologue runs synchronously, then it spawns the\nper-repo enrollment and returns immediately, so this handler keeps the\ndefault 5s ``_COORD_TIMEOUT`` (no per-route bump \u2014 the slow per-repo GitHub\nround-trips happen off-connection):\n  * ``202 {\"enrolled\": \"spawned\", \"tenant_id\", \"installation_id\"}`` \u2014 spawned;\n    the UI re-polls ``GET /pr-merge/onboarding/accounts`` to see the repos.\n    There is NO ``repos`` array in this response.\n  * ``403 installation_not_owned_by_tenant`` \u2014 the installation is bound to a\n    different tenant.\n  * ``404 installation_not_mapped`` \u2014 the installation isn't bound to any\n    tenant (connect it first).\n  * ``500`` \u2014 coord-side failure.\n\nLike the claim proxy, this passes coord's status code AND JSON body through\nVERBATIM (not via ``_proxy_coord_post``, which stringifies a \u2265400 body into\n``HTTPException.detail`` and would rewrite the ``202`` to ``200``) so the\nfrontend can render coord's ``error`` code and keep the ``202`` distinct.\nhttpx transport errors mirror the shared helpers (ConnectError \u2192 502,\nTimeoutException \u2192 504).",
+        "operationId": "api_v1_operations_pr_merge_onboarding_installations_installation_id_enroll_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "installation_id",
+            "required": true,
+            "schema": {
+              "title": "Installation Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
         "security": [
           {
             "CookieOrBearerScheme": []
           }
         ],
-        "summary": "Get Pr Merge Onboarding Github App",
+        "summary": "Post Pr Merge Onboarding Enroll",
         "tags": [
           "operations"
         ]
@@ -76536,7 +76669,7 @@
     },
     "/api/v1/operations/pr-merge/prs": {
       "get": {
-        "description": "PR Merge Orchestrator Phase 1 D1.6 + D1.7 -- proxy coord's\n``GET /pr-merge/prs`` (read-only list of all open PRs joined to\nper-(repo, head_sha) CI lifecycle).\n\nFleet-wide. Forwards the operator bearer so coord requires an\nauthenticated operator \u2014 retires the pilot-anonymous posture\n(operator decision 2026-05-31), mirroring ``/merge/queue``.\n\n``include_merged`` is forwarded ONLY when set, so the default request is\nbyte-for-byte the legacy call (same convention as ``/admin-dev/prs``).\ncoord's response is returned verbatim \u2014 no field whitelist \u2014 so the\nmerged-row enrichment passes through unchanged.",
+        "description": "PR Merge Orchestrator Phase 1 D1.6 + D1.7 -- proxy coord's\n``GET /pr-merge/prs`` (read-only list of all open PRs joined to\nper-(repo, head_sha) CI lifecycle).\n\nFleet-wide. Forwards the operator bearer so coord requires an\nauthenticated operator \u2014 retires the pilot-anonymous posture\n(operator decision 2026-05-31), mirroring ``/merge/queue``.\n\n``include_merged`` and ``merged_count_hours`` are forwarded ONLY when\nset, so the default request is byte-for-byte the legacy call (same\nconvention as ``/admin-dev/prs``). coord's response is returned verbatim\n\u2014 no field whitelist \u2014 so the merged-row enrichment and the\n``merged_recent_count`` field pass through unchanged. A coord deploy that\npredates either param simply ignores it and omits the field.",
         "operationId": "api_v1_operations_pr_merge_prs_get",
         "parameters": [
           {
@@ -76550,6 +76683,20 @@
               "maximum": 720,
               "minimum": 0,
               "title": "Include Merged",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "When >0, ask coord to add `merged_recent_count` (how many PRs landed in the last N hours) to the envelope. This is the CHEAP half of `include_merged`: a single count over the partial index `idx_repo_branches_merged_at`, with none of the per-PR deploy classification, so the fleet pipeline can label its 'Merged' tab without paying for the rows. Independent of `include_merged`.",
+            "in": "query",
+            "name": "merged_count_hours",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "When >0, ask coord to add `merged_recent_count` (how many PRs landed in the last N hours) to the envelope. This is the CHEAP half of `include_merged`: a single count over the partial index `idx_repo_branches_merged_at`, with none of the per-PR deploy classification, so the fleet pipeline can label its 'Merged' tab without paying for the rows. Independent of `include_merged`.",
+              "maximum": 720,
+              "minimum": 0,
+              "title": "Merged Count Hours",
               "type": "integer"
             }
           }
@@ -76576,11 +76723,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Pr Merge Prs",
         "tags": [
           "operations"
@@ -76633,12 +76775,55 @@
             "description": "Validation Error"
           }
         },
+        "summary": "Get Pr Merge Pr Checks",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/pr-merge/red-main/{repo}/spawn-fix": {
+      "post": {
+        "description": "Operator-driven red-main remediation (red-main auto-remediation\nPhase 4b). Spawn a visible fix session on the operator's device for\n``repo``'s current red episode, proxying coord's\n``POST /pr-merge/red-main/:repo/spawn-fix``.\n\n``repo`` is ``owner/name`` and is captured inline via ``{repo:path}``\n(the same shape as ``/pr-merge/repos/:repo/profile``). No request body\nis required \u2014 coord resolves the live red episode + tenant from the\nforwarded operator bearer.\n\nCoord returns ``200 {\"agent_id\": \"<uuid>\"}`` on success, or ``409`` when\na fix session is already running for the current red episode or the repo\nhas no live red-main alert. ``_proxy_coord_post`` re-raises coord's\nstatus + JSON body so the banner can surface the 409 message inline.",
+        "operationId": "api_v1_operations_pr_merge_red_main_repo_spawn_fix_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "title": "Repo",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Pr Merge Red Main Spawn Fix Api V1 Operations Pr Merge Red Main  Repo  Spawn Fix Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
         "security": [
           {
             "CookieOrBearerScheme": []
           }
         ],
-        "summary": "Get Pr Merge Pr Checks",
+        "summary": "Post Pr Merge Red Main Spawn Fix",
         "tags": [
           "operations"
         ]
@@ -76660,11 +76845,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Pr Merge Repos",
         "tags": [
           "operations"
@@ -76708,11 +76888,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Pr Merge Repo Profile",
         "tags": [
           "operations"
@@ -76842,11 +77017,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Pr Merge Settings",
         "tags": [
           "operations"
@@ -76916,11 +77086,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Pr Merge Slo",
         "tags": [
           "operations"
@@ -76943,11 +77108,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Pr Merge Suggestions",
         "tags": [
           "operations"
@@ -77208,11 +77368,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Releases",
         "tags": [
           "operations"
@@ -77272,11 +77427,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Release",
         "tags": [
           "operations"
@@ -77322,11 +77472,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Deregister Repo",
         "tags": [
           "operations"
@@ -77347,11 +77492,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "List Repos",
         "tags": [
           "operations"
@@ -77394,11 +77534,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Register Repo",
         "tags": [
           "operations"
@@ -77487,11 +77622,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "List Coord Sessions",
         "tags": [
           "operations"
@@ -77583,11 +77713,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Coord Session",
         "tags": [
           "operations"
@@ -77632,11 +77757,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Session Agent Status",
         "tags": [
           "operations"
@@ -77681,11 +77801,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Session Claims",
         "tags": [
           "operations"
@@ -77730,11 +77845,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Stream Coord Session Events",
         "tags": [
           "operations"
@@ -77840,11 +77950,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Session Lineage",
         "tags": [
           "operations"
@@ -77943,11 +78048,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Coord Session Output",
         "tags": [
           "operations"
@@ -77992,11 +78092,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Coord Session Restore Record",
         "tags": [
           "operations"
@@ -78128,11 +78223,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Symbol Claims",
         "tags": [
           "operations"
@@ -78205,11 +78295,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Trees By Device",
         "tags": [
           "operations"
@@ -78232,11 +78317,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
         "summary": "Get Trees Contention",
         "tags": [
           "operations"

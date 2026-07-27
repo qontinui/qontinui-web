@@ -70,14 +70,16 @@ _UNAVAILABLE_STATUSES = frozenset({502, 503, 504})
 _DEGRADABLE_TENANT_STATUSES = frozenset({403, 502, 504})
 
 
-async def _resolve_tenant(request: Request, current_user: UserModel) -> UUID:
+async def _resolve_tenant(request: Request) -> UUID:
     """Call the ``get_tenant_id`` dependency function directly.
 
     Side effects (bearer + active-tenant capture into the proxy ContextVars)
     still run; the only difference from ``Depends(get_tenant_id)`` is that
-    failures surface inside the handler where they can be degraded.
+    failures surface inside the handler where they can be degraded. The
+    routes' own ``current_user`` dependency remains their authentication
+    gate — helpers need not be coord tenant members.
     """
-    return await get_tenant_id(request, current_user)
+    return await get_tenant_id(request)
 
 
 class HelperAnswerRequest(BaseModel):
@@ -114,7 +116,7 @@ async def list_helper_tasks(
     way instead of erroring out of the dependency.
     """
     try:
-        tenant_id = await _resolve_tenant(request, current_user)
+        tenant_id = await _resolve_tenant(request)
     except HTTPException as exc:
         if exc.status_code in _DEGRADABLE_TENANT_STATUSES:
             logger.info(
@@ -162,7 +164,7 @@ async def submit_helper_answer(
     ``helper_task_queue_unavailable`` detail the portal already understands.
     """
     try:
-        tenant_id = await _resolve_tenant(request, current_user)
+        tenant_id = await _resolve_tenant(request)
     except HTTPException as exc:
         if exc.status_code in _DEGRADABLE_TENANT_STATUSES:
             logger.info(

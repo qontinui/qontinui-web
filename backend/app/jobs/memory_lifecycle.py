@@ -77,13 +77,15 @@ async def decay_once(
 ) -> dict[str, int]:
     """One daily maintenance pass over the memory substrate.
 
-    Bundles the three cheap set-based sweeps that must run at least
-    daily: Ebbinghaus decay (invalidate below-threshold rows + prune past
-    the grace window), the session-close expiry sweep (expire
+    Bundles the two cheap set-based sweeps that must run at least daily:
+    Ebbinghaus decay (invalidate below-threshold rows + prune past the
+    grace window) and the session-close expiry sweep (expire
     ``scope='session'`` rows 7 days after their session closed, plus
-    orphan cleanup), and the job reaper (requeue/fail claims a dead runner
-    abandoned — kind-agnostic, so it covers synthesis and embedding jobs
-    alike).
+    orphan cleanup).
+
+    The job reaper is deliberately NOT bundled here — it is queue-liveness
+    machinery, not retention, and runs on its own frequent cadence. See
+    :func:`reap_once`.
     """
     now = now or datetime.now(UTC)
     invalidated = await store.decay_invalidate(
@@ -93,21 +95,52 @@ async def decay_once(
         session, now=now, grace_days=DECAY_PRUNE_GRACE_DAYS
     )
     session_expired = await store.expire_closed_session_records(session, now=now)
-    reaped = await store.reap_stale_claims(session, now=now)
     logger.info(
         "memory_decay_completed",
         invalidated=invalidated,
         pruned=pruned,
         session_expired=session_expired,
-        synthesis_requeued=reaped["requeued"],
-        synthesis_failed=reaped["failed"],
     )
     return {
         "invalidated": invalidated,
         "pruned": pruned,
         "session_expired": session_expired,
-        "synthesis_requeued": reaped["requeued"],
-        "synthesis_failed": reaped["failed"],
+    }
+
+
+async def reap_once(
+    session: AsyncSession, *, now: datetime | None = None
+) -> dict[str, int]:
+    """Requeue (or fail) job claims a runner abandoned.
+
+    Kind-agnostic, so it covers ``synthesis`` and ``embedding`` jobs alike.
+
+    This is the queue's ONLY self-healing path. A runner that claims a job
+    and then halts without posting a result — the poller's ``Disabled``
+    arm (no LLM credentials / embedder down) explicitly "leaves this job
+    for the backend reaper" — flips the row to ``status='claimed'``, and a
+    claimed row is invisible to BOTH sides of the queue: ``claim_jobs``
+    hands out only ``pending`` rows, and ``enqueue_jobs`` treats
+    ``claimed`` as live so it will not re-create the work either. Until
+    this reaper runs, that job is stranded and its cluster is silently
+    stuck.
+
+    It therefore must NOT inherit a retention cadence. Bundled into the
+    daily ``memory_decay`` pass it stranded a real synthesis job for ~24h
+    (claimed 13:34, stale at 14:04 per ``JOB_CLAIM_STALE_MINUTES``, but
+    unreachable until the next 03:10 sweep). Reaping is a cheap set-based
+    UPDATE bounded by ``claimed_at``, so a frequent cadence is safe.
+    """
+    now = now or datetime.now(UTC)
+    reaped = await store.reap_stale_claims(session, now=now)
+    logger.info(
+        "memory_reap_completed",
+        requeued=reaped["requeued"],
+        failed=reaped["failed"],
+    )
+    return {
+        "requeued": reaped["requeued"],
+        "failed": reaped["failed"],
     }
 
 

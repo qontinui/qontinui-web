@@ -187,8 +187,10 @@ export function useClauses(
 
   /**
    * Edit the parent document's `attrs` (the category header editor writes
-   * `default_tier` here) via the prompt-document PATCH proxy. Merged
-   * server-side; forwarded verbatim.
+   * `default_tier` here) via the prompt-document PATCH proxy. The merge is
+   * CLIENT-side — `ClauseManagerDialog` spreads `document.attrs` before
+   * overwriting keys — and the merged object is forwarded verbatim; the server
+   * REPLACES the stored attrs object with it wholesale.
    */
   const saveAttrs = async (attrs: PromptDocumentAttrs): Promise<boolean> => {
     try {

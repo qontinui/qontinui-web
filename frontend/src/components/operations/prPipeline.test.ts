@@ -17,6 +17,7 @@ import {
   derivePipelineHealth,
   escalateStaleWaiting,
   formatDurationShort,
+  isMergedPr,
   lastActivityForMs,
   matchesFilter,
   matchesQuery,
@@ -34,6 +35,7 @@ import {
   STALE_ESCALATION,
   WAITING_STALE_MAX_MS,
   waitingDwellCapMs,
+  withDwellEvidence,
 } from "./prPipeline";
 
 const NOW = new Date("2026-07-15T12:00:00Z").getTime();
@@ -1170,7 +1172,12 @@ describe("buildPipelineRows — dwell escalation covers both derivation paths", 
     // Counters alone were not the web#813 lesson — the operator scans the
     // detail string. A stalled wait must say so there.
     const behindStale = buildPipelineRows(
-      [pr({ merge_state_status: "BEHIND", last_activity_secs: THREE_DAYS_SECS })],
+      [
+        pr({
+          merge_state_status: "BEHIND",
+          last_activity_secs: THREE_DAYS_SECS,
+        }),
+      ],
       []
     );
     expect(derivePipelineHealth(behindStale, NOW).detail).toContain(
@@ -1183,6 +1190,297 @@ describe("buildPipelineRows — dwell escalation covers both derivation paths", 
     expect(derivePipelineHealth(behindFresh, NOW).detail ?? "").not.toContain(
       "stalled waiting"
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// "No evidence" must not render as "genuinely fine" (plan
+// 2026-07-27-coord-conflict-bookkeeping-is-proposal-scoped-four-blind-spots,
+// F3).
+//
+// The bug these guard: coord only populates `conflict_age_secs` for a PR that
+// once had a merge proposal, and nine `qontinui-runner` PRs never did. The
+// dwell escalation correctly refused to invent a strand from `null` — and the
+// page then drew those rows IDENTICALLY to a PR coord had measured and found
+// young, amber "conflict — resolve at merge (… deep in queue)". Every
+// operator scan skipped them, for up to a month.
+//
+// The contract: the CLOCK'S ABSENCE is reported on its own axis
+// (`dwellEvidence`); the escalation's refusal is not weakened; and nothing
+// about kind / label / reason / attention / rank / the author counts moves on
+// absence alone.
+// ---------------------------------------------------------------------------
+describe("no-evidence rows render distinctly from measured-and-fine rows", () => {
+  const RUNNER = "qontinui/qontinui-runner";
+  const TWO_HOURS_SECS = 2 * 60 * 60;
+  const LONG_CI: Record<string, MergeEconomics> = {
+    [RUNNER]: { candidate_ci_p90_secs: TWO_HOURS_SECS, queue_depth: 12 },
+  };
+
+  /** A DIRTY runner PR — amber `conflict-deferred` — with/without a clock. */
+  function deferred(secs: number | null) {
+    return buildPipelineRows(
+      [
+        pr({
+          repo: RUNNER,
+          merge_state_status: "DIRTY",
+          mergeable: null,
+          conflict_age_secs: secs,
+        }),
+      ],
+      [],
+      LONG_CI
+    )[0];
+  }
+
+  // --- the headline assertion ----------------------------------------------
+
+  it("the nine-runner-PR case: null clock is DISTINGUISHABLE from a young one", () => {
+    const noClock = deferred(null);
+    const measuredYoung = deferred(60 * 60); // 1h, cap is 6h → genuinely fine
+
+    // Same kind, same colour band, same promise — nothing was invented.
+    expect(noClock.status.kind).toBe("conflict-deferred");
+    expect(measuredYoung.status.kind).toBe("conflict-deferred");
+    expect(noClock.status.attention).toBe("waiting");
+    expect(measuredYoung.status.attention).toBe("waiting");
+    expect(noClock.status.label).toBe(measuredYoung.status.label);
+    expect(noClock.status.reason).toBe(measuredYoung.status.reason);
+
+    // ...and yet the two rows are no longer indistinguishable. THIS is F3:
+    // one bit, on its own axis, that every rendering surface keys off.
+    expect(noClock.status.dwellEvidence).toBe("unknown");
+    expect(measuredYoung.status.dwellEvidence).toBe("measured");
+  });
+
+  it("a real clock leaves EVERY user-visible field byte-identical to before", () => {
+    // The regression guard for "existing behaviour is unchanged": a measured
+    // row's label and reason are exactly what web#813 shipped, and so are an
+    // UNmeasured row's — the change is additive on a new field only.
+    for (const row of [deferred(3 * 60 * 60), deferred(null)]) {
+      expect(row.status.label).toBe("Conflict (resolve at merge)");
+      expect(row.status.reason).toBe(
+        "conflict — resolve at merge (repo CI ~2h, 12 in queue)"
+      );
+    }
+  });
+
+  // --- the refusal is NOT weakened ------------------------------------------
+
+  it("absence still never invents a strand — no red, no author, no rank change", () => {
+    const noClock = deferred(null);
+    const measuredYoung = deferred(60 * 60);
+    expect(noClock.status.kind).not.toBe("conflict-stranded");
+    expect(noClock.status.attention).toBe("waiting");
+    // Every count the operator reads is identical to the measured-and-young
+    // row's — the unknown row buys no severity anywhere.
+    const unknown = derivePipelineHealth([noClock], NOW, LONG_CI);
+    const known = derivePipelineHealth([measuredYoung], NOW, LONG_CI);
+    expect(unknown.needsAttention).toBe(known.needsAttention);
+    expect(unknown.conflicted).toBe(known.conflicted);
+    expect(unknown.level).toBe(known.level);
+  });
+
+  it("a measured PAST-cap row still escalates, and carries no unknown marker", () => {
+    const stranded = deferred(31 * 24 * 60 * 60);
+    expect(stranded.status.kind).toBe("conflict-stranded");
+    expect(stranded.status.attention).toBe("author");
+    // An escalated row is measured BY DEFINITION — the field would be noise.
+    expect(stranded.status.dwellEvidence).toBeUndefined();
+  });
+
+  // --- the same rule for the other two waiting kinds -------------------------
+
+  it("applies uniformly to needs-rebase and blocked (one rule, not a special case)", () => {
+    const behindNoClock = buildPipelineRows(
+      [pr({ merge_state_status: "BEHIND" })],
+      []
+    )[0];
+    expect(behindNoClock.status.kind).toBe("needs-rebase");
+    expect(behindNoClock.status.dwellEvidence).toBe("unknown");
+
+    const behindMeasured = buildPipelineRows(
+      [pr({ merge_state_status: "BEHIND", last_activity_secs: 60 * 60 })],
+      []
+    )[0];
+    expect(behindMeasured.status.dwellEvidence).toBe("measured");
+
+    const blockedNoClock = buildPipelineRows(
+      [pr()],
+      [proposal({ status: "blocked-by-overlap" })]
+    )[0];
+    expect(blockedNoClock.status.kind).toBe("blocked");
+    expect(blockedNoClock.status.dwellEvidence).toBe("unknown");
+  });
+
+  it("a proposal-only row is NOT marked — 'not applicable' is not 'coord has a gap'", () => {
+    // It has no PrRow to age, permanently and by construction, so it is not
+    // the F3 population. Marking it would paint the marker across a routine,
+    // healthy state and restore the "everything is amber and explained" scan.
+    const row = buildPipelineRows(
+      [],
+      [
+        proposal({
+          status: "blocked-by-overlap",
+          repos: [repoDetail({ branch: "agent/x" })],
+        }),
+      ]
+    )[0];
+    expect(row.pr).toBeNull();
+    expect(row.status.kind).toBe("blocked");
+    expect(row.status.dwellEvidence).toBeUndefined();
+  });
+
+  it("a multi-repo GROUP row is not marked either, so the count stays per-PR", () => {
+    // The bug `conflicted` had to grow a Set to avoid: a group proposal makes
+    // its own row AND a row per member PR, so a row-wise sum over-reports.
+    const rows = buildPipelineRows(
+      [
+        // BEHIND with no `last_activity_secs` → each member PR is itself an
+        // unmeasurable waiting row, which is what makes the over-count
+        // reachable at all.
+        pr({ branch: "b1", merge_state_status: "BEHIND" }),
+        pr({
+          repo: "qontinui/qontinui-runner",
+          pr_number: 2,
+          branch: "b2",
+          merge_state_status: "BEHIND",
+        }),
+      ],
+      [
+        proposal({
+          status: "blocked-by-overlap",
+          repos: [
+            repoDetail({ branch: "b1" }),
+            repoDetail({ repo: "qontinui/qontinui-runner", branch: "b2" }),
+          ],
+        }),
+      ]
+    );
+    const group = rows.find((r) => r.members !== null)!;
+    expect(group.members).toHaveLength(2);
+    expect(group.status.dwellEvidence).toBeUndefined();
+    // Two member PR rows, each its own PR → the count is 2, not 3.
+    expect(derivePipelineHealth(rows, NOW).unknownDwell).toBe(2);
+  });
+
+  it("kinds with no dwell cap are never marked either way", () => {
+    // `unknown` must mean "a clock was needed and missing", never "this
+    // row has no clock because it never wanted one".
+    for (const row of [
+      buildPipelineRows([pr({ merge_state_status: "CLEAN" })], [])[0],
+      buildPipelineRows([pr({ mergeable: false })], [])[0], // not-mergeable
+      buildPipelineRows([pr()], [proposal({ status: "awaiting-ci" })])[0],
+      buildPipelineRows([pr()], [proposal({ status: "conflict" })])[0],
+    ]) {
+      expect(row.status.dwellEvidence, row.status.kind).toBeUndefined();
+    }
+  });
+
+  // --- the top-of-page scan -------------------------------------------------
+
+  it("surfaces the coverage count on the health strip, without moving the level", () => {
+    // Two separate properties, asserted separately because one fixture cannot
+    // carry both:
+    //   (a) coverage NEVER raises the level — proved on a GREEN baseline,
+    //       which is the only starting point an accidental
+    //       `amberReasons.push` could move;
+    //   (b) coverage is appended LAST, so it never displaces a pipeline
+    //       reason in the operator's scan — proved on an AMBER baseline.
+    expect(
+      derivePipelineHealth([deferred(null), deferred(null)], NOW, LONG_CI).level
+    ).toBe("green");
+
+    const withoutUnknowns = buildPipelineRows(
+      [pr({ last_activity_secs: 60 * 60 })],
+      [proposal({ status: "blocked-by-overlap" })]
+    );
+    const base = derivePipelineHealth(withoutUnknowns, NOW, LONG_CI);
+    expect(base.level).toBe("amber");
+    expect(base.unknownDwell).toBe(0);
+    expect(base.detail).not.toContain("unknown age");
+
+    const rows = [
+      ...withoutUnknowns,
+      deferred(null),
+      buildPipelineRows(
+        [pr({ pr_number: 2, branch: "b2", merge_state_status: "BEHIND" })],
+        []
+      )[0],
+    ];
+    const health = derivePipelineHealth(rows, NOW, LONG_CI);
+    expect(health.unknownDwell).toBe(2);
+    expect(health.detail).toContain("2 waiting PRs of unknown age");
+    expect(health.detail).toContain("cannot escalate");
+    expect(health.level).toBe(base.level);
+    expect(health.detail.startsWith(base.detail)).toBe(true);
+  });
+
+  it("says nothing at all when every waiting row IS measured", () => {
+    const health = derivePipelineHealth([deferred(60 * 60)], NOW, LONG_CI);
+    expect(health.unknownDwell).toBe(0);
+    expect(health.detail).not.toContain("unknown age");
+  });
+
+  it("singularises the coverage phrase", () => {
+    const health = derivePipelineHealth([deferred(null)], NOW, LONG_CI);
+    expect(health.detail).toContain("1 waiting PR of unknown age");
+    expect(health.detail).toContain("it cannot escalate");
+  });
+
+  // --- the unit-level helper -------------------------------------------------
+
+  it("withDwellEvidence: pure, additive, and gated on kind + attention", () => {
+    const deferredStatus: UnifiedStatus = {
+      kind: "conflict-deferred",
+      label: "L",
+      reason: "R",
+      attention: "waiting",
+    };
+    // Additive on ONE field — every other field is carried through untouched.
+    expect(withDwellEvidence(deferredStatus, null)).toEqual({
+      ...deferredStatus,
+      dwellEvidence: "unknown",
+    });
+    expect(withDwellEvidence(deferredStatus, 5_000)).toEqual({
+      ...deferredStatus,
+      dwellEvidence: "measured",
+    });
+    // Nonsense is absence, exactly as the clock readers already treat it.
+    for (const bad of [Number.NaN, -5, Number.POSITIVE_INFINITY]) {
+      expect(withDwellEvidence(deferredStatus, bad).dwellEvidence).toBe(
+        "unknown"
+      );
+    }
+    // A zero-age clock IS evidence (coord just observed the conflict).
+    expect(withDwellEvidence(deferredStatus, 0).dwellEvidence).toBe("measured");
+    // Never mutates its input.
+    expect(deferredStatus.dwellEvidence).toBeUndefined();
+    // Non-waiting attention, and kinds outside STALE_ESCALATION: identity.
+    const author: UnifiedStatus = { ...deferredStatus, attention: "author" };
+    expect(withDwellEvidence(author, null)).toBe(author);
+    const ready: UnifiedStatus = {
+      kind: "ready",
+      label: "Ready",
+      reason: "r",
+      attention: "none",
+    };
+    expect(withDwellEvidence(ready, null)).toBe(ready);
+  });
+
+  it("every escalatable kind is stamped — the map and the stamp cannot drift", () => {
+    // If a fourth waiting kind is added to STALE_ESCALATION, it inherits the
+    // marker automatically; this asserts that rather than trusting it.
+    for (const kind of Object.keys(STALE_ESCALATION) as UnifiedStatusKind[]) {
+      const s: UnifiedStatus = {
+        kind,
+        label: "L",
+        reason: "R",
+        attention: "waiting",
+      };
+      expect(withDwellEvidence(s, null).dwellEvidence, kind).toBe("unknown");
+      expect(withDwellEvidence(s, 1).dwellEvidence, kind).toBe("measured");
+    }
   });
 });
 
@@ -1459,6 +1757,64 @@ describe("merged rows", () => {
     // health strip read "last merged never" on a perfectly healthy fleet.
     const h = derivePipelineHealth(buildPipelineRows([MERGED_B], []), NOW);
     expect(h.lastMergedAt).toBe(ago(5));
+  });
+
+  // --- isMergedPr: the predicate the merged tab's contents rest on -----------
+
+  it("isMergedPr: an open row with no merge sha is NOT merged", () => {
+    // The whole safety argument for accepting a merge sha as a land signal is
+    // that a live PR never carries one — coord's open-PR query does not even
+    // project the column. If this ever flips, open PRs start rendering as
+    // landed and vanish from the live list.
+    expect(isMergedPr(pr())).toBe(false);
+    expect(isMergedPr(pr({ pr_state: "draft" }))).toBe(false);
+    expect(isMergedPr(pr({ pr_state: "open", merge_commit_sha: null }))).toBe(
+      false
+    );
+  });
+
+  it("isMergedPr: a phantom-open ff-land IS merged", () => {
+    // coord's ff-land pushes a rebased sha, so GitHub never auto-closes the
+    // PR: pr_state stays 'open' while the row is landed. pr_state alone misses
+    // it; the sha is the land-path-independent signal.
+    const phantom = pr({ pr_state: "open", merge_commit_sha: "ccccccc3333" });
+    expect(isMergedPr(phantom)).toBe(true);
+    expect(buildPipelineRows([phantom], [])[0].status.kind).toBe("merged");
+  });
+
+  it("isMergedPr: both terminal pr_states still count with no sha", () => {
+    expect(isMergedPr(pr({ pr_state: "merged" }))).toBe(true);
+    expect(isMergedPr(pr({ pr_state: "closed" }))).toBe(true);
+  });
+
+  it("a landed PR reads as merged even with a live proposal attached", () => {
+    // Terminal outranks the proposal lifecycle. A PR merged by the merge
+    // button while coord's proposal still sits `queued` used to render as
+    // queued — unfinished work that had in fact landed, and a landing the
+    // merged tab's count claimed but did not show.
+    const landed = pr({
+      pr_number: 20,
+      branch: "b-landed",
+      pr_state: "merged",
+      merged_at: ago(2),
+      merge_commit_sha: "ddddddd4444",
+    });
+    const rows = buildPipelineRows(
+      [landed],
+      [
+        proposal({
+          status: "queued",
+          repos: [repoDetail({ branch: "b-landed" })],
+        }),
+      ]
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status.kind).toBe("merged");
+    expect(matchesFilter(rows[0], "merged")).toBe(true);
+    expect(matchesFilter(rows[0], "all")).toBe(false);
+    // ...and NOT still in flight. The proposal lags the land, so keying the
+    // in-flight arm on the proposal alone would file one row under two tabs.
+    expect(matchesFilter(rows[0], "in-flight")).toBe(false);
   });
 });
 
