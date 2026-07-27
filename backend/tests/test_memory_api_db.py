@@ -188,12 +188,24 @@ _SETUP_SQL = [
         WHERE status = 'pending'
     """,
     # The load-bearing dedupe: at most one LIVE job per (tenant, kind,
-    # input set), so the bridge's 15-minute cadence and the daily reindex
-    # cannot pile up duplicate work between runner drains.
-    """
+    # input set), so the bridge's 15-minute cadence and the reindex sweep
+    # cannot pile up duplicate work between runner drains. Kind-aware on
+    # `done` (mirrors memory_jobs_02_kind_aware_dedupe): a done SYNTHESIS
+    # job keeps blocking (never redo a completed cluster), but a done
+    # EMBEDDING job does NOT (a done-but-unapplied embedding must be able
+    # to re-queue, since fetch_reindex_batch gates re-embedding).
+    # DROP first (not just IF NOT EXISTS) so a PERSISTENT test DB whose
+    # index predates the kind-aware predicate is upgraded — otherwise the
+    # ON CONFLICT ... WHERE clause would not match the stale index. Same
+    # upgrade-a-persistent-DB reasoning as the kind CHECK drop+re-add below.
+    # The WHERE predicate is interpolated from the SAME constant
+    # ``enqueue_jobs`` uses for its ON CONFLICT clause, so the test index
+    # and the runtime conflict target can never drift apart.
+    "DROP INDEX IF EXISTS coord.uq_memory_jobs_live_input",
+    f"""
     CREATE UNIQUE INDEX IF NOT EXISTS uq_memory_jobs_live_input
         ON coord.memory_jobs (tenant_id, kind, input_hash)
-        WHERE status IN ('pending', 'claimed', 'done')
+        WHERE {store._LIVE_JOB_INPUT_DEDUP_PREDICATE}
     """,
     # Librarian Phase 4: widen the kind CHECK to admit 'library'. Mirrors
     # the coord_memory_links migration's drop+recreate — also upgrades a
