@@ -68,6 +68,31 @@ export type UnifiedStatusKind =
 export type Attention = "author" | "waiting" | "none";
 
 /**
+ * Whether a still-`waiting` row's DWELL CLOCK exists at all.
+ *
+ * Orthogonal to `attention`: it does not say who must act, it says whether
+ * this module was able to ask the question. `measured` — coord reported an
+ * age, the dwell cap was evaluated against real evidence, and the row is
+ * genuinely inside its window. `unknown` — coord reported no age, so
+ * `escalateStaleWaiting` correctly declined to invent one and the row will
+ * stay amber FOREVER no matter how old it actually is.
+ *
+ * Absent on any row where the question does not arise (a non-waiting status,
+ * or a kind with no entry in `STALE_ESCALATION` and therefore no cap).
+ *
+ * Why the distinction has to reach the screen: nine `qontinui-runner` PRs sat
+ * conflicted for up to a MONTH rendering as amber *"conflict — resolve at
+ * merge (… deep in queue)"* — a phrase whose plain meaning is "no action
+ * needed" — because coord only populates `conflict_age_secs` for a PR that
+ * once had a merge proposal, and these never did (plan
+ * `2026-07-27-coord-conflict-bookkeeping-is-proposal-scoped-four-blind-spots`,
+ * F3). Refusing to escalate on absence is right; drawing that refusal
+ * IDENTICALLY to a genuinely-young PR is what hid them. Every operator who
+ * scanned the page correctly skipped all nine.
+ */
+export type DwellEvidence = "measured" | "unknown";
+
+/**
  * The audited kind → attention table. Every status this module constructs
  * MUST carry the attention listed here (enforced by a unit test), because the
  * badge palette in MergePipeline is keyed off the SAME table: `author` → red,
@@ -154,6 +179,14 @@ export interface UnifiedStatus {
   /** Brief plain-language reason / next step. May be empty. */
   reason: string;
   attention: Attention;
+  /**
+   * Set on every still-`waiting` row that HAS a dwell cap — see
+   * `DwellEvidence`. Deliberately NOT part of `kind` or `attention`: an
+   * unknown clock is not proof of a problem any more than it is proof of
+   * freshness, so the row keeps its kind, its amber, its sort rank and its
+   * exclusion from the needs-attention count. Only the presentation changes.
+   */
+  dwellEvidence?: DwellEvidence;
 }
 
 /**
@@ -571,6 +604,51 @@ export function escalateStaleWaiting(
 }
 
 /**
+ * The user-facing sentence behind `dwellEvidence: "unknown"`. Lives here
+ * with every other piece of user-facing copy this module owns; rendered by
+ * `MergePipeline` on the badge title and in the expanded row.
+ *
+ * Deliberately NOT appended to `reason`. The inline reason is CSS-truncated at
+ * 22–40 characters in the collapsed row, so a suffix there would be clipped
+ * away in exactly the scan this exists to fix, while still forcing every
+ * consumer that compares against `reason` to account for it (the row detail's
+ * duplicate-error guard does exactly that). One bit — `dwellEvidence` — drives
+ * every surface instead, so the flag and the text can never disagree.
+ */
+export const UNKNOWN_DWELL_NOTE =
+  "coord reports no age for this wait, so this row can never escalate on " +
+  "its own — check it by hand";
+
+/**
+ * Record whether a still-waiting row's dwell clock EXISTS. Pure; runs after
+ * `escalateStaleWaiting`, so an already-escalated row is out of scope by
+ * construction (its kind is no longer escalatable — a strand is measured by
+ * definition).
+ *
+ * Purely additive: `kind`, `label`, `reason`, `attention`, `KIND_RANK` and the
+ * needs-attention count are untouched in BOTH branches, because absence of a
+ * clock is not proof of a problem any more than it is proof of freshness. It
+ * does NOT invent a strand from `null` — that refusal (`escalateStaleWaiting`,
+ * `conflictStrandedForMs`) is correct and stays. `measured` is ASSERTED rather
+ * than implied by absence, so a later reader cannot mistake "this module never
+ * looked" for "this module looked and the clock was fine".
+ */
+export function withDwellEvidence(
+  status: UnifiedStatus,
+  dwellMs: number | null
+): UnifiedStatus {
+  // Only a WAITING kind that has a dwell cap can be misread as "fine" — a
+  // status with no cap was never going to escalate and promises nothing.
+  if (!isEscalatable(status.kind)) return status;
+  if (status.attention !== "waiting") return status;
+  // Non-finite / negative is absence, matching the clock readers (which
+  // already collapse those to `null`; this stays defensive because the
+  // function is exported and its `dwellMs` is a plain number).
+  const measured = dwellMs !== null && Number.isFinite(dwellMs) && dwellMs >= 0;
+  return { ...status, dwellEvidence: measured ? "measured" : "unknown" };
+}
+
+/**
  * Status for a PR with NO active merge attempt — GitHub's view decides.
  * Precedence (report §C/§7): merged (terminal, and it outranks the stale
  * pr_state a fast-forward land leaves behind) > draft > behind-main >
@@ -882,6 +960,27 @@ function pickMergedAt(
  * (`conflict_age_secs`); the other kinds read the universal activity clock
  * (`last_activity_secs`). A proposal-only row has no PrRow, hence no clock,
  * hence never escalates — by design, since absence is not evidence.
+ *
+ * Whatever the escalation decides, a PR row is then STAMPED with whether that
+ * decision rested on evidence at all (`withDwellEvidence`). The two steps are
+ * separate on purpose: escalation may only fire on a real clock, while the
+ * stamp is precisely the report that there wasn't one.
+ *
+ * The stamp is for PR ROWS ONLY. `unknown` has to mean "coord could have
+ * aged this PR and didn't" — the F3 defect. A proposal-only or multi-repo
+ * group row has no PrRow to age in the first place, so marking it would be
+ * "not applicable" wearing the badge of "coord has a gap here", and since
+ * those rows are a routine, healthy, permanent state it would paint the marker
+ * over the whole page — restoring the very "everything is amber and explained,
+ * move on" scan this is meant to break. It also keeps the marked set exactly
+ * one row per PR, which is what `PipelineHealth.unknownDwell` reports as a PR
+ * count.
+ *
+ * And those rows are not blind the way the F3 population was: a proposal-only
+ * row's `updatedAt` is `active.updated_at`, a real scheduler state-change
+ * timestamp the row renders — so its age IS on screen. The F3 PR rows showed
+ * `pr.last_refreshed_at`, coord's always-fresh mirror stamp, which is exactly
+ * why a month-old conflict looked minutes old.
  */
 function escalateIfStale(
   status: UnifiedStatus,
@@ -897,11 +996,12 @@ function escalateIfStale(
       : kind === "conflict-deferred"
         ? conflictStrandedForMs(pr)
         : lastActivityForMs(pr);
-  return escalateStaleWaiting(
+  const escalated = escalateStaleWaiting(
     status,
     dwellMs,
     waitingDwellCapMs(kind, repo, economics)
   );
+  return pr === null ? escalated : withDwellEvidence(escalated, dwellMs);
 }
 
 export function buildPipelineRows(
@@ -1196,6 +1296,19 @@ export interface PipelineHealth {
    * 1h40m, and every one of the conflicts was days old).
    */
   conflicted: number;
+  /**
+   * Waiting rows whose dwell clock does not exist (`dwellEvidence:
+   * "unknown"`) — the count of rows the page CANNOT age, and therefore
+   * cannot ever escalate.
+   *
+   * Reported separately from `level` for the same reason `conflicted` is: an
+   * unknown age is not a pipeline-throughput fact, and — unlike a conflict —
+   * it is not even proof that anything is wrong. It is a coverage number. It
+   * exists so the top-of-page scan, which is where the nine month-old runner
+   * PRs were repeatedly skipped, can say "N of these amber rows are amber by
+   * default, not by measurement".
+   */
+  unknownDwell: number;
   lastMergedAt: string | null;
 }
 
@@ -1295,6 +1408,12 @@ export function derivePipelineHealth(
   const needsAttention = rows.filter(
     (r) => r.status.attention === "author"
   ).length;
+  // Rows the page cannot age. Only PR rows ever carry the stamp
+  // (`escalateIfStale`), so — unlike the row-wise sum `conflicted` had to
+  // abandon — this IS a distinct-PR count and can be printed as one.
+  const unknownDwell = rows.filter(
+    (r) => r.pr !== null && r.status.dwellEvidence === "unknown"
+  ).length;
 
   // Land times come from BOTH sources. `GET /merge/queue` is the in-flight
   // view — it excludes terminal proposals — so reading only `attempts` left
@@ -1333,10 +1452,12 @@ export function derivePipelineHealth(
     (p) => (p.requeue_count ?? 0) >= REQUEUE_CHURN_THRESHOLD
   );
 
-  // Pipeline reasons drive `level`. Author reasons NEVER do — see below.
+  // Pipeline reasons drive `level`. Author reasons NEVER do — see below, and
+  // coverage reasons (what the page could not measure) never do either.
   const redReasons: string[] = [];
   const amberReasons: string[] = [];
   const authorReasons: string[] = [];
+  const coverageReasons: string[] = [];
 
   // Conflicts are author-side backlog, not pipeline throughput. They stay
   // VISIBLE (that was the point of surfacing them at all) but they no longer
@@ -1360,6 +1481,18 @@ export function derivePipelineHealth(
     authorReasons.push(
       `${staleWaits} stalled waiting PR${staleWaits === 1 ? "" : "s"} ` +
         `need${staleWaits === 1 ? "s" : ""} an author look`
+    );
+  // NOT an author reason — nobody is being told to act — and NOT a level
+  // input, because an unknown age is evidence of nothing. It is stated plainly
+  // so the operator knows how much of the amber below is measured and how much
+  // is merely undisputed. Absent this line the scan reads a fully-amber,
+  // fully-explained pipeline and moves on, which is exactly what it did for a
+  // month.
+  if (unknownDwell > 0)
+    coverageReasons.push(
+      `${unknownDwell} waiting PR${unknownDwell === 1 ? "" : "s"} of ` +
+        `unknown age — coord reports no clock, so ` +
+        `${unknownDwell === 1 ? "it" : "they"} cannot escalate`
     );
   // Orthogonal means the conflict count is no evidence EITHER WAY — it does not
   // license asserting the positive. With backlog present and nothing at all in
@@ -1418,11 +1551,17 @@ export function derivePipelineHealth(
         : level === "amber"
           ? "Pipeline slow"
           : "Merging normally",
-    detail: [...redReasons, ...amberReasons, ...authorReasons].join(" · "),
+    detail: [
+      ...redReasons,
+      ...amberReasons,
+      ...authorReasons,
+      ...coverageReasons,
+    ].join(" · "),
     queueDepth: active.length,
     inFlight,
     needsAttention,
     conflicted: conflicts,
+    unknownDwell,
     lastMergedAt,
   };
 }

@@ -61,7 +61,11 @@ import {
   MergePipeline,
   STATUS_BADGE_CLASS,
 } from "./MergePipeline";
-import { ATTENTION_BY_KIND, type UnifiedStatusKind } from "./prPipeline";
+import {
+  ATTENTION_BY_KIND,
+  UNKNOWN_DWELL_NOTE,
+  type UnifiedStatusKind,
+} from "./prPipeline";
 
 function pr(overrides: Partial<PrRow> = {}): PrRow {
   return {
@@ -403,6 +407,120 @@ describe("MergePipeline", () => {
     const badge = document.querySelector('[data-status-kind="not-mergeable"]');
     expect(badge?.getAttribute("title")).toContain("Not mergeable — conflict");
     expect(screen.getByTestId("row-reason")).toHaveTextContent(/conflict/);
+  });
+
+  // --------------------------------------------------------------------------
+  // "No evidence" is drawn differently from "measured and fine" (plan
+  // 2026-07-27-coord-conflict-bookkeeping-is-proposal-scoped-four-blind-spots,
+  // F3). Nine runner PRs sat conflicted for up to a month rendering as an
+  // ordinary amber "resolve at merge" row, because coord never reported an age
+  // for them and the page drew the absence exactly like a young PR.
+  // --------------------------------------------------------------------------
+
+  /** A DIRTY long-CI PR (amber `conflict-deferred`) with/without a clock. */
+  const deferredPr = (conflictAgeSecs: number | null) =>
+    pr({
+      repo: "qontinui/qontinui-runner",
+      merge_state_status: "DIRTY",
+      mergeable: null,
+      conflict_age_secs: conflictAgeSecs,
+    });
+
+  it("marks an unmeasurable amber row with the ? glyph and explains it on hover", () => {
+    hookData.current.prs = [deferredPr(null)];
+
+    render(<MergePipeline />);
+
+    const badge = document.querySelector(
+      '[data-status-kind="conflict-deferred"]'
+    );
+    expect(badge).toBeInTheDocument();
+    expect(badge?.getAttribute("data-dwell-evidence")).toBe("unknown");
+    // Visible at SCAN distance — a hover-only signal is what failed before.
+    expect(badge?.textContent).toContain("?");
+    expect(badge?.getAttribute("title")).toContain(UNKNOWN_DWELL_NOTE);
+    // Same amber, same kind: absence is not evidence of a problem either.
+    expect(badge?.className).toContain("bg-amber-");
+    expect(badge?.className).not.toContain("bg-red-");
+    expect(badge?.className).toContain("border-dashed");
+  });
+
+  it("leaves a MEASURED amber row exactly as it renders today", () => {
+    // 1h old, cap is 6h → coord looked and this PR really is young. Every
+    // rendered surface must be what shipped before F3 — badge text, badge
+    // title, inline reason — so only the unknown case moved.
+    hookData.current.prs = [deferredPr(60 * 60)];
+
+    render(<MergePipeline />);
+
+    const badge = document.querySelector(
+      '[data-status-kind="conflict-deferred"]'
+    );
+    expect(badge?.getAttribute("data-dwell-evidence")).toBe("measured");
+    expect(badge?.textContent).toBe("Conflict (resolve at merge)");
+    expect(badge?.className).not.toContain("border-dashed");
+    expect(badge?.getAttribute("title")).toBe(
+      "Conflict (resolve at merge) — conflict — resolve at merge " +
+        "(repo CI ~2h, deep in queue)"
+    );
+    // Expand it — `RowDetail` renders only when open, so asserting the note's
+    // absence on a collapsed row would pass even if it were unconditional.
+    fireEvent.click(screen.getByText(/Conflict \(resolve at merge\)/));
+    expect(screen.queryByTestId("unknown-dwell-note")).not.toBeInTheDocument();
+  });
+
+  it("the two rows differ ONLY by the marker — same label, same inline reason", () => {
+    hookData.current.prs = [
+      deferredPr(null),
+      pr({
+        pr_number: 762,
+        branch: "feat/other",
+        repo: "qontinui/qontinui-runner",
+        merge_state_status: "DIRTY",
+        mergeable: null,
+        conflict_age_secs: 60 * 60,
+      }),
+    ];
+
+    render(<MergePipeline />);
+
+    const reasons = screen
+      .getAllByTestId("row-reason")
+      .map((n) => n.textContent);
+    expect(new Set(reasons).size).toBe(1); // identical copy...
+    const evidence = Array.from(
+      document.querySelectorAll("[data-dwell-evidence]")
+    ).map((n) => n.getAttribute("data-dwell-evidence"));
+    expect(evidence.sort()).toEqual(["measured", "unknown"]); // ...one bit apart
+  });
+
+  it("spells the marker out in the expanded detail, muted rather than alarming", () => {
+    hookData.current.prs = [deferredPr(null)];
+
+    render(<MergePipeline />);
+    fireEvent.click(screen.getByText(/Conflict \(resolve at merge\)/));
+
+    const note = screen.getByTestId("unknown-dwell-note");
+    expect(note).toHaveTextContent(UNKNOWN_DWELL_NOTE);
+    expect(note.className).toContain("text-muted-foreground");
+    expect(note.className).not.toContain("text-red-");
+  });
+
+  it("does not promote an unmeasurable row into the needs-attention tab", () => {
+    hookData.current.prs = [deferredPr(null)];
+
+    render(<MergePipeline />);
+
+    // The health strip's author counter ignores it entirely...
+    expect(screen.queryByText(/needs attention/)).not.toBeInTheDocument();
+    // ...but the operator IS told how much of the amber is unmeasured.
+    expect(screen.getByTestId("pipeline-health")).toHaveTextContent(
+      "1 waiting PR of unknown age"
+    );
+    expect(screen.getByTestId("pipeline-health")).toHaveAttribute(
+      "data-health-level",
+      "green"
+    );
   });
 
   // --------------------------------------------------------------------------
