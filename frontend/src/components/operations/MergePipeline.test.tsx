@@ -587,6 +587,84 @@ describe("MergePipeline", () => {
   });
 
   // --------------------------------------------------------------------------
+  // "How it landed" — the ff-land explainer in the expanded detail
+  // --------------------------------------------------------------------------
+
+  it("explains the closed-not-merged mechanic for a coord ff-land", () => {
+    hookData.current.prs = [
+      pr({
+        pr_number: 7,
+        branch: "b-7",
+        pr_state: "closed", // coord ff-land closes with merged=false
+        merge_commit_sha: "deadbeef1234",
+        merged_at: new Date(Date.now() - 60_000).toISOString(),
+        close_cause: "commits_landed_via_other_pr",
+      }),
+    ];
+
+    render(<MergePipeline />);
+    fireEvent.click(screen.getByTestId("pipeline-filter-merged"));
+    fireEvent.click(screen.getByText("qontinui-web#7"));
+
+    const detail = screen.getByTestId("landed-detail");
+    expect(detail).toHaveTextContent("How it landed");
+    expect(detail).toHaveTextContent(/Landed on main by coord/);
+    const link = screen.getByTestId("landed-commit-link");
+    expect(link).toHaveAttribute(
+      "href",
+      "https://github.com/qontinui/qontinui-web/commit/deadbeef1234"
+    );
+    expect(link).toHaveTextContent("deadbee");
+    expect(screen.getByTestId("ff-land-note")).toHaveTextContent(
+      /GitHub shows this PR/
+    );
+  });
+
+  it("omits the closed-not-merged caveat for a normal GitHub merge", () => {
+    hookData.current.prs = [
+      pr({
+        pr_number: 8,
+        branch: "b-8",
+        pr_state: "merged",
+        merge_commit_sha: "cafe00011122",
+        merged_at: new Date(Date.now() - 60_000).toISOString(),
+        close_cause: "merged",
+      }),
+    ];
+
+    render(<MergePipeline />);
+    fireEvent.click(screen.getByTestId("pipeline-filter-merged"));
+    fireEvent.click(screen.getByText("qontinui-web#8"));
+
+    expect(screen.getByTestId("landed-detail")).toHaveTextContent(
+      /Merged into main/
+    );
+    expect(screen.queryByTestId("ff-land-note")).toBeNull();
+  });
+
+  it("shows the landed commit without a caveat when coord omits close_cause", () => {
+    hookData.current.prs = [
+      pr({
+        pr_number: 9,
+        branch: "b-9",
+        pr_state: "closed",
+        merge_commit_sha: "0ff1ce123456",
+        merged_at: new Date(Date.now() - 60_000).toISOString(),
+        // close_cause absent — a coord deploy predating the projection
+      }),
+    ];
+
+    render(<MergePipeline />);
+    fireEvent.click(screen.getByTestId("pipeline-filter-merged"));
+    fireEvent.click(screen.getByText("qontinui-web#9"));
+
+    expect(screen.getByTestId("landed-commit-link")).toHaveTextContent(
+      "0ff1ce1"
+    );
+    expect(screen.queryByTestId("ff-land-note")).toBeNull();
+  });
+
+  // --------------------------------------------------------------------------
   // The merged read is expensive — it must stay off the 2s hot poll
   // --------------------------------------------------------------------------
 

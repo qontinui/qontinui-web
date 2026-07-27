@@ -177,6 +177,16 @@ export interface PrRow {
   /** The commit that actually landed. Non-null is coord's land-path-independent
    *  "this PR merged" signal — a coord ff-land closes the PR with merged=false. */
   merge_commit_sha?: string | null;
+  /**
+   * How the PR closed (`repo_branches.close_cause`). `commits_landed_via_other_pr`
+   * is a coord rebase fast-forward land — GitHub shows the PR **Closed, not
+   * Merged**, though its commits are on the base branch; `merged` is a normal
+   * GitHub merge. Lets the detail view explain the closed-not-merged appearance
+   * instead of guessing from pr_state (coord stamps that `merged` for both).
+   * Absent on coord deploys predating the projection — treat absence as
+   * "unknown", never assert the ff-land caveat without it.
+   */
+  close_cause?: string | null;
   /** kebab-case deploy state ("has my merged PR deployed yet?"). */
   deploy_state?: string | null;
 }

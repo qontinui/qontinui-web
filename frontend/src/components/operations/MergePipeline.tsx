@@ -247,6 +247,13 @@ function prHref(repo: string, prNumber: number): string {
   return `https://github.com/${repo}/pull/${prNumber}`;
 }
 
+function commitHref(repo: string, sha: string): string {
+  return `https://github.com/${repo}/commit/${sha}`;
+}
+
+/** The coord close_cause of a rebase fast-forward land. */
+const FF_LAND_CLOSE_CAUSE = "commits_landed_via_other_pr";
+
 // ----------------------------------------------------------------------------
 // Health strip
 // ----------------------------------------------------------------------------
@@ -420,6 +427,66 @@ function FailingChecks({ row }: { row: PipelineRow }) {
   );
 }
 
+/**
+ * How a landed PR reached its base branch — shown in the detail view a click
+ * earns, next to the GitHub link. coord lands by rebase fast-forward
+ * (close_cause `commits_landed_via_other_pr`): it pushes the rebased commits
+ * straight to the base branch, so GitHub closes the PR as *Closed, not Merged*
+ * even though the code landed. That appearance is the fleet's #1 "did this
+ * actually merge?" confusion, so we spell it out — but only when close_cause
+ * confirms the ff-land. An absent close_cause (older coord) shows the landed
+ * commit + time with no caveat, never a claim we can't back.
+ */
+function LandedDetail({ row }: { row: PipelineRow }) {
+  if (row.status.kind !== "merged" || row.pr === null) return null;
+  const sha = row.pr.merge_commit_sha ?? null;
+  const base = row.baseBranch ?? row.pr.base_branch ?? "the base branch";
+  const ffLand = row.pr.close_cause === FF_LAND_CLOSE_CAUSE;
+  return (
+    <div className="space-y-1" data-testid="landed-detail">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground m-0">
+        How it landed
+      </p>
+      <p className="text-[13px] text-foreground/85 m-0">
+        {ffLand
+          ? `Landed on ${base} by coord (rebase fast-forward)`
+          : `Merged into ${base}`}
+        {sha && (
+          <>
+            {" as "}
+            <a
+              href={commitHref(row.repo, sha)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-mono text-primary hover:underline"
+              data-testid="landed-commit-link"
+            >
+              {sha.slice(0, 7)}
+            </a>
+          </>
+        )}
+        {row.pr.merged_at && (
+          <span className="text-muted-foreground">
+            {" · "}
+            {relativeTime(row.pr.merged_at)}
+          </span>
+        )}
+      </p>
+      {ffLand && (
+        <p
+          className="text-[11px] text-muted-foreground m-0"
+          data-testid="ff-land-note"
+        >
+          coord lands by pushing the rebased commits straight to {base}, so
+          GitHub shows this PR <span className="font-medium">Closed</span>, not{" "}
+          <span className="font-medium">Merged</span> — the commits are on{" "}
+          {base}.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function RowDetail({ row }: { row: PipelineRow }) {
   const active = row.activeProposal;
   const earlier = row.attempts.filter(
@@ -451,6 +518,9 @@ function RowDetail({ row }: { row: PipelineRow }) {
           {redactSecrets(active.error)}
         </p>
       )}
+
+      {/* how a landed PR reached its base branch (explains ff-land closes) */}
+      <LandedDetail row={row} />
 
       {/* which checks failed, with links to the runs */}
       <FailingChecks row={row} />
