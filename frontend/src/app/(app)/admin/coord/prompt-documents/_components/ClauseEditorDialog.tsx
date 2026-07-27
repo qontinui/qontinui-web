@@ -24,6 +24,7 @@ import { AlertTriangle, Loader2, Plus, Trash2 } from "lucide-react";
 import {
   CLAUSE_STATUSES,
   CLAUSE_TIERS,
+  TIER_DESCRIPTIONS,
   TIER_INHERIT,
   type Clause,
   type ClauseCreate,
@@ -323,9 +324,9 @@ export function ClauseEditorDialog({
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit clause" : "New clause"}</DialogTitle>
           <DialogDescription>
-            A structured clause of the <code>{category}</code> policy — a
-            trigger, the action to take, its bounds, and a CLOSED list of
-            escalation conditions. Served to the fleet by coord.
+            One rule inside the <code>{category}</code> policy: when it applies
+            (trigger), what to do (action), how far it goes (bounds), and when
+            to stop and ask you instead (escalate if). AI agents follow it.
           </DialogDescription>
         </DialogHeader>
 
@@ -402,6 +403,13 @@ export function ClauseEditorDialog({
                   ))}
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">
+                {form.tier
+                  ? TIER_DESCRIPTIONS[form.tier]
+                  : defaultTier
+                    ? `Uses the category default — ${TIER_DESCRIPTIONS[defaultTier]}`
+                    : "Uses the category default (none set)."}
+              </p>
             </div>
           </div>
 

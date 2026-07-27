@@ -214,6 +214,20 @@ export const CLAUSE_TIERS: readonly ClauseTier[] = [
 /** The sentinel the tier `<Select>` uses for the null/"inherit" choice. */
 export const TIER_INHERIT = "__inherit__";
 
+/**
+ * Plain-language descriptions of each autonomy tier, for non-technical
+ * operators. Surfaced as helper text under the tier selectors so the selected
+ * `proceed+notify`-style token is always paired with an explanation of what it
+ * means for how agents behave.
+ */
+export const TIER_DESCRIPTIONS: Record<ClauseTier, string> = {
+  proceed: "Agents act on their own.",
+  "proceed+log": "Agents act on their own, and record what they did.",
+  "proceed+notify": "Agents act on their own, then tell you.",
+  "ask-first": "Agents check with you first, and act only once you approve.",
+  never: "Agents never do this — it's left entirely to you.",
+};
+
 /** One `coord.policy_clauses` row. */
 export interface Clause {
   clause_id: string;

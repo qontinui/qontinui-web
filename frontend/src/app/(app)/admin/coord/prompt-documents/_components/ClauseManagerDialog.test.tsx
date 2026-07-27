@@ -91,4 +91,23 @@ describe("ClauseManagerDialog category default tier", () => {
     );
     expect(screen.getByTestId("category-default-tier-save")).toBeDisabled();
   });
+
+  it("explains the saved tier in plain language for non-technical operators", async () => {
+    renderDialog(doc({ default_tier: "ask-first" }));
+
+    await screen.findByText(/No clauses yet/i);
+
+    // The bare `ask-first` token is never shown without its meaning.
+    expect(screen.getByText(/act only once you approve/i)).toBeInTheDocument();
+  });
+
+  it("says no default is set when the document has no tier", async () => {
+    renderDialog(doc(null));
+
+    await screen.findByText(/No clauses yet/i);
+
+    expect(
+      screen.getByText(/each rule uses only its own setting/i)
+    ).toBeInTheDocument();
+  });
 });
