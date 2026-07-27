@@ -298,9 +298,10 @@ class TestEnqueue:
 
     def test_embedding_hash_is_tag_scoped(self, db: AsyncEngine) -> None:
         # A deployed-tag change must re-open the same rows for a fresh job
-        # even though the earlier job is `done` — and `done` is INSIDE the
-        # live dedupe index. Without this, the tag-drift class the reindex
-        # sweep exists to heal would be permanently unhealable.
+        # even though the earlier job is `done`. The `input_hash` folds in
+        # the model tag, so a new tag is a distinct key regardless of the
+        # dedupe predicate — this stays true independently of the
+        # kind-aware `done` handling exercised below.
         tenant = uuid4()
         rows = [(uuid4(), "content")]
         _run(
@@ -318,6 +319,138 @@ class TestEnqueue:
             ),
         )
         assert again == 1
+
+    def test_done_embedding_job_does_not_block_reenqueue(self, db: AsyncEngine) -> None:
+        # Regression for the prod deadlock (2026-07-27): a row that still
+        # needs an embedding but has a `done`-but-unapplied embedding job
+        # (vectors never written, so `embedding` is still NULL) must be
+        # re-queueable. `fetch_reindex_batch` re-fetches such a row on every
+        # run (it excludes only IN-FLIGHT jobs), so if the `done` job blocked
+        # the re-enqueue the row would be fetched forever yet never embedded.
+        # SAME input_hash as the done job — the kind-aware index is the only
+        # thing that lets it through.
+        tenant = uuid4()
+        rows = [(uuid4(), "still unembedded")]
+        first = _run(
+            db,
+            lambda s: store.enqueue_jobs(
+                s, tenant, [store.embedding_job_input(rows, model_tag=TAG)]
+            ),
+        )
+        assert first == 1
+        # The runner "finished" the job without writing vectors: flip it to
+        # done, leaving the row's embedding NULL and its input_hash intact.
+        _exec(
+            db,
+            [
+                "UPDATE coord.memory_jobs SET status = 'done' "
+                "WHERE tenant_id = :t AND kind = 'embedding'"
+            ],
+            t=tenant,
+        )
+        again = _run(
+            db,
+            lambda s: store.enqueue_jobs(
+                s, tenant, [store.embedding_job_input(rows, model_tag=TAG)]
+            ),
+        )
+        assert again == 1
+        # A fresh pending embedding job now exists for a runner to drain.
+        assert (
+            _scalar(
+                db,
+                "SELECT count(*) FROM coord.memory_jobs "
+                "WHERE tenant_id = :t AND kind = 'embedding' "
+                "AND status = 'pending'",
+                t=tenant,
+            )
+            == 1
+        )
+
+    def test_done_synthesis_job_still_blocks_reenqueue(self, db: AsyncEngine) -> None:
+        # A completed synthesis already inserted its `mental_model` and
+        # superseded its members; a `done` synthesis MUST keep blocking
+        # re-enqueue so it is never redone (double-insert + re-supersede).
+        # This is the half of the kind-aware split that does NOT change.
+        tenant = uuid4()
+        members = [uuid4(), uuid4()]
+        first = _run(
+            db,
+            lambda s: store.enqueue_jobs(
+                s, tenant, [store.synthesis_job_input(members, ["a", "b"])]
+            ),
+        )
+        assert first == 1
+        _exec(
+            db,
+            [
+                "UPDATE coord.memory_jobs SET status = 'done' "
+                "WHERE tenant_id = :t AND kind = 'synthesis'"
+            ],
+            t=tenant,
+        )
+        again = _run(
+            db,
+            lambda s: store.enqueue_jobs(
+                s, tenant, [store.synthesis_job_input(members, ["a", "b"])]
+            ),
+        )
+        assert again == 0
+
+    def test_in_flight_job_blocks_duplicate_enqueue(self, db: AsyncEngine) -> None:
+        # A live (pending OR claimed) job of EITHER kind still blocks a
+        # duplicate — the idempotence the 10-/15-minute enqueuers rely on,
+        # unchanged by the kind-aware `done` handling.
+        tenant = uuid4()
+        rows = [(uuid4(), "content")]
+        members = [uuid4(), uuid4()]
+
+        # A pending embedding job blocks a duplicate embedding.
+        _run(
+            db,
+            lambda s: store.enqueue_jobs(
+                s, tenant, [store.embedding_job_input(rows, model_tag=TAG)]
+            ),
+        )
+        dup_pending = _run(
+            db,
+            lambda s: store.enqueue_jobs(
+                s, tenant, [store.embedding_job_input(rows, model_tag=TAG)]
+            ),
+        )
+        assert dup_pending == 0
+
+        # ...and once it is claimed, it still blocks.
+        _exec(
+            db,
+            [
+                "UPDATE coord.memory_jobs SET status = 'claimed' "
+                "WHERE tenant_id = :t AND kind = 'embedding'"
+            ],
+            t=tenant,
+        )
+        dup_claimed = _run(
+            db,
+            lambda s: store.enqueue_jobs(
+                s, tenant, [store.embedding_job_input(rows, model_tag=TAG)]
+            ),
+        )
+        assert dup_claimed == 0
+
+        # A pending synthesis job blocks a duplicate synthesis.
+        _run(
+            db,
+            lambda s: store.enqueue_jobs(
+                s, tenant, [store.synthesis_job_input(members, ["a", "b"])]
+            ),
+        )
+        dup_synth = _run(
+            db,
+            lambda s: store.enqueue_jobs(
+                s, tenant, [store.synthesis_job_input(members, ["a", "b"])]
+            ),
+        )
+        assert dup_synth == 0
 
 
 # ---------------------------------------------------------------------------
@@ -852,3 +985,41 @@ class TestReaper:
         assert counts == {"requeued": 0, "failed": 1}
         assert _job_field(db, job_id, "status") == "failed"
         assert _job_field(db, job_id, "attempt") == 4
+
+
+class TestReaperIsNotBundledIntoDecay:
+    """The reaper runs on its own frequent cadence, not the daily sweep.
+
+    A claimed row is invisible to both sides of the queue (``claim_jobs``
+    hands out only ``pending``; ``enqueue_jobs`` counts ``claimed`` as
+    live), so the reaper is the queue's only self-healing path. While it
+    was bundled into the daily ``memory_decay`` pass, a job abandoned by a
+    halted runner stayed stranded for up to ~24h despite a 30-minute
+    staleness bound.
+    """
+
+    def test_reap_once_requeues_stale_claim(self, db: AsyncEngine) -> None:
+        from app.jobs.memory_lifecycle import reap_once
+
+        tenant = uuid4()
+        job_id = _seed_job(
+            db, tenant, [uuid4()], status="claimed", claimed_minutes_ago=45
+        )
+
+        stats = _run(db, lambda s: reap_once(s, now=NOW))
+
+        assert stats == {"requeued": 1, "failed": 0}
+        assert _job_field(db, job_id, "status") == "pending"
+
+    def test_decay_once_no_longer_reaps(self, db: AsyncEngine) -> None:
+        from app.jobs.memory_lifecycle import decay_once
+
+        tenant = uuid4()
+        job_id = _seed_job(
+            db, tenant, [uuid4()], status="claimed", claimed_minutes_ago=45
+        )
+
+        stats = _run(db, lambda s: decay_once(s, now=NOW))
+
+        assert "synthesis_requeued" not in stats
+        assert _job_field(db, job_id, "status") == "claimed"

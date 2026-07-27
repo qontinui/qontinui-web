@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const toastSuccess = vi.fn();
@@ -136,6 +136,59 @@ describe("GatesTable search + gate-id", () => {
     render(<GatesTable gates={GATES} onActed={() => {}} />);
     await user.type(screen.getByTestId("gates-search"), "devenv");
     expect(rowTitles()).toEqual(["Unrelated devenv phase-2"]);
+  });
+
+  it("renders NO gate-class chip and NO provenance line when the clearance-authority fields are absent (pre-deploy coord — identical to today)", () => {
+    // GATES rows deliberately omit gate_class / cleared_* /
+    // registered_by_agent_id entirely (plan
+    // `2026-07-27-configurable-gate-clearance-authority` Phase 6: coord may
+    // not send them yet; the UI must not break — or change — on absence).
+    render(<GatesTable gates={GATES} onActed={() => {}} />);
+    expect(screen.queryByTestId("gates-gate-class")).toBeNull();
+    expect(screen.queryByTestId("gates-clearance-provenance")).toBeNull();
+  });
+
+  it("renders the gate-class chip when gate_class is set", () => {
+    render(
+      <GatesTable
+        gates={[gate({ gate_class: "security-surface" })]}
+        onActed={() => {}}
+      />,
+    );
+    expect(
+      screen.getByTestId("gates-gate-class").textContent,
+    ).toBe("security-surface");
+  });
+
+  it("renders a withdrawn verdict with its own label and the failed (destructive) tone", () => {
+    render(
+      <GatesTable gates={[gate({ verdict: "withdrawn" })]} onActed={() => {}} />,
+    );
+    // Scope to the row — the verdict filter <option> also says "withdrawn".
+    const row = screen.getByTestId("gates-table-row");
+    const badge = within(row).getByText("withdrawn");
+    // Same destructive tone as `failed`, but the label stays `withdrawn`.
+    expect(badge.className).toContain("destructive");
+  });
+
+  it("renders the clearance-provenance sub-line when coord stamps the columns", () => {
+    render(
+      <GatesTable
+        gates={[
+          gate({
+            verdict: "cleared",
+            cleared_via: "agent_attest",
+            cleared_by_agent_id: "6f2a91c3-0000-0000-0000-000000000001",
+            cleared_by_device_id: "1b2c3d4e-0000-0000-0000-000000000002",
+            cleared_under_rule: "9e8d7c6b-0000-0000-0000-000000000003",
+          }),
+        ]}
+        onActed={() => {}}
+      />,
+    );
+    expect(
+      screen.getByTestId("gates-clearance-provenance").textContent,
+    ).toBe("attested by agent 6f2a91c3 on 1b2c3d4e under rule 9e8d7c6b");
   });
 
   it("the copy button writes the FULL gate id to the clipboard", async () => {

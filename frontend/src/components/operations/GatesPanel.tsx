@@ -44,6 +44,7 @@ import {
   gateSnoozeUrl,
   gateUnmuteUrl,
   relativeTime,
+  summarizeClearanceProvenance,
 } from "./utils";
 import {
   gateAnchor,
@@ -68,6 +69,11 @@ function verdictVariant(
     case "cleared":
       return "success";
     case "failed":
+      return "destructive";
+    // `withdrawn` (registrant cancelled its own request) styles like `failed`
+    // — a destructive-toned terminal verdict — but keeps its own label (the
+    // badge renders the verdict text verbatim), so the two stay distinct.
+    case "withdrawn":
       return "destructive";
     case "open":
     default:
@@ -241,6 +247,16 @@ function GateRowView({ gate, onActed }: GateRowProps) {
     [gate]
   );
 
+  // Clearance provenance (plan `2026-07-27-configurable-gate-clearance-
+  // authority` Phase 6): who moved this gate to a terminal verdict, via which
+  // door, under which rule — e.g. "attested by agent <id> on <device> under
+  // rule <id>". `null` when coord doesn't emit the columns yet (pre-deploy),
+  // so the row renders exactly as it did before the columns existed.
+  const clearanceProvenance = useMemo(
+    () => summarizeClearanceProvenance(gate),
+    [gate]
+  );
+
   const isSnoozed = useMemo(() => {
     if (!gate.snoozed_until) return false;
     const until = new Date(gate.snoozed_until).getTime();
@@ -258,6 +274,9 @@ function GateRowView({ gate, onActed }: GateRowProps) {
   // Re-open is offered on cleared/failed rows still in the list window
   // (best-effort recovery; see the honesty caveat on the control). The Undo
   // toast, which captures the gate_id in closure, is the primary recovery.
+  // `withdrawn` is deliberately NOT reopenable here: the registrant cancelled
+  // its own request, and coord's reopen semantics for withdrawn gates are
+  // undefined until the clearance-authority coord PRs land.
   const isReopenable = gate.verdict === "cleared" || gate.verdict === "failed";
 
   // POST helper — every action surfaces its error inline (honesty: never a
@@ -347,6 +366,17 @@ function GateRowView({ gate, onActed }: GateRowProps) {
         >
           {gate.verdict}
         </Badge>
+        {/* Gate-class chip — registrant self-classification (free vocabulary;
+            NULL/absent = unclassified → no chip, identical to today). */}
+        {gate.gate_class && (
+          <Badge
+            variant="outline"
+            className="font-mono text-[10px]"
+            data-gate-class={gate.gate_class}
+          >
+            {gate.gate_class}
+          </Badge>
+        )}
         <span className="text-sm font-mono truncate min-w-0 flex-1">
           {predicateText}
         </span>
@@ -379,6 +409,17 @@ function GateRowView({ gate, onActed }: GateRowProps) {
           <>
             <span aria-hidden>·</span>
             <span className="truncate">{gate.verdict_reason}</span>
+          </>
+        )}
+        {/* Clearance provenance — rendered only when coord stamped the
+            provenance columns (a pre-deploy coord omits them → no segment,
+            byte-identical row to today). */}
+        {clearanceProvenance && (
+          <>
+            <span aria-hidden>·</span>
+            <span className="truncate" data-clearance-provenance="true">
+              {clearanceProvenance}
+            </span>
           </>
         )}
       </div>

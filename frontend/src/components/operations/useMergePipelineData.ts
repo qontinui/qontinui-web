@@ -33,6 +33,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_API } from "./utils";
+import { isMergedPr } from "./prPipeline";
 import type {
   BlastRadiusBlock,
   BlastRadiusBlocksResponse,
@@ -111,6 +112,14 @@ export interface MergePipelineData {
    */
   mergedPrs: PrRow[] | null;
   /**
+   * How many PRs landed in the {@link MERGED_LOOKBACK_HOURS} window, per
+   * coord's cheap count — available WITHOUT the expensive merged-rows read, so
+   * the Merged tab can be labelled before anyone opens it. `null` = unknown
+   * (not yet fetched, coord too old to answer, or its count failed); a caller
+   * must render that as "unknown", never as 0.
+   */
+  mergedCount: number | null;
+  /**
    * Per-repo merge economics keyed by `owner/name`. Never null — it defaults
    * to an empty map, and a 404 / coord-down / not-yet-deployed economics read
    * keeps it empty, so prPipeline transparently falls back to its hardcoded
@@ -137,6 +146,7 @@ export function useMergePipelineData(
   const [proposals, setProposals] = useState<ProposalDetail[] | null>(null);
   const [prs, setPrs] = useState<PrRow[] | null>(null);
   const [mergedPrs, setMergedPrs] = useState<PrRow[] | null>(null);
+  const [mergedCount, setMergedCount] = useState<number | null>(null);
   const [economicsByRepo, setEconomicsByRepo] = useState<
     Record<string, MergeEconomics>
   >({});
@@ -190,12 +200,22 @@ export function useMergePipelineData(
   // Best-effort + 404-tolerant: a coord deploy without the endpoint renders
   // as an empty list, never as an error (the queue fetch owns `error`).
   //
-  // The hot poll asks for OPEN PRs only. Merged rows are a separate, much
+  // The hot poll asks for OPEN PRs only. Merged ROWS are a separate, much
   // slower fetch (see fetchMergedPrs) because `?include_merged=` is an order
   // of magnitude more expensive server-side.
+  //
+  // It does, however, carry `?merged_count_hours=` — coord's cheap merged
+  // COUNT (one count over the `idx_repo_branches_merged_at` partial index, no
+  // per-PR deploy classification). That rides here deliberately: it answers
+  // "how many landed?" for the Merged tab's label without a sixth request in
+  // the batch — so the request budget, and therefore the backend connection
+  // budget this file's header is about, is unchanged — and without dragging in
+  // the read that took the API down on 2026-07-21.
   const fetchPrs = useCallback(async () => {
     try {
-      const res = await httpClient.fetch(`${OPERATIONS_API}/pr-merge/prs`);
+      const res = await httpClient.fetch(
+        `${OPERATIONS_API}/pr-merge/prs?merged_count_hours=${MERGED_LOOKBACK_HOURS}`
+      );
       if (!res.ok) {
         if (res.status === 404) {
           if (!cleanedUpRef.current) setPrs([]);
@@ -205,7 +225,18 @@ export function useMergePipelineData(
       }
       const body = (await res.json()) as PrListResponse | PrRow[];
       const list = Array.isArray(body) ? body : (body.prs ?? []);
-      if (!cleanedUpRef.current) setPrs(list);
+      // Absent means UNKNOWN — a coord too old to answer, or one whose count
+      // failed and was omitted rather than failing the listing. That resets to
+      // null (the caller renders a dash) instead of leaving the last number on
+      // screen: a stale count carries no staleness signal, so it would read as
+      // a current fact forever. Note 0 is a fact and survives; only absence is
+      // unknown. This is the SUCCESS path only — a failed request keeps
+      // whatever we last knew, same as the PR list below.
+      const count = Array.isArray(body) ? undefined : body.merged_recent_count;
+      if (!cleanedUpRef.current) {
+        setPrs(list);
+        setMergedCount(typeof count === "number" ? count : null);
+      }
     } catch (err) {
       // Keep the last known-good list. This endpoint is slow enough on a
       // loaded fleet to intermittently 500/504 at the gateway (~30s); wiping
@@ -234,14 +265,22 @@ export function useMergePipelineData(
       }
       const body = (await res.json()) as PrListResponse | PrRow[];
       const list = Array.isArray(body) ? body : (body.prs ?? []);
-      // Keep only the terminal rows; the open ones already arrive via the hot
-      // poll, and taking them from here too would double-render every PR.
+      // Every row this endpoint adds beyond the open list has LANDED —
+      // coord's merged query requires `merge_commit_sha IS NOT NULL`, and the
+      // open query never projects that column. So the merged set is exactly
+      // the rows carrying a merge sha, whatever `pr_state` says.
+      //
+      // Filtering on `pr_state IN (merged, closed)` instead — what this did —
+      // silently dropped coord's ff-lands during their phantom-open window: an
+      // ff-land pushes a rebased sha straight to the base branch, so GitHub
+      // never auto-closes the PR and its mirrored pr_state stays 'open' until
+      // the straggler sweep. coord deliberately stopped gating on pr_state for
+      // exactly that reason; re-imposing it here made those landings invisible
+      // in the merged tab and left them rendered as live work in the open one.
+      // De-duplication against the open list is the consumer's job (see
+      // MergePipeline) — dropping rows is not.
       if (!cleanedUpRef.current) {
-        setMergedPrs(
-          list.filter(
-            (p) => p.pr_state === "merged" || p.pr_state === "closed"
-          )
-        );
+        setMergedPrs(list.filter(isMergedPr));
       }
     } catch (err) {
       log.warn("fetchMergedPrs failed — keeping last known merged rows", err);
@@ -562,7 +601,10 @@ export function useMergePipelineData(
           // `onclose`'s ladder gives up after MAX_RECONNECT_ATTEMPTS (~31s),
           // so this is what makes WS recovery unconditional.
           if (!document.hidden) reviveWs();
-          pollTimerRef.current = setTimeout(() => void tick(), POLL_INTERVAL_MS);
+          pollTimerRef.current = setTimeout(
+            () => void tick(),
+            POLL_INTERVAL_MS
+          );
         }
       }
     };
@@ -620,6 +662,7 @@ export function useMergePipelineData(
     proposals,
     prs,
     mergedPrs,
+    mergedCount,
     economicsByRepo,
     suggestions,
     gateBlocks,

@@ -3,12 +3,52 @@
 Loads configuration from environment variables and .env file.
 """
 
+import ipaddress
 import json
+import re
+import socket
 import warnings
 from typing import Any, cast
+from urllib.parse import urlparse
 
-from pydantic import AnyHttpUrl, Field, PostgresDsn, field_validator
+from pydantic import (
+    AnyHttpUrl,
+    Field,
+    PostgresDsn,
+    field_validator,
+    model_validator,
+)
 from pydantic_settings import BaseSettings
+
+# Trust posture is derived FAIL-CLOSED (see ``is_production_posture``): only a
+# literal ``development`` ENVIRONMENT is a local/dev posture that may trust the
+# hermetic local IdP; every other value — staging (a cosmetic staging->prod
+# migration leftover, so prod runs with ENVIRONMENT=staging — see the root
+# CLAUDE.md), production, or anything unexpected — is treated as production
+# posture so the dev-local-auth guardrail can never go inert.
+
+# Numeric-only IPv4 forms the OS resolver still accepts but ``ipaddress`` does
+# not: single-integer (2130706433), short (127.1), hex (0x7f000001), and
+# octal (0177.0.0.1) parts. Each dot-separated part is decimal or 0x-hex (the
+# host has already been lower-cased); a leading-zero decimal part is octal, which
+# ``socket.inet_aton`` resolves. The pattern is deliberately restrictive so a
+# real hostname (which always contains a non-[0-9a-fx.] character or a leading
+# alpha label) can never be routed through numeric normalisation.
+_NUMERIC_IPV4_RE = re.compile(r"^(0x[0-9a-f]+|[0-9]+)(\.(0x[0-9a-f]+|[0-9]+)){0,3}$")
+
+# Hosts that mean "an issuer served from this machine / the local dev box".
+# A production-posture backend that trusts a loopback/local Cognito issuer would
+# be trusting a token any local process can mint — the exact thing the guardrail
+# forbids. host.docker.internal is included because a container reaches the host
+# dev IdP through it.
+_LOOPBACK_ISSUER_HOSTS = frozenset(
+    {"127.0.0.1", "localhost", "0.0.0.0", "::1", "host.docker.internal"}  # noqa: S104
+)
+
+# Database names that belong to the SHARED dev database. When dev-local-auth is
+# enabled the JIT-provisioned dev user must not land here, so the guardrail
+# refuses to boot against these and forces an isolated DATABASE_URL.
+_SHARED_DEV_DB_NAMES = frozenset({"qontinui_db", "db"})
 
 
 class Settings(BaseSettings):
@@ -242,6 +282,25 @@ class Settings(BaseSettings):
             if a.strip()
         ]
 
+    # Dev-local-auth on-ramp (local web UI-Bridge verification on-ramp, Phase 1).
+    # Master gate for the hermetic local-IdP login flow. When set, the backend is
+    # expected to run with COGNITO_ISSUER pointed at the local IdP
+    # (scripts/dev_local_idp.py / spec_ci_local_idp.py, http://127.0.0.1:8770) and
+    # COGNITO_ALLOWED_AUDIENCES=qontinui-web-local, so an injected UI-Bridge tab can
+    # present a locally-minted, Cognito-shaped token that the REAL verifier accepts
+    # and JIT-provisions. This is a DEV-ONLY seam and mirrors how
+    # NEXT_PUBLIC_ENABLE_SPEC_CI gates the frontend spec-CI path. The prod
+    # guardrail below (`_enforce_dev_local_auth_safety`) makes it structurally
+    # impossible to enable under a production-posture ENVIRONMENT.
+    QONTINUI_DEV_LOCAL_AUTH: bool = Field(
+        default=False,
+        description=(
+            "Master dev flag for the hermetic local-IdP auth on-ramp. Dev/local "
+            "only — the backend REFUSES TO BOOT if this is set while "
+            "ENVIRONMENT is a production posture (staging/production)."
+        ),
+    )
+
     # Stripe
     STRIPE_SECRET_KEY: str | None = Field(default=None, description="Stripe secret key")
     STRIPE_PUBLISHABLE_KEY: str | None = Field(
@@ -398,11 +457,21 @@ class Settings(BaseSettings):
     @field_validator("ENVIRONMENT")
     @classmethod
     def validate_environment(cls, v: str) -> str:
-        """Validate ENVIRONMENT is one of allowed values."""
+        """Normalise and validate ENVIRONMENT.
+
+        Case and surrounding whitespace are normalised so a mis-cased or
+        padded value (``"Production"``, ``"staging "``) maps to its canonical
+        form. Without this, the exact-match posture checks scattered through
+        the app (``settings.ENVIRONMENT == "production"``) would silently miss
+        a mis-cased prod value and run with dev-relaxed security. A genuinely
+        unknown value is REJECTED (fail-safe: the app refuses to boot rather
+        than run under an ambiguous trust posture).
+        """
+        normalized = v.strip().lower()
         allowed = ["development", "staging", "production"]
-        if v not in allowed:
+        if normalized not in allowed:
             raise ValueError(f"ENVIRONMENT must be one of: {allowed}")
-        return v
+        return normalized
 
     @field_validator("DATABASE_URL")
     @classmethod
@@ -414,6 +483,140 @@ class Settings(BaseSettings):
         if "postgresql" not in v.lower():
             raise ValueError("Only PostgreSQL is supported for DATABASE_URL")
         return v
+
+    @property
+    def is_production_posture(self) -> bool:
+        """True unless ENVIRONMENT is exactly local ``development`` (FAIL-CLOSED).
+
+        The trust posture is derived by *exclusion*, not by an allow-list: only
+        a literal ``development`` posture is treated as non-production. Prod runs
+        with ENVIRONMENT=staging (a cosmetic migration leftover), so staging
+        counts as production; so does ``production`` and — critically — any
+        value that is empty, mis-cased, or otherwise unexpected. Deriving prod
+        posture as "not development" (rather than membership in a
+        ``{staging, production}`` set) means the dev-local-auth guardrail errs
+        SAFE: it can never silently go inert because ENVIRONMENT drifted to a
+        value nobody thought to add to a set. The ``.strip().lower()`` mirrors
+        ``validate_environment`` so the check holds even for a value that
+        somehow bypassed that validator.
+        """
+        return self.ENVIRONMENT.strip().lower() != "development"
+
+    @property
+    def cognito_issuer_is_loopback(self) -> bool:
+        """True when COGNITO_ISSUER points at a loopback/local host.
+
+        Deliberately broad — this backs the prod guardrail, so it must catch
+        loopback-equivalent forms, not just the exact strings used by the dev
+        flow: the named set (0.0.0.0, host.docker.internal), any ``.localhost``
+        name (RFC 6761), a trailing-dot FQDN, every IP form the stdlib
+        recognises as loopback (127.0.0.0/8, ``::1`` in any expansion, and the
+        IPv4-mapped ``::ffff:127.0.0.1``), AND the numeric/short/octal/hex IPv4
+        spellings the OS resolver still routes to loopback but ``ipaddress``
+        rejects (``127.1``, ``2130706433``, ``0x7f000001``, ``0177.0.0.1``).
+        """
+        # urlparse strips IPv6 brackets; normalise case and a trailing dot.
+        host = (urlparse(self.COGNITO_ISSUER).hostname or "").lower().rstrip(".")
+        if not host:
+            return False
+        if host in _LOOPBACK_ISSUER_HOSTS:
+            return True
+        if host == "localhost" or host.endswith(".localhost"):
+            return True
+        try:
+            ip = ipaddress.ip_address(host)
+        except ValueError:
+            # Not a canonical IP literal. Before giving up, catch the numeric
+            # IPv4 forms a real resolver still accepts (short/octal/decimal/hex)
+            # — 127.1 / 2130706433 / 0x7f000001 / 0177.0.0.1 all resolve to
+            # loopback. Only attempt this for a numeric-ish host so a genuine
+            # hostname can never be mis-normalised into loopback.
+            if _NUMERIC_IPV4_RE.match(host):
+                try:
+                    packed = socket.inet_aton(host)
+                except OSError:
+                    return False
+                return ipaddress.IPv4Address(packed).is_loopback
+            return False
+        if ip.is_loopback:
+            return True
+        # IPv4-mapped IPv6 (e.g. ::ffff:127.0.0.1) — unwrap and re-check.
+        mapped = getattr(ip, "ipv4_mapped", None)
+        return bool(mapped is not None and mapped.is_loopback)
+
+    @staticmethod
+    def _database_name(database_url: str) -> str:
+        """Extract the database name from a PostgreSQL DSN (path, no query)."""
+        path = urlparse(database_url).path.lstrip("/")
+        # Strip anything after a "?" that urlparse may leave when the DSN is
+        # not fully URL-shaped.
+        return path.split("?", 1)[0]
+
+    @model_validator(mode="after")
+    def _enforce_dev_local_auth_safety(self) -> "Settings":
+        """Fail-fast guardrail around the dev-local-auth on-ramp.
+
+        Two structural protections, both enforced at settings-instantiation time
+        (before the app can boot):
+
+        1. **Prod guardrail (the security core).** Under a production-posture
+           ENVIRONMENT (staging/production), REFUSE TO BOOT if either the
+           ``QONTINUI_DEV_LOCAL_AUTH`` master flag is set OR ``COGNITO_ISSUER``
+           resolves to a loopback/local host. Both would let a locally-minted
+           token be trusted in prod — impossible by construction now.
+
+        2. **Isolated dev DB (anomaly fix).** When dev-local-auth is active —
+           EITHER the ``QONTINUI_DEV_LOCAL_AUTH`` master flag is set OR
+           ``COGNITO_ISSUER`` resolves to a loopback/local host (only reachable
+           under a dev posture, per protection 1) — refuse to run against the
+           shared dev database so the JIT-provisioned dev user cannot pollute
+           it, forcing an explicit isolated ``DATABASE_URL``. The loopback
+           signal is included because it is what ACTUALLY activates local-auth:
+           the Cognito verifier is purely issuer-driven, so pointing
+           ``COGNITO_ISSUER`` at the local IdP grants full local-auth even if a
+           dev forgets to set the master flag — and that path must not be
+           allowed to write into the shared dev DB either.
+        """
+        if self.is_production_posture:
+            reasons: list[str] = []
+            if self.QONTINUI_DEV_LOCAL_AUTH:
+                reasons.append("QONTINUI_DEV_LOCAL_AUTH is set")
+            if self.cognito_issuer_is_loopback:
+                reasons.append(
+                    "COGNITO_ISSUER resolves to a loopback/local host "
+                    f"({self.COGNITO_ISSUER!r})"
+                )
+            if reasons:
+                raise ValueError(
+                    "Refusing to boot: dev-local-auth is forbidden under a "
+                    f"production-posture ENVIRONMENT={self.ENVIRONMENT!r} "
+                    "(staging is treated as production) because "
+                    + " and ".join(reasons)
+                    + ". The hermetic local IdP must NEVER be trusted in "
+                    "production. Unset QONTINUI_DEV_LOCAL_AUTH and point "
+                    "COGNITO_ISSUER at the real Cognito issuer, or run with "
+                    "ENVIRONMENT=development for local-auth."
+                )
+
+        if self.QONTINUI_DEV_LOCAL_AUTH or self.cognito_issuer_is_loopback:
+            db_name = self._database_name(str(self.DATABASE_URL)).lower()
+            if db_name in _SHARED_DEV_DB_NAMES:
+                trigger = (
+                    "QONTINUI_DEV_LOCAL_AUTH=1"
+                    if self.QONTINUI_DEV_LOCAL_AUTH
+                    else "COGNITO_ISSUER points at the local IdP "
+                    f"({self.COGNITO_ISSUER!r})"
+                )
+                raise ValueError(
+                    f"Refusing to boot: {trigger} activates dev-local-auth, "
+                    "which must run against an ISOLATED database, but "
+                    f"DATABASE_URL names the shared dev database {db_name!r}. "
+                    "The dev-local-auth flow JIT-provisions a synthetic dev "
+                    "user; set DATABASE_URL to a dedicated database (e.g. "
+                    "'qontinui_local_auth') so it cannot pollute shared dev data."
+                )
+
+        return self
 
     class Config:
         """Pydantic configuration for Settings class."""

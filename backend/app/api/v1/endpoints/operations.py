@@ -173,7 +173,6 @@ def _extract_caller_token(request: Request) -> str | None:
 
 async def get_tenant_id(
     request: Request,
-    current_user: UserModel = Depends(get_current_active_user_async),
 ) -> UUID:
     """Dependency: resolve the current user's home tenant_id (UUID).
 
@@ -789,6 +788,17 @@ async def get_pr_merge_prs(
         "not just open ones. 0 (default) preserves the open-PRs-only "
         "behavior. Backs the fleet pipeline's 'Merged' tab.",
     ),
+    merged_count_hours: int = Query(
+        default=0,
+        ge=0,
+        le=24 * 30,
+        description="When >0, ask coord to add `merged_recent_count` (how many "
+        "PRs landed in the last N hours) to the envelope. This is the CHEAP "
+        "half of `include_merged`: a single count over the partial index "
+        "`idx_repo_branches_merged_at`, with none of the per-PR deploy "
+        "classification, so the fleet pipeline can label its 'Merged' tab "
+        "without paying for the rows. Independent of `include_merged`.",
+    ),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """PR Merge Orchestrator Phase 1 D1.6 + D1.7 -- proxy coord's
@@ -799,13 +809,21 @@ async def get_pr_merge_prs(
     authenticated operator — retires the pilot-anonymous posture
     (operator decision 2026-05-31), mirroring ``/merge/queue``.
 
-    ``include_merged`` is forwarded ONLY when set, so the default request is
-    byte-for-byte the legacy call (same convention as ``/admin-dev/prs``).
-    coord's response is returned verbatim — no field whitelist — so the
-    merged-row enrichment passes through unchanged.
+    ``include_merged`` and ``merged_count_hours`` are forwarded ONLY when
+    set, so the default request is byte-for-byte the legacy call (same
+    convention as ``/admin-dev/prs``). coord's response is returned verbatim
+    — no field whitelist — so the merged-row enrichment and the
+    ``merged_recent_count`` field pass through unchanged. A coord deploy that
+    predates either param simply ignores it and omits the field.
     """
-    params = {"include_merged": include_merged} if include_merged > 0 else None
-    return await _proxy_coord_get("/pr-merge/prs", params=params, tenant_id=tenant_id)
+    params: dict[str, Any] = {}
+    if include_merged > 0:
+        params["include_merged"] = include_merged
+    if merged_count_hours > 0:
+        params["merged_count_hours"] = merged_count_hours
+    return await _proxy_coord_get(
+        "/pr-merge/prs", params=params or None, tenant_id=tenant_id
+    )
 
 
 # Coord path for the CI-duration-aware severity economics read
@@ -839,6 +857,51 @@ async def get_pr_merge_merge_economics(
     """
     try:
         return await _proxy_coord_get(_COORD_MERGE_ECONOMICS_PATH, tenant_id=tenant_id)
+    except HTTPException as exc:
+        if exc.status_code in (404, 502, 503, 504):
+            return {}
+        raise
+
+
+@router.get("/pr-merge/health")
+async def get_pr_merge_health(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Merge-train liveness — proxies coord's ``GET /pr-merge/health``.
+
+    Backs the fleet pipeline's "Train" tab, which answers "what is the merge
+    train doing per repo, and why is it pausing". This read carries the three
+    signals that per-PR data CANNOT explain, because they are properties of
+    the train itself rather than of any one PR:
+
+    - ``last_merged_at`` — the pause clock. A frozen value with an ADVANCING
+      ``last_predicate_eval_at`` is the signature of a suppressed train
+      (the engine is evaluating; nothing is landing).
+    - ``leader`` — the ``coord.leader_lease`` row. ``lease_fresh=false`` means
+      leadership is lapsing, which stalls every repo at once.
+    - ``dry_run`` — repos frozen in ``rollout_state=dry_run`` (coord issue
+      #776). A silently frozen tenant merges nothing and, before this field
+      existed, produced no signal at all.
+
+    It also returns ``ready_unmerged.prs[]`` — green + CLEAN + unlanded PRs
+    with a readiness-onset age and the latest proposal's ``status``/``error``
+    at the PR's CURRENT head. That per-repo backlog is the direct answer to
+    "why has nothing merged for the last hour".
+
+    GRACEFUL FALLBACK (required): mirrors ``/pr-merge/merge-economics`` — a 404
+    (coord deploy predating the route) or a transient coord outage
+    (502/503/504) degrades to ``{}`` rather than erroring, so the Train tab
+    still renders whatever it can derive from ``/merge/queue`` +
+    ``/pr-merge/prs`` and simply omits the fleet-level banner.
+
+    Tenant note: UNLIKE the fleet-wide ``/merge/queue`` and ``/pr-merge/prs``,
+    coord scopes this route's ``ready_unmerged`` and ``dry_run`` sections to
+    the bearer's tenant (its handler takes ``TenantId``, not
+    ``FleetPrincipal``). ``tenant_id`` is still resolved only to trigger
+    bearer-forwarding; coord derives the scope from the bearer itself.
+    """
+    try:
+        return await _proxy_coord_get("/pr-merge/health", tenant_id=tenant_id)
     except HTTPException as exc:
         if exc.status_code in (404, 502, 503, 504):
             return {}
@@ -1300,11 +1363,18 @@ async def get_pr_merge_repo_profile(
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Resolved per-(tenant, repo) settings — three-tier
-    (global → tenant → repo) layered. The ``repo`` is the
-    ``owner/name`` form; the ``:path`` converter lets FastAPI accept
-    the ``/`` inline without URL-encoding."""
+    (global → tenant → repo) layered.
+
+    ``repo`` is the ``owner/name`` form and the ``:path`` converter lets
+    FastAPI accept the ``/`` inline. Coord's ``:repo`` param is a SINGLE
+    path segment, though, so the slug is re-encoded on the way out
+    (``qontinui/qontinui-runner`` → ``qontinui%2Fqontinui-runner``) —
+    same as ``/pr-merge/prs/{repo}/{pr}/checks`` above. Forwarding the
+    raw ``/`` makes coord see four path segments, match no route, and
+    return 404, which surfaces in the Merge Settings per-repo card as a
+    bare ``HTTP 404`` where the resolved profile should be."""
     return await _proxy_coord_get(
-        f"/pr-merge/repos/{repo}/profile", tenant_id=tenant_id
+        f"/pr-merge/repos/{quote(repo, safe='')}/profile", tenant_id=tenant_id
     )
 
 
@@ -1316,9 +1386,13 @@ async def patch_pr_merge_repo_profile(
 ) -> Any:
     """UPSERT the per-repo override row. Coord stamps
     ``profile_source='user_edit'``, audits the change, and publishes
-    invalidation. Returns the post-write EffectiveProfile."""
+    invalidation. Returns the post-write EffectiveProfile.
+
+    Same single-segment re-encoding as the GET above — without it the
+    PATCH 404s too, so "Save override" in the Merge Settings card
+    silently fails to write."""
     return await _proxy_coord_patch(
-        f"/pr-merge/repos/{repo}/profile", body, tenant_id=tenant_id
+        f"/pr-merge/repos/{quote(repo, safe='')}/profile", body, tenant_id=tenant_id
     )
 
 
@@ -1747,6 +1821,94 @@ async def post_pr_merge_onboarding_claim(
     return JSONResponse(content=content, status_code=resp.status_code)
 
 
+# ---- Zero-touch onboarding: enroll an already-connected installation ------
+#
+# The "Enroll / Sync repositories" button on the Connected Organizations card.
+# The claim path (above) only fires for a FRESH GitHub App install (the Setup-URL
+# `?code=` redirect), so an org whose App is already installed has no UI trigger
+# to enroll its repos — it dead-ends at "connected · no repositories enrolled
+# yet". This proxy fronts coord's already-existing enroll endpoint so that org
+# can be enrolled (or re-synced to pick up newly-added repos) in one click.
+#
+# Coord's `POST /coord/onboarding/installations/:installation_id/enroll` runs its
+# authorization prologue SYNCHRONOUSLY (it verifies the installation is mapped to
+# the caller's active tenant BEFORE any side effect — fail-closed), then
+# `tokio::spawn`s the per-repo enrollment (signature probes, dry-run profile
+# writes, `tenant_repos` upserts, the one-time "🍕 Enable qontinui" bootstrap PR
+# — all idempotent) and returns `202 {"enrolled": "spawned", "tenant_id", "installation_id"}`
+# IMMEDIATELY. There is deliberately NO `repos` array — the list isn't known at
+# response time; the UI re-polls the accounts endpoint to learn the enrolled
+# repos. Error shapes surface with their own status: `403 installation_not_
+# owned_by_tenant`, `404 installation_not_mapped`, `500`.
+COORD_ENROLL_PATH = "/coord/onboarding/installations/{installation_id}/enroll"
+
+
+@router.post("/pr-merge/onboarding/installations/{installation_id}/enroll")
+async def post_pr_merge_onboarding_enroll(
+    installation_id: int,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> JSONResponse:
+    """Enroll (or re-sync) an already-connected GitHub App installation's repos.
+
+    Proxies coord's ``POST /coord/onboarding/installations/{installation_id}/enroll``,
+    substituting ``installation_id`` into the coord path. Backs the
+    "Enroll / Sync repositories" button on the Connected Organizations card,
+    which closes the "connected · no repositories enrolled yet" dead end for an
+    org whose App is already installed (the Setup-URL ``?code=`` claim can never
+    fire for it) and doubles as a manual re-sync to pick up newly-added repos.
+
+    Authz — ``require_coord_tenant_admin`` (admin in the ACTIVE tenant), NOT the
+    looser ``get_tenant_id``: enrolling opens bootstrap PRs and writes repo
+    profiles, a consequential write, matching the settings-write posture. coord
+    re-validates the active-tenant override server-side (defense-in-depth).
+
+    Contract — coord's authz prologue runs synchronously, then it spawns the
+    per-repo enrollment and returns immediately, so this handler keeps the
+    default 5s ``_COORD_TIMEOUT`` (no per-route bump — the slow per-repo GitHub
+    round-trips happen off-connection):
+      * ``202 {"enrolled": "spawned", "tenant_id", "installation_id"}`` — spawned;
+        the UI re-polls ``GET /pr-merge/onboarding/accounts`` to see the repos.
+        There is NO ``repos`` array in this response.
+      * ``403 installation_not_owned_by_tenant`` — the installation is bound to a
+        different tenant.
+      * ``404 installation_not_mapped`` — the installation isn't bound to any
+        tenant (connect it first).
+      * ``500`` — coord-side failure.
+
+    Like the claim proxy, this passes coord's status code AND JSON body through
+    VERBATIM (not via ``_proxy_coord_post``, which stringifies a ≥400 body into
+    ``HTTPException.detail`` and would rewrite the ``202`` to ``200``) so the
+    frontend can render coord's ``error`` code and keep the ``202`` distinct.
+    httpx transport errors mirror the shared helpers (ConnectError → 502,
+    TimeoutException → 504).
+    """
+    url = (
+        f"{settings.COORD_URL}"
+        f"{COORD_ENROLL_PATH.format(installation_id=installation_id)}"
+    )
+    headers = _tenant_headers(tenant_id)
+    async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
+        try:
+            resp = await client.post(url, headers=headers)
+        except httpx.ConnectError:
+            raise HTTPException(
+                status_code=502,
+                detail="coord is not reachable",
+            )
+        except httpx.TimeoutException:
+            raise HTTPException(
+                status_code=504,
+                detail="timeout waiting for coord",
+            )
+    # Pass coord's status code + JSON body straight through. Fall back to a
+    # wrapped raw body if coord ever returns a non-JSON payload.
+    try:
+        content = resp.json()
+    except ValueError:
+        content = {"detail": resp.text}
+    return JSONResponse(content=content, status_code=resp.status_code)
+
+
 # ---- Coord device pairing — Step 1 of the onboarding wizard -------------
 #
 # The wizard's Pair Device step (``MergeOrchestrationOnboarding.tsx``,
@@ -1955,6 +2117,33 @@ async def get_pr_merge_slo(
     )
 
 
+@router.post("/pr-merge/red-main/{repo:path}/spawn-fix")
+async def post_pr_merge_red_main_spawn_fix(
+    repo: str,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Operator-driven red-main remediation (red-main auto-remediation
+    Phase 4b). Spawn a visible fix session on the operator's device for
+    ``repo``'s current red episode, proxying coord's
+    ``POST /pr-merge/red-main/:repo/spawn-fix``.
+
+    ``repo`` is ``owner/name`` and is captured inline via ``{repo:path}``
+    (the same shape as ``/pr-merge/repos/:repo/profile``). No request body
+    is required — coord resolves the live red episode + tenant from the
+    forwarded operator bearer.
+
+    Coord returns ``200 {"agent_id": "<uuid>"}`` on success, or ``409`` when
+    a fix session is already running for the current red episode or the repo
+    has no live red-main alert. ``_proxy_coord_post`` re-raises coord's
+    status + JSON body so the banner can surface the 409 message inline.
+    """
+    return await _proxy_coord_post(
+        f"/pr-merge/red-main/{repo}/spawn-fix",
+        {},
+        tenant_id=tenant_id,
+    )
+
+
 async def _proxy_coord_post(
     path: str,
     body: Any,
@@ -2097,7 +2286,6 @@ async def get_claims_list(
 async def get_agent_status(
     correlation_topic: str | None = None,
     tenant_id: UUID = Depends(get_tenant_id),
-    current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
     """List active (non-expired) agent_status rows for the caller's tenant.
 
@@ -4171,7 +4359,6 @@ async def list_coord_sessions(
     # single-tenant path. The returned UUID is otherwise unused on the
     # wire here (the `scope=all` path computes its own `tenant_ids`).
     tenant_id: UUID = Depends(get_tenant_id),
-    current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
     """List active (default) or all sessions across one or all tenants
     the caller belongs to.
@@ -4872,7 +5059,6 @@ async def deregister_repo(
 async def get_next_step_settings(
     request: Request,
     tenant_id: UUID = Depends(get_tenant_id),
-    current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
     """Per-tenant read of the decision-engine autonomy settings.
 
@@ -5174,13 +5360,17 @@ async def update_prompt_document(
     tenant_id: UUID = Depends(require_coord_tenant_admin),
     current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
-    """Edit a prompt document's description/body. Tenant-admin only.
+    """Edit a prompt document's description/body/attrs. Tenant-admin only.
 
-    The body is forwarded as ``{description?, body?, change_description?}`` with
-    ``updated_by`` stamped from the authenticated session (see
-    :func:`_editor_identity`) — a body-supplied ``updated_by`` is ignored, so the
-    version snapshot coord writes carries the real editor. Coord creates a new
-    immutable version on every successful edit; nothing is overwritten in place.
+    The body is forwarded as ``{description?, body?, attrs?,
+    change_description?}`` with ``updated_by`` stamped from the authenticated
+    session (see :func:`_editor_identity`) — a body-supplied ``updated_by`` is
+    ignored, so the version snapshot coord writes carries the real editor. Coord
+    creates a new immutable version on every successful description/body edit;
+    nothing is overwritten in place. A supplied ``attrs`` REPLACES the stored
+    attrs object wholesale (the client merges before sending), and an attrs-only
+    edit is document configuration, not content — coord updates it in place
+    without creating a version.
     """
     return await _proxy_coord_patch(
         f"/coord/prompt-documents/{kind}/{name}",

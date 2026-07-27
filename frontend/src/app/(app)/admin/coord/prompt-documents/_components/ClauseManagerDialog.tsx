@@ -45,6 +45,7 @@ import { ClauseImportDialog } from "./ClauseImportDialog";
 import {
   CLAUSE_STATUS_VARIANT,
   CLAUSE_TIERS,
+  TIER_DESCRIPTIONS,
   TIER_INHERIT,
   type Clause,
   type ClauseTier,
@@ -139,9 +140,9 @@ export function ClauseManagerDialog({
           <DialogHeader>
             <DialogTitle>Clauses — {document?.description ?? name}</DialogTitle>
             <DialogDescription>
-              The structured clauses of <code>{`{{policy:${name}}}`}</code>,
-              ordered as coord serves them. Edits are tenant-scoped and
-              validated by coord.
+              The individual rules inside this policy that AI agents follow, in
+              order. Changes save immediately and apply to every agent in your
+              workspace.
             </DialogDescription>
           </DialogHeader>
 
@@ -183,8 +184,11 @@ export function ClauseManagerDialog({
                   </Select>
                 </div>
                 <p className="flex-1 text-xs text-muted-foreground">
-                  Clauses with no tier of their own inherit this. Written to the
-                  document&apos;s <code>attrs.default_tier</code>.
+                  The autonomy level any rule below uses when it hasn&apos;t set
+                  its own (the rules marked &ldquo;Inherit&rdquo;).{" "}
+                  {defaultTier
+                    ? TIER_DESCRIPTIONS[defaultTier]
+                    : "No default set, so each rule uses only its own setting."}
                 </p>
                 <Button
                   size="sm"
