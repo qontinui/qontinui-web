@@ -79017,7 +79017,7 @@
     },
     "/api/v1/operations/pr-merge/repos/{repo}/profile": {
       "get": {
-        "description": "Resolved per-(tenant, repo) settings \u2014 three-tier\n(global \u2192 tenant \u2192 repo) layered. The ``repo`` is the\n``owner/name`` form; the ``:path`` converter lets FastAPI accept\nthe ``/`` inline without URL-encoding.",
+        "description": "Resolved per-(tenant, repo) settings \u2014 three-tier\n(global \u2192 tenant \u2192 repo) layered.\n\n``repo`` is the ``owner/name`` form and the ``:path`` converter lets\nFastAPI accept the ``/`` inline. Coord's ``:repo`` param is a SINGLE\npath segment, though, so the slug is re-encoded on the way out\n(``qontinui/qontinui-runner`` \u2192 ``qontinui%2Fqontinui-runner``) \u2014\nsame as ``/pr-merge/prs/{repo}/{pr}/checks`` above. Forwarding the\nraw ``/`` makes coord see four path segments, match no route, and\nreturn 404, which surfaces in the Merge Settings per-repo card as a\nbare ``HTTP 404`` where the resolved profile should be.",
         "operationId": "api_v1_operations_pr_merge_repos_repo_profile_get",
         "parameters": [
           {
@@ -79058,7 +79058,7 @@
         ]
       },
       "patch": {
-        "description": "UPSERT the per-repo override row. Coord stamps\n``profile_source='user_edit'``, audits the change, and publishes\ninvalidation. Returns the post-write EffectiveProfile.",
+        "description": "UPSERT the per-repo override row. Coord stamps\n``profile_source='user_edit'``, audits the change, and publishes\ninvalidation. Returns the post-write EffectiveProfile.\n\nSame single-segment re-encoding as the GET above \u2014 without it the\nPATCH 404s too, so \"Save override\" in the Merge Settings card\nsilently fails to write.",
         "operationId": "api_v1_operations_pr_merge_repos_repo_profile_patch",
         "parameters": [
           {
