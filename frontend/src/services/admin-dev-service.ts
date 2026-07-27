@@ -76,6 +76,34 @@ export interface GateOverviewRow {
   /** When the most recent shadow cycle stamped `shadow_reap_signal` (ISO-8601). */
   shadow_reap_at: string | null;
   registered_by: string | null;
+  /**
+   * Agent UUID of the registrant when the registering token carried one
+   * (agent-token sessions only; device JWTs carry no agent_id by design).
+   * OPTIONAL + nullable: a coord predating the clearance-authority deploy
+   * (plan `2026-07-27-configurable-gate-clearance-authority`) omits it.
+   */
+  registered_by_agent_id?: string | null;
+  /**
+   * Registrant self-classified gate class (free vocabulary — e.g.
+   * `security-surface`, `routine-review`, `ops-confirm`). NULL/absent =
+   * unclassified (strictest default authority coord-side). OPTIONAL: a
+   * lagging coord omits it and the table renders no chip.
+   */
+  gate_class?: string | null;
+  // Clearance provenance (web migration `gates_clearance_provenance_01`;
+  // stamped by coord's clear/fail/withdraw paths). ALL optional + nullable —
+  // a coord predating the deploy omits them and the table renders no
+  // provenance sub-line (never a crash).
+  /** Device UUID of the caller that moved the gate to a terminal verdict. */
+  cleared_by_device_id?: string | null;
+  /** Agent UUID of the caller (agent-token sessions only). */
+  cleared_by_agent_id?: string | null;
+  /** Which door moved the gate: `operator_route | agent_attest |
+   *  agent_reject | withdraw | force_clear | sweep` (free text). */
+  cleared_via?: string | null;
+  /** `policy_rules.policy_id` of the `gate_clearance` rule that authorized
+   *  the action; NULL for operator routes and the no-rule defaults. */
+  cleared_under_rule?: string | null;
   tenant_id: string;
   created_at: string;
   evaluated_at: string | null;
