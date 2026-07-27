@@ -175,7 +175,15 @@ export interface GateCounts {
   would_reap: number;
 }
 
-export type GateVerdict = "open" | "cleared" | "failed";
+/** Server-side verdict filter values for `getOverview`. Mirrors coord's
+ *  `GateVerdict` vocabulary (kept in sync with the union in
+ *  `components/operations/types.ts`). */
+export type GateVerdict =
+  | "open"
+  | "cleared"
+  | "failed"
+  | "misconfigured"
+  | "withdrawn";
 
 // ---- Open PRs (fleet-wide) -----------------------------------------------
 

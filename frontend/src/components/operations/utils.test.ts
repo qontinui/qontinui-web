@@ -127,6 +127,21 @@ describe("summarizeClearanceProvenance", () => {
     expect(verb("sweep")).toBe("cleared by sweep");
   });
 
+  it("actor-naming verbs take 'on <device>', never a double 'by'", () => {
+    expect(
+      summarizeClearanceProvenance({
+        cleared_via: "operator_route",
+        cleared_by_device_id: DEVICE,
+      })
+    ).toBe("cleared by operator on 1b2c3d4e");
+    expect(
+      summarizeClearanceProvenance({
+        cleared_via: "sweep",
+        cleared_by_device_id: DEVICE,
+      })
+    ).toBe("cleared by sweep on 1b2c3d4e");
+  });
+
   it("degrades an unknown cleared_via to 'cleared via <value>'", () => {
     expect(summarizeClearanceProvenance({ cleared_via: "future_door" })).toBe(
       "cleared via future_door"
