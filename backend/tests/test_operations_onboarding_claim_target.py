@@ -161,6 +161,30 @@ def test_gate_failures_pass_through_verbatim(
     assert res.json()["error"] == code
 
 
+def test_connect_state_is_forwarded_when_present(auth_client: TestClient) -> None:
+    """The token minted before the GitHub hop must reach coord's claim.
+
+    Coord binds to the TOKEN's tenant, so dropping it here would silently
+    reinstate the caller-bearer bind this plan removes (and, once
+    ``COORD_REQUIRE_CONNECT_STATE`` is armed, 400 every live connect).
+    """
+    client = _patched_post(_mock_response())
+    with patch("httpx.AsyncClient", return_value=client):
+        auth_client.post(
+            CLAIM_URL,
+            json={"code": "abc", "installation_id": 1, "connect_state": "tok-123"},
+        )
+    assert client.post.call_args.kwargs["json"]["connect_state"] == "tok-123"
+
+
+def test_connect_state_omitted_rather_than_null(auth_client: TestClient) -> None:
+    """Absent means absent — coord distinguishes it from an unresolvable token."""
+    client = _patched_post(_mock_response())
+    with patch("httpx.AsyncClient", return_value=client):
+        auth_client.post(CLAIM_URL, json={"code": "abc", "installation_id": 1})
+    assert "connect_state" not in client.post.call_args.kwargs["json"]
+
+
 def test_tenant_never_taken_from_body(auth_client: TestClient) -> None:
     """A body-supplied tenant_id must be ignored — tenant comes from auth only.
 

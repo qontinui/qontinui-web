@@ -24,7 +24,7 @@
  * honest (the user knows their org) and costs no safety — the gate is coord's.
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Github, ExternalLink, Loader2 } from "lucide-react";
 import {
   Card,
@@ -36,11 +36,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useResetOnBackNavigation } from "@/hooks/useResetOnBackNavigation";
 import { OPERATIONS_API } from "@/components/operations/utils";
 import { httpClient } from "@/services/service-factory";
 import {
   authorizeUrl,
   beginConnectState,
+  mintConnectState,
   type ConnectFlow,
 } from "@/lib/onboarding-connect-state";
 
@@ -67,6 +69,8 @@ export function ConnectInstalledOrg({
   const [config, setConfig] = useState<GithubAppConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [login, setLogin] = useState("");
+  const [minting, setMinting] = useState(false);
+  const [mintError, setMintError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -89,13 +93,48 @@ export function ConnectInstalledOrg({
     };
   }, []);
 
-  // Hide entirely when coord has no OAuth creds: without them the authorize
-  // round-trip would end in a 500 `oauth_not_configured`, so offering it would
-  // be a worse dead end than the one we're fixing.
-  if (loading || !config?.oauth_configured || !config.client_id) return null;
+  // `minting` stays true through the outbound nav (the document is leaving);
+  // clear it if the browser restores this page from the bfcache on Back, or the
+  // authorize button comes back permanently disabled.
+  const clearMinting = useCallback(() => setMinting(false), []);
+  useResetOnBackNavigation(clearMinting);
 
   const trimmed = login.trim();
   const valid = LOGIN_RE.test(trimmed);
+  const clientId = config?.client_id ?? null;
+
+  /**
+   * Mint the connect state, then navigate. This has to happen on CLICK, not
+   * during render: the mint is an authenticated round-trip to coord (via the
+   * web proxy) and a render-time call could neither await it nor report its
+   * failure. Building the href during render — which is what this component did
+   * before plan `2026-07-26-coord-onboarding-claim-caller-tenant-binding` — also
+   * minted a fresh CSRF nonce on every keystroke, so only the last one ever
+   * matched.
+   *
+   * On failure we stay put and show a retryable message rather than navigating
+   * to a stateless authorize URL that coord will refuse to complete.
+   */
+  const onAuthorize = useCallback(async () => {
+    if (!clientId || !valid || minting) return;
+    setMinting(true);
+    setMintError(null);
+    try {
+      const token = await mintConnectState();
+      const state = beginConnectState(flow, trimmed, token);
+      // Same-tab nav: the callback must return into this authenticated session
+      // (a session-less tab can't complete the claim).
+      window.location.assign(authorizeUrl(clientId, state));
+    } catch (e) {
+      setMintError(e instanceof Error ? e.message : String(e));
+      setMinting(false);
+    }
+  }, [clientId, flow, minting, trimmed, valid]);
+
+  // Hide entirely when coord has no OAuth creds: without them the authorize
+  // round-trip would end in a 500 `oauth_not_configured`, so offering it would
+  // be a worse dead end than the one we're fixing.
+  if (loading || !config?.oauth_configured || !clientId) return null;
 
   return (
     <Card data-testid="connect-installed-org">
@@ -122,33 +161,38 @@ export function ConnectInstalledOrg({
           autoCapitalize="none"
         />
         {/*
-          An <a> rather than a fetch+redirect: the browser must land on GitHub
-          itself, and the same-tab nav means the callback returns into this
-          authenticated session (a session-less tab can't complete the claim).
-          `beginConnectState` mints the CSRF nonce as the URL is built, so it is
-          always stored before we navigate.
+          A button that navigates rather than a bare <a href>: the URL can only
+          be built AFTER the connect-state mint resolves. The browser still lands
+          on GitHub itself, same-tab, so the callback returns into this
+          authenticated session.
         */}
-        <a
-          href={
-            valid
-              ? authorizeUrl(config.client_id, beginConnectState(flow, trimmed))
-              : undefined
-          }
-          aria-disabled={!valid}
+        <button
+          type="button"
+          onClick={onAuthorize}
+          disabled={!valid || minting}
           data-testid="connect-installed-org-authorize"
           className={cn(
             buttonVariants({ variant: "secondary" }),
             "w-fit",
-            !valid && "pointer-events-none opacity-50"
+            (!valid || minting) && "opacity-50"
           )}
         >
-          {loading ? (
+          {minting ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
             <ExternalLink className="h-4 w-4" />
           )}
           Authorize &amp; connect
-        </a>
+        </button>
+        {mintError && (
+          <p
+            className="text-xs text-destructive"
+            role="alert"
+            data-testid="connect-installed-org-error"
+          >
+            {mintError}
+          </p>
+        )}
         <p className="text-xs text-muted-foreground">
           You must be an admin of the organization. Authorizing doesn&apos;t
           change the App&apos;s permissions or install it anywhere new.

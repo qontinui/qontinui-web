@@ -12,12 +12,18 @@
  * separate autonomous-dev runner setup.
  *
  * Post-install, GitHub redirects back to /admin/coord/onboarding-status which
- * completes the claim. Navigation is same-tab (a plain <a href>) so the
- * redirect returns into the authenticated session.
+ * completes the claim. Navigation is same-tab so the redirect returns into the
+ * authenticated session.
+ *
+ * This CTA used to point at a hardcoded `installations/new` URL with **no
+ * `state` at all** — the live entry point for the CSRF described in plan
+ * `2026-07-26-coord-onboarding-claim-caller-tenant-binding` §1. It now goes
+ * through {@link InstallGitHubAppButton}, which mints a tenant-bound
+ * connect-state token before navigating.
  */
 
 import Link from "next/link";
-import { Github, ExternalLink } from "lucide-react";
+import { Github } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -25,12 +31,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { buttonVariants } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
-
-const APP_SLUG =
-  process.env.NEXT_PUBLIC_GITHUB_APP_SLUG || "qontinui-merge-orchestrator";
-const INSTALL_URL = `https://github.com/apps/${APP_SLUG}/installations/new`;
+import { InstallGitHubAppButton } from "@/components/operations/InstallGitHubAppButton";
 
 export function ConnectGitHubOrg() {
   return (
@@ -49,14 +50,10 @@ export function ConnectGitHubOrg() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        <a
-          href={INSTALL_URL}
-          data-testid="connect-github-org-install"
-          className={cn(buttonVariants({ variant: "default" }), "w-fit")}
-        >
-          <ExternalLink className="h-4 w-4" />
-          Install the GitHub App
-        </a>
+        <InstallGitHubAppButton
+          flow="connect"
+          testId="connect-github-org-install"
+        />
         <p className="text-xs text-muted-foreground">
           After installing, GitHub returns you to Qontinui to finish connecting
           — automatically.

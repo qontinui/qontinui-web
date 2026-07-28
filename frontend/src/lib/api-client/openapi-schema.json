@@ -26635,7 +26635,7 @@
         "type": "object"
       },
       "OnboardingClaimRequest": {
-        "description": "Body for ``POST /pr-merge/onboarding/claim``.\n\n``code`` \u2014 the short-lived GitHub OAuth code. Comes from EITHER the\nSetup-URL post-install redirect (fresh install) OR the\n``login/oauth/authorize`` user-authorization callback (the only way to get\na code for an org whose App is ALREADY installed \u2014 GitHub issues no\nSetup-URL code on a re-visit).\n\n``installation_id`` / ``account_login`` \u2014 which installation to claim. The\nSetup-URL redirect carries ``installation_id``; the authorize callback\ncarries neither, so that path names the org via ``account_login`` and coord\nresolves the id from the caller's own ``/user/installations``. Exactly one\nis required (coord 400s ``target_required`` otherwise); ``installation_id``\nwins if both are sent. NEITHER selects a tenant \u2014 the tenant always comes\nfrom the caller's auth \u2014 and coord 403s ``installation_not_administered``\nfor an installation the caller doesn't administer, whichever key is used.\n\n``bind_only`` \u2014 when true, coord binds the account WITHOUT enrolling its\nrepos (no bootstrap PRs); for the clone-only path. Defaults false =\nbind + enroll (today's behavior).",
+        "description": "Body for ``POST /pr-merge/onboarding/claim``.\n\n``code`` \u2014 the short-lived GitHub OAuth code. Comes from EITHER the\nSetup-URL post-install redirect (fresh install) OR the\n``login/oauth/authorize`` user-authorization callback (the only way to get\na code for an org whose App is ALREADY installed \u2014 GitHub issues no\nSetup-URL code on a re-visit).\n\n``installation_id`` / ``account_login`` \u2014 which installation to claim. The\nSetup-URL redirect carries ``installation_id``; the authorize callback\ncarries neither, so that path names the org via ``account_login`` and coord\nresolves the id from the caller's own ``/user/installations``. Exactly one\nis required (coord 400s ``target_required`` otherwise); ``installation_id``\nwins if both are sent. NEITHER selects a tenant \u2014 the tenant always comes\nfrom the caller's auth \u2014 and coord 403s ``installation_not_administered``\nfor an installation the caller doesn't administer, whichever key is used.\n\n``bind_only`` \u2014 when true, coord binds the account WITHOUT enrolling its\nrepos (no bootstrap PRs); for the clone-only path. Defaults false =\nbind + enroll (today's behavior).\n\n``connect_state`` \u2014 the single-use token minted by\n``POST /pr-merge/onboarding/connect-state`` before the browser was sent to\nGitHub, round-tripped through GitHub's ``state`` param. Coord binds to\nthe TOKEN's tenant (and requires the caller's own tenant to match), which\nis what stops a caller from binding an org into a tenant that never\ninitiated the flow. Optional on this wire during the transition: coord\nenforces it behind ``COORD_REQUIRE_CONNECT_STATE`` (default off), so a web\nbuild that forwards it to a coord that predates the feature is simply\nignored rather than rejected.",
         "properties": {
           "account_login": {
             "anyOf": [
@@ -26656,6 +26656,17 @@
           "code": {
             "title": "Code",
             "type": "string"
+          },
+          "connect_state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connect State"
           },
           "installation_id": {
             "anyOf": [
@@ -78686,6 +78697,26 @@
           }
         },
         "summary": "Post Pr Merge Onboarding Claim",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/pr-merge/onboarding/connect-state": {
+      "post": {
+        "description": "Mint a single-use, tenant-bound connect-state token for a GitHub connect.\n\nProxies coord's ``POST /coord/onboarding/connect-state``. Takes no body:\nthe only input that matters is the caller's identity, which\n``get_tenant_id`` resolves and ``_tenant_headers`` forwards as the\noperator's bearer \u2014 coord records the resulting row against *that* tenant\nand later binds the claim to it.\n\nPasses coord's status code and JSON body through verbatim (like the claim\nproxy, not the raising ``_proxy_coord_post`` helper) so the connect UI can\nsurface a retryable, honest failure instead of a blank navigation to a\nstateless GitHub URL. httpx transport errors mirror the shared helpers\n(ConnectError \u2192 502, TimeoutException \u2192 504).",
+        "operationId": "api_v1_operations_pr_merge_onboarding_connect_state_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Post Pr Merge Onboarding Connect State",
         "tags": [
           "operations"
         ]
