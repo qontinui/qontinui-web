@@ -1756,17 +1756,69 @@ COORD_ONBOARDING_CLAIM_PATH = "/coord/onboarding/github-accounts/claim"
 COORD_ONBOARDING_CONNECT_STATE_PATH = "/coord/onboarding/connect-state"
 
 
+class OnboardingConnectStateRequest(BaseModel):
+    """Body for ``POST /pr-merge/onboarding/connect-state``.
+
+    None of these fields selects a tenant — that still comes solely from the
+    caller's auth. They pin what the *flow* is allowed to do, so the decision
+    stops being a free parameter of the later claim.
+
+    ``flow`` — ``connect`` (merge-orchestrator onboarding: bind + enroll) or
+    ``runner-clone`` (clone-only: bind, no enrollment, no bootstrap PRs). Coord
+    records it on the minted row and derives the claim's ``bind_only`` from it,
+    rejecting a claim body that disagrees. Without it ``bind_only`` is chosen by
+    whoever POSTs the claim (plan
+    ``2026-07-26-coord-onboarding-claim-caller-tenant-binding`` §7.5 F2).
+
+    **REQUIRED here, even though coord's own mint accepts it as optional.**
+    Coord keeps it optional so a caller predating the field is not broken; this
+    proxy is the ONLY door to that mint (coord's ``TenantId`` resolves solely
+    from an operator Cognito context, so nothing reaches it except through
+    here), so requiring it at the door is what makes "every minted row records
+    a flow" true in practice rather than aspirational. Leaving it optional
+    would hand the F2 attacker — by definition someone hand-crafting the
+    request, not someone using the UI — a one-key bypass: POST ``{}``, get a
+    flow-less row, then choose ``bind_only`` on the claim after all. There is
+    no compatibility cost: the mint route ships in the same release as its only
+    callers, so no deployed client posts a flow-less body.
+
+    ``target_login`` / ``target_installation_id`` — which org/installation the
+    token authorises, when that is known BEFORE the GitHub hop. It is known on
+    the authorize (already-installed) path, where the user typed the org; it is
+    NOT known on the fresh-install path, where GitHub names the installation
+    only in its post-install redirect. Callers send nothing there rather than
+    guess, and coord skips the target assertion for a row that records none.
+
+    ``target_login`` is bounded and charset-checked here for the same
+    fail-early reason as ``flow``: the browser validates it before the mint,
+    but this route is directly reachable, and an unbounded value (or one
+    containing the ``~`` that delimits the GitHub ``state`` wire format) should
+    fail as a typed 422 rather than as an opaque coord 400. The pattern is
+    deliberately looser than GitHub's own login rule (it permits consecutive
+    hyphens) — coord and GitHub remain the authoritative check; this only
+    excludes values that cannot be a login at all.
+    """
+
+    flow: Literal["connect", "runner-clone"]
+    target_login: str | None = Field(
+        default=None, max_length=39, pattern=r"^[A-Za-z0-9][A-Za-z0-9-]{0,38}$"
+    )
+    target_installation_id: int | None = None
+
+
 @router.post("/pr-merge/onboarding/connect-state")
 async def post_pr_merge_onboarding_connect_state(
+    body: OnboardingConnectStateRequest,
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> JSONResponse:
     """Mint a single-use, tenant-bound connect-state token for a GitHub connect.
 
-    Proxies coord's ``POST /coord/onboarding/connect-state``. Takes no body:
-    the only input that matters is the caller's identity, which
-    ``get_tenant_id`` resolves and ``_tenant_headers`` forwards as the
-    operator's bearer — coord records the resulting row against *that* tenant
-    and later binds the claim to it.
+    Proxies coord's ``POST /coord/onboarding/connect-state``. The tenant is
+    NEVER taken from the body: ``get_tenant_id`` resolves the caller and
+    ``_tenant_headers`` forwards the operator's bearer, so coord records the
+    row against *that* tenant and later binds the claim to it. The body only
+    narrows what the flow may go on to do — see
+    :class:`OnboardingConnectStateRequest`.
 
     Passes coord's status code and JSON body through verbatim (like the claim
     proxy, not the raising ``_proxy_coord_post`` helper) so the connect UI can
@@ -1776,9 +1828,18 @@ async def post_pr_merge_onboarding_connect_state(
     """
     url = f"{settings.COORD_URL}{COORD_ONBOARDING_CONNECT_STATE_PATH}"
     headers = _tenant_headers(tenant_id)
+    # `flow` is required, so it always rides. The target is forwarded only when
+    # the caller actually supplied one — matching the claim proxy below, and
+    # keeping "this flow named no target" (coord skips the assertion) cleanly
+    # distinct from "this flow named a target" (coord asserts it).
+    payload: dict[str, Any] = {"flow": body.flow}
+    if body.target_login:
+        payload["target_login"] = body.target_login
+    if body.target_installation_id is not None:
+        payload["target_installation_id"] = body.target_installation_id
     async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
         try:
-            resp = await client.post(url, json={}, headers=headers)
+            resp = await client.post(url, json=payload, headers=headers)
         except httpx.ConnectError:
             raise HTTPException(
                 status_code=502,

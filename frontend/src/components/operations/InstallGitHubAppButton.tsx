@@ -32,19 +32,24 @@ import {
 } from "@/lib/onboarding-connect-state";
 
 export function InstallGitHubAppButton({
-  flow = "connect",
-  login = "",
+  flow,
   label = "Install the GitHub App",
   testId,
   variant = "default",
 }: {
-  /** `runner-clone` makes the eventual claim bind-only (no enrollment / PRs). */
-  flow?: ConnectFlow;
   /**
-   * Target org login. Empty on the fresh-install path — GitHub names the
-   * installation itself in the Setup-URL redirect.
+   * `runner-clone` makes the eventual claim bind-only (no enrollment / PRs).
+   * It is recorded on the minted row, so coord derives `bind_only` from it
+   * rather than from the claim body — see {@link mintConnectState}.
+   *
+   * REQUIRED, deliberately: it used to default to `connect`, which is the
+   * MORE privileged of the two (bind + enroll + bootstrap PRs). Now that the
+   * value is recorded server-side and authorises the claim, a call site that
+   * forgot it would silently mint the privileged flow with nothing — not
+   * `tsc`, not a test — noticing. Making it required turns that into a
+   * compile error.
    */
-  login?: string;
+  flow: ConnectFlow;
   label?: string;
   testId: string;
   variant?: "default" | "secondary";
@@ -63,8 +68,14 @@ export function InstallGitHubAppButton({
     setMinting(true);
     setError(null);
     try {
-      const token = await mintConnectState();
-      const state = beginConnectState(flow, login, token);
+      // No target is bound on this path, deliberately: GitHub names the
+      // installation only in its post-install redirect, i.e. AFTER the mint.
+      // Coord skips the target assertion when the row records none; inventing
+      // one here would 403 every legitimate fresh install.
+      const token = await mintConnectState({ flow });
+      // Empty login for the same reason — on the fresh-install path the
+      // Setup-URL redirect carries `installation_id`, so `state` needs no login.
+      const state = beginConnectState(flow, "", token);
       // Same-tab nav so GitHub's post-install redirect returns into THIS
       // authenticated session — the Setup URL can't complete a claim without one.
       window.location.assign(installUrl(GITHUB_APP_SLUG, state));
@@ -72,7 +83,7 @@ export function InstallGitHubAppButton({
       setError(e instanceof Error ? e.message : String(e));
       setMinting(false);
     }
-  }, [flow, login, minting]);
+  }, [flow, minting]);
 
   return (
     <div className="space-y-2">

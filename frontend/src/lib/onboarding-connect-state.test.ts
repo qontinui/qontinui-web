@@ -9,13 +9,18 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const fetchMock = vi.fn();
 vi.mock("@/services/service-factory", () => ({
-  httpClient: { fetch: vi.fn(), get: vi.fn() },
+  httpClient: {
+    fetch: (...args: unknown[]) => fetchMock(...args),
+    get: vi.fn(),
+  },
 }));
 
 import {
   beginConnectState,
   consumeNonce,
+  mintConnectState,
   parseConnectState,
 } from "./onboarding-connect-state";
 
@@ -29,6 +34,70 @@ const TOKEN = "test-token-connect-state-0123456789abcdef";
 
 beforeEach(() => {
   sessionStorage.clear();
+  fetchMock.mockReset();
+});
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+/** The JSON body of the last mint request, as actually sent. */
+function lastMintBody(): Record<string, unknown> {
+  const call = fetchMock.mock.calls.at(-1);
+  if (!call) throw new Error("no connect-state mint was requested");
+  return JSON.parse(String((call[1] as { body?: string }).body ?? "{}"));
+}
+
+describe("mintConnectState", () => {
+  it("always sends the flow, and no target when none is known", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ connect_state: TOKEN }));
+
+    await expect(mintConnectState({ flow: "runner-clone" })).resolves.toBe(
+      TOKEN
+    );
+    expect(lastMintBody()).toEqual({ flow: "runner-clone" });
+  });
+
+  it("sends a target when the caller knows one before the GitHub hop", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ connect_state: TOKEN }));
+
+    await mintConnectState({
+      flow: "connect",
+      targetLogin: "  acme-org  ",
+      targetInstallationId: 4242,
+    });
+
+    expect(lastMintBody()).toEqual({
+      flow: "connect",
+      target_login: "acme-org",
+      target_installation_id: 4242,
+    });
+  });
+
+  it("omits an empty target rather than sending a blank one", async () => {
+    // Coord distinguishes "this flow named no target" (skip the assertion)
+    // from "this flow named a target" (assert it). A blank string would be a
+    // third state with no meaning.
+    fetchMock.mockResolvedValue(jsonResponse({ connect_state: TOKEN }));
+
+    await mintConnectState({ flow: "connect", targetLogin: "   " });
+
+    expect(lastMintBody()).toEqual({ flow: "connect" });
+  });
+
+  it("omits a non-finite installation id instead of emitting null", async () => {
+    // `JSON.stringify({a: NaN})` is `{"a":null}` — a computed-and-failed id
+    // (`Number(param)`) would otherwise emit exactly the explicit null the
+    // omit-vs-null convention exists to avoid.
+    fetchMock.mockResolvedValue(jsonResponse({ connect_state: TOKEN }));
+
+    await mintConnectState({ flow: "connect", targetInstallationId: NaN });
+
+    expect(lastMintBody()).toEqual({ flow: "connect" });
+  });
 });
 
 describe("beginConnectState / parseConnectState", () => {

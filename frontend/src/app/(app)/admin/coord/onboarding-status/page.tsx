@@ -393,6 +393,19 @@ export default function OnboardingStatusPage() {
             </p>
           </CardHeader>
           <CardContent className="space-y-3">
+            {/*
+              The flow the user STARTED with, when the callback still told us
+              (a legacy bare `runner-clone`, or a parsed-but-tokenless state).
+              A stateless callback — out-of-band Marketplace install, or a
+              crafted link — makes it genuinely unknowable, and this is the
+              merge-orchestrator onboarding surface, so `connect` is the
+              intended default there. That is not an escalation: the /admin/coord
+              layout admits any authenticated tenant member (it gates mutations,
+              not views) and /admin/coord/onboarding offers the same `connect`
+              CTA to the same audience, so re-minting `connect` here grants
+              nothing the user could not request directly. The runner-clone
+              alternative stays one click away in the link below.
+            */}
             <InstallGitHubAppButton
               flow={isRunnerClone ? "runner-clone" : "connect"}
               label="Connect GitHub"

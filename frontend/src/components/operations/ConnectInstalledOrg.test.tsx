@@ -45,6 +45,15 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+/** The JSON body of the connect-state mint request, as actually sent. */
+function mintBody(): Record<string, unknown> {
+  const call = fetchMock.mock.calls.find((c) =>
+    String(c[0]).includes("/onboarding/connect-state")
+  );
+  if (!call) throw new Error("no connect-state mint was requested");
+  return JSON.parse(String((call[1] as { body?: string }).body ?? "{}"));
+}
+
 function stubFetch(mintResponse: Response) {
   fetchMock.mockImplementation((url: string) =>
     Promise.resolve(
@@ -74,7 +83,7 @@ afterEach(() => {
 describe("<ConnectInstalledOrg> authorize CTA", () => {
   it("mints on click and appends the token to the state wire format", async () => {
     stubFetch(jsonResponse({ connect_state: TOKEN }));
-    render(<ConnectInstalledOrg />);
+    render(<ConnectInstalledOrg flow="connect" />);
 
     const input = await screen.findByTestId("connect-installed-org-login");
     await userEvent.type(input, "acme-org");
@@ -115,11 +124,37 @@ describe("<ConnectInstalledOrg> authorize CTA", () => {
       new URL(assign.mock.calls[0][0] as string).searchParams.get("state") ??
       "";
     expect(state.split("~")[0]).toBe("runner-clone");
+    // Full body, not just `.flow`: this site sends the target on BOTH flows, so
+    // a property probe would miss a regression that dropped it on this one.
+    expect(mintBody()).toEqual({
+      flow: "runner-clone",
+      target_login: "acme-org",
+    });
+  });
+
+  it("mints with flow=connect AND the entered org as the target", async () => {
+    // This is the one initiation site where the target is known before the
+    // GitHub hop — the user typed it and `LOGIN_RE` validated it — so the token
+    // is bound to that org rather than authorising a claim of any org the
+    // caller happens to administer.
+    stubFetch(jsonResponse({ connect_state: TOKEN }));
+    render(<ConnectInstalledOrg flow="connect" />);
+
+    await userEvent.type(
+      await screen.findByTestId("connect-installed-org-login"),
+      "acme-org"
+    );
+    await userEvent.click(
+      screen.getByTestId("connect-installed-org-authorize")
+    );
+
+    await waitFor(() => expect(assign).toHaveBeenCalledTimes(1));
+    expect(mintBody()).toEqual({ flow: "connect", target_login: "acme-org" });
   });
 
   it("surfaces a mint failure without navigating", async () => {
     stubFetch(jsonResponse({ detail: "coord is not reachable" }, 502));
-    render(<ConnectInstalledOrg />);
+    render(<ConnectInstalledOrg flow="connect" />);
 
     await userEvent.type(
       await screen.findByTestId("connect-installed-org-login"),

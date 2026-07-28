@@ -33,6 +33,13 @@
  * tenant that initiated the flow" a server-enforced invariant rather than a
  * client convention.
  *
+ * The mint also records the **flow** (and the target org, where it is known
+ * before the GitHub hop). Coord derives `bind_only` from the recorded flow
+ * instead of trusting the claim body, which is what stops a non-admin tenant
+ * member from minting on the deliberately non-admin-gated
+ * `/connect-runner-github` page and then hand-crafting `bind_only:false` to get
+ * repo enrollment and bootstrap PRs.
+ *
  * The client nonce below is **not** redundant with it and must not be
  * "simplified" away: the token proves *which tenant initiated*, the nonce proves
  * *this browser tab initiated*. Neither implies the other.
@@ -78,9 +85,43 @@ function randomNonce(): string {
 }
 
 /**
+ * What the connect flow commits to at mint time, over and above the tenant.
+ *
+ * `flow` is ALWAYS knowable — the page that owns the button knows whether it is
+ * the merge-orchestrator connect or the runner's clone-only connect. The target
+ * usually is not: on the fresh-install path the user picks the org on GitHub
+ * *after* the mint, so there is nothing to name yet.
+ */
+export interface MintConnectStateRequest {
+  /** Which flow this token authorises. */
+  flow: ConnectFlow;
+  /** Target org login, when known BEFORE the GitHub hop (the authorize path). */
+  targetLogin?: string | null;
+  /** Target installation id, when known BEFORE the GitHub hop. */
+  targetInstallationId?: number | null;
+}
+
+/**
  * Mint a single-use, tenant-bound connect-state token from coord (via the web
  * proxy, which forwards the operator's bearer — coord's mint is Cognito-gated
  * and cannot be reached with a device token).
+ *
+ * ## Why the flow is sent, and why it is not optional
+ * Coord derives the claim's `bind_only` from the flow recorded on the minted
+ * row and rejects a claim body that disagrees. Before that, `bind_only` was an
+ * attacker-chosen body field while `/connect-runner-github` is deliberately NOT
+ * admin-gated — so any tenant member could mint there and hand-craft
+ * `bind_only:false` to get repo enrollment plus bootstrap PRs, a privilege
+ * escalation *inside* their own tenant (plan
+ * `2026-07-26-coord-onboarding-claim-caller-tenant-binding` §7.5 F2). Sending
+ * the flow at mint time is what moves that decision server-side.
+ *
+ * The target (`targetLogin` / `targetInstallationId`) is sent only where it is
+ * genuinely known before the GitHub hop — the authorize path, where the user
+ * has typed the org. On the fresh-install path GitHub names the installation
+ * only in its post-install redirect, so we send nothing rather than invent a
+ * target: coord skips the target assertion when the row records none, and a
+ * guessed value would 403 legitimate installs.
  *
  * Throws on any failure. Callers MUST surface that as a visible, retryable
  * error and must NOT fall back to navigating to a stateless GitHub URL: a
@@ -88,10 +129,26 @@ function randomNonce(): string {
  * `COORD_REQUIRE_CONNECT_STATE`, so a silent fallback would just move the
  * failure to a point where the OAuth code has already been spent.
  */
-export async function mintConnectState(): Promise<string> {
+export async function mintConnectState({
+  flow,
+  targetLogin = null,
+  targetInstallationId = null,
+}: MintConnectStateRequest): Promise<string> {
+  const payload: Record<string, unknown> = { flow };
+  // Omit rather than send an empty/absent target: coord distinguishes "this
+  // flow named no target" (skip the assertion) from "this flow named a target"
+  // (assert it), and a blank string would be a third, meaningless state.
+  const login = targetLogin?.trim();
+  if (login) payload.target_login = login;
+  // `Number.isInteger`, not `typeof === "number"`: NaN and Infinity are both
+  // numbers and both `JSON.stringify` to `null`, which would emit exactly the
+  // explicit-null the line above refuses to send.
+  if (Number.isInteger(targetInstallationId)) {
+    payload.target_installation_id = targetInstallationId;
+  }
   const res = await httpClient.fetch(CONNECT_STATE_MINT_URL, {
     method: "POST",
-    body: JSON.stringify({}),
+    body: JSON.stringify(payload),
     // A mint is a write that allocates a single-use row; retrying it silently
     // would leak rows and mask a genuine coord outage.
     maxRetries: 0,
