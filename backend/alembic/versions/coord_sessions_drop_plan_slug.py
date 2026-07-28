@@ -1,7 +1,7 @@
 """coord.sessions drop plan_slug — CONTRACT half of the plan_slug → work_unit_slug rename
 
 Revision ID: coord_sessions_drop_plan_slug
-Revises: memory_jobs_02_kind_aware_dedupe
+Revises: appid_01_co_occurrence_app_id
 Create Date: 2026-07-28
 
 Stage 2d of plan
@@ -58,7 +58,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_sessions_drop_plan_slug"
-down_revision: str | Sequence[str] | None = "memory_jobs_02_kind_aware_dedupe"
+down_revision: str | Sequence[str] | None = "appid_01_co_occurrence_app_id"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
