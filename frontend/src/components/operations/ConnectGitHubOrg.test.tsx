@@ -25,8 +25,11 @@ vi.mock("@/services/service-factory", () => ({
 
 import { ConnectGitHubOrg } from "./ConnectGitHubOrg";
 
-const TOKEN =
-  "deadbeefcafe0123456789abcdef0123456789abcdef0123456789abcdef0123";
+// `test-token-` prefix is load-bearing, not cosmetic: a bare hex literal trips
+// gitleaks' `generic-api-key` rule, and `.gitleaks.toml` already exempts
+// `test[-_]?token`. Naming the fake keeps the secret scan green without
+// weakening it. Keep the prefix and keep the value wire-safe (no `~`).
+const TOKEN = "test-token-connect-state-github-org-0123456789abcdef";
 
 const originalLocation = window.location;
 const assign = vi.fn();
@@ -36,6 +39,15 @@ function jsonResponse(body: unknown, status = 200): Response {
     status,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+/** The JSON body of the connect-state mint request, as actually sent. */
+function mintBody(): Record<string, unknown> {
+  const call = fetchMock.mock.calls.find((c) =>
+    String(c[0]).includes("/onboarding/connect-state")
+  );
+  if (!call) throw new Error("no connect-state mint was requested");
+  return JSON.parse(String((call[1] as { body?: string }).body ?? "{}"));
 }
 
 beforeEach(() => {
@@ -79,6 +91,20 @@ describe("<ConnectGitHubOrg> install CTA", () => {
     expect(segments[0]).toBe("connect");
     expect(segments[2]).toMatch(/^[0-9a-f]{32}$/);
     expect(segments[3]).toBe(TOKEN);
+  });
+
+  it("mints with flow=connect and no invented target", async () => {
+    // The flow is what coord turns into `bind_only`; this is the bind+enroll
+    // path, so it must arrive as `connect`. The target is genuinely unknown
+    // here — GitHub names the installation only in its post-install redirect,
+    // i.e. after this mint — so nothing may be guessed for it.
+    fetchMock.mockResolvedValue(jsonResponse({ connect_state: TOKEN }));
+    render(<ConnectGitHubOrg />);
+
+    await userEvent.click(screen.getByTestId("connect-github-org-install"));
+    await waitFor(() => expect(assign).toHaveBeenCalledTimes(1));
+
+    expect(mintBody()).toEqual({ flow: "connect" });
   });
 
   it("shows a retryable error and does NOT navigate when the mint fails", async () => {

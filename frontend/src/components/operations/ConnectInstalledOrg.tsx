@@ -61,10 +61,17 @@ interface GithubAppConfig {
 const LOGIN_RE = /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/;
 
 export function ConnectInstalledOrg({
-  flow = "connect",
+  flow,
 }: {
-  /** `runner-clone` claims bind-only (no enrollment / bootstrap PRs). */
-  flow?: ConnectFlow;
+  /**
+   * `runner-clone` claims bind-only (no enrollment / bootstrap PRs).
+   *
+   * REQUIRED for the same reason as {@link InstallGitHubAppButton}'s: the
+   * value is now recorded on the minted row and is what authorises the
+   * claim's `bind_only`, so defaulting it to the more privileged `connect`
+   * would let a future call site escalate by omission.
+   */
+  flow: ConnectFlow;
 }) {
   const [config, setConfig] = useState<GithubAppConfig | null>(null);
   const [loading, setLoading] = useState(true);
@@ -114,13 +121,18 @@ export function ConnectInstalledOrg({
    *
    * On failure we stay put and show a retryable message rather than navigating
    * to a stateless authorize URL that coord will refuse to complete.
+   *
+   * This is the ONE path where the target org is known before the GitHub hop
+   * (the user typed it, and `LOGIN_RE` has already validated it), so the mint
+   * binds it: the token then authorises a claim of *that* org only, rather than
+   * of any org the caller happens to administer.
    */
   const onAuthorize = useCallback(async () => {
     if (!clientId || !valid || minting) return;
     setMinting(true);
     setMintError(null);
     try {
-      const token = await mintConnectState();
+      const token = await mintConnectState({ flow, targetLogin: trimmed });
       const state = beginConnectState(flow, trimmed, token);
       // Same-tab nav: the callback must return into this authenticated session
       // (a session-less tab can't complete the claim).

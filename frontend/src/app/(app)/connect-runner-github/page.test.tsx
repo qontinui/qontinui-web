@@ -41,6 +41,15 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+/** The JSON body of the connect-state mint request, as actually sent. */
+function mintBody(): Record<string, unknown> {
+  const call = fetchMock.mock.calls.find((c) =>
+    String(c[0]).includes("/onboarding/connect-state")
+  );
+  if (!call) throw new Error("no connect-state mint was requested");
+  return JSON.parse(String((call[1] as { body?: string }).body ?? "{}"));
+}
+
 beforeEach(() => {
   fetchMock.mockReset();
   assign.mockReset();
@@ -82,5 +91,19 @@ describe("/connect-runner-github install CTA", () => {
     // bind-only marker survives the new wire format
     expect(segments[0]).toBe("runner-clone");
     expect(segments[3]).toBe(TOKEN);
+  });
+
+  it("mints with flow=runner-clone and no invented target", async () => {
+    // This is the page the F2 escalation runs through: it is deliberately NOT
+    // admin-gated, so if the flow never reached the mint, `bind_only` would
+    // stay a claim-body field any tenant member could set to false and get repo
+    // enrollment + bootstrap PRs. Recording `runner-clone` server-side is what
+    // takes that choice away from the claim.
+    render(<ConnectRunnerGithubPage />);
+
+    await userEvent.click(screen.getByTestId("connect-runner-github-install"));
+    await waitFor(() => expect(assign).toHaveBeenCalledTimes(1));
+
+    expect(mintBody()).toEqual({ flow: "runner-clone" });
   });
 });
