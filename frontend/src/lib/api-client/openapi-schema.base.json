@@ -72387,6 +72387,230 @@
         ]
       }
     },
+    "/api/v1/operations/coord/prompt-document-proposals": {
+      "get": {
+        "description": "List the tenant's policy-edit proposals, newest first. Any tenant member.\n\n``status`` is forwarded verbatim (coord owns the ``pending`` | ``approved`` |\n``rejected`` vocabulary \u2014 the web tier deliberately does not re-encode it, so\na coord-side vocabulary addition needs no web change). Coord returns\n``{\"proposals\": [...]}``.\n\nDegrades rather than 502s while coord's Phase 5 half is undeployed: the\nresponse then carries an empty list plus an ``unavailable`` note (and its\n``unavailable_kind``, so the page can style a benign pre-deploy window\ndifferently from coord actually being down), so an unreadable queue is never\ndisplayed as an empty one.",
+        "operationId": "api_v1_operations_coord_prompt_document_proposals_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "pending",
+              "title": "Status",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response List Prompt Document Proposals Api V1 Operations Coord Prompt Document Proposals Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Prompt Document Proposals",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/prompt-document-proposals/{proposal_id}/approve": {
+      "post": {
+        "description": "Approve a pending proposal \u2014 coord applies the edit and returns the new\ndocument version. Tenant-admin only.\n\nOnly ``decision_note`` is taken from the client; ``decided_by`` is stamped\nfrom the authenticated session. Coord's 4xx (already decided, stale\n``base_version``, unknown id) passes through verbatim \u2014 including the 404 you\nget before coord's Phase 5 deploy, which must stay visible rather than\nsilently no-op.",
+        "operationId": "api_v1_operations_coord_prompt_document_proposals_proposal_id_approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true,
+            "schema": {
+              "title": "Proposal Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Approve Prompt Document Proposal Api V1 Operations Coord Prompt Document Proposals  Proposal Id  Approve Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Approve Prompt Document Proposal",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/prompt-document-proposals/{proposal_id}/reject": {
+      "post": {
+        "description": "Reject a pending proposal \u2014 the edit is never applied. Tenant-admin only.\n\nSame body reduction and server-side ``decided_by`` stamp as\n:func:`approve_prompt_document_proposal`.",
+        "operationId": "api_v1_operations_coord_prompt_document_proposals_proposal_id_reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true,
+            "schema": {
+              "title": "Proposal Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Reject Prompt Document Proposal Api V1 Operations Coord Prompt Document Proposals  Proposal Id  Reject Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Reject Prompt Document Proposal",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/prompt-document-writes": {
+      "get": {
+        "description": "Recently landed prompt-document writes across the tenant, newest first.\n\nAn AGGREGATION over routes that already exist \u2014 the document list plus one\n``/versions`` read per document \u2014 rather than a new coord surface, so it\nworks against today's deployed coord and needs nothing from coord's Phase 5\nhalf. Each item carries ``current_version`` so the page can offer one-click\nrevert (a PATCH of the older version's body through\n:func:`update_prompt_document`, which coord records as a NEW version \u2014\nhistory is never rewritten).\n\nWrites are returned unfiltered, with ``edited_by`` verbatim. Deliberately no\n\"agent writes only\" filter: the provenance tag coord's write tool stamps is\nnot fixed until its Phase 5 half lands, and filtering on a guessed prefix\nwould silently hide writes \u2014 the exact failure this feed exists to prevent.\n\nHonest partial results: a per-document versions read that fails is skipped and\nreported in ``partial`` rather than failing the whole feed, so one bad\ndocument cannot blank the page \u2014 and every skip is logged, so \"3 of 20\ndocuments did not return their history\" is greppable rather than a dead end.",
+        "operationId": "api_v1_operations_coord_prompt_document_writes_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 40,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Prompt Document Writes Api V1 Operations Coord Prompt Document Writes Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Prompt Document Writes",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/prompt-documents": {
       "get": {
         "description": "List the tenant's prompt documents (no bodies), optionally filtered to a\nsingle ``kind``. Any authenticated tenant member.\n\nCoord's list route seeds the canonical documents on first touch, so a fresh\ntenant sees the full set immediately. An unknown ``kind`` is coord's 400.",
