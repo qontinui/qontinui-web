@@ -204,6 +204,16 @@ const GROUPS: NavGroup[] = [
         testId: "coord-nav-prompt-documents",
       },
       {
+        // Sits beside Prompt Documents deliberately: it reviews edits TO those
+        // documents. Distinct path (not /prompt-documents/proposals) so the
+        // Prompt Documents item's startsWith active-match doesn't
+        // double-highlight, matching the Onboarding / Onboarding Status pair.
+        href: "/admin/coord/prompt-document-proposals",
+        label: "Policy Edit Review",
+        icon: ScrollText,
+        testId: "coord-nav-prompt-document-proposals",
+      },
+      {
         href: "/admin/coord/merge-settings",
         label: "Merge Settings",
         icon: GitMerge,

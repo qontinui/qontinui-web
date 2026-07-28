@@ -5571,6 +5571,259 @@ async def import_prompt_document_clauses(
     )
 
 
+# Policy-edit proposal queue + landed-write feed (plan
+# ``2026-07-28-migrate-claude-md-into-qontinui.md`` Phase 5).
+#
+# Coord's ``coord_write_prompt_document`` MCP tool lets an agent append clauses to
+# a served policy document. Phase 5 adds a DIRECTION comparator on top of it: an
+# agent-authored edit that LOWERS a clause's autonomy tier or widens authority
+# (and, fail-closed, any edit the comparator cannot classify) does NOT land — it
+# is re-routed into ``coord.prompt_document_proposals`` (web migration
+# ``prompt_doc_proposals_01``) as a pending proposal for operator review.
+# Tier-raising and additive edits keep landing immediately and show up in the
+# landed-write feed below instead.
+#
+# This is a review QUEUE, not a gate: nothing blocks on the operator reading it.
+# The page therefore has two halves —
+#
+#   1. pending proposals  → the three ``/coord/prompt-document-proposals`` routes
+#   2. landed writes      → :func:`list_prompt_document_writes`, an aggregation
+#      over the EXISTING per-document versions route (no new coord surface), with
+#      one-click revert done by the browser as an ordinary PATCH of an older
+#      version's body through :func:`update_prompt_document`.
+#
+# Auth posture matches the prompt-document proxies above: GET reads gate on tenant
+# MEMBERSHIP (``get_tenant_id``); approve/reject gate on
+# ``require_coord_tenant_admin`` and coord re-checks. ``decided_by`` is stamped
+# SERVER-SIDE from the authenticated session (see :func:`_editor_identity`) and
+# the client body is reduced to ``decision_note`` alone — a browser can never
+# choose who a decision is attributed to, nor smuggle ``status``/``tenant_id``.
+#
+# DEPLOY ORDERING: coord's Phase 5 half ships after this. Until it does, coord
+# answers 404 on the proposals routes. The READ route degrades to an explicit
+# ``unavailable`` note (an honest "cannot see", never a confident empty queue);
+# approve/reject deliberately do NOT degrade — a decision that silently no-ops
+# would be worse than an error.
+#
+# No DB session is taken on any of these routes (the coord proxies resolve
+# identity over HTTP via ``get_coord_identity``), so nothing pins a database
+# connection across an outbound coord call — the failure mode that produced
+# CORS-looking 504s on ``/operations/*``.
+
+_COORD_PROPOSALS_PATH = "/coord/prompt-document-proposals"
+
+# Coord statuses that mean "this surface is not answering" rather than "coord
+# answered no". 404 covers the pre-deploy window (route not registered yet) and
+# coord's own ``degraded`` 404 (store not provisioned); 5xx covers unreachable /
+# timed out, which ``_proxy_coord_get`` already maps to 502/504.
+_COORD_ABSENT_STATUSES = frozenset({404, 501, 502, 503, 504})
+
+# The landed-write feed fans out one versions read per document. Documents are
+# ordered newest-``updated_at`` first and capped, which is sound rather than
+# merely cheap: a document's ``updated_at`` is >= its newest version's
+# ``created_at``, so a document outside the cap cannot own a write newer than the
+# ones already collected.
+_WRITE_FEED_DOCUMENT_CAP = 20
+
+
+def _coord_unavailable_note(exc: HTTPException) -> str:
+    """One honest line for a coord surface that could not be read."""
+    if exc.status_code == 404:
+        return (
+            "coord has no proposal queue yet — its Phase 5 direction-enforcement "
+            "deploy has not landed. Pending proposals cannot be listed, which is "
+            "not the same as there being none."
+        )
+    return f"coord did not answer the proposal queue (HTTP {exc.status_code})."
+
+
+def _parse_iso(value: Any) -> datetime:
+    """Best-effort ISO-8601 parse for feed ordering; unparseable sorts oldest."""
+    if not isinstance(value, str):
+        return datetime.min.replace(tzinfo=UTC)
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return datetime.min.replace(tzinfo=UTC)
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
+@router.get("/coord/prompt-document-proposals")
+async def list_prompt_document_proposals(
+    status: str = "pending",
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """List the tenant's policy-edit proposals, newest first. Any tenant member.
+
+    ``status`` is forwarded verbatim (coord owns the ``pending`` | ``approved`` |
+    ``rejected`` vocabulary — the web tier deliberately does not re-encode it, so
+    a coord-side vocabulary addition needs no web change). Coord returns
+    ``{"proposals": [...]}``.
+
+    Degrades rather than 502s while coord's Phase 5 half is undeployed: the
+    response then carries an empty list plus an ``unavailable`` note the page
+    renders as a banner, so an unreadable queue is never displayed as an empty
+    one.
+    """
+    try:
+        return await _proxy_coord_get(
+            _COORD_PROPOSALS_PATH, params={"status": status}, tenant_id=tenant_id
+        )
+    except HTTPException as exc:
+        if exc.status_code in _COORD_ABSENT_STATUSES:
+            return {
+                "proposals": [],
+                "total": 0,
+                "unavailable": _coord_unavailable_note(exc),
+            }
+        raise
+
+
+@router.post("/coord/prompt-document-proposals/{proposal_id}/approve")
+async def approve_prompt_document_proposal(
+    proposal_id: str,
+    body: dict[str, Any] | None = None,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> Any:
+    """Approve a pending proposal — coord applies the edit and returns the new
+    document version. Tenant-admin only.
+
+    Only ``decision_note`` is taken from the client; ``decided_by`` is stamped
+    from the authenticated session. Coord's 4xx (already decided, stale
+    ``base_version``, unknown id) passes through verbatim — including the 404 you
+    get before coord's Phase 5 deploy, which must stay visible rather than
+    silently no-op.
+    """
+    return await _proxy_coord_post(
+        f"{_COORD_PROPOSALS_PATH}/{quote(proposal_id, safe='')}/approve",
+        {
+            "decision_note": (body or {}).get("decision_note"),
+            "decided_by": _editor_identity(current_user),
+        },
+        tenant_id=tenant_id,
+    )
+
+
+@router.post("/coord/prompt-document-proposals/{proposal_id}/reject")
+async def reject_prompt_document_proposal(
+    proposal_id: str,
+    body: dict[str, Any] | None = None,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> Any:
+    """Reject a pending proposal — the edit is never applied. Tenant-admin only.
+
+    Same body reduction and server-side ``decided_by`` stamp as
+    :func:`approve_prompt_document_proposal`.
+    """
+    return await _proxy_coord_post(
+        f"{_COORD_PROPOSALS_PATH}/{quote(proposal_id, safe='')}/reject",
+        {
+            "decision_note": (body or {}).get("decision_note"),
+            "decided_by": _editor_identity(current_user),
+        },
+        tenant_id=tenant_id,
+    )
+
+
+@router.get("/coord/prompt-document-writes")
+async def list_prompt_document_writes(
+    limit: int = Query(default=40, ge=1, le=200),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> dict[str, Any]:
+    """Recently landed prompt-document writes across the tenant, newest first.
+
+    An AGGREGATION over routes that already exist — the document list plus one
+    ``/versions`` read per document — rather than a new coord surface, so it
+    works against today's deployed coord and needs nothing from coord's Phase 5
+    half. Each item carries ``current_version`` so the page can offer one-click
+    revert (a PATCH of the older version's body through
+    :func:`update_prompt_document`, which coord records as a NEW version —
+    history is never rewritten).
+
+    Writes are returned unfiltered, with ``edited_by`` verbatim. Deliberately no
+    "agent writes only" filter: the provenance tag coord's write tool stamps is
+    not fixed until its Phase 5 half lands, and filtering on a guessed prefix
+    would silently hide writes — the exact failure this feed exists to prevent.
+
+    Honest partial results: a per-document versions read that fails is skipped and
+    reported in ``partial`` rather than failing the whole feed, so one bad
+    document cannot blank the page.
+    """
+    try:
+        listing = await _proxy_coord_get("/coord/prompt-documents", tenant_id=tenant_id)
+    except HTTPException as exc:
+        if exc.status_code in _COORD_ABSENT_STATUSES:
+            return {
+                "writes": [],
+                "total": 0,
+                "unavailable": (
+                    f"coord did not answer the document list (HTTP {exc.status_code})."
+                ),
+            }
+        raise
+
+    documents: list[dict[str, Any]] = []
+    degraded: str | None = None
+    if isinstance(listing, dict):
+        raw = listing.get("documents")
+        documents = (
+            [d for d in raw if isinstance(d, dict)] if isinstance(raw, list) else []
+        )
+        note = listing.get("degraded")
+        degraded = note if isinstance(note, str) else None
+
+    documents.sort(key=lambda d: _parse_iso(d.get("updated_at")), reverse=True)
+    documents = documents[:_WRITE_FEED_DOCUMENT_CAP]
+
+    async def _versions(doc: dict[str, Any]) -> Any:
+        kind = quote(str(doc.get("kind", "")), safe="")
+        name = quote(str(doc.get("name", "")), safe="")
+        return await _proxy_coord_get(
+            f"/coord/prompt-documents/{kind}/{name}/versions", tenant_id=tenant_id
+        )
+
+    results = await asyncio.gather(
+        *(_versions(doc) for doc in documents), return_exceptions=True
+    )
+
+    writes: list[dict[str, Any]] = []
+    failed = 0
+    for doc, result in zip(documents, results, strict=True):
+        if isinstance(result, BaseException) or not isinstance(result, dict):
+            failed += 1
+            continue
+        current_version = result.get("current_version")
+        label = doc.get("description") or doc.get("name")
+        for version in result.get("versions") or []:
+            if not isinstance(version, dict):
+                continue
+            writes.append(
+                {
+                    "kind": doc.get("kind"),
+                    "name": doc.get("name"),
+                    "label": label,
+                    "version_number": version.get("version_number"),
+                    "change_note": version.get("description"),
+                    "edited_by": version.get("edited_by"),
+                    "created_at": version.get("created_at"),
+                    "current_version": current_version,
+                }
+            )
+
+    writes.sort(key=lambda w: _parse_iso(w.get("created_at")), reverse=True)
+    response: dict[str, Any] = {"writes": writes[:limit], "total": len(writes)}
+    if degraded:
+        response["degraded"] = degraded
+    if failed:
+        response["partial"] = (
+            f"{failed} of {len(documents)} documents did not return their history; "
+            "their writes are missing from this feed."
+        )
+    return response
+
+
 @router.put("/coord/policies/system/{system_rule_id}/override")
 async def put_coord_policy_override(
     system_rule_id: str,
