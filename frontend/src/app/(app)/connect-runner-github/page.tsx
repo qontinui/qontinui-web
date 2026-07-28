@@ -20,12 +20,16 @@
  * the full merge-orchestrator onboarding wizard): any tenant member using the
  * runner must be able to reach it, and the framing here is clone-only.
  *
- * `state=runner-clone` marks this as the clone-picker flow so onboarding-status
- * claims **bind-only** (no repo enrollment / bootstrap PRs) — see D2 in
- * plans/2026-07-08-runner-clone-picker-selfserve-connect-claim.md.
+ * The `runner-clone` flow marker in `state` makes onboarding-status claim
+ * **bind-only** (no repo enrollment / bootstrap PRs) — see D2 in
+ * plans/2026-07-08-runner-clone-picker-selfserve-connect-claim.md. It used to be
+ * a bare `state=runner-clone` constant hardcoded here; it now rides in the
+ * `<flow>~<login>~<nonce>~<connect_state>` wire format alongside a coord-minted,
+ * tenant-bound token (plan
+ * 2026-07-26-coord-onboarding-claim-caller-tenant-binding).
  */
 
-import { Github, ExternalLink } from "lucide-react";
+import { Github } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -33,20 +37,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { buttonVariants } from "@/components/ui/button";
 import { ConnectInstalledOrg } from "@/components/operations/ConnectInstalledOrg";
-import { cn } from "@/lib/utils";
-
-const APP_SLUG =
-  process.env.NEXT_PUBLIC_GITHUB_APP_SLUG || "qontinui-merge-orchestrator";
-
-/**
- * Same-tab install nav so the post-install redirect returns into this
- * authenticated session. `state=runner-clone` rides through GitHub's install
- * flow back to the Setup URL, where onboarding-status reads it to claim
- * bind-only (clone path — no bootstrap PRs).
- */
-const INSTALL_URL = `https://github.com/apps/${APP_SLUG}/installations/new?state=runner-clone`;
+import { InstallGitHubAppButton } from "@/components/operations/InstallGitHubAppButton";
 
 export default function ConnectRunnerGithubPage() {
   return (
@@ -70,14 +62,16 @@ export default function ConnectRunnerGithubPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          <a
-            href={INSTALL_URL}
-            data-testid="connect-runner-github-install"
-            className={cn(buttonVariants({ variant: "default" }), "w-fit")}
-          >
-            <ExternalLink className="h-4 w-4" />
-            Install the GitHub App
-          </a>
+          {/*
+            Same-tab install nav so the post-install redirect returns into this
+            authenticated session. The `runner-clone` flow marker rides through
+            GitHub's install flow back to the Setup URL, where onboarding-status
+            reads it to claim bind-only (clone path — no bootstrap PRs).
+          */}
+          <InstallGitHubAppButton
+            flow="runner-clone"
+            testId="connect-runner-github-install"
+          />
           <p className="text-xs text-muted-foreground">
             After installing, GitHub returns you to Qontinui to finish
             connecting. Then return to your runner and click{" "}

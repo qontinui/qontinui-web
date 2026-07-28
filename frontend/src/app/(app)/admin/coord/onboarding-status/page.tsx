@@ -22,6 +22,14 @@
  *
  * An installer without a session hits the normal `(app)` auth wall first.
  * Admin-gating + CoordNav come from the /admin/coord layout.
+ *
+ * Since plan `2026-07-26-coord-onboarding-claim-caller-tenant-binding` the claim
+ * also forwards the coord-minted `connect_state` that rode through GitHub's
+ * `state`, and **fails closed without it** — coord binds to the token's tenant,
+ * so a stateless callback can no longer bind an arbitrary org into whichever
+ * tenant happens to be looking at this page. The one legitimate stateless
+ * arrival (an install started from GitHub's Marketplace rather than from one of
+ * our links) is rendered as a restartable "start the connect again" card.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -32,11 +40,12 @@ import {
   parseConnectState,
 } from "@/lib/onboarding-connect-state";
 import { ConnectedOrgs } from "@/components/operations/ConnectedOrgs";
+import { InstallGitHubAppButton } from "@/components/operations/InstallGitHubAppButton";
 import { OnboardingDoctor } from "@/components/operations/OnboardingDoctor";
 import { OPERATIONS_API } from "@/components/operations/utils";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { CheckCircle2, Loader2, XCircle } from "lucide-react";
+import { CheckCircle2, Loader2, RefreshCw, XCircle } from "lucide-react";
 import { httpClient } from "@/services/service-factory";
 
 /** Coord's claim success envelope (frozen contract, coord PR #901). */
@@ -49,7 +58,47 @@ interface ClaimResponse {
   enrolled?: unknown;
 }
 
-type ClaimPhase = "claiming" | "success" | "error";
+/**
+ * `recover` is a claim we deliberately did not (or could not) complete but
+ * which the operator can simply restart — a missing/unusable connect-state
+ * token. It is rendered as a "start the connect again" card with a working
+ * install button, NOT as a raw error: the honest legitimate case is an admin
+ * who installed the App from GitHub's Marketplace or the App's own page, whose
+ * Setup-URL redirect never passed through one of our links and so carries no
+ * state at all.
+ */
+type ClaimPhase = "claiming" | "success" | "error" | "recover";
+
+/** coord's connect-state rejection codes (plan §2 / coord `ClaimError`). */
+const RECOVERABLE_CLAIM_CODES = [
+  "connect_state_required",
+  "connect_state_invalid",
+];
+
+/**
+ * True when coord's rejection is a connect-state problem rather than a real
+ * failure.
+ *
+ * Deliberately stricter than `messageForClaimError`'s whole-body substring
+ * scan: this predicate decides whether the operator is told "retry" or "you
+ * aren't an admin", so a 400 whose message merely *mentions* the code (a
+ * field-validation error naming the field, say) must not be downgraded to a
+ * restart prompt. Coord may put the code on any of `error`/`code`/`detail`
+ * (`ClaimError::parts` shapes the envelope), so match those fields exactly.
+ */
+function isRecoverableClaimRejection(status: number, body: unknown): boolean {
+  // Both codes are 400s (coord's `ClaimError::parts`). A 403
+  // `connect_state_tenant_mismatch` is deliberately NOT recoverable here — it
+  // means the token belongs to another tenant, which is the attack signal.
+  if (status !== 400) return false;
+  if (typeof body === "string") return RECOVERABLE_CLAIM_CODES.includes(body);
+  if (!body || typeof body !== "object") return false;
+  const envelope = body as Record<string, unknown>;
+  return ["error", "code", "detail"].some((key) => {
+    const value = envelope[key];
+    return typeof value === "string" && RECOVERABLE_CLAIM_CODES.includes(value);
+  });
+}
 
 /**
  * Map coord's pass-through status code (+ body) to an operator-facing message.
@@ -63,6 +112,12 @@ function messageForClaimError(status: number, body: unknown): string {
     typeof body === "string" ? body : JSON.stringify(body ?? {});
   switch (status) {
     case 403:
+      if (serialized.includes("connect_state_tenant_mismatch")) {
+        return (
+          "This connect link was started from a different Qontinui workspace " +
+          "— sign in to that workspace, or start the connect again from here."
+        );
+      }
       return (
         "You don't administer this GitHub installation — only the org " +
         "owner/admin who installed the app can complete onboarding."
@@ -85,16 +140,23 @@ function messageForClaimError(status: number, body: unknown): string {
 }
 
 /**
- * Remove the spent OAuth `code` from the address bar so a browser refresh does
- * not re-POST an already-consumed code. Other params (installation_id /
- * setup_action) are preserved. Uses history.replaceState so we don't trigger a
- * Next.js navigation (which would remount + re-fire the claim).
+ * Remove the OAuth `code` and the connect `state` from the address bar. Other
+ * params (installation_id / setup_action) are preserved. Uses
+ * history.replaceState so we don't trigger a Next.js navigation (which would
+ * remount + re-fire the claim).
+ *
+ * Called after a claim resolves EITHER way. After success the code is spent, so
+ * this stops a refresh re-POSTing it. After a `recover` the code is *unspent*
+ * and the connect-state token is still live for the rest of its TTL — both are
+ * credentials sitting in the address bar, browser history and the `Referer` of
+ * anything the recover card links to, so they are worth dropping there too.
  */
-function stripSpentCodeFromUrl(): void {
+function stripClaimParamsFromUrl(): void {
   if (typeof window === "undefined") return;
   const url = new URL(window.location.href);
-  if (!url.searchParams.has("code")) return;
+  if (!url.searchParams.has("code") && !url.searchParams.has("state")) return;
   url.searchParams.delete("code");
+  url.searchParams.delete("state");
   window.history.replaceState(window.history.state, "", url.toString());
 }
 
@@ -119,6 +181,11 @@ export default function OnboardingStatusPage() {
   // The org named in `state`, for the authorize (already-installed) path where
   // GitHub sends a code but NO installation_id.
   const stateLogin = connectState?.login ?? null;
+  // The coord-minted, tenant-bound, single-use token that rode through GitHub.
+  // Its ABSENCE is now disqualifying (see the recover branch below): every path
+  // we initiate mints one, so a callback without it either bypassed our links
+  // (out-of-band install) or was crafted.
+  const stateToken = connectState?.connectState ?? null;
   // Two claimable redirect shapes: the fresh-install Setup-URL redirect
   // (code + installation_id) and the user-authorization callback
   // (code + login-from-state). The `?repo=` status view and bare visits have no
@@ -130,6 +197,7 @@ export default function OnboardingStatusPage() {
   );
   const [claim, setClaim] = useState<ClaimResponse | null>(null);
   const [claimError, setClaimError] = useState<string | null>(null);
+  const [recoverMessage, setRecoverMessage] = useState<string | null>(null);
   // Fire the claim POST exactly once per mount (belt to the URL-strip braces).
   const firedRef = useRef(false);
 
@@ -137,15 +205,33 @@ export default function OnboardingStatusPage() {
     if (!hasClaimParams || firedRef.current) return;
     firedRef.current = true;
 
-    // Reject a callback whose nonce doesn't match the one we minted: the code is
-    // single-use, so a crafted link must not spend it. A state with no nonce is
-    // the legacy runner / fresh-install shape and passes.
-    if (!consumeNonce(connectState?.nonce ?? null)) {
-      setClaimError(
-        "This connect link didn't originate from this browser session — " +
-          "please start again from the Connect page.",
+    // FAIL CLOSED without a server-minted connect state. This callback carries a
+    // live OAuth code, and until now a state-less one was claimed anyway —
+    // binding whatever org the URL named into whichever tenant happened to load
+    // the page (plan `2026-07-26-…-caller-tenant-binding` §1, exploit #1). The
+    // legitimate case that lands here is an out-of-band install (GitHub
+    // Marketplace / the App's own page), so it gets a restart, not a dead end.
+    if (!stateToken) {
+      setRecoverMessage(
+        "This connect didn't start from Qontinui, so we can't safely finish it " +
+          "here. Start the connect again below — it takes one click and GitHub " +
+          "will bring you straight back.",
       );
-      setPhase("error");
+      setPhase("recover");
+      stripClaimParamsFromUrl();
+      return;
+    }
+
+    // Reject a callback whose nonce doesn't match the one we minted: the code is
+    // single-use, so a crafted link must not spend it. Restartable — a cleared
+    // sessionStorage looks the same as a crafted link from here.
+    if (!consumeNonce(connectState?.nonce ?? null)) {
+      setRecoverMessage(
+        "This connect link didn't originate from this browser session, so we " +
+          "stopped before using it. Start the connect again below.",
+      );
+      setPhase("recover");
+      stripClaimParamsFromUrl();
       return;
     }
 
@@ -177,6 +263,9 @@ export default function OnboardingStatusPage() {
             body: JSON.stringify({
               code,
               ...target,
+              // The server-minted state is what binds this claim to the tenant
+              // that STARTED the flow, instead of to whoever's bearer arrives.
+              connect_state: stateToken,
               // Clone-picker connect binds only — no repo enrollment / PRs.
               ...(isRunnerClone ? { bind_only: true } : {}),
             }),
@@ -187,14 +276,24 @@ export default function OnboardingStatusPage() {
           .catch(() => ({}) as Record<string, unknown>);
         if (cancelled) return;
         if (!res.ok) {
+          if (isRecoverableClaimRejection(res.status, body)) {
+            setRecoverMessage(
+              "Your connect link expired or had already been used, so we " +
+                "stopped before binding anything. Start the connect again below.",
+            );
+            setPhase("recover");
+            stripClaimParamsFromUrl();
+            return;
+          }
           setClaimError(messageForClaimError(res.status, body));
           setPhase("error");
           return;
         }
         setClaim(body as ClaimResponse);
         setPhase("success");
-        // The code is single-use — drop it so a refresh can't re-submit it.
-        stripSpentCodeFromUrl();
+        // The code + state are single-use — drop them so a refresh can't
+        // re-submit them.
+        stripClaimParamsFromUrl();
       } catch (e) {
         if (cancelled) return;
         setClaimError(e instanceof Error ? e.message : String(e));
@@ -211,6 +310,7 @@ export default function OnboardingStatusPage() {
     installationIdRaw,
     isRunnerClone,
     stateLogin,
+    stateToken,
     connectState,
   ]);
 
@@ -275,6 +375,44 @@ export default function OnboardingStatusPage() {
               )}
             </p>
           </CardHeader>
+        </Card>
+      )}
+
+      {phase === "recover" && (
+        <Card data-testid="onboarding-claim-recover">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <RefreshCw className="h-4 w-4 text-muted-foreground" />
+              Start the connect again
+            </CardTitle>
+            <p
+              className="text-sm text-muted-foreground"
+              data-testid="onboarding-claim-recover-message"
+            >
+              {recoverMessage}
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <InstallGitHubAppButton
+              flow={isRunnerClone ? "runner-clone" : "connect"}
+              label="Connect GitHub"
+              testId="onboarding-claim-recover-install"
+            />
+            <p className="text-xs text-muted-foreground">
+              Already installed the App on your organization? GitHub won&apos;t
+              send you back through the install flow —{" "}
+              <Link
+                href={
+                  isRunnerClone
+                    ? "/connect-runner-github"
+                    : "/admin/coord/onboarding"
+                }
+                className="underline underline-offset-4 hover:text-foreground"
+              >
+                authorize it here instead →
+              </Link>
+            </p>
+          </CardContent>
         </Card>
       )}
 

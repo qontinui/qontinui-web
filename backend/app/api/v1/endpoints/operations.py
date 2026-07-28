@@ -1733,6 +1733,68 @@ async def get_pr_merge_onboarding_github_app(
 # status so the page can render the right message, NOT be collapsed to 500.
 COORD_ONBOARDING_CLAIM_PATH = "/coord/onboarding/github-accounts/claim"
 
+# ---- Connect-state mint (tenant-binds the connect flow before GitHub) ------
+#
+# Plan `2026-07-26-coord-onboarding-claim-caller-tenant-binding`. The claim
+# above binds the GitHub account to the CALLER's bearer tenant, while the
+# org-admin proof comes from whoever authorized the OAuth code — two values
+# that were never cross-checked. The fix makes the destination tenant an
+# intrinsic property of the connect flow: before sending the browser to
+# GitHub, the initiating page mints a single-use, tenant-bound token from
+# coord and rides it through GitHub's `state` round-trip; the claim forwards
+# it back and coord binds to the TOKEN's tenant.
+#
+# This proxy is the only way the browser (and, later, the runner) can reach
+# coord's mint: coord's `TenantId` extractor resolves solely from an operator
+# Cognito context, so a device/agent JWT cannot call it directly — it has to
+# come through here with the operator's bearer forwarded by `_tenant_headers`.
+#
+# Coord returns `{connect_state, expires_at}` with the plaintext token exactly
+# once (only its sha256 is stored). Status + JSON body pass through verbatim,
+# same as the claim proxy, so the page can distinguish "coord is down" from
+# "you aren't allowed to mint".
+COORD_ONBOARDING_CONNECT_STATE_PATH = "/coord/onboarding/connect-state"
+
+
+@router.post("/pr-merge/onboarding/connect-state")
+async def post_pr_merge_onboarding_connect_state(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Mint a single-use, tenant-bound connect-state token for a GitHub connect.
+
+    Proxies coord's ``POST /coord/onboarding/connect-state``. Takes no body:
+    the only input that matters is the caller's identity, which
+    ``get_tenant_id`` resolves and ``_tenant_headers`` forwards as the
+    operator's bearer — coord records the resulting row against *that* tenant
+    and later binds the claim to it.
+
+    Passes coord's status code and JSON body through verbatim (like the claim
+    proxy, not the raising ``_proxy_coord_post`` helper) so the connect UI can
+    surface a retryable, honest failure instead of a blank navigation to a
+    stateless GitHub URL. httpx transport errors mirror the shared helpers
+    (ConnectError → 502, TimeoutException → 504).
+    """
+    url = f"{settings.COORD_URL}{COORD_ONBOARDING_CONNECT_STATE_PATH}"
+    headers = _tenant_headers(tenant_id)
+    async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
+        try:
+            resp = await client.post(url, json={}, headers=headers)
+        except httpx.ConnectError:
+            raise HTTPException(
+                status_code=502,
+                detail="coord is not reachable",
+            )
+        except httpx.TimeoutException:
+            raise HTTPException(
+                status_code=504,
+                detail="timeout waiting for coord",
+            )
+    try:
+        content = resp.json()
+    except ValueError:
+        content = {"detail": resp.text}
+    return JSONResponse(content=content, status_code=resp.status_code)
+
 
 class OnboardingClaimRequest(BaseModel):
     """Body for ``POST /pr-merge/onboarding/claim``.
@@ -1755,12 +1817,23 @@ class OnboardingClaimRequest(BaseModel):
     ``bind_only`` — when true, coord binds the account WITHOUT enrolling its
     repos (no bootstrap PRs); for the clone-only path. Defaults false =
     bind + enroll (today's behavior).
+
+    ``connect_state`` — the single-use token minted by
+    ``POST /pr-merge/onboarding/connect-state`` before the browser was sent to
+    GitHub, round-tripped through GitHub's ``state`` param. Coord binds to
+    the TOKEN's tenant (and requires the caller's own tenant to match), which
+    is what stops a caller from binding an org into a tenant that never
+    initiated the flow. Optional on this wire during the transition: coord
+    enforces it behind ``COORD_REQUIRE_CONNECT_STATE`` (default off), so a web
+    build that forwards it to a coord that predates the feature is simply
+    ignored rather than rejected.
     """
 
     code: str
     installation_id: int | None = None
     account_login: str | None = None
     bind_only: bool = False
+    connect_state: str | None = None
 
 
 @router.post("/pr-merge/onboarding/claim")
@@ -1799,6 +1872,11 @@ async def post_pr_merge_onboarding_claim(
         payload["installation_id"] = body.installation_id
     if body.account_login:
         payload["account_login"] = body.account_login
+    # Omit rather than send null when the caller has no token: coord's
+    # `COORD_REQUIRE_CONNECT_STATE` distinguishes "absent" from "present but
+    # unresolvable", and an explicit null would blur the two.
+    if body.connect_state:
+        payload["connect_state"] = body.connect_state
     async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
         try:
             resp = await client.post(url, json=payload, headers=headers)
