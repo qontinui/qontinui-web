@@ -363,6 +363,59 @@ class TestListWrites:
         assert len(body["writes"]) == 1
         assert "partial" in body
 
+    def test_ceiling_is_reported_not_applied_silently(self, auth_client: TestClient):
+        """Crossing the fan-out ceiling drops documents, so it must be SAID.
+
+        The tempting "newest ``updated_at`` first, then cap" shortcut is unsound
+        — coord's attrs-only PATCH bumps ``updated_at`` without inserting a
+        version — so a dropped document really can own a newer write. The one
+        thing that must never happen is dropping it quietly.
+        """
+        documents = {
+            "documents": [
+                {
+                    "kind": "policy",
+                    "name": f"doc-{i}",
+                    "description": None,
+                    "updated_at": f"2026-07-2{i}T12:00:00Z",
+                }
+                for i in range(2)
+            ],
+            "total": 2,
+        }
+        one = _versions_payload(
+            1,
+            [
+                {
+                    "version_number": 1,
+                    "description": None,
+                    "edited_by": None,
+                    "created_at": "2026-07-28T12:00:00Z",
+                }
+            ],
+        )
+
+        with (
+            patch(
+                "app.api.v1.endpoints.operations._WRITE_FEED_DOCUMENT_CEILING",
+                1,
+            ),
+            _patch_httpx() as MockClient,
+        ):
+            instance = AsyncMock()
+            instance.get.side_effect = [
+                _mock_response(json_data=documents),
+                _mock_response(json_data=one),
+            ]
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.get(WRITES)
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body["writes"]) == 1
+        assert "truncated" in body and "1 documents" in body["truncated"]
+
     def test_document_list_404_degrades(self, auth_client: TestClient):
         with _patch_httpx() as MockClient:
             instance = AsyncMock()

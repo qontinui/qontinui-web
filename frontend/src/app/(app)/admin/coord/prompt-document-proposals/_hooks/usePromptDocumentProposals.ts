@@ -8,6 +8,7 @@ import type {
   ListWritesResponse,
   PromptDocumentProposal,
   PromptDocumentWrite,
+  UnavailableKind,
 } from "../types";
 
 const API = "/api/v1/operations";
@@ -80,7 +81,11 @@ export function usePromptDocumentProposals() {
   const [acting, setActing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [unavailable, setUnavailable] = useState<string | null>(null);
-  const [writesNotice, setWritesNotice] = useState<string | null>(null);
+  const [unavailableKind, setUnavailableKind] =
+    useState<UnavailableKind | null>(null);
+  /** Every write-feed caveat that is set — they are independent, not a chain. */
+  const [writesNotices, setWritesNotices] = useState<string[]>([]);
+  const [writesSevere, setWritesSevere] = useState(false);
 
   const loadProposals = useCallback(async () => {
     try {
@@ -89,10 +94,15 @@ export function usePromptDocumentProposals() {
       );
       setProposals(data.proposals ?? []);
       setUnavailable(data.unavailable ?? null);
+      setUnavailableKind(data.unavailable_kind ?? null);
       setError(null);
     } catch (err) {
       // Keep the last-good queue on screen; the banner says it may be stale.
+      // Clear the unavailable note: it described the PREVIOUS response, and
+      // leaving it set would stack two contradictory banners.
       setError(message(err, "Failed to load proposals"));
+      setUnavailable(null);
+      setUnavailableKind(null);
     }
   }, []);
 
@@ -102,18 +112,24 @@ export function usePromptDocumentProposals() {
         `${WRITES}?limit=40`
       );
       setWrites(data.writes ?? []);
-      setWritesNotice(
-        data.unavailable ?? data.degraded ?? data.partial ?? null
+      // All four caveats are independent and can co-occur — showing only the
+      // first would swallow the others.
+      setWritesNotices(
+        [data.unavailable, data.degraded, data.partial, data.truncated].filter(
+          (n): n is string => Boolean(n)
+        )
       );
+      setWritesSevere(data.unavailable_kind === "unreachable");
     } catch (err) {
-      setWritesNotice(message(err, "Failed to load recent writes"));
+      setWritesNotices([message(err, "Failed to load recent writes")]);
+      setWritesSevere(true);
     }
   }, []);
 
   /**
-   * The documents' live versions. Fetched separately from the write feed
-   * (which is capped) so a proposal targeting a rarely-touched document still
-   * gets a truthful staleness verdict rather than none.
+   * The documents' live versions. Fetched separately from the write feed so a
+   * proposal targeting a rarely-touched document still gets a truthful
+   * staleness verdict rather than none.
    */
   const loadLiveVersions = useCallback(async () => {
     try {
@@ -157,39 +173,42 @@ export function usePromptDocumentProposals() {
     [liveVersions]
   );
 
-  const decide = async (
-    proposal: PromptDocumentProposal,
-    action: "approve" | "reject",
-    decisionNote: string
-  ): Promise<boolean> => {
-    try {
-      setActing(true);
-      const note = decisionNote.trim();
-      await httpClient.post(
-        `${PROPOSALS}/${encodeURIComponent(proposal.id)}/${action}`,
-        note ? { decision_note: note } : {}
-      );
-      toast.success(
-        action === "approve"
-          ? `Approved — the edit to ${proposal.doc_name} has been applied.`
-          : `Rejected — the edit to ${proposal.doc_name} was not applied.`
-      );
-      await reload();
-      return true;
-    } catch (err) {
-      toast.error(
-        message(
-          err,
+  const decide = useCallback(
+    async (
+      proposal: PromptDocumentProposal,
+      action: "approve" | "reject",
+      decisionNote: string
+    ): Promise<boolean> => {
+      try {
+        setActing(true);
+        const note = decisionNote.trim();
+        await httpClient.post(
+          `${PROPOSALS}/${encodeURIComponent(proposal.id)}/${action}`,
+          note ? { decision_note: note } : {}
+        );
+        toast.success(
           action === "approve"
-            ? "Failed to approve proposal"
-            : "Failed to reject proposal"
-        )
-      );
-      return false;
-    } finally {
-      setActing(false);
-    }
-  };
+            ? `Approved — the edit to ${proposal.doc_name} has been applied.`
+            : `Rejected — the edit to ${proposal.doc_name} was not applied.`
+        );
+        await reload();
+        return true;
+      } catch (err) {
+        toast.error(
+          message(
+            err,
+            action === "approve"
+              ? "Failed to approve proposal"
+              : "Failed to reject proposal"
+          )
+        );
+        return false;
+      } finally {
+        setActing(false);
+      }
+    },
+    [reload]
+  );
 
   /**
    * Undo one landed write: read the body of the version BEFORE it and PATCH
@@ -197,37 +216,59 @@ export function usePromptDocumentProposals() {
    * module note), so the undo is itself undoable.
    *
    * Only meaningful for a write that is currently head — undoing an older write
-   * from a flat feed would silently discard every write made since. The caller
-   * offers the control only in that case; the guard here makes the invariant
-   * enforceable rather than merely observed.
+   * would silently discard every write made since.
+   *
+   * The head check is done TWICE, and the second one is the real guard. The
+   * feed's `current_version` is a snapshot from page load; if a peer admin
+   * edited the document since, it is stale and would wave through exactly the
+   * clobber this exists to prevent. coord's PATCH takes no version
+   * precondition, so the live re-read immediately before the write is the only
+   * place the invariant can actually be enforced. The first check just avoids
+   * a pointless round trip.
    */
-  const revertWrite = async (write: PromptDocumentWrite): Promise<boolean> => {
-    const target = write.version_number - 1;
-    if (write.version_number !== write.current_version || target < 1) {
-      toast.error(
-        "Only the most recent write can be undone in one click. Use the document's history view for anything older."
-      );
-      return false;
-    }
-    try {
-      setActing(true);
-      const snapshot = await httpClient.get<VersionSnapshot>(
-        `${docPath(write.kind, write.name)}/versions/${target}`
-      );
-      await httpClient.patch(docPath(write.kind, write.name), {
-        body: snapshot.body,
-        change_description: `Undid v${write.version_number} — restored the wording from v${target} via the review feed`,
-      });
-      toast.success(`Restored ${write.label} to the wording from v${target}.`);
-      await reload();
-      return true;
-    } catch (err) {
-      toast.error(message(err, "Failed to undo this write"));
-      return false;
-    } finally {
-      setActing(false);
-    }
-  };
+  const revertWrite = useCallback(
+    async (write: PromptDocumentWrite): Promise<boolean> => {
+      const target = write.version_number - 1;
+      const notHead =
+        "Only the most recent write can be undone in one click. Use the document's history view for anything older.";
+      if (write.version_number !== write.current_version || target < 1) {
+        toast.error(notHead);
+        return false;
+      }
+      try {
+        setActing(true);
+        // Live re-read: has the document moved under us since page load?
+        const live = await httpClient.get<{ current_version: number }>(
+          `${docPath(write.kind, write.name)}/versions`
+        );
+        if (live.current_version !== write.version_number) {
+          toast.error(
+            `${write.label} has changed since this page loaded (now v${live.current_version}). Refreshed — review the newer write before undoing anything.`
+          );
+          await reload();
+          return false;
+        }
+        const snapshot = await httpClient.get<VersionSnapshot>(
+          `${docPath(write.kind, write.name)}/versions/${target}`
+        );
+        await httpClient.patch(docPath(write.kind, write.name), {
+          body: snapshot.body,
+          change_description: `Undid v${write.version_number} — restored the wording from v${target} via the review feed`,
+        });
+        toast.success(
+          `Restored ${write.label} to the wording from v${target}.`
+        );
+        await reload();
+        return true;
+      } catch (err) {
+        toast.error(message(err, "Failed to undo this write"));
+        return false;
+      } finally {
+        setActing(false);
+      }
+    },
+    [reload]
+  );
 
   return {
     proposals,
@@ -236,7 +277,9 @@ export function usePromptDocumentProposals() {
     acting,
     error,
     unavailable,
-    writesNotice,
+    unavailableKind,
+    writesNotices,
+    writesSevere,
     liveVersionFor,
     reload,
     decide,

@@ -9,6 +9,7 @@ import {
   CoordAdminOnly,
   ReadOnlyNotice,
 } from "@/components/admin/coord/CoordAdminOnly";
+import { formatWhen } from "../_lib/format";
 import { DIRECTION_META, TIER_DESCRIPTIONS } from "../types";
 import type { PromptDocumentProposal, ProposalTier } from "../types";
 
@@ -19,17 +20,14 @@ interface ProposalCardProps {
    * be resolved. `null` renders as unknown — never as "up to date".
    */
   liveVersion: number | null;
+  /** True while a load is in flight — suppresses "could not be read" claims. */
+  loading: boolean;
   acting: boolean;
   onDecide: (
     proposal: PromptDocumentProposal,
     action: "approve" | "reject",
     decisionNote: string
   ) => Promise<boolean>;
-}
-
-function formatWhen(iso: string): string {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
 }
 
 /** Tier token + its plain-language gloss, or an em dash when unset. */
@@ -58,6 +56,7 @@ function TierChip({ tier }: { tier: ProposalTier | null }) {
 export function ProposalCard({
   proposal,
   liveVersion,
+  loading,
   acting,
   onDecide,
 }: ProposalCardProps) {
@@ -151,8 +150,12 @@ export function ProposalCard({
         </span>{" "}
         · {formatWhen(proposal.created_at)} · authored against v
         {proposal.base_version}
+        {/* A load in flight is not a failed lookup — say nothing until it
+            settles rather than flashing "could not be read". */}
         {liveVersion === null
-          ? " · the document's current version could not be read"
+          ? loading
+            ? ""
+            : " · the document's current version could not be read"
           : liveVersion === proposal.base_version
             ? " · still the current version"
             : ""}

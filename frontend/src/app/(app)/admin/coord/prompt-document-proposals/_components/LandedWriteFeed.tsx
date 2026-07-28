@@ -6,20 +6,22 @@ import {
   CoordAdminOnly,
   ReadOnlyNotice,
 } from "@/components/admin/coord/CoordAdminOnly";
+import { cn } from "@/lib/utils";
+import { formatWhen } from "../_lib/format";
 import type { PromptDocumentWrite } from "../types";
 
 interface LandedWriteFeedProps {
   writes: PromptDocumentWrite[];
-  /** Non-null when the feed is unreadable, degraded, or incomplete. */
-  notice: string | null;
+  /**
+   * Every caveat that applies — unreadable, degraded, partial, truncated. They
+   * are independent conditions and can co-occur, so all of them are shown.
+   */
+  notices: string[];
+  /** True when a caveat means coord is actually failing, not just incomplete. */
+  severe: boolean;
   loading: boolean;
   acting: boolean;
   onRevert: (write: PromptDocumentWrite) => Promise<boolean>;
-}
-
-function formatWhen(iso: string): string {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
 }
 
 /**
@@ -39,7 +41,8 @@ function formatWhen(iso: string): string {
  */
 export function LandedWriteFeed({
   writes,
-  notice,
+  notices,
+  severe,
   loading,
   acting,
   onRevert,
@@ -55,13 +58,38 @@ export function LandedWriteFeed({
         </p>
       </div>
 
-      {notice && (
+      {/* Coord genuinely failing gets the amber treatment; "incomplete but
+          working" (degraded / partial / truncated) stays muted. */}
+      {notices.length > 0 && (
         <div
-          className="flex items-start gap-2 rounded-lg border border-border bg-muted/50 px-3 py-2.5"
+          className={cn(
+            "flex items-start gap-2 rounded-lg border px-3 py-2.5",
+            severe
+              ? "border-amber-500/40 bg-amber-500/10"
+              : "border-border bg-muted/50"
+          )}
           data-testid="landed-writes-notice"
         >
-          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">{notice}</p>
+          <AlertTriangle
+            className={cn(
+              "mt-0.5 size-4 shrink-0",
+              severe
+                ? "text-amber-600 dark:text-amber-400"
+                : "text-muted-foreground"
+            )}
+          />
+          <div
+            className={cn(
+              "space-y-1 text-sm",
+              severe
+                ? "text-amber-800 dark:text-amber-200"
+                : "text-muted-foreground"
+            )}
+          >
+            {notices.map((notice) => (
+              <p key={notice}>{notice}</p>
+            ))}
+          </div>
         </div>
       )}
 
@@ -72,7 +100,7 @@ export function LandedWriteFeed({
       ) : writes.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border py-10 text-center">
           <p className="text-sm text-muted-foreground">
-            {notice
+            {notices.length > 0
               ? "No writes could be read — see the note above."
               : "No document writes recorded yet."}
           </p>

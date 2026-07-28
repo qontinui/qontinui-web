@@ -2,6 +2,7 @@
 
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { usePromptDocumentProposals } from "../_hooks/usePromptDocumentProposals";
 import { LandedWriteFeed } from "./LandedWriteFeed";
 import { ProposalCard } from "./ProposalCard";
@@ -30,12 +31,18 @@ export function ReviewFeed() {
     acting,
     error,
     unavailable,
-    writesNotice,
+    unavailableKind,
+    writesNotices,
+    writesSevere,
     liveVersionFor,
     reload,
     decide,
     revertWrite,
   } = usePromptDocumentProposals();
+
+  // A pre-deploy 404 is expected and benign; anything else means coord is
+  // failing and must not wear the calmest style on the page.
+  const unavailableSevere = unavailableKind !== "not_deployed";
 
   const initialLoading =
     loading && proposals.length === 0 && writes.length === 0;
@@ -92,14 +99,36 @@ export function ReviewFeed() {
           </div>
         )}
 
-        {/* Coord answered, but its Phase 5 proposal surface isn't deployed. */}
+        {/* Coord answered, but its Phase 5 proposal surface isn't deployed —
+            or coord is genuinely down, which is styled as the louder case. */}
         {unavailable && (
           <div
-            className="flex items-start gap-2 rounded-lg border border-border bg-muted/50 px-3 py-2.5"
+            className={cn(
+              "flex items-start gap-2 rounded-lg border px-3 py-2.5",
+              unavailableSevere
+                ? "border-amber-500/40 bg-amber-500/10"
+                : "border-border bg-muted/50"
+            )}
             data-testid="proposals-unavailable"
           >
-            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">{unavailable}</p>
+            <AlertTriangle
+              className={cn(
+                "mt-0.5 size-4 shrink-0",
+                unavailableSevere
+                  ? "text-amber-600 dark:text-amber-400"
+                  : "text-muted-foreground"
+              )}
+            />
+            <p
+              className={cn(
+                "text-sm",
+                unavailableSevere
+                  ? "text-amber-800 dark:text-amber-200"
+                  : "text-muted-foreground"
+              )}
+            >
+              {unavailable}
+            </p>
           </div>
         )}
 
@@ -116,6 +145,7 @@ export function ReviewFeed() {
               key={proposal.id}
               proposal={proposal}
               liveVersion={liveVersionFor(proposal.doc_kind, proposal.doc_name)}
+              loading={loading}
               acting={acting}
               onDecide={decide}
             />
@@ -125,7 +155,8 @@ export function ReviewFeed() {
 
       <LandedWriteFeed
         writes={writes}
-        notice={writesNotice}
+        notices={writesNotices}
+        severe={writesSevere}
         loading={loading}
         acting={acting}
         onRevert={revertWrite}

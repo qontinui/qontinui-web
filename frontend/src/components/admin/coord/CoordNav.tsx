@@ -43,6 +43,7 @@ import {
   ExternalLink,
   FileText,
   Gauge,
+  Gavel,
   GitBranch,
   GitMerge,
   GitPullRequest,
@@ -210,7 +211,7 @@ const GROUPS: NavGroup[] = [
         // double-highlight, matching the Onboarding / Onboarding Status pair.
         href: "/admin/coord/prompt-document-proposals",
         label: "Policy Edit Review",
-        icon: ScrollText,
+        icon: Gavel,
         testId: "coord-nav-prompt-document-proposals",
       },
       {

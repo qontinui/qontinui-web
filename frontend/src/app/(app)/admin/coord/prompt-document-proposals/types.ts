@@ -112,7 +112,16 @@ export interface ListProposalsResponse {
   proposals: PromptDocumentProposal[];
   total: number;
   unavailable?: string;
+  /**
+   * Why it could not be read. `not_deployed` is the expected, benign window
+   * before coord's Phase 5 half ships; `unreachable` means coord is actually
+   * failing and must not be shown in the calmest style on the page.
+   */
+  unavailable_kind?: UnavailableKind;
 }
+
+/** Severity axis for an unreadable coord surface. */
+export type UnavailableKind = "not_deployed" | "unreachable";
 
 /** One landed write — a version snapshot, addressed back to its document. */
 export interface PromptDocumentWrite {
@@ -132,15 +141,21 @@ export interface PromptDocumentWrite {
 /**
  * `GET /api/v1/operations/coord/prompt-document-writes` response.
  *
- * Three distinct not-good states, never flattened into one:
- * `unavailable` (coord could not be asked at all), `degraded` (coord answered
- * but its document store is unprovisioned), and `partial` (some documents did
- * not return their history, so the feed is incomplete).
+ * Four INDEPENDENT not-good states, never flattened into one and never
+ * mutually exclusive — `degraded` and `partial` routinely co-occur, so the page
+ * shows every one that is set rather than picking a winner:
+ *
+ * * `unavailable` — coord could not be asked at all.
+ * * `degraded`    — coord answered, but its document store is unprovisioned.
+ * * `partial`     — some documents did not return their history.
+ * * `truncated`   — more documents exist than the fan-out ceiling reads.
  */
 export interface ListWritesResponse {
   writes: PromptDocumentWrite[];
   total: number;
   unavailable?: string;
+  unavailable_kind?: UnavailableKind;
   degraded?: string;
   partial?: string;
+  truncated?: string;
 }
