@@ -27,8 +27,9 @@ Why this is safe now (verified, not assumed)
   copied verbatim, orphan retention, cross-tenant-drift exclusion, and the
   targeted downgrade — is pinned by
   ``backend/tests/test_coord_plan_pr_citations_3a_backfill_migration.py``.
-  That test upgrades to the 3a revision by ID (never to ``head``), so it is
-  unaffected by this drop and keeps guarding the fold's semantics forever.
+  That test upgrades to the 3a revision by ID (never to ``head``) and seeds its
+  own synthetic rows in an ephemeral DB, so it is unaffected by this drop and
+  keeps guarding the fold's semantics indefinitely.
 * **Stage 3b** (coord #1275) deleted coord's legacy read/write path and removed
   ``"plan_pr_citations"`` from ``ALEMBIC_OWNED_TABLES`` in
   ``qontinui-coord/src/schema_manifest.rs``, so a fresh coord boot no longer
@@ -40,6 +41,10 @@ Why this is safe now (verified, not assumed)
   ``qontinui-staging-coord:726`` carrying image tag
   ``qontinui-coord:6c851966705f``, ``rolloutState COMPLETED``, 2/2 running.
   Green deploy jobs are NOT a rollout; the serving SHA is.
+* **The runner's boot gate is clear too** — coord is not the only service that
+  hard-fails on a missing ``coord.*`` table. ``qontinui-runner``'s
+  ``src-tauri/src/database/pg/mod.rs`` does not list ``plan_pr_citations``, so
+  no runner crash-loops on this drop either.
 * No qontinui-web code reads or writes this table — the only remaining
   references in this repo are the migrations that created/backfilled it and the
   3a test, all of which run at revisions strictly before this one.
@@ -54,11 +59,17 @@ never-registered work units, acceptable data loss" and were DELIBERATELY not
 migrated. They have survived in ``coord.plan_pr_citations`` until now as
 forensic residue.
 
-**THIS REVISION DESTROYS THEM PERMANENTLY.** So does it destroy the pre-fold
-per-row ``source`` values (``'pr_body'`` / ``'commit_message'``), which 3a
-restamped to ``'legacy_backfill'`` in the successor and which were readable in
-this table until now. There is no other copy of either. Stage 3a's test run was
-the last point at which the fold could be checked against real legacy rows.
+**THIS REVISION DESTROYS THEM PERMANENTLY**, and with them the pre-fold per-row
+``source`` values of every row the fold MINTED — those rows entered the successor
+stamped ``'legacy_backfill'``, so their original ``'pr_body'`` /
+``'commit_message'`` label survived only here. (Rows coord had ALREADY
+dual-written are unaffected: 3a's ``ON CONFLICT DO NOTHING`` left them alone and
+they keep their organic ``source`` in ``coord.work_unit_pr_citations`` — the 3a
+test pins exactly that.) For the orphans and for the minted rows' original
+``source`` there is no other copy anywhere.
+
+**Applying this revision to prod is the last point at which the fold could be
+checked against real production legacy rows.**
 
 Indexes
 =======
@@ -86,19 +97,30 @@ better than stalling on one long-lived transaction that happens to hold a lock.
 shares a single transaction — an unreset ``SET LOCAL`` would leak this 3s
 timeout into every migration that lands after this one.
 
+``RESET`` (rather than saving and restoring a prior value) is safe here because
+no apply path sets a session-level ``lock_timeout``: not ``migrate.yml``, not
+``.platform/hooks/postdeploy/01_run_migrations.sh``, not ``start-backend.sh``,
+not ``alembic.ini``, and no ``PGOPTIONS``. There is nothing to clobber, so
+``RESET`` and ``SET LOCAL … = DEFAULT`` are equivalent (both land on ``0``).
+
 Downgrade — STRUCTURE ONLY, the rows are gone
 =============================================
 
 ``downgrade()`` recreates the table and all three indexes with exactly the shape
-``coord_plan_pr_citations`` defined (re-verified: no intervening revision ever
-ALTERed it — ``coord_tenant_backfill_01_pr_surfaces`` only UPDATEs ``repo``
-values), so the migration chain is reversible and a later revision that expects
-the table can still run against a downgraded DB.
+``coord_plan_pr_citations`` defined. No intervening revision ever ALTERed the
+table — re-verified empirically, not by inspection: the live catalog shape
+(``information_schema.columns`` + ``pg_indexes`` + ``pg_constraint``) at the
+creating revision, at this revision's parent 443 revisions later, and after this
+``downgrade()`` all compare IDENTICAL, ``NULLS NOT DISTINCT`` and the primary key
+included. (The only later revision that touches the table at all,
+``coord_tenant_backfill_01``, is pure DML: it SETs ``tenant_id``, matching rows
+on ``repo``.) So the chain is reversible and a later revision that expects the
+table can still run against a downgraded DB.
 
 **It restores STRUCTURE ONLY. It cannot restore a single row.** The folded rows
-live on in ``coord.work_unit_pr_citations`` under a different key and a
-restamped ``source``; the orphans and the pre-fold ``source`` values do not
-exist anywhere. A downgrade yields an empty table, not the old data.
+live on in ``coord.work_unit_pr_citations`` under a different key; the orphans,
+and the pre-fold ``source`` of every row the fold minted, do not exist anywhere.
+A downgrade yields an empty table, not the old data.
 
 Authorship posture
 ==================
@@ -108,15 +130,32 @@ Authorship posture
 ``tests/coord_schema_authorship.rs`` in both coord and the runner). This
 revision is pure ``coord.*`` DDL, which is exactly where such DDL belongs.
 
-Sequenced coord-side follow-up (NOT in this PR, by design)
+Sequenced cross-repo follow-ups (NOT in this PR, by design)
 ==========================================================
 
-The plan requires ``"plan_pr_citations"`` to be added to
-``DEPRECATED_COORD_TABLES`` in ``qontinui-coord/src/mcp/tools.rs``. That set is
-evaluated as ``live catalog ∩ DEPRECATED_COORD_TABLES``, so listing a table that
-still exists fires a false ``schema:deprecated_object_present``. It therefore
-CANNOT land before this drop is applied to prod — it is strictly sequential
-after it, and is owned by the coord-side session.
+Two changes in other repos become due only ONCE this drop is applied to prod.
+Both are tracked by coord gate **``cda7919f-af71-47d0-8f22-605c5c3ec662``**
+(work unit ``2026-07-06-coord-plan-slug-to-work-unit-slug-rename``, predicate
+``file_exists`` on this file at ``qontinui-web@main``) — the plan explicitly
+ruled that a code comment is not a tracking artifact, and neither is a docstring:
+
+1. **coord** — add ``"plan_pr_citations"`` to ``DEPRECATED_COORD_TABLES``
+   (``qontinui-coord/src/schema_manifest.rs``, the const at :363; the consumer
+   that intersects it with the live catalog is ``mcp/tools.rs`` ~:8610) and drop
+   the now-stale deferral note at :217-225. It is evaluated as
+   ``live catalog ∩ DEPRECATED_COORD_TABLES``, so listing a table that still
+   exists fires a false ``schema:deprecated_object_present`` — which is why it
+   CANNOT ride this PR and is strictly sequential after prod application. Until
+   it lands, the deprecation guard does not cover this table.
+2. **qontinui-runner** — ``src-tauri/schema.pg.sql.generated`` is a checked-in
+   ``pg_dump`` of this alembic-managed schema and still contains the
+   ``coord.plan_pr_citations`` block. Its ``schema-pg-sql-fresh.yml`` gate checks
+   out qontinui-web at ``main``, runs ``alembic upgrade head``, dumps, and fails
+   on any diff — so once this lands, the checked-in file is stale. Not
+   immediate (the heavy verify job only runs when a runner PR touches
+   ``src-tauri/queries/**`` or the generated file), but the next such PR reddens
+   for an unrelated reason. Regenerate with
+   ``src-tauri/scripts/regenerate_schema_pg_sql.sh``.
 """
 
 from collections.abc import Sequence
@@ -131,6 +170,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    """Drop the retired legacy citation table. Destroys the orphaned rows."""
     # Bound the DDL's lock wait: a queued ACCESS EXCLUSIVE request blocks every
     # reader that arrives behind it, so fail fast rather than stalling.
     op.execute("SET LOCAL lock_timeout = '3s'")
