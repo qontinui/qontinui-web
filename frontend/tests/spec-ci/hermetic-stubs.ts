@@ -107,8 +107,13 @@ export const HERMETIC_STUBS: readonly HermeticStub[] = [
     //   - code-reviewer  — mirrors what `backend/scripts/seed_agent_registry.py`
     //     actually writes: spawn_path always 'in_session_subagent',
     //     policy_required true for THIS agent only, model/effort NULL (its
-    //     .claude/agents frontmatter declares neither), fanout_bound NULL.
-    //     Drives the policy-required badge + the all-null (empty) meta line +
+    //     .claude/agents frontmatter declares neither). fanout_bound is NOT
+    //     the seed's shape — that column is `INTEGER NOT NULL DEFAULT 15`
+    //     (agent_registry_01 migration:75) and the seed's INSERT omits it, so
+    //     a seeded row reads 15. null is chosen here to exercise the page's
+    //     `!== null && !== undefined` guard, which stays reachable because
+    //     coord may omit the field entirely (`row.get("fanout_bound")` →
+    //     None). Drives the policy-required badge + the empty meta line +
     //     the "Registry default:" honesty line.
     //   - debugging-specialist — every optional deliberately populated (a
     //     shape coord's registry permits but the initial seed leaves NULL) to
