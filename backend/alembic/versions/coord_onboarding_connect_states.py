@@ -1,7 +1,7 @@
 """coord.onboarding_connect_states (P0 — tenant-bound, single-use GitHub connect-state tokens)
 
 Revision ID: coord_onboarding_connect_states
-Revises: appid_01_co_occurrence_app_id
+Revises: agent_registry_01
 Create Date: 2026-07-28
 
 P0 of ``2026-07-26-coord-onboarding-claim-caller-tenant-binding.md`` — the
@@ -38,6 +38,49 @@ Schema
   handler (not a column default — the TTL is the consumer's policy).
 * ``consumed_at TIMESTAMPTZ NULL``      — single-use marker, NULL until the
   token is spent.
+* ``flow TEXT NULL``                    — the intended flow, bound at mint:
+  ``'connect'`` | ``'runner-clone'``.
+* ``target_login TEXT NULL``            — the intended org login, when it is
+  already known at mint time.
+* ``target_installation_id BIGINT NULL`` — the intended GitHub App
+  installation, when it is already known at mint time.
+
+Why the row binds the FLOW and the TARGET, not just the tenant
+==============================================================
+
+Finding **F2** of the adversarial review of this plan: a row carrying only
+``tenant_id`` is a *possession proof*, not an *authorization*. It proves the
+presenter holds a token minted by someone in that tenant — nothing more. In
+particular it does not bind ``bind_only``, which stays attacker-chosen from the
+request body, so any non-admin member of the tenant can flip a mint that was
+issued for a read-only connect into one that triggers repo enrollment. Binding
+``flow`` at mint time moves that decision from the request body onto the
+server-recorded row: coord asserts the presented flow equals ``flow`` and
+derives ``bind_only`` from the row, never from the caller.
+
+``target_login`` / ``target_installation_id`` do the same for the *destination*,
+narrowing the token from "some org in this tenant" to "this org".
+
+Why all three are NULLABLE — do NOT tighten them to NOT NULL
+============================================================
+
+**``flow`` is always known at mint time; the TARGET is not.** On the
+fresh-install path the user has not chosen an org yet — they pick it on
+GitHub's own installation screen *after* the state token has already been
+minted and handed to the redirect. There is literally nothing to bind at mint
+time, so ``target_login`` and ``target_installation_id`` are genuinely absent
+for that flow, not merely unpopulated.
+
+Target assertion is therefore **conditional**: coord asserts the callback's org
+matches only when the column is non-null, and skips the assertion when it is
+null. Making either target column ``NOT NULL`` would break the fresh-install
+path outright (the mint has no value to write). ``flow`` is left nullable for
+the narrower reason that this migration is the *producer* and lands before the
+P1 consumer: rows written by the pre-fix mint path, and any row minted during
+the deploy window between this table appearing and the consumer shipping, carry
+no ``flow``. A ``NOT NULL`` here would make the producer-before-consumer deploy
+order (plan §5) un-orderable. Tighten only after the consumer is live AND a
+backfill has proven zero nulls — and even then, never the target columns.
 
 Why sha256 hex and NOT the repo's Argon2 convention
 ===================================================
@@ -83,6 +126,12 @@ Index
   on the connect critical path. Without this index that reap is a sequential
   scan on every mint.
 
+No index is added for ``flow`` / ``target_login`` / ``target_installation_id``.
+They are never lookup keys — every read of this table still arrives by
+``token_hash`` (the PK), and the three new columns are only ever *asserted
+against* on the row that lookup already returned. An index on them would cost
+write amplification on the mint critical path and buy nothing.
+
 Retention is deliberate: the reap keys on ``expires_at < now()``, NOT on
 ``consumed_at IS NOT NULL``. Consumed-but-unexpired rows are kept for their full
 TTL so a replayed token returns the single-use rejection rather than the
@@ -98,11 +147,23 @@ allowlist) green with zero changes.
 Idempotency: ``CREATE TABLE/INDEX IF NOT EXISTS`` up, ``DROP INDEX/TABLE IF
 EXISTS`` down — reversible for the ``migration-reversal`` gate.
 
-Chains off ``appid_01_co_occurrence_app_id``, the single live head on ``main``
-at authoring time (2026-07-28; the plan was written against
-``memory_jobs_02_kind_aware_dedupe``, which has since been superseded). If a
-concurrent head-race moves ``main``'s head before this lands, re-point
-``down_revision`` onto the new head.
+Chains off ``agent_registry_01``, the single live head on ``main`` as of
+2026-07-28. The head has now moved TWICE under this still-unlanded PR, which is
+why the value below is not to be trusted from any plan or docstring — recompute
+it. ``main``'s chain in this region is::
+
+    appid_01_co_occurrence_app_id
+      -> coord_plan_pr_citations_3a_backfill
+        -> agent_registry_01                  (single live head)
+          -> coord_onboarding_connect_states  (this revision)
+
+The two earlier candidates are both stale: the plan was written against
+``memory_jobs_02_kind_aware_dedupe``, and the first draft of this file chained
+off ``appid_01_co_occurrence_app_id`` — which ``coord_plan_pr_citations_3a_backfill``
+subsequently claimed as ITS parent, forking the chain into two heads. If a
+concurrent head-race moves ``main``'s head again before this lands, re-point
+``down_revision`` onto the new head; the head is the revision id that is no
+other migration's ``down_revision``, and there must be exactly one.
 """
 
 from collections.abc import Sequence
@@ -113,7 +174,7 @@ from alembic import op
 # Keep ``down_revision`` on ONE physical line — the ``alembic-heads-pr`` CI gate
 # parses it with a line-based regex.
 revision: str = "coord_onboarding_connect_states"
-down_revision: str | Sequence[str] | None = "appid_01_co_occurrence_app_id"
+down_revision: str | Sequence[str] | None = "agent_registry_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -123,11 +184,21 @@ def upgrade() -> None:
     op.execute(
         """
         CREATE TABLE IF NOT EXISTS coord.onboarding_connect_states (
-            token_hash   VARCHAR(64) PRIMARY KEY,
-            tenant_id    UUID NOT NULL,
-            created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-            expires_at   TIMESTAMPTZ NOT NULL,
-            consumed_at  TIMESTAMPTZ
+            token_hash              VARCHAR(64) PRIMARY KEY,
+            tenant_id               UUID NOT NULL,
+            created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+            expires_at              TIMESTAMPTZ NOT NULL,
+            consumed_at             TIMESTAMPTZ,
+            -- Bound at mint: 'connect' | 'runner-clone'. Asserted
+            -- unconditionally by the consumer; bind_only is DERIVED from this
+            -- row, never read from the request body (F2).
+            flow                    TEXT,
+            -- Intended target, when known at mint time. NULL on the
+            -- fresh-install path, where the org is chosen on GitHub AFTER the
+            -- state is minted -- so the consumer asserts these only when
+            -- non-null. See the docstring: do NOT tighten to NOT NULL.
+            target_login            TEXT,
+            target_installation_id  BIGINT
         )
         """
     )
