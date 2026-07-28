@@ -41,6 +41,10 @@ const ACTIVE_TENANT_URL_PREFIXES = [
   // gated coord-side). Forwarding it lets a multi-tenant operator pair a
   // device to the tenant they've switched to, not just their home tenant.
   "/api/v1/devices/pair-codes",
+  // Agent-registry prefs — coord-scoped; the backend forwards the override
+  // so a multi-tenant operator edits agent prefs in the tenant they've
+  // switched to (membership-validated coord-side), matching /operations/*.
+  "/api/v1/agent-registry",
 ];
 
 function readActiveTenantId(): string | null {
@@ -183,7 +187,7 @@ export class HttpClient {
      * minted it) yet the backend keeps rejecting it — so the usual predicate
      * would never fire and the caller would 401 forever.
      */
-    tokenKnownRejected = false,
+    tokenKnownRejected = false
   ): void {
     if (skipAuth) return;
     if (status !== 401 && status !== 403) return;
@@ -199,7 +203,7 @@ export class HttpClient {
     console.warn(
       `[HttpClient] ${status} with an expired/absent (or server-rejected) access ` +
         "token — treating as session expiry and halting (redirecting to re-auth) " +
-        "rather than letting polling loops retry-storm.",
+        "rather than letting polling loops retry-storm."
     );
     this.tokenManager.clearTokens();
     if (this.onSessionExpired) {
@@ -231,7 +235,12 @@ export class HttpClient {
     attempt: number = 1
   ): Promise<Response> {
     // Execute single request
-    const response = await this.executeSingleRequest(url, options, skipAuth, timeoutMs);
+    const response = await this.executeSingleRequest(
+      url,
+      options,
+      skipAuth,
+      timeoutMs
+    );
 
     // Handle 401 Unauthorized with token refresh.
     //
