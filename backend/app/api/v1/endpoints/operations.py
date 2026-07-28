@@ -5702,17 +5702,19 @@ async def _fetch_versions_bulk(
     count, and the log is what makes that count diagnosable.
 
     Failure handling is TOTAL: ``_one`` names the expected exception classes so
-    it can log a precise reason, and ``return_exceptions=True`` catches
-    everything else (``httpx.InvalidURL`` and ``httpx.StreamError`` are notably
-    NOT ``HTTPError`` subclasses). One unanticipated exception must degrade one
+    it can log a precise reason, and the per-task ``exception()`` check below
+    catches everything else. One unanticipated exception must degrade one
     document, never blank the whole feed.
 
-    The whole fan-out is additionally bounded by ``_WRITE_FEED_DEADLINE``: with a
-    per-request timeout and a concurrency limit, a large document set could
-    otherwise pin a worker for concurrency-limited waves of it. On deadline the
-    gather is cancelled and the documents that had not answered are reported as
-    failures like any other — a slow coord degrades the feed rather than hanging
-    the page.
+    The whole fan-out is additionally bounded by
+    ``_WRITE_FEED_DEADLINE_SECONDS``: with a per-request timeout and a
+    concurrency limit, a large document set could otherwise pin a worker for
+    concurrency-limited waves of it. The deadline uses :func:`asyncio.wait`
+    rather than wrapping a gather in :func:`asyncio.timeout`, specifically so
+    the documents that DID answer before the deadline are kept — cancelling the
+    gather would throw their results away and make the feed emptier than the
+    truth. Only the stragglers become ``None``, and they are reported through
+    the same ``partial`` path as any other failure.
     """
     headers = _tenant_headers(tenant_id)
     semaphore = asyncio.Semaphore(_WRITE_FEED_CONCURRENCY)
@@ -5750,33 +5752,41 @@ async def _fetch_versions_bulk(
                 _failed(kind, name, f"non-JSON body: {exc}")
                 return None
 
-        try:
-            async with asyncio.timeout(_WRITE_FEED_DEADLINE_SECONDS):
-                results = await asyncio.gather(
-                    *(_one(doc) for doc in documents), return_exceptions=True
-                )
-        except TimeoutError:
+        tasks = [asyncio.create_task(_one(doc)) for doc in documents]
+        _, pending = await asyncio.wait(tasks, timeout=_WRITE_FEED_DEADLINE_SECONDS)
+        if pending:
             logger.warning(
                 "prompt_document_versions_fetch_deadline",
                 tenant_id=str(tenant_id),
                 documents=len(documents),
+                unanswered=len(pending),
                 deadline_seconds=_WRITE_FEED_DEADLINE_SECONDS,
             )
-            return [None] * len(documents)
+            for task in pending:
+                task.cancel()
+            # Let the cancellations settle INSIDE the client's context manager;
+            # closing the client out from under in-flight requests is what
+            # produces spurious teardown errors.
+            await asyncio.gather(*pending, return_exceptions=True)
 
-    # Anything `_one` did not anticipate still degrades to a single missing
-    # document, and still says so in the log.
     out: list[Any] = []
-    for doc, result in zip(documents, results, strict=True):
-        if isinstance(result, BaseException):
-            _failed(
-                str(doc.get("kind", "")),
-                str(doc.get("name", "")),
-                f"unexpected {type(result).__name__}: {result}",
-            )
+    for doc, task in zip(documents, tasks, strict=True):
+        kind = str(doc.get("kind", ""))
+        name = str(doc.get("name", ""))
+        if task.cancelled():
+            _failed(kind, name, "did not answer before the fan-out deadline")
+            out.append(None)
+            continue
+        # `_one` handles the expected failures itself and returns None; this
+        # arm is the total backstop for everything it did not anticipate
+        # (`httpx.InvalidURL` and `httpx.StreamError` are notably NOT
+        # `HTTPError` subclasses). One surprise degrades one document.
+        exc = task.exception()
+        if exc is not None:
+            _failed(kind, name, f"unexpected {type(exc).__name__}: {exc}")
             out.append(None)
         else:
-            out.append(result)
+            out.append(task.result())
     return out
 
 

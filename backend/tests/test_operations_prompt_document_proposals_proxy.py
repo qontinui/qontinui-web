@@ -24,6 +24,7 @@ The behaviours that matter here, and why:
   failing wholesale when one document's history is unreadable.
 """
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -469,6 +470,72 @@ class TestListWrites:
         assert resp.status_code == 200
         body = resp.json()
         assert len(body["writes"]) == 1
+        assert "partial" in body
+
+    def test_deadline_keeps_the_documents_that_did_answer(
+        self, auth_client: TestClient
+    ):
+        """A slow document must not discard its fast siblings' results.
+
+        Wrapping the gather in ``asyncio.timeout`` would cancel the whole
+        fan-out and blank the feed; ``asyncio.wait`` keeps what arrived and
+        cancels only the stragglers.
+        """
+        documents = {
+            "documents": [
+                {
+                    "kind": "policy",
+                    "name": "fast",
+                    "description": "Fast",
+                    "updated_at": "2026-07-28T12:00:00Z",
+                },
+                {
+                    "kind": "policy",
+                    "name": "slow",
+                    "description": "Slow",
+                    "updated_at": "2026-07-27T12:00:00Z",
+                },
+            ],
+            "total": 2,
+        }
+        fast = _versions_payload(
+            1,
+            [
+                {
+                    "version_number": 1,
+                    "description": None,
+                    "edited_by": None,
+                    "created_at": "2026-07-28T12:00:00Z",
+                }
+            ],
+        )
+
+        async def _responses(*args, **kwargs):
+            url = args[0] if args else ""
+            if url.endswith("/coord/prompt-documents"):
+                return _mock_response(json_data=documents)
+            if "/fast/" in url:
+                return _mock_response(json_data=fast)
+            await asyncio.sleep(30)  # never answers within the deadline
+            return _mock_response(json_data={})
+
+        with (
+            patch(
+                "app.api.v1.endpoints.operations._WRITE_FEED_DEADLINE_SECONDS",
+                0.2,
+            ),
+            _patch_httpx() as MockClient,
+        ):
+            instance = AsyncMock()
+            instance.get.side_effect = _responses
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.get(WRITES)
+
+        assert resp.status_code == 200
+        body = resp.json()
+        # The fast document's write survived the slow one's cancellation.
+        assert [w["name"] for w in body["writes"]] == ["fast"]
         assert "partial" in body
 
     def test_limit_slice_is_reported(self, auth_client: TestClient):
