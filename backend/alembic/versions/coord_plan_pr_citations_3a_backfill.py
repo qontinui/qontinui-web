@@ -36,13 +36,23 @@ only wrote the legacy table) into the successor:
   is deliberate: it also covers the PK, and the legacy table's own dedupe key
   (``uq_plan_pr_citations_dedupe``) plus the 1:1 slug join guarantee the
   SELECT itself produces no intra-statement duplicates.
-* ``source`` is stamped ``'legacy_backfill'`` — a value outside the organic
-  vocabulary (``'pr_body'`` | ``'commit_message'`` | ``'mcp_declare_intent'``)
-  — so backfilled rows stay identifiable and the downgrade can target exactly
-  them. The original per-row source is NOT lost: it remains readable in the
-  legacy table until Stage 3c drops it. ``cited_at`` is copied verbatim
-  (original record time, not ``now()``); ``tenant_id`` is copied verbatim from
-  the legacy row (faithful fold — no tenant enrichment from ``work_units``).
+* ``source`` is stamped ``'legacy_backfill'`` — a value coord's own writers
+  never emit (organic values on coord main today: ``'pr_body'`` and
+  ``'commit_message'`` from the webhook harvest, ``'manual_backfill'`` plus
+  arbitrary caller-supplied labels from the add-citation lever) — so
+  backfilled rows stay identifiable and the downgrade can target exactly
+  them. Two acknowledged consequences, both handled coord-side in Stage 3b:
+  (1) a residual row that was ORIGINALLY webhook-captured re-enters the
+  successor table outside ``WEBHOOK_CITATION_SOURCES``, i.e. in the removable
+  "caller assertion" trust class — Stage 3b decides whether
+  ``'legacy_backfill'`` joins the non-removable class; (2) ``source`` is a
+  free-form caller field on the add-citation route, so Stage 3b adds
+  ``'legacy_backfill'`` to that route's rejection list, structurally reserving
+  the value this downgrade deletes by. The original per-row source is NOT
+  lost: it remains readable in the legacy table until Stage 3c drops it.
+  ``cited_at`` is copied verbatim (original record time, not ``now()``);
+  ``tenant_id`` is copied verbatim from the legacy row (faithful fold — no
+  tenant enrichment from ``work_units``).
 
 Orphans (accepted data loss)
 ============================
@@ -75,7 +85,8 @@ Downgrade
 =========
 
 Targeted ``DELETE ... WHERE source = 'legacy_backfill'`` — removes exactly the
-rows this revision minted (organic writers never use that source value) and
+rows this revision minted (coord's own writers never use that source value;
+Stage 3b reserves it on the caller-supplied add-citation route too) and
 cannot touch organically dual-written citations.
 
 Authorship posture
