@@ -5,8 +5,12 @@
  *
  * Plan `2026-05-19-coordinator-production-readiness.md` Phase 2 (Wave 2).
  *
- * Admin-gates every page below this layout, renders the CoordNav, and
- * routes the page body. Five primary pages:
+ * Renders the CoordNav and routes the page body. It does NOT admin-gate:
+ * any authenticated tenant member may VIEW these pages (see the note in the
+ * component body) — pages gate their own mutations on `isCoordAdmin`. That
+ * distinction is load-bearing for the connect-flow security reasoning in
+ * `onboarding-status/page.tsx`, so do not restate it as "admin-gated".
+ * Five primary pages:
  *  - /admin/coord/fleet
  *  - /admin/coord/trees
  *  - /admin/coord/plans (+ /admin/coord/plans/[slug])

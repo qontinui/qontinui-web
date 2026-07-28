@@ -1789,21 +1789,28 @@ class OnboardingConnectStateRequest(BaseModel):
     only in its post-install redirect. Callers send nothing there rather than
     guess, and coord skips the target assertion for a row that records none.
 
-    ``target_login`` is bounded and charset-checked here for the same
-    fail-early reason as ``flow``: the browser validates it before the mint,
-    but this route is directly reachable, and an unbounded value (or one
-    containing the ``~`` that delimits the GitHub ``state`` wire format) should
-    fail as a typed 422 rather than as an opaque coord 400. The pattern is
-    deliberately looser than GitHub's own login rule (it permits consecutive
-    hyphens) — coord and GitHub remain the authoritative check; this only
-    excludes values that cannot be a login at all.
+    Both target fields are bounded here for the same fail-early reason as
+    ``flow``: the browser validates them before the mint, but this route is
+    directly reachable, and an out-of-range value should fail as a typed 422
+    rather than as an opaque coord 400. For ``target_login`` that means a
+    length + charset check — in particular excluding the ``~`` that delimits
+    the GitHub ``state`` wire format. For ``target_installation_id`` it means
+    an ``i64`` range check, because Python ints are unbounded and coord
+    deserializes into ``i64``.
+
+    The ``target_login`` pattern is deliberately looser than GitHub's own login
+    rule — it permits consecutive hyphens and a trailing hyphen, neither of
+    which is a real login. Coord and GitHub remain the authoritative check;
+    this only excludes values that cannot be a login at all. (No lookahead, so
+    it compiles under pydantic's default rust-regex engine, whose ``$`` is
+    end-of-haystack — a trailing newline is rejected rather than tolerated.)
     """
 
     flow: Literal["connect", "runner-clone"]
     target_login: str | None = Field(
         default=None, max_length=39, pattern=r"^[A-Za-z0-9][A-Za-z0-9-]{0,38}$"
     )
-    target_installation_id: int | None = None
+    target_installation_id: int | None = Field(default=None, gt=0, le=2**63 - 1)
 
 
 @router.post("/pr-merge/onboarding/connect-state")

@@ -216,6 +216,29 @@ def test_mint_rejects_an_impossible_target_login(
     client.post.assert_not_called()
 
 
+@pytest.mark.parametrize("target_installation_id", [0, -1, 2**63])
+def test_mint_rejects_an_out_of_range_installation_id(
+    auth_client: TestClient, target_installation_id: int
+) -> None:
+    """Python ints are unbounded; coord deserializes into ``i64``.
+
+    Without the range check an oversize value validates here and becomes the
+    opaque coord 400 that the sibling ``target_login`` check exists to avoid.
+    """
+    client = _patched_post(_mock_response(json_data={"connect_state": "ab12"}))
+    with patch("httpx.AsyncClient", return_value=client):
+        res = auth_client.post(
+            MINT_URL,
+            json={
+                "flow": "connect",
+                "target_installation_id": target_installation_id,
+            },
+        )
+
+    assert res.status_code == 422
+    client.post.assert_not_called()
+
+
 @pytest.mark.parametrize(("status", "code"), [(401, "unauthorized"), (500, "boom")])
 def test_mint_failures_pass_through_verbatim(
     auth_client: TestClient, status: int, code: str
