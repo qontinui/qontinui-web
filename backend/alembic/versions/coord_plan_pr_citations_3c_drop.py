@@ -42,9 +42,13 @@ Why this is safe now (verified, not assumed)
   ``qontinui-coord:6c851966705f``, ``rolloutState COMPLETED``, 2/2 running.
   Green deploy jobs are NOT a rollout; the serving SHA is.
 * **The runner's boot gate is clear too** — coord is not the only service that
-  hard-fails on a missing ``coord.*`` table. ``qontinui-runner``'s
-  ``src-tauri/src/database/pg/mod.rs`` does not list ``plan_pr_citations``, so
-  no runner crash-loops on this drop either.
+  hard-fails on a missing ``coord.*`` table. ``qontinui-runner``'s required-table
+  set is the ``required`` vec in ``src-tauri/src/coordinator/scheduler.rs``
+  (~:127-134, the sole caller of ``PgDb::require_table``, defined in
+  ``src-tauri/src/database/pg/mod.rs``); it does not name
+  ``plan_pr_citations``, and ``git grep`` over the runner's ``src-tauri/src``
+  on ``origin/main`` finds the string nowhere. No runner crash-loops on this
+  drop either.
 * No qontinui-web code reads or writes this table — the only remaining
   references in this repo are the migrations that created/backfilled it and the
   3a test, all of which run at revisions strictly before this one.
@@ -67,6 +71,12 @@ dual-written are unaffected: 3a's ``ON CONFLICT DO NOTHING`` left them alone and
 they keep their organic ``source`` in ``coord.work_unit_pr_citations`` — the 3a
 test pins exactly that.) For the orphans and for the minted rows' original
 ``source`` there is no other copy anywhere.
+
+A third, smaller population dies here too, and is worth naming because it is
+neither an orphan nor a minted row: 3a EXCLUDED rows where the legacy row and
+the matched work unit both carried a non-NULL ``tenant_id`` and they DISAGREED
+(counted and logged as cross-tenant drift, not folded). Any such row that coord
+had not already dual-written is destroyed outright by this DROP.
 
 **Applying this revision to prod is the last point at which the fold could be
 checked against real production legacy rows.**
@@ -98,24 +108,28 @@ shares a single transaction — an unreset ``SET LOCAL`` would leak this 3s
 timeout into every migration that lands after this one.
 
 ``RESET`` (rather than saving and restoring a prior value) is safe here because
-no apply path sets a session-level ``lock_timeout``: not ``migrate.yml``, not
-``.platform/hooks/postdeploy/01_run_migrations.sh``, not ``start-backend.sh``,
-not ``alembic.ini``, and no ``PGOPTIONS``. There is nothing to clobber, so
+no apply path sets a session-level ``lock_timeout``: not
+``.github/workflows/migrate.yml``, not ``backend/start-backend.sh``, not
+``backend/alembic.ini`` — nor the retired Elastic-Beanstalk
+``backend/.platform/hooks/postdeploy/01_run_migrations.sh``, checked belt-and-braces
+— and no ``PGOPTIONS`` anywhere in the repo. There is nothing to clobber, so
 ``RESET`` and ``SET LOCAL … = DEFAULT`` are equivalent (both land on ``0``).
 
 Downgrade — STRUCTURE ONLY, the rows are gone
 =============================================
 
 ``downgrade()`` recreates the table and all three indexes with exactly the shape
-``coord_plan_pr_citations`` defined. No intervening revision ever ALTERed the
-table — re-verified empirically, not by inspection: the live catalog shape
+``coord_plan_pr_citations`` defined. Nothing between them left the shape
+different — re-verified empirically, not by inspection: the live catalog shape
 (``information_schema.columns`` + ``pg_indexes`` + ``pg_constraint``) at the
-creating revision, at this revision's parent 443 revisions later, and after this
+creating revision, at this revision's parent 109 revisions later, and after this
 ``downgrade()`` all compare IDENTICAL, ``NULLS NOT DISTINCT`` and the primary key
-included. (The only later revision that touches the table at all,
-``coord_tenant_backfill_01``, is pure DML: it SETs ``tenant_id``, matching rows
-on ``repo``.) So the chain is reversible and a later revision that expects the
-table can still run against a downgraded DB.
+included. That diff proves net-identity, which is what reversibility needs; the
+stronger "never ALTERed at all" comes from inspection — the only later revision
+that MODIFIES the table, ``coord_tenant_backfill_01``, is pure DML (it SETs
+``tenant_id``, matching rows on ``repo``), and 3a only READs it. So the chain is
+reversible and a later revision that expects the table can still run against a
+downgraded DB.
 
 **It restores STRUCTURE ONLY. It cannot restore a single row.** The folded rows
 live on in ``coord.work_unit_pr_citations`` under a different key; the orphans,
@@ -137,25 +151,45 @@ Two changes in other repos become due only ONCE this drop is applied to prod.
 Both are tracked by coord gate **``cda7919f-af71-47d0-8f22-605c5c3ec662``**
 (work unit ``2026-07-06-coord-plan-slug-to-work-unit-slug-rename``, predicate
 ``file_exists`` on this file at ``qontinui-web@main``) — the plan explicitly
-ruled that a code comment is not a tracking artifact, and neither is a docstring:
+ruled that a code comment is not a tracking artifact, and neither is a docstring.
+
+**The gate fires on MERGE, not on prod application.** Merging this auto-triggers
+``.github/workflows/migrate.yml`` (``push`` to ``main`` under
+``backend/alembic/**``), which dispatches the migrator ECS task, so in practice
+merge ≈ applied. But if that run fails or lags, acting on the gate would land
+follow-up 1 while the table still physically exists — firing exactly the false
+``schema:deprecated_object_present`` it is meant to avoid. **Confirm the table is
+absent from the live prod catalog before landing follow-up 1**, whatever the gate
+says. (Where this docstring and the gate's ``phase_name`` differ in wording, this
+docstring governs — the ``phase_name`` is frozen at registration.)
 
 1. **coord** — add ``"plan_pr_citations"`` to ``DEPRECATED_COORD_TABLES``
    (``qontinui-coord/src/schema_manifest.rs``, the const at :363; the consumer
-   that intersects it with the live catalog is ``mcp/tools.rs`` ~:8610) and drop
-   the now-stale deferral note at :217-225. It is evaluated as
-   ``live catalog ∩ DEPRECATED_COORD_TABLES``, so listing a table that still
-   exists fires a false ``schema:deprecated_object_present`` — which is why it
-   CANNOT ride this PR and is strictly sequential after prod application. Until
-   it lands, the deprecation guard does not cover this table.
+   that intersects it with the live catalog is ``mcp/tools.rs`` ~:8610). It is
+   evaluated as ``live catalog ∩ DEPRECATED_COORD_TABLES``, so listing a table
+   that still exists fires a false ``schema:deprecated_object_present`` — which
+   is why it CANNOT ride this PR. Until it lands, the deprecation guard does not
+   cover this table.
+   **UPDATE — do NOT delete — the note at ``schema_manifest.rs:217-225.``** Only
+   its last clause ("deliberately NOT in ``DEPRECATED_COORD_TABLES`` yet … the
+   DROP stage adds it there") goes stale. The rest is load-bearing and must
+   survive: it records why ``plan_pr_citations`` MUST stay out of the
+   critical-boot allowlist — a boot gate on a dropped table makes every
+   post-drop coord build unbootable. The ``plans`` note directly beneath it was
+   deliberately retained after ``plans`` was dropped, for exactly this reason;
+   mirror that.
 2. **qontinui-runner** — ``src-tauri/schema.pg.sql.generated`` is a checked-in
    ``pg_dump`` of this alembic-managed schema and still contains the
-   ``coord.plan_pr_citations`` block. Its ``schema-pg-sql-fresh.yml`` gate checks
-   out qontinui-web at ``main``, runs ``alembic upgrade head``, dumps, and fails
-   on any diff — so once this lands, the checked-in file is stale. Not
-   immediate (the heavy verify job only runs when a runner PR touches
-   ``src-tauri/queries/**`` or the generated file), but the next such PR reddens
-   for an unrelated reason. Regenerate with
-   ``src-tauri/scripts/regenerate_schema_pg_sql.sh``.
+   ``coord.plan_pr_citations`` block (the ``CREATE TABLE``, its PK, and all three
+   indexes incl. ``NULLS NOT DISTINCT``). Its ``schema-pg-sql-fresh.yml`` gate
+   resolves a qontinui-web ref (a same-named branch if one exists, else ``main``
+   — ``main`` for any ordinary runner PR), runs ``alembic upgrade head``, dumps,
+   and fails on any diff — so once this lands, the checked-in file is stale. Not
+   immediate: the heavy ``schema-fresh-verify`` job only runs when a runner PR
+   touches ``src-tauri/queries/**`` or the generated file. But the next such PR
+   reddens for an unrelated reason. Regenerate with
+   ``src-tauri/scripts/regenerate_schema_pg_sql.sh`` (literally what the verify
+   job runs).
 """
 
 from collections.abc import Sequence
