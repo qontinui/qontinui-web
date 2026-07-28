@@ -31,7 +31,7 @@ export default function OnboardingPage() {
         issues no Setup-URL code on a re-visit, so the install CTA above can
         never complete a claim for it. Renders only when coord has OAuth creds.
       */}
-      <ConnectInstalledOrg />
+      <ConnectInstalledOrg flow="connect" />
       <MergeOrchestrationOnboarding />
     </div>
   );

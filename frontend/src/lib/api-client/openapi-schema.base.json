@@ -26128,6 +26128,48 @@
         "title": "OnboardingClaimRequest",
         "type": "object"
       },
+      "OnboardingConnectStateRequest": {
+        "description": "Body for ``POST /pr-merge/onboarding/connect-state``.\n\nNone of these fields selects a tenant \u2014 that still comes solely from the\ncaller's auth. They pin what the *flow* is allowed to do, so the decision\nstops being a free parameter of the later claim.\n\n``flow`` \u2014 ``connect`` (merge-orchestrator onboarding: bind + enroll) or\n``runner-clone`` (clone-only: bind, no enrollment, no bootstrap PRs). Coord\nrecords it on the minted row and derives the claim's ``bind_only`` from it,\nrejecting a claim body that disagrees. Without it ``bind_only`` is chosen by\nwhoever POSTs the claim (plan\n``2026-07-26-coord-onboarding-claim-caller-tenant-binding`` \u00a77.5 F2).\n\n**REQUIRED here, even though coord's own mint accepts it as optional.**\nCoord keeps it optional so a caller predating the field is not broken; this\nproxy is the ONLY door to that mint (coord's ``TenantId`` resolves solely\nfrom an operator Cognito context, so nothing reaches it except through\nhere), so requiring it at the door is what makes \"every minted row records\na flow\" true in practice rather than aspirational. Leaving it optional\nwould hand the F2 attacker \u2014 by definition someone hand-crafting the\nrequest, not someone using the UI \u2014 a one-key bypass: POST ``{}``, get a\nflow-less row, then choose ``bind_only`` on the claim after all. There is\nno compatibility cost: the mint route ships in the same release as its only\ncallers, so no deployed client posts a flow-less body.\n\n``target_login`` / ``target_installation_id`` \u2014 which org/installation the\ntoken authorises, when that is known BEFORE the GitHub hop. It is known on\nthe authorize (already-installed) path, where the user typed the org; it is\nNOT known on the fresh-install path, where GitHub names the installation\nonly in its post-install redirect. Callers send nothing there rather than\nguess, and coord skips the target assertion for a row that records none.\n\n``target_login`` is bounded and charset-checked here for the same\nfail-early reason as ``flow``: the browser validates it before the mint,\nbut this route is directly reachable, and an unbounded value (or one\ncontaining the ``~`` that delimits the GitHub ``state`` wire format) should\nfail as a typed 422 rather than as an opaque coord 400. The pattern is\ndeliberately looser than GitHub's own login rule (it permits consecutive\nhyphens) \u2014 coord and GitHub remain the authoritative check; this only\nexcludes values that cannot be a login at all.",
+        "properties": {
+          "flow": {
+            "enum": [
+              "connect",
+              "runner-clone"
+            ],
+            "title": "Flow",
+            "type": "string"
+          },
+          "target_installation_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Installation Id"
+          },
+          "target_login": {
+            "anyOf": [
+              {
+                "maxLength": 39,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{0,38}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Login"
+          }
+        },
+        "required": [
+          "flow"
+        ],
+        "title": "OnboardingConnectStateRequest",
+        "type": "object"
+      },
       "OrganizationCreate": {
         "description": "Schema for creating a new organization.",
         "properties": {
@@ -76764,8 +76806,18 @@
     },
     "/api/v1/operations/pr-merge/onboarding/connect-state": {
       "post": {
-        "description": "Mint a single-use, tenant-bound connect-state token for a GitHub connect.\n\nProxies coord's ``POST /coord/onboarding/connect-state``. Takes no body:\nthe only input that matters is the caller's identity, which\n``get_tenant_id`` resolves and ``_tenant_headers`` forwards as the\noperator's bearer \u2014 coord records the resulting row against *that* tenant\nand later binds the claim to it.\n\nPasses coord's status code and JSON body through verbatim (like the claim\nproxy, not the raising ``_proxy_coord_post`` helper) so the connect UI can\nsurface a retryable, honest failure instead of a blank navigation to a\nstateless GitHub URL. httpx transport errors mirror the shared helpers\n(ConnectError \u2192 502, TimeoutException \u2192 504).",
+        "description": "Mint a single-use, tenant-bound connect-state token for a GitHub connect.\n\nProxies coord's ``POST /coord/onboarding/connect-state``. The tenant is\nNEVER taken from the body: ``get_tenant_id`` resolves the caller and\n``_tenant_headers`` forwards the operator's bearer, so coord records the\nrow against *that* tenant and later binds the claim to it. The body only\nnarrows what the flow may go on to do \u2014 see\n:class:`OnboardingConnectStateRequest`.\n\nPasses coord's status code and JSON body through verbatim (like the claim\nproxy, not the raising ``_proxy_coord_post`` helper) so the connect UI can\nsurface a retryable, honest failure instead of a blank navigation to a\nstateless GitHub URL. httpx transport errors mirror the shared helpers\n(ConnectError \u2192 502, TimeoutException \u2192 504).",
         "operationId": "api_v1_operations_pr_merge_onboarding_connect_state_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OnboardingConnectStateRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
@@ -76774,6 +76826,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Post Pr Merge Onboarding Connect State",

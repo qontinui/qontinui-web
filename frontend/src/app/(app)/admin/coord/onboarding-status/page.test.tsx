@@ -16,6 +16,7 @@
 
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 let mockSearchParams = new URLSearchParams();
 vi.mock("next/navigation", () => ({
@@ -40,8 +41,11 @@ vi.mock("@/components/operations/ConnectedOrgs", () => ({
 
 import OnboardingStatusPage from "./page";
 
-const TOKEN =
-  "feedface0123456789abcdef0123456789abcdef0123456789abcdef01234567";
+// `test-token-` prefix is load-bearing, not cosmetic: a bare hex literal is
+// what gitleaks' `generic-api-key` rule looks for, and `.gitleaks.toml` already
+// exempts `test[-_]?token`. Naming the fake keeps the secret scan green without
+// weakening it. Keep the prefix and keep the value wire-safe (no `~`).
+const TOKEN = "test-token-connect-state-onboarding-status-0123456789abcdef";
 const NONCE = "00112233445566778899aabbccddeeff";
 
 const originalLocation = window.location;
@@ -60,6 +64,15 @@ function claimBody(): Record<string, unknown> {
   );
   if (!call) throw new Error("no claim POST was issued");
   return JSON.parse((call[1] as RequestInit).body as string);
+}
+
+/** The connect-state mint body the recovery card sent, parsed. */
+function mintBody(): Record<string, unknown> {
+  const call = fetchMock.mock.calls.find((c) =>
+    String(c[0]).includes("/onboarding/connect-state")
+  );
+  if (!call) throw new Error("no connect-state mint was requested");
+  return JSON.parse(String((call[1] as RequestInit).body ?? "{}"));
 }
 
 beforeEach(() => {
@@ -271,5 +284,65 @@ describe("onboarding-status claim", () => {
 
     await screen.findByTestId("onboarding-claim-error");
     expect(screen.queryByTestId("onboarding-claim-recover")).toBeNull();
+  });
+});
+
+/**
+ * The recovery card is the FOURTH connect-initiation site, and the only one
+ * that *computes* its flow instead of hardcoding it. Inverting that ternary is
+ * the cheapest possible regression in this feature — it would silently upgrade
+ * a clone-only connect to the bind + enroll + bootstrap-PR flow, and coord now
+ * records that server-side and authorises the claim from it. Both branches are
+ * pinned on the actual mint payload.
+ */
+describe("recovery card re-mint", () => {
+  function stubMint() {
+    fetchMock.mockImplementation((url: string) =>
+      Promise.resolve(
+        String(url).includes("/onboarding/connect-state")
+          ? jsonResponse({ connect_state: TOKEN })
+          : jsonResponse({ ok: true })
+      )
+    );
+  }
+
+  it("re-mints the runner-clone flow when that is what came back", async () => {
+    // A legacy bare `runner-clone` state parses but carries no token, so the
+    // page fails closed onto the recovery card with the flow still known.
+    stubMint();
+    mockSearchParams = new URLSearchParams({
+      code: "gho_code",
+      installation_id: "4242",
+      state: "runner-clone",
+    });
+
+    render(<OnboardingStatusPage />);
+
+    await userEvent.click(
+      await screen.findByTestId("onboarding-claim-recover-install")
+    );
+    await waitFor(() => expect(mintBody()).toEqual({ flow: "runner-clone" }));
+  });
+
+  it("re-mints the connect flow for a stateless callback", async () => {
+    // No state at all — an out-of-band Marketplace install or a crafted link.
+    // The originating flow is genuinely unknowable here, and this page is the
+    // merge-orchestrator onboarding surface, so `connect` is the intended
+    // default. It is NOT an escalation: `/admin/coord/onboarding` renders the
+    // same `connect` CTA to exactly the same audience (the /admin/coord layout
+    // admits any authenticated tenant member, gating only mutations), so this
+    // grants nothing the user could not already ask for directly.
+    stubMint();
+    mockSearchParams = new URLSearchParams({
+      code: "gho_code",
+      installation_id: "9999",
+    });
+
+    render(<OnboardingStatusPage />);
+
+    await userEvent.click(
+      await screen.findByTestId("onboarding-claim-recover-install")
+    );
+    await waitFor(() => expect(mintBody()).toEqual({ flow: "connect" }));
   });
 });
