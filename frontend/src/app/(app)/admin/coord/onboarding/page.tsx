@@ -15,7 +15,9 @@
  * Without this page the SLO panel renders "No repos onboarded yet" with
  * no actionable next step.
  *
- * Admin-gating + CoordNav come from the /admin/coord layout.
+ * CoordNav comes from the /admin/coord layout. That layout does NOT admin-gate
+ * — any authenticated tenant member may reach this page, including the
+ * `connect` install CTA below. Mutations gate on `isCoordAdmin` per page.
  */
 
 import { ConnectGitHubOrg } from "@/components/operations/ConnectGitHubOrg";
