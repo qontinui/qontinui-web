@@ -5715,7 +5715,18 @@ async def _fetch_versions_bulk(
     gather would throw their results away and make the feed emptier than the
     truth. Only the stragglers become ``None``, and they are reported through
     the same ``partial`` path as any other failure.
+
+    An empty ``documents`` returns ``[]`` before touching :func:`asyncio.wait`,
+    which raises ``ValueError`` on an empty set — and empty is ORDINARY here: a
+    tenant with no documents yet, and coord's store-unprovisioned ``degraded``
+    answer, both land on it. That path must render its caveat, not 500.
     """
+    # `asyncio.wait` raises ValueError on an empty set, and no-documents is a
+    # routine state (fresh tenant; coord's `degraded` store-unprovisioned
+    # answer) — not an error worth a 500.
+    if not documents:
+        return []
+
     headers = _tenant_headers(tenant_id)
     semaphore = asyncio.Semaphore(_WRITE_FEED_CONCURRENCY)
 
@@ -5977,7 +5988,7 @@ async def list_prompt_document_writes(
     # indistinguishable from the ceiling case that gets a banner.
     if len(writes) > limit:
         response["limited"] = (
-            f"Showing the {limit} most recent of {len(writes)} writes."
+            f"Showing the {_plural(limit, 'most recent write')} of {len(writes)}."
         )
     return response
 

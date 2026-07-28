@@ -13,12 +13,20 @@ import type { PromptDocumentWrite } from "../types";
 interface LandedWriteFeedProps {
   writes: PromptDocumentWrite[];
   /**
-   * Every caveat that applies — unreadable, degraded, partial, truncated. They
-   * are independent conditions and can co-occur, so all of them are shown.
+   * Every caveat that applies — unreadable, degraded, partial, truncated,
+   * limited. They are independent conditions and can co-occur, so all of them
+   * are shown.
    */
   notices: string[];
   /** True when a caveat means coord is actually failing, not just incomplete. */
   severe: boolean;
+  /**
+   * True when the caveats say nothing could be read. Distinct from `severe`:
+   * every document failing individually leaves the feed empty without coord
+   * being down, and the empty state must not then claim there is simply
+   * nothing to show.
+   */
+  nothingRead: boolean;
   loading: boolean;
   acting: boolean;
   onRevert: (write: PromptDocumentWrite) => Promise<boolean>;
@@ -33,6 +41,10 @@ interface LandedWriteFeedProps {
  * didn't. Seeing both on one page is the point: the review surface should show
  * what happened as well as what is waiting.
  *
+ * Every caveat the backend set is rendered — `unavailable`, `degraded`,
+ * `partial`, `truncated`, `limited` — because each one means a write is missing
+ * from what is on screen.
+ *
  * Undo appends a new version restoring the PREVIOUS body; it never rewrites
  * history, so an undo is itself undoable. Only the version that is currently
  * head gets the control — undoing an older-than-head write from a flat feed
@@ -43,6 +55,7 @@ export function LandedWriteFeed({
   writes,
   notices,
   severe,
+  nothingRead,
   loading,
   acting,
   onRevert,
@@ -100,11 +113,12 @@ export function LandedWriteFeed({
       ) : writes.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border py-10 text-center">
           <p className="text-sm text-muted-foreground">
-            {/* Only an actual read FAILURE means "could not be read". The
-                incomplete-but-working caveats (degraded / partial / truncated /
-                limited) can be set on a feed that read fine and is genuinely
-                empty, and claiming otherwise would be its own small lie. */}
-            {severe
+            {/* "Nothing recorded yet" is a CLAIM, and only safe when the feed
+                actually read everything. coord being down is one way to lose
+                that right; so is every document failing individually, which
+                sets `partial` without `unavailable`. Either way, do not tell
+                the operator the queue is empty. */}
+            {nothingRead
               ? "No writes could be read — see the note above."
               : "No document writes recorded yet."}
           </p>

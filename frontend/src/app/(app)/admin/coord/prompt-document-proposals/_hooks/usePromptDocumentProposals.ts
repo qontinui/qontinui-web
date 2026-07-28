@@ -87,6 +87,7 @@ export function usePromptDocumentProposals() {
   /** Every write-feed caveat that is set — they are independent, not a chain. */
   const [writesNotices, setWritesNotices] = useState<string[]>([]);
   const [writesSevere, setWritesSevere] = useState(false);
+  const [writesNothingRead, setWritesNothingRead] = useState(false);
 
   const loadProposals = useCallback(async () => {
     try {
@@ -132,9 +133,17 @@ export function usePromptDocumentProposals() {
           // unlabelled failure here still means coord is not answering.
           isUnavailableSevere(data.unavailable_kind, true)
       );
+      // Distinct from severity: `partial` with an empty feed means every
+      // document failed individually — coord is up, but nothing was read, and
+      // the empty state must not claim there is nothing to show.
+      setWritesNothingRead(
+        Boolean(data.unavailable) ||
+          (Boolean(data.partial) && (data.writes ?? []).length === 0)
+      );
     } catch (err) {
       setWritesNotices([message(err, "Failed to load recent writes")]);
       setWritesSevere(true);
+      setWritesNothingRead(true);
     }
   }, []);
 
@@ -303,6 +312,7 @@ export function usePromptDocumentProposals() {
     unavailableKind,
     writesNotices,
     writesSevere,
+    writesNothingRead,
     liveVersionFor,
     reload,
     decide,

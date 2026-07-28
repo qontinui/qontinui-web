@@ -197,6 +197,47 @@ describe("usePromptDocumentProposals — honesty about what is missing", () => {
     expect(result.current.writesSevere).toBe(false);
   });
 
+  it("treats an UNLABELLED write-feed failure as severe", async () => {
+    // The write feed's document-list route ships in today's coord, so any
+    // failure means coord is not answering — the opposite default from the
+    // proposals queue, whose whole point is a benign pre-deploy 404.
+    getMock.mockImplementation(
+      routeInitial({
+        writes: {
+          writes: [],
+          total: 0,
+          unavailable: "coord did not answer the document list (HTTP 502).",
+        },
+      })
+    );
+
+    const { result } = renderHook(() => usePromptDocumentProposals());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.writesSevere).toBe(true);
+    expect(result.current.writesNothingRead).toBe(true);
+  });
+
+  it("does not claim 'nothing recorded' when every document failed", async () => {
+    // coord is up (no `unavailable`), but every document's history read failed,
+    // so the feed is empty for a reason the operator must not read as "quiet".
+    getMock.mockImplementation(
+      routeInitial({
+        writes: {
+          writes: [],
+          total: 0,
+          partial: "5 of the 5 documents read did not return their history",
+        },
+      })
+    );
+
+    const { result } = renderHook(() => usePromptDocumentProposals());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.writesSevere).toBe(false);
+    expect(result.current.writesNothingRead).toBe(true);
+  });
+
   it("keeps an unreadable queue distinct from an empty one", async () => {
     getMock.mockImplementation(
       routeInitial({

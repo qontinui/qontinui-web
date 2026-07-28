@@ -35,6 +35,7 @@ export function ReviewFeed() {
     unavailableKind,
     writesNotices,
     writesSevere,
+    writesNothingRead,
     liveVersionFor,
     reload,
     decide,
@@ -162,6 +163,7 @@ export function ReviewFeed() {
         writes={writes}
         notices={writesNotices}
         severe={writesSevere}
+        nothingRead={writesNothingRead}
         loading={loading}
         acting={acting}
         onRevert={revertWrite}

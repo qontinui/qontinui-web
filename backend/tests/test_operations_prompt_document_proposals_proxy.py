@@ -585,7 +585,57 @@ class TestListWrites:
 
         body = resp.json()
         assert len(body["writes"]) == 1
-        assert "limited" in body and "of 2 writes" in body["limited"]
+        assert "limited" in body and "of 2" in body["limited"]
+
+    def test_no_documents_returns_an_empty_feed_not_a_500(
+        self, auth_client: TestClient
+    ):
+        """Zero documents is ORDINARY, and must not crash the fan-out.
+
+        ``asyncio.wait`` raises ``ValueError`` on an empty set, so the empty
+        case needs an explicit early return. It is reachable on a fresh tenant
+        AND on coord's store-unprovisioned answer — the very case ``degraded``
+        exists to report, which would otherwise 500 instead of rendering its
+        caveat and take the whole write feed down with it.
+        """
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(
+                json_data={
+                    "documents": [],
+                    "total": 0,
+                    "degraded": "coord.prompt_documents is not provisioned",
+                }
+            )
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.get(WRITES)
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["writes"] == []
+        assert body["total"] == 0
+        # The degraded caveat still reaches the page.
+        assert body["degraded"] == "coord.prompt_documents is not provisioned"
+        # Nothing failed, so no failure caveats are invented.
+        assert "partial" not in body
+        assert "truncated" not in body
+
+    def test_malformed_document_list_returns_an_empty_feed(
+        self, auth_client: TestClient
+    ):
+        """A non-list ``documents`` also lands on the empty path — same guard."""
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(
+                json_data={"documents": "not a list"}
+            )
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.get(WRITES)
+
+        assert resp.status_code == 200
+        assert resp.json()["writes"] == []
 
     def test_document_list_404_degrades(self, auth_client: TestClient):
         with _patch_httpx() as MockClient:
