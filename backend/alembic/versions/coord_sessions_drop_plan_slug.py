@@ -69,6 +69,10 @@ def upgrade() -> None:
     # session hot path behind one slow in-flight query.
     op.execute("SET LOCAL lock_timeout = '3s'")
     op.execute("ALTER TABLE coord.sessions DROP COLUMN IF EXISTS plan_slug")
+    # env.py runs every pending migration in ONE enclosing transaction, so
+    # without a reset this SET LOCAL would silently apply to any migration
+    # that runs after this one in the same batch (e.g. a fresh-DB replay).
+    op.execute("SET LOCAL lock_timeout = DEFAULT")
 
 
 def downgrade() -> None:
