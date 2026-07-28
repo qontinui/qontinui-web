@@ -41,15 +41,19 @@ only wrote the legacy table) into the successor:
   ``'commit_message'`` from the webhook harvest, ``'manual_backfill'`` plus
   arbitrary caller-supplied labels from the add-citation lever) — so
   backfilled rows stay identifiable and the downgrade can target exactly
-  them. Two acknowledged consequences, both handled coord-side in Stage 3b:
-  (1) a residual row that was ORIGINALLY webhook-captured re-enters the
-  successor table outside ``WEBHOOK_CITATION_SOURCES``, i.e. in the removable
-  "caller assertion" trust class — Stage 3b decides whether
-  ``'legacy_backfill'`` joins the non-removable class; (2) ``source`` is a
-  free-form caller field on the add-citation route, so Stage 3b adds
-  ``'legacy_backfill'`` to that route's rejection list, structurally reserving
-  the value this downgrade deletes by. The original per-row source is NOT
-  lost: it remains readable in the legacy table until Stage 3c drops it.
+  them. Two consequences were acknowledged here and deferred to coord; both
+  are now RESOLVED coord-side (``PROTECTED_CITATION_SOURCES`` in
+  ``data/repo_branches.rs``, which SUPERSEDES the ``WEBHOOK_CITATION_SOURCES``
+  constant this docstring originally named):
+  (1) a residual row that was ORIGINALLY webhook-captured re-entered the
+  successor table outside the webhook source set, i.e. in the removable
+  "caller assertion" trust class — ``'legacy_backfill'`` is now IN the
+  non-removable class, because the fold restamps every row and a folded row's
+  original provenance is therefore not recoverable from the row itself;
+  (2) ``source`` was a free-form caller field on the add-citation route, so
+  both add doors (HTTP + MCP) now REJECT ``'legacy_backfill'``, structurally
+  reserving the value this downgrade deletes by. The original per-row source is
+  NOT lost: it remains readable in the legacy table until Stage 3c drops it.
   ``cited_at`` is copied verbatim (original record time, not ``now()``);
   ``tenant_id`` is copied verbatim from the legacy row (faithful fold — no
   tenant enrichment from ``work_units``).
