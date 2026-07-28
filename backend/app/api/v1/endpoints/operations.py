@@ -5640,6 +5640,13 @@ _WRITE_FEED_DOCUMENT_CEILING = 200
 # Concurrent in-flight version reads during the fan-out.
 _WRITE_FEED_CONCURRENCY = 10
 
+# Wall-clock bound on the whole fan-out. Without it the worst case is
+# ``ceil(ceiling / concurrency)`` waves of ``_COORD_TIMEOUT`` each — 20 waves ×
+# 5s with the constants above — pinning an ASGI worker for the duration. Coord's
+# ``list_versions`` also has no LIMIT, so a document with deep history is not a
+# cheap read. A slow coord must degrade this feed, not hang the page.
+_WRITE_FEED_DEADLINE_SECONDS = 20.0
+
 
 def _coord_unavailable(exc: HTTPException) -> tuple[str, str]:
     """One honest line for an unreadable coord surface, plus its KIND.
@@ -5660,6 +5667,11 @@ def _coord_unavailable(exc: HTTPException) -> tuple[str, str]:
         f"coord did not answer the proposal queue (HTTP {exc.status_code}).",
         "unreachable",
     )
+
+
+def _plural(count: int, noun: str) -> str:
+    """``"1 document"`` / ``"3 documents"`` — these strings are read by humans."""
+    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
 
 
 def _parse_iso(value: Any) -> datetime:
@@ -5685,12 +5697,34 @@ async def _fetch_versions_bulk(
     bounded by a semaphore.
 
     A document whose read fails yields ``None`` in its slot AND a
-    ``prompt_document_versions_fetch_failed`` warning naming the document and
-    the error — the caller turns the ``None`` into the operator-facing
-    ``partial`` count, and the log is what makes that count diagnosable.
+    ``prompt_document_versions_fetch_failed`` warning naming the tenant and the
+    document — the caller turns the ``None`` into the operator-facing ``partial``
+    count, and the log is what makes that count diagnosable.
+
+    Failure handling is TOTAL: ``_one`` names the expected exception classes so
+    it can log a precise reason, and ``return_exceptions=True`` catches
+    everything else (``httpx.InvalidURL`` and ``httpx.StreamError`` are notably
+    NOT ``HTTPError`` subclasses). One unanticipated exception must degrade one
+    document, never blank the whole feed.
+
+    The whole fan-out is additionally bounded by ``_WRITE_FEED_DEADLINE``: with a
+    per-request timeout and a concurrency limit, a large document set could
+    otherwise pin a worker for concurrency-limited waves of it. On deadline the
+    gather is cancelled and the documents that had not answered are reported as
+    failures like any other — a slow coord degrades the feed rather than hanging
+    the page.
     """
     headers = _tenant_headers(tenant_id)
     semaphore = asyncio.Semaphore(_WRITE_FEED_CONCURRENCY)
+
+    def _failed(kind: str, name: str, error: str) -> None:
+        logger.warning(
+            "prompt_document_versions_fetch_failed",
+            tenant_id=str(tenant_id),
+            kind=kind,
+            name=name,
+            error=error,
+        )
 
     async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
 
@@ -5705,33 +5739,45 @@ async def _fetch_versions_bulk(
                 try:
                     resp = await client.get(url, headers=headers)
                 except httpx.HTTPError as exc:
-                    logger.warning(
-                        "prompt_document_versions_fetch_failed",
-                        kind=kind,
-                        name=name,
-                        error=str(exc),
-                    )
+                    _failed(kind, name, str(exc))
                     return None
             if resp.status_code >= 400:
-                logger.warning(
-                    "prompt_document_versions_fetch_failed",
-                    kind=kind,
-                    name=name,
-                    error=f"HTTP {resp.status_code}",
-                )
+                _failed(kind, name, f"HTTP {resp.status_code}")
                 return None
             try:
                 return resp.json()
             except ValueError as exc:
-                logger.warning(
-                    "prompt_document_versions_fetch_failed",
-                    kind=kind,
-                    name=name,
-                    error=f"non-JSON body: {exc}",
-                )
+                _failed(kind, name, f"non-JSON body: {exc}")
                 return None
 
-        return list(await asyncio.gather(*(_one(doc) for doc in documents)))
+        try:
+            async with asyncio.timeout(_WRITE_FEED_DEADLINE_SECONDS):
+                results = await asyncio.gather(
+                    *(_one(doc) for doc in documents), return_exceptions=True
+                )
+        except TimeoutError:
+            logger.warning(
+                "prompt_document_versions_fetch_deadline",
+                tenant_id=str(tenant_id),
+                documents=len(documents),
+                deadline_seconds=_WRITE_FEED_DEADLINE_SECONDS,
+            )
+            return [None] * len(documents)
+
+    # Anything `_one` did not anticipate still degrades to a single missing
+    # document, and still says so in the log.
+    out: list[Any] = []
+    for doc, result in zip(documents, results, strict=True):
+        if isinstance(result, BaseException):
+            _failed(
+                str(doc.get("kind", "")),
+                str(doc.get("name", "")),
+                f"unexpected {type(result).__name__}: {result}",
+            )
+            out.append(None)
+        else:
+            out.append(result)
+    return out
 
 
 @router.get("/coord/prompt-document-proposals")
@@ -5904,14 +5950,24 @@ async def list_prompt_document_writes(
     if degraded:
         response["degraded"] = degraded
     if failed:
+        # Denominator is the documents actually READ (post-ceiling), which is
+        # what the ratio describes; the ``truncated`` caveat below owns the ones
+        # that were never attempted.
         response["partial"] = (
-            f"{failed} of {len(documents)} documents did not return their history; "
-            "their writes are missing from this feed."
+            f"{failed} of the {_plural(len(documents), 'document')} read did not "
+            "return their history; their writes are missing from this feed."
         )
     if truncated > 0:
         response["truncated"] = (
-            f"{truncated} documents beyond the {_WRITE_FEED_DOCUMENT_CEILING}-document "
-            "ceiling were not read; writes belonging to them are missing from this feed."
+            f"{_plural(truncated, 'document')} beyond the "
+            f"{_WRITE_FEED_DOCUMENT_CEILING}-document ceiling {'were' if truncated != 1 else 'was'} "
+            "not read; writes belonging to them are missing from this feed."
+        )
+    # The limit slice drops writes too, and a silent drop here would be
+    # indistinguishable from the ceiling case that gets a banner.
+    if len(writes) > limit:
+        response["limited"] = (
+            f"Showing the {limit} most recent of {len(writes)} writes."
         )
     return response
 

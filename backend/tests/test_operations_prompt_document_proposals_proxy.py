@@ -414,7 +414,111 @@ class TestListWrites:
         assert resp.status_code == 200
         body = resp.json()
         assert len(body["writes"]) == 1
-        assert "truncated" in body and "1 documents" in body["truncated"]
+        assert "truncated" in body and "1 document " in body["truncated"]
+
+    def test_unexpected_exception_degrades_one_document_not_the_feed(
+        self, auth_client: TestClient
+    ):
+        """Totality: the fan-out must survive an exception it did not anticipate.
+
+        ``httpx.InvalidURL`` and ``httpx.StreamError`` are NOT ``HTTPError``
+        subclasses, so a narrow ``except`` would let them blank the whole feed —
+        contradicting the route's own "one bad document cannot blank the page"
+        contract.
+        """
+        documents = {
+            "documents": [
+                {
+                    "kind": "policy",
+                    "name": "alpha",
+                    "description": "Alpha",
+                    "updated_at": "2026-07-28T12:00:00Z",
+                },
+                {
+                    "kind": "policy",
+                    "name": "beta",
+                    "description": "Beta",
+                    "updated_at": "2026-07-27T12:00:00Z",
+                },
+            ],
+            "total": 2,
+        }
+        ok = _versions_payload(
+            1,
+            [
+                {
+                    "version_number": 1,
+                    "description": None,
+                    "edited_by": None,
+                    "created_at": "2026-07-28T12:00:00Z",
+                }
+            ],
+        )
+
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.side_effect = [
+                _mock_response(json_data=documents),
+                _mock_response(json_data=ok),
+                RuntimeError("something nobody predicted"),
+            ]
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.get(WRITES)
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body["writes"]) == 1
+        assert "partial" in body
+
+    def test_limit_slice_is_reported(self, auth_client: TestClient):
+        """The ``limit`` slice drops writes, so it must say so.
+
+        Otherwise it is indistinguishable, from the operator's seat, from the
+        ceiling case that does get a banner.
+        """
+        documents = {
+            "documents": [
+                {
+                    "kind": "policy",
+                    "name": "alpha",
+                    "description": "Alpha",
+                    "updated_at": "2026-07-28T12:00:00Z",
+                }
+            ],
+            "total": 1,
+        }
+        alpha = _versions_payload(
+            2,
+            [
+                {
+                    "version_number": 2,
+                    "description": None,
+                    "edited_by": None,
+                    "created_at": "2026-07-28T12:00:00Z",
+                },
+                {
+                    "version_number": 1,
+                    "description": None,
+                    "edited_by": None,
+                    "created_at": "2026-07-27T12:00:00Z",
+                },
+            ],
+        )
+
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.side_effect = [
+                _mock_response(json_data=documents),
+                _mock_response(json_data=alpha),
+            ]
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.get(f"{WRITES}?limit=1")
+
+        body = resp.json()
+        assert len(body["writes"]) == 1
+        assert "limited" in body and "of 2 writes" in body["limited"]
 
     def test_document_list_404_degrades(self, auth_client: TestClient):
         with _patch_httpx() as MockClient:

@@ -123,6 +123,31 @@ export interface ListProposalsResponse {
 /** Severity axis for an unreadable coord surface. */
 export type UnavailableKind = "not_deployed" | "unreachable";
 
+/**
+ * Whether an unreadable surface should be shown as alarming (amber) or merely
+ * informational (muted).
+ *
+ * The default matters and differs PER SURFACE, so it is an explicit argument
+ * rather than an accident of comparison direction:
+ *
+ * * The proposals queue defaults to NOT severe. Its whole reason for existing
+ *   is coord's pre-deploy 404 window, and Vercel + ECS deploy independently —
+ *   "new frontend, older backend that does not send `unavailable_kind` yet" is
+ *   a routine window, and shouting in it is the exact false alarm this field
+ *   was added to prevent.
+ * * The write feed defaults to severe. Its underlying document-list route ships
+ *   in today's coord, so any failure there means coord genuinely is not
+ *   answering.
+ */
+export function isUnavailableSevere(
+  kind: UnavailableKind | null | undefined,
+  fallback: boolean
+): boolean {
+  if (kind === "not_deployed") return false;
+  if (kind === "unreachable") return true;
+  return fallback;
+}
+
 /** One landed write — a version snapshot, addressed back to its document. */
 export interface PromptDocumentWrite {
   kind: string;
@@ -141,14 +166,18 @@ export interface PromptDocumentWrite {
 /**
  * `GET /api/v1/operations/coord/prompt-document-writes` response.
  *
- * Four INDEPENDENT not-good states, never flattened into one and never
- * mutually exclusive — `degraded` and `partial` routinely co-occur, so the page
- * shows every one that is set rather than picking a winner:
+ * Five INDEPENDENT caveats, never flattened into one and never mutually
+ * exclusive — `degraded` and `partial` routinely co-occur, so the page shows
+ * every one that is set rather than picking a winner:
  *
  * * `unavailable` — coord could not be asked at all.
  * * `degraded`    — coord answered, but its document store is unprovisioned.
  * * `partial`     — some documents did not return their history.
  * * `truncated`   — more documents exist than the fan-out ceiling reads.
+ * * `limited`     — more writes were collected than `limit` returned.
+ *
+ * Each one means something is missing from the feed. Every path that drops a
+ * write sets one of them; none drops quietly.
  */
 export interface ListWritesResponse {
   writes: PromptDocumentWrite[];
@@ -158,4 +187,6 @@ export interface ListWritesResponse {
   degraded?: string;
   partial?: string;
   truncated?: string;
+  /** More writes exist than `limit` returned — the slice, said out loud. */
+  limited?: string;
 }

@@ -4,6 +4,7 @@ import { AlertTriangle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { usePromptDocumentProposals } from "../_hooks/usePromptDocumentProposals";
+import { isUnavailableSevere } from "../types";
 import { LandedWriteFeed } from "./LandedWriteFeed";
 import { ProposalCard } from "./ProposalCard";
 
@@ -40,9 +41,13 @@ export function ReviewFeed() {
     revertWrite,
   } = usePromptDocumentProposals();
 
-  // A pre-deploy 404 is expected and benign; anything else means coord is
-  // failing and must not wear the calmest style on the page.
-  const unavailableSevere = unavailableKind !== "not_deployed";
+  // A pre-deploy 404 is expected and benign. An UNLABELLED unavailable is also
+  // treated as benign here (fallback `false`): the frontend and backend deploy
+  // independently, so "new page, older backend that doesn't send the kind yet"
+  // is a routine window, and shouting in it is the false alarm this field
+  // exists to avoid. The write feed makes the opposite call, for the reason
+  // documented on `isUnavailableSevere`.
+  const unavailableSevere = isUnavailableSevere(unavailableKind, false);
 
   const initialLoading =
     loading && proposals.length === 0 && writes.length === 0;

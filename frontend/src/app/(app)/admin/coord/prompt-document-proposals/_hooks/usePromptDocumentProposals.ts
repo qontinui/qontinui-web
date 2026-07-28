@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { httpClient } from "@/services/service-factory";
+import { isUnavailableSevere } from "../types";
 import type {
   ListProposalsResponse,
   ListWritesResponse,
@@ -112,14 +113,25 @@ export function usePromptDocumentProposals() {
         `${WRITES}?limit=40`
       );
       setWrites(data.writes ?? []);
-      // All four caveats are independent and can co-occur — showing only the
+      // All five caveats are independent and can co-occur — showing only the
       // first would swallow the others.
       setWritesNotices(
-        [data.unavailable, data.degraded, data.partial, data.truncated].filter(
-          (n): n is string => Boolean(n)
-        )
+        [
+          data.unavailable,
+          data.degraded,
+          data.partial,
+          data.truncated,
+          data.limited,
+        ].filter((n): n is string => Boolean(n))
       );
-      setWritesSevere(data.unavailable_kind === "unreachable");
+      // Only an `unavailable` response is a coord failure; degraded / partial /
+      // truncated / limited all mean "read fine, just incomplete".
+      setWritesSevere(
+        Boolean(data.unavailable) &&
+          // This route's document list ships in today's coord, so an
+          // unlabelled failure here still means coord is not answering.
+          isUnavailableSevere(data.unavailable_kind, true)
+      );
     } catch (err) {
       setWritesNotices([message(err, "Failed to load recent writes")]);
       setWritesSevere(true);
@@ -222,9 +234,14 @@ export function usePromptDocumentProposals() {
    * feed's `current_version` is a snapshot from page load; if a peer admin
    * edited the document since, it is stale and would wave through exactly the
    * clobber this exists to prevent. coord's PATCH takes no version
-   * precondition, so the live re-read immediately before the write is the only
-   * place the invariant can actually be enforced. The first check just avoids
-   * a pointless round trip.
+   * precondition, so a live re-read is the only place the invariant can be
+   * enforced at all. The first check just avoids a pointless round trip.
+   *
+   * The remaining window is honestly small but NOT zero: one more GET (the
+   * snapshot fetch) sits between the guard and the PATCH. Closing it properly
+   * needs an `If-Match`-style precondition on coord's PATCH, which does not
+   * exist yet — so this narrows the race from "page lifetime" to "one request",
+   * rather than eliminating it.
    */
   const revertWrite = useCallback(
     async (write: PromptDocumentWrite): Promise<boolean> => {
@@ -238,12 +255,18 @@ export function usePromptDocumentProposals() {
       try {
         setActing(true);
         // Live re-read: has the document moved under us since page load?
-        const live = await httpClient.get<{ current_version: number }>(
+        const live = await httpClient.get<{ current_version?: number }>(
           `${docPath(write.kind, write.name)}/versions`
         );
         if (live.current_version !== write.version_number) {
+          // A missing `current_version` fails closed here (strict !==), so
+          // describe it as unknown rather than printing "now vundefined".
+          const now =
+            typeof live.current_version === "number"
+              ? `now v${live.current_version}`
+              : "its current version could not be read";
           toast.error(
-            `${write.label} has changed since this page loaded (now v${live.current_version}). Refreshed — review the newer write before undoing anything.`
+            `${write.label} has changed since this page loaded (${now}). Refreshed — review the newer write before undoing anything.`
           );
           await reload();
           return false;

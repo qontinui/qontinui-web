@@ -100,7 +100,11 @@ export function LandedWriteFeed({
       ) : writes.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border py-10 text-center">
           <p className="text-sm text-muted-foreground">
-            {notices.length > 0
+            {/* Only an actual read FAILURE means "could not be read". The
+                incomplete-but-working caveats (degraded / partial / truncated /
+                limited) can be set on a feed that read fine and is genuinely
+                empty, and claiming otherwise would be its own small lie. */}
+            {severe
               ? "No writes could be read — see the note above."
               : "No document writes recorded yet."}
           </p>

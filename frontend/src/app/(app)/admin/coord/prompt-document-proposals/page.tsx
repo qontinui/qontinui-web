@@ -26,14 +26,16 @@
  * (no cloud-only extension slot), matching every sibling admin/coord page.
  */
 
-import { ScrollText } from "lucide-react";
+import { Gavel } from "lucide-react";
 import { ReviewFeed } from "./_components/ReviewFeed";
 
 export default function PromptDocumentProposalsPage() {
   return (
     <div className="space-y-6 p-6" data-testid="prompt-document-proposals-page">
       <div className="flex items-start gap-3">
-        <ScrollText
+        {/* Same icon as this page's nav entry (CoordNav `Gavel`) — the two are
+            the same destination and must look like it. */}
+        <Gavel
           className="mt-0.5 size-5 shrink-0 text-muted-foreground"
           aria-hidden
         />
