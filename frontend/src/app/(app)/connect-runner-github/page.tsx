@@ -23,8 +23,18 @@
  * `state=runner-clone` marks this as the clone-picker flow so onboarding-status
  * claims **bind-only** (no repo enrollment / bootstrap PRs) — see D2 in
  * plans/2026-07-08-runner-clone-picker-selfserve-connect-claim.md.
+ *
+ * P2 (native hand-off): a deep-link-capable runner opens this page with
+ * `?state=<runner-nonce>`. The nonce is validated (hex-only — it is later
+ * embedded in a `qontinui://` URL) and carried through the GitHub round-trip
+ * via the connect-state wire format, so onboarding-status can deep-link the
+ * OAuth code back to the runner, which claims with its OWN bearer — binding to
+ * the runner's tenant no matter which account the browser is logged into.
+ * Without the param the page behaves exactly as before (browser-session claim).
  */
 
+import { useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 import { Github, ExternalLink } from "lucide-react";
 import {
   Card,
@@ -35,6 +45,11 @@ import {
 } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
 import { ConnectInstalledOrg } from "@/components/operations/ConnectInstalledOrg";
+import {
+  beginConnectState,
+  installUrl,
+  isValidRunnerState,
+} from "@/lib/onboarding-connect-state";
 import { cn } from "@/lib/utils";
 
 const APP_SLUG =
@@ -44,11 +59,30 @@ const APP_SLUG =
  * Same-tab install nav so the post-install redirect returns into this
  * authenticated session. `state=runner-clone` rides through GitHub's install
  * flow back to the Setup URL, where onboarding-status reads it to claim
- * bind-only (clone path — no bootstrap PRs).
+ * bind-only (clone path — no bootstrap PRs). Legacy (no runner nonce) shape —
+ * kept verbatim so pre-P2 behavior is byte-identical.
  */
 const INSTALL_URL = `https://github.com/apps/${APP_SLUG}/installations/new?state=runner-clone`;
 
 export default function ConnectRunnerGithubPage() {
+  const searchParams = useSearchParams();
+  // P2: the runner's return nonce. Hex-validated at this ingress; anything
+  // else is ignored and the page falls back to the browser-claim flow.
+  const rawRunnerState = searchParams?.get("state") ?? null;
+  const runnerState = isValidRunnerState(rawRunnerState) ? rawRunnerState : null;
+
+  // With a runner nonce, the install nav mints a full connect-state (flow +
+  // browser CSRF nonce + runner nonce) instead of the bare legacy marker.
+  // Memoized: beginConnectState persists a sessionStorage nonce per call, and
+  // the href must be stable across re-renders.
+  const installHref = useMemo(
+    () =>
+      runnerState
+        ? installUrl(APP_SLUG, beginConnectState("runner-clone", "", runnerState))
+        : INSTALL_URL,
+    [runnerState],
+  );
+
   return (
     <div
       className="mx-auto max-w-2xl p-3 sm:p-6"
@@ -71,7 +105,7 @@ export default function ConnectRunnerGithubPage() {
         </CardHeader>
         <CardContent className="space-y-3">
           <a
-            href={INSTALL_URL}
+            href={installHref}
             data-testid="connect-runner-github-install"
             className={cn(buttonVariants({ variant: "default" }), "w-fit")}
           >
@@ -96,7 +130,7 @@ export default function ConnectRunnerGithubPage() {
         open bootstrap PRs.
       */}
       <div className="mt-3">
-        <ConnectInstalledOrg flow="runner-clone" />
+        <ConnectInstalledOrg flow="runner-clone" runnerState={runnerState} />
       </div>
     </div>
   );

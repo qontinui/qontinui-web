@@ -60,9 +60,16 @@ const LOGIN_RE = /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/;
 
 export function ConnectInstalledOrg({
   flow = "connect",
+  runnerState = null,
 }: {
   /** `runner-clone` claims bind-only (no enrollment / bootstrap PRs). */
   flow?: ConnectFlow;
+  /**
+   * P2 native hand-off: the runner's return nonce, carried through the GitHub
+   * round-trip so the callback deep-links back to the runner instead of
+   * claiming in the browser. Null → unchanged browser-claim behavior.
+   */
+  runnerState?: string | null;
 }) {
   const [config, setConfig] = useState<GithubAppConfig | null>(null);
   const [loading, setLoading] = useState(true);
@@ -131,7 +138,10 @@ export function ConnectInstalledOrg({
         <a
           href={
             valid
-              ? authorizeUrl(config.client_id, beginConnectState(flow, trimmed))
+              ? authorizeUrl(
+                  config.client_id,
+                  beginConnectState(flow, trimmed, runnerState)
+                )
               : undefined
           }
           aria-disabled={!valid}
