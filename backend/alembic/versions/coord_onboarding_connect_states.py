@@ -1,7 +1,7 @@
 """coord.onboarding_connect_states (P0 — tenant-bound, single-use GitHub connect-state tokens)
 
 Revision ID: coord_onboarding_connect_states
-Revises: agent_registry_01
+Revises: coord_sessions_drop_plan_slug
 Create Date: 2026-07-28
 
 P0 of ``2026-07-26-coord-onboarding-claim-caller-tenant-binding.md`` — the
@@ -147,23 +147,29 @@ allowlist) green with zero changes.
 Idempotency: ``CREATE TABLE/INDEX IF NOT EXISTS`` up, ``DROP INDEX/TABLE IF
 EXISTS`` down — reversible for the ``migration-reversal`` gate.
 
-Chains off ``agent_registry_01``, the single live head on ``main`` as of
-2026-07-28. The head has now moved TWICE under this still-unlanded PR, which is
-why the value below is not to be trusted from any plan or docstring — recompute
-it. ``main``'s chain in this region is::
+Chains off ``coord_sessions_drop_plan_slug``, the single live head on ``main``
+as of 2026-07-29T11:35Z (main ``e13242cd``). The head has now moved FIVE times
+under this still-unlanded PR, which is why the value below is not to be trusted
+from any plan or docstring — recompute it. ``main``'s chain in this region is::
 
     appid_01_co_occurrence_app_id
       -> coord_plan_pr_citations_3a_backfill
-        -> agent_registry_01                  (single live head)
-          -> coord_onboarding_connect_states  (this revision)
+        -> agent_registry_01
+          -> prompt_doc_proposals_01
+            -> coord_plan_pr_citations_3c_drop
+              -> coord_sessions_drop_plan_slug   (single live head)
+                -> coord_onboarding_connect_states  (this revision)
 
-The two earlier candidates are both stale: the plan was written against
-``memory_jobs_02_kind_aware_dedupe``, and the first draft of this file chained
-off ``appid_01_co_occurrence_app_id`` — which ``coord_plan_pr_citations_3a_backfill``
-subsequently claimed as ITS parent, forking the chain into two heads. If a
-concurrent head-race moves ``main``'s head again before this lands, re-point
-``down_revision`` onto the new head; the head is the revision id that is no
-other migration's ``down_revision``, and there must be exactly one.
+Every earlier candidate is stale, and each went stale the same way — it was the
+head when written and gained a child on ``main`` before this PR landed. The plan
+was written against ``memory_jobs_02_kind_aware_dedupe``; the first draft chained
+off ``appid_01_co_occurrence_app_id`` (which ``coord_plan_pr_citations_3a_backfill``
+then claimed as ITS parent); the second chained off ``agent_registry_01`` (which
+``prompt_doc_proposals_01`` then claimed). If a concurrent head-race moves
+``main``'s head again before this lands, re-point ``down_revision`` onto the new
+head; the head is the revision id that is no other migration's ``down_revision``,
+and there must be exactly one. Do NOT copy the value out of this docstring — it
+records what was true at the timestamp above, not what is true when you read it.
 """
 
 from collections.abc import Sequence
@@ -174,7 +180,7 @@ from alembic import op
 # Keep ``down_revision`` on ONE physical line — the ``alembic-heads-pr`` CI gate
 # parses it with a line-based regex.
 revision: str = "coord_onboarding_connect_states"
-down_revision: str | Sequence[str] | None = "agent_registry_01"
+down_revision: str | Sequence[str] | None = "coord_sessions_drop_plan_slug"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
