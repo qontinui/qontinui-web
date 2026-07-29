@@ -6,7 +6,7 @@ from typing import cast
 import structlog
 from fastapi import Depends, Request, Response
 from fastapi.security import OAuth2PasswordBearer
-from fastapi_users import BaseUserManager, FastAPIUsers, UUIDIDMixin
+from fastapi_users import BaseUserManager, FastAPIUsers, UUIDIDMixin, schemas
 from fastapi_users.authentication import AuthenticationBackend, JWTStrategy
 from fastapi_users.authentication.transport import (
     Transport,
@@ -190,6 +190,60 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
                 "user_registration_complete_without_org",
                 user_id=str(user.id),
             )
+
+    async def update(
+        self,
+        user_update: schemas.UU,
+        user: User,
+        safe: bool = False,
+        request: Request | None = None,
+    ) -> User:
+        """Revoke coord access in the same operation as a deactivation.
+
+        This is the SECOND deactivation writer: the mounted fastapi-users
+        users router exposes ``PATCH /api/v1/auth/users/{id}``, whose
+        ``UserUpdate`` inherits ``is_active`` from ``BaseUserUpdate`` and
+        passes it straight through ``create_update_dict_superuser()``. Since
+        web#845 the 118 ``get_tenant_id`` coord-proxy routes consult coord
+        tenant membership ONLY, so a web-local flip revokes nothing — the
+        coord-side disable has to ride along.
+
+        Only the superuser arm (``safe=False``) can carry ``is_active``:
+        ``create_update_dict()`` — the ``PATCH /me`` arm — excludes it, so the
+        self-service route provably makes no coord call, and ``safe=True``
+        short-circuits to the plain parent update with zero coord traffic.
+
+        ``apply_activation_transition`` sequences the coord call around the
+        parent's persist (coord-first when disabling, persist-first when
+        re-enabling) so web is never left MORE permissive than coord, and
+        raises on any coord failure.
+
+        Plan: ``2026-07-24-web-deactivation-must-revoke-coord-membership``.
+        """
+        parent_update = super().update
+        if safe:
+            return await parent_update(user_update, user, safe=safe, request=request)
+
+        # Deferred import: ``app.api.deps`` imports THIS module, and the
+        # activation service pulls in ``app.api.coord_proxy`` →
+        # ``app.api.v1.endpoints.operations`` → ``app.api.deps``, so a
+        # module-scope import here would close an import cycle.
+        from app.services.coord_operator_activation import (
+            apply_activation_transition,
+        )
+
+        async def _persist() -> User:
+            return await parent_update(user_update, user, safe=safe, request=request)
+
+        return await apply_activation_transition(
+            request=request,
+            user=user,
+            requested_is_active=user_update.create_update_dict_superuser().get(
+                "is_active"
+            ),
+            actor=None,
+            persist=_persist,
+        )
 
 
 async def get_user_manager(user_db=Depends(get_user_db)):
