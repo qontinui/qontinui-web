@@ -48,6 +48,7 @@ from app.schemas.user import (
     UserUpdate,
 )
 from app.services.avatar_service import avatar_service
+from app.services.coord_operator_activation import apply_activation_transition
 from app.services.storage_service import StorageService
 
 router = APIRouter()
@@ -314,7 +315,25 @@ async def update_user_by_id(
         "is_superuser": user.is_superuser,
     }
 
-    user = await update_user(db, user, user_update)
+    # Deactivation must revoke coord access in the SAME operation — since
+    # web#845 the 118 ``get_tenant_id`` coord-proxy routes read coord tenant
+    # membership only, never this local flag, so a web-only flip revokes
+    # nothing. ``apply_activation_transition`` sequences the coord call around
+    # the local write so web is never left MORE permissive than coord, and
+    # raises on any coord failure. Plan:
+    # 2026-07-24-web-deactivation-must-revoke-coord-membership.
+    target = user
+
+    async def _persist() -> UserModel:
+        return await update_user(db, target, user_update)
+
+    user = await apply_activation_transition(
+        request=request,
+        user=user,
+        requested_is_active=user_update.model_dump(exclude_unset=True).get("is_active"),
+        actor=current_user,
+        persist=_persist,
+    )
 
     # Capture after state
     after_state = {
