@@ -11,7 +11,13 @@ sweeps over ``coord.memory_records``:
   daily pass also runs the session-close expiry sweep (expire
   ``scope='session'`` rows 7 days after their session closed) and the
   job reaper (requeue/fail claims a dead runner abandoned).
-* **Consolidation** (weekly, per tenant): near-duplicate merge via a
+* **Consolidation** (every 10 minutes and at boot, per tenant): this is
+  the memory feedback loop, so it runs on a prompt cadence, NOT the
+  weekly beat it was ported from — see the ``memory_consolidate``
+  registration in :mod:`app.core.scheduler` for the reasoning (a weekly
+  Sunday slot surfaced a ``mental_model`` up to 7 days after the episodes
+  that formed it, and combined with sub-hourly redeploys it had never
+  actually run). Near-duplicate merge via a
   bounded pgvector self-join, then ENQUEUE of episode clusters as
   ``kind='synthesis'`` ``coord.memory_jobs`` rows. This backend ships no
   LLM client, so synthesis itself is offloaded to a runner: it claims a
@@ -36,6 +42,7 @@ reindex 03:40 UTC daily, consolidate 04:20 UTC Sunday).
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -58,7 +65,11 @@ from app.services.memory_lifecycle import (
     greedy_clusters,
     resolve_merges,
 )
-from app.services.memory_vectors import EMBEDDING_MODEL_TAG
+from app.services.memory_vectors import (
+    EMBEDDING_MODEL_TAG,
+    MemoryEmbeddingDimensionError,
+    ensure_embedding_dims,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -184,11 +195,38 @@ async def consolidate_tenant(
         session, tenant_id, now=now, limit=CLUSTER_CANDIDATE_LIMIT
     )
     by_id = {row["memory_id"]: row for row in candidates}
-    clusters = greedy_clusters(
-        store.cluster_items_from_rows(candidates),
-        similarity=CLUSTER_SIMILARITY,
-        min_size=CLUSTER_MIN_SIZE,
-    )
+    cluster_items = store.cluster_items_from_rows(candidates)
+    clusters: list[list[UUID]] = []
+    try:
+        # `fetch_cluster_candidates` filters only on `embedding IS NOT NULL`,
+        # NOT on the embedding model tag, so a tenant mid-model-migration can
+        # return rows of differing width. A mixed-width corpus has no
+        # meaningful similarity matrix, so skip THIS tenant's cluster arm
+        # (the near-dup merge above stands) instead of crashing the sweep.
+        ensure_embedding_dims([item.embedding for item in cluster_items])
+    except MemoryEmbeddingDimensionError as exc:
+        logger.warning(
+            "memory_consolidation_cluster_skipped",
+            tenant_id=str(tenant_id),
+            reason="embedding_dimension_mismatch",
+            error=str(exc),
+            cluster_candidates=len(candidates),
+        )
+    else:
+        # Off the event loop: clustering is the ONE CPU-bound section of this
+        # sweep. Even fully vectorised it must never be able to wedge the loop
+        # again — a 60s in-loop stall here timed out ALB health checks and made
+        # every ECS deploy fail (plan
+        # 2026-07-28-web-deploy-red-main-memory-consolidate-event-loop-stall).
+        # `to_thread` works despite the GIL: CPython releases it every
+        # `sys.setswitchinterval` (~5ms) and numpy drops it outright for the
+        # matmul, so the loop stays schedulable throughout.
+        clusters = await asyncio.to_thread(
+            greedy_clusters,
+            cluster_items,
+            similarity=CLUSTER_SIMILARITY,
+            min_size=CLUSTER_MIN_SIZE,
+        )
     cluster_inputs = [
         store.synthesis_job_input(
             list(members),
