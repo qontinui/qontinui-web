@@ -164,20 +164,23 @@ says. (Where this docstring and the gate's ``phase_name`` differ in wording, thi
 docstring governs — the ``phase_name`` is frozen at registration.)
 
 1. **coord** — add ``"plan_pr_citations"`` to ``DEPRECATED_COORD_TABLES``
-   (``qontinui-coord/src/schema_manifest.rs``, the const at :363; the consumer
-   that intersects it with the live catalog is ``mcp/tools.rs`` ~:8610). It is
-   evaluated as ``live catalog ∩ DEPRECATED_COORD_TABLES``, so listing a table
-   that still exists fires a false ``schema:deprecated_object_present`` — which
-   is why it CANNOT ride this PR. Until it lands, the deprecation guard does not
-   cover this table.
+   (``qontinui-coord/src/schema_manifest.rs``, the const at :363). It is
+   evaluated as ``live catalog ∩ DEPRECATED_COORD_TABLES`` — the intersection
+   itself runs in ``src/schema_observer.rs`` (documented :539-544, executed
+   :573); ``mcp/tools.rs`` ~:8610 only publishes the already-computed
+   ``obs.deprecated_present`` onto the twin. So listing a table that still
+   exists fires a false ``schema:deprecated_object_present`` — which is why it
+   CANNOT ride this PR. Until it lands, the deprecation guard does not cover
+   this table.
    **UPDATE — do NOT delete — the note at ``schema_manifest.rs:217-225.``** Only
    its last clause ("deliberately NOT in ``DEPRECATED_COORD_TABLES`` yet … the
    DROP stage adds it there") goes stale. The rest is load-bearing and must
-   survive: it records why ``plan_pr_citations`` MUST stay out of the
-   critical-boot allowlist — a boot gate on a dropped table makes every
-   post-drop coord build unbootable. The ``plans`` note directly beneath it was
-   deliberately retained after ``plans`` was dropped, for exactly this reason;
-   mirror that.
+   survive: it records why ``plan_pr_citations`` MUST stay out of
+   ``ALEMBIC_OWNED_TABLES`` (the list it sits in, const at :25) — and out of
+   ``CRITICAL_BOOT_TABLES`` (:412) — because a boot gate on a dropped table
+   makes every post-drop coord build unbootable. The ``plans`` note directly
+   beneath it (:226-229) was deliberately retained after ``plans`` was dropped,
+   for exactly this reason; mirror that.
 2. **qontinui-runner** — ``src-tauri/schema.pg.sql.generated`` is a checked-in
    ``pg_dump`` of this alembic-managed schema and still contains the
    ``coord.plan_pr_citations`` block (the ``CREATE TABLE``, its PK, and all three
