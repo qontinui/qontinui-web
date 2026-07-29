@@ -11,6 +11,7 @@ import {
   deriveInteractable,
   enrichElement,
   enrichElements,
+  normalizeBboxes,
 } from "./normalize";
 
 describe("parseCssColor", () => {
@@ -104,7 +105,7 @@ describe("deriveInteractable", () => {
   });
   it("is FALSE for plain content / containers", () => {
     expect(deriveInteractable({ category: "content", tagName: "div" })).toBe(
-      false,
+      false
     );
     expect(deriveInteractable({ tagName: "span", actions: [] })).toBe(false);
     expect(deriveInteractable({ tagName: "p" })).toBe(false);
@@ -112,12 +113,12 @@ describe("deriveInteractable", () => {
   });
   it("is FALSE for media without handlers", () => {
     expect(deriveInteractable({ category: "media", tagName: "img" })).toBe(
-      false,
+      false
     );
   });
   it("a content element with a real handler is still interactable", () => {
     expect(
-      deriveInteractable({ category: "content", actions: ["click"] }),
+      deriveInteractable({ category: "content", actions: ["click"] })
     ).toBe(true);
   });
 });
@@ -225,6 +226,92 @@ describe("enrichElements", () => {
     enrichElements(els);
     expect((els[0] as Record<string, unknown>).interactable).toBe(true);
     expect((els[3] as Record<string, unknown>).interactable).toBe(false);
+    expect(els[1]).toBeNull();
+    expect(els[2]).toBe("nope");
+  });
+});
+
+describe("normalizeBboxes", () => {
+  const bboxOf = (el: unknown) =>
+    (el as Record<string, unknown>).bbox as Record<string, number> | undefined;
+
+  it("maps {x,y,width,height} floats to the Rust Region {x,y,w,h}", () => {
+    const els: unknown[] = [
+      { id: "a", bbox: { x: 10.4, y: 20.6, width: 100.5, height: 40.2 } },
+    ];
+    normalizeBboxes(els);
+    expect(bboxOf(els[0])).toEqual({ x: 10, y: 21, w: 101, h: 40 });
+  });
+
+  // ---------------------------------------------------------------------
+  // Signed origin. `Region.x`/`Region.y` are i32 in rust-vision-core, so the
+  // capture emits the TRUE coordinate. Clamping negatives to 0 (what this
+  // adapter used to do) reported every off-viewport element as sitting flush
+  // against the viewport edge — fabricating overlaps against whatever really
+  // lives at the origin and erasing genuine off-screen placement.
+  // ---------------------------------------------------------------------
+
+  it("preserves a negative x/y instead of clamping it to 0", () => {
+    // A `left: -9999px` screen-reader-only node, and a sticky header
+    // scrolled half off the top of the viewport.
+    const els: unknown[] = [
+      { id: "sr-only", bbox: { x: -9999, y: 12, width: 120, height: 32 } },
+      { id: "sticky-header", bbox: { x: 0, y: -23.6, width: 800, height: 48 } },
+    ];
+    normalizeBboxes(els);
+    expect(bboxOf(els[0])).toEqual({ x: -9999, y: 12, w: 120, h: 32 });
+    expect(bboxOf(els[1])).toEqual({ x: 0, y: -24, w: 800, h: 48 });
+  });
+
+  it("rounds negative origins to the nearest integer, not toward zero", () => {
+    const els: unknown[] = [
+      { id: "a", bbox: { x: -0.4, y: -0.6, width: 1, height: 1 } },
+    ];
+    normalizeBboxes(els);
+    // Math.round(-0.4) === -0 and Math.round(-0.6) === -1; -0 serializes as 0.
+    const b = bboxOf(els[0])!;
+    expect(b.x === 0 || Object.is(b.x, -0)).toBe(true);
+    expect(b.y).toBe(-1);
+  });
+
+  it("still floors a negative width/height at 0 (unsigned extent)", () => {
+    const els: unknown[] = [
+      { id: "a", bbox: { x: -5, y: -5, width: -3, height: -7 } },
+    ];
+    normalizeBboxes(els);
+    expect(bboxOf(els[0])).toEqual({ x: -5, y: -5, w: 0, h: 0 });
+  });
+
+  it("negative coordinates survive JSON serialization verbatim", () => {
+    // The capture writes `JSON.stringify(body)` to disk for `vision-audit`
+    // to deserialize — this is the wire the analyzer actually reads.
+    const els: unknown[] = [
+      { id: "off", bbox: { x: -9999, y: -48, width: 120, height: 32 } },
+    ];
+    normalizeBboxes(els);
+    const round = JSON.parse(JSON.stringify({ elements: els })) as {
+      elements: Array<{ bbox: Record<string, number> }>;
+    };
+    expect(round.elements[0].bbox).toEqual({ x: -9999, y: -48, w: 120, h: 32 });
+  });
+
+  it("drops a malformed or non-finite bbox rather than emitting NaN", () => {
+    const els: unknown[] = [
+      { id: "a", bbox: { x: NaN, y: 0, width: 1, height: 1 } },
+      { id: "b", bbox: { x: 0, y: 0, width: 1 } },
+      { id: "c", bbox: "nope" },
+      { id: "d", bbox: null },
+    ];
+    normalizeBboxes(els);
+    for (const el of els) {
+      expect("bbox" in (el as Record<string, unknown>)).toBe(false);
+    }
+  });
+
+  it("leaves bbox-less elements and non-objects untouched", () => {
+    const els: unknown[] = [{ id: "a" }, null, "nope"];
+    normalizeBboxes(els);
+    expect(els[0]).toEqual({ id: "a" });
     expect(els[1]).toBeNull();
     expect(els[2]).toBe("nope");
   });
