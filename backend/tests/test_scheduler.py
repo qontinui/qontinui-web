@@ -33,10 +33,13 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from app.core.scheduler import (
+    BOOT_DELAY_MAX_SECONDS,
+    BOOT_DELAY_MIN_SECONDS,
     INTERVAL_JITTER_SECONDS,
     ScheduledTask,
     SchedulerService,
     _env_token,
+    install_default_tasks,
     scheduler_status,
 )
 
@@ -154,6 +157,31 @@ async def _wait_for(predicate, *, timeout: float = 5.0) -> bool:
 # ---------------------------------------------------------------------------
 
 
+class TestQueueLivenessCadence:
+    """The job reaper must never inherit a retention cadence.
+
+    It is the only path that returns an abandoned ``claimed`` job to the
+    queue — nothing hands out a claimed row and nothing re-enqueues over
+    it — so a slow cadence silently strands work rather than merely
+    delaying cleanup.
+    """
+
+    def test_memory_reap_is_registered_frequently_and_at_boot(self) -> None:
+        service = SchedulerService()
+        install_default_tasks(service)
+
+        task = service._tasks["memory_reap"]
+
+        assert task.cron == "*/10 * * * *", (
+            "memory_reap fell back to a slow cadence — an abandoned claim "
+            "blocks both claim and re-enqueue until it is reaped"
+        )
+        assert task.run_at_boot, (
+            "a deploy that kills a runner mid-claim must not need a full "
+            "cron slot before the queue self-heals"
+        )
+
+
 class TestCronNextFire:
     """``compute_next`` must reproduce the former Celery beat schedule exactly."""
 
@@ -167,6 +195,10 @@ class TestCronNextFire:
             ("*/10 * * * *", datetime(2026, 7, 13, 12, 10, tzinfo=UTC)),
             # memory_consolidate — every 10 minutes (was weekly Sundays 04:20;
             # corrected so the memory feedback loop stays prompt).
+            ("*/10 * * * *", datetime(2026, 7, 13, 12, 10, tzinfo=UTC)),
+            # memory_reap — every 10 minutes (was bundled into the daily
+            # memory_decay; split out so an abandoned claim is requeued within
+            # a tick of going stale rather than up to ~24h later).
             ("*/10 * * * *", datetime(2026, 7, 13, 12, 10, tzinfo=UTC)),
             # memory_bridge_sync — every 15 minutes.
             ("*/15 * * * *", datetime(2026, 7, 13, 12, 15, tzinfo=UTC)),
@@ -242,6 +274,104 @@ class TestIntervalJitter:
 
         for _ in range(200):
             assert task.compute_next(NOW) > NOW
+
+
+# ---------------------------------------------------------------------------
+# Boot delay — must clear the ALB's initial health-check window
+# ---------------------------------------------------------------------------
+
+
+class TestBootDelay:
+    """``run_at_boot`` must not fire inside the ALB initial health-check window.
+
+    Regression for plan
+    ``2026-07-28-web-deploy-red-main-memory-consolidate-event-loop-stall``: the
+    old 1-10s boot band put every boot sweep exactly where the ECS task's ALB
+    target is still proving itself, so one expensive sweep there timed the
+    health checks out and the deployment circuit breaker rolled the release
+    back. Defence-in-depth only — the sweep itself now runs off the loop.
+    """
+
+    def test_cron_boot_task_waits_out_the_health_window(self):
+        task = ScheduledTask(
+            name="t", coro=_noop, cron="*/10 * * * *", run_at_boot=True
+        )
+        low = NOW + timedelta(seconds=BOOT_DELAY_MIN_SECONDS)
+        high = NOW + timedelta(seconds=BOOT_DELAY_MAX_SECONDS)
+
+        for _ in range(200):
+            assert low <= task.first_run_at(NOW) <= high
+
+    def test_boot_delay_clears_the_observed_alb_verdict(self):
+        """38s was the observed first "Request timed out" verdict on 2026-07-28."""
+        assert BOOT_DELAY_MIN_SECONDS > 38.0
+        assert BOOT_DELAY_MAX_SECONDS >= BOOT_DELAY_MIN_SECONDS
+
+    def test_boot_delay_is_jittered(self):
+        """A fixed delay would thundering-herd N replicas onto the same lock."""
+        task = ScheduledTask(
+            name="t", coro=_noop, cron="*/10 * * * *", run_at_boot=True
+        )
+
+        assert len({task.first_run_at(NOW) for _ in range(50)}) > 1
+
+    def test_boot_delay_never_exceeds_the_tasks_own_cadence(self):
+        """A 30s poll must not be pushed to 2 minutes just to dodge the window.
+
+        ``scheduled_dispatch`` is ``run_at_boot`` precisely so unanchored rows
+        get picked up promptly; delaying it past its own interval would trade
+        one promptness defect for another.
+        """
+        task = ScheduledTask(
+            name="t", coro=_noop, interval_seconds=30.0, run_at_boot=True
+        )
+
+        for _ in range(200):
+            assert NOW < task.first_run_at(NOW) <= NOW + timedelta(seconds=30.0)
+
+    def test_short_cadence_boot_delay_stays_jittered(self):
+        """Regression: clamping the SAMPLE instead of the WINDOW killed jitter.
+
+        ``min(random.uniform(120, 180), interval)`` saturates for any interval
+        below ``BOOT_DELAY_MIN_SECONDS``, collapsing the delay to the constant
+        ``interval`` — which silently made ``run_at_boot`` a no-op for the 30s
+        and 60s pollers (they fired at exactly their own cadence, i.e. exactly
+        what the flag exists to avoid) and thundering-herded every replica onto
+        the same instant. The bound-only assertion above passes against that
+        degenerate constant, so it needs this companion.
+        """
+        for interval in (30.0, 60.0):
+            task = ScheduledTask(
+                name="t", coro=_noop, interval_seconds=interval, run_at_boot=True
+            )
+
+            delays = {task.first_run_at(NOW) for _ in range(50)}
+
+            assert len(delays) > 1, (
+                f"boot delay for a {interval}s cadence collapsed to a constant "
+                f"— the jitter window was clamped away"
+            )
+            assert min(delays) >= NOW + timedelta(seconds=1.0)
+            assert max(delays) <= NOW + timedelta(seconds=min(10.0, interval))
+
+    def test_boot_sweep_lands_well_inside_the_shortest_boot_cron(self):
+        """The */10 boot crons must still sweep long before their next slot."""
+        assert BOOT_DELAY_MAX_SECONDS < 600.0
+
+    def test_memory_consolidate_keeps_run_at_boot(self):
+        """The deploy-survives-the-cadence guarantee is deliberate — keep it.
+
+        Dropping ``run_at_boot`` here would re-introduce the defect e5cd013c
+        was written to fix: sub-hourly redeploys perpetually skipping the
+        scheduled slot, so consolidation had NEVER run.
+        """
+        service = SchedulerService()
+        install_default_tasks(service)
+
+        task = service._tasks["memory_consolidate"]
+
+        assert task.run_at_boot
+        assert task.cron == "*/10 * * * *"
 
 
 # ---------------------------------------------------------------------------

@@ -21,37 +21,31 @@ import { useAdvancedAutomation } from "@/contexts/advanced-automation-context";
 // now filtered out at the source by `platforms: ["runner"]` in
 // @qontinui/navigation >=0.1.4, so no web-local hide list is needed for them.)
 //
-// WEB_ADVANCED_IDS — web-only demotions. The shared @qontinui/navigation
-// package (>=0.1.5) now flags the workflow/automation/insights/config long tail
-// `hidden: true` at the source, so those items are gated by the same Settings →
-// General "Show advanced automation features" toggle (setShowHiddenItems) on
-// BOTH apps — no web-local entry needed for them anymore.
+// WEB_ADVANCED_IDS — web-only demotions for nav ids that have NO entry in the
+// shared @qontinui/navigation registry.
 //
-// (The shared `memory` id is gone as of @qontinui/navigation 0.2.0 — it was
-// renamed `observations` and gated `platforms: ["runner"]` (its /observe/memory
-// route 404s on web), so it never reaches the web sidebar and needs no entry
-// here. Web's OWN `observations` item (/observations) is listed below.)
+// Everything the shared registry knows about is demoted AT THE SOURCE. Items
+// both apps demote carry `hidden: true`; items only ONE app demotes carry a
+// platform list (`hidden: ["web"]`) as of @qontinui/navigation 0.3.0. That is
+// why the task_run-scoped surfaces the runner keeps but web does not — `runs`,
+// `run-findings`, `active`, `gui-automation`, `vga` — are no longer listed
+// here: a coord+sessions user works in `coord.sessions`, which produce no
+// task_runs, and the registry now says so itself. Duplicating them in this set
+// bought nothing and drifted the moment either side changed.
 //
-// What remains here is the set qontinui-web demotes but the runner KEEPS: the
-// task_run-scoped execution/review surfaces (runs/active/findings) — a
-// coord+sessions user works in `coord.sessions`, which produce no task_runs —
-// plus a handful of web-local nav ids that have no package entry
-// (scheduled-runs, build-flow-designer, review, inspector, observations).
-// Routes stay registered so deep-links keep working.
+// (reflection/tasks/triggers — runner-only features whose web routes 404 — are
+// filtered out at the source by `platforms: ["runner"]`. The shared `memory` id
+// is likewise gone: renamed `observations` and gated `platforms: ["runner"]`
+// since 0.2.0. Web's OWN `observations` item, route /observations, is a
+// different, web-local id and IS listed below.)
+//
+// Routes stay registered either way, so deep-links keep working.
 const WEB_ADVANCED_IDS = new Set<string>([
-  // execution / review (task_run-scoped, not session-scoped) — runner keeps these
-  "active",
-  "runs",
-  "run-findings",
-  "gui-automation",
-  // web-local nav ids with no shared-package entry
   "scheduled-runs",
   "build-flow-designer",
   "review",
   "inspector",
   "observations",
-  // visual automation (belongs to visual mode; never in the coord default)
-  "vga",
 ]);
 
 export function useSidebarNavigation() {
@@ -74,9 +68,9 @@ export function useSidebarNavigation() {
       return items
         .filter((item) => {
           if (item.hiddenInProd && (!mounted || !isDevelopment)) return false;
-          // Web menu policy: workflow/automation/visual items are gated behind
-          // the advanced toggle. (Runner-only items are platform-filtered by
-          // the shared nav package.)
+          // Web menu policy for web-local ids only — the shared registry
+          // already applied its own (now per-platform) `hidden` demotions
+          // during getWebNavItems() via setShowHiddenItems below.
           if (!showAdvancedAutomation && WEB_ADVANCED_IDS.has(item.id))
             return false;
           if (

@@ -173,7 +173,6 @@ def _extract_caller_token(request: Request) -> str | None:
 
 async def get_tenant_id(
     request: Request,
-    current_user: UserModel = Depends(get_current_active_user_async),
 ) -> UUID:
     """Dependency: resolve the current user's home tenant_id (UUID).
 
@@ -789,6 +788,17 @@ async def get_pr_merge_prs(
         "not just open ones. 0 (default) preserves the open-PRs-only "
         "behavior. Backs the fleet pipeline's 'Merged' tab.",
     ),
+    merged_count_hours: int = Query(
+        default=0,
+        ge=0,
+        le=24 * 30,
+        description="When >0, ask coord to add `merged_recent_count` (how many "
+        "PRs landed in the last N hours) to the envelope. This is the CHEAP "
+        "half of `include_merged`: a single count over the partial index "
+        "`idx_repo_branches_merged_at`, with none of the per-PR deploy "
+        "classification, so the fleet pipeline can label its 'Merged' tab "
+        "without paying for the rows. Independent of `include_merged`.",
+    ),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """PR Merge Orchestrator Phase 1 D1.6 + D1.7 -- proxy coord's
@@ -799,13 +809,21 @@ async def get_pr_merge_prs(
     authenticated operator — retires the pilot-anonymous posture
     (operator decision 2026-05-31), mirroring ``/merge/queue``.
 
-    ``include_merged`` is forwarded ONLY when set, so the default request is
-    byte-for-byte the legacy call (same convention as ``/admin-dev/prs``).
-    coord's response is returned verbatim — no field whitelist — so the
-    merged-row enrichment passes through unchanged.
+    ``include_merged`` and ``merged_count_hours`` are forwarded ONLY when
+    set, so the default request is byte-for-byte the legacy call (same
+    convention as ``/admin-dev/prs``). coord's response is returned verbatim
+    — no field whitelist — so the merged-row enrichment and the
+    ``merged_recent_count`` field pass through unchanged. A coord deploy that
+    predates either param simply ignores it and omits the field.
     """
-    params = {"include_merged": include_merged} if include_merged > 0 else None
-    return await _proxy_coord_get("/pr-merge/prs", params=params, tenant_id=tenant_id)
+    params: dict[str, Any] = {}
+    if include_merged > 0:
+        params["include_merged"] = include_merged
+    if merged_count_hours > 0:
+        params["merged_count_hours"] = merged_count_hours
+    return await _proxy_coord_get(
+        "/pr-merge/prs", params=params or None, tenant_id=tenant_id
+    )
 
 
 # Coord path for the CI-duration-aware severity economics read
@@ -839,6 +857,51 @@ async def get_pr_merge_merge_economics(
     """
     try:
         return await _proxy_coord_get(_COORD_MERGE_ECONOMICS_PATH, tenant_id=tenant_id)
+    except HTTPException as exc:
+        if exc.status_code in (404, 502, 503, 504):
+            return {}
+        raise
+
+
+@router.get("/pr-merge/health")
+async def get_pr_merge_health(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Merge-train liveness — proxies coord's ``GET /pr-merge/health``.
+
+    Backs the fleet pipeline's "Train" tab, which answers "what is the merge
+    train doing per repo, and why is it pausing". This read carries the three
+    signals that per-PR data CANNOT explain, because they are properties of
+    the train itself rather than of any one PR:
+
+    - ``last_merged_at`` — the pause clock. A frozen value with an ADVANCING
+      ``last_predicate_eval_at`` is the signature of a suppressed train
+      (the engine is evaluating; nothing is landing).
+    - ``leader`` — the ``coord.leader_lease`` row. ``lease_fresh=false`` means
+      leadership is lapsing, which stalls every repo at once.
+    - ``dry_run`` — repos frozen in ``rollout_state=dry_run`` (coord issue
+      #776). A silently frozen tenant merges nothing and, before this field
+      existed, produced no signal at all.
+
+    It also returns ``ready_unmerged.prs[]`` — green + CLEAN + unlanded PRs
+    with a readiness-onset age and the latest proposal's ``status``/``error``
+    at the PR's CURRENT head. That per-repo backlog is the direct answer to
+    "why has nothing merged for the last hour".
+
+    GRACEFUL FALLBACK (required): mirrors ``/pr-merge/merge-economics`` — a 404
+    (coord deploy predating the route) or a transient coord outage
+    (502/503/504) degrades to ``{}`` rather than erroring, so the Train tab
+    still renders whatever it can derive from ``/merge/queue`` +
+    ``/pr-merge/prs`` and simply omits the fleet-level banner.
+
+    Tenant note: UNLIKE the fleet-wide ``/merge/queue`` and ``/pr-merge/prs``,
+    coord scopes this route's ``ready_unmerged`` and ``dry_run`` sections to
+    the bearer's tenant (its handler takes ``TenantId``, not
+    ``FleetPrincipal``). ``tenant_id`` is still resolved only to trigger
+    bearer-forwarding; coord derives the scope from the bearer itself.
+    """
+    try:
+        return await _proxy_coord_get("/pr-merge/health", tenant_id=tenant_id)
     except HTTPException as exc:
         if exc.status_code in (404, 502, 503, 504):
             return {}
@@ -1300,11 +1363,18 @@ async def get_pr_merge_repo_profile(
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Resolved per-(tenant, repo) settings — three-tier
-    (global → tenant → repo) layered. The ``repo`` is the
-    ``owner/name`` form; the ``:path`` converter lets FastAPI accept
-    the ``/`` inline without URL-encoding."""
+    (global → tenant → repo) layered.
+
+    ``repo`` is the ``owner/name`` form and the ``:path`` converter lets
+    FastAPI accept the ``/`` inline. Coord's ``:repo`` param is a SINGLE
+    path segment, though, so the slug is re-encoded on the way out
+    (``qontinui/qontinui-runner`` → ``qontinui%2Fqontinui-runner``) —
+    same as ``/pr-merge/prs/{repo}/{pr}/checks`` above. Forwarding the
+    raw ``/`` makes coord see four path segments, match no route, and
+    return 404, which surfaces in the Merge Settings per-repo card as a
+    bare ``HTTP 404`` where the resolved profile should be."""
     return await _proxy_coord_get(
-        f"/pr-merge/repos/{repo}/profile", tenant_id=tenant_id
+        f"/pr-merge/repos/{quote(repo, safe='')}/profile", tenant_id=tenant_id
     )
 
 
@@ -1316,9 +1386,13 @@ async def patch_pr_merge_repo_profile(
 ) -> Any:
     """UPSERT the per-repo override row. Coord stamps
     ``profile_source='user_edit'``, audits the change, and publishes
-    invalidation. Returns the post-write EffectiveProfile."""
+    invalidation. Returns the post-write EffectiveProfile.
+
+    Same single-segment re-encoding as the GET above — without it the
+    PATCH 404s too, so "Save override" in the Merge Settings card
+    silently fails to write."""
     return await _proxy_coord_patch(
-        f"/pr-merge/repos/{repo}/profile", body, tenant_id=tenant_id
+        f"/pr-merge/repos/{quote(repo, safe='')}/profile", body, tenant_id=tenant_id
     )
 
 
@@ -1747,6 +1821,94 @@ async def post_pr_merge_onboarding_claim(
     return JSONResponse(content=content, status_code=resp.status_code)
 
 
+# ---- Zero-touch onboarding: enroll an already-connected installation ------
+#
+# The "Enroll / Sync repositories" button on the Connected Organizations card.
+# The claim path (above) only fires for a FRESH GitHub App install (the Setup-URL
+# `?code=` redirect), so an org whose App is already installed has no UI trigger
+# to enroll its repos — it dead-ends at "connected · no repositories enrolled
+# yet". This proxy fronts coord's already-existing enroll endpoint so that org
+# can be enrolled (or re-synced to pick up newly-added repos) in one click.
+#
+# Coord's `POST /coord/onboarding/installations/:installation_id/enroll` runs its
+# authorization prologue SYNCHRONOUSLY (it verifies the installation is mapped to
+# the caller's active tenant BEFORE any side effect — fail-closed), then
+# `tokio::spawn`s the per-repo enrollment (signature probes, dry-run profile
+# writes, `tenant_repos` upserts, the one-time "🍕 Enable qontinui" bootstrap PR
+# — all idempotent) and returns `202 {"enrolled": "spawned", "tenant_id", "installation_id"}`
+# IMMEDIATELY. There is deliberately NO `repos` array — the list isn't known at
+# response time; the UI re-polls the accounts endpoint to learn the enrolled
+# repos. Error shapes surface with their own status: `403 installation_not_
+# owned_by_tenant`, `404 installation_not_mapped`, `500`.
+COORD_ENROLL_PATH = "/coord/onboarding/installations/{installation_id}/enroll"
+
+
+@router.post("/pr-merge/onboarding/installations/{installation_id}/enroll")
+async def post_pr_merge_onboarding_enroll(
+    installation_id: int,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> JSONResponse:
+    """Enroll (or re-sync) an already-connected GitHub App installation's repos.
+
+    Proxies coord's ``POST /coord/onboarding/installations/{installation_id}/enroll``,
+    substituting ``installation_id`` into the coord path. Backs the
+    "Enroll / Sync repositories" button on the Connected Organizations card,
+    which closes the "connected · no repositories enrolled yet" dead end for an
+    org whose App is already installed (the Setup-URL ``?code=`` claim can never
+    fire for it) and doubles as a manual re-sync to pick up newly-added repos.
+
+    Authz — ``require_coord_tenant_admin`` (admin in the ACTIVE tenant), NOT the
+    looser ``get_tenant_id``: enrolling opens bootstrap PRs and writes repo
+    profiles, a consequential write, matching the settings-write posture. coord
+    re-validates the active-tenant override server-side (defense-in-depth).
+
+    Contract — coord's authz prologue runs synchronously, then it spawns the
+    per-repo enrollment and returns immediately, so this handler keeps the
+    default 5s ``_COORD_TIMEOUT`` (no per-route bump — the slow per-repo GitHub
+    round-trips happen off-connection):
+      * ``202 {"enrolled": "spawned", "tenant_id", "installation_id"}`` — spawned;
+        the UI re-polls ``GET /pr-merge/onboarding/accounts`` to see the repos.
+        There is NO ``repos`` array in this response.
+      * ``403 installation_not_owned_by_tenant`` — the installation is bound to a
+        different tenant.
+      * ``404 installation_not_mapped`` — the installation isn't bound to any
+        tenant (connect it first).
+      * ``500`` — coord-side failure.
+
+    Like the claim proxy, this passes coord's status code AND JSON body through
+    VERBATIM (not via ``_proxy_coord_post``, which stringifies a ≥400 body into
+    ``HTTPException.detail`` and would rewrite the ``202`` to ``200``) so the
+    frontend can render coord's ``error`` code and keep the ``202`` distinct.
+    httpx transport errors mirror the shared helpers (ConnectError → 502,
+    TimeoutException → 504).
+    """
+    url = (
+        f"{settings.COORD_URL}"
+        f"{COORD_ENROLL_PATH.format(installation_id=installation_id)}"
+    )
+    headers = _tenant_headers(tenant_id)
+    async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
+        try:
+            resp = await client.post(url, headers=headers)
+        except httpx.ConnectError:
+            raise HTTPException(
+                status_code=502,
+                detail="coord is not reachable",
+            )
+        except httpx.TimeoutException:
+            raise HTTPException(
+                status_code=504,
+                detail="timeout waiting for coord",
+            )
+    # Pass coord's status code + JSON body straight through. Fall back to a
+    # wrapped raw body if coord ever returns a non-JSON payload.
+    try:
+        content = resp.json()
+    except ValueError:
+        content = {"detail": resp.text}
+    return JSONResponse(content=content, status_code=resp.status_code)
+
+
 # ---- Coord device pairing — Step 1 of the onboarding wizard -------------
 #
 # The wizard's Pair Device step (``MergeOrchestrationOnboarding.tsx``,
@@ -1955,6 +2117,33 @@ async def get_pr_merge_slo(
     )
 
 
+@router.post("/pr-merge/red-main/{repo:path}/spawn-fix")
+async def post_pr_merge_red_main_spawn_fix(
+    repo: str,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Operator-driven red-main remediation (red-main auto-remediation
+    Phase 4b). Spawn a visible fix session on the operator's device for
+    ``repo``'s current red episode, proxying coord's
+    ``POST /pr-merge/red-main/:repo/spawn-fix``.
+
+    ``repo`` is ``owner/name`` and is captured inline via ``{repo:path}``
+    (the same shape as ``/pr-merge/repos/:repo/profile``). No request body
+    is required — coord resolves the live red episode + tenant from the
+    forwarded operator bearer.
+
+    Coord returns ``200 {"agent_id": "<uuid>"}`` on success, or ``409`` when
+    a fix session is already running for the current red episode or the repo
+    has no live red-main alert. ``_proxy_coord_post`` re-raises coord's
+    status + JSON body so the banner can surface the 409 message inline.
+    """
+    return await _proxy_coord_post(
+        f"/pr-merge/red-main/{repo}/spawn-fix",
+        {},
+        tenant_id=tenant_id,
+    )
+
+
 async def _proxy_coord_post(
     path: str,
     body: Any,
@@ -2097,7 +2286,6 @@ async def get_claims_list(
 async def get_agent_status(
     correlation_topic: str | None = None,
     tenant_id: UUID = Depends(get_tenant_id),
-    current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
     """List active (non-expired) agent_status rows for the caller's tenant.
 
@@ -4171,7 +4359,6 @@ async def list_coord_sessions(
     # single-tenant path. The returned UUID is otherwise unused on the
     # wire here (the `scope=all` path computes its own `tenant_ids`).
     tenant_id: UUID = Depends(get_tenant_id),
-    current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
     """List active (default) or all sessions across one or all tenants
     the caller belongs to.
@@ -4872,7 +5059,6 @@ async def deregister_repo(
 async def get_next_step_settings(
     request: Request,
     tenant_id: UUID = Depends(get_tenant_id),
-    current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
     """Per-tenant read of the decision-engine autonomy settings.
 
@@ -5174,13 +5360,17 @@ async def update_prompt_document(
     tenant_id: UUID = Depends(require_coord_tenant_admin),
     current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
-    """Edit a prompt document's description/body. Tenant-admin only.
+    """Edit a prompt document's description/body/attrs. Tenant-admin only.
 
-    The body is forwarded as ``{description?, body?, change_description?}`` with
-    ``updated_by`` stamped from the authenticated session (see
-    :func:`_editor_identity`) — a body-supplied ``updated_by`` is ignored, so the
-    version snapshot coord writes carries the real editor. Coord creates a new
-    immutable version on every successful edit; nothing is overwritten in place.
+    The body is forwarded as ``{description?, body?, attrs?,
+    change_description?}`` with ``updated_by`` stamped from the authenticated
+    session (see :func:`_editor_identity`) — a body-supplied ``updated_by`` is
+    ignored, so the version snapshot coord writes carries the real editor. Coord
+    creates a new immutable version on every successful description/body edit;
+    nothing is overwritten in place. A supplied ``attrs`` REPLACES the stored
+    attrs object wholesale (the client merges before sending), and an attrs-only
+    edit is document configuration, not content — coord updates it in place
+    without creating a version.
     """
     return await _proxy_coord_patch(
         f"/coord/prompt-documents/{kind}/{name}",
@@ -5379,6 +5569,428 @@ async def import_prompt_document_clauses(
         body,
         tenant_id=tenant_id,
     )
+
+
+# Policy-edit proposal queue + landed-write feed (plan
+# ``2026-07-28-migrate-claude-md-into-qontinui.md`` Phase 5).
+#
+# Coord's ``coord_write_prompt_document`` MCP tool lets an agent append clauses to
+# a served policy document. Phase 5 adds a DIRECTION comparator on top of it: an
+# agent-authored edit that LOWERS a clause's autonomy tier or widens authority
+# (and, fail-closed, any edit the comparator cannot classify) does NOT land — it
+# is re-routed into ``coord.prompt_document_proposals`` (web migration
+# ``prompt_doc_proposals_01``) as a pending proposal for operator review.
+# Tier-raising and additive edits keep landing immediately and show up in the
+# landed-write feed below instead.
+#
+# This is a review QUEUE, not a gate: nothing blocks on the operator reading it.
+# The page therefore has two halves —
+#
+#   1. pending proposals  → the three ``/coord/prompt-document-proposals`` routes
+#   2. landed writes      → :func:`list_prompt_document_writes`, an aggregation
+#      over the EXISTING per-document versions route (no new coord surface), with
+#      one-click revert done by the browser as an ordinary PATCH of an older
+#      version's body through :func:`update_prompt_document`.
+#
+# Auth posture matches the prompt-document proxies above: GET reads gate on tenant
+# MEMBERSHIP (``get_tenant_id``); approve/reject gate on
+# ``require_coord_tenant_admin`` and coord re-checks. ``decided_by`` is stamped
+# SERVER-SIDE from the authenticated session (see :func:`_editor_identity`) and
+# the client body is reduced to ``decision_note`` alone — a browser can never
+# choose who a decision is attributed to, nor smuggle ``status``/``tenant_id``.
+#
+# DEPLOY ORDERING: coord's Phase 5 half ships after this. Until it does, coord
+# answers 404 on the proposals routes. The READ route degrades to an explicit
+# ``unavailable`` note (an honest "cannot see", never a confident empty queue);
+# approve/reject deliberately do NOT degrade — a decision that silently no-ops
+# would be worse than an error.
+#
+# DB SESSIONS, precisely: the two GET routes take none — ``get_tenant_id``
+# resolves identity over HTTP via ``get_coord_identity``, so no database
+# connection is pinned across their outbound coord calls (the failure mode that
+# produced CORS-looking 504s on ``/operations/*``). Approve/reject DO hold one:
+# ``get_current_active_user_async`` is a fastapi-users yield dependency whose
+# ``AsyncSession`` stays open for the whole request. That is unavoidable for an
+# authenticated write and is exactly what every neighbouring prompt-document
+# write proxy above does — but it is a real pin, so do not read this block as
+# "these routes never hold a connection".
+
+_COORD_PROPOSALS_PATH = "/coord/prompt-document-proposals"
+
+# Coord statuses that mean "this surface is not answering" rather than "coord
+# answered no". 404 covers the pre-deploy window (route not registered yet) and
+# coord's own ``degraded`` 404 (store not provisioned); 5xx covers unreachable /
+# timed out, which ``_proxy_coord_get`` already maps to 502/504.
+_COORD_ABSENT_STATUSES = frozenset({404, 501, 502, 503, 504})
+
+# The landed-write feed fans out one versions read per document, over ONE shared
+# client bounded by a semaphore (rather than a client per document).
+#
+# There is deliberately NO "newest N documents" cap. The tempting invariant —
+# "a document's ``updated_at`` is >= its newest version's ``created_at``, so a
+# document outside the cap cannot own a newer write" — does NOT hold: coord's
+# attrs-only PATCH branch bumps ``updated_at`` WITHOUT inserting a version, and
+# it is reachable from the sibling prompt-documents editor. So documents whose
+# only recent activity was an attrs edit could evict a document owning a
+# genuinely newer write, and it would vanish from the feed silently. The ceiling
+# below is a pure safety bound, and crossing it is REPORTED (``truncated``)
+# rather than applied quietly.
+_WRITE_FEED_DOCUMENT_CEILING = 200
+
+# Concurrent in-flight version reads during the fan-out.
+_WRITE_FEED_CONCURRENCY = 10
+
+# Wall-clock bound on the whole fan-out. Without it the worst case is
+# ``ceil(ceiling / concurrency)`` waves of ``_COORD_TIMEOUT`` each — 20 waves ×
+# 5s with the constants above — pinning an ASGI worker for the duration. Coord's
+# ``list_versions`` also has no LIMIT, so a document with deep history is not a
+# cheap read. A slow coord must degrade this feed, not hang the page.
+_WRITE_FEED_DEADLINE_SECONDS = 20.0
+
+
+def _coord_unavailable(exc: HTTPException) -> tuple[str, str]:
+    """One honest line for an unreadable coord surface, plus its KIND.
+
+    The kind matters to the page, not just the prose: ``not_deployed`` is the
+    expected, benign pre-deploy window and renders muted, while ``unreachable``
+    means coord is actually failing and must not be dressed in the calmest style
+    on the page.
+    """
+    if exc.status_code == 404:
+        return (
+            "coord has no proposal queue yet — its Phase 5 direction-enforcement "
+            "deploy has not landed. Pending proposals cannot be listed, which is "
+            "not the same as there being none.",
+            "not_deployed",
+        )
+    return (
+        f"coord did not answer the proposal queue (HTTP {exc.status_code}).",
+        "unreachable",
+    )
+
+
+def _plural(count: int, noun: str) -> str:
+    """``"1 document"`` / ``"3 documents"`` — these strings are read by humans."""
+    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+
+
+def _parse_iso(value: Any) -> datetime:
+    """Best-effort ISO-8601 parse for feed ordering; unparseable sorts oldest."""
+    if not isinstance(value, str):
+        return datetime.min.replace(tzinfo=UTC)
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return datetime.min.replace(tzinfo=UTC)
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
+async def _fetch_versions_bulk(
+    documents: list[dict[str, Any]], tenant_id: UUID
+) -> list[Any]:
+    """Read ``/versions`` for every document, positionally aligned with input.
+
+    Deliberately does NOT reuse :func:`_proxy_coord_get` per document: that
+    builds a fresh ``httpx.AsyncClient`` (and therefore a fresh connection pool
+    and TLS handshake) per call, which for this route's fan-out means one pool
+    per document on every page load. Here ONE client serves the whole fan-out,
+    bounded by a semaphore.
+
+    A document whose read fails yields ``None`` in its slot AND a
+    ``prompt_document_versions_fetch_failed`` warning naming the tenant and the
+    document — the caller turns the ``None`` into the operator-facing ``partial``
+    count, and the log is what makes that count diagnosable.
+
+    Failure handling is TOTAL: ``_one`` names the expected exception classes so
+    it can log a precise reason, and the per-task ``exception()`` check below
+    catches everything else. One unanticipated exception must degrade one
+    document, never blank the whole feed.
+
+    The whole fan-out is additionally bounded by
+    ``_WRITE_FEED_DEADLINE_SECONDS``: with a per-request timeout and a
+    concurrency limit, a large document set could otherwise pin a worker for
+    concurrency-limited waves of it. The deadline uses :func:`asyncio.wait`
+    rather than wrapping a gather in :func:`asyncio.timeout`, specifically so
+    the documents that DID answer before the deadline are kept — cancelling the
+    gather would throw their results away and make the feed emptier than the
+    truth. Only the stragglers become ``None``, and they are reported through
+    the same ``partial`` path as any other failure.
+
+    An empty ``documents`` returns ``[]`` before touching :func:`asyncio.wait`,
+    which raises ``ValueError`` on an empty set — and empty is ORDINARY here: a
+    tenant with no documents yet, and coord's store-unprovisioned ``degraded``
+    answer, both land on it. That path must render its caveat, not 500.
+    """
+    # `asyncio.wait` raises ValueError on an empty set, and no-documents is a
+    # routine state (fresh tenant; coord's `degraded` store-unprovisioned
+    # answer) — not an error worth a 500.
+    if not documents:
+        return []
+
+    headers = _tenant_headers(tenant_id)
+    semaphore = asyncio.Semaphore(_WRITE_FEED_CONCURRENCY)
+
+    def _failed(kind: str, name: str, error: str) -> None:
+        logger.warning(
+            "prompt_document_versions_fetch_failed",
+            tenant_id=str(tenant_id),
+            kind=kind,
+            name=name,
+            error=error,
+        )
+
+    async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
+
+        async def _one(doc: dict[str, Any]) -> Any:
+            kind = str(doc.get("kind", ""))
+            name = str(doc.get("name", ""))
+            url = (
+                f"{settings.COORD_URL}/coord/prompt-documents/"
+                f"{quote(kind, safe='')}/{quote(name, safe='')}/versions"
+            )
+            async with semaphore:
+                try:
+                    resp = await client.get(url, headers=headers)
+                except httpx.HTTPError as exc:
+                    _failed(kind, name, str(exc))
+                    return None
+            if resp.status_code >= 400:
+                _failed(kind, name, f"HTTP {resp.status_code}")
+                return None
+            try:
+                return resp.json()
+            except ValueError as exc:
+                _failed(kind, name, f"non-JSON body: {exc}")
+                return None
+
+        tasks = [asyncio.create_task(_one(doc)) for doc in documents]
+        _, pending = await asyncio.wait(tasks, timeout=_WRITE_FEED_DEADLINE_SECONDS)
+        if pending:
+            logger.warning(
+                "prompt_document_versions_fetch_deadline",
+                tenant_id=str(tenant_id),
+                documents=len(documents),
+                unanswered=len(pending),
+                deadline_seconds=_WRITE_FEED_DEADLINE_SECONDS,
+            )
+            for task in pending:
+                task.cancel()
+            # Let the cancellations settle INSIDE the client's context manager;
+            # closing the client out from under in-flight requests is what
+            # produces spurious teardown errors.
+            await asyncio.gather(*pending, return_exceptions=True)
+
+    out: list[Any] = []
+    for doc, task in zip(documents, tasks, strict=True):
+        kind = str(doc.get("kind", ""))
+        name = str(doc.get("name", ""))
+        if task.cancelled():
+            _failed(kind, name, "did not answer before the fan-out deadline")
+            out.append(None)
+            continue
+        # `_one` handles the expected failures itself and returns None; this
+        # arm is the total backstop for everything it did not anticipate
+        # (`httpx.InvalidURL` and `httpx.StreamError` are notably NOT
+        # `HTTPError` subclasses). One surprise degrades one document.
+        exc = task.exception()
+        if exc is not None:
+            _failed(kind, name, f"unexpected {type(exc).__name__}: {exc}")
+            out.append(None)
+        else:
+            out.append(task.result())
+    return out
+
+
+@router.get("/coord/prompt-document-proposals")
+async def list_prompt_document_proposals(
+    status: str = "pending",
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """List the tenant's policy-edit proposals, newest first. Any tenant member.
+
+    ``status`` is forwarded verbatim (coord owns the ``pending`` | ``approved`` |
+    ``rejected`` vocabulary — the web tier deliberately does not re-encode it, so
+    a coord-side vocabulary addition needs no web change). Coord returns
+    ``{"proposals": [...]}``.
+
+    Degrades rather than 502s while coord's Phase 5 half is undeployed: the
+    response then carries an empty list plus an ``unavailable`` note (and its
+    ``unavailable_kind``, so the page can style a benign pre-deploy window
+    differently from coord actually being down), so an unreadable queue is never
+    displayed as an empty one.
+    """
+    try:
+        return await _proxy_coord_get(
+            _COORD_PROPOSALS_PATH, params={"status": status}, tenant_id=tenant_id
+        )
+    except HTTPException as exc:
+        if exc.status_code in _COORD_ABSENT_STATUSES:
+            note, kind = _coord_unavailable(exc)
+            return {
+                "proposals": [],
+                "total": 0,
+                "unavailable": note,
+                "unavailable_kind": kind,
+            }
+        raise
+
+
+@router.post("/coord/prompt-document-proposals/{proposal_id}/approve")
+async def approve_prompt_document_proposal(
+    proposal_id: str,
+    body: dict[str, Any] | None = None,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> Any:
+    """Approve a pending proposal — coord applies the edit and returns the new
+    document version. Tenant-admin only.
+
+    Only ``decision_note`` is taken from the client; ``decided_by`` is stamped
+    from the authenticated session. Coord's 4xx (already decided, stale
+    ``base_version``, unknown id) passes through verbatim — including the 404 you
+    get before coord's Phase 5 deploy, which must stay visible rather than
+    silently no-op.
+    """
+    return await _proxy_coord_post(
+        f"{_COORD_PROPOSALS_PATH}/{quote(proposal_id, safe='')}/approve",
+        {
+            "decision_note": (body or {}).get("decision_note"),
+            "decided_by": _editor_identity(current_user),
+        },
+        tenant_id=tenant_id,
+    )
+
+
+@router.post("/coord/prompt-document-proposals/{proposal_id}/reject")
+async def reject_prompt_document_proposal(
+    proposal_id: str,
+    body: dict[str, Any] | None = None,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> Any:
+    """Reject a pending proposal — the edit is never applied. Tenant-admin only.
+
+    Same body reduction and server-side ``decided_by`` stamp as
+    :func:`approve_prompt_document_proposal`.
+    """
+    return await _proxy_coord_post(
+        f"{_COORD_PROPOSALS_PATH}/{quote(proposal_id, safe='')}/reject",
+        {
+            "decision_note": (body or {}).get("decision_note"),
+            "decided_by": _editor_identity(current_user),
+        },
+        tenant_id=tenant_id,
+    )
+
+
+@router.get("/coord/prompt-document-writes")
+async def list_prompt_document_writes(
+    limit: int = Query(default=40, ge=1, le=200),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> dict[str, Any]:
+    """Recently landed prompt-document writes across the tenant, newest first.
+
+    An AGGREGATION over routes that already exist — the document list plus one
+    ``/versions`` read per document — rather than a new coord surface, so it
+    works against today's deployed coord and needs nothing from coord's Phase 5
+    half. Each item carries ``current_version`` so the page can offer one-click
+    revert (a PATCH of the older version's body through
+    :func:`update_prompt_document`, which coord records as a NEW version —
+    history is never rewritten).
+
+    Writes are returned unfiltered, with ``edited_by`` verbatim. Deliberately no
+    "agent writes only" filter: the provenance tag coord's write tool stamps is
+    not fixed until its Phase 5 half lands, and filtering on a guessed prefix
+    would silently hide writes — the exact failure this feed exists to prevent.
+
+    Honest partial results: a per-document versions read that fails is skipped and
+    reported in ``partial`` rather than failing the whole feed, so one bad
+    document cannot blank the page — and every skip is logged, so "3 of 20
+    documents did not return their history" is greppable rather than a dead end.
+    """
+    try:
+        listing = await _proxy_coord_get("/coord/prompt-documents", tenant_id=tenant_id)
+    except HTTPException as exc:
+        if exc.status_code in _COORD_ABSENT_STATUSES:
+            return {
+                "writes": [],
+                "total": 0,
+                "unavailable": (
+                    f"coord did not answer the document list (HTTP {exc.status_code})."
+                ),
+                # The document list ships in today's coord, so a 404 here is not
+                # the benign pre-deploy window the proposals route sees — every
+                # failure of this read means coord is genuinely not answering.
+                "unavailable_kind": "unreachable",
+            }
+        raise
+
+    documents: list[dict[str, Any]] = []
+    degraded: str | None = None
+    if isinstance(listing, dict):
+        raw = listing.get("documents")
+        documents = (
+            [d for d in raw if isinstance(d, dict)] if isinstance(raw, list) else []
+        )
+        note = listing.get("degraded")
+        degraded = note if isinstance(note, str) else None
+
+    documents.sort(key=lambda d: _parse_iso(d.get("updated_at")), reverse=True)
+    truncated = len(documents) - _WRITE_FEED_DOCUMENT_CEILING
+    if truncated > 0:
+        documents = documents[:_WRITE_FEED_DOCUMENT_CEILING]
+
+    results = await _fetch_versions_bulk(documents, tenant_id)
+
+    writes: list[dict[str, Any]] = []
+    failed = 0
+    for doc, result in zip(documents, results, strict=True):
+        if not isinstance(result, dict):
+            failed += 1
+            continue
+        current_version = result.get("current_version")
+        label = doc.get("description") or doc.get("name")
+        for version in result.get("versions") or []:
+            if not isinstance(version, dict):
+                continue
+            writes.append(
+                {
+                    "kind": doc.get("kind"),
+                    "name": doc.get("name"),
+                    "label": label,
+                    "version_number": version.get("version_number"),
+                    "change_note": version.get("description"),
+                    "edited_by": version.get("edited_by"),
+                    "created_at": version.get("created_at"),
+                    "current_version": current_version,
+                }
+            )
+
+    writes.sort(key=lambda w: _parse_iso(w.get("created_at")), reverse=True)
+    response: dict[str, Any] = {"writes": writes[:limit], "total": len(writes)}
+    if degraded:
+        response["degraded"] = degraded
+    if failed:
+        # Denominator is the documents actually READ (post-ceiling), which is
+        # what the ratio describes; the ``truncated`` caveat below owns the ones
+        # that were never attempted.
+        response["partial"] = (
+            f"{failed} of the {_plural(len(documents), 'document')} read did not "
+            "return their history; their writes are missing from this feed."
+        )
+    if truncated > 0:
+        response["truncated"] = (
+            f"{_plural(truncated, 'document')} beyond the "
+            f"{_WRITE_FEED_DOCUMENT_CEILING}-document ceiling {'were' if truncated != 1 else 'was'} "
+            "not read; writes belonging to them are missing from this feed."
+        )
+    # The limit slice drops writes too, and a silent drop here would be
+    # indistinguishable from the ceiling case that gets a banner.
+    if len(writes) > limit:
+        response["limited"] = (
+            f"Showing the {_plural(limit, 'most recent write')} of {len(writes)}."
+        )
+    return response
 
 
 @router.put("/coord/policies/system/{system_rule_id}/override")

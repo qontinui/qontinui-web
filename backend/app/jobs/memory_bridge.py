@@ -181,7 +181,9 @@ async def bridge_sync_once(
         # One embedding job per tenant per pass, for the rows just landed.
         # The queue's live-status `input_hash` dedupe is what keeps this
         # 15-minute cadence from piling up work: an identical target set
-        # with a live (pending/claimed/done) job is a no-op insert. The
+        # with an in-flight (pending/claimed) embedding job is a no-op
+        # insert. A `done` embedding job does NOT dedupe (kind-aware index,
+        # see enqueue_jobs) — a done-but-unapplied job must re-queue. The
         # compare-first pass above already makes an in-sync run return
         # before reaching here, so this is belt AND braces — the braces
         # matter because a run that upserts ANY name re-walks that

@@ -186,6 +186,16 @@ jobs:
           command -v psql >/dev/null || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
           psql -h localhost -U test_user -d test_db -c "CREATE SCHEMA IF NOT EXISTS runner;"
 
+      # LOAD-BEARING BACKSTOP — do NOT add a `paths:` filter or a job-level `if:`
+      # that would stop this from running on every PR. migration-reversal.yml's
+      # head guard treats a non-zero `alembic heads` as skip-and-pass (a stacked
+      # PR whose down_revision lives on an unlanded parent is the chain-
+      # consolidation gate's problem, not a reversibility problem). That guard is
+      # deliberately NOT narrowed by matching alembic's error prose, because a
+      # wording change upstream would turn it into a false red on exactly the PRs
+      # it exists to let through. The classes it therefore does not catch —
+      # migration SyntaxError/ImportError, graph cycles, duplicate revision ids —
+      # are caught HERE instead. Filtering this step un-backstops that decision.
       - name: Run database migrations
         working-directory: ./backend
         run: alembic upgrade heads

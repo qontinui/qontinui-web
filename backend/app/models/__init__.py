@@ -48,6 +48,7 @@ from app.models.collaboration import (
 )
 from app.models.coverage_snapshot import CoverageSnapshot
 from app.models.custom_function import CustomFunction
+from app.models.design_policy import DesignPolicy
 from app.models.detected_issue import DetectedIssue
 from app.models.device import Device
 from app.models.device_connection import DeviceConnection
@@ -291,6 +292,8 @@ __all__ = [
     "DetectedIssue",
     # Finding Category Configs
     "FindingCategoryConfig",
+    # Design/UX Policies
+    "DesignPolicy",
     # Discoveries
     "Discovery",
     # State Discovery

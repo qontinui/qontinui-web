@@ -107,6 +107,11 @@ export function GateActions({
 
   const verdict = gate.verdict.toLowerCase();
   const isOpen = verdict === "open";
+  // `withdrawn` (registrant cancelled its own request — plan
+  // `2026-07-27-configurable-gate-clearance-authority`) is deliberately NOT
+  // in the Reopen set: coord's reopen semantics for withdrawn gates are
+  // undefined until the clearance-authority coord PRs land, so a withdrawn
+  // row offers no verdict-changing actions (mute/unmute still applies).
   const isClearedOrFailed = verdict === "cleared" || verdict === "failed";
   const isOperatorApproval =
     (gate.predicate?.kind as string | undefined) === "operator_approval";

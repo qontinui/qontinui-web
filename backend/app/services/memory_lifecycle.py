@@ -20,9 +20,11 @@ unit-testable in isolation (see ``tests/test_memory_lifecycle.py``):
   ``2026-07-13-runner-paid-embedding``) loads no embedding model on any
   live path, so the sweeps ENQUEUE (see ``memory_store.enqueue_jobs``)
   for a runner to compute and post back. ``job_input_hash`` is the stable
-  key that keeps the same work from being enqueued twice while a job for
-  it is still pending/claimed/done — which is what makes the 15-minute
-  bridge and daily reindex cadences idempotent rather than accumulating.
+  key that keeps the same work from being enqueued twice while a live job
+  for it exists — an in-flight (pending/claimed) job of either kind, plus
+  a done SYNTHESIS job (a done embedding does not dedupe; see the
+  kind-aware ``enqueue_jobs``). This is what makes the 15-minute bridge
+  and reindex cadences idempotent rather than accumulating.
 """
 
 from __future__ import annotations
@@ -33,6 +35,14 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
+# numpy is relied on via its TRANSITIVE pin in poetry.lock (2.4.5, required by
+# both `pandas` and `opencv-python-headless`, which are direct deps) rather than
+# a direct `[tool.poetry.dependencies]` entry: adding one makes `poetry check
+# --lock` and `poetry install` fail with "pyproject.toml changed significantly
+# since poetry.lock was last generated", which would red every backend CI job.
+# Declaring it directly needs a companion `poetry lock` in a separate change.
+# Same precedent as app/services/frame_extraction.py.
+import numpy as np
 import structlog
 
 logger = structlog.get_logger(__name__)
@@ -117,16 +127,6 @@ def retention_score(importance: float, age_days: float, access_count: int) -> fl
     return importance * math.exp(
         -age_days / (DECAY_BASE_HORIZON_DAYS * half_life_factor)
     )
-
-
-def cosine_similarity(a: list[float], b: list[float]) -> float:
-    """Cosine similarity of two equal-length vectors (0.0 on zero norm)."""
-    dot = sum(x * y for x, y in zip(a, b, strict=True))
-    norm_a = math.sqrt(sum(x * x for x in a))
-    norm_b = math.sqrt(sum(x * x for x in b))
-    if norm_a == 0.0 or norm_b == 0.0:
-        return 0.0
-    return dot / (norm_a * norm_b)
 
 
 # ---------------------------------------------------------------------------
@@ -224,24 +224,82 @@ def greedy_clusters(
     seed. Clusters smaller than ``min_size`` are discarded — only the
     seed is consumed, so its near-misses remain available to later
     seeds. Deterministic given the input.
+
+    The similarity scan is vectorised: the ordered embeddings are
+    L2-normalised into one ``float64`` matrix ``M`` and the FULL pairwise
+    matrix ``S = M @ M.T`` is computed in a single BLAS matmul, after
+    which the greedy loop only reads precomputed rows of ``S``. The
+    outer seed/assign sequence is unchanged — only the inner O(n·dim)
+    Python scan is replaced. This is what keeps the job off the
+    "60-second event-loop stall" path: the pure-Python form cost ~17 s at
+    ``CLUSTER_CANDIDATE_LIMIT`` rows × ``EMBEDDING_DIM`` components (see
+    plan ``2026-07-28-web-deploy-red-main-memory-consolidate-event-loop-stall``).
+    ``S`` is bounded by ``CLUSTER_CANDIDATE_LIMIT`` — 1000² float64 = 8 MB;
+    **if that limit is ever raised, revisit this**, since ``S`` grows as
+    O(limit²).
+
+    Zero-norm vectors score 0.0 against everything (never ``NaN``),
+    matching the scalar formula this replaced.
+
+    Equivalence to the scalar formula is exact at every threshold this is
+    used with — differential fuzzing found 0 divergences in 600 trials at
+    ``CLUSTER_SIMILARITY`` (0.75), including pairs seeded at 0.75 ± 1e-16.
+    The ONE known exception is ``similarity >= 1.0`` on exact-duplicate
+    vectors, where normalise-then-dot and dot-then-divide can straddle
+    1.0 by a single ulp in either direction; that threshold selects only
+    perfect duplicates and is not a configuration this ships with.
+
+    Total by construction: an
+    empty input returns ``[]``, and ragged input (embeddings of differing
+    width — possible mid-model-migration, since
+    ``fetch_cluster_candidates`` does not filter by model tag) is logged
+    and yields ``[]`` rather than raising. Callers should reject ragged
+    input up front with
+    :func:`app.services.memory_vectors.ensure_embedding_dims`.
     """
     ordered = sorted(items, key=lambda i: (i.created_at, str(i.memory_id)))
+    if not ordered:
+        return []
+
+    width = len(ordered[0].embedding)
+    if any(len(item.embedding) != width for item in ordered):
+        logger.warning(
+            "greedy_clusters_ragged_embeddings",
+            items=len(ordered),
+            expected_dim=width,
+        )
+        return []
+
+    matrix = np.asarray([item.embedding for item in ordered], dtype=np.float64)
+    norms: np.ndarray = np.linalg.norm(matrix, axis=1)
+    zero_norm = norms == 0.0
+    # Guard the divide, then zero those rows outright: a zero vector must
+    # score 0.0 against everything (the scalar formula's zero-norm arm),
+    # never NaN.
+    norms[zero_norm] = 1.0
+    matrix /= norms[:, np.newaxis]
+    matrix[zero_norm] = 0.0
+    sims: np.ndarray = matrix @ matrix.T
+
+    ids = [item.memory_id for item in ordered]
     assigned: set[UUID] = set()
     clusters: list[list[UUID]] = []
-    for seed in ordered:
-        if seed.memory_id in assigned:
+    for seed_index, seed_id in enumerate(ids):
+        if seed_id in assigned:
             continue
-        members = [seed.memory_id]
-        for other in ordered:
-            if other.memory_id in assigned or other.memory_id == seed.memory_id:
+        members = [seed_id]
+        # Strictly ``>``, and ``flatnonzero`` yields ascending indices, so
+        # members land in the same order the scalar inner loop produced.
+        for other_index in np.flatnonzero(sims[seed_index] > similarity):
+            other_id = ids[int(other_index)]
+            if other_id in assigned or other_id == seed_id:
                 continue
-            if cosine_similarity(seed.embedding, other.embedding) > similarity:
-                members.append(other.memory_id)
+            members.append(other_id)
         if len(members) >= min_size:
             clusters.append(members)
             assigned.update(members)
         else:
-            assigned.add(seed.memory_id)
+            assigned.add(seed_id)
     return clusters
 
 
@@ -255,18 +313,21 @@ def job_input_hash(target_ids: list[UUID], *, model_tag: str | None = None) -> s
 
     The ``coord.memory_jobs.input_hash`` dedupe key: the same set of
     target ids always hashes identically regardless of order, so a job
-    whose inputs already have a live (pending/claimed/done) job is never
-    enqueued twice. sha256 hex over the comma-joined sorted ids.
+    whose inputs already have a live job (an in-flight pending/claimed job
+    of either kind, or a done SYNTHESIS job — the kind-aware
+    ``enqueue_jobs`` dedupe) is never enqueued twice. sha256 hex over the
+    comma-joined sorted ids.
 
-    ``model_tag`` (embedding jobs) is folded in so that a DEPLOYED-TAG
-    CHANGE re-opens the same rows for a fresh job. Without it, the
-    live-status dedupe spans ``done`` — so once a row set had been
-    embedded under the old tag, the reindex sweep could never enqueue
-    those same rows again under the new one, and the tag-drift class the
-    sweep exists to heal would be permanently unhealable. Synthesis
-    passes no tag, which keeps its hash byte-identical to the
-    pre-generalization ``member_set_hash`` — the values migrated across
-    from ``member_set_hash`` stay valid rather than silently missing.
+    ``model_tag`` (embedding jobs) is folded in so a job's dedupe key is
+    scoped to the tag it will be embedded under: a DEPLOYED-TAG CHANGE
+    yields a distinct hash and so a distinct job regardless of any earlier
+    same-rows job. (A done embedding job no longer participates in the
+    live-input index at all — the kind-aware fix lets a done-but-unapplied
+    embedding re-queue under the SAME tag too — but keeping the tag in the
+    key keeps distinct-tag jobs cleanly distinct.) Synthesis passes no
+    tag, which keeps its hash byte-identical to the pre-generalization
+    ``member_set_hash`` — the values migrated across from
+    ``member_set_hash`` stay valid rather than silently missing.
     """
     joined = ",".join(sorted(str(m) for m in target_ids))
     if model_tag is not None:

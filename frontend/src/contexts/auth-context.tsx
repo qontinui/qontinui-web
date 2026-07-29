@@ -11,6 +11,7 @@ import React, {
 import { createLogger } from "@/lib/logger";
 import { isPublic } from "@/lib/public-routes";
 import { authService } from "@/services/service-factory";
+import { consumeDevLocalAuthToken } from "@/services/auth/dev-local-auth";
 import { User } from "@/types/auth-types";
 import { pageStateDB } from "@/stores/page-state";
 import { clearExtractionConfig } from "@/hooks/use-extraction-config";
@@ -266,6 +267,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const checkAuth = async () => {
     logger.debug("Checking authentication...");
     try {
+      // Dev-local-auth handoff (dev-only, strictly gated). A tab seeded by the
+      // /verify-web harness carries a token ONLY in localStorage (Playwright
+      // storageState can set localStorage + cookies but NOT the sessionStorage
+      // the bearer lives in). Consume it here — BEFORE any auth-state read — so
+      // it lands in sessionStorage + the marker cookie via the SAME
+      // TokenManager.setTokens path a real Cognito login uses; the normal
+      // isAuthenticated() path below then hydrates the user. One-shot; strict
+      // no-op unless NEXT_PUBLIC_ENABLE_DEV_LOCAL_AUTH === "1" AND the key is
+      // present, so it never interferes with the real login flow.
+      if (consumeDevLocalAuthToken(authService.tokenManager)) {
+        logger.info(
+          "Consumed dev-local-auth handoff token from localStorage (gated)"
+        );
+      }
+
       // Purge a stale session BEFORE reading any auth state. A reopened browser
       // keeps the localStorage markers (`is_authenticated`, `refresh_token_expiry`)
       // and the `qontinui_auth` marker cookie, but its tab-scoped sessionStorage

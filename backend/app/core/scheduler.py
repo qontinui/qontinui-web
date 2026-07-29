@@ -71,6 +71,32 @@ DEFAULT_TIMEOUT_SECONDS = 600.0
 # tolerates clock skew / newly-registered work).
 _MAX_SLEEP_SECONDS = 30.0
 
+# Delay window for a `run_at_boot` task's first fire. SIZED AGAINST THE ALB
+# INITIAL HEALTH-CHECK WINDOW, not against boot time: the old 1-10s band put
+# every boot sweep squarely inside the window in which the ECS task's ALB target
+# must pass its first health checks, so one expensive sweep firing there timed
+# the checks out and the deployment circuit breaker rolled the release back
+# (observed 2026-07-28: task up at 20:15:42, first "Request timed out" verdict at
+# 20:16:20 — 38s in). 120-180s lands the sweep after the target is already in
+# service on any plausible interval x healthy_threshold combination, while
+# staying far inside the shortest run_at_boot cron cadence (*/10 = 600s) so the
+# deploy-survives-the-cadence guarantee `run_at_boot` exists for is untouched.
+# This is defence-in-depth only: the real fix is that CPU-bound sweep sections
+# run off the event loop (see app/jobs/memory_lifecycle.consolidate_tenant).
+#
+# KNOWN COST of this window: it puts the boot sweep AFTER the ECS "wait for
+# service to stabilize" gate completes, so a future regression that re-blocks
+# the loop will produce a GREEN deploy plus a silent production stall, instead
+# of the loud circuit-breaker rollback that surfaced the 2026-07-28 incident.
+# That deploy-time canary is deliberately traded away for release reliability;
+# the replacement detection is the loop-responsiveness regression test in
+# tests/test_memory_lifecycle.py, not the deploy gate.
+#
+# Applies only to cadences LONGER than this window — see `first_run_at`, which
+# keeps sub-window interval polls on the historical 1-10s band.
+BOOT_DELAY_MIN_SECONDS = 120.0
+BOOT_DELAY_MAX_SECONDS = 180.0
+
 _JobCoro = Callable[[], Awaitable[Any]]
 
 
@@ -121,9 +147,23 @@ class ScheduledTask:
     def first_run_at(self, now: datetime) -> datetime:
         """When this task should first fire after the scheduler starts."""
         if self.run_at_boot:
-            # Not exactly `now`: a small jittered delay lets boot finish and
-            # keeps N replicas from all contending for the lock the same instant.
-            return now + timedelta(seconds=random.uniform(1.0, 10.0))
+            # Not exactly `now`: a jittered delay lets boot finish, keeps N
+            # replicas from all contending for the lock the same instant, and
+            # (see BOOT_DELAY_*_SECONDS) holds the sweep clear of the ALB's
+            # initial health-check window.
+            lo, hi = BOOT_DELAY_MIN_SECONDS, BOOT_DELAY_MAX_SECONDS
+            if self.interval_seconds is not None and self.interval_seconds <= hi:
+                # A cadence shorter than the ALB window gains nothing from being
+                # pushed out past its own interval — and these are cheap polls,
+                # not sweeps, so the ALB hazard never applied to them. Keep the
+                # historical 1-10s band, capped by the task's own interval.
+                # Clamping the WINDOW, not the sample: `min(sample, interval)`
+                # would saturate (BOOT_DELAY_MIN already exceeds these
+                # intervals) and collapse the jitter to a constant, silently
+                # making `run_at_boot` a no-op for the 30s/60s tasks.
+                lo, hi = 1.0, min(10.0, self.interval_seconds)
+            delay = random.uniform(lo, hi)
+            return now + timedelta(seconds=delay)
         return self.compute_next(now)
 
     def compute_next(self, now: datetime) -> datetime:
@@ -390,6 +430,12 @@ async def _job_memory_decay() -> Any:
     return await _run_committed(decay_once)
 
 
+async def _job_memory_reap() -> Any:
+    from app.jobs.memory_lifecycle import reap_once
+
+    return await _run_committed(reap_once)
+
+
 async def _job_memory_reindex() -> Any:
     from app.jobs.memory_lifecycle import reindex_once
 
@@ -452,6 +498,25 @@ def install_default_tasks(service: SchedulerService) -> None:
     # Tenant agentic-memory lifecycle + MEMORY.md bridge (formerly celery beat).
     service.register(
         ScheduledTask(name="memory_decay", coro=_job_memory_decay, cron="10 3 * * *")
+    )
+    service.register(
+        ScheduledTask(
+            name="memory_reap",
+            # Every 10 minutes, NOT the daily cadence it had while bundled into
+            # memory_decay. The reaper requeues job claims a runner abandoned,
+            # and it is the queue's ONLY self-healing path: a claimed row is
+            # handed to nobody (claim_jobs selects status='pending') and blocks
+            # re-enqueue (enqueue_jobs counts 'claimed' as live), so until this
+            # runs, one halted runner strands that cluster's synthesis entirely.
+            # Observed 2026-07-23: a synthesis job claimed at 13:34 was stale at
+            # 14:04 (JOB_CLAIM_STALE_MINUTES=30) but unreachable until the next
+            # 03:10 decay sweep — ~13h of dead queue for a 30-min staleness bound.
+            # The sweep is a cheap claimed_at-bounded UPDATE; run_at_boot clears
+            # anything a deploy-time kill stranded mid-claim.
+            coro=_job_memory_reap,
+            cron="*/10 * * * *",
+            run_at_boot=True,
+        )
     )
     service.register(
         ScheduledTask(

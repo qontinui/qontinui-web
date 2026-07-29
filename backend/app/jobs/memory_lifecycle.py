@@ -11,7 +11,13 @@ sweeps over ``coord.memory_records``:
   daily pass also runs the session-close expiry sweep (expire
   ``scope='session'`` rows 7 days after their session closed) and the
   job reaper (requeue/fail claims a dead runner abandoned).
-* **Consolidation** (weekly, per tenant): near-duplicate merge via a
+* **Consolidation** (every 10 minutes and at boot, per tenant): this is
+  the memory feedback loop, so it runs on a prompt cadence, NOT the
+  weekly beat it was ported from — see the ``memory_consolidate``
+  registration in :mod:`app.core.scheduler` for the reasoning (a weekly
+  Sunday slot surfaced a ``mental_model`` up to 7 days after the episodes
+  that formed it, and combined with sub-hourly redeploys it had never
+  actually run). Near-duplicate merge via a
   bounded pgvector self-join, then ENQUEUE of episode clusters as
   ``kind='synthesis'`` ``coord.memory_jobs`` rows. This backend ships no
   LLM client, so synthesis itself is offloaded to a runner: it claims a
@@ -36,6 +42,7 @@ reindex 03:40 UTC daily, consolidate 04:20 UTC Sunday).
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -58,7 +65,11 @@ from app.services.memory_lifecycle import (
     greedy_clusters,
     resolve_merges,
 )
-from app.services.memory_vectors import EMBEDDING_MODEL_TAG
+from app.services.memory_vectors import (
+    EMBEDDING_MODEL_TAG,
+    MemoryEmbeddingDimensionError,
+    ensure_embedding_dims,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -77,13 +88,15 @@ async def decay_once(
 ) -> dict[str, int]:
     """One daily maintenance pass over the memory substrate.
 
-    Bundles the three cheap set-based sweeps that must run at least
-    daily: Ebbinghaus decay (invalidate below-threshold rows + prune past
-    the grace window), the session-close expiry sweep (expire
+    Bundles the two cheap set-based sweeps that must run at least daily:
+    Ebbinghaus decay (invalidate below-threshold rows + prune past the
+    grace window) and the session-close expiry sweep (expire
     ``scope='session'`` rows 7 days after their session closed, plus
-    orphan cleanup), and the job reaper (requeue/fail claims a dead runner
-    abandoned — kind-agnostic, so it covers synthesis and embedding jobs
-    alike).
+    orphan cleanup).
+
+    The job reaper is deliberately NOT bundled here — it is queue-liveness
+    machinery, not retention, and runs on its own frequent cadence. See
+    :func:`reap_once`.
     """
     now = now or datetime.now(UTC)
     invalidated = await store.decay_invalidate(
@@ -93,21 +106,52 @@ async def decay_once(
         session, now=now, grace_days=DECAY_PRUNE_GRACE_DAYS
     )
     session_expired = await store.expire_closed_session_records(session, now=now)
-    reaped = await store.reap_stale_claims(session, now=now)
     logger.info(
         "memory_decay_completed",
         invalidated=invalidated,
         pruned=pruned,
         session_expired=session_expired,
-        synthesis_requeued=reaped["requeued"],
-        synthesis_failed=reaped["failed"],
     )
     return {
         "invalidated": invalidated,
         "pruned": pruned,
         "session_expired": session_expired,
-        "synthesis_requeued": reaped["requeued"],
-        "synthesis_failed": reaped["failed"],
+    }
+
+
+async def reap_once(
+    session: AsyncSession, *, now: datetime | None = None
+) -> dict[str, int]:
+    """Requeue (or fail) job claims a runner abandoned.
+
+    Kind-agnostic, so it covers ``synthesis`` and ``embedding`` jobs alike.
+
+    This is the queue's ONLY self-healing path. A runner that claims a job
+    and then halts without posting a result — the poller's ``Disabled``
+    arm (no LLM credentials / embedder down) explicitly "leaves this job
+    for the backend reaper" — flips the row to ``status='claimed'``, and a
+    claimed row is invisible to BOTH sides of the queue: ``claim_jobs``
+    hands out only ``pending`` rows, and ``enqueue_jobs`` treats
+    ``claimed`` as live so it will not re-create the work either. Until
+    this reaper runs, that job is stranded and its cluster is silently
+    stuck.
+
+    It therefore must NOT inherit a retention cadence. Bundled into the
+    daily ``memory_decay`` pass it stranded a real synthesis job for ~24h
+    (claimed 13:34, stale at 14:04 per ``JOB_CLAIM_STALE_MINUTES``, but
+    unreachable until the next 03:10 sweep). Reaping is a cheap set-based
+    UPDATE bounded by ``claimed_at``, so a frequent cadence is safe.
+    """
+    now = now or datetime.now(UTC)
+    reaped = await store.reap_stale_claims(session, now=now)
+    logger.info(
+        "memory_reap_completed",
+        requeued=reaped["requeued"],
+        failed=reaped["failed"],
+    )
+    return {
+        "requeued": reaped["requeued"],
+        "failed": reaped["failed"],
     }
 
 
@@ -151,11 +195,38 @@ async def consolidate_tenant(
         session, tenant_id, now=now, limit=CLUSTER_CANDIDATE_LIMIT
     )
     by_id = {row["memory_id"]: row for row in candidates}
-    clusters = greedy_clusters(
-        store.cluster_items_from_rows(candidates),
-        similarity=CLUSTER_SIMILARITY,
-        min_size=CLUSTER_MIN_SIZE,
-    )
+    cluster_items = store.cluster_items_from_rows(candidates)
+    clusters: list[list[UUID]] = []
+    try:
+        # `fetch_cluster_candidates` filters only on `embedding IS NOT NULL`,
+        # NOT on the embedding model tag, so a tenant mid-model-migration can
+        # return rows of differing width. A mixed-width corpus has no
+        # meaningful similarity matrix, so skip THIS tenant's cluster arm
+        # (the near-dup merge above stands) instead of crashing the sweep.
+        ensure_embedding_dims([item.embedding for item in cluster_items])
+    except MemoryEmbeddingDimensionError as exc:
+        logger.warning(
+            "memory_consolidation_cluster_skipped",
+            tenant_id=str(tenant_id),
+            reason="embedding_dimension_mismatch",
+            error=str(exc),
+            cluster_candidates=len(candidates),
+        )
+    else:
+        # Off the event loop: clustering is the ONE CPU-bound section of this
+        # sweep. Even fully vectorised it must never be able to wedge the loop
+        # again — a 60s in-loop stall here timed out ALB health checks and made
+        # every ECS deploy fail (plan
+        # 2026-07-28-web-deploy-red-main-memory-consolidate-event-loop-stall).
+        # `to_thread` works despite the GIL: CPython releases it every
+        # `sys.setswitchinterval` (~5ms) and numpy drops it outright for the
+        # matmul, so the loop stays schedulable throughout.
+        clusters = await asyncio.to_thread(
+            greedy_clusters,
+            cluster_items,
+            similarity=CLUSTER_SIMILARITY,
+            min_size=CLUSTER_MIN_SIZE,
+        )
     cluster_inputs = [
         store.synthesis_job_input(
             list(members),

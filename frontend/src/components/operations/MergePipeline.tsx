@@ -35,18 +35,24 @@ import {
 import Link from "next/link";
 import { CollapsiblePanel } from "./CollapsiblePanel";
 import { GateDecisionRow, MergeTrainRow, SuggestionCard } from "./MergeTrain";
+import { MergeTrainActivity } from "./MergeTrainActivity";
 import { relativeTime } from "./utils";
 import {
   MERGED_LOOKBACK_HOURS,
   useMergePipelineData,
 } from "./useMergePipelineData";
+import { useTrainHealth } from "./useTrainHealth";
 import { usePrCheckDetails } from "./usePrCheckDetails";
+import { buildRepoTrainRows, buildTrainSummary } from "./trainActivity";
+import { redactSecrets } from "./mergeTypes";
 import type { MergeEconomics } from "./mergeTypes";
 import {
   buildPipelineRows,
   derivePipelineHealth,
   matchesFilter,
   matchesQuery,
+  singleKey,
+  UNKNOWN_DWELL_NOTE,
   unstableHasFailure,
   type PipelineFilter,
   type PipelineRow,
@@ -140,6 +146,30 @@ export const AUTHOR_GLYPH_KINDS: ReadonlySet<UnifiedStatusKind> = new Set([
 ]);
 
 /**
+ * The marker for an amber row whose dwell clock DOES NOT EXIST — the third
+ * glyph, joining `✓` (landed) and `✕` (the author must act). It reads
+ * "coord cannot say how long this has been waiting", never "this is fine" and
+ * never "this is broken".
+ *
+ * A glyph, and specifically a glyph in the channel the page already uses, is
+ * the choice the UX priorities force. The signal has to survive the SCAN — a
+ * hover title alone is invisible to an operator sweeping twenty rows for work,
+ * which is precisely how nine month-old conflicts were skipped every time. But
+ * the row must not change colour, kind, sort rank or attention, because none
+ * of those may move on the absence of evidence. A prefix glyph plus a dashed
+ * border is the only channel left that is visible at scan distance, costs no
+ * layout, and asserts nothing about severity.
+ */
+const UNKNOWN_DWELL_GLYPH = "? ";
+
+/**
+ * The dashed treatment layered over the amber a `waiting` row already earns.
+ * Same hue (attention has not changed), but the border no longer reads as a
+ * firm measurement — the same "provisional" vocabulary `draft` already uses.
+ */
+const UNKNOWN_DWELL_CLASS = "border-dashed";
+
+/**
  * The badge carries its own reason as a `title`, so the "why is this PR
  * blocked?" answer is one hover away on EVERY row — including the narrow
  * viewports where the inline reason is dropped and the wide ones where it is
@@ -147,16 +177,28 @@ export const AUTHOR_GLYPH_KINDS: ReadonlySet<UnifiedStatusKind> = new Set([
  * accessibility tree and needs no provider.
  */
 function StatusBadge({ row }: { row: PipelineRow }) {
-  const { kind, label, reason } = row.status;
+  const { kind, label, reason, dwellEvidence } = row.status;
+  const isUnknown = dwellEvidence === "unknown";
+  const base = reason ? `${label} — ${reason}` : label;
   return (
     <Badge
       variant="outline"
-      className={`text-[11px] font-semibold whitespace-nowrap ${STATUS_BADGE_CLASS[kind]}`}
+      className={[
+        "text-[11px] font-semibold whitespace-nowrap",
+        STATUS_BADGE_CLASS[kind],
+        isUnknown ? UNKNOWN_DWELL_CLASS : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
       data-status-kind={kind}
-      title={reason ? `${label} — ${reason}` : label}
+      // Absent when the question does not arise, so a reader can tell "not
+      // applicable" from "measured" from "unknown" — the whole point.
+      data-dwell-evidence={dwellEvidence}
+      title={isUnknown ? `${base} (${UNKNOWN_DWELL_NOTE})` : base}
     >
       {kind === "merged" && "✓ "}
       {AUTHOR_GLYPH_KINDS.has(kind) && "✕ "}
+      {isUnknown && UNKNOWN_DWELL_GLYPH}
       {label}
     </Badge>
   );
@@ -204,6 +246,13 @@ function RowTime({ row }: { row: PipelineRow }) {
 function prHref(repo: string, prNumber: number): string {
   return `https://github.com/${repo}/pull/${prNumber}`;
 }
+
+function commitHref(repo: string, sha: string): string {
+  return `https://github.com/${repo}/commit/${sha}`;
+}
+
+/** The coord close_cause of a rebase fast-forward land. */
+const FF_LAND_CLOSE_CAUSE = "commits_landed_via_other_pr";
 
 // ----------------------------------------------------------------------------
 // Health strip
@@ -378,6 +427,66 @@ function FailingChecks({ row }: { row: PipelineRow }) {
   );
 }
 
+/**
+ * How a landed PR reached its base branch — shown in the detail view a click
+ * earns, next to the GitHub link. coord lands by rebase fast-forward
+ * (close_cause `commits_landed_via_other_pr`): it pushes the rebased commits
+ * straight to the base branch, so GitHub closes the PR as *Closed, not Merged*
+ * even though the code landed. That appearance is the fleet's #1 "did this
+ * actually merge?" confusion, so we spell it out — but only when close_cause
+ * confirms the ff-land. An absent close_cause (older coord) shows the landed
+ * commit + time with no caveat, never a claim we can't back.
+ */
+function LandedDetail({ row }: { row: PipelineRow }) {
+  if (row.status.kind !== "merged" || row.pr === null) return null;
+  const sha = row.pr.merge_commit_sha ?? null;
+  const base = row.baseBranch ?? row.pr.base_branch ?? "the base branch";
+  const ffLand = row.pr.close_cause === FF_LAND_CLOSE_CAUSE;
+  return (
+    <div className="space-y-1" data-testid="landed-detail">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground m-0">
+        How it landed
+      </p>
+      <p className="text-[13px] text-foreground/85 m-0">
+        {ffLand
+          ? `Landed on ${base} by coord (rebase fast-forward)`
+          : `Merged into ${base}`}
+        {sha && (
+          <>
+            {" as "}
+            <a
+              href={commitHref(row.repo, sha)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-mono text-primary hover:underline"
+              data-testid="landed-commit-link"
+            >
+              {sha.slice(0, 7)}
+            </a>
+          </>
+        )}
+        {row.pr.merged_at && (
+          <span className="text-muted-foreground">
+            {" · "}
+            {relativeTime(row.pr.merged_at)}
+          </span>
+        )}
+      </p>
+      {ffLand && (
+        <p
+          className="text-[11px] text-muted-foreground m-0"
+          data-testid="ff-land-note"
+        >
+          coord lands by pushing the rebased commits straight to {base}, so
+          GitHub shows this PR <span className="font-medium">Closed</span>, not{" "}
+          <span className="font-medium">Merged</span> — the commits are on{" "}
+          {base}.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function RowDetail({ row }: { row: PipelineRow }) {
   const active = row.activeProposal;
   const earlier = row.attempts.filter(
@@ -391,12 +500,27 @@ function RowDetail({ row }: { row: PipelineRow }) {
           {row.status.reason}
         </p>
       )}
+      {/* The four-word inline marker, spelled out. The glyph is what survives
+          the scan; this is what the operator reads once it has earned a
+          click. Muted, not red — an unknown age accuses nobody. */}
+      {row.status.dwellEvidence === "unknown" && (
+        <p
+          className="text-xs text-muted-foreground flex items-center gap-1 m-0"
+          data-testid="unknown-dwell-note"
+        >
+          <ShieldQuestion className="h-3 w-3 shrink-0" />
+          {UNKNOWN_DWELL_NOTE}
+        </p>
+      )}
       {active?.error && active.error !== row.status.reason && (
         <p className="text-xs text-red-300 flex items-center gap-1 m-0">
           <AlertTriangle className="h-3 w-3 shrink-0" />
-          {active.error}
+          {redactSecrets(active.error)}
         </p>
       )}
+
+      {/* how a landed PR reached its base branch (explains ff-land closes) */}
+      <LandedDetail row={row} />
 
       {/* which checks failed, with links to the runs */}
       <FailingChecks row={row} />
@@ -599,6 +723,10 @@ const FILTERS: Array<{ id: PipelineFilter; label: string }> = [
   // Landing history, newest-merge-first. Populated from coord's
   // `?include_merged=<hours>` rows (see MERGED_LOOKBACK_HOURS).
   { id: "merged", label: "Merged" },
+  // Row-per-REPO view of the merge train itself — see MergeTrainActivity.
+  // Not a filter over the PR rows, so it renders its own component and its
+  // tab count is repos-with-activity, not PRs.
+  { id: "train", label: "Train" },
 ];
 // A "My PRs" tab needs pr_author from coord's /pr-merge/prs join (today the
 // queue only carries agent_id) — backend follow-up per the redesign report §4.
@@ -616,6 +744,7 @@ export function MergePipeline() {
     proposals,
     prs,
     mergedPrs,
+    mergedCount,
     economicsByRepo,
     suggestions,
     gateBlocks,
@@ -628,25 +757,64 @@ export function MergePipeline() {
   const [query, setQuery] = useState("");
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
-  const loaded = proposals !== null && prs !== null;
-  const rows = useMemo(
-    () =>
-      buildPipelineRows(
-        [...(prs ?? []), ...(mergedPrs ?? [])],
-        proposals ?? [],
-        economicsByRepo
-      ),
-    [prs, mergedPrs, proposals, economicsByRepo]
+  // Merge-train liveness — its own hook on its own slower cadence, and only
+  // while the Train tab is open (coord's health read scales with the
+  // ready-unmerged backlog, and every dashboard request pins a backend DB
+  // connection for its whole lifetime).
+  const { health: trainHealth, loaded: trainHealthLoaded } = useTrainHealth(
+    filter === "train"
   );
+
+  const loaded = proposals !== null && prs !== null;
+  const rows = useMemo(() => {
+    // The merged read returns landed rows the open poll can ALSO be carrying:
+    // an ff-landed PR sits "phantom-open" (GitHub never auto-closed it) until
+    // coord's straggler sweep, so it is in both lists at once. The merged row
+    // is the truthful one — it knows the PR landed — so it wins, and the open
+    // copy is dropped. Without this the same PR renders twice, once as live
+    // work, under a colliding row key.
+    //
+    // Keyed by `singleKey` — the SAME identity buildPipelineRows gives the row
+    // and React renders it under, so what is collapsed here is exactly what
+    // would collide there. (PR number is the tempting key and the wrong one:
+    // it is not what collides.)
+    const merged = mergedPrs ?? [];
+    const landed = new Set(merged.map((p) => singleKey(p.repo, p.branch)));
+    const open = (prs ?? []).filter(
+      (p) => !landed.has(singleKey(p.repo, p.branch))
+    );
+    return buildPipelineRows(
+      [...open, ...merged],
+      proposals ?? [],
+      economicsByRepo
+    );
+  }, [prs, mergedPrs, proposals, economicsByRepo]);
+
+  // Row-per-repo train state. Derived from the SAME queue + PR data the other
+  // tabs use (plus health), so opening the tab costs one extra read, not a
+  // second copy of the pipeline.
+  const trainRows = useMemo(
+    () => buildRepoTrainRows(proposals ?? [], prs ?? [], trainHealth),
+    [proposals, prs, trainHealth]
+  );
+  const trainSummary = useMemo(
+    () => buildTrainSummary(trainHealth, trainRows),
+    [trainHealth, trainRows]
+  );
+
   const counts = useMemo(
     () =>
       Object.fromEntries(
         FILTERS.map((f) => [
           f.id,
-          rows.filter((r) => matchesFilter(r, f.id)).length,
+          // The Train tab counts repos the train is actively working, not PRs
+          // — a PR count there would be meaningless against a per-repo list.
+          f.id === "train"
+            ? trainRows.filter((r) => r.activity.kind !== "idle").length
+            : rows.filter((r) => matchesFilter(r, f.id)).length,
         ])
       ) as Record<PipelineFilter, number>,
-    [rows]
+    [rows, trainRows]
   );
   const visible = useMemo(
     () =>
@@ -684,10 +852,23 @@ export function MergePipeline() {
                   : "text-muted-foreground"
               }`}
             >
-              {/* The merged set is only fetched while its tab is open, so
-                  before that a count would be a lie ("0 merged") rather than
-                  a fact. Show a dash until we've actually looked. */}
-              {f.id === "merged" && mergedPrs === null ? "–" : counts[f.id]}
+              {/* The merged ROWS are only fetched while this tab is open, so
+                  until then `counts.merged` is 0 for want of looking, not
+                  because nothing landed. coord answers the cheap half —
+                  `merged_recent_count` — on the hot poll, so the label is a
+                  real number from the first render. A dash remains for the
+                  genuinely unknown case: coord too old to answer, or its
+                  count failed.
+
+                  The two numbers count the same landings but not the same
+                  things: coord counts landed PRs, `counts.merged` counts
+                  RENDERED rows, and a landed MULTI-REPO proposal renders a
+                  summary row on top of its member PR rows. So opening the tab
+                  can nudge the number up by the number of such groups —
+                  pre-existing row-model behavior, not a stale count. */}
+              {f.id === "merged" && mergedPrs === null
+                ? (mergedCount ?? "–")
+                : counts[f.id]}
             </span>
           </Button>
         ))}
@@ -702,8 +883,17 @@ export function MergePipeline() {
 
       {error && <p className="text-xs text-red-300">{error}</p>}
 
-      {/* the unified list */}
-      {!loaded ? (
+      {/* The Train tab is a row-per-REPO view of the merge train itself, not a
+          filter over the PR rows — so it replaces the list entirely. */}
+      {filter === "train" ? (
+        <MergeTrainActivity
+          summary={trainSummary}
+          rows={trainRows}
+          loaded={loaded}
+          healthLoaded={trainHealthLoaded}
+          query={query}
+        />
+      ) : !loaded ? (
         <div className="space-y-2">
           <Skeleton className="h-10 w-full" />
           <Skeleton className="h-10 w-full" />

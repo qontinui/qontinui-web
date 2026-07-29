@@ -42,6 +42,62 @@ from jwt.algorithms import RSAAlgorithm
 KID = "spec-ci-local"
 
 
+def mint_token(
+    *,
+    issuer: str,
+    audience: str,
+    out_dir: str,
+    email: str = "spec-ci-bot@no-reply.qontinui.io",
+    name: str = "",
+    ttl_seconds: int = 7200,
+) -> str:
+    """Generate an ephemeral keypair, write the JWKS, and mint an id token.
+
+    This is the reusable core shared by the Spec-CI CLI (``main`` below) and the
+    dev-local-auth wrapper (``scripts/dev_local_idp.py``). It writes
+    ``<out_dir>/.well-known/jwks.json`` (served by a throwaway HTTP server as the
+    issuer) and returns a signed RS256 id token carrying the claims the backend's
+    provision-on-first-login path requires. No backend code path is stubbed; only
+    the issuer is local. See the module docstring for the full contract.
+    """
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+    # Public JWK (kty/n/e from PyJWT's serializer) + the lookup/metadata
+    # fields the backend's verifier selects on (kid) and pins (alg).
+    jwk = json.loads(RSAAlgorithm.to_jwk(private_key.public_key()))
+    jwk.update({"kid": KID, "alg": "RS256", "use": "sig"})
+
+    well_known = Path(out_dir) / ".well-known"
+    well_known.mkdir(parents=True, exist_ok=True)
+    jwks_path = well_known / "jwks.json"
+    jwks_path.write_text(json.dumps({"keys": [jwk]}), encoding="utf-8")
+    print(f"[spec-ci-local-idp] wrote {jwks_path}", file=sys.stderr)
+
+    now = int(time.time())
+    claims = {
+        # Stable sub for a given email so re-runs resolve to the same
+        # provisioned user (uuid5 = deterministic).
+        "sub": str(uuid.uuid5(uuid.NAMESPACE_URL, f"spec-ci:{email}")),
+        "email": email,
+        # email_verified=True is required for the provision path's
+        # link-by-email arm to be willing to match an existing row.
+        "email_verified": True,
+        "token_use": "id",
+        "iss": issuer.rstrip("/"),
+        "aud": audience,
+        "iat": now,
+        "exp": now + ttl_seconds,
+    }
+    if name:
+        claims["name"] = name
+    token = pyjwt.encode(claims, private_key, algorithm="RS256", headers={"kid": KID})
+    print(
+        f"[spec-ci-local-idp] minted id token for {email} (exp +{ttl_seconds}s)",
+        file=sys.stderr,
+    )
+    return token
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -90,41 +146,13 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-
-    # Public JWK (kty/n/e from PyJWT's serializer) + the lookup/metadata
-    # fields the backend's verifier selects on (kid) and pins (alg).
-    jwk = json.loads(RSAAlgorithm.to_jwk(private_key.public_key()))
-    jwk.update({"kid": KID, "alg": "RS256", "use": "sig"})
-
-    well_known = Path(args.out_dir) / ".well-known"
-    well_known.mkdir(parents=True, exist_ok=True)
-    jwks_path = well_known / "jwks.json"
-    jwks_path.write_text(json.dumps({"keys": [jwk]}), encoding="utf-8")
-    print(f"[spec-ci-local-idp] wrote {jwks_path}", file=sys.stderr)
-
-    now = int(time.time())
-    claims = {
-        # Stable sub for a given email so re-runs resolve to the same
-        # provisioned user (uuid5 = deterministic).
-        "sub": str(uuid.uuid5(uuid.NAMESPACE_URL, f"spec-ci:{args.email}")),
-        "email": args.email,
-        # email_verified=True is required for the provision path's
-        # link-by-email arm to be willing to match an existing row.
-        "email_verified": True,
-        "token_use": "id",
-        "iss": args.issuer.rstrip("/"),
-        "aud": args.audience,
-        "iat": now,
-        "exp": now + args.ttl_seconds,
-    }
-    if args.name:
-        claims["name"] = args.name
-    token = pyjwt.encode(claims, private_key, algorithm="RS256", headers={"kid": KID})
-    print(
-        f"[spec-ci-local-idp] minted id token for {args.email} "
-        f"(exp +{args.ttl_seconds}s)",
-        file=sys.stderr,
+    token = mint_token(
+        issuer=args.issuer,
+        audience=args.audience,
+        out_dir=args.out_dir,
+        email=args.email,
+        name=args.name,
+        ttl_seconds=args.ttl_seconds,
     )
     print(token)
     return 0

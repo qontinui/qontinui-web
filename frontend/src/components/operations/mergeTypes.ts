@@ -15,7 +15,13 @@ export type ProposalStatus =
   | "merged"
   | "conflict"
   | "blocked-by-overlap"
-  | "cancelled";
+  | "cancelled"
+  // Wave-6 speculative pipelining: candidate CI is running on a SPECULATIVE
+  // tip stacked on an unlanded predecessor (`coord.speculative_chains`).
+  | "speculative-ci"
+  // `COORD_MERGE_DRY_LAND=1` — the scheduler completed every phase but parked
+  // instead of pushing. Terminal, and NOT a landing.
+  | "shadow-landed";
 
 export interface RepoDetail {
   repo: string;
@@ -113,6 +119,29 @@ export interface PrRow {
   pending_contexts?: string[];
   correlation_id: string | null;
   /**
+   * Typed "why isn't this merging" classification (kebab-case), computed by
+   * coord's `classify_merge_status`. See {@link MergeStatusToken}.
+   *
+   * OPTIONAL by contract: coord only began emitting it on 2026-06-18
+   * (`pr_merge: classify merge_status + blocking_summary on GET
+   * /pr-merge/prs`), so a coord deploy predating that omits the field
+   * entirely. Consumers MUST treat absence as "no verdict available" and fall
+   * back to the raw signals (`ci_conclusion`, `merge_state_status`, …) rather
+   * than rendering a wrong reason.
+   */
+  merge_status?: MergeStatusToken | string;
+  /** Short human one-liner explaining {@link PrRow.merge_status}. Same
+   *  optionality contract. */
+  blocking_summary?: string;
+  /**
+   * Status of the latest non-cancelled `merge_proposal` linked to this PR via
+   * `coord.merge_proposal_repos (repo, head_sha)`. Same optionality contract;
+   * also absent whenever no proposal was ever cut at this head.
+   */
+  proposal_status?: ProposalStatus | string | null;
+  /** Age in seconds of that latest proposal, at coord's query time. */
+  proposal_age_secs?: number | null;
+  /**
    * Seconds this PR has been stuck in conflict on its CURRENT head — coord's
    * strand clock (`MIN(created_at)` over the head's `conflict` proposals).
    *
@@ -148,6 +177,16 @@ export interface PrRow {
   /** The commit that actually landed. Non-null is coord's land-path-independent
    *  "this PR merged" signal — a coord ff-land closes the PR with merged=false. */
   merge_commit_sha?: string | null;
+  /**
+   * How the PR closed (`repo_branches.close_cause`). `commits_landed_via_other_pr`
+   * is a coord rebase fast-forward land — GitHub shows the PR **Closed, not
+   * Merged**, though its commits are on the base branch; `merged` is a normal
+   * GitHub merge. Lets the detail view explain the closed-not-merged appearance
+   * instead of guessing from pr_state (coord stamps that `merged` for both).
+   * Absent on coord deploys predating the projection — treat absence as
+   * "unknown", never assert the ff-land caveat without it.
+   */
+  close_cause?: string | null;
   /** kebab-case deploy state ("has my merged PR deployed yet?"). */
   deploy_state?: string | null;
 }
@@ -155,6 +194,241 @@ export interface PrRow {
 export interface PrListResponse {
   prs: PrRow[];
   total: number;
+  /**
+   * How many PRs landed inside the `?merged_count_hours=` window — the count
+   * alone, without the expensive per-PR deploy classification `include_merged`
+   * pays for. Absent when we didn't ask, and also when coord's count failed or
+   * the deploy predates the param: absent means UNKNOWN, never zero.
+   */
+  merged_recent_count?: number | null;
+}
+
+/**
+ * coord's `classify_merge_status` verdict tokens, in the classifier's own
+ * precedence order (first match wins). Kept as a union for exhaustive
+ * rendering, but every consumer must tolerate an unknown string — coord may
+ * add a token before the frontend knows about it.
+ */
+export type MergeStatusToken =
+  | "draft"
+  | "ci-failed"
+  | "ci-pending"
+  | "conflicts"
+  | "behind-base"
+  | "review-required"
+  | "blast-radius-block"
+  | "ready"
+  | "queued"
+  /** Green + CLEAN + open, but no fresh proposal — the orchestrator is
+   *  stalled. The single highest-signal token for "why the pause". */
+  | "ready-but-unlanded"
+  | "unknown";
+
+// ============================================================================
+// Merge-train health — `GET /api/v1/operations/pr-merge/health`
+//
+// Mirrors coord's `GET /pr-merge/health` (`src/pr_merge/ops_routes.rs::
+// assemble_health`). EVERY field is optional: the web proxy degrades a 404 /
+// coord outage to `{}`, so the Train tab must render from an empty object.
+// ============================================================================
+
+/** The live `coord.leader_lease` row (scope `global`). */
+export interface TrainLeader {
+  holder_id?: string;
+  fenced_token?: number;
+  acquired_at?: string | null;
+  heartbeat_at?: string | null;
+  heartbeat_age_seconds?: number | null;
+  /**
+   * Heartbeat younger than the election TTL. `false` means leadership is
+   * genuinely lapsing — which stalls EVERY repo at once, so it outranks any
+   * per-repo reason. `null`/absent = coord could not compute it.
+   */
+  lease_fresh?: boolean | null;
+}
+
+/**
+ * A PR coord judges ready (CLEAN + terminal-complete checks + required
+ * satisfied + no blocking label) that is nonetheless unmerged.
+ */
+export interface ReadyUnmergedPr {
+  repo: string;
+  pr_number: number;
+  /** Readiness-onset timestamp; `null` when no check row carried one. */
+  ready_since?: string | null;
+  /** Seconds since readiness onset. This is the pause clock PER PR. */
+  age_seconds?: number | null;
+  /** `status` of the latest proposal at this PR's CURRENT head (so it
+   *  self-clears on force-push). Absent when none was ever cut. */
+  latest_proposal_status?: string;
+  /**
+   * That proposal's `error` text — the WHY behind a green-but-unlanded PR.
+   *
+   * SECURITY: coord's `set_error` embeds the failing git command verbatim,
+   * including the `https://x-access-token:<token>@github.com/...` clone URL.
+   * NEVER render this raw — pass it through {@link redactSecrets} first.
+   */
+  latest_proposal_error?: string;
+}
+
+/**
+ * Per-repo view of coord's **per-repo in-flight fairness cap**
+ * (`COORD_MERGE_PER_REPO_CAP`, default 2).
+ *
+ * This cap is why "free slots + a green PR + nothing happening" is possible: a
+ * repo already holding `per_repo_cap` in-flight proposals is SKIPPED by the
+ * dequeue even when a global slot is free. It was added by the 2026-07-04
+ * awaiting-ci churn fix, after six qontinui-runner proposals held the whole
+ * queue while other repos' green PRs starved.
+ */
+export interface RepoSlotSaturation {
+  repo: string;
+  /** Proposals in `dry-rebasing` / `awaiting-ci` / `landing` for this repo. */
+  in_flight: number;
+  queued: number;
+  /** `in_flight >= per_repo_cap` — the dequeue skips this repo's next proposal. */
+  at_repo_cap: boolean;
+  oldest_queued_wait_seconds?: number | null;
+}
+
+/**
+ * Merge-slot saturation — "is the train paused because it has no room?".
+ *
+ * Every field is DB+env derived by coord, so it is identical from any replica.
+ * `occupied` is a status count, NOT a reading of the leader's semaphore (the
+ * two disagree briefly around each status transition) — do not present it as
+ * one.
+ */
+export interface SlotSaturation {
+  /** `COORD_MERGE_SLOTS` as configured. */
+  configured_cap: number;
+  /** The cap actually applied — clamped to online CI runners when `dynamic`,
+   *  and 0 when none are online, which halts dispatch entirely. */
+  effective_cap: number;
+  dynamic: boolean;
+  /** Online (idle+busy) CI runners; `null` when the cap is static. */
+  online_ci_runners?: number | null;
+  occupied: number;
+  available: number;
+  saturated: boolean;
+  queued_depth: number;
+  /** Seconds the oldest queued proposal has waited for a slot. The number that
+   *  separates a throughput ceiling from a healthy train at full rate. */
+  oldest_queued_wait_seconds?: number | null;
+  per_repo_cap: number;
+  repos?: RepoSlotSaturation[];
+  repos_at_cap?: string[];
+  /**
+   * coord's own one-sentence interpretation, absent when there is no slot
+   * pressure. Provided for non-dashboard consumers (the merge-train steward,
+   * agents curling `/pr-merge/health`); this dashboard renders its own richer
+   * banner from the structured fields and deliberately ignores it, so the two
+   * can be worded for their different audiences.
+   */
+  headline?: string;
+}
+
+export interface TrainHealth {
+  leader?: TrainLeader | null;
+  /** Merge-slot saturation. `null`/absent on a coord deploy predating the
+   *  observer, or when its read failed — never treat absence as "not
+   *  saturated". */
+  slots?: SlotSaturation | null;
+  /** GREATEST(last proposal land, last observed MERGED transition). The
+   *  fleet-wide pause clock. */
+  last_merged_at?: string | null;
+  /** Fleet-wide max `repo_branches.last_predicate_eval_at`. Advancing while
+   *  `last_merged_at` is frozen = the train is suppressed, not idle. */
+  last_predicate_eval_at?: string | null;
+  /** False = coord has no GitHub app client, so stale `pr_state` is NEVER
+   *  corrected and every verdict below is suspect. */
+  hydration_enabled?: boolean;
+  pr_state_stale_backlog?: number;
+  reconcile_interval_seconds?: number;
+  freshness_ttl_seconds?: number;
+  ready_unmerged?: {
+    count?: number;
+    max_age_seconds?: number | null;
+    prs?: ReadyUnmergedPr[];
+  } | null;
+  /** coord issue #776 — repos frozen in `rollout_state=dry_run` merge nothing
+   *  while still evaluating, producing an otherwise silent freeze. */
+  dry_run?: {
+    would_merge_blocked_by_dry_run?: number;
+    repos?: string[];
+  } | null;
+  generated_at?: string;
+}
+
+/**
+ * Strip credentials out of coord-authored error text before it reaches the DOM.
+ *
+ * coord's merge scheduler stores the failing git command verbatim in
+ * `merge_proposals.error`, which means a clone failure persists a live
+ * installation token:
+ *
+ *     git clone https://x-access-token:gho_XXXX@github.com/o/r.git -> … failed
+ *
+ * That string is served by BOTH `/merge/queue` (`error`) and `/pr-merge/health`
+ * (`ready_unmerged[].latest_proposal_error`), so any surface rendering merge
+ * errors leaks it to every operator with dashboard access — and into browser
+ * history, screenshots, and bug reports. Verified present in live coord data
+ * on 2026-07-25.
+ *
+ * This is a display-side mitigation only; the durable fix is coord redacting
+ * before it writes the column (it already has a `redact_token` helper for the
+ * git-door push path).
+ */
+export function redactSecrets(text: string): string;
+export function redactSecrets(
+  text: string | null | undefined
+): string | null | undefined;
+export function redactSecrets(
+  text: string | null | undefined
+): string | null | undefined {
+  if (!text) return text;
+  return (
+    text
+      // Userinfo in any URL, WITH a colon: https://user:secret@host
+      .replace(
+        /(https?:\/\/)[^/\s:@]+:[^/\s@]+@/gi,
+        (_m, scheme: string) => `${scheme}***:***@`
+      )
+      // ...and WITHOUT one: https://<token>@host — the other standard git
+      // credential URL form. Omitting it let any non-`gh*_`-prefixed token
+      // (a 40-hex classic PAT, say) through untouched.
+      .replace(
+        /(https?:\/\/)[^/\s:@]+@/gi,
+        (_m, scheme: string) => `${scheme}***@`
+      )
+      // Bare GitHub tokens (ghp_/gho_/ghu_/ghs_/ghr_ + github_pat_) anywhere
+      // else in the text — e.g. an error that quotes a header, not a URL.
+      .replace(/\bgh[pousr]_[A-Za-z0-9]{16,}/g, "gh*_***")
+      .replace(/\bgithub_pat_[A-Za-z0-9_]{20,}/g, "github_pat_***")
+      // Authorization headers. coord's git-door push path carries an agent JWT
+      // via `git -c http.extraHeader='Authorization: Bearer …'`, and that whole
+      // command lands in the error text verbatim.
+      //
+      // Each rule is ANCHORED to a credential-bearing shape. An unanchored
+      // `(Bearer|Basic|token)\s+\S{12,}` mangles ordinary prose — coord emits
+      // "token authentication failed for user bob" and "basic reachability
+      // check failed", both of which became "*** " noise. This is redaction,
+      // not truncation: the diagnostic text has to survive.
+      .replace(
+        /\b(Authorization\s*:\s*)(Bearer|Basic|token)(\s+)[A-Za-z0-9._~+/=-]{12,}/gi,
+        "$1$2$3***"
+      )
+      // A bare `Bearer <credential>` — "Bearer" followed by a 20+ char opaque
+      // blob is not a phrase that occurs in error prose.
+      .replace(/\bBearer(\s+)[A-Za-z0-9._~+/=-]{20,}/g, "Bearer$1***")
+      // `token=…`, `token: …`, `--token …` — flag/assignment shapes only.
+      // Anchored on start-or-whitespace rather than `\b`: a leading `-` is a
+      // non-word character, so `\b--token` never matches at all.
+      .replace(
+        /(^|[\s'"([])(--?token[=\s]+|token\s*[=:]\s*)[A-Za-z0-9._~+/=-]{12,}/gi,
+        "$1$2***"
+      )
+  );
 }
 
 // ============================================================================
