@@ -31,10 +31,12 @@ run-name: "Deploy web${{ inputs.dispatch_id != '' && format(' [dispatch:{0}]', i
 # actually serving, and it runs on every outcome except cancellation — so it
 # catches a rollback hidden behind a GREEN services-stable wait *and* one hidden
 # behind a FAILED wait. The second case is not hypothetical: on 2026-07-28/29
-# revisions 437 and 438 were both registered, both rejected, and both rolled back
-# to 436 while the only step that still ran ("Verify deploy effect signature")
-# reported success — production silently missed two releases. That step is a
-# RECORDER, not a gate (see its own comment); this one is the gate.
+# revisions 437 and 438 were both registered, both rejected, and both rolled
+# back to 436. Those runs DID go red — but on the stabilize waiter, so the red
+# said "timeout", not "your release is not live": no step named the serving
+# revision, and the only step that still ran ("Verify deploy effect signature")
+# is a RECORDER that cannot fail (see its own comment). Production missed two
+# releases and nothing in the run said so. This step is the gate.
 #
 # Memory: proj_web_main_blocked_schemas_memory_drift — the manual-build era this
 # workflow ends. The Dockerfile's `git clone qontinui-schemas` RUN layer is the
@@ -416,20 +418,24 @@ jobs:
           echo "Registered $NEW_TD"
           echo "new_td=$NEW_TD" >> "$GITHUB_OUTPUT"
 
+          # Written BEFORE the call, deliberately. The identity assertion gates
+          # on this output, and the asymmetry is stark: an extra red on a run
+          # that already failed costs nothing, whereas a SKIPPED gate on a
+          # rollover that actually happened is exactly the silent-missed-release
+          # bug this workflow exists to prevent. The AWS CLI can return non-zero
+          # AFTER the mutation has been applied server-side (read timeout on the
+          # response, connection reset, retries exhausted post-apply) — so
+          # "update-service exited 0" is NOT the same question as "was the
+          # service rolled". `new_td` alone cannot carry this: it is written
+          # above, before any rollover is requested.
+          echo "update_requested=1" >> "$GITHUB_OUTPUT"
+
           aws ecs update-service \
             --cluster "${ECS_CLUSTER}" \
             --service "${ECS_SERVICE}" \
             --task-definition "$NEW_TD" \
             --region "${AWS_REGION}" >/dev/null
           echo "Service update requested -> $NEW_TD"
-
-          # Set ONLY after update-service succeeds. `new_td` above is written
-          # before the rollover is requested, so it cannot distinguish "ECS was
-          # asked to move" from "we registered a revision and then failed".
-          # The identity assertion gates on THIS output: if we never asked ECS
-          # to move, the prior revision is legitimately still serving and an
-          # identity mismatch would be a false alarm, not a finding.
-          echo "update_requested=1" >> "$GITHUB_OUTPUT"
 
       - name: Wait for service to stabilize
         run: |
@@ -440,9 +446,17 @@ jobs:
 
       # ── Serving-revision IDENTITY assertion — THE deploy gate ─────────────
       # Proves the revision this run registered is the one actually serving.
-      # A 200 from ${HEALTH_URL} proves only that *a* task is alive: the OLD
-      # task answers it perfectly during and after a circuit-breaker rollback,
-      # which is precisely how the 2026-07-28/29 double miss stayed invisible.
+      # A 200 from ${API_BASE}/health proves only that *a* task is alive: the
+      # OLD task answers it perfectly during and after a circuit-breaker
+      # rollback, which is precisely how the 2026-07-28/29 double miss stayed
+      # invisible.
+      #
+      # Shape assumptions, verified against the live service on 2026-07-29:
+      # deploymentController=ECS, strategy=ROLLING, taskSets=null,
+      # bakeTimeInMinutes=0, ALB target group (so `rolloutState` is returned —
+      # it is absent behind a Classic LB), desiredCount=1. A migration to
+      # blue/green (CODE_DEPLOY) or a scale-to-zero would need this step
+      # revisited; it hard-fails with a clear message rather than passing.
       #
       # `!cancelled()` is load-bearing. A step with no `if:` defaults to
       # `if: success()`, so when the services-stable waiter above times out this
@@ -537,27 +551,46 @@ jobs:
                   sys.exit(0)
 
               # Terminal negatives — polling cannot change these, so surface the
-              # diagnostics immediately instead of burning the rest of the
-              # window. The poll exists ONLY to absorb the few-second race
-              # between a green waiter and ECS's final state transition.
-              if rollout == "FAILED":
-                  print("  rolloutState=FAILED is terminal; not polling further.",
-                        flush=True)
+              # diagnostics rather than burning the rest of the window. The poll
+              # exists ONLY to absorb the race between a green waiter and ECS's
+              # final state transition.
+              #
+              # `attempt >= 2` is deliberate and load-bearing: DescribeServices
+              # is eventually consistent, and `aws ecs wait services-stable`
+              # polls once BEFORE its first sleep — so a stale read that has not
+              # yet materialised our new deployment satisfies the waiter and
+              # then presents here as COMPLETED-on-the-prior-revision, which is
+              # byte-for-byte indistinguishable from a rollback on a single
+              # sample. Requiring two consecutive terminal reads costs ~20s on a
+              # genuine rollback and removes a false-RED on a healthy deploy.
+              # (Neither obvious discriminator works: a stale read is stale on
+              # BOTH task-def fields, and ECS rolls back onto the SAME
+              # deployment id rather than creating a new one.)
+              if attempt >= 2 and rollout == "FAILED":
+                  print("  rolloutState=FAILED on two consecutive reads; "
+                        "terminal, not polling further.", flush=True)
                   break
-              if rollout == "COMPLETED" and primary_td != expected:
+              if attempt >= 2 and rollout == "COMPLETED" and primary_td != expected:
                   # ECS has SETTLED on a revision that is not ours: a
                   # circuit-breaker rollback, or a concurrent deploy that won.
                   # This is the rollback case — the most important one — and it
-                  # is just as terminal as FAILED.
-                  print("  rollout COMPLETED on a different revision; settled "
-                        "against us, not polling further.", flush=True)
+                  # is as terminal as FAILED.
+                  print("  rollout COMPLETED on a different revision, twice; "
+                        "settled against us, not polling further.", flush=True)
                   break
 
               if attempt < ATTEMPTS:
                   time.sleep(INTERVAL)
 
+          # When the circuit breaker has marked OUR revision FAILED but has not
+          # yet promoted the prior deployment, primary_td == expected — so the
+          # generic "not the revision this run deployed" lead would contradict
+          # the numbers printed right beside it.
+          lead = ("The revision this run deployed FAILED to roll out."
+                  if rollout == "FAILED"
+                  else "Serving revision is NOT the revision this run deployed.")
           fail(
-              "Serving revision is NOT the revision this run deployed. "
+              f"{lead} "
               f"expected={expected} serving={serving} primary={primary_td} "
               f"rollout={rollout} running={running}/{desired} reason={reason!r}. "
               "The deploy did not take effect — circuit-breaker rollback, failed "
@@ -576,12 +609,21 @@ jobs:
               --query 'services[0].events[0:15].[createdAt,message]' \
               --output text 2>/dev/null || true
             echo "--- recent web container log ---"
+            # `|| echo ""` is load-bearing: the harness runs this with -e, so an
+            # unguarded command substitution that fails (throttling, missing log
+            # group, missing IAM) would exit the step HERE and swallow both the
+            # log dump and the explicit exit below — losing the crash log at the
+            # exact moment it is needed.
             STREAM=$(aws logs describe-log-streams --log-group-name "/ecs/qontinui-staging/web" \
               --region "${AWS_REGION}" --order-by LastEventTime --descending --max-items 1 \
-              --query 'logStreams[0].logStreamName' --output text)
-            aws logs get-log-events --log-group-name "/ecs/qontinui-staging/web" \
-              --log-stream-name "$STREAM" --region "${AWS_REGION}" --limit 60 \
-              --query 'events[].message' --output text 2>/dev/null | tail -60 || true
+              --query 'logStreams[0].logStreamName' --output text 2>/dev/null || echo "")
+            if [ -n "$STREAM" ] && [ "$STREAM" != "None" ]; then
+              aws logs get-log-events --log-group-name "/ecs/qontinui-staging/web" \
+                --log-stream-name "$STREAM" --region "${AWS_REGION}" --limit 60 \
+                --query 'events[].message' --output text 2>/dev/null | tail -60 || true
+            else
+              echo "(no log stream resolved for /ecs/qontinui-staging/web)"
+            fi
             exit 1
           fi
 
@@ -722,7 +764,11 @@ jobs:
       # Behavioral auto-rollback. Fires ONLY when the smoke step itself failed
       # (steps.smoke.conclusion == 'failure'), which by construction can only
       # happen after the new revision is live (it runs after wait-stable +
-      # verify-rollout). An earlier build/register/update failure leaves
+      # "Assert serving revision identity", so the smoke can only reach
+      # 'failure' once identity is PROVEN). An earlier build/register/update or
+      # identity failure leaves the smoke 'skipped', never 'failure', so this
+      # step cannot double-rollback a deploy the circuit breaker already
+      # reverted. An earlier build/register/update failure leaves
       # PRIOR_TD still serving, so this step is correctly skipped then. Re-points
       # the service at the deterministic last-known-good task-def, waits for it
       # to stabilize, and fails the job loudly.
@@ -826,10 +872,18 @@ jobs:
       # run), which is why `composed_outcome` cannot gate either.
       #
       # What this step MUST do is be legible. Previously a `partial` composed
-      # outcome matched no case arm and emitted NOTHING — run 30395049856, the
-      # first of the two silently-missed releases, produced zero annotation. The
-      # release dimension is now always printed, and a `contradiction` on it is
-      # annotated as coord's independent second signal.
+      # outcome matched no `case` arm and produced no `::warning::` annotation —
+      # the jq summary below did print the dimensions, but nothing FLAGGED them,
+      # so run 30395049856 (the first of the two missed releases) scrolled past
+      # unremarked. The release dimension is now echoed on its own line and a
+      # `contradiction` is annotated.
+      #
+      # Calibrate expectations for that annotation: it fired on run 30411815369
+      # but NOT on 30395049856, where the same rollback read as
+      # `partial`/`in_flight` — coord compares a declared commit SHA against an
+      # observed image digest, so in-run it often cannot conclude. Treat the
+      # release line as a forensic breadcrumb, not a reliable second signal.
+      # The identity assertion above is the authority.
       - name: Verify deploy effect signature
         if: ${{ always() && steps.declare.outputs.signature_id != '' }}
         continue-on-error: true
