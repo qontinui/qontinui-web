@@ -24,9 +24,17 @@ run-name: "Deploy web${{ inputs.dispatch_id != '' && format(' [dispatch:{0}]', i
 #
 # Safety: the ECS service has its deployment circuit breaker enabled
 # (enable+rollback). A crash-looping image auto-rolls-back to the prior
-# task-def revision instead of flapping. The "Verify rollout" step below turns
-# that silent rollback into a hard CI failure so a bad build is loud, not
-# masked by a green services-stable wait.
+# task-def revision instead of flapping.
+#
+# A deploy is verified by IDENTITY, not liveness. The "Assert serving revision
+# identity" step below proves the revision THIS run registered is the one
+# actually serving, and it runs on every outcome except cancellation — so it
+# catches a rollback hidden behind a GREEN services-stable wait *and* one hidden
+# behind a FAILED wait. The second case is not hypothetical: on 2026-07-28/29
+# revisions 437 and 438 were both registered, both rejected, and both rolled back
+# to 436 while the only step that still ran ("Verify deploy effect signature")
+# reported success — production silently missed two releases. That step is a
+# RECORDER, not a gate (see its own comment); this one is the gate.
 #
 # Memory: proj_web_main_blocked_schemas_memory_drift — the manual-build era this
 # workflow ends. The Dockerfile's `git clone qontinui-schemas` RUN layer is the
@@ -249,6 +257,18 @@ jobs:
       # predict-and-check policy call is likewise REPORT-ONLY until the deploy
       # domain has calibration evidence (flipping it to blocking is a
       # deliberate future decision, not a default).
+      #
+      # Do NOT promote predict-and-check (or its `health_coverage`) to a
+      # failure. Three reasons, each verified rather than assumed:
+      #   1. It escalates on GREEN deploys too — `infra_apply_safety` reports
+      #      itself as "an always-escalate domain by design (Q4/Q8)". Run
+      #      30337272325 succeeded end-to-end and still printed
+      #      `predict-and-check: escalate`. Gating on it reds 100% of deploys.
+      #   2. It runs BEFORE update-service below, so it describes coord's
+      #      observability at declare time — not this deploy's outcome.
+      #   3. It would couple prod deployability to an observability service: a
+      #      coord outage would block every web deploy.
+      # The identity assertion after the rollout is what actually gates.
       - name: Declare deploy effect signature
         id: declare
         continue-on-error: true
@@ -403,6 +423,14 @@ jobs:
             --region "${AWS_REGION}" >/dev/null
           echo "Service update requested -> $NEW_TD"
 
+          # Set ONLY after update-service succeeds. `new_td` above is written
+          # before the rollover is requested, so it cannot distinguish "ECS was
+          # asked to move" from "we registered a revision and then failed".
+          # The identity assertion gates on THIS output: if we never asked ECS
+          # to move, the prior revision is legitimately still serving and an
+          # identity mismatch would be a false alarm, not a finding.
+          echo "update_requested=1" >> "$GITHUB_OUTPUT"
+
       - name: Wait for service to stabilize
         run: |
           aws ecs wait services-stable \
@@ -410,26 +438,150 @@ jobs:
             --services "${ECS_SERVICE}" \
             --region "${AWS_REGION}"
 
-      # services-stable also returns green AFTER a circuit-breaker rollback (the
-      # service is "stable" on the OLD revision). Compare the live task-def to
-      # the one we registered: a mismatch means our image crash-looped and was
-      # rolled back — fail loudly with the crash log.
-      - name: Verify rollout (catch circuit-breaker rollback)
+      # ── Serving-revision IDENTITY assertion — THE deploy gate ─────────────
+      # Proves the revision this run registered is the one actually serving.
+      # A 200 from ${HEALTH_URL} proves only that *a* task is alive: the OLD
+      # task answers it perfectly during and after a circuit-breaker rollback,
+      # which is precisely how the 2026-07-28/29 double miss stayed invisible.
+      #
+      # `!cancelled()` is load-bearing. A step with no `if:` defaults to
+      # `if: success()`, so when the services-stable waiter above times out this
+      # check was SKIPPED — the one step that could have named the serving
+      # revision did not run in the only scenario where it mattered. Verified on
+      # runs 30395049856 and 30411815369: step "Wait for service to stabilize"
+      # failed, this step reported `skipped`, and the job's last word came from a
+      # recorder that cannot fail.
+      #
+      # Gated on `update_requested` rather than `new_td` so a run that
+      # registered a revision but never reached update-service correctly skips:
+      # nothing was rolled, and the prior revision is legitimately serving.
+      - name: Assert serving revision identity
+        if: ${{ !cancelled() && steps.deploy.outputs.update_requested == '1' }}
+        env:
+          EXPECTED_TD: ${{ steps.deploy.outputs.new_td }}
         run: |
-          LIVE_TD=$(aws ecs describe-services \
-            --cluster "${ECS_CLUSTER}" --services "${ECS_SERVICE}" \
-            --region "${AWS_REGION}" \
-            --query 'services[0].taskDefinition' --output text)
-          EXPECTED="${{ steps.deploy.outputs.new_td }}"
-          echo "live=$LIVE_TD expected=$EXPECTED"
-          if [ "$LIVE_TD" != "$EXPECTED" ]; then
-            echo "::error::Circuit breaker rolled the deploy back (live=$LIVE_TD). The new image likely crash-looped on boot. Recent web container log:"
+          set -uo pipefail
+
+          rc=0
+          python3 - <<'PY' || rc=$?
+          import json, os, subprocess, sys, time
+
+          expected = os.environ["EXPECTED_TD"]
+          cluster = os.environ["ECS_CLUSTER"]
+          service = os.environ["ECS_SERVICE"]
+          region = os.environ["AWS_REGION"]
+
+          ATTEMPTS = 6
+          INTERVAL = 20
+
+
+          def fail(msg):
+              print(f"::error::{msg}")
+              sys.exit(1)
+
+
+          def read_service():
+              """Synchronous, authoritative read. Unreadable is NOT verified."""
+              proc = subprocess.run(
+                  ["aws", "ecs", "describe-services",
+                   "--cluster", cluster, "--services", service,
+                   "--region", region, "--output", "json"],
+                  capture_output=True, text=True,
+              )
+              if proc.returncode != 0:
+                  fail("could not read the ECS service state, so the deploy is "
+                       f"UNVERIFIED (aws exit {proc.returncode}): "
+                       f"{proc.stderr.strip()[:400]}")
+              try:
+                  services = json.loads(proc.stdout)["services"]
+              except (ValueError, KeyError) as exc:
+                  fail(f"unparseable describe-services response: {exc}")
+              if not services:
+                  fail(f"ECS returned no service named {service!r} in cluster "
+                       f"{cluster!r} — cannot verify the deploy.")
+              return services[0]
+
+
+          serving = primary_td = rollout = reason = ""
+          running = desired = 0
+
+          for attempt in range(1, ATTEMPTS + 1):
+              svc = read_service()
+              primary = next(
+                  (d for d in svc.get("deployments", []) if d.get("status") == "PRIMARY"),
+                  None,
+              )
+              if primary is None:
+                  fail("the ECS service has no PRIMARY deployment — cannot verify "
+                       "which revision is serving.")
+
+              serving = svc.get("taskDefinition", "")
+              primary_td = primary.get("taskDefinition", "")
+              rollout = primary.get("rolloutState", "")
+              reason = primary.get("rolloutStateReason", "")
+              # Compare counts WITHIN the PRIMARY deployment: the service-level
+              # desiredCount and a deployment's runningCount are different
+              # denominators and diverge mid-rollover.
+              running = primary.get("runningCount", 0)
+              desired = primary.get("desiredCount", 0)
+
+              print(f"  attempt {attempt}/{ATTEMPTS}: serving={serving} "
+                    f"primary={primary_td} rollout={rollout} "
+                    f"running={running}/{desired}", flush=True)
+
+              if (serving == expected and primary_td == expected
+                      and rollout == "COMPLETED"
+                      and desired > 0 and running >= desired):
+                  print(f"Serving revision identity VERIFIED: {expected} "
+                        f"(rolloutState COMPLETED, {running}/{desired} tasks up).")
+                  sys.exit(0)
+
+              # Terminal negatives — polling cannot change these, so surface the
+              # diagnostics immediately instead of burning the rest of the
+              # window. The poll exists ONLY to absorb the few-second race
+              # between a green waiter and ECS's final state transition.
+              if rollout == "FAILED":
+                  print("  rolloutState=FAILED is terminal; not polling further.",
+                        flush=True)
+                  break
+              if rollout == "COMPLETED" and primary_td != expected:
+                  # ECS has SETTLED on a revision that is not ours: a
+                  # circuit-breaker rollback, or a concurrent deploy that won.
+                  # This is the rollback case — the most important one — and it
+                  # is just as terminal as FAILED.
+                  print("  rollout COMPLETED on a different revision; settled "
+                        "against us, not polling further.", flush=True)
+                  break
+
+              if attempt < ATTEMPTS:
+                  time.sleep(INTERVAL)
+
+          fail(
+              "Serving revision is NOT the revision this run deployed. "
+              f"expected={expected} serving={serving} primary={primary_td} "
+              f"rollout={rollout} running={running}/{desired} reason={reason!r}. "
+              "The deploy did not take effect — circuit-breaker rollback, failed "
+              "stabilization, or a concurrent deploy won the race. NOTE: a 200 "
+              "from the public health endpoint does NOT contradict this finding; "
+              "the PRIOR task serves it correctly while the new revision is "
+              "absent."
+          )
+          PY
+
+          if [ "$rc" -ne 0 ]; then
+            echo "--- recent ECS service events ---"
+            aws ecs describe-services \
+              --cluster "${ECS_CLUSTER}" --services "${ECS_SERVICE}" \
+              --region "${AWS_REGION}" \
+              --query 'services[0].events[0:15].[createdAt,message]' \
+              --output text 2>/dev/null || true
+            echo "--- recent web container log ---"
             STREAM=$(aws logs describe-log-streams --log-group-name "/ecs/qontinui-staging/web" \
               --region "${AWS_REGION}" --order-by LastEventTime --descending --max-items 1 \
               --query 'logStreams[0].logStreamName' --output text)
             aws logs get-log-events --log-group-name "/ecs/qontinui-staging/web" \
-              --log-stream-name "$STREAM" --region "${AWS_REGION}" --limit 40 \
-              --query 'events[].message' --output text 2>/dev/null | tail -40 || true
+              --log-stream-name "$STREAM" --region "${AWS_REGION}" --limit 60 \
+              --query 'events[].message' --output text 2>/dev/null | tail -60 || true
             exit 1
           fi
 
@@ -657,11 +809,27 @@ jobs:
       # transition probes server-side and persists the composed verdict to
       # coord.deploy_verifications.
       #
-      # Report-only: a red verdict annotates, never fails the job — the smoke
-      # + auto-rollback steps above already ENFORCE; this step RECORDS. The
-      # Ci/Config dimensions settle on a ~minutes horizon, so
+      # Report-only: a red verdict annotates, never fails the job — the
+      # "Assert serving revision identity" step above is the GATE; this step
+      # RECORDS. The Ci/Config dimensions settle on a ~minutes horizon, so
       # `settled:false, composed:partial` here is normal — any later
       # POST /coord/deploys/verify (same signature_id) settles it.
+      #
+      # Why coord's verdict must NOT become the gate, despite the `release`
+      # dimension carrying exactly the identity fact we care about: coord's
+      # release observer is ASYNCHRONOUS, and at the moment this step runs it
+      # commonly returns a stale snapshot. On the fully-green run 30337272325 it
+      # stamped `release: in_flight` at 07:10:20Z for a rollover the job's own
+      # synchronous read had already proven converged at 07:13:01Z — so
+      # `in_flight` here does not distinguish success from failure. It also
+      # composes `partial` on healthy deploys (config/ci never settle inside the
+      # run), which is why `composed_outcome` cannot gate either.
+      #
+      # What this step MUST do is be legible. Previously a `partial` composed
+      # outcome matched no case arm and emitted NOTHING — run 30395049856, the
+      # first of the two silently-missed releases, produced zero annotation. The
+      # release dimension is now always printed, and a `contradiction` on it is
+      # annotated as coord's independent second signal.
       - name: Verify deploy effect signature
         if: ${{ always() && steps.declare.outputs.signature_id != '' }}
         continue-on-error: true
@@ -681,4 +849,14 @@ jobs:
             failure|contradiction)
               echo "::warning::deploy verification composed '$OUT' (report-only) — signature $SIG; inspect GET $COORD_BASE_URL/coord/deploys/$SIG" ;;
           esac
+
+          # The release dimension is the identity signal — always surface it,
+          # including on `partial`, which used to print nothing at all.
+          REL_SEL='[.dimension_verdicts[]? | select(.dimension == "release")][0]'
+          REL_OUT=$(printf '%s' "$RESP" | jq -r "$REL_SEL.outcome // empty" 2>/dev/null || true)
+          REL_DET=$(printf '%s' "$RESP" | jq -r "$REL_SEL.detail // empty" 2>/dev/null || true)
+          echo "release dimension: ${REL_OUT:-unavailable} — ${REL_DET:-n/a}"
+          if [ "$REL_OUT" = "contradiction" ]; then
+            echo "::warning::coord observed the release as NOT the declared artifact (release=$REL_OUT): $REL_DET — this is coord's INDEPENDENT second signal; the authoritative gate is the 'Assert serving revision identity' step above."
+          fi
           exit 0
