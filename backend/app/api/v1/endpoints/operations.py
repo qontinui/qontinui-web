@@ -5717,6 +5717,428 @@ async def import_prompt_document_clauses(
     )
 
 
+# Policy-edit proposal queue + landed-write feed (plan
+# ``2026-07-28-migrate-claude-md-into-qontinui.md`` Phase 5).
+#
+# Coord's ``coord_write_prompt_document`` MCP tool lets an agent append clauses to
+# a served policy document. Phase 5 adds a DIRECTION comparator on top of it: an
+# agent-authored edit that LOWERS a clause's autonomy tier or widens authority
+# (and, fail-closed, any edit the comparator cannot classify) does NOT land — it
+# is re-routed into ``coord.prompt_document_proposals`` (web migration
+# ``prompt_doc_proposals_01``) as a pending proposal for operator review.
+# Tier-raising and additive edits keep landing immediately and show up in the
+# landed-write feed below instead.
+#
+# This is a review QUEUE, not a gate: nothing blocks on the operator reading it.
+# The page therefore has two halves —
+#
+#   1. pending proposals  → the three ``/coord/prompt-document-proposals`` routes
+#   2. landed writes      → :func:`list_prompt_document_writes`, an aggregation
+#      over the EXISTING per-document versions route (no new coord surface), with
+#      one-click revert done by the browser as an ordinary PATCH of an older
+#      version's body through :func:`update_prompt_document`.
+#
+# Auth posture matches the prompt-document proxies above: GET reads gate on tenant
+# MEMBERSHIP (``get_tenant_id``); approve/reject gate on
+# ``require_coord_tenant_admin`` and coord re-checks. ``decided_by`` is stamped
+# SERVER-SIDE from the authenticated session (see :func:`_editor_identity`) and
+# the client body is reduced to ``decision_note`` alone — a browser can never
+# choose who a decision is attributed to, nor smuggle ``status``/``tenant_id``.
+#
+# DEPLOY ORDERING: coord's Phase 5 half ships after this. Until it does, coord
+# answers 404 on the proposals routes. The READ route degrades to an explicit
+# ``unavailable`` note (an honest "cannot see", never a confident empty queue);
+# approve/reject deliberately do NOT degrade — a decision that silently no-ops
+# would be worse than an error.
+#
+# DB SESSIONS, precisely: the two GET routes take none — ``get_tenant_id``
+# resolves identity over HTTP via ``get_coord_identity``, so no database
+# connection is pinned across their outbound coord calls (the failure mode that
+# produced CORS-looking 504s on ``/operations/*``). Approve/reject DO hold one:
+# ``get_current_active_user_async`` is a fastapi-users yield dependency whose
+# ``AsyncSession`` stays open for the whole request. That is unavoidable for an
+# authenticated write and is exactly what every neighbouring prompt-document
+# write proxy above does — but it is a real pin, so do not read this block as
+# "these routes never hold a connection".
+
+_COORD_PROPOSALS_PATH = "/coord/prompt-document-proposals"
+
+# Coord statuses that mean "this surface is not answering" rather than "coord
+# answered no". 404 covers the pre-deploy window (route not registered yet) and
+# coord's own ``degraded`` 404 (store not provisioned); 5xx covers unreachable /
+# timed out, which ``_proxy_coord_get`` already maps to 502/504.
+_COORD_ABSENT_STATUSES = frozenset({404, 501, 502, 503, 504})
+
+# The landed-write feed fans out one versions read per document, over ONE shared
+# client bounded by a semaphore (rather than a client per document).
+#
+# There is deliberately NO "newest N documents" cap. The tempting invariant —
+# "a document's ``updated_at`` is >= its newest version's ``created_at``, so a
+# document outside the cap cannot own a newer write" — does NOT hold: coord's
+# attrs-only PATCH branch bumps ``updated_at`` WITHOUT inserting a version, and
+# it is reachable from the sibling prompt-documents editor. So documents whose
+# only recent activity was an attrs edit could evict a document owning a
+# genuinely newer write, and it would vanish from the feed silently. The ceiling
+# below is a pure safety bound, and crossing it is REPORTED (``truncated``)
+# rather than applied quietly.
+_WRITE_FEED_DOCUMENT_CEILING = 200
+
+# Concurrent in-flight version reads during the fan-out.
+_WRITE_FEED_CONCURRENCY = 10
+
+# Wall-clock bound on the whole fan-out. Without it the worst case is
+# ``ceil(ceiling / concurrency)`` waves of ``_COORD_TIMEOUT`` each — 20 waves ×
+# 5s with the constants above — pinning an ASGI worker for the duration. Coord's
+# ``list_versions`` also has no LIMIT, so a document with deep history is not a
+# cheap read. A slow coord must degrade this feed, not hang the page.
+_WRITE_FEED_DEADLINE_SECONDS = 20.0
+
+
+def _coord_unavailable(exc: HTTPException) -> tuple[str, str]:
+    """One honest line for an unreadable coord surface, plus its KIND.
+
+    The kind matters to the page, not just the prose: ``not_deployed`` is the
+    expected, benign pre-deploy window and renders muted, while ``unreachable``
+    means coord is actually failing and must not be dressed in the calmest style
+    on the page.
+    """
+    if exc.status_code == 404:
+        return (
+            "coord has no proposal queue yet — its Phase 5 direction-enforcement "
+            "deploy has not landed. Pending proposals cannot be listed, which is "
+            "not the same as there being none.",
+            "not_deployed",
+        )
+    return (
+        f"coord did not answer the proposal queue (HTTP {exc.status_code}).",
+        "unreachable",
+    )
+
+
+def _plural(count: int, noun: str) -> str:
+    """``"1 document"`` / ``"3 documents"`` — these strings are read by humans."""
+    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+
+
+def _parse_iso(value: Any) -> datetime:
+    """Best-effort ISO-8601 parse for feed ordering; unparseable sorts oldest."""
+    if not isinstance(value, str):
+        return datetime.min.replace(tzinfo=UTC)
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return datetime.min.replace(tzinfo=UTC)
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
+async def _fetch_versions_bulk(
+    documents: list[dict[str, Any]], tenant_id: UUID
+) -> list[Any]:
+    """Read ``/versions`` for every document, positionally aligned with input.
+
+    Deliberately does NOT reuse :func:`_proxy_coord_get` per document: that
+    builds a fresh ``httpx.AsyncClient`` (and therefore a fresh connection pool
+    and TLS handshake) per call, which for this route's fan-out means one pool
+    per document on every page load. Here ONE client serves the whole fan-out,
+    bounded by a semaphore.
+
+    A document whose read fails yields ``None`` in its slot AND a
+    ``prompt_document_versions_fetch_failed`` warning naming the tenant and the
+    document — the caller turns the ``None`` into the operator-facing ``partial``
+    count, and the log is what makes that count diagnosable.
+
+    Failure handling is TOTAL: ``_one`` names the expected exception classes so
+    it can log a precise reason, and the per-task ``exception()`` check below
+    catches everything else. One unanticipated exception must degrade one
+    document, never blank the whole feed.
+
+    The whole fan-out is additionally bounded by
+    ``_WRITE_FEED_DEADLINE_SECONDS``: with a per-request timeout and a
+    concurrency limit, a large document set could otherwise pin a worker for
+    concurrency-limited waves of it. The deadline uses :func:`asyncio.wait`
+    rather than wrapping a gather in :func:`asyncio.timeout`, specifically so
+    the documents that DID answer before the deadline are kept — cancelling the
+    gather would throw their results away and make the feed emptier than the
+    truth. Only the stragglers become ``None``, and they are reported through
+    the same ``partial`` path as any other failure.
+
+    An empty ``documents`` returns ``[]`` before touching :func:`asyncio.wait`,
+    which raises ``ValueError`` on an empty set — and empty is ORDINARY here: a
+    tenant with no documents yet, and coord's store-unprovisioned ``degraded``
+    answer, both land on it. That path must render its caveat, not 500.
+    """
+    # `asyncio.wait` raises ValueError on an empty set, and no-documents is a
+    # routine state (fresh tenant; coord's `degraded` store-unprovisioned
+    # answer) — not an error worth a 500.
+    if not documents:
+        return []
+
+    headers = _tenant_headers(tenant_id)
+    semaphore = asyncio.Semaphore(_WRITE_FEED_CONCURRENCY)
+
+    def _failed(kind: str, name: str, error: str) -> None:
+        logger.warning(
+            "prompt_document_versions_fetch_failed",
+            tenant_id=str(tenant_id),
+            kind=kind,
+            name=name,
+            error=error,
+        )
+
+    async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
+
+        async def _one(doc: dict[str, Any]) -> Any:
+            kind = str(doc.get("kind", ""))
+            name = str(doc.get("name", ""))
+            url = (
+                f"{settings.COORD_URL}/coord/prompt-documents/"
+                f"{quote(kind, safe='')}/{quote(name, safe='')}/versions"
+            )
+            async with semaphore:
+                try:
+                    resp = await client.get(url, headers=headers)
+                except httpx.HTTPError as exc:
+                    _failed(kind, name, str(exc))
+                    return None
+            if resp.status_code >= 400:
+                _failed(kind, name, f"HTTP {resp.status_code}")
+                return None
+            try:
+                return resp.json()
+            except ValueError as exc:
+                _failed(kind, name, f"non-JSON body: {exc}")
+                return None
+
+        tasks = [asyncio.create_task(_one(doc)) for doc in documents]
+        _, pending = await asyncio.wait(tasks, timeout=_WRITE_FEED_DEADLINE_SECONDS)
+        if pending:
+            logger.warning(
+                "prompt_document_versions_fetch_deadline",
+                tenant_id=str(tenant_id),
+                documents=len(documents),
+                unanswered=len(pending),
+                deadline_seconds=_WRITE_FEED_DEADLINE_SECONDS,
+            )
+            for task in pending:
+                task.cancel()
+            # Let the cancellations settle INSIDE the client's context manager;
+            # closing the client out from under in-flight requests is what
+            # produces spurious teardown errors.
+            await asyncio.gather(*pending, return_exceptions=True)
+
+    out: list[Any] = []
+    for doc, task in zip(documents, tasks, strict=True):
+        kind = str(doc.get("kind", ""))
+        name = str(doc.get("name", ""))
+        if task.cancelled():
+            _failed(kind, name, "did not answer before the fan-out deadline")
+            out.append(None)
+            continue
+        # `_one` handles the expected failures itself and returns None; this
+        # arm is the total backstop for everything it did not anticipate
+        # (`httpx.InvalidURL` and `httpx.StreamError` are notably NOT
+        # `HTTPError` subclasses). One surprise degrades one document.
+        exc = task.exception()
+        if exc is not None:
+            _failed(kind, name, f"unexpected {type(exc).__name__}: {exc}")
+            out.append(None)
+        else:
+            out.append(task.result())
+    return out
+
+
+@router.get("/coord/prompt-document-proposals")
+async def list_prompt_document_proposals(
+    status: str = "pending",
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """List the tenant's policy-edit proposals, newest first. Any tenant member.
+
+    ``status`` is forwarded verbatim (coord owns the ``pending`` | ``approved`` |
+    ``rejected`` vocabulary — the web tier deliberately does not re-encode it, so
+    a coord-side vocabulary addition needs no web change). Coord returns
+    ``{"proposals": [...]}``.
+
+    Degrades rather than 502s while coord's Phase 5 half is undeployed: the
+    response then carries an empty list plus an ``unavailable`` note (and its
+    ``unavailable_kind``, so the page can style a benign pre-deploy window
+    differently from coord actually being down), so an unreadable queue is never
+    displayed as an empty one.
+    """
+    try:
+        return await _proxy_coord_get(
+            _COORD_PROPOSALS_PATH, params={"status": status}, tenant_id=tenant_id
+        )
+    except HTTPException as exc:
+        if exc.status_code in _COORD_ABSENT_STATUSES:
+            note, kind = _coord_unavailable(exc)
+            return {
+                "proposals": [],
+                "total": 0,
+                "unavailable": note,
+                "unavailable_kind": kind,
+            }
+        raise
+
+
+@router.post("/coord/prompt-document-proposals/{proposal_id}/approve")
+async def approve_prompt_document_proposal(
+    proposal_id: str,
+    body: dict[str, Any] | None = None,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> Any:
+    """Approve a pending proposal — coord applies the edit and returns the new
+    document version. Tenant-admin only.
+
+    Only ``decision_note`` is taken from the client; ``decided_by`` is stamped
+    from the authenticated session. Coord's 4xx (already decided, stale
+    ``base_version``, unknown id) passes through verbatim — including the 404 you
+    get before coord's Phase 5 deploy, which must stay visible rather than
+    silently no-op.
+    """
+    return await _proxy_coord_post(
+        f"{_COORD_PROPOSALS_PATH}/{quote(proposal_id, safe='')}/approve",
+        {
+            "decision_note": (body or {}).get("decision_note"),
+            "decided_by": _editor_identity(current_user),
+        },
+        tenant_id=tenant_id,
+    )
+
+
+@router.post("/coord/prompt-document-proposals/{proposal_id}/reject")
+async def reject_prompt_document_proposal(
+    proposal_id: str,
+    body: dict[str, Any] | None = None,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> Any:
+    """Reject a pending proposal — the edit is never applied. Tenant-admin only.
+
+    Same body reduction and server-side ``decided_by`` stamp as
+    :func:`approve_prompt_document_proposal`.
+    """
+    return await _proxy_coord_post(
+        f"{_COORD_PROPOSALS_PATH}/{quote(proposal_id, safe='')}/reject",
+        {
+            "decision_note": (body or {}).get("decision_note"),
+            "decided_by": _editor_identity(current_user),
+        },
+        tenant_id=tenant_id,
+    )
+
+
+@router.get("/coord/prompt-document-writes")
+async def list_prompt_document_writes(
+    limit: int = Query(default=40, ge=1, le=200),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> dict[str, Any]:
+    """Recently landed prompt-document writes across the tenant, newest first.
+
+    An AGGREGATION over routes that already exist — the document list plus one
+    ``/versions`` read per document — rather than a new coord surface, so it
+    works against today's deployed coord and needs nothing from coord's Phase 5
+    half. Each item carries ``current_version`` so the page can offer one-click
+    revert (a PATCH of the older version's body through
+    :func:`update_prompt_document`, which coord records as a NEW version —
+    history is never rewritten).
+
+    Writes are returned unfiltered, with ``edited_by`` verbatim. Deliberately no
+    "agent writes only" filter: the provenance tag coord's write tool stamps is
+    not fixed until its Phase 5 half lands, and filtering on a guessed prefix
+    would silently hide writes — the exact failure this feed exists to prevent.
+
+    Honest partial results: a per-document versions read that fails is skipped and
+    reported in ``partial`` rather than failing the whole feed, so one bad
+    document cannot blank the page — and every skip is logged, so "3 of 20
+    documents did not return their history" is greppable rather than a dead end.
+    """
+    try:
+        listing = await _proxy_coord_get("/coord/prompt-documents", tenant_id=tenant_id)
+    except HTTPException as exc:
+        if exc.status_code in _COORD_ABSENT_STATUSES:
+            return {
+                "writes": [],
+                "total": 0,
+                "unavailable": (
+                    f"coord did not answer the document list (HTTP {exc.status_code})."
+                ),
+                # The document list ships in today's coord, so a 404 here is not
+                # the benign pre-deploy window the proposals route sees — every
+                # failure of this read means coord is genuinely not answering.
+                "unavailable_kind": "unreachable",
+            }
+        raise
+
+    documents: list[dict[str, Any]] = []
+    degraded: str | None = None
+    if isinstance(listing, dict):
+        raw = listing.get("documents")
+        documents = (
+            [d for d in raw if isinstance(d, dict)] if isinstance(raw, list) else []
+        )
+        note = listing.get("degraded")
+        degraded = note if isinstance(note, str) else None
+
+    documents.sort(key=lambda d: _parse_iso(d.get("updated_at")), reverse=True)
+    truncated = len(documents) - _WRITE_FEED_DOCUMENT_CEILING
+    if truncated > 0:
+        documents = documents[:_WRITE_FEED_DOCUMENT_CEILING]
+
+    results = await _fetch_versions_bulk(documents, tenant_id)
+
+    writes: list[dict[str, Any]] = []
+    failed = 0
+    for doc, result in zip(documents, results, strict=True):
+        if not isinstance(result, dict):
+            failed += 1
+            continue
+        current_version = result.get("current_version")
+        label = doc.get("description") or doc.get("name")
+        for version in result.get("versions") or []:
+            if not isinstance(version, dict):
+                continue
+            writes.append(
+                {
+                    "kind": doc.get("kind"),
+                    "name": doc.get("name"),
+                    "label": label,
+                    "version_number": version.get("version_number"),
+                    "change_note": version.get("description"),
+                    "edited_by": version.get("edited_by"),
+                    "created_at": version.get("created_at"),
+                    "current_version": current_version,
+                }
+            )
+
+    writes.sort(key=lambda w: _parse_iso(w.get("created_at")), reverse=True)
+    response: dict[str, Any] = {"writes": writes[:limit], "total": len(writes)}
+    if degraded:
+        response["degraded"] = degraded
+    if failed:
+        # Denominator is the documents actually READ (post-ceiling), which is
+        # what the ratio describes; the ``truncated`` caveat below owns the ones
+        # that were never attempted.
+        response["partial"] = (
+            f"{failed} of the {_plural(len(documents), 'document')} read did not "
+            "return their history; their writes are missing from this feed."
+        )
+    if truncated > 0:
+        response["truncated"] = (
+            f"{_plural(truncated, 'document')} beyond the "
+            f"{_WRITE_FEED_DOCUMENT_CEILING}-document ceiling {'were' if truncated != 1 else 'was'} "
+            "not read; writes belonging to them are missing from this feed."
+        )
+    # The limit slice drops writes too, and a silent drop here would be
+    # indistinguishable from the ceiling case that gets a banner.
+    if len(writes) > limit:
+        response["limited"] = (
+            f"Showing the {_plural(limit, 'most recent write')} of {len(writes)}."
+        )
+    return response
+
+
 @router.put("/coord/policies/system/{system_rule_id}/override")
 async def put_coord_policy_override(
     system_rule_id: str,

@@ -44,7 +44,13 @@ shapes `parse_snapshot` accepts — `{elements:[...]}` / `{data:{elements:[...]}
 write (see `normalize.ts` + `normalizeSnapshotForAnalyzer` in the spec):
 
 - **bbox** — the SDK's `{x,y,width,height}` floats → the Rust `Region`
-  `{x,y,w,h}` u32.
+  `{x,y,w,h}`: a **signed** `i32` origin and an **unsigned** `u32` extent.
+  `getBoundingClientRect()` legitimately reports negative x/y for anything
+  scrolled or positioned off the top/left of the viewport, and that true
+  coordinate is emitted verbatim — clamping it to 0 reported every off-screen
+  element as flush against the viewport edge and fabricated overlaps against
+  whatever really lives at the origin. A negative width/height is meaningless,
+  so `w`/`h` are still floored at 0.
 - **analyzer visual/interactivity fields** — `interactable` (from
   category/actions/tag/role), `fg_color`/`bg_color` (parsed from
   `state.computedStyles.color`/`backgroundColor`), `font_size_px`/
