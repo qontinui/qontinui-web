@@ -11,7 +11,13 @@ sweeps over ``coord.memory_records``:
   daily pass also runs the session-close expiry sweep (expire
   ``scope='session'`` rows 7 days after their session closed) and the
   job reaper (requeue/fail claims a dead runner abandoned).
-* **Consolidation** (weekly, per tenant): near-duplicate merge via a
+* **Consolidation** (every 10 minutes and at boot, per tenant): this is
+  the memory feedback loop, so it runs on a prompt cadence, NOT the
+  weekly beat it was ported from — see the ``memory_consolidate``
+  registration in :mod:`app.core.scheduler` for the reasoning (a weekly
+  Sunday slot surfaced a ``mental_model`` up to 7 days after the episodes
+  that formed it, and combined with sub-hourly redeploys it had never
+  actually run). Near-duplicate merge via a
   bounded pgvector self-join, then ENQUEUE of episode clusters as
   ``kind='synthesis'`` ``coord.memory_jobs`` rows. This backend ships no
   LLM client, so synthesis itself is offloaded to a runner: it claims a
