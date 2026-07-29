@@ -465,9 +465,13 @@ jobs:
       # failed, this step reported `skipped`, and the job's last word came from a
       # recorder that cannot fail.
       #
-      # Gated on `update_requested` rather than `new_td` so a run that
-      # registered a revision but never reached update-service correctly skips:
-      # nothing was rolled, and the prior revision is legitimately serving.
+      # Gated on `update_requested` rather than `new_td` so a run that never
+      # got as far as REGISTERING a revision correctly skips: nothing was
+      # rolled and the prior revision is legitimately serving. Note the flag is
+      # set immediately BEFORE the update-service call (see its comment), so a
+      # run that dies in that one-line window still gets the gate — deliberate,
+      # since a skipped gate on a rollover that did happen is the bug this
+      # whole step exists to prevent.
       - name: Assert serving revision identity
         if: ${{ !cancelled() && steps.deploy.outputs.update_requested == '1' }}
         env:
@@ -509,13 +513,21 @@ jobs:
               only an unreadable LAST attempt is a verdict. "Unreadable is not
               verified" governs the final answer, not every sample.
               """
-              proc = subprocess.run(
-                  ["aws", "ecs", "describe-services",
-                   "--cluster", cluster, "--services", service,
-                   "--region", region, "--output", "json"],
-                  capture_output=True, text=True,
-              )
-              if proc.returncode != 0:
+              # timeout= keeps the advertised budget honest: without it a wedged
+              # CLI call extends the step past the polling window entirely.
+              try:
+                  proc = subprocess.run(
+                      ["aws", "ecs", "describe-services",
+                       "--cluster", cluster, "--services", service,
+                       "--region", region, "--output", "json"],
+                      capture_output=True, text=True, timeout=90,
+                  )
+              except subprocess.TimeoutExpired:
+                  proc = None
+                  detail = "describe-services did not return within 90s"
+              if proc is None:
+                  pass
+              elif proc.returncode != 0:
                   detail = (f"aws exit {proc.returncode}: "
                             f"{proc.stderr.strip()[:400]}")
               else:
@@ -538,6 +550,7 @@ jobs:
           serving = primary_td = rollout = reason = ""
           running = desired = 0
           terminal_streak = 0
+          saw_failed_on_ours = False
 
           for attempt in range(1, ATTEMPTS + 1):
               svc = read_service(last_attempt=(attempt == ATTEMPTS))
@@ -592,9 +605,20 @@ jobs:
               # obvious discriminator works: a stale read is stale on BOTH
               # task-def fields, and ECS rolls back onto the SAME deployment id
               # rather than minting a new one.) Costs ~20s on a real rollback.
+              #
+              # Settled-but-wrong states are terminal too: a COMPLETED rollout
+              # of OUR revision at desiredCount 0, and a service that reports no
+              # rolloutState at all (the shape assumption above is broken).
+              # Neither can change by waiting, so polling them to exhaustion
+              # only delays a verdict that is already decided.
+              if rollout == "FAILED" and primary_td == expected:
+                  saw_failed_on_ours = True
               is_terminal = (
                   rollout == "FAILED"
                   or (rollout == "COMPLETED" and primary_td != expected)
+                  or (rollout == "COMPLETED" and primary_td == expected
+                      and desired == 0)
+                  or (rollout == "" and primary_td == expected)
               )
               terminal_streak = terminal_streak + 1 if is_terminal else 0
               if terminal_streak >= 2:
@@ -610,7 +634,14 @@ jobs:
           # than a settled rollback `expected == serving == primary_td` — and a
           # blanket "not the revision this run deployed" would contradict the
           # three fields printed right beside it.
-          if primary_td != expected:
+          if primary_td != expected and saw_failed_on_ours:
+              # We WATCHED our revision fail before the breaker promoted the
+              # prior one — say so instead of offering three possible causes.
+              lead = ("The revision this run deployed FAILED to roll out and "
+                      "was rolled back.")
+              cause = ("ECS gave up starting tasks on it and the circuit "
+                       "breaker reverted to the prior revision.")
+          elif primary_td != expected:
               lead = "Serving revision is NOT the revision this run deployed."
               cause = ("The deploy did not take effect — circuit-breaker "
                        "rollback, a concurrent deploy that won the race, or an "
@@ -620,11 +651,20 @@ jobs:
               lead = "The revision this run deployed FAILED to roll out."
               cause = ("ECS gave up starting tasks on it; the circuit breaker "
                        "is reverting to the prior revision.")
+          elif not rollout:
+              lead = ("The ECS service is not reporting a rolloutState, so "
+                      "identity cannot be asserted.")
+              cause = ("The shape assumption behind this check is broken — "
+                       "rolloutState is absent behind a Classic Load Balancer "
+                       "and for non-ECS deployment controllers. Revisit this "
+                       "step against the service's current configuration.")
           elif rollout != "COMPLETED":
               lead = ("The revision this run deployed did not finish rolling "
-                      f"out (rolloutState={rollout or 'unknown'}).")
-              cause = (f"It was still transitioning after "
-                       f"{ATTEMPTS * INTERVAL // 60} minutes of polling.")
+                      f"out (rolloutState={rollout}).")
+              # Sleeps happen only while attempt < ATTEMPTS, so the elapsed
+              # window is one interval shorter than ATTEMPTS * INTERVAL.
+              cause = (f"It was still transitioning after roughly "
+                       f"{(ATTEMPTS - 1) * INTERVAL // 60} minutes of polling.")
           elif desired == 0:
               lead = ("The ECS service is scaled to zero — identity cannot be "
                       "asserted.")
