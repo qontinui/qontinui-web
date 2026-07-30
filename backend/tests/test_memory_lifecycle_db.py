@@ -11,7 +11,9 @@ vectors are seeded directly and the sweeps only ENQUEUE
 * the decay invalidate sweep + the grace-period prune,
 * near-duplicate merge (fold, threshold, tenant isolation),
 * the ``source.lifecycle_hold`` exclusion on BOTH supersede paths, each
-  with its unheld positive control,
+  with its unheld positive control — including the in-flight arm, where
+  a synthesis job enqueued BEFORE the flag was set still cannot end the
+  row when its result lands,
 * consolidation ENQUEUEING synthesis jobs (dedupe on re-run),
 * reindex-on-model-bump ENQUEUEING embedding jobs for stale-tag + NULL
   rows rather than embedding them.
@@ -692,6 +694,120 @@ class TestLifecycleHoldClustering:
         assert stats["clusters"] == 1
         jobs = _job_rows(db, tenant)
         assert {UUID(str(m)) for m in jobs[0]["target_ids"]} == set(members)
+
+
+def _set_hold(db: AsyncEngine, memory_id: UUID, held: bool = True) -> None:
+    """Flip ``source.lifecycle_hold`` on one existing row (post-seed)."""
+    _exec(
+        db,
+        [
+            """
+            UPDATE coord.memory_records
+            SET source = COALESCE(source, '{}'::jsonb)
+                         || jsonb_build_object(
+                                'lifecycle_hold', CAST(:held AS boolean))
+            WHERE memory_id = :m
+            """
+        ],
+        m=memory_id,
+        held=held,
+    )
+
+
+class TestLifecycleHoldInFlightSynthesis:
+    """The race: a synthesis job already enqueued when the hold is set.
+
+    ``fetch_cluster_candidates`` only keeps a held row out of NEW
+    clusters. Consolidation enqueues every 10 minutes, so at the moment a
+    hold is set there is almost always a ``pending``/``claimed`` job whose
+    ``target_ids`` already name the row. ``supersede_many`` re-checks the
+    hold so that job cannot end it — otherwise the hold would read as
+    protection while silently failing inside its race window.
+    """
+
+    def test_enqueued_job_cannot_supersede_a_later_held_member(
+        self, db: AsyncEngine
+    ) -> None:
+        tenant = uuid4()
+        # 1. Seed + enqueue with every member UNHELD (so the job's
+        #    target_ids name all five, exactly as in production).
+        members = _seed_hold_cluster(db, tenant, held=set())
+        stats = _run(db, lambda s: consolidate_tenant(s, tenant, now=NOW))
+        assert stats["enqueued"] == 1
+        job_id = UUID(str(_job_rows(db, tenant)[0]["job_id"]))
+        _run(
+            db,
+            lambda s: store.claim_jobs(
+                s, tenant, limit=4, kinds=["synthesis"], worker="r"
+            ),
+        )
+
+        # 2. Hold one member AFTER the job exists and is claimed.
+        held = members[0]
+        _set_hold(db, held)
+        assert {UUID(str(m)) for m in _job_rows(db, tenant)[0]["target_ids"]} == set(
+            members
+        ), "the in-flight job still names the held member"
+
+        # 3. The runner posts its result against that stale target set.
+        new_id = _run(
+            db,
+            lambda s: store.record_synthesis_result(
+                s,
+                tenant,
+                job_id,
+                "Distilled model for the cluster",
+                embedding=None,
+                embedding_model=None,
+                now=NOW,
+            ),
+        )
+
+        # The synthesis itself is NOT cancelled: the mental_model lands and
+        # the unheld members are superseded by it. `consolidated_from` is
+        # provenance, not an exclusivity claim, so it may cite the still-
+        # live held row — that is the pre-supersession state, and it
+        # self-corrects when the hold is released.
+        assert new_id is not None
+        assert _row(db, new_id, "kind") == "mental_model"
+        for member in members[1:]:
+            assert _row(db, member, "superseded_by") == new_id
+            assert _row(db, member, "valid_until") is not None
+
+        # The held member survives its own already-enqueued job.
+        _assert_live(db, held)
+
+    def test_released_member_is_still_superseded_by_an_inflight_job(
+        self, db: AsyncEngine
+    ) -> None:
+        """Positive control: identical flow, ``lifecycle_hold: false``."""
+        tenant = uuid4()
+        members = _seed_hold_cluster(db, tenant, held=set())
+        _run(db, lambda s: consolidate_tenant(s, tenant, now=NOW))
+        job_id = UUID(str(_job_rows(db, tenant)[0]["job_id"]))
+        _run(
+            db,
+            lambda s: store.claim_jobs(
+                s, tenant, limit=4, kinds=["synthesis"], worker="r"
+            ),
+        )
+        _set_hold(db, members[0], held=False)
+
+        new_id = _run(
+            db,
+            lambda s: store.record_synthesis_result(
+                s,
+                tenant,
+                job_id,
+                "Distilled model for the cluster",
+                embedding=None,
+                embedding_model=None,
+                now=NOW,
+            ),
+        )
+        assert new_id is not None
+        for member in members:
+            assert _row(db, member, "superseded_by") == new_id
 
 
 class TestLifecycleHoldPredicateShape:

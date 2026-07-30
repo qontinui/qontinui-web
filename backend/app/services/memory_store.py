@@ -742,7 +742,14 @@ async def mark_superseded(
     old_memory_id: UUID,
     new_memory_id: UUID,
 ) -> None:
-    """Point the old row at its replacement and end its validity."""
+    """Point the old row at its replacement and end its validity.
+
+    Deliberately ignores ``source.lifecycle_hold``, unlike
+    :func:`supersede_many`: the asymmetry is the design — AUTOMATIC
+    supersession honours the hold, EXPLICIT caller-initiated supersession
+    (this function, which is how a held record is adjudicated) overrides
+    it.
+    """
     await session.execute(
         text(
             """
@@ -1486,8 +1493,10 @@ async def fetch_cluster_candidates(
     per cluster, via ``supersede_many`` when the runner posts its result),
     and clustering only needs cosine > ``CLUSTER_SIMILARITY`` (0.75) — far
     looser than the near-dup 0.95. Excluding a held row here is what keeps
-    it out of a cluster in the first place, so no synthesis job is ever
-    enqueued that names it as a member.
+    it out of a cluster in the first place, so no synthesis job enqueued
+    AFTER the flag was set ever names it as a member. Jobs enqueued
+    BEFORE it was set already do, which is why ``supersede_many`` re-checks
+    the hold at apply time.
     """
     rows = await session.execute(
         text(
@@ -1526,16 +1535,41 @@ async def supersede_many(
     *,
     now: datetime,
 ) -> None:
-    """Point ``member_ids`` at their consolidated replacement (set-based)."""
+    """Point ``member_ids`` at their consolidated replacement (set-based).
+
+    Rows held by :func:`_not_lifecycle_held` are skipped. This is the LAST
+    gate of the automatic supersede path, and it is what makes "a held
+    record is never superseded automatically" a TOTAL invariant rather
+    than a best-effort one. ``fetch_cluster_candidates`` keeps a held row
+    out of new clusters, but a synthesis job enqueued BEFORE the flag was
+    set already names it in ``target_ids``, and this is the only place
+    that job's supersession is applied. Consolidation enqueues every 10
+    minutes, so there is almost always such a job in flight at the moment
+    a hold is set: without this predicate the hold has a race window, and
+    a hold with a race window is worse than no hold — it reads as
+    protection while silently failing.
+
+    The one objection — a ``mental_model`` whose ``consolidated_from``
+    cites a still-live row — is benign. ``consolidated_from`` is
+    PROVENANCE, not an exclusivity claim, and a live member alongside an
+    additive synthesized row is exactly the pre-supersession state. It
+    self-corrects when the hold is released and the next cluster forms.
+
+    Deliberately ASYMMETRIC with :func:`mark_superseded`, which honours no
+    hold: automatic supersession respects the flag, explicit
+    caller-initiated supersession (how a held record is adjudicated)
+    overrides it.
+    """
     if not member_ids:
         return
     stmt = text(
-        """
+        f"""
         UPDATE coord.memory_records
         SET superseded_by = :new_memory_id,
             valid_until = :now,
             updated_at = :now
         WHERE tenant_id = :tenant_id AND memory_id IN :member_ids
+          AND {_not_lifecycle_held()}
         """
     ).bindparams(bindparam("member_ids", expanding=True))
     await session.execute(
