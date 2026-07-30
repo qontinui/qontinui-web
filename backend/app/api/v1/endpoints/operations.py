@@ -5633,8 +5633,12 @@ async def restore_prompt_document_version(
     payload: dict[str, Any] = {}
     if change_note is not None:
         payload["change_note"] = change_note
+    # FastAPI hands these back URL-DECODED, so they are re-encoded before going
+    # onto the wire to coord. A document name carrying a `/` or `?` would
+    # otherwise reshape the upstream path rather than address the document.
     return await _proxy_coord_post(
-        f"/coord/prompt-documents/{kind}/{name}/versions/{version}/restore",
+        f"/coord/prompt-documents/{quote(kind, safe='')}/{quote(name, safe='')}"
+        f"/versions/{version}/restore",
         payload,
         tenant_id=tenant_id,
     )
@@ -5723,6 +5727,14 @@ async def put_session_compliance_config(
     accepting it would let the stored value drift from the truth it summarises.
     Coord versions the row on every change; the versions route below serves that
     history. Returns coord's post-write config view (same shape as the GET).
+
+    **Contract note — partial bodies.** Every field is optional, so coord MUST
+    treat an omitted key as "leave unchanged" rather than as a reset. This is a
+    PUT for coord-route-shape reasons, not full-replacement semantics; the two
+    are easy to conflate and the failure mode is invisible in manual testing,
+    because the admin UI always sends all four fields together. A client that
+    sent only ``{"enabled": false}`` against replace-semantics would silently
+    wipe the mode, attempt limit, and enforced clause.
     """
     payload = {k: v for k, v in body.items() if k in _SESSION_COMPLIANCE_CONFIG_FIELDS}
     return await _proxy_coord_put(
@@ -5748,7 +5760,10 @@ async def list_session_compliance_config_versions(
 @router.get("/coord/session-compliance/sessions")
 async def list_session_compliance_sessions(
     limit: int | None = None,
-    verdict: str | None = None,
+    # Constrained to the three real verdicts: there is no fourth, so a fourth
+    # should be a 422 here rather than a filter coord has to reject (or,
+    # worse, silently match nothing and render as "none of these exist").
+    verdict: Literal["verified", "unverified", "not_applicable"] | None = None,
     cursor: str | None = None,
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:

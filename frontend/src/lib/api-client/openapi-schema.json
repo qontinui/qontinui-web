@@ -76161,7 +76161,7 @@
         ]
       },
       "put": {
-        "description": "Update the enforcement config. Tenant-admin only.\n\nBody: ``{enabled?, mode?, enforced_clause_ref?, max_attempts?,\nchange_note?}`` \u2014 filtered to that allowlist\n(``_SESSION_COMPLIANCE_CONFIG_FIELDS``) before forwarding. ``updated_by`` is\ndeliberately NOT among them: coord takes the editor from its authenticated\n``OperatorContext``, and a client-asserted editor on a behaviour-changing\nsetting would be unverifiable audit trail.\n\n``applicable`` is not writable either \u2014 it is derived from the clause, so\naccepting it would let the stored value drift from the truth it summarises.\nCoord versions the row on every change; the versions route below serves that\nhistory. Returns coord's post-write config view (same shape as the GET).",
+        "description": "Update the enforcement config. Tenant-admin only.\n\nBody: ``{enabled?, mode?, enforced_clause_ref?, max_attempts?,\nchange_note?}`` \u2014 filtered to that allowlist\n(``_SESSION_COMPLIANCE_CONFIG_FIELDS``) before forwarding. ``updated_by`` is\ndeliberately NOT among them: coord takes the editor from its authenticated\n``OperatorContext``, and a client-asserted editor on a behaviour-changing\nsetting would be unverifiable audit trail.\n\n``applicable`` is not writable either \u2014 it is derived from the clause, so\naccepting it would let the stored value drift from the truth it summarises.\nCoord versions the row on every change; the versions route below serves that\nhistory. Returns coord's post-write config view (same shape as the GET).\n\n**Contract note \u2014 partial bodies.** Every field is optional, so coord MUST\ntreat an omitted key as \"leave unchanged\" rather than as a reset. This is a\nPUT for coord-route-shape reasons, not full-replacement semantics; the two\nare easy to conflate and the failure mode is invisible in manual testing,\nbecause the admin UI always sends all four fields together. A client that\nsent only ``{\"enabled\": false}`` against replace-semantics would silently\nwipe the mode, attempt limit, and enforced clause.",
         "operationId": "api_v1_operations_coord_session_compliance_config_put",
         "requestBody": {
           "content": {
@@ -76280,6 +76280,11 @@
             "schema": {
               "anyOf": [
                 {
+                  "enum": [
+                    "verified",
+                    "unverified",
+                    "not_applicable"
+                  ],
                   "type": "string"
                 },
                 {

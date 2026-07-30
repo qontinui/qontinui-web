@@ -25,15 +25,18 @@ function message(err: unknown, fallback: string): string {
 }
 
 /**
- * True when the failure is "coord does not serve this route", not "coord is
- * broken".
+ * True when coord answered "not found" rather than failing.
  *
  * `httpClient` throws a plain `Error` whose message embeds the upstream status
  * (`GET <url> failed: 404 - …`), and the web proxy mirrors coord's status
- * rather than collapsing it — so a 404/405 here means the compliance service
- * isn't deployed on coord yet. That is a legitimately different state from an
- * outage and the UI must not render it as either an error or an empty result:
- * empty would claim "no sessions have been checked", which we do not know.
+ * rather than collapsing it. What a 404 MEANS is genuinely ambiguous from here:
+ * before coord's half of this plan ships it means "route not deployed", and
+ * afterwards it could mean "nothing stored for this tenant" or "bad cursor".
+ * The UI therefore reports the fact (coord said not-found) and names both
+ * readings, rather than picking one and stating it as diagnosis.
+ *
+ * What matters either way is that it is NOT an empty result: rendering an empty
+ * table would claim "no sessions have been checked", which we do not know.
  */
 function isRouteUnavailable(err: unknown): boolean {
   const text = err instanceof Error ? err.message : String(err);
@@ -166,7 +169,9 @@ export function useSessionCompliance() {
           error: null,
         });
         toast.success(`Saved as settings version ${updated.current_version}`);
-        loadVersions();
+        // Fire-and-forget refresh of the audit trail; it reports its own
+        // failures into `versions.error`, so there is nothing to await here.
+        void loadVersions();
         return true;
       } catch (err) {
         toast.error(message(err, "Failed to save enforcement settings"));

@@ -266,6 +266,21 @@ class TestSessions:
 
         assert instance.get.call_args.kwargs["params"] is None
 
+    def test_unknown_verdict_is_rejected(self, auth_client: TestClient):
+        """There is no fourth verdict, so a fourth filter value is a 422 here
+        rather than a query coord has to reject."""
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(json_data={"sessions": []})
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.get(
+                f"{COMPLIANCE}/sessions", params={"verdict": "no_report"}
+            )
+
+        assert resp.status_code == 422
+        instance.get.assert_not_called()
+
     def test_returns_rows(self, auth_client: TestClient):
         payload = {
             "sessions": [

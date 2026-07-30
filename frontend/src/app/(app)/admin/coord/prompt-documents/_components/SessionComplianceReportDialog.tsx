@@ -13,9 +13,9 @@ import { FileText } from "lucide-react";
 import {
   ATTRIBUTION_META,
   ITEM_STATE_LABEL,
-  RECONCILE_RESULT_META,
   VERDICT_META,
   isReportAbsent,
+  resultBadge,
   type ComplianceReportItem,
   type ReconciliationItem,
   type SessionComplianceRow,
@@ -126,6 +126,16 @@ export function SessionComplianceReportDialog({
                 report whose claims didn&apos;t hold up, because in both cases
                 the work was not shown to be finished.
               </div>
+            ) : row.report == null ? (
+              /* Not the same claim as "no report": coord said nothing about
+                 absence here, and this row came from the list route, which may
+                 simply not carry the report body. Saying "the report carried no
+                 items" would invent a fact about the session. */
+              <div className="rounded-lg border border-border bg-muted/40 px-3 py-3 text-sm text-muted-foreground">
+                The stored report isn&apos;t included in this view — coord&apos;s
+                session list didn&apos;t return its contents. That means it
+                can&apos;t be shown here, not that the session emitted nothing.
+              </div>
             ) : paired.length === 0 ? (
               <div className="rounded-lg border border-border bg-muted/40 px-3 py-3 text-sm text-muted-foreground">
                 The report carried no enumerated items.
@@ -133,8 +143,10 @@ export function SessionComplianceReportDialog({
             ) : (
               <ul className="space-y-2" data-testid="compliance-report-items">
                 {paired.map(({ reported, checked }, idx) => {
+                  // Attribution is folded into the badge, so a guessed or
+                  // absent attribution can never wear the green chip.
                   const resultMeta = checked
-                    ? RECONCILE_RESULT_META[checked.result]
+                    ? resultBadge(checked.result, checked.attribution)
                     : null;
                   const attribution =
                     checked?.attribution && checked.attribution !== "session"

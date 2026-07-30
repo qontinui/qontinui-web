@@ -476,11 +476,48 @@ export function shapeCheckedCount(row: SessionComplianceRow): number {
   ).length;
 }
 
-/** True when the session emitted no POLICY_COMPLIANCE block at all. */
+/**
+ * True when the session emitted no POLICY_COMPLIANCE block at all.
+ *
+ * Deliberately keyed ONLY on coord's explicit `absent` reason. A missing
+ * `report` field is NOT evidence of a missing report: these rows come from the
+ * list route, and a list projection that omits the report JSONB (exactly what
+ * the sibling prompt-document list does with bodies) would otherwise make every
+ * unverified session render "no report emitted". Fabricating absence is the
+ * failure this whole feature exists to prevent, so absence must be asserted by
+ * coord, never inferred from a field the projection may simply not carry.
+ */
 export function isReportAbsent(row: SessionComplianceRow): boolean {
-  return (
-    row.reason === "absent" ||
-    row.reconciliation?.reason === "absent" ||
-    (row.verdict === "unverified" && row.report == null)
-  );
+  return row.reason === "absent" || row.reconciliation?.reason === "absent";
+}
+
+/**
+ * How to badge one reconciled claim, given how it was attributed.
+ *
+ * A `heuristic` attribution is coord's most-recent-active-session guess, which
+ * names the wrong parent under concurrent sessions; `none` means nothing ties
+ * the evidence to this session at all. Neither may wear the green "Confirmed"
+ * chip — that is the difference between evidence and a plausible story. The
+ * result coord reported is still shown, qualified, rather than silently
+ * downgraded to something coord did not say.
+ *
+ * Also the single place an unrecognised result is handled: it renders as
+ * itself, never collapsing into "Not checked", which is a different claim.
+ */
+export function resultBadge(
+  result: ReconcileResult,
+  attribution?: GateAttribution | null
+): { label: string; variant: "success" | "warning" | "destructive" | "outline" } {
+  const meta = RECONCILE_RESULT_META[result] ?? {
+    label: result,
+    variant: "outline" as const,
+  };
+  if (meta.variant !== "success") return meta;
+  if (attribution === "heuristic") {
+    return { label: "Confirmed — attribution guessed", variant: "outline" };
+  }
+  if (attribution === "none") {
+    return { label: "Confirmed — not attributed", variant: "outline" };
+  }
+  return meta;
 }
