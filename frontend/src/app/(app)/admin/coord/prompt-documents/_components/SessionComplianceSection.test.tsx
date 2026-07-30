@@ -23,6 +23,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 const getMock = vi.fn();
 const putMock = vi.fn();
@@ -83,9 +84,14 @@ describe("SessionComplianceSection", () => {
     render(<SessionComplianceSection />);
 
     const notice = await screen.findByTestId("compliance-unavailable");
+    // Both readings of a 404 are named — the UI reports what coord said, and
+    // does not pick one diagnosis and state it as fact.
     expect(notice).toHaveTextContent(/doesn't serve the session-compliance/i);
+    expect(notice).toHaveTextContent(/nothing stored under them for this tenant/i);
     // The honesty clause: absence of data is not evidence of absence of work.
-    expect(notice).toHaveTextContent(/not because nothing has happened/i);
+    expect(notice).toHaveTextContent(
+      /not the same as nothing having happened/i
+    );
   });
 
   it("renders the enforcement panel with derived applicability", async () => {
@@ -225,6 +231,86 @@ describe("SessionComplianceSection", () => {
     // A deferred item shows its stated reason instead of a gate.
     expect(
       within(ledger).getByText(/out of scope for this PR/i)
+    ).toBeInTheDocument();
+  });
+
+  it("never claims the settings are untouched off a history route it couldn't read", async () => {
+    const user = userEvent.setup();
+    // Only the versions route fails — the staged-rollout case that
+    // `featureUnavailable` (all four 404) does not rescue.
+    getMock.mockImplementation((url: string) => {
+      if (url.includes("/config/versions"))
+        return Promise.reject(new Error("GET x failed: 404 - Not Found"));
+      if (url.includes("/config")) return Promise.resolve(CONFIG);
+      if (url.includes("/sessions")) return Promise.resolve({ sessions: [] });
+      return Promise.resolve({ items: [] });
+    });
+
+    render(<SessionComplianceSection />);
+
+    await user.click(
+      await screen.findByTestId("compliance-config-history-toggle")
+    );
+
+    const history = await screen.findByTestId("compliance-config-history");
+    expect(
+      within(history).getByTestId("compliance-unavailable")
+    ).toBeInTheDocument();
+    // The positive claim about tenant state must NOT appear.
+    expect(
+      within(history).queryByText(/No recorded changes yet/i)
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not infer 'no report emitted' from a list row that omits the report", async () => {
+    routeGets({
+      sessions: {
+        sessions: [
+          {
+            id: "sc-4",
+            claude_session_id: "sess-omitted",
+            verdict: "unverified",
+            // No `report`, and coord said nothing about absence — the list
+            // projection simply may not carry the body.
+            reconciliation: { unreconciled_count: 1 },
+            checked_at: "2026-07-30T12:00:00Z",
+          },
+        ],
+      },
+    });
+
+    render(<SessionComplianceSection />);
+
+    const row = await screen.findByTestId("compliance-session-sess-omitted");
+    expect(within(row).getByText("Unverified")).toBeInTheDocument();
+    expect(
+      within(row).queryByText(/no report emitted/i)
+    ).not.toBeInTheDocument();
+  });
+
+  it("never badges a guessed-attribution claim as confirmed", async () => {
+    routeGets({
+      outstanding: {
+        items: [
+          {
+            claude_session_id: "sess-5",
+            checked_at: "2026-07-30T12:00:00Z",
+            ref: "gated thing",
+            state: "gated",
+            gate_id: "gate-9",
+            attribution: "heuristic",
+            result: "confirmed",
+          },
+        ],
+      },
+    });
+
+    render(<SessionComplianceSection />);
+
+    const ledger = await screen.findByTestId("outstanding-ledger");
+    expect(within(ledger).queryByText("Confirmed")).not.toBeInTheDocument();
+    expect(
+      within(ledger).getByText(/Confirmed — attribution guessed/)
     ).toBeInTheDocument();
   });
 

@@ -81,6 +81,9 @@ export function SessionComplianceSection() {
             saving={saving}
             versions={versions.data}
             versionsLoading={versions.loading}
+            versionsUnavailable={versions.unavailable}
+            versionsDegraded={versions.degraded}
+            versionsError={versions.error}
             onSave={saveConfig}
           />
 

@@ -25,7 +25,7 @@ import {
   ATTRIBUTION_META,
   ITEM_STATE_LABEL,
   OUTSTANDING_STATES,
-  RECONCILE_RESULT_META,
+  resultBadge,
   type OutstandingItem,
   type OutstandingState,
 } from "../compliance-types";
@@ -257,8 +257,10 @@ export function OutstandingWorkLedger({
                     item.attribution && item.attribution !== "session"
                       ? ATTRIBUTION_META[item.attribution]
                       : null;
+                  // Attribution is folded in, so a gate coord only guessed at
+                  // never renders with the confirmed (green) chip.
                   const resultMeta = item.result
-                    ? RECONCILE_RESULT_META[item.result]
+                    ? resultBadge(item.result, item.attribution)
                     : null;
                   return (
                     <TableRow

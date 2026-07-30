@@ -116,7 +116,9 @@ export function PromptDocumentList() {
    * Memoized so the history dialog's load effect (which has `target` in its
    * dependency list) fires on a genuine document change instead of on every
    * render of this list — an inline object literal is a new reference each
-   * time, which re-triggers the versions fetch in a loop.
+   * time. Without this, any re-render of this list (the `saving` flag toggling
+   * during a restore, for instance) refetched the version list and reset the
+   * dialog's selected version out from under the operator.
    */
   const historyTarget = useMemo(
     () =>

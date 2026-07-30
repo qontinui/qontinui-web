@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,6 +34,7 @@ import {
   type SessionComplianceConfigVersion,
   type SessionComplianceMode,
 } from "../compliance-types";
+import { ComplianceStateNotice } from "./ComplianceStateNotice";
 
 function formatWhen(iso: string): string {
   const d = new Date(iso);
@@ -46,6 +47,12 @@ interface EnforcementPanelProps {
   saving: boolean;
   versions: SessionComplianceConfigVersion[] | null;
   versionsLoading: boolean;
+  /** Coord doesn't serve the config-versions route (404/405). */
+  versionsUnavailable: boolean;
+  /** Coord answered but its compliance store isn't provisioned. */
+  versionsDegraded: string | null;
+  /** Coord unreachable or refusing the config-versions read. */
+  versionsError: string | null;
   onSave: (patch: SessionComplianceConfigUpdate) => Promise<boolean>;
 }
 
@@ -73,6 +80,9 @@ export function SessionComplianceEnforcementPanel({
   saving,
   versions,
   versionsLoading,
+  versionsUnavailable,
+  versionsDegraded,
+  versionsError,
   onSave,
 }: EnforcementPanelProps) {
   const [enabled, setEnabled] = useState(false);
@@ -82,14 +92,40 @@ export function SessionComplianceEnforcementPanel({
   const [changeNote, setChangeNote] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
 
-  // Re-seed the form whenever coord's view changes (initial load, post-save).
+  /**
+   * The config the form was last seeded from. Used to tell "the operator hasn't
+   * touched anything" from "the operator is mid-edit" without lifting the
+   * whole form into a reducer.
+   */
+  const seededFrom = useRef<SessionComplianceConfig | null>(null);
+
+  // Re-seed the form from coord's view — but NOT over unsaved edits. A refetch
+  // (the Refresh button, or a poll) that silently replaced a half-typed clause
+  // ref with the stored one would destroy work the operator can't get back and
+  // never told them it happened.
   useEffect(() => {
     if (!config) return;
+    const prev = seededFrom.current;
+    const matches = (c: SessionComplianceConfig) =>
+      enabled === c.enabled &&
+      mode === c.mode &&
+      clauseRef === (c.enforced_clause_ref ?? "") &&
+      maxAttempts === String(c.max_attempts ?? 1) &&
+      changeNote === "";
+    // Untouched relative to what it was seeded from — or already equal to the
+    // incoming config (the post-save case), where re-seeding is a no-op but
+    // must still refresh the baseline or it would go stale forever.
+    const untouched = prev === null || matches(prev) || matches(config);
+    if (!untouched) return;
+    seededFrom.current = config;
     setEnabled(config.enabled);
     setMode(config.mode);
     setClauseRef(config.enforced_clause_ref ?? "");
     setMaxAttempts(String(config.max_attempts ?? 1));
     setChangeNote("");
+    // Intentionally keyed on `config` only: the form fields are read to decide
+    // whether re-seeding is safe, but a keystroke must not itself re-run this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config]);
 
   if (loading && !config) {
@@ -266,12 +302,14 @@ export function SessionComplianceEnforcementPanel({
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <Label>What happens when the report is missing</Label>
+            <Label htmlFor="compliance-mode">
+              What happens when the report is missing
+            </Label>
             <Select
               value={mode}
               onValueChange={(v) => setMode(v as SessionComplianceMode)}
             >
-              <SelectTrigger data-testid="compliance-mode">
+              <SelectTrigger id="compliance-mode" data-testid="compliance-mode">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -380,12 +418,23 @@ export function SessionComplianceEnforcementPanel({
           {versions ? ` (${versions.length})` : ""}
         </button>
         {historyOpen && (
-          <div className="mt-2" data-testid="compliance-config-history">
+          <div className="mt-2 space-y-2" data-testid="compliance-config-history">
+            {/* Read failures get their own sentence. "No recorded changes yet"
+                is a positive claim about this tenant's settings, and must never
+                be rendered off a route we could not read — a single-route 404
+                during coord's staged rollout would otherwise assert that the
+                settings have never been touched. */}
+            <ComplianceStateNotice
+              unavailable={versionsUnavailable}
+              degraded={versionsDegraded}
+              error={versionsError}
+              what="setting changes"
+            />
             {versionsLoading && !versions ? (
               <p className="py-3 text-sm text-muted-foreground">
                 Loading change history…
               </p>
-            ) : !versions || versions.length === 0 ? (
+            ) : !versions ? null : versions.length === 0 ? (
               <p className="py-3 text-sm text-muted-foreground">
                 No recorded changes yet — these are still the defaults.
               </p>

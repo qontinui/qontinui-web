@@ -37,9 +37,11 @@ export function ComplianceStateNotice({
       >
         <CloudOff className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
         <p className="text-sm text-muted-foreground">
-          Coord doesn&apos;t serve the session-compliance routes yet, so no{" "}
-          {what} can be read. This panel is empty because the data
-          isn&apos;t reachable — not because nothing has happened.
+          Coord answered &ldquo;not found&rdquo; for {what} — either it
+          doesn&apos;t serve the session-compliance routes yet, or it has nothing
+          stored under them for this tenant. Nothing is shown because the data
+          couldn&apos;t be read, which is not the same as nothing having
+          happened.
         </p>
       </div>
     );
