@@ -75955,6 +75955,90 @@
         ]
       }
     },
+    "/api/v1/operations/coord/prompt-documents/{kind}/{name}/versions/{version}/restore": {
+      "post": {
+        "description": "Roll a prompt document back to an earlier version. Tenant-admin only.\n\nPlan ``2026-07-30-session-compliance-report-enforcement.md`` \u00a7B1. Distinct\nfrom :func:`restore_prompt_document_default`, which re-seeds the *code*\ndefault named by ``default_source``: this restores an arbitrary prior\nSNAPSHOT, which is what \"undo that edit\" actually means.\n\nThe restore is an ordinary versioning edit \u2014 coord copies version\n``version``'s body forward as a NEW snapshot and bumps ``current_version``.\n**History is never rewritten**, so the restore is itself reversible from the\nsame history view, and the version being restored FROM stays readable.\n\nBody: ``{change_note?}`` \u2014 the note recorded on the new snapshot (the UI\ndefaults it to \"Restored from version N\"). Only ``change_note`` is\nforwarded: unlike the PATCH proxy above, ``updated_by`` is NOT stamped here\nand is never taken from the browser. Coord derives the editor from its own\nauthenticated ``OperatorContext`` on this route, so forwarding a client\nclaim would only add a seventh client-asserted-provenance site to the ones\nplan ``2026-07-27-prompt-document-writes-operator-gated`` exists to remove.\n\nCoord 4xx (unknown document, unknown version, non-admin) passes through.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_versions_version_restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Restore Prompt Document Version Api V1 Operations Coord Prompt Documents  Kind   Name  Versions  Version  Restore Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Restore Prompt Document Version",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/pull-decisions": {
       "get": {
         "description": "Return the ``repo_pull`` decision audit feed from coord (tenant-scoped).\n\nForwards to coord's ``GET /coord/policies/resolutions`` with\n``decision_domain=repo_pull`` always pinned, plus the optional\n``device_id`` / ``repo`` / ``limit`` / ``since`` filters. Drives the\n``/admin/coord/pull-decisions`` activity page.",
@@ -76050,6 +76134,201 @@
           }
         },
         "summary": "Get Pull Decisions",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/session-compliance/config": {
+      "get": {
+        "description": "Read the tenant's session-compliance enforcement config.\n\nReturns ``{enabled, mode, max_attempts, enforced_clause_ref, applicable,\napplicability_reason, prompt_document_version, current_version}``.\n\n``applicable``/``applicability_reason`` are coord-DERIVED, not stored\nsettings: ``applicable`` (enforcing), ``enforcement_disabled`` (switched\noff), ``clause_absent`` (the named clause is not in the active version of\nits document, so enforcement is inert), ``document_missing`` (the document\nitself is gone). ``prompt_document_version`` is the document version that\nderivation was made against; ``current_version`` is the config row's own\nversion. Any authenticated tenant member.",
+        "operationId": "api_v1_operations_coord_session_compliance_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Session Compliance Config Api V1 Operations Coord Session Compliance Config Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Session Compliance Config",
+        "tags": [
+          "operations"
+        ]
+      },
+      "put": {
+        "description": "Update the enforcement config. Tenant-admin only.\n\nBody: ``{enabled?, mode?, enforced_clause_ref?, max_attempts?,\nchange_note?}`` \u2014 filtered to that allowlist\n(``_SESSION_COMPLIANCE_CONFIG_FIELDS``) before forwarding. ``updated_by`` is\ndeliberately NOT among them: coord takes the editor from its authenticated\n``OperatorContext``, and a client-asserted editor on a behaviour-changing\nsetting would be unverifiable audit trail.\n\n``applicable`` is not writable either \u2014 it is derived from the clause, so\naccepting it would let the stored value drift from the truth it summarises.\nCoord versions the row on every change; the versions route below serves that\nhistory. Returns coord's post-write config view (same shape as the GET).",
+        "operationId": "api_v1_operations_coord_session_compliance_config_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Put Session Compliance Config Api V1 Operations Coord Session Compliance Config Put"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Put Session Compliance Config",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/session-compliance/config/versions": {
+      "get": {
+        "description": "Version history of the enforcement config, newest first.\n\nEnforcement config changes fleet behaviour, so it is versioned like a\nprompt document rather than patched in place \u2014 this route is what makes\n\"who turned this off, and when\" answerable. Any authenticated tenant member.",
+        "operationId": "api_v1_operations_coord_session_compliance_config_versions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response List Session Compliance Config Versions Api V1 Operations Coord Session Compliance Config Versions Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Session Compliance Config Versions",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/session-compliance/outstanding": {
+      "get": {
+        "description": "The outstanding-work ledger: every ``deferred``/``gated`` item across\nall stored session reports, each with its gate or its stated reason.\n\nThis is the fleet's unfinished work made queryable \u2014 it otherwise exists\nonly scattered through plan files. Read-only and honest by construction:\nthe items are what sessions REPORTED, carrying coord's reconciliation\nverdict alongside, not an independent inventory of everything undone. Any\nauthenticated tenant member.",
+        "operationId": "api_v1_operations_coord_session_compliance_outstanding_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response List Session Compliance Outstanding Api V1 Operations Coord Session Compliance Outstanding Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Session Compliance Outstanding",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/session-compliance/sessions": {
+      "get": {
+        "description": "Recent per-session compliance verdicts, newest first.\n\nThree verdicts and only three: ``verified`` (block present and every\ncheckable claim reconciled), ``unverified`` (block present but \u22651 claim\nunconfirmed or contradicted \u2014 and ALSO the case where no block was emitted\nat all, carrying reason ``absent``), ``not_applicable`` (enforcement off or\nthe clause absent). A missing report is deliberately not a fourth state.\n\n``limit``/``verdict``/``cursor`` are forwarded when set; coord owns the\npage size default and the cursor grammar. Any authenticated tenant member.",
+        "operationId": "api_v1_operations_coord_session_compliance_sessions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "verdict",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Verdict"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response List Session Compliance Sessions Api V1 Operations Coord Session Compliance Sessions Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Session Compliance Sessions",
         "tags": [
           "operations"
         ]

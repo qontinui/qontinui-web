@@ -15,6 +15,13 @@
  * Reads are visible to any tenant member; edits + restore are re-checked as
  * tenant-admin by coord.
  *
+ * The page also carries the **session compliance** surface (plan
+ * `2026-07-30-session-compliance-report-enforcement.md` §B): the switch for the
+ * check that holds closing sessions to the POLICY_COMPLIANCE report their
+ * policy requires, the per-session verdicts, and the outstanding-work ledger.
+ * It lives here — not behind its own nav entry — because what it enforces is
+ * one of the documents listed above.
+ *
  * Crawl-safety: a child of the `/admin/coord` layout, which gates the subtree on
  * `user?.is_superuser` and renders `null` otherwise — so the Spec-CI crawl (no
  * authenticated user) never mounts the body. Talks only to the always-registered
@@ -24,10 +31,11 @@
 
 import { NotebookText } from "lucide-react";
 import { PromptDocumentList } from "./_components/PromptDocumentList";
+import { SessionComplianceSection } from "./_components/SessionComplianceSection";
 
 export default function PromptDocumentsPage() {
   return (
-    <div className="space-y-6 p-6" data-testid="prompt-documents-page">
+    <div className="space-y-8 p-6" data-testid="prompt-documents-page">
       <div className="flex items-start gap-3">
         <NotebookText className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
         <div>
@@ -43,6 +51,16 @@ export default function PromptDocumentsPage() {
       </div>
 
       <PromptDocumentList />
+
+      {/*
+        Session compliance lives on this page rather than behind its own nav
+        entry: the thing it enforces is one of the documents above, and the
+        clause it names is edited a few inches away. Splitting the switch from
+        the text it enforces is exactly how the two drift apart.
+      */}
+      <div className="border-t border-border pt-8">
+        <SessionComplianceSection />
+      </div>
     </div>
   );
 }

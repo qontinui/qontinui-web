@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   AlertTriangle,
@@ -15,7 +15,11 @@ import { PromptDocumentCreateDialog } from "./PromptDocumentCreateDialog";
 import { PromptDocumentEditorDialog } from "./PromptDocumentEditorDialog";
 import { PromptDocumentHistoryDialog } from "./PromptDocumentHistoryDialog";
 import { ClauseManagerDialog } from "./ClauseManagerDialog";
-import type { PromptDocument, PromptDocumentSummary } from "../types";
+import type {
+  PromptDocument,
+  PromptDocumentKind,
+  PromptDocumentSummary,
+} from "../types";
 import { KIND_META, PROMPT_DOCUMENT_KINDS } from "../types";
 
 function formatWhen(iso: string): string {
@@ -45,6 +49,7 @@ export function PromptDocumentList() {
     createDocument,
     updateDocument,
     restoreDefault,
+    restoreVersion,
   } = usePromptDocuments();
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -87,6 +92,43 @@ export function PromptDocumentList() {
     setClausesOpen(true);
     await loadFull(doc);
   };
+
+  /**
+   * Roll the open document back to `version`, then re-read it so the history
+   * dialog's diff immediately describes the NEW current version rather than the
+   * one that was current a moment ago.
+   */
+  const handleRestoreVersion = async (
+    kind: PromptDocumentKind,
+    name: string,
+    version: number,
+    changeNote: string
+  ): Promise<boolean> => {
+    const ok = await restoreVersion(kind, name, version, changeNote);
+    if (ok) {
+      const full = await fetchDocument(kind, name);
+      if (full) setEditing(full);
+    }
+    return ok;
+  };
+
+  /**
+   * Memoized so the history dialog's load effect (which has `target` in its
+   * dependency list) fires on a genuine document change instead of on every
+   * render of this list — an inline object literal is a new reference each
+   * time, which re-triggers the versions fetch in a loop.
+   */
+  const historyTarget = useMemo(
+    () =>
+      editing
+        ? {
+            kind: editing.kind,
+            name: editing.name,
+            label: editing.description ?? editing.name,
+          }
+        : null,
+    [editing]
+  );
 
   const initialLoading = loading && documents.length === 0;
 
@@ -204,19 +246,13 @@ export function PromptDocumentList() {
       <PromptDocumentHistoryDialog
         open={historyOpen}
         onOpenChange={setHistoryOpen}
-        target={
-          editing
-            ? {
-                kind: editing.kind,
-                name: editing.name,
-                label: editing.description ?? editing.name,
-              }
-            : null
-        }
+        target={historyTarget}
         currentBody={editing?.body ?? ""}
         currentVersion={editing?.current_version ?? 0}
         fetchVersions={fetchVersions}
         fetchVersion={fetchVersion}
+        saving={saving}
+        onRestoreVersion={handleRestoreVersion}
       />
 
       <ClauseManagerDialog

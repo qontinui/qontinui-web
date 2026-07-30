@@ -195,6 +195,42 @@ export function usePromptDocuments() {
     }
   };
 
+  /**
+   * Roll the document back to an earlier version (plan
+   * `2026-07-30-session-compliance-report-enforcement.md` §B1).
+   *
+   * Distinct from {@link restoreDefault}, which re-seeds the shipped code
+   * default: this restores an arbitrary prior SNAPSHOT, which is what "undo
+   * that edit" means. Coord copies that version's body forward as a NEW
+   * version — **history is never rewritten**, so the restore is itself
+   * reversible and the version restored from stays readable.
+   *
+   * `change_note` is recorded on the new snapshot; the editor is stamped by
+   * coord from its authenticated operator context, never asserted here.
+   */
+  const restoreVersion = async (
+    kind: PromptDocumentKind,
+    name: string,
+    version: number,
+    changeNote?: string
+  ): Promise<boolean> => {
+    try {
+      setSaving(true);
+      await httpClient.post(
+        `${docPath(kind, name)}/versions/${version}/restore`,
+        changeNote ? { change_note: changeNote } : {}
+      );
+      toast.success(`Restored version ${version} as a new version`);
+      await loadDocuments();
+      return true;
+    } catch (err) {
+      toast.error(message(err, "Failed to restore that version"));
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return {
     documents,
     loading,
@@ -208,5 +244,6 @@ export function usePromptDocuments() {
     createDocument,
     updateDocument,
     restoreDefault,
+    restoreVersion,
   };
 }

@@ -9,8 +9,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { History } from "lucide-react";
+import { History, Loader2, Undo2 } from "lucide-react";
 import { diffLines } from "../_lib/diff";
 import type {
   ListVersionsResponse,
@@ -36,6 +38,19 @@ interface PromptDocumentHistoryDialogProps {
     name: string,
     version: number
   ) => Promise<PromptDocumentVersion | null>;
+  /** True while a restore is in flight (the parent's shared saving flag). */
+  saving?: boolean;
+  /**
+   * Roll the document back to `version`. Resolves `true` on success, at which
+   * point the parent has re-fetched the document, so this dialog re-renders
+   * against the new current version.
+   */
+  onRestoreVersion?: (
+    kind: PromptDocumentKind,
+    name: string,
+    version: number,
+    changeNote: string
+  ) => Promise<boolean>;
 }
 
 function formatWhen(iso: string): string {
@@ -52,6 +67,10 @@ function formatWhen(iso: string): string {
  * computed client-side (`_lib/diff.ts`) — both sides are already in memory and
  * prompt documents are prose-sized, so there is no round-trip and no new
  * dependency.
+ *
+ * The diff is also what makes the Restore action safe to offer here rather than
+ * from the list: you decide to roll back while looking at exactly what rolling
+ * back would change.
  */
 export function PromptDocumentHistoryDialog({
   open,
@@ -61,12 +80,16 @@ export function PromptDocumentHistoryDialog({
   currentVersion,
   fetchVersions,
   fetchVersion,
+  saving = false,
+  onRestoreVersion,
 }: PromptDocumentHistoryDialogProps) {
   const [versions, setVersions] = useState<PromptDocumentVersionMeta[]>([]);
   const [loadingList, setLoadingList] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
   const [snapshot, setSnapshot] = useState<PromptDocumentVersion | null>(null);
   const [loadingSnapshot, setLoadingSnapshot] = useState(false);
+  const [confirmingRestore, setConfirmingRestore] = useState(false);
+  const [restoreNote, setRestoreNote] = useState("");
 
   useEffect(() => {
     if (!open || !target) return;
@@ -92,6 +115,13 @@ export function PromptDocumentHistoryDialog({
     };
   }, [open, target, currentVersion, fetchVersions]);
 
+  // Any change of document, version selection, or close abandons a half-started
+  // restore — a confirmation left standing over a different version than the
+  // one it was opened for would restore something the operator never looked at.
+  useEffect(() => {
+    setConfirmingRestore(false);
+  }, [open, target, selected]);
+
   const loadSnapshot = useCallback(
     async (version: number) => {
       if (!target) return;
@@ -113,6 +143,36 @@ export function PromptDocumentHistoryDialog({
     [snapshot, currentBody]
   );
 
+  /**
+   * Restoring the version that is ALREADY current is a no-op that would still
+   * burn a version number, so it is offered only for a genuinely prior one —
+   * and only once its snapshot is loaded, so the diff above is describing the
+   * change being confirmed.
+   */
+  const canRestore =
+    onRestoreVersion != null &&
+    target != null &&
+    selected != null &&
+    selected !== currentVersion &&
+    snapshot != null &&
+    !loadingSnapshot;
+
+  const startRestore = () => {
+    setRestoreNote(`Restored from version ${selected}`);
+    setConfirmingRestore(true);
+  };
+
+  const doRestore = async () => {
+    if (!canRestore || !target || selected == null || !onRestoreVersion) return;
+    const ok = await onRestoreVersion(
+      target.kind,
+      target.name,
+      selected,
+      restoreNote.trim() || `Restored from version ${selected}`
+    );
+    if (ok) setConfirmingRestore(false);
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -126,7 +186,10 @@ export function PromptDocumentHistoryDialog({
           </DialogTitle>
           <DialogDescription>
             Every edit is kept as an immutable version. Select one to see what
-            changed between it and the current version {currentVersion}.
+            changed between it and the current version {currentVersion}
+            {onRestoreVersion
+              ? " — and restore it if that's the wording you want back."
+              : "."}
           </DialogDescription>
         </DialogHeader>
 
@@ -263,7 +326,69 @@ export function PromptDocumentHistoryDialog({
           </div>
         </div>
 
-        <div className="flex justify-end pt-2">
+        {/* Restore — offered only next to the diff that justifies it. */}
+        {confirmingRestore && canRestore && (
+          <div
+            className="space-y-2 rounded-lg border border-border bg-muted/40 px-3 py-3"
+            data-testid="restore-version-confirm"
+          >
+            <p className="text-sm">
+              Restore version {selected} as the current version of{" "}
+              <span className="font-medium">{target?.label}</span>?
+            </p>
+            <p className="text-sm text-muted-foreground">
+              This is an ordinary edit, not a rewind: version {selected}&apos;s
+              text is copied forward as a <strong>new version</strong> (v
+              {currentVersion + 1}). Nothing is deleted — version{" "}
+              {currentVersion} stays in this history exactly as it is, so you can
+              undo the restore the same way you made it.
+            </p>
+            <div className="space-y-1.5">
+              <Label htmlFor="restore-change-note">
+                Note recorded on the new version
+              </Label>
+              <Input
+                id="restore-change-note"
+                value={restoreNote}
+                onChange={(e) => setRestoreNote(e.target.value)}
+                data-testid="restore-change-note"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={saving}
+                onClick={() => setConfirmingRestore(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                disabled={saving}
+                onClick={doRestore}
+                data-testid="restore-version-confirm-button"
+              >
+                {saving && <Loader2 className="mr-1.5 size-4 animate-spin" />}
+                Restore version {selected}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2 pt-2">
+          {canRestore && !confirmingRestore && (
+            <Button
+              variant="outline"
+              className="mr-auto gap-1.5"
+              onClick={startRestore}
+              disabled={saving}
+              data-testid="restore-version"
+            >
+              <Undo2 className="size-4" />
+              Restore this version
+            </Button>
+          )}
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Close
           </Button>
