@@ -43,11 +43,22 @@ Design / column-contract notes
   coord tables (``coord.gates.verdict``, ``coord.prompt_documents.kind`` /
   ``.format``, ``coord.policy_clauses.status`` / ``.tier``).
 
-* ``reason`` is free-text and deliberately **un-CHECKed**: the reason
+* ``reason`` is free-text and deliberately **not value-CHECKed**: the reason
   vocabulary (``absent``, ``unreconciled_claims``, ``enforcement_disabled``,
   ``clause_absent``, …) is expected to grow as reconciliation gets more
   signals, and a CHECK there would force a migration per new reason. It is
   NULL for a clean ``verified``.
+
+  One structural invariant IS enforced: ``reason = 'absent'`` implies
+  ``report IS NULL``. The row asserts "the session emitted no block", so it
+  must not simultaneously carry a block. The guard matters because this table
+  is **upserted** — a re-check of a session whose block went away, written with
+  a defensive ``ON CONFLICT DO UPDATE SET report = COALESCE(EXCLUDED.report,
+  session_compliance.report)``, would otherwise preserve the stale report and
+  show the operator a report the session did not emit. The constraint is
+  deliberately one-directional: ``report IS NULL`` does NOT imply
+  ``reason = 'absent'``, because a ``not_applicable`` row (enforcement off, or
+  clause absent) legitimately has no report and a different reason.
 
 * ``claude_session_id`` is the **Claude Code session UUID** — the id space that
   keys ``coord.agent_sessions`` and every ``*.agent_session_id`` column — NOT
@@ -61,6 +72,29 @@ Design / column-contract notes
   ``coord.agent_sessions``: compliance is recorded at Stop-hook time and must
   not fail because the session-lookup upsert has not run yet (the same
   best-effort-link stance the newer coord lineage tables take).
+
+  **The TEXT column is CHECK-constrained to UUID shape, and that is
+  load-bearing** — unlike ``session_handles.claude_session_id``, this column
+  gets JOINed against genuinely-``UUID`` columns (notably
+  ``coord.gates.agent_session_id``, added by ``coord_sesscompl_03``, which is
+  UUID because every coord ``agent_session_id`` is). Two failure modes follow
+  from an unconstrained TEXT column and the CHECK closes both:
+
+  - A ``::text`` cast on the UUID side makes the join case- and
+    whitespace-sensitive, so an uppercase or padded stored value silently
+    fails to match and reports a genuinely-compliant session's ``state: gated``
+    claim as unreconciled — a false ``unverified``, in exactly the check whose
+    false-positive rate has to stay near zero.
+  - A ``::uuid`` cast on the TEXT side raises ``22P02`` on the first
+    non-UUID row, erroring the whole reconciliation query.
+
+  With the CHECK in place every stored value is castable, so **the required
+  join direction is ``gates.agent_session_id = claude_session_id::uuid``** —
+  cast TEXT to UUID, never UUID to TEXT. ``::uuid`` normalizes case, so the
+  match is correct regardless of how coord cased the path segment. The CHECK is
+  case-insensitive (``~*``) so a well-formed uppercase id is stored rather than
+  rejected: a hard insert failure on the Stop-hook path would be worse than a
+  cased value the mandated cast already handles.
 
 * ``report`` JSONB is the ``policy-compliance/1`` block **verbatim**, and is
   NULL exactly when the block was absent. Storing it raw keeps the operator
@@ -115,9 +149,7 @@ def upgrade() -> None:
                                         DEFAULT gen_random_uuid(),
             tenant_id               UUID NOT NULL,
             claude_session_id       TEXT NOT NULL,
-            verdict                 TEXT NOT NULL
-                CHECK (verdict IN ('verified', 'unverified',
-                                   'not_applicable')),
+            verdict                 TEXT NOT NULL,
             reason                  TEXT,
             report                  JSONB,
             reconciliation          JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -127,7 +159,22 @@ def upgrade() -> None:
             created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
             updated_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
             CONSTRAINT uq_session_compliance_tenant_session
-                UNIQUE (tenant_id, claude_session_id)
+                UNIQUE (tenant_id, claude_session_id),
+            -- Named, because this is the set most likely to be widened
+            -- later and widening needs DROP CONSTRAINT <name>.
+            CONSTRAINT ck_session_compliance_verdict
+                CHECK (verdict IN ('verified', 'unverified',
+                                   'not_applicable')),
+            -- Guarantees every value is ::uuid-castable, which is what makes
+            -- the mandated join direction safe. See the module docstring.
+            CONSTRAINT ck_session_compliance_claude_session_id_uuid
+                CHECK (claude_session_id ~*
+                       '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-'
+                       '[0-9a-f]{4}-[0-9a-f]{12}$'),
+            -- reason='absent' asserts "no block was emitted", so the row
+            -- must not also carry one. One-directional on purpose.
+            CONSTRAINT ck_session_compliance_absent_has_no_report
+                CHECK (reason IS DISTINCT FROM 'absent' OR report IS NULL)
         )
         """
     )
@@ -138,7 +185,12 @@ def upgrade() -> None:
             'The Claude Code session UUID (the id space keying '
             'coord.agent_sessions and every *.agent_session_id), NOT '
             'coord.sessions.id. Stored as TEXT to match '
-            'coord.session_handles.claude_session_id.'
+            'coord.session_handles.claude_session_id, but CHECK-constrained '
+            'to UUID shape. Canonical form is lowercase-hyphenated. Joins '
+            'against a UUID column MUST cast this side: '
+            'gates.agent_session_id = claude_session_id::uuid — never '
+            'agent_session_id::text, which would be case-sensitive and could '
+            'silently miss.'
         """
     )
     op.execute(

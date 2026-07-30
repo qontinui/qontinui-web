@@ -33,6 +33,21 @@ snapshot and UPDATEs ``current_version`` in the same transaction, under
 ``FOR UPDATE`` on the parent (``prompt_documents.rs:805-884``). History is never
 rewritten; a rollback is an ordinary forward edit that creates a NEW version.
 
+**Write-path obligation on the coord side, since SQL cannot express it.**
+``current_version`` starts at 1 and nothing in this schema ties it to the
+existence of a snapshot row, so a bootstrap
+``INSERT INTO coord.session_compliance_config (tenant_id) VALUES (…)
+ON CONFLICT (tenant_id) DO NOTHING`` — the natural shape for seeding per-tenant
+defaults — would leave a row claiming ``current_version = 1`` with **no**
+version-1 snapshot, and the operator audit surface these tables exist for would
+show empty history for the currently-live state. Every coord write that creates
+or mutates a config row must INSERT the matching
+``session_compliance_config_versions`` snapshot **in the same transaction**,
+including the very first one. (The sibling ``coord_prompt_docs_01`` did not have
+this hole because it seeded version-1 snapshots for the rows it data-migrated;
+these tables are new and empty, so there is nothing for this migration to seed
+and the invariant is coord's to hold.)
+
 Note the one deliberate naming divergence from that sibling: the version column
 here is ``version`` (the prompt-document table calls it ``version_number``).
 ``version`` is the name in the plan's column contract and therefore in coord's
@@ -89,8 +104,12 @@ Other notes
   the config still reads ``enabled = true``, which is exactly the kind of
   invisible-inert state this plan exists to eliminate.
 
-Idempotency: raw ``op.execute`` with ``CREATE TABLE / INDEX IF NOT EXISTS`` —
-the house convention for coord tables.
+No explicit index is created: ``tenant_id`` lookups ride the UNIQUE constraint
+on the live table, and ``config_id`` lookups ride the leading column of
+``UNIQUE (config_id, version)`` on the snapshots table.
+
+Idempotency: raw ``op.execute`` with ``CREATE TABLE IF NOT EXISTS`` — the house
+convention for coord tables.
 """
 
 from collections.abc import Sequence
@@ -115,15 +134,21 @@ def upgrade() -> None:
             enabled             BOOLEAN NOT NULL DEFAULT false,
             enforced_clause_ref TEXT NOT NULL
                 DEFAULT 'policy/planning-and-scope#finish-to-zero',
-            mode                TEXT NOT NULL DEFAULT 'nudge'
-                CHECK (mode IN ('nudge', 'reopen')),
-            max_attempts        INTEGER NOT NULL DEFAULT 1
-                CHECK (max_attempts >= 1),
+            mode                TEXT NOT NULL DEFAULT 'nudge',
+            max_attempts        INTEGER NOT NULL DEFAULT 1,
             current_version     INTEGER NOT NULL DEFAULT 1,
             updated_by          TEXT,
             created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
             updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-            CONSTRAINT uq_session_compliance_config_tenant UNIQUE (tenant_id)
+            CONSTRAINT uq_session_compliance_config_tenant UNIQUE (tenant_id),
+            -- Named so a later widening of the mode set can DROP CONSTRAINT
+            -- by name rather than hunting a generated one.
+            CONSTRAINT ck_session_compliance_config_mode
+                CHECK (mode IN ('nudge', 'reopen')),
+            -- max_attempts = 0 would silently disable the nudge while the
+            -- config still reads enabled=true — invisible-inert state.
+            CONSTRAINT ck_session_compliance_config_max_attempts
+                CHECK (max_attempts >= 1)
         )
         """
     )
@@ -175,7 +200,11 @@ def upgrade() -> None:
         COMMENT ON TABLE coord.session_compliance_config_versions IS
             'Append-only immutable snapshots. Never UPDATE or DELETE a row '
             'here: a rollback is a forward edit that INSERTs a new version, '
-            'mirroring coord.prompt_document_versions.'
+            'mirroring coord.prompt_document_versions. Every write that '
+            'creates or mutates a session_compliance_config row must INSERT '
+            'the matching snapshot in the SAME transaction — including the '
+            'first one, or current_version=1 describes history that does not '
+            'exist.'
         """
     )
 
