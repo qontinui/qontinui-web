@@ -1306,6 +1306,38 @@ async def expire_closed_session_records(session: AsyncSession, *, now: datetime)
     return total
 
 
+def _not_lifecycle_held(prefix: str = "") -> str:
+    """SQL predicate: this row is NOT held out of automatic consolidation.
+
+    ``source.lifecycle_hold = true`` takes one record out of every
+    automatic supersede path while a human adjudicates it. Both
+    consolidation paths — :func:`find_near_duplicate_pairs` (1 supersede
+    per pair) and :func:`fetch_cluster_candidates` (N-1 per cluster) —
+    must honour it; honouring only one leaves the record collapsible.
+
+    The comparison is on TEXT (``->>``), deliberately never a
+    ``::boolean`` cast. A cast raises on a malformed value
+    (``"lifecycle_hold": "yes"``) and that error aborts the ENTIRE sweep
+    for EVERY tenant — the same failure class :data:`_UUID_TEXT_RE`
+    exists to keep away from ``scope_ref::uuid``. Text comparison cannot
+    throw. It fails OPEN (a malformed value leaves that record eligible),
+    which is the correct trade: a mis-set flag on one record is
+    recoverable, a sweep that aborts fleet-wide is not.
+
+    ``IS DISTINCT FROM`` (not ``!=``) because ``->>`` yields NULL for an
+    absent key, and NULL ``!= 'true'`` is NULL, not TRUE — every unflagged
+    row would drop out of the result set. It also gives the explicit
+    ``"lifecycle_hold": false`` its meaning: NOT held. That value records
+    "this record was adjudicated and released", a state a presence-only
+    check (``jsonb_exists``, the idiom used for ``source.decayed_at``)
+    could not express.
+
+    ``prefix`` is a table alias with its trailing dot (``"a."``) for the
+    self-join, empty for a single-table query.
+    """
+    return f"{prefix}source->>'lifecycle_hold' IS DISTINCT FROM 'true'"
+
+
 async def find_near_duplicate_pairs(
     session: AsyncSession,
     tenant_id: UUID,
@@ -1322,10 +1354,17 @@ async def find_near_duplicate_pairs(
     The left side is bounded to rows created inside ``window_days`` and
     the pair batch is capped at ``pair_limit`` per run, tightest pairs
     first. ``a.memory_id < b.memory_id`` de-duplicates the symmetric join.
+
+    Rows held by :func:`_not_lifecycle_held` are excluded from BOTH sides:
+    a held row is under human adjudication, and ``apply_merge`` supersedes
+    the loser of every pair returned here, so a held row that reached this
+    result set would be collapsed by the heuristic the hold exists to
+    pre-empt. Excluding one side would not be enough — the hold has to
+    survive whichever side of the join the row lands on.
     """
     rows = await session.execute(
         text(
-            """
+            f"""
             SELECT a.memory_id  AS id_a,
                    a.importance AS importance_a,
                    a.access_count AS access_a,
@@ -1348,6 +1387,8 @@ async def find_near_duplicate_pairs(
               AND a.embedding IS NOT NULL AND b.embedding IS NOT NULL
               AND a.created_at > CAST(:now AS timestamptz)
                                  - make_interval(days => :window_days)
+              AND {_not_lifecycle_held("a.")}
+              AND {_not_lifecycle_held("b.")}
               AND (a.embedding <=> b.embedding) < :max_distance
             ORDER BY (a.embedding <=> b.embedding)
             LIMIT :pair_limit
@@ -1438,10 +1479,19 @@ async def fetch_cluster_candidates(
 
     Returns oldest-first dicts with the parsed embedding (each carries
     ``memory_id, title, content, importance, created_at, embedding``).
+
+    Rows held by :func:`_not_lifecycle_held` are excluded. This is the
+    DOMINANT supersede path of the two: a cluster that survives synthesis
+    has every member but the distilled replacement superseded (N-1 rows
+    per cluster, via ``supersede_many`` when the runner posts its result),
+    and clustering only needs cosine > ``CLUSTER_SIMILARITY`` (0.75) — far
+    looser than the near-dup 0.95. Excluding a held row here is what keeps
+    it out of a cluster in the first place, so no synthesis job is ever
+    enqueued that names it as a member.
     """
     rows = await session.execute(
         text(
-            """
+            f"""
             SELECT memory_id, title, content, importance, created_at,
                    CAST(embedding AS text) AS embedding_text
             FROM coord.memory_records
@@ -1451,6 +1501,7 @@ async def fetch_cluster_candidates(
               AND superseded_by IS NULL
               AND (valid_until IS NULL OR valid_until > CAST(:now AS timestamptz))
               AND embedding IS NOT NULL
+              AND {_not_lifecycle_held()}
             ORDER BY created_at ASC, memory_id ASC
             LIMIT :limit
             """

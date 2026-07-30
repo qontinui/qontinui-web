@@ -10,6 +10,8 @@ vectors are seeded directly and the sweeps only ENQUEUE
 * SQL/Python agreement of the decay retention-score formula,
 * the decay invalidate sweep + the grace-period prune,
 * near-duplicate merge (fold, threshold, tenant isolation),
+* the ``source.lifecycle_hold`` exclusion on BOTH supersede paths, each
+  with its unheld positive control,
 * consolidation ENQUEUEING synthesis jobs (dedupe on re-run),
 * reindex-on-model-bump ENQUEUEING embedding jobs for stale-tag + NULL
   rows rather than embedding them.
@@ -476,6 +478,235 @@ class TestConsolidationEnqueue:
         assert second["clusters"] == 1
         assert second["enqueued"] == 0
         assert len(_job_rows(db, tenant)) == 1
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle hold — records withheld from automatic consolidation
+# ---------------------------------------------------------------------------
+#
+# `source.lifecycle_hold = true` takes one record out of every automatic
+# supersede path while a human adjudicates it. Two independent paths can
+# supersede a row, so each class below pairs its held assertion with an
+# UNHELD positive control on identical geometry: without that control the
+# held test would pass vacuously against a no-op fix (or against rows that
+# were never candidates in the first place).
+
+HELD: dict[str, Any] = {"lifecycle_hold": True}
+RELEASED: dict[str, Any] = {"lifecycle_hold": False}
+
+
+def _seed_dup_pair(
+    db: AsyncEngine,
+    tenant: UUID,
+    *,
+    source_a: dict[str, Any] | None = None,
+    source_b: dict[str, Any] | None = None,
+) -> tuple[UUID, UUID]:
+    """Two ``observation`` rows at cosine 0.99^2 = 0.9801 (> the 0.95 dup bar).
+
+    Same geometry and same fold ordering as
+    ``TestNearDupMerge.test_merges_above_threshold_and_folds``: ``a`` is
+    the survivor (higher importance + access), ``b`` the loser.
+    """
+    a = _seed(
+        db,
+        tenant,
+        content="sidecar winner",
+        kind="observation",
+        importance=0.8,
+        access_count=3,
+        embedding=_blend(0, 1, 0.99),
+        source=source_a,
+    )
+    b = _seed(
+        db,
+        tenant,
+        content="sidecar loser",
+        kind="observation",
+        importance=0.5,
+        access_count=2,
+        age_days=1,
+        embedding=_blend(0, 2, 0.99),
+        source=source_b,
+    )
+    return a, b
+
+
+def _assert_live(db: AsyncEngine, *memory_ids: UUID) -> None:
+    for memory_id in memory_ids:
+        assert _row(db, memory_id, "superseded_by") is None
+        assert _row(db, memory_id, "valid_until") is None
+
+
+class TestLifecycleHoldNearDup:
+    """Path 1 — ``find_near_duplicate_pairs`` → ``apply_merge`` (1 per pair)."""
+
+    def test_held_pair_survives_the_merge(self, db: AsyncEngine) -> None:
+        tenant = uuid4()
+        a, b = _seed_dup_pair(db, tenant, source_a=HELD, source_b=HELD)
+
+        stats = _run(db, lambda s: consolidate_tenant(s, tenant, now=NOW))
+        assert stats["candidate_pairs"] == 0
+        assert stats["merges"] == 0
+        _assert_live(db, a, b)
+
+    def test_unheld_pair_collapses(self, db: AsyncEngine) -> None:
+        """Positive control: the identical geometry, no flag → one dies."""
+        tenant = uuid4()
+        a, b = _seed_dup_pair(db, tenant)
+
+        stats = _run(db, lambda s: consolidate_tenant(s, tenant, now=NOW))
+        assert stats["merges"] == 1
+        assert _row(db, b, "superseded_by") == a
+        assert _row(db, b, "valid_until") is not None
+        assert _row(db, a, "superseded_by") is None
+
+    def test_holding_either_side_protects_the_pair(self, db: AsyncEngine) -> None:
+        """The predicate is on BOTH join sides, so either flag suffices."""
+        for source_a, source_b in ((HELD, None), (None, HELD)):
+            tenant = uuid4()
+            a, b = _seed_dup_pair(db, tenant, source_a=source_a, source_b=source_b)
+            stats = _run(db, partial(_consolidate_for, tenant))
+            assert stats["merges"] == 0
+            _assert_live(db, a, b)
+
+    def test_explicit_false_is_not_held(self, db: AsyncEngine) -> None:
+        """``lifecycle_hold: false`` records "adjudicated and released"."""
+        tenant = uuid4()
+        a, b = _seed_dup_pair(db, tenant, source_a=RELEASED, source_b=RELEASED)
+
+        stats = _run(db, lambda s: consolidate_tenant(s, tenant, now=NOW))
+        assert stats["merges"] == 1
+        assert _row(db, b, "superseded_by") == a
+
+    def test_malformed_hold_value_fails_open_and_never_aborts(
+        self, db: AsyncEngine
+    ) -> None:
+        """A junk value must not raise — the whole sweep rides on it.
+
+        A ``::boolean`` cast would raise on ``"yes"`` and take down the
+        consolidation pass for EVERY tenant; the text comparison cannot
+        throw, so the sweep completes and the record merely stays
+        eligible (fails open).
+        """
+        tenant = uuid4()
+        junk: dict[str, Any] = {"lifecycle_hold": "yes"}
+        a, b = _seed_dup_pair(db, tenant, source_a=junk, source_b=junk)
+
+        stats = _run(db, lambda s: consolidate_tenant(s, tenant, now=NOW))
+        assert stats["merges"] == 1
+        assert _row(db, b, "superseded_by") == a
+
+
+def _seed_hold_cluster(
+    db: AsyncEngine,
+    tenant: UUID,
+    *,
+    held: set[int],
+    hold_source: dict[str, Any] | None = None,
+) -> list[UUID]:
+    """``_seed_episode_cluster`` geometry, with a hold on ``held`` indices."""
+    return [
+        _seed(
+            db,
+            tenant,
+            content=f"episode number {i}",
+            kind="episode",
+            importance=0.4 + i * 0.05,
+            age_days=float(30 - i),
+            embedding=_blend(0, i + 1, 0.93),
+            source=(hold_source if hold_source is not None else HELD)
+            if i in held
+            else None,
+        )
+        for i in range(5)
+    ]
+
+
+class TestLifecycleHoldClustering:
+    """Path 2 — ``fetch_cluster_candidates`` (the DOMINANT one: N-1/cluster).
+
+    Supersession here is deferred: the runner posts a synthesis result and
+    ``supersede_many`` ends exactly the job's ``target_ids``. So keeping a
+    held row out of the candidate set — and therefore out of every job's
+    ``target_ids`` — is what makes it unreachable by this path at all.
+    """
+
+    def test_held_rows_never_reach_the_candidate_set(self, db: AsyncEngine) -> None:
+        tenant = uuid4()
+        members = _seed_hold_cluster(db, tenant, held=set(range(5)))
+
+        candidates = _run(
+            db,
+            lambda s: store.fetch_cluster_candidates(s, tenant, now=NOW, limit=1000),
+        )
+        assert candidates == []
+
+        stats = _run(db, lambda s: consolidate_tenant(s, tenant, now=NOW))
+        assert stats["cluster_candidates"] == 0
+        assert stats["clusters"] == 0
+        assert stats["enqueued"] == 0
+        assert _job_rows(db, tenant) == []
+        _assert_live(db, *members)
+
+    def test_unheld_cluster_still_enqueues(self, db: AsyncEngine) -> None:
+        """Positive control: identical geometry, no flag → a job appears."""
+        tenant = uuid4()
+        members = _seed_hold_cluster(db, tenant, held=set())
+
+        stats = _run(db, lambda s: consolidate_tenant(s, tenant, now=NOW))
+        assert stats["cluster_candidates"] == 5
+        assert stats["clusters"] == 1
+        assert stats["enqueued"] == 1
+        jobs = _job_rows(db, tenant)
+        assert {UUID(str(m)) for m in jobs[0]["target_ids"]} == set(members)
+
+    def test_held_members_are_omitted_from_the_synthesis_job(
+        self, db: AsyncEngine
+    ) -> None:
+        """A partial hold shrinks the cluster; it does not cancel it."""
+        tenant = uuid4()
+        members = _seed_hold_cluster(db, tenant, held={0, 1})
+
+        stats = _run(db, lambda s: consolidate_tenant(s, tenant, now=NOW))
+        assert stats["cluster_candidates"] == 3
+        assert stats["clusters"] == 1
+        assert stats["enqueued"] == 1
+
+        jobs = _job_rows(db, tenant)
+        targets = {UUID(str(m)) for m in jobs[0]["target_ids"]}
+        assert targets == set(members[2:])
+        # `supersede_many` only ever ends rows named in a job's target_ids,
+        # so the held pair is unreachable by this path.
+        assert targets.isdisjoint(members[:2])
+        _assert_live(db, *members[:2])
+
+    def test_explicit_false_is_not_held(self, db: AsyncEngine) -> None:
+        tenant = uuid4()
+        members = _seed_hold_cluster(
+            db, tenant, held=set(range(5)), hold_source=RELEASED
+        )
+
+        stats = _run(db, lambda s: consolidate_tenant(s, tenant, now=NOW))
+        assert stats["cluster_candidates"] == 5
+        assert stats["clusters"] == 1
+        jobs = _job_rows(db, tenant)
+        assert {UUID(str(m)) for m in jobs[0]["target_ids"]} == set(members)
+
+
+class TestLifecycleHoldPredicateShape:
+    """Ungated (no ``db`` fixture) — runs even where Postgres is absent."""
+
+    def test_predicate_is_a_text_comparison_never_a_cast(self) -> None:
+        for prefix in ("", "a.", "b."):
+            sql = store._not_lifecycle_held(prefix)
+            assert sql == (f"{prefix}source->>'lifecycle_hold' IS DISTINCT FROM 'true'")
+            # A cast is the failure class this predicate exists to avoid:
+            # it raises on a malformed value and aborts the sweep for every
+            # tenant. `->` (jsonb) would also mistype the comparison.
+            assert "::" not in sql
+            assert "CAST" not in sql.upper()
+            assert "->>" in sql
 
 
 # ---------------------------------------------------------------------------
