@@ -93,6 +93,66 @@ export const HERMETIC_STUBS: readonly HermeticStub[] = [
     note: "list[RunnerWire] (endpoints/devices.py:249 response_model) — coord fleet proxy; ci-bot owned no devices on prod",
   },
   {
+    pattern: /\/api\/v1\/agent-registry(\?|$)/,
+    // Anchored so ONLY the collection GET is stubbed: the pref write
+    // (`/agent-registry/prefs/{agent_name}`) is a PUT and falls through
+    // twice over — no `$`/`?` match, and non-GET methods `fallback()`.
+    //
+    // POPULATED, not empty. `/settings/agents` has no IR spec — the crawl's
+    // console gate is its only automated protection, and an empty list would
+    // render just the "No agents are registered" div, leaving the whole row
+    // renderer (badges, the fanout_bound null-guard, recordedLine, the
+    // controlled toggle) unexecuted in CI: a vacuous green. Two rows split
+    // the branches:
+    //   - code-reviewer  — mirrors what `backend/scripts/seed_agent_registry.py`
+    //     actually writes: spawn_path always 'in_session_subagent',
+    //     policy_required true for THIS agent only, model/effort NULL (its
+    //     .claude/agents frontmatter declares neither). fanout_bound is NOT
+    //     the seed's shape — that column is `INTEGER NOT NULL DEFAULT 15`
+    //     (agent_registry_01 migration:75) and the seed's INSERT omits it, so
+    //     a seeded row reads 15. null is chosen here to exercise the page's
+    //     `!== null && !== undefined` guard, which stays reachable because
+    //     coord may omit the field entirely (`row.get("fanout_bound")` →
+    //     None). Drives the policy-required badge + the empty meta line +
+    //     the "Registry default:" honesty line.
+    //   - debugging-specialist — every optional deliberately populated (a
+    //     shape coord's registry permits but the initial seed leaves NULL) to
+    //     exercise the opposite branch: the Disabled·<disposition> badge,
+    //     dispositionLabel(), the model/effort/fanout_bound join, and the
+    //     "Recorded preference:" line via source: "user_pref".
+    body: {
+      agents: [
+        {
+          agent_name: "code-reviewer",
+          purpose:
+            "Reviews code changes for bugs, best practices violations, security issues, and performance concerns",
+          spawn_path: "in_session_subagent",
+          model: null,
+          effort: null,
+          policy_required: true,
+          fanout_bound: null,
+          enabled: true,
+          disposition: "block",
+          source: "default",
+        },
+        {
+          agent_name: "debugging-specialist",
+          purpose:
+            "Systematic debugging agent for root cause analysis with log-based verification",
+          spawn_path: "in_session_subagent",
+          model: "opus",
+          effort: "high",
+          policy_required: false,
+          fanout_bound: 3,
+          enabled: false,
+          disposition: "degrade",
+          source: "user_pref",
+        },
+      ],
+    },
+    note: "AgentRegistryResponse{agents: AgentRegistryEntry[]} (endpoints/agent_registry.py:153-177; consumed by lib/api/agent-registry.ts:110-117) — coord proxy, no coord process in CI",
+  },
+  {
     pattern: /\/api\/v1\/operations\/tenants(\?|$)/,
     // One synthetic tenant, ACTIVE — prod ci-bot resolves exactly one tenant,
     // and the settings identity section renders its Tenant / Tenant ID label
