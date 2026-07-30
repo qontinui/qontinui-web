@@ -96,9 +96,18 @@ and released", which a presence-only check could not express. Do not clear
 these in bulk.
 """
 
+import logging
 from collections.abc import Sequence
 
+import sqlalchemy as sa
+
 from alembic import op
+
+# Same channel the other data migrations report on, so the migrator container's
+# logs carry how many rows this actually flagged. Without it the only record of
+# the backfill's blast radius is a query run afterwards, by which point the
+# before-picture is gone.
+logger = logging.getLogger("alembic.runtime.migration")
 
 # revision identifiers, used by Alembic.
 revision: str = "memhold_backfill_01"
@@ -159,29 +168,48 @@ _WINNER_MATCH = f"""
 
 def upgrade() -> None:
     """Set ``source.lifecycle_hold = true`` on the losers and their winners."""
+    conn = op.get_bind()
+
     # 1. Every loser, live or already superseded.
-    op.execute(
-        f"""
-        UPDATE coord.memory_records
-           SET source = jsonb_set(
-                   source, '{{lifecycle_hold}}', 'true'::jsonb, true
-               )
-         WHERE source->>'origin' = '{_SIDECAR_ORIGIN}'
-           AND lower(source->>'lifecycle_hold') IS DISTINCT FROM 'true'
-        """
-    )
+    losers = conn.execute(
+        sa.text(
+            f"""
+            UPDATE coord.memory_records
+               SET source = jsonb_set(
+                       source, '{{lifecycle_hold}}', 'true'::jsonb, true
+                   )
+             WHERE source->>'origin' = '{_SIDECAR_ORIGIN}'
+               AND lower(source->>'lifecycle_hold') IS DISTINCT FROM 'true'
+            """
+        )
+    ).rowcount
 
     # 2. The topic-file winner of each divergence.
-    op.execute(
-        f"""
-        WITH sidecar AS ({_SIDECAR_KEY_CTE})
-        UPDATE coord.memory_records w
-           SET source = jsonb_set(
-                   w.source, '{{lifecycle_hold}}', 'true'::jsonb, true
-               )
-         WHERE {_WINNER_MATCH}
-           AND lower(w.source->>'lifecycle_hold') IS DISTINCT FROM 'true'
-        """
+    winners = conn.execute(
+        sa.text(
+            f"""
+            WITH sidecar AS ({_SIDECAR_KEY_CTE})
+            UPDATE coord.memory_records w
+               SET source = jsonb_set(
+                       w.source, '{{lifecycle_hold}}', 'true'::jsonb, true
+                   )
+             WHERE {_WINNER_MATCH}
+               AND lower(w.source->>'lifecycle_hold') IS DISTINCT FROM 'true'
+            """
+        )
+    ).rowcount
+
+    # Measured against prod 2026-07-30: 138 losers (52 live + 86 already
+    # superseded) and 11 winners. A materially different count means the set
+    # moved between then and application — worth reading before Phase 3.
+    logger.info(
+        "memhold_backfill_01: lifecycle_hold=true set on %d sync-conflict "
+        "sidecar row(s) (live AND already-superseded) and %d topic-file "
+        "winner row(s); expected 138 and 11 as measured against prod "
+        "2026-07-30. Rows already reading 'true' are skipped, so a re-run "
+        "reports 0/0.",
+        losers,
+        winners,
     )
 
 
