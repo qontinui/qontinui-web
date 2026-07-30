@@ -23485,6 +23485,26 @@
         "title": "LearnedWorkflowResponse",
         "type": "object"
       },
+      "LifecycleHoldResponse": {
+        "description": "``PUT``/``DELETE /memory/records/{id}/hold`` \u2014 the resulting state.\n\n``held`` is the state the record is now IN, not the change applied, so\nboth verbs return the same shape and either is safe to replay.\n\nThe release path returns ``held=False`` with a body rather than a bare\n204: an explicit ``false`` is a meaningful state (\"adjudicated and\nreleased\") that the lifecycle predicate distinguishes from the key\nbeing absent, so echoing it is more honest than an empty response\nthat reads as \"the flag is gone\".",
+        "properties": {
+          "held": {
+            "title": "Held",
+            "type": "boolean"
+          },
+          "memory_id": {
+            "format": "uuid",
+            "title": "Memory Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "memory_id",
+          "held"
+        ],
+        "title": "LifecycleHoldResponse",
+        "type": "object"
+      },
       "LinkRequest": {
         "description": "Body for POST /identities/link.\n\n``id_token`` is a fresh Cognito ID token proving the caller controls\nthe federated identity to be linked into their canonical account.",
         "properties": {
@@ -25540,6 +25560,11 @@
           "embedding_coverage": {
             "title": "Embedding Coverage",
             "type": "number"
+          },
+          "lifecycle_held": {
+            "default": 0,
+            "title": "Lifecycle Held",
+            "type": "integer"
           },
           "quota_bytes": {
             "title": "Quota Bytes",
@@ -71570,6 +71595,108 @@
           }
         ],
         "summary": "Delete Record",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/memory/records/{memory_id}/hold": {
+      "delete": {
+        "description": "Release the hold \u2014 the record returns to normal lifecycle management.\n\nWrites an explicit ``source.lifecycle_hold = false`` rather than\ndropping the key, because ``false`` records \"this record was\nadjudicated and released\" \u2014 a state the lifecycle predicate\ndeliberately distinguishes from never having been held, and what\nmakes the ``lifecycle_held`` count in ``GET /stats`` a true measure\nof the adjudication backlog rather than of churn.\n\nIdempotent: releasing an unheld record is a no-op that reports\n``held=False``. 404 only when the record does not exist in the\ncaller's tenant.",
+        "operationId": "api_v1_memory_records_memory_id_hold_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "memory_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Memory Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleHoldResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Release Record Hold",
+        "tags": [
+          "memory"
+        ]
+      },
+      "put": {
+        "description": "Hold a record out of every AUTOMATIC lifecycle sweep.\n\nSets ``source.lifecycle_hold = true``, which the seven automatic\ngates in ``memory_store`` honour: both consolidation supersede paths\n(near-dup and cluster), the in-flight synthesis apply, decay\ninvalidate, the physical decay prune, closed-session expiry and the\nMEMORY.md bridge. It does NOT freeze the record against explicit\naction \u2014 ``POST /records/{id}/supersede`` and ``DELETE /records/{id}``\nstill apply, because overriding a hold is exactly how an adjudication\nlands.\n\nIdempotent, and appliable to SUPERSEDED and tombstoned records \u2014 that\nis the point rather than an oversight. A record wrongly folded away\nby consolidation is the usual reason to hold one, and until a hold\nexists the prune physically deletes such a row once its 90-day grace\npasses.\n\n404 for records that don't exist in the caller's tenant (cross-tenant\nids are never disclosed).",
+        "operationId": "api_v1_memory_records_memory_id_hold_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "memory_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Memory Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleHoldResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Hold Record",
         "tags": [
           "memory"
         ]

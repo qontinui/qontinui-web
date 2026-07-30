@@ -29,8 +29,13 @@ Endpoints (mounted under ``/api/v1/memory``):
   ``coord.memory_links`` from a root record → ``{nodes, edges}``.
 * ``POST /records/{id}/supersede``       — insert replacement, end the
   old row's validity.
+* ``PUT /records/{id}/hold``             — hold the record out of every
+  automatic lifecycle sweep while a human adjudicates it.
+* ``DELETE /records/{id}/hold``          — release the hold (records
+  "adjudicated and released"; returns the resulting state, not 204).
 * ``DELETE /records/{id}``               — tombstone.
-* ``GET /stats``                         — usage/quota posture.
+* ``GET /stats``                         — usage/quota posture, including
+  the count of records currently held.
 * ``POST /jobs/claim``                   — a runner claims pending jobs
   of the ``kinds`` it can execute (backend enqueues, runner computes).
 * ``POST /jobs/{id}/result``             — the runner posts the job's
@@ -92,6 +97,7 @@ from app.schemas.memory import (
     EmbeddingResultPayload,
     JobResultRequest,
     JobResultResponse,
+    LifecycleHoldResponse,
     ListRecordsResponse,
     MemoryGraphEdge,
     MemoryGraphNode,
@@ -788,6 +794,85 @@ async def supersede_record(
     )
 
 
+@router.put("/records/{memory_id}/hold", response_model=LifecycleHoldResponse)
+async def hold_record(
+    memory_id: UUID,
+    principal: MemoryPrincipal = Depends(get_memory_tenant),
+    db: AsyncSession = Depends(get_async_db),
+) -> LifecycleHoldResponse:
+    """Hold a record out of every AUTOMATIC lifecycle sweep.
+
+    Sets ``source.lifecycle_hold = true``, which the seven automatic
+    gates in ``memory_store`` honour: both consolidation supersede paths
+    (near-dup and cluster), the in-flight synthesis apply, decay
+    invalidate, the physical decay prune, closed-session expiry and the
+    MEMORY.md bridge. It does NOT freeze the record against explicit
+    action — ``POST /records/{id}/supersede`` and ``DELETE /records/{id}``
+    still apply, because overriding a hold is exactly how an adjudication
+    lands.
+
+    Idempotent, and appliable to SUPERSEDED and tombstoned records — that
+    is the point rather than an oversight. A record wrongly folded away
+    by consolidation is the usual reason to hold one, and until a hold
+    exists the prune physically deletes such a row once its 90-day grace
+    passes.
+
+    404 for records that don't exist in the caller's tenant (cross-tenant
+    ids are never disclosed).
+    """
+    return await _set_hold(memory_id, held=True, principal=principal, db=db)
+
+
+@router.delete("/records/{memory_id}/hold", response_model=LifecycleHoldResponse)
+async def release_record_hold(
+    memory_id: UUID,
+    principal: MemoryPrincipal = Depends(get_memory_tenant),
+    db: AsyncSession = Depends(get_async_db),
+) -> LifecycleHoldResponse:
+    """Release the hold — the record returns to normal lifecycle management.
+
+    Writes an explicit ``source.lifecycle_hold = false`` rather than
+    dropping the key, because ``false`` records "this record was
+    adjudicated and released" — a state the lifecycle predicate
+    deliberately distinguishes from never having been held, and what
+    makes the ``lifecycle_held`` count in ``GET /stats`` a true measure
+    of the adjudication backlog rather than of churn.
+
+    Idempotent: releasing an unheld record is a no-op that reports
+    ``held=False``. 404 only when the record does not exist in the
+    caller's tenant.
+    """
+    return await _set_hold(memory_id, held=False, principal=principal, db=db)
+
+
+async def _set_hold(
+    memory_id: UUID,
+    *,
+    held: bool,
+    principal: MemoryPrincipal,
+    db: AsyncSession,
+) -> LifecycleHoldResponse:
+    """Shared body of the two hold verbs — they differ only in ``held``."""
+    matched = await store.set_lifecycle_hold(
+        db,
+        tenant_id=principal.tenant_id,
+        memory_id=memory_id,
+        held=held,
+        now=datetime.now(UTC),
+    )
+    if not matched:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="memory record not found",
+        )
+    logger.info(
+        "memory_lifecycle_hold_set",
+        memory_id=str(memory_id),
+        held=held,
+    )
+    return LifecycleHoldResponse(memory_id=memory_id, held=held)
+
+
 @router.delete("/records/{memory_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_record(
     memory_id: UUID,
@@ -815,6 +900,7 @@ async def memory_stats(
     """Usage + quota posture for the caller's tenant."""
     usage = await store.get_usage(db, principal.tenant_id)
     coverage = await store.embedding_coverage(db, principal.tenant_id)
+    held = await store.count_lifecycle_held(db, principal.tenant_id)
     # Scoped to kind='synthesis': the queue now also carries embedding
     # jobs, and these fields say "synthesis".
     job_counts = await store.job_counts(db, principal.tenant_id, kind="synthesis")
@@ -833,6 +919,7 @@ async def memory_stats(
         synthesis_jobs_claimed=job_counts["claimed"],
         synthesis_jobs_done=job_counts["done"],
         synthesis_jobs_failed=job_counts["failed"],
+        lifecycle_held=held,
     )
 
 
