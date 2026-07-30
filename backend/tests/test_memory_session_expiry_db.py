@@ -13,12 +13,15 @@ Covers ``memory_store.expire_closed_session_records``:
   ``valid_until = created_at + 7 days``,
 * a malformed (non-UUID) scope_ref does NOT raise and is treated as an
   orphan,
-* a second run is a no-op (idempotent).
+* a second run is a no-op (idempotent),
+* ``source.lifecycle_hold`` skips a row in BOTH passes, each with its
+  unheld positive control.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Awaitable, Callable, Generator
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -117,6 +120,7 @@ def _seed_session_record(
     *,
     created_days_ago: float = 0.0,
     valid_until_days_ago: float | None = None,
+    source: dict[str, Any] | None = None,
 ) -> UUID:
     memory_id = uuid4()
     _exec(
@@ -125,10 +129,11 @@ def _seed_session_record(
             """
             INSERT INTO coord.memory_records
                 (memory_id, tenant_id, scope, scope_ref, kind, title,
-                 content, content_hash, valid_until, created_at)
+                 content, content_hash, valid_until, created_at, source)
             VALUES
                 (:memory_id, :tenant, 'session', :scope_ref, 'episode',
-                 :title, :content, :content_hash, :valid_until, :created_at)
+                 :title, :content, :content_hash, :valid_until, :created_at,
+                 CAST(:source AS jsonb))
             """
         ],
         memory_id=memory_id,
@@ -137,6 +142,7 @@ def _seed_session_record(
         title="session note",
         content=f"session content {memory_id}",
         content_hash=f"hash-{memory_id}",
+        source=json.dumps(source or {}),
         valid_until=(
             NOW - timedelta(days=valid_until_days_ago)
             if valid_until_days_ago is not None
@@ -229,3 +235,41 @@ class TestSessionExpirySweep:
         first = _valid_until(db, row)
         assert _run(db, lambda s: store.expire_closed_session_records(s, now=NOW)) == 0
         assert _valid_until(db, row) == first
+
+
+HELD: dict[str, Any] = {"lifecycle_hold": True}
+
+
+class TestSessionExpiryLifecycleHold:
+    """The sweep is automatic (bundled into the daily ``decay_once``), so a
+    held row must survive BOTH of its passes.
+
+    Each held assertion is paired with an unheld positive control on
+    identical geometry — otherwise the held test would pass vacuously
+    against a row that was never a candidate.
+    """
+
+    def test_closed_session_pass_skips_a_held_row(self, db: AsyncEngine) -> None:
+        tenant = uuid4()
+        sess = _seed_session(db, tenant, state="closed", closed_days_ago=2)
+        held = _seed_session_record(db, tenant, str(sess), source=HELD)
+        unheld = _seed_session_record(db, tenant, str(sess))
+
+        total = _run(db, lambda s: store.expire_closed_session_records(s, now=NOW))
+        assert total == 1
+
+        assert _valid_until(db, held) is None
+        assert _valid_until(db, unheld) == _closed_at(db, sess) + timedelta(days=7)
+
+    def test_orphan_pass_skips_a_held_row(self, db: AsyncEngine) -> None:
+        tenant = uuid4()
+        held = _seed_session_record(
+            db, tenant, str(uuid4()), created_days_ago=2, source=HELD
+        )
+        unheld = _seed_session_record(db, tenant, str(uuid4()), created_days_ago=2)
+
+        total = _run(db, lambda s: store.expire_closed_session_records(s, now=NOW))
+        assert total == 1
+
+        assert _valid_until(db, held) is None
+        assert _valid_until(db, unheld) is not None

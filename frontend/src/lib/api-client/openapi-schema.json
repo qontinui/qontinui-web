@@ -1422,6 +1422,131 @@
         "title": "AdminUserData",
         "type": "object"
       },
+      "AgentPrefUpdateRequest": {
+        "description": "Client body for ``PUT /api/v1/agent-registry/prefs/{agent_name}``.\n\nDeliberately excludes ``user_id`` \u2014 the acting user is always the\nauthenticated caller, resolved server-side. Disposition validity\n(``block`` / ``degrade`` / ``warn_proceed``) is coord's job; its 422\n``invalid_disposition`` is forwarded through rather than duplicated\nhere (a web-side copy of the enum would drift).",
+        "properties": {
+          "disposition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Required by coord when disabling a policy-required agent: block | degrade | warn_proceed",
+            "title": "Disposition"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "AgentPrefUpdateRequest",
+        "type": "object"
+      },
+      "AgentRegistryEntry": {
+        "description": "One agent in the caller's effective registry view.\n\nThe effective entry shape derived WEB-SIDE from coord's\n``GET /coord/agent-registry`` rows + prefs: registry defaults overlaid\nwith the caller's own pref (``source`` tells the frontend which one is\nin force).",
+        "properties": {
+          "agent_name": {
+            "title": "Agent Name",
+            "type": "string"
+          },
+          "disposition": {
+            "default": "block",
+            "description": "block | degrade | warn_proceed",
+            "title": "Disposition",
+            "type": "string"
+          },
+          "effort": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effort"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "fanout_bound": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fanout Bound"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "policy_required": {
+            "default": false,
+            "title": "Policy Required",
+            "type": "boolean"
+          },
+          "purpose": {
+            "default": "",
+            "title": "Purpose",
+            "type": "string"
+          },
+          "source": {
+            "default": "default",
+            "description": "default | user_pref",
+            "title": "Source",
+            "type": "string"
+          },
+          "spawn_path": {
+            "default": "",
+            "title": "Spawn Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_name"
+        ],
+        "title": "AgentRegistryEntry",
+        "type": "object"
+      },
+      "AgentRegistryResponse": {
+        "description": "Response envelope for ``GET /api/v1/agent-registry``.",
+        "properties": {
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/AgentRegistryEntry"
+            },
+            "title": "Agents",
+            "type": "array"
+          }
+        },
+        "required": [
+          "agents"
+        ],
+        "title": "AgentRegistryResponse",
+        "type": "object"
+      },
       "AggregatedTaskRuns": {
         "description": "All running tasks across fleet.",
         "properties": {
@@ -23485,6 +23610,26 @@
         "title": "LearnedWorkflowResponse",
         "type": "object"
       },
+      "LifecycleHoldResponse": {
+        "description": "``PUT``/``DELETE /memory/records/{id}/hold`` \u2014 the resulting state.\n\n``held`` is the state the record is now IN, not the change applied, so\nboth verbs return the same shape and either is safe to replay.\n\nThe release path returns ``held=False`` with a body rather than a bare\n204: an explicit ``false`` is a meaningful state (\"adjudicated and\nreleased\") that the lifecycle predicate distinguishes from the key\nbeing absent, so echoing it is more honest than an empty response\nthat reads as \"the flag is gone\".",
+        "properties": {
+          "held": {
+            "title": "Held",
+            "type": "boolean"
+          },
+          "memory_id": {
+            "format": "uuid",
+            "title": "Memory Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "memory_id",
+          "held"
+        ],
+        "title": "LifecycleHoldResponse",
+        "type": "object"
+      },
       "LinkRequest": {
         "description": "Body for POST /identities/link.\n\n``id_token`` is a fresh Cognito ID token proving the caller controls\nthe federated identity to be linked into their canonical account.",
         "properties": {
@@ -25540,6 +25685,11 @@
           "embedding_coverage": {
             "title": "Embedding Coverage",
             "type": "number"
+          },
+          "lifecycle_held": {
+            "default": 0,
+            "title": "Lifecycle Held",
+            "type": "integer"
           },
           "quota_bytes": {
             "title": "Quota Bytes",
@@ -50928,6 +51078,83 @@
         ]
       }
     },
+    "/api/v1/agent-registry": {
+      "get": {
+        "description": "The current user's effective agent list.\n\nProxies coord ``GET /coord/agent-registry`` (registry rows + prefs;\noperator bearer forwarded, tenant resolved coord-side from it) and\noverlays the caller's own prefs into the effective shape the settings\npage renders.",
+        "operationId": "api_v1_agent_registry_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRegistryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Agent Registry",
+        "tags": [
+          "agent-registry"
+        ]
+      }
+    },
+    "/api/v1/agent-registry/prefs/{agent_name}": {
+      "put": {
+        "description": "Upsert the caller's pref for one agent.\n\nProxies coord ``PUT /coord/agent-registry/prefs/{agent_name}`` with\n``user_id`` set from the AUTHENTICATED user (never the client body).\nCoord's 422 error codes pass through as structured detail.",
+        "operationId": "api_v1_agent_registry_prefs_agent_name_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_name",
+            "required": true,
+            "schema": {
+              "title": "Agent Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentPrefUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Put Agent Pref Api V1 Agent Registry Prefs  Agent Name  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Agent Pref",
+        "tags": [
+          "agent-registry"
+        ]
+      }
+    },
     "/api/v1/ai-prompt-templates/{template_id}/versions": {
       "get": {
         "description": "List all versions for a prompt template with pagination.",
@@ -71570,6 +71797,108 @@
           }
         ],
         "summary": "Delete Record",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/memory/records/{memory_id}/hold": {
+      "delete": {
+        "description": "Release the hold \u2014 the record returns to normal lifecycle management.\n\nWrites an explicit ``source.lifecycle_hold = false`` rather than\ndropping the key, because ``false`` records \"this record was\nadjudicated and released\" \u2014 a state the lifecycle predicate\ndeliberately distinguishes from never having been held, and what\nmakes the ``lifecycle_held`` count in ``GET /stats`` a true measure\nof the adjudication backlog rather than of churn.\n\nIdempotent: releasing an unheld record is a no-op that reports\n``held=False``. 404 only when the record does not exist in the\ncaller's tenant.",
+        "operationId": "api_v1_memory_records_memory_id_hold_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "memory_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Memory Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleHoldResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Release Record Hold",
+        "tags": [
+          "memory"
+        ]
+      },
+      "put": {
+        "description": "Hold a record out of every AUTOMATIC lifecycle sweep.\n\nSets ``source.lifecycle_hold = true``, which the seven automatic\ngates in ``memory_store`` honour: both consolidation supersede paths\n(near-dup and cluster), the in-flight synthesis apply, decay\ninvalidate, the physical decay prune, closed-session expiry and the\nMEMORY.md bridge. It does NOT freeze the record against explicit\naction \u2014 ``POST /records/{id}/supersede`` and ``DELETE /records/{id}``\nstill apply, because overriding a hold is exactly how an adjudication\nlands.\n\nIdempotent, and appliable to SUPERSEDED and tombstoned records \u2014 that\nis the point rather than an oversight. A record wrongly folded away\nby consolidation is the usual reason to hold one, and until a hold\nexists the prune physically deletes such a row once its 90-day grace\npasses.\n\n404 for records that don't exist in the caller's tenant (cross-tenant\nids are never disclosed).",
+        "operationId": "api_v1_memory_records_memory_id_hold_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "memory_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Memory Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleHoldResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Hold Record",
         "tags": [
           "memory"
         ]

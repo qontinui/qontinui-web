@@ -22,6 +22,7 @@ from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
     admin_dev,
+    agent_registry,
     agent_sessions,
     ai_prompts,
     analytics,
@@ -361,6 +362,10 @@ api_router.include_router(
 )
 # Fleet-fresh P5 — app config editor + test-host designation (coord.test_targets)
 api_router.include_router(fleet_targets.router, prefix="/fleet", tags=["fleet-targets"])
+# Agent-registry proxy — per-user agent enable/disposition prefs (coord-backed)
+api_router.include_router(
+    agent_registry.router, prefix="/agent-registry", tags=["agent-registry"]
+)
 # Scheduled workflow runs (cron-driven dispatch via celery-beat / redbeat)
 api_router.include_router(
     scheduled_runs.router,

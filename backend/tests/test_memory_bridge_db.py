@@ -5,8 +5,11 @@ test-local mirror of the ``coord.memories`` table and the
 ``coord.memories_latest`` view (per the ``coord_memories`` +
 ``coord_tenant_scope_columns`` alembic migrations). Covers: initial
 mirror, idempotent re-run, version-bump supersede, content-neutral
-version bump (dedup, no churn), removal → tombstone, and the
-NULL-tenant skip.
+version bump (dedup, no churn), removal → tombstone, the NULL-tenant
+skip, and the ``source.lifecycle_hold`` gate on ``list_bridged_records``
+(which is what keeps this AUTOMATIC job off a held row, since the
+``mark_superseded``/``tombstone_record`` writes it reaches honour no
+hold themselves).
 """
 
 from __future__ import annotations
@@ -345,6 +348,101 @@ class TestBridgeTombstone:
         # Idempotent afterwards.
         stats = _sync(db)
         assert stats == {"upserted": 0, "superseded": 0, "tombstoned": 0, "enqueued": 0}
+
+
+def _set_hold(engine: AsyncEngine, memory_id: UUID, held: bool = True) -> None:
+    """Flip ``source.lifecycle_hold`` on one existing bridged row."""
+    _exec(
+        engine,
+        [
+            """
+            UPDATE coord.memory_records
+            SET source = COALESCE(source, '{}'::jsonb)
+                         || jsonb_build_object(
+                                'lifecycle_hold', CAST(:held AS boolean))
+            WHERE memory_id = :m
+            """
+        ],
+        m=memory_id,
+        held=held,
+    )
+
+
+class TestBridgeLifecycleHold:
+    """``bridge_sync_once`` is AUTOMATIC (15-min cadence), so it must honour
+    a hold.
+
+    It reaches ``mark_superseded`` and ``tombstone_record``, neither of
+    which honours the flag themselves — the API path uses them to LAND an
+    adjudication and must be able to override a hold. The gate is on the
+    bridge's own selector, ``list_bridged_records``: a held row never
+    enters ``bridged``, which closes both automatic writes at once.
+
+    Every held assertion is read from the RAW row, not via
+    ``list_bridged_records`` — the gate is in that helper, so reading
+    through it would be circular.
+    """
+
+    def test_held_record_is_not_superseded_by_a_version_bump(
+        self, db: AsyncEngine
+    ) -> None:
+        tenant = uuid4()
+        _write_memory(db, tenant, "proj_alpha_notes", 1, "first body")
+        _sync(db)
+        (old,) = _bridged(db, tenant)
+        _set_hold(db, old["memory_id"])
+
+        _write_memory(db, tenant, "proj_alpha_notes", 2, "second body, revised")
+        stats = _sync(db)
+        assert stats["superseded"] == 0
+
+        assert _record_field(db, old["memory_id"], "superseded_by") is None
+        assert _record_field(db, old["memory_id"], "valid_until") is None
+        assert _record_field(db, old["memory_id"], "is_tombstone") is False
+
+    def test_unheld_record_is_still_superseded_by_a_version_bump(
+        self, db: AsyncEngine
+    ) -> None:
+        """Positive control: identical flow, ``lifecycle_hold: false``."""
+        tenant = uuid4()
+        _write_memory(db, tenant, "proj_alpha_notes", 1, "first body")
+        _sync(db)
+        (old,) = _bridged(db, tenant)
+        _set_hold(db, old["memory_id"], held=False)
+
+        _write_memory(db, tenant, "proj_alpha_notes", 2, "second body, revised")
+        stats = _sync(db)
+        assert stats["superseded"] == 1
+        assert _record_field(db, old["memory_id"], "superseded_by") is not None
+
+    def test_held_record_is_not_tombstoned_when_the_memory_is_retracted(
+        self, db: AsyncEngine
+    ) -> None:
+        tenant = uuid4()
+        _write_memory(db, tenant, "held_note", 1, "held body")
+        _write_memory(db, tenant, "loose_note", 1, "loose body")
+        _sync(db)
+        by_name = {r["name"]: r for r in _bridged(db, tenant)}
+        _set_hold(db, by_name["held_note"]["memory_id"])
+
+        # Coord retracts BOTH memories.
+        _exec(db, ["UPDATE coord.memories SET is_tombstone = true"])
+        stats = _sync(db)
+
+        # Only the unheld one is tombstoned — the positive control that
+        # keeps this from passing on a row that was never a candidate.
+        assert stats["tombstoned"] == 1
+        assert (
+            _record_field(db, by_name["held_note"]["memory_id"], "is_tombstone")
+            is False
+        )
+        assert (
+            _record_field(db, by_name["held_note"]["memory_id"], "valid_until") is None
+        )
+        assert (
+            _record_field(db, by_name["loose_note"]["memory_id"], "is_tombstone")
+            is True
+        )
 
 
 class TestBridgeRedaction:

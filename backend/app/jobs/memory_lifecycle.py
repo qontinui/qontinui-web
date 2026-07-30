@@ -172,6 +172,16 @@ async def consolidate_tenant(
     ``memory_store.record_synthesis_result``). Enqueue is deduped by
     ``input_hash``, so re-running before the runner drains the queue is a
     no-op for already-queued clusters.
+
+    One caveat on the near-dup arm's ``lifecycle_hold`` gate: the hold is
+    checked in the ``find_near_duplicate_pairs`` SELECT but ``apply_merge``
+    is a separate statement, so under READ COMMITTED a hold COMMITTED
+    between the two still supersedes the loser — a millisecond-wide
+    window, left open deliberately. Re-checking it in ``apply_merge``'s
+    loser UPDATE would no-op that update while the survivor UPDATE still
+    folded in the loser's importance and access count, double-counting
+    them into a row whose partner never died. The cluster arm has no such
+    window because ``supersede_many`` gates the whole apply.
     """
     now = now or datetime.now(UTC)
 
