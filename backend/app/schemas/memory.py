@@ -327,6 +327,23 @@ class SupersedeResponse(BaseModel):
     deduped: bool
 
 
+class LifecycleHoldResponse(BaseModel):
+    """``PUT``/``DELETE /memory/records/{id}/hold`` — the resulting state.
+
+    ``held`` is the state the record is now IN, not the change applied, so
+    both verbs return the same shape and either is safe to replay.
+
+    The release path returns ``held=False`` with a body rather than a bare
+    204: an explicit ``false`` is a meaningful state ("adjudicated and
+    released") that the lifecycle predicate distinguishes from the key
+    being absent, so echoing it is more honest than an empty response
+    that reads as "the flag is gone".
+    """
+
+    memory_id: UUID
+    held: bool
+
+
 class MemoryStatsResponse(BaseModel):
     """``GET /memory/stats`` — usage + quota posture for the tenant."""
 
@@ -344,6 +361,12 @@ class MemoryStatsResponse(BaseModel):
     synthesis_jobs_claimed: int = 0
     synthesis_jobs_done: int = 0
     synthesis_jobs_failed: int = 0
+    # Records held out of every automatic lifecycle sweep. Counted
+    # regardless of liveness — a hold on an already-superseded row is the
+    # case that matters most, so a live-only count would under-report the
+    # adjudication backlog. This is the "how much is left to decide"
+    # number; it falls to zero when every hold has been released.
+    lifecycle_held: int = 0
 
 
 # --------------------------------------------------------------------------
