@@ -43,6 +43,16 @@ const LOCAL_EXTRA_SETTINGS: NavigationItem[] = [
     color: "#FFD700",
     platforms: ["web"],
   },
+  {
+    id: "settings-agents",
+    label: "Agents",
+    icon: "Bot",
+    description:
+      "Per-user agent registry preferences (enable/disable + spawn disposition)",
+    route: "/settings/agents",
+    color: "#FFD700",
+    platforms: ["web"],
+  },
 ];
 
 function getSettingsNavItems(): {
