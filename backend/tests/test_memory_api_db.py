@@ -34,6 +34,7 @@ import hashlib
 import json
 import math
 from collections.abc import AsyncGenerator, Generator
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -922,6 +923,270 @@ class TestStorageEffects:
         # Synthesis-job backlog fields (v1.1) present, zeroed when idle.
         assert stats["synthesis_jobs_pending"] == 0
         assert stats["synthesis_jobs_done"] == 0
+        # Nothing held on a fresh tenant.
+        assert stats["lifecycle_held"] == 0
+
+
+# ---------------------------------------------------------------------------
+# The lifecycle hold — PUT/DELETE /records/{id}/hold
+#
+# `source.lifecycle_hold` takes a record out of every automatic lifecycle
+# sweep. The gates themselves are covered in test_memory_lifecycle_db /
+# test_memory_session_expiry_db / test_memory_bridge_db, which set the flag
+# by hand-written SQL. What is covered HERE is the API writer: that the
+# value it produces is the one those gates actually honour, that release
+# writes an explicit `false` rather than dropping the key, and that a hold
+# can be applied to an already-superseded row — the case the flag exists
+# for and the one a liveness filter would have refused.
+# ---------------------------------------------------------------------------
+
+
+def _hold_json(engine: AsyncEngine, memory_id: str) -> Any:
+    """``source->'lifecycle_hold'`` as a JSON value (type-preserving)."""
+    return _scalar(
+        engine,
+        "SELECT source->'lifecycle_hold' FROM coord.memory_records"
+        " WHERE memory_id = :m",
+        m=memory_id,
+    )
+
+
+def _hold_jsonb_type(engine: AsyncEngine, memory_id: str) -> str | None:
+    """The JSONB *type name* of the stored flag — 'boolean', not 'string'."""
+    return _scalar(
+        engine,
+        "SELECT jsonb_typeof(source->'lifecycle_hold')"
+        " FROM coord.memory_records WHERE memory_id = :m",
+        m=memory_id,
+    )
+
+
+def _exists(engine: AsyncEngine, memory_id: str) -> bool:
+    return bool(
+        _scalar(
+            engine,
+            "SELECT count(*) FROM coord.memory_records WHERE memory_id = :m",
+            m=memory_id,
+        )
+    )
+
+
+def _prune(engine: AsyncEngine, *, now: datetime, grace_days: int) -> int:
+    """Run the real physical prune sweep against the test DB."""
+
+    async def _go() -> int:
+        maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+        async with maker() as session:
+            pruned = await store.decay_prune(session, now=now, grace_days=grace_days)
+            await session.commit()
+            return pruned
+
+    return asyncio.run(_go())
+
+
+class TestLifecycleHoldApi:
+    def _write(self, mc: MemoryClient, content: str) -> str:
+        resp = mc.client.post(
+            "/api/v1/memory/records", json={"records": [_record(content)]}
+        )
+        assert resp.status_code == 200
+        return resp.json()["records"][0]["memory_id"]
+
+    def test_put_stores_a_real_json_boolean_not_a_string(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """The property that makes the gates' case-folding moot on this path.
+
+        A hold written as the STRING ``"True"`` reads as protected while
+        leaving the record fully collectable — the hazard
+        ``_not_lifecycle_held``'s ``lower()`` exists to absorb. The API
+        writer must not be able to produce it.
+        """
+        memory_id = self._write(mc, "held record alpha")
+
+        resp = mc.client.put(f"/api/v1/memory/records/{memory_id}/hold")
+
+        assert resp.status_code == 200
+        assert resp.json() == {"memory_id": memory_id, "held": True}
+        assert _hold_jsonb_type(db, memory_id) == "boolean"
+        assert _hold_json(db, memory_id) is True
+
+    def test_release_writes_explicit_false_not_a_missing_key(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """``false`` means "adjudicated and released" — a distinct state."""
+        memory_id = self._write(mc, "held record beta")
+        mc.client.put(f"/api/v1/memory/records/{memory_id}/hold")
+
+        resp = mc.client.delete(f"/api/v1/memory/records/{memory_id}/hold")
+
+        assert resp.status_code == 200
+        assert resp.json() == {"memory_id": memory_id, "held": False}
+        assert _hold_jsonb_type(db, memory_id) == "boolean"
+        assert _hold_json(db, memory_id) is False
+
+    def test_hold_preserves_other_source_keys(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """A shallow merge — ``origin`` is how the sidecar set is selected."""
+        resp = mc.client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    _record(
+                        "sidecar loser content",
+                        source={"origin": "sync-conflict-sidecar"},
+                    )
+                ]
+            },
+        )
+        memory_id = resp.json()["records"][0]["memory_id"]
+
+        mc.client.put(f"/api/v1/memory/records/{memory_id}/hold")
+
+        origin = _scalar(
+            db,
+            "SELECT source->>'origin' FROM coord.memory_records WHERE memory_id = :m",
+            m=memory_id,
+        )
+        assert origin == "sync-conflict-sidecar"
+        assert _hold_json(db, memory_id) is True
+
+    def test_both_verbs_are_idempotent(self, mc: MemoryClient, db: AsyncEngine) -> None:
+        memory_id = self._write(mc, "held record gamma")
+
+        for _ in range(2):
+            assert (
+                mc.client.put(f"/api/v1/memory/records/{memory_id}/hold").status_code
+                == 200
+            )
+        assert _hold_json(db, memory_id) is True
+
+        for _ in range(2):
+            assert (
+                mc.client.delete(f"/api/v1/memory/records/{memory_id}/hold").status_code
+                == 200
+            )
+        assert _hold_json(db, memory_id) is False
+
+    def test_unknown_id_is_404_on_both_verbs(self, mc: MemoryClient) -> None:
+        ghost = uuid4()
+        assert mc.client.put(f"/api/v1/memory/records/{ghost}/hold").status_code == 404
+        assert (
+            mc.client.delete(f"/api/v1/memory/records/{ghost}/hold").status_code == 404
+        )
+
+    def test_other_tenant_cannot_hold_or_release(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """404, and — the part worth asserting — no write leaks across."""
+        memory_id = self._write(mc, "tenant A holdable row")
+        mc.client.put(f"/api/v1/memory/records/{memory_id}/hold")
+
+        mc.as_tenant(uuid4())  # tenant B
+
+        assert (
+            mc.client.delete(f"/api/v1/memory/records/{memory_id}/hold").status_code
+            == 404
+        )
+        assert _hold_json(db, memory_id) is True  # untouched
+
+    def test_stats_count_tracks_holds_and_is_tenant_scoped(
+        self, mc: MemoryClient
+    ) -> None:
+        """``lifecycle_held`` is the adjudication backlog measure."""
+        first = self._write(mc, "backlog row one")
+        second = self._write(mc, "backlog row two")
+        tenant_a = mc.tenant_id
+
+        mc.client.put(f"/api/v1/memory/records/{first}/hold")
+        mc.client.put(f"/api/v1/memory/records/{second}/hold")
+        assert mc.client.get("/api/v1/memory/stats").json()["lifecycle_held"] == 2
+
+        mc.as_tenant(uuid4())
+        assert mc.client.get("/api/v1/memory/stats").json()["lifecycle_held"] == 0
+
+        mc.as_tenant(tenant_a)
+        mc.client.delete(f"/api/v1/memory/records/{first}/hold")
+        assert mc.client.get("/api/v1/memory/stats").json()["lifecycle_held"] == 1
+
+    def test_a_superseded_row_can_still_be_held_and_survives_the_prune(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """The case the writer exists for, proven against the real sweep.
+
+        A record wrongly folded away by consolidation is the usual reason
+        to apply a hold, and ``decay_prune`` PHYSICALLY deletes such a row
+        once its grace window passes. So the hold has to be appliable
+        AFTER supersession (no liveness filter on the writer) and the
+        value the API writes has to be one ``decay_prune`` honours. This
+        asserts both, end to end, rather than trusting the unit-level
+        flag shape.
+        """
+        memory_id = self._write(mc, "wrongly consolidated original")
+        superseded = mc.client.post(
+            f"/api/v1/memory/records/{memory_id}/supersede",
+            json={"title": "replacement", "content": "the surviving version"},
+        )
+        assert superseded.status_code == 200
+
+        # Holdable even though it is no longer live.
+        hold = mc.client.put(f"/api/v1/memory/records/{memory_id}/hold")
+        assert hold.status_code == 200
+        assert mc.client.get("/api/v1/memory/stats").json()["lifecycle_held"] == 1
+
+        # Well past any grace window — this row is otherwise a victim.
+        far_future = datetime(2030, 1, 1, tzinfo=UTC)
+        _prune(db, now=far_future, grace_days=0)
+
+        assert _exists(db, memory_id)
+
+    def test_positive_control_an_unheld_superseded_row_is_pruned(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """Without the hold the same row IS destroyed — the sweep works.
+
+        Without this control the test above would pass just as well
+        against a prune that never deletes anything.
+        """
+        memory_id = self._write(mc, "unprotected consolidated original")
+        assert (
+            mc.client.post(
+                f"/api/v1/memory/records/{memory_id}/supersede",
+                json={"title": "replacement", "content": "the surviving version"},
+            ).status_code
+            == 200
+        )
+
+        far_future = datetime(2030, 1, 1, tzinfo=UTC)
+        _prune(db, now=far_future, grace_days=0)
+
+        assert not _exists(db, memory_id)
+
+    def test_a_released_row_is_pruned_again(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """Release genuinely returns the row to lifecycle management.
+
+        The explicit ``false`` must read as NOT held, not merely as
+        "different from true" — otherwise adjudicated records would stay
+        pinned forever and the backlog count would never mean anything.
+        """
+        memory_id = self._write(mc, "adjudicated then released original")
+        assert (
+            mc.client.post(
+                f"/api/v1/memory/records/{memory_id}/supersede",
+                json={"title": "replacement", "content": "the surviving version"},
+            ).status_code
+            == 200
+        )
+        mc.client.put(f"/api/v1/memory/records/{memory_id}/hold")
+        mc.client.delete(f"/api/v1/memory/records/{memory_id}/hold")
+
+        far_future = datetime(2030, 1, 1, tzinfo=UTC)
+        _prune(db, now=far_future, grace_days=0)
+
+        assert not _exists(db, memory_id)
 
 
 # ---------------------------------------------------------------------------

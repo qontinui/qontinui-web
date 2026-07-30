@@ -1387,10 +1387,15 @@ def _not_lifecycle_held(prefix: str = "") -> str:
     recoverable, a sweep that aborts fleet-wide is not.
 
     ``lower(...)`` keeps that no-cast/never-throws property while still
-    catching a hand-typed ``"True"``/``"TRUE"``. Hand-typed values are the
-    NORMAL case right now: there is no API for setting this flag, so every
-    hold is applied by raw SQL, and a case mismatch would silently leave
-    the record fully collectable while reading as protected.
+    catching a hand-typed ``"True"``/``"TRUE"``, and a case mismatch would
+    silently leave the record fully collectable while reading as
+    protected. :func:`set_lifecycle_hold` is now the supported writer and
+    emits a real JSON boolean, so nothing this predicate reads from the
+    API path can be mis-cased or malformed — but holds applied by raw SQL
+    before it existed are still out there, and raw SQL remains available,
+    so the case-folding and the fail-open text comparison both stay. This
+    predicate defends against the value it CANNOT constrain, not against
+    the one writer that is well-behaved.
 
     ``IS DISTINCT FROM`` (not ``!=``) because ``->>`` yields NULL for an
     absent key, and NULL ``!= 'true'`` is NULL, not TRUE — every unflagged
@@ -1404,6 +1409,111 @@ def _not_lifecycle_held(prefix: str = "") -> str:
     self-join, empty for a single-table query.
     """
     return f"lower({prefix}source->>'lifecycle_hold') IS DISTINCT FROM 'true'"
+
+
+async def set_lifecycle_hold(
+    session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    memory_id: UUID,
+    held: bool,
+    now: datetime,
+) -> bool:
+    """Apply (``held=True``) or release (``held=False``) one record's hold.
+
+    The WRITER for the flag :func:`_not_lifecycle_held` reads. Until this
+    existed the seven gates listed there were reachable only by raw SQL
+    against the live database, which is why that predicate case-folds:
+    hand-typed was the only way a hold could be set.
+
+    Three properties this writer establishes that raw SQL could not:
+
+    * **The value is a real JSON boolean**, built by
+      ``jsonb_build_object`` from a bound ``bool`` — never a string. So
+      ``source->>'lifecycle_hold'`` is exactly ``'true'`` or ``'false'``
+      here, and the malformed (``"yes"``) and mixed-case (``"True"``)
+      values that forced the predicate's ``lower()`` and its fail-open
+      text comparison cannot ORIGINATE from this path. Those defences
+      stay: they still cover the holds already applied by hand, and
+      fail-open on a value this function cannot produce is strictly
+      better than a cast that aborts a fleet-wide sweep.
+    * **Release writes an explicit ``false``, never a key deletion.**
+      ``false`` means "adjudicated and released" — a state
+      :func:`_not_lifecycle_held` deliberately distinguishes from an
+      absent key, and the marker that makes "still held" a countable
+      measure of what is left to adjudicate (see
+      :func:`count_lifecycle_held`).
+    * **Shallow-merges into ``source``**, so the ``origin`` / ``import``
+      / ``decayed_at`` keys other paths key on survive untouched.
+
+    Deliberately carries NO liveness filter, and that is a load-bearing
+    choice rather than an omission. The hold's most important gate is
+    :func:`decay_prune`, whose ``superseded_by IS NOT NULL`` arm makes
+    an ALREADY-superseded row a victim once the grace window passes — and
+    a record that was wrongly auto-superseded is the common reason to
+    apply a hold in the first place. A liveness filter here would refuse
+    the hold on exactly the rows that most need it, leaving their
+    evidence to be physically deleted at the grace boundary. Tombstoned
+    and superseded records are therefore holdable, matching
+    :func:`get_record`, which the API's 404 check uses and which is
+    likewise validity-blind.
+
+    Returns True when a row in ``tenant_id`` matched (False maps to 404;
+    a cross-tenant ``memory_id`` is never disclosed as existing).
+    """
+    updated = (
+        await session.execute(
+            text(
+                """
+                UPDATE coord.memory_records
+                SET source = COALESCE(source, '{}'::jsonb)
+                             || jsonb_build_object('lifecycle_hold',
+                                                   CAST(:held AS boolean)),
+                    updated_at = :now
+                WHERE tenant_id = :tenant_id AND memory_id = :memory_id
+                RETURNING memory_id
+                """
+            ),
+            {
+                "tenant_id": tenant_id,
+                "memory_id": memory_id,
+                "held": held,
+                "now": now,
+            },
+        )
+    ).scalar_one_or_none()
+    return updated is not None
+
+
+async def count_lifecycle_held(session: AsyncSession, tenant_id: UUID) -> int:
+    """How many of ``tenant_id``'s records are held out of the lifecycle.
+
+    Expressed as the exact negation of :func:`_not_lifecycle_held` rather
+    than as its own copy of the comparison, so the count and the seven
+    gates can never drift apart — including on the malformed-value
+    edge, where a row the gates leave collectable is correctly NOT
+    counted as held.
+
+    Counts regardless of liveness, for the same reason
+    :func:`set_lifecycle_hold` writes regardless of it: a hold on a
+    superseded row is the case that matters most, and a live-only count
+    would under-report the adjudication backlog by exactly the rows the
+    hold is protecting from :func:`decay_prune`.
+    """
+    row = (
+        await session.execute(
+            text(
+                f"""
+                SELECT count(*) AS held
+                FROM coord.memory_records
+                WHERE tenant_id = :tenant_id
+                  AND NOT ({_not_lifecycle_held()})
+                """
+            ),
+            {"tenant_id": tenant_id},
+        )
+    ).one()
+    return int(row.held)
 
 
 async def find_near_duplicate_pairs(
