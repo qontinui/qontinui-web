@@ -1,7 +1,7 @@
 """memhold backfill 01 — hold the sync-conflict sidecars out of the lifecycle
 
 Revision ID: memhold_backfill_01
-Revises: operators_disabled_01
+Revises: coord_sesscompl_03
 
 Why
 ---
@@ -102,7 +102,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "memhold_backfill_01"
-down_revision: str = "operators_disabled_01"
+down_revision: str = "coord_sesscompl_03"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

@@ -73,7 +73,7 @@ from tests._alembic_harness import (
 # Pinned explicitly rather than "head" so a later migration landing on top
 # cannot silently change what this test walks.
 _REVISION_ID = "memhold_backfill_01"
-_PARENT_REVISION_ID = "operators_disabled_01"
+_PARENT_REVISION_ID = "coord_sesscompl_03"
 
 _SIDECAR_ORIGIN = "sync-conflict-sidecar"
 _WINNER_ORIGIN = "topic-file"
