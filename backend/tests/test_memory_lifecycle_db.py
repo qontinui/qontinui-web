@@ -14,6 +14,9 @@ vectors are seeded directly and the sweeps only ENQUEUE
   with its unheld positive control — including the in-flight arm, where
   a synthesis job enqueued BEFORE the flag was set still cannot end the
   row when its result lands,
+* the same hold on BOTH decay halves — invalidate (hides the row) and
+  prune (DELETES it), the latter standing on its own for rows superseded
+  before the hold was applied,
 * consolidation ENQUEUEING synthesis jobs (dedupe on re-run),
 * reindex-on-model-bump ENQUEUEING embedding jobs for stale-tag + NULL
   rows rather than embedding them.
@@ -563,12 +566,32 @@ class TestLifecycleHoldNearDup:
         assert _row(db, b, "valid_until") is not None
         assert _row(db, a, "superseded_by") is None
 
-    def test_holding_either_side_protects_the_pair(self, db: AsyncEngine) -> None:
-        """The predicate is on BOTH join sides, so either flag suffices."""
-        for source_a, source_b in ((HELD, None), (None, HELD)):
+    def test_holding_either_join_side_protects_the_pair(self, db: AsyncEngine) -> None:
+        """The predicate is on BOTH join sides, addressed by JOIN ORDER.
+
+        Which seeded row is SQL-``a`` and which is SQL-``b`` is decided by
+        ``b.memory_id > a.memory_id`` over random ``uuid4()``s — NOT by
+        the importance ordering this suite otherwise picks rows with. So
+        holding "the winner" then "the loser" does not reliably exercise
+        both arms: it lands on whichever side the shuffle put them, and a
+        fix applied to only ONE arm passes ~25% of runs (measured: 1 of 12
+        silent passes against a neutered ``b.`` arm).
+
+        Sorting the ids and holding ``min`` in one arm and ``max`` in the
+        other pins the hold to a known join side every run, so a
+        half-applied predicate fails 100% of the time.
+        """
+        for hold_the_max in (False, True):
             tenant = uuid4()
-            a, b = _seed_dup_pair(db, tenant, source_a=source_a, source_b=source_b)
+            a, b = _seed_dup_pair(db, tenant)
+            lo, hi = sorted((a, b))
+            # lo is SQL-`a` (the join's left side), hi is SQL-`b`.
+            _set_hold(db, hi if hold_the_max else lo)
+
             stats = _run(db, partial(_consolidate_for, tenant))
+            assert stats["candidate_pairs"] == 0, (
+                f"held join side {'b' if hold_the_max else 'a'} still paired"
+            )
             assert stats["merges"] == 0
             _assert_live(db, a, b)
 
@@ -580,6 +603,22 @@ class TestLifecycleHoldNearDup:
         stats = _run(db, lambda s: consolidate_tenant(s, tenant, now=NOW))
         assert stats["merges"] == 1
         assert _row(db, b, "superseded_by") == a
+
+    def test_uppercase_true_is_held(self, db: AsyncEngine) -> None:
+        """``"True"`` holds too — the comparison is case-insensitive.
+
+        There is no API for setting this flag: every hold is applied by
+        hand-written SQL, so Python-cased ``"True"`` is a likely value. A
+        case-sensitive comparison would leave that record fully
+        collectable while reading, to the person who typed it, as held.
+        """
+        tenant = uuid4()
+        upper: dict[str, Any] = {"lifecycle_hold": "True"}
+        a, b = _seed_dup_pair(db, tenant, source_a=upper, source_b=None)
+
+        stats = _run(db, lambda s: consolidate_tenant(s, tenant, now=NOW))
+        assert stats["merges"] == 0
+        _assert_live(db, a, b)
 
     def test_malformed_hold_value_fails_open_and_never_aborts(
         self, db: AsyncEngine
@@ -810,16 +849,119 @@ class TestLifecycleHoldInFlightSynthesis:
             assert _row(db, member, "superseded_by") == new_id
 
 
+class TestLifecycleHoldDecay:
+    """Decay — the only sweeps that can PERMANENTLY destroy a held record.
+
+    ``decay_once`` is fully automatic (``cron="10 3 * * *"``). Its two
+    halves are gated independently because they fail differently: an
+    ungated ``decay_invalidate`` hides the record mid-adjudication, an
+    ungated ``decay_prune`` DELETES it. Each held assertion is paired with
+    an unheld positive control on identical geometry — without the
+    control, a held test passes vacuously on rows that were never
+    eligible.
+    """
+
+    def test_held_row_is_not_decay_invalidated(self, db: AsyncEngine) -> None:
+        tenant = uuid4()
+        held = _seed(
+            db, tenant, content="held stale", importance=0.5, age_days=720, source=HELD
+        )
+        # Positive control: identical decay geometry, no flag.
+        unheld = _seed(db, tenant, content="unheld stale", importance=0.5, age_days=720)
+
+        stats = _run(db, lambda s: decay_once(s, now=NOW))
+        assert stats["invalidated"] == 1
+
+        assert _row(db, held, "valid_until") is None
+        assert _row(db, held, "source->>'decayed_at'") is None
+        assert _row(db, unheld, "valid_until") is not None
+        assert _row(db, unheld, "source->>'decayed_at'") is not None
+
+    def test_held_superseded_row_past_grace_is_not_pruned(
+        self, db: AsyncEngine
+    ) -> None:
+        """The half that matters most, and it stands on its own.
+
+        These rows were superseded BEFORE the hold was applied — the
+        common case, since a bad auto-supersede is what prompts a hold.
+        ``decay_invalidate``'s gate cannot help them (their ``valid_until``
+        is already set); only the prune gate keeps the adjudicator's
+        evidence alive past the 90-day grace.
+        """
+        tenant = uuid4()
+        survivor = _seed(db, tenant, content="survivor", importance=0.9)
+        held = _seed(
+            db,
+            tenant,
+            content="held superseded",
+            valid_until_days_ago=100,
+            superseded_by=survivor,
+            source=HELD,
+        )
+        # Positive control: identical terminal state, no flag.
+        unheld = _seed(
+            db,
+            tenant,
+            content="unheld superseded",
+            valid_until_days_ago=100,
+            superseded_by=survivor,
+        )
+
+        stats = _run(db, lambda s: decay_once(s, now=NOW))
+        assert stats["pruned"] == 1
+
+        assert _exists(db, held)
+        assert _row(db, held, "superseded_by") == survivor
+        assert not _exists(db, unheld)
+
+    def test_held_decayed_and_tombstoned_rows_survive_the_prune(
+        self, db: AsyncEngine
+    ) -> None:
+        """The other two terminal markers are gated by the same predicate."""
+        tenant = uuid4()
+        held_decayed = _seed(
+            db,
+            tenant,
+            content="held decayed",
+            valid_until_days_ago=100,
+            source={"decayed_at": "2026-03-01T00:00:00+00:00", **HELD},
+        )
+        held_tombstoned = _seed(
+            db,
+            tenant,
+            content="held tombstoned",
+            valid_until_days_ago=100,
+            is_tombstone=True,
+            source=HELD,
+        )
+        unheld_decayed = _seed(
+            db,
+            tenant,
+            content="unheld decayed",
+            valid_until_days_ago=100,
+            source={"decayed_at": "2026-03-01T00:00:00+00:00"},
+        )
+
+        stats = _run(db, lambda s: decay_once(s, now=NOW))
+        assert stats["pruned"] == 1
+        assert _exists(db, held_decayed)
+        assert _exists(db, held_tombstoned)
+        assert not _exists(db, unheld_decayed)
+
+
 class TestLifecycleHoldPredicateShape:
     """Ungated (no ``db`` fixture) — runs even where Postgres is absent."""
 
     def test_predicate_is_a_text_comparison_never_a_cast(self) -> None:
         for prefix in ("", "a.", "b."):
             sql = store._not_lifecycle_held(prefix)
-            assert sql == (f"{prefix}source->>'lifecycle_hold' IS DISTINCT FROM 'true'")
+            assert sql == (
+                f"lower({prefix}source->>'lifecycle_hold') IS DISTINCT FROM 'true'"
+            )
             # A cast is the failure class this predicate exists to avoid:
             # it raises on a malformed value and aborts the sweep for every
             # tenant. `->` (jsonb) would also mistype the comparison.
+            # `lower()` is case folding on TEXT — it cannot throw either.
             assert "::" not in sql
             assert "CAST" not in sql.upper()
             assert "->>" in sql

@@ -745,10 +745,25 @@ async def mark_superseded(
     """Point the old row at its replacement and end its validity.
 
     Deliberately ignores ``source.lifecycle_hold``, unlike
-    :func:`supersede_many`: the asymmetry is the design — AUTOMATIC
-    supersession honours the hold, EXPLICIT caller-initiated supersession
-    (this function, which is how a held record is adjudicated) overrides
-    it.
+    :func:`supersede_many`. This is NOT because every caller is explicit —
+    it is not. Two callers reach here:
+
+    * the memory API's supersede endpoint (explicit, human-initiated —
+      how a held record is adjudicated), and
+    * ``memory_bridge.bridge_sync_once``, which is fully AUTOMATIC (the
+      scheduler's 15-minute ``memory_bridge_sync`` cadence).
+
+    The hold is honoured for the automatic caller at its own SELECTOR
+    instead: :func:`list_bridged_records` excludes held rows, so the
+    bridge never obtains a held ``memory_id`` to pass here (or to
+    :func:`tombstone_record`). Gating THIS function would break the
+    explicit path, which must be able to override a hold — that override
+    is what landing an adjudication means.
+
+    So the rule is not "explicit callers only" but "automatic callers are
+    gated at their selector". Any NEW automatic caller of this function
+    must bring its own gate; adding one without it silently re-opens the
+    hole this comment exists to name.
     """
     await session.execute(
         text(
@@ -1121,6 +1136,13 @@ async def decay_invalidate(
     prune can distinguish decay-invalidated rows from rows whose
     ``valid_until`` was set by an explicit temporal validity. Returns
     the number of rows invalidated.
+
+    Rows held by :func:`_not_lifecycle_held` are skipped. Decay is fully
+    automatic (daily ``memory_decay``), so it is exactly the class of
+    writer the hold exists to hold OFF: a held record left to decay goes
+    retrieval-invisible while a human is still adjudicating it, and the
+    ``source.decayed_at`` stamp it earns here is what later makes it
+    eligible for the PHYSICAL delete in :func:`decay_prune`.
     """
     result = await session.execute(
         text(
@@ -1133,6 +1155,7 @@ async def decay_invalidate(
                                           CAST(:now_iso AS text))
             WHERE is_tombstone = false
               AND (valid_until IS NULL OR valid_until > CAST(:now AS timestamptz))
+              AND {_not_lifecycle_held()}
               AND {_RETENTION_SCORE_SQL} < :threshold
             """
         ),
@@ -1155,14 +1178,30 @@ async def decay_prune(session: AsyncSession, *, now: datetime, grace_days: int) 
     One CTE-based statement: victims are derived in SQL, never
     materialized into bind lists (a large sweep would otherwise expand
     thousands of ``IN (...)`` binds three times over).
+
+    Rows held by :func:`_not_lifecycle_held` are never victims, and this
+    is the most important of the hold's gates. Every other sweep only
+    makes a record invisible; this one DELETES it, and permanent loss of
+    the evidence a human is mid-adjudication over is the worst outcome
+    the lifecycle can produce — a hold that still permits it protects
+    nothing.
+
+    It also matters INDEPENDENTLY of :func:`decay_invalidate`'s gate. The
+    ``superseded_by IS NOT NULL`` arm makes any already-superseded row a
+    victim once the grace window passes, including rows superseded BEFORE
+    the hold was applied — which is the common case, since being wrongly
+    auto-superseded is usually what prompts the hold. Without this
+    predicate a hold would preserve that evidence only until the grace
+    expired; with it, indefinitely.
     """
-    prune_predicate = """
+    prune_predicate = f"""
         valid_until IS NOT NULL
         AND valid_until < CAST(:now AS timestamptz)
                           - make_interval(days => :grace_days)
         AND (is_tombstone = true
              OR superseded_by IS NOT NULL
              OR jsonb_exists(source, 'decayed_at'))
+        AND {_not_lifecycle_held()}
     """
     # The UPDATE and DELETE target disjoint row sets (cleared explicitly
     # excludes victims), and the self-FK's deferred check runs after the
@@ -1241,6 +1280,12 @@ async def expire_closed_session_records(session: AsyncSession, *, now: datetime)
     pass 2 wraps the cast in a ``CASE`` so a non-matching scope_ref
     yields NULL (no session match) instead of a cast error.
 
+    Both passes skip rows held by :func:`_not_lifecycle_held`. This sweep
+    is automatic (bundled into the daily ``decay_once``) and ends a live
+    row's validity, so a held session-scoped record would go
+    retrieval-invisible mid-adjudication — and, once invisible, becomes
+    prune-eligible by way of any other terminal marker it carries.
+
     Returns the total number of rows expired across both passes.
     """
     closed = await session.execute(
@@ -1254,6 +1299,7 @@ async def expire_closed_session_records(session: AsyncSession, *, now: datetime)
                 WHERE r.scope = 'session'
                   AND r.is_tombstone = false
                   AND r.superseded_by IS NULL
+                  AND {_not_lifecycle_held("r.")}
                   AND r.scope_ref ~ '{_UUID_TEXT_RE}'
             )
             UPDATE coord.memory_records r
@@ -1283,6 +1329,7 @@ async def expire_closed_session_records(session: AsyncSession, *, now: datetime)
             WHERE r.scope = 'session'
               AND r.is_tombstone = false
               AND r.superseded_by IS NULL
+              AND {_not_lifecycle_held("r.")}
               AND r.created_at < CAST(:now AS timestamptz) - interval '24 hours'
               AND (
                     r.valid_until IS NULL
@@ -1314,13 +1361,21 @@ async def expire_closed_session_records(session: AsyncSession, *, now: datetime)
 
 
 def _not_lifecycle_held(prefix: str = "") -> str:
-    """SQL predicate: this row is NOT held out of automatic consolidation.
+    """SQL predicate: this row is NOT held out of the automatic lifecycle path.
 
     ``source.lifecycle_hold = true`` takes one record out of every
-    automatic supersede path while a human adjudicates it. Both
-    consolidation paths — :func:`find_near_duplicate_pairs` (1 supersede
-    per pair) and :func:`fetch_cluster_candidates` (N-1 per cluster) —
-    must honour it; honouring only one leaves the record collapsible.
+    AUTOMATIC lifecycle sweep while a human adjudicates it. That is more
+    than supersession — every scheduled writer that can end, hide or
+    delete a record must honour it, or the hold protects nothing:
+
+    * consolidation — :func:`find_near_duplicate_pairs` (1 supersede per
+      pair), :func:`fetch_cluster_candidates` (N-1 per cluster) and
+      :func:`supersede_many` (the in-flight-job apply gate),
+    * decay — :func:`decay_invalidate` and :func:`decay_prune`,
+    * session expiry — :func:`expire_closed_session_records`,
+    * the MEMORY.md bridge — :func:`list_bridged_records`.
+
+    Honouring only some leaves the record reachable by the rest.
 
     The comparison is on TEXT (``->>``), deliberately never a
     ``::boolean`` cast. A cast raises on a malformed value
@@ -1330,6 +1385,12 @@ def _not_lifecycle_held(prefix: str = "") -> str:
     throw. It fails OPEN (a malformed value leaves that record eligible),
     which is the correct trade: a mis-set flag on one record is
     recoverable, a sweep that aborts fleet-wide is not.
+
+    ``lower(...)`` keeps that no-cast/never-throws property while still
+    catching a hand-typed ``"True"``/``"TRUE"``. Hand-typed values are the
+    NORMAL case right now: there is no API for setting this flag, so every
+    hold is applied by raw SQL, and a case mismatch would silently leave
+    the record fully collectable while reading as protected.
 
     ``IS DISTINCT FROM`` (not ``!=``) because ``->>`` yields NULL for an
     absent key, and NULL ``!= 'true'`` is NULL, not TRUE — every unflagged
@@ -1342,7 +1403,7 @@ def _not_lifecycle_held(prefix: str = "") -> str:
     ``prefix`` is a table alias with its trailing dot (``"a."``) for the
     self-join, empty for a single-table query.
     """
-    return f"{prefix}source->>'lifecycle_hold' IS DISTINCT FROM 'true'"
+    return f"lower({prefix}source->>'lifecycle_hold') IS DISTINCT FROM 'true'"
 
 
 async def find_near_duplicate_pairs(
@@ -1738,10 +1799,25 @@ async def list_bridged_records(
     A bridged record is a live (non-tombstone, non-superseded, valid)
     ``reference`` row whose ``source.bridge`` names the coord memories
     bridge.
+
+    Rows held by :func:`_not_lifecycle_held` are excluded, and THIS is the
+    bridge's lifecycle-hold gate. ``bridge_sync_once`` is fully automatic
+    (15-minute cadence) and this selector is the sole source of the ids it
+    hands to :func:`mark_superseded` (a version bump on an existing name)
+    and :func:`tombstone_record` (a name that vanished upstream) — both of
+    which deliberately honour no hold, because the explicit API path uses
+    them to LAND an adjudication. Gating them would break that; gating
+    this selector closes both automatic writes at once.
+
+    A held row therefore drops out of ``bridged``, which makes its name
+    look absent to the diff, so the pass re-upserts it as a NEW record
+    (or dedups onto the held row itself when the content is unchanged).
+    That is additive and harmless — the adjudicator's row stays live and
+    intact — and it converges the moment the hold is released.
     """
     rows = await session.execute(
         text(
-            """
+            f"""
             SELECT tenant_id, memory_id,
                    source->>'memory_name' AS memory_name,
                    CAST(source->>'version' AS bigint) AS version
@@ -1752,6 +1828,7 @@ async def list_bridged_records(
               AND superseded_by IS NULL
               AND (valid_until IS NULL OR valid_until > CAST(:now AS timestamptz))
               AND source->>'memory_name' IS NOT NULL
+              AND {_not_lifecycle_held()}
             """
         ),
         {"bridge": BRIDGE_SOURCE_NAME, "now": now},
