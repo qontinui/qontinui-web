@@ -326,7 +326,7 @@ def test_memhold_backfill_01_holds_the_contested_set_only() -> None:
         # ----------------------------------------------------------------
         # Apply the backfill.
         # ----------------------------------------------------------------
-        run_alembic(root, url, "upgrade", _REVISION_ID)
+        applied = run_alembic(root, url, "upgrade", _REVISION_ID)
         after = _holds(engine, tenant_id)
 
         for title in sorted(_EXPECT_HELD):
@@ -358,13 +358,30 @@ def test_memhold_backfill_01_holds_the_contested_set_only() -> None:
         # assert against that exact expression rather than only on the JSON.
         assert _held_titles(engine, tenant_id) == _EXPECT_HELD
 
+        # The migration REPORTS its two row counts into the migrator log — the
+        # only record of the backfill's blast radius once the before-picture is
+        # gone. Assert the report, not just its effects: a broken count query is
+        # otherwise invisible. 3 losers + 3 winners in this fixture.
+        log = applied.stdout + applied.stderr
+        assert "on 3 sync-conflict sidecar row(s)" in log, (
+            f"loser count must be reported; got:\n{log}"
+        )
+        assert "and 3 topic-file winner row(s)" in log, (
+            f"winner count must be reported; got:\n{log}"
+        )
+
         # ----------------------------------------------------------------
         # Re-run over its own output — the idempotency claim.
         # ----------------------------------------------------------------
         run_alembic(root, url, "stamp", _PARENT_REVISION_ID)
-        run_alembic(root, url, "upgrade", _REVISION_ID)
+        rerun = run_alembic(root, url, "upgrade", _REVISION_ID)
 
         assert _holds(engine, tenant_id) == after, "re-running must change nothing"
+        rerun_log = rerun.stdout + rerun.stderr
+        assert "on 0 sync-conflict sidecar row(s)" in rerun_log, (
+            f"a re-run must report 0 rows touched; got:\n{rerun_log}"
+        )
+        assert "and 0 topic-file winner row(s)" in rerun_log
 
         # ----------------------------------------------------------------
         # Downgrade — drops exactly what upgrade set true.
