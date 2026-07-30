@@ -11,7 +11,7 @@
  * age / fraction / eta.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Copy } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -280,6 +280,19 @@ export function GatesTable({
   const [verdictFilter, setVerdictFilter] = useState<string>(ALL);
   const [basisFilter, setBasisFilter] = useState<string>(ALL);
   const [sortKey, setSortKey] = useState<SortKey>("age");
+
+  // Deep link: `/admin/coord/gates?gate=<id>` arrives with the search box
+  // pre-filled with that id, so a link from elsewhere in the console (the
+  // outstanding-work ledger under /admin/coord/prompt-documents links gated
+  // items this way) lands on the gate rather than on an unfiltered list.
+  // Read once on mount from `window.location` rather than `useSearchParams`,
+  // which would force this client subtree behind a Suspense boundary for a
+  // one-shot read. The box stays editable — this only seeds it.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const gate = new URLSearchParams(window.location.search).get("gate");
+    if (gate) setSearch(gate);
+  }, []);
 
   const verdictOptions = useMemo(
     () => Array.from(new Set(gates.map((g) => g.verdict))).sort(),

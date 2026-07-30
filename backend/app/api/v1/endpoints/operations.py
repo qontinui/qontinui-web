@@ -5599,6 +5599,202 @@ async def restore_prompt_document_default(
     )
 
 
+@router.post("/coord/prompt-documents/{kind}/{name}/versions/{version}/restore")
+async def restore_prompt_document_version(
+    kind: str,
+    name: str,
+    version: int,
+    body: dict[str, Any] | None = None,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Roll a prompt document back to an earlier version. Tenant-admin only.
+
+    Plan ``2026-07-30-session-compliance-report-enforcement.md`` §B1. Distinct
+    from :func:`restore_prompt_document_default`, which re-seeds the *code*
+    default named by ``default_source``: this restores an arbitrary prior
+    SNAPSHOT, which is what "undo that edit" actually means.
+
+    The restore is an ordinary versioning edit — coord copies version
+    ``version``'s body forward as a NEW snapshot and bumps ``current_version``.
+    **History is never rewritten**, so the restore is itself reversible from the
+    same history view, and the version being restored FROM stays readable.
+
+    Body: ``{change_note?}`` — the note recorded on the new snapshot (the UI
+    defaults it to "Restored from version N"). Only ``change_note`` is
+    forwarded: unlike the PATCH proxy above, ``updated_by`` is NOT stamped here
+    and is never taken from the browser. Coord derives the editor from its own
+    authenticated ``OperatorContext`` on this route, so forwarding a client
+    claim would only add a seventh client-asserted-provenance site to the ones
+    plan ``2026-07-27-prompt-document-writes-operator-gated`` exists to remove.
+
+    Coord 4xx (unknown document, unknown version, non-admin) passes through.
+    """
+    change_note = (body or {}).get("change_note")
+    payload: dict[str, Any] = {}
+    if change_note is not None:
+        payload["change_note"] = change_note
+    return await _proxy_coord_post(
+        f"/coord/prompt-documents/{kind}/{name}/versions/{version}/restore",
+        payload,
+        tenant_id=tenant_id,
+    )
+
+
+# Session compliance enforcement (plan
+# ``2026-07-30-session-compliance-report-enforcement.md`` Part B).
+#
+# Three components, three homes: the RUNNER executes the check (a turn-end hook
+# bundled in the runner binary), COORD configures it and reconciles what the
+# emitted POLICY_COMPLIANCE block CLAIMS against what coord independently
+# observed (PRs landed, gates open), storing a verdict per session in
+# ``coord.session_compliance``, and QONTINUI-WEB controls it — these proxies are
+# that control surface: the enforcement switch, its version history, the
+# per-session verdicts, and the outstanding-work ledger.
+#
+# Coverage is bounded by who executes: the runner sees only the sessions IT
+# spawned. Sessions started by hand in an external terminal, on another machine,
+# or under a different runner instance are outside the check entirely. The UI
+# states that as a static bound rather than deriving it from any runner metric,
+# which is computed over the runner's own process subtree and would therefore
+# report full coverage of a partial world.
+#
+# Applicability is DERIVED, never configured: coord answers ``applicable`` +
+# ``applicability_reason`` by checking whether ``enforced_clause_ref`` is present
+# in the ACTIVE version of the prompt document it names. Enforcement therefore
+# self-inerts when the clause is edited out, instead of drifting into enforcing
+# a rule the fleet is no longer served.
+#
+# Auth posture matches the prompt-document proxies above: GET reads gate on
+# tenant MEMBERSHIP (``get_tenant_id``) so the console read view is visible to
+# developers; the config PUT gates on ``require_coord_tenant_admin`` (coord
+# re-checks admin). Coord 4xx bodies — including the ``degraded`` answer while
+# ``coord.session_compliance`` is not yet migrated — pass through verbatim.
+
+#: Keys the config PUT forwards to coord. An allowlist rather than a
+#: blocklist, so no future client-supplied field (``updated_by`` above all)
+#: can ride along: coord stamps the editor from its authenticated
+#: ``OperatorContext``, and web-asserted provenance would be unverifiable.
+_SESSION_COMPLIANCE_CONFIG_FIELDS = (
+    "enabled",
+    "mode",
+    "enforced_clause_ref",
+    "max_attempts",
+    "change_note",
+)
+
+
+@router.get("/coord/session-compliance/config")
+async def get_session_compliance_config(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Read the tenant's session-compliance enforcement config.
+
+    Returns ``{enabled, mode, max_attempts, enforced_clause_ref, applicable,
+    applicability_reason, prompt_document_version, current_version}``.
+
+    ``applicable``/``applicability_reason`` are coord-DERIVED, not stored
+    settings: ``applicable`` (enforcing), ``enforcement_disabled`` (switched
+    off), ``clause_absent`` (the named clause is not in the active version of
+    its document, so enforcement is inert), ``document_missing`` (the document
+    itself is gone). ``prompt_document_version`` is the document version that
+    derivation was made against; ``current_version`` is the config row's own
+    version. Any authenticated tenant member.
+    """
+    return await _proxy_coord_get(
+        "/coord/session-compliance/config", tenant_id=tenant_id
+    )
+
+
+@router.put("/coord/session-compliance/config")
+async def put_session_compliance_config(
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Update the enforcement config. Tenant-admin only.
+
+    Body: ``{enabled?, mode?, enforced_clause_ref?, max_attempts?,
+    change_note?}`` — filtered to that allowlist
+    (``_SESSION_COMPLIANCE_CONFIG_FIELDS``) before forwarding. ``updated_by`` is
+    deliberately NOT among them: coord takes the editor from its authenticated
+    ``OperatorContext``, and a client-asserted editor on a behaviour-changing
+    setting would be unverifiable audit trail.
+
+    ``applicable`` is not writable either — it is derived from the clause, so
+    accepting it would let the stored value drift from the truth it summarises.
+    Coord versions the row on every change; the versions route below serves that
+    history. Returns coord's post-write config view (same shape as the GET).
+    """
+    payload = {k: v for k, v in body.items() if k in _SESSION_COMPLIANCE_CONFIG_FIELDS}
+    return await _proxy_coord_put(
+        "/coord/session-compliance/config", payload, tenant_id=tenant_id
+    )
+
+
+@router.get("/coord/session-compliance/config/versions")
+async def list_session_compliance_config_versions(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Version history of the enforcement config, newest first.
+
+    Enforcement config changes fleet behaviour, so it is versioned like a
+    prompt document rather than patched in place — this route is what makes
+    "who turned this off, and when" answerable. Any authenticated tenant member.
+    """
+    return await _proxy_coord_get(
+        "/coord/session-compliance/config/versions", tenant_id=tenant_id
+    )
+
+
+@router.get("/coord/session-compliance/sessions")
+async def list_session_compliance_sessions(
+    limit: int | None = None,
+    verdict: str | None = None,
+    cursor: str | None = None,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Recent per-session compliance verdicts, newest first.
+
+    Three verdicts and only three: ``verified`` (block present and every
+    checkable claim reconciled), ``unverified`` (block present but ≥1 claim
+    unconfirmed or contradicted — and ALSO the case where no block was emitted
+    at all, carrying reason ``absent``), ``not_applicable`` (enforcement off or
+    the clause absent). A missing report is deliberately not a fourth state.
+
+    ``limit``/``verdict``/``cursor`` are forwarded when set; coord owns the
+    page size default and the cursor grammar. Any authenticated tenant member.
+    """
+    params: dict[str, Any] = {}
+    if limit is not None:
+        params["limit"] = limit
+    if verdict is not None:
+        params["verdict"] = verdict
+    if cursor is not None:
+        params["cursor"] = cursor
+    return await _proxy_coord_get(
+        "/coord/session-compliance/sessions",
+        params=params or None,
+        tenant_id=tenant_id,
+    )
+
+
+@router.get("/coord/session-compliance/outstanding")
+async def list_session_compliance_outstanding(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """The outstanding-work ledger: every ``deferred``/``gated`` item across
+    all stored session reports, each with its gate or its stated reason.
+
+    This is the fleet's unfinished work made queryable — it otherwise exists
+    only scattered through plan files. Read-only and honest by construction:
+    the items are what sessions REPORTED, carrying coord's reconciliation
+    verdict alongside, not an independent inventory of everything undone. Any
+    authenticated tenant member.
+    """
+    return await _proxy_coord_get(
+        "/coord/session-compliance/outstanding", tenant_id=tenant_id
+    )
+
+
 # Structured policy clauses (plan
 # ``2026-07-18-policy-clause-schema-web-data-model.md`` Phase 2).
 #
