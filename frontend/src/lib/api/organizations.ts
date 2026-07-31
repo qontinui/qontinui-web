@@ -17,6 +17,19 @@ import type {
 import { httpClient } from "@/services/service-factory";
 
 /**
+ * List all organizations the current user belongs to
+ */
+export async function listOrganizations(): Promise<Organization[]> {
+  const response = await httpClient.fetch(`/api/v1/organizations`);
+
+  if (!response.ok) {
+    throw new Error("Failed to list organizations");
+  }
+
+  return response.json();
+}
+
+/**
  * Send an invitation to join an organization
  */
 export async function inviteMember(

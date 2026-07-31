@@ -2020,7 +2020,7 @@
         "type": "object"
       },
       "ApplicationCreate": {
-        "description": "Create an application.",
+        "description": "Create an application.\n\n``organization_id`` (P4 org sharing) shares the application with an org\nfrom birth \u2014 the caller must hold an edit-capable role (owner/admin/\nmember) in that org.",
         "properties": {
           "description": {
             "anyOf": [
@@ -2038,6 +2038,18 @@
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "organization_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization Id"
           },
           "slug": {
             "maxLength": 200,
@@ -2230,7 +2242,7 @@
         "type": "object"
       },
       "ApplicationResponse": {
-        "description": "An application.",
+        "description": "An application.\n\n``owner_user_id`` is exposed so shared-view clients can render\nowner-only controls (e.g. the sharing selector) honestly.",
         "properties": {
           "created_at": {
             "title": "Created At",
@@ -2256,6 +2268,23 @@
             "title": "Name",
             "type": "string"
           },
+          "organization_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization Id"
+          },
+          "owner_user_id": {
+            "format": "uuid",
+            "title": "Owner User Id",
+            "type": "string"
+          },
           "slug": {
             "title": "Slug",
             "type": "string"
@@ -2267,6 +2296,7 @@
         },
         "required": [
           "id",
+          "owner_user_id",
           "name",
           "slug",
           "created_at",
@@ -2276,7 +2306,7 @@
         "type": "object"
       },
       "ApplicationUpdate": {
-        "description": "Partial update of an application.",
+        "description": "Partial update of an application.\n\n``organization_id`` shares (set) / unshares (explicit ``null``) the\napplication. Field-absent vs explicit-null is distinguished by the\nendpoints via ``model_dump(exclude_unset=True)``. Only the resource\nOWNER may change it.",
         "properties": {
           "description": {
             "anyOf": [
@@ -2301,6 +2331,18 @@
               }
             ],
             "title": "Name"
+          },
+          "organization_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization Id"
           },
           "slug": {
             "anyOf": [
@@ -15133,7 +15175,7 @@
         "type": "object"
       },
       "EnvironmentCreate": {
-        "description": "Create an environment, optionally bound to an application.",
+        "description": "Create an environment, optionally bound to an application.\n\n``organization_id`` (P4 org sharing) shares the environment with an org\nfrom birth \u2014 the caller must hold an edit-capable role (owner/admin/\nmember) in that org.",
         "properties": {
           "application_id": {
             "anyOf": [
@@ -15163,6 +15205,18 @@
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "organization_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization Id"
           }
         },
         "required": [
@@ -15232,7 +15286,7 @@
         "type": "object"
       },
       "EnvironmentResponse": {
-        "description": "An environment, including its (single) canonical machine pointer.",
+        "description": "An environment, including its (single) canonical machine pointer.\n\n``owner_user_id`` is exposed so shared-view clients can render\nowner-only controls (e.g. the sharing selector) honestly.",
         "properties": {
           "application_id": {
             "anyOf": [
@@ -15282,6 +15336,23 @@
             "title": "Name",
             "type": "string"
           },
+          "organization_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization Id"
+          },
+          "owner_user_id": {
+            "format": "uuid",
+            "title": "Owner User Id",
+            "type": "string"
+          },
           "updated_at": {
             "title": "Updated At",
             "type": "string"
@@ -15289,6 +15360,7 @@
         },
         "required": [
           "id",
+          "owner_user_id",
           "name",
           "created_at",
           "updated_at"
@@ -15297,7 +15369,7 @@
         "type": "object"
       },
       "EnvironmentUpdate": {
-        "description": "Partial update of an environment.",
+        "description": "Partial update of an environment.\n\n``organization_id`` shares (set) / unshares (explicit ``null``) the\nenvironment. Field-absent vs explicit-null is distinguished by the\nendpoints via ``model_dump(exclude_unset=True)``. Only the resource\nOWNER may change it.",
         "properties": {
           "application_id": {
             "anyOf": [
@@ -15334,6 +15406,18 @@
               }
             ],
             "title": "Name"
+          },
+          "organization_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization Id"
           }
         },
         "title": "EnvironmentUpdate",
@@ -57178,7 +57262,7 @@
     },
     "/api/v1/devenv/agent/environments/{environment_id}/canonical-config": {
       "get": {
-        "description": "Return the environment's canonical config for a machine to PULL.\n\nThis is the read side of the pull model: a runner fetches the canonical\nmachine's (secret-free) config envelope plus a per-section apply policy,\nthen \u2014 by a LOCAL decision on that box \u2014 reconciles its own environment\ntoward it. Machine-key authenticated; the environment must belong to the\ncalling machine's owner (else 404, never leaking existence).\n\n422 ``no_canonical_machine`` when no canonical is set (mirrors the\nuser-side drift endpoint). The payload is secret-free by construction \u2014\nthe stored envelope already coerced ``env_contract`` to present/absent.",
+        "description": "Return the environment's canonical config for a machine to PULL.\n\nThis is the read side of the pull model: a runner fetches the canonical\nmachine's (secret-free) config envelope plus a per-section apply policy,\nthen \u2014 by a LOCAL decision on that box \u2014 reconciles its own environment\ntoward it. Machine-key authenticated; the calling machine's OWNER must\nhave VIEW access to the environment \u2014 their own, or org-shared with any\nnon-``helper`` role (a pull is a read, so viewer-grade access suffices).\nNo access -> 404, never leaking existence.\n\n422 ``no_canonical_machine`` when no canonical is set (mirrors the\nuser-side drift endpoint). The payload is secret-free by construction \u2014\nthe stored envelope already coerced ``env_contract`` to present/absent.",
         "operationId": "api_v1_devenv_agent_environments_environment_id_canonical_config_get",
         "parameters": [
           {
@@ -57231,7 +57315,7 @@
     },
     "/api/v1/devenv/agent/environments/{environment_id}/config": {
       "put": {
-        "description": "Upsert the calling machine's config for an environment.\n\nThe environment must be owned by the machine's owner (else 404 \u2014 never\nleak existence). The :class:`ConfigEnvelope` validator has already\napplied the secret backstop (env_contract values coerced to\npresent/absent; nested non-string section values rejected) by the time\nthis body runs, so the stored config is secret-safe.",
+        "description": "Upsert the calling machine's config for an environment.\n\nThe machine's OWNER must have EDIT access to the environment: their own,\nor org-shared with an edit-capable role (owner/admin/member) \u2014 reporting\nwrites into the env. Both \"no access at all\" and \"view-only\" resolve to\n404 (never leak existence to a machine credential). The\n:class:`ConfigEnvelope` validator has already applied the secret backstop\n(env_contract values coerced to present/absent; nested non-string section\nvalues rejected) by the time this body runs, so the stored config is\nsecret-safe.",
         "operationId": "api_v1_devenv_agent_environments_environment_id_config_put",
         "parameters": [
           {
@@ -57296,7 +57380,7 @@
     },
     "/api/v1/devenv/applications": {
       "get": {
-        "description": "List the owner's applications.",
+        "description": "List the applications the caller can view (owned + org-shared).",
         "operationId": "api_v1_devenv_applications_get",
         "responses": {
           "200": {
@@ -57325,7 +57409,7 @@
         ]
       },
       "post": {
-        "description": "Create an application (slug unique per owner).",
+        "description": "Create an application (slug unique per owner).\n\n``organization_id`` shares it from birth \u2014 the caller must hold an\nedit-capable role in that org.",
         "operationId": "api_v1_devenv_applications_post",
         "requestBody": {
           "content": {
@@ -57372,7 +57456,7 @@
     },
     "/api/v1/devenv/applications/{application_id}": {
       "delete": {
-        "description": "Delete an application.",
+        "description": "Delete an application (edit access).",
         "operationId": "api_v1_devenv_applications_application_id_delete",
         "parameters": [
           {
@@ -57412,7 +57496,7 @@
         ]
       },
       "get": {
-        "description": "Get one application.",
+        "description": "Get one application (owned or org-shared).",
         "operationId": "api_v1_devenv_applications_application_id_get",
         "parameters": [
           {
@@ -57459,7 +57543,7 @@
         ]
       },
       "patch": {
-        "description": "Partially update an application.",
+        "description": "Partially update an application (edit access; sharing is owner-only).",
         "operationId": "api_v1_devenv_applications_application_id_patch",
         "parameters": [
           {
@@ -57518,7 +57602,7 @@
     },
     "/api/v1/devenv/environments": {
       "get": {
-        "description": "List the owner's environments.",
+        "description": "List the environments the caller can view (owned + org-shared).",
         "operationId": "api_v1_devenv_environments_get",
         "responses": {
           "200": {
@@ -57547,7 +57631,7 @@
         ]
       },
       "post": {
-        "description": "Create an environment, optionally bound to an owned application.",
+        "description": "Create an environment, optionally bound to a viewable application.\n\n``organization_id`` shares it from birth \u2014 the caller must hold an\nedit-capable role in that org.",
         "operationId": "api_v1_devenv_environments_post",
         "requestBody": {
           "content": {
@@ -57594,7 +57678,7 @@
     },
     "/api/v1/devenv/environments/{environment_id}": {
       "delete": {
-        "description": "Delete an environment.",
+        "description": "Delete an environment (edit access).",
         "operationId": "api_v1_devenv_environments_environment_id_delete",
         "parameters": [
           {
@@ -57634,7 +57718,7 @@
         ]
       },
       "get": {
-        "description": "Get one environment.",
+        "description": "Get one environment (owned or org-shared).",
         "operationId": "api_v1_devenv_environments_environment_id_get",
         "parameters": [
           {
@@ -57681,7 +57765,7 @@
         ]
       },
       "patch": {
-        "description": "Partially update an environment.",
+        "description": "Partially update an environment (edit access; sharing is owner-only).",
         "operationId": "api_v1_devenv_environments_environment_id_patch",
         "parameters": [
           {
@@ -57740,7 +57824,7 @@
     },
     "/api/v1/devenv/environments/{environment_id}/canonical": {
       "put": {
-        "description": "Designate a machine as the canonical source of truth for an env.\n\nValidates the machine is owned by the caller AND has reported a config\nrow for this environment (a machine with no config can't be a useful\nsource of truth). Atomic single-column update, plus an append to the\n``canonical_change_log`` audit trail (who/when/from->to, plus the\noptional ``note`` explaining why) \u2014 the team-sync model requires every\ncanonical change to be attributable. A no-op change (re-designating the\nmachine that is already canonical) is not recorded, and neither is its\nnote: there is no change for it to annotate.",
+        "description": "Designate a machine as the canonical source of truth for an env.\n\nRequires EDIT access to the environment. On an org-shared environment\nthe machine may belong to ANY user, but must have reported a config row\nfor this environment (a machine with no config can't be a useful source\nof truth \u2014 and the config row is what ties a foreign machine to the env;\na foreign machine WITHOUT one resolves 404 so existence never leaks).\nAtomic single-column update, plus an append to the\n``canonical_change_log`` audit trail (who/when/from->to, plus the\noptional ``note`` explaining why) \u2014 the team-sync model requires every\ncanonical change to be attributable; that audit is the safety mechanism\nfor \"any developer can re-designate canonical\". A no-op change\n(re-designating the machine that is already canonical) is not recorded,\nand neither is its note: there is no change for it to annotate.",
         "operationId": "api_v1_devenv_environments_environment_id_canonical_put",
         "parameters": [
           {
@@ -57799,7 +57883,7 @@
     },
     "/api/v1/devenv/environments/{environment_id}/canonical-history": {
       "get": {
-        "description": "List the environment's canonical-designation changes, newest first.\n\nAnswers \"who made this the canonical environment, when, and why.\"\nOwner-scoped like every other route here (cross-owner env id -> 404).\n\nPaged with the same ``limit``/``offset`` contract as the config-history\ntimeline, so a client can page BACK through an audit trail longer than one\npage instead of silently presenting the first page as the whole history.\n\nDisplay names (actor email, from/to machine names) are resolved by the\nrepository in the same query; each is ``None`` when the referenced row is\ngone, which is expected \u2014 the audit outlives machine/user deletion.",
+        "description": "List the environment's canonical-designation changes, newest first.\n\nAnswers \"who made this the canonical environment, when, and why.\"\nVisible to anyone who can VIEW the environment (non-viewable env id -> 404).\n\nPaged with the same ``limit``/``offset`` contract as the config-history\ntimeline, so a client can page BACK through an audit trail longer than one\npage instead of silently presenting the first page as the whole history.\n\nDisplay names (actor email, from/to machine names) are resolved by the\nrepository in the same query; each is ``None`` when the referenced row is\ngone, which is expected \u2014 the audit outlives machine/user deletion.",
         "operationId": "api_v1_devenv_environments_environment_id_canonical_history_get",
         "parameters": [
           {
@@ -57875,7 +57959,7 @@
     },
     "/api/v1/devenv/environments/{environment_id}/drift": {
       "get": {
-        "description": "Drift of every non-canonical machine vs the canonical machine.\n\n422 when no canonical machine is set (drift is undefined without a\nsource of truth).",
+        "description": "Drift of every non-canonical machine vs the canonical machine.\n\nAccess is resolved through the ENVIRONMENT: anyone who can view it sees\nthe drift of every machine that reported a config for it, regardless of\nwhich user owns those machines (machines themselves stay owner-scoped\nelsewhere). 422 when no canonical machine is set (drift is undefined\nwithout a source of truth).",
         "operationId": "api_v1_devenv_environments_environment_id_drift_get",
         "parameters": [
           {
@@ -57924,7 +58008,7 @@
     },
     "/api/v1/devenv/environments/{environment_id}/drift/{machine_id}": {
       "get": {
-        "description": "Drift of a single target machine vs the canonical machine.",
+        "description": "Drift of a single target machine vs the canonical machine.\n\nAccess is resolved through the ENVIRONMENT (view). A machine that is\nneither the caller's own nor tied to this env by a config row resolves\n404 \u2014 env visibility must not leak unrelated machines.",
         "operationId": "api_v1_devenv_environments_environment_id_drift_machine_id_get",
         "parameters": [
           {

@@ -35,6 +35,10 @@ export type DeltaStatus = "added" | "removed" | "changed";
 
 export interface Application {
   id: string;
+  /** The resource owner — sharing/unsharing is owner-only. */
+  owner_user_id: string;
+  /** Org this application is shared with, or null when personal. */
+  organization_id: string | null;
   name: string;
   slug: string;
   description: string | null;
@@ -46,12 +50,16 @@ export interface ApplicationCreate {
   name: string;
   slug: string;
   description?: string | null;
+  /** Share with an org from birth (caller must hold an edit role there). */
+  organization_id?: string | null;
 }
 
 export interface ApplicationUpdate {
   name?: string;
   slug?: string;
   description?: string | null;
+  /** Set = share with that org; explicit null = revert to personal. */
+  organization_id?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -105,6 +113,10 @@ export interface MachineUpdate {
 
 export interface Environment {
   id: string;
+  /** The resource owner — sharing/unsharing is owner-only. */
+  owner_user_id: string;
+  /** Org this environment is shared with, or null when personal. */
+  organization_id: string | null;
   name: string;
   description: string | null;
   application_id: string | null;
@@ -117,12 +129,16 @@ export interface EnvironmentCreate {
   name: string;
   description?: string | null;
   application_id?: string | null;
+  /** Share with an org from birth (caller must hold an edit role there). */
+  organization_id?: string | null;
 }
 
 export interface EnvironmentUpdate {
   name?: string;
   description?: string | null;
   application_id?: string | null;
+  /** Set = share with that org; explicit null = revert to personal. */
+  organization_id?: string | null;
 }
 
 // ---------------------------------------------------------------------------

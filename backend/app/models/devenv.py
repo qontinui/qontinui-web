@@ -53,6 +53,7 @@ class Application(Base):
     __table_args__ = (
         UniqueConstraint("owner_user_id", "slug", name="uq_devenv_app_owner_slug"),
         Index("idx_devenv_app_owner", "owner_user_id"),
+        Index("idx_devenv_app_org", "organization_id"),
         {"schema": _SCHEMA},
     )
 
@@ -65,6 +66,15 @@ class Application(Base):
         PGUUID(as_uuid=True),
         ForeignKey("auth.users.id", ondelete="CASCADE"),
         nullable=False,
+    )
+    # P4 org sharing: NULL = personal (owner-only), set = shared with every
+    # member of that auth.organizations row except `helper`. Soft reference,
+    # deliberately NOT a FK (devenv convention for cross-schema pointers — see
+    # `coord_device_id` below — and an ORM FK to auth would add an
+    # auth<->devenv edge to Base.metadata.sorted_tables, the FK-cycle class
+    # commit c479a7a9 had to break). Membership is validated in app code.
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), nullable=True
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     slug: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -183,6 +193,7 @@ class Environment(Base):
         UniqueConstraint("owner_user_id", "name", name="uq_devenv_env_owner_name"),
         Index("idx_devenv_env_owner", "owner_user_id"),
         Index("idx_devenv_env_application", "application_id"),
+        Index("idx_devenv_env_org", "organization_id"),
         {"schema": _SCHEMA},
     )
 
@@ -195,6 +206,13 @@ class Environment(Base):
         PGUUID(as_uuid=True),
         ForeignKey("auth.users.id", ondelete="CASCADE"),
         nullable=False,
+    )
+    # P4 org sharing: NULL = personal (owner-only), set = shared with every
+    # member of that auth.organizations row except `helper`. Soft reference,
+    # NOT a FK — same rationale as Application.organization_id (cross-schema
+    # soft-pointer convention + sorted_tables cycle avoidance).
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), nullable=True
     )
     application_id: Mapped[uuid.UUID | None] = mapped_column(
         PGUUID(as_uuid=True),

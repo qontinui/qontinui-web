@@ -52,25 +52,44 @@ SectionPolicyT = Literal[
 
 
 class ApplicationCreate(BaseSchema):
-    """Create an application."""
+    """Create an application.
+
+    ``organization_id`` (P4 org sharing) shares the application with an org
+    from birth — the caller must hold an edit-capable role (owner/admin/
+    member) in that org.
+    """
 
     name: str = Field(min_length=1, max_length=200)
     slug: str = Field(min_length=1, max_length=200)
     description: str | None = None
+    organization_id: UUID | None = None
 
 
 class ApplicationUpdate(BaseSchema):
-    """Partial update of an application."""
+    """Partial update of an application.
+
+    ``organization_id`` shares (set) / unshares (explicit ``null``) the
+    application. Field-absent vs explicit-null is distinguished by the
+    endpoints via ``model_dump(exclude_unset=True)``. Only the resource
+    OWNER may change it.
+    """
 
     name: str | None = Field(default=None, min_length=1, max_length=200)
     slug: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = None
+    organization_id: UUID | None = None
 
 
 class ApplicationResponse(BaseORMSchema):
-    """An application."""
+    """An application.
+
+    ``owner_user_id`` is exposed so shared-view clients can render
+    owner-only controls (e.g. the sharing selector) honestly.
+    """
 
     id: UUID
+    owner_user_id: UUID
+    organization_id: UUID | None = None
     name: str
     slug: str
     description: str | None = None
@@ -214,25 +233,44 @@ class DispatchEnrollResponse(BaseSchema):
 
 
 class EnvironmentCreate(BaseSchema):
-    """Create an environment, optionally bound to an application."""
+    """Create an environment, optionally bound to an application.
+
+    ``organization_id`` (P4 org sharing) shares the environment with an org
+    from birth — the caller must hold an edit-capable role (owner/admin/
+    member) in that org.
+    """
 
     name: str = Field(min_length=1, max_length=200)
     description: str | None = None
     application_id: UUID | None = None
+    organization_id: UUID | None = None
 
 
 class EnvironmentUpdate(BaseSchema):
-    """Partial update of an environment."""
+    """Partial update of an environment.
+
+    ``organization_id`` shares (set) / unshares (explicit ``null``) the
+    environment. Field-absent vs explicit-null is distinguished by the
+    endpoints via ``model_dump(exclude_unset=True)``. Only the resource
+    OWNER may change it.
+    """
 
     name: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = None
     application_id: UUID | None = None
+    organization_id: UUID | None = None
 
 
 class EnvironmentResponse(BaseORMSchema):
-    """An environment, including its (single) canonical machine pointer."""
+    """An environment, including its (single) canonical machine pointer.
+
+    ``owner_user_id`` is exposed so shared-view clients can render
+    owner-only controls (e.g. the sharing selector) honestly.
+    """
 
     id: UUID
+    owner_user_id: UUID
+    organization_id: UUID | None = None
     name: str
     description: str | None = None
     application_id: UUID | None = None
