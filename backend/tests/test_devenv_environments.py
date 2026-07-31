@@ -569,6 +569,24 @@ async def second_user(async_db_session: AsyncSession):
     return user
 
 
+@pytest_asyncio.fixture()
+async def third_user(async_db_session: AsyncSession):
+    """A third real user row — the org NON-member in sharing tests."""
+    from app.models.user import User
+
+    user = User(
+        email=f"third_{uuid4()}@example.com",
+        username=f"third_{uuid4().hex[:8]}",
+        full_name="Third User",
+        is_active=True,
+        is_verified=True,
+    )
+    async_db_session.add(user)
+    await async_db_session.commit()
+    await async_db_session.refresh(user)
+    return user
+
+
 class TestDevenvEndToEnd:
     """The enroll → push → canonical → drift flow against real Postgres."""
 
@@ -1443,6 +1461,58 @@ class TestOrgSharing:
             )
             assert r.status_code == 200, r.text
             assert r.json()["machine_id"] == machines["drift-b"]
+
+    @pytest.mark.asyncio
+    async def test_config_history_on_shared_env_visible_to_member(
+        self, async_db_session: AsyncSession, test_user, second_user, third_user
+    ) -> None:
+        """Config-history is authorized through the ENVIRONMENT, like drift.
+
+        The config-history routes predate org sharing and were owner-scoped.
+        They resolve through ``_resolve_env_machine_or_404``, which now goes
+        through ``get_viewable`` — so a member reads the owner's machine
+        timeline on a shared env, while a non-member still 404s on the env.
+        """
+        _org, env_id = await self._seed_shared_env(
+            async_db_session, test_user, role_members={second_user: "member"}
+        )
+        # Owner: one machine that reports two DISTINCT configs (two captures).
+        app1 = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app1) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines", json={"name": f"hist-{uuid4().hex[:6]}"}
+            )
+            machine_id = r.json()["id"]
+            r = await client.post(
+                f"{API_PREFIX}/agent/enroll",
+                json={"enrollment_code": r.json()["enrollment_code"]},
+            )
+            key = r.json()["machine_key"]
+            for py in ("3.13", "3.11"):
+                r = await client.put(
+                    f"{API_PREFIX}/agent/environments/{env_id}/config",
+                    json=_config_body({"versions": {"python": py}}),
+                    headers={"X-Machine-Key": key},
+                )
+                assert r.status_code == 200, r.text
+
+        history_url = (
+            f"{API_PREFIX}/environments/{env_id}/machines/{machine_id}/config-history"
+        )
+
+        # Member: sees the owner's machine timeline through the shared env.
+        app2 = _build_app(db_session=async_db_session, user=second_user)
+        async with _client(app2) as client:
+            r = await client.get(history_url)
+            assert r.status_code == 200, r.text
+            assert len(r.json()) == 2
+
+        # Non-member: the env is not viewable, so it does not exist to them.
+        app3 = _build_app(db_session=async_db_session, user=third_user)
+        async with _client(app3) as client:
+            r = await client.get(history_url)
+            assert r.status_code == 404, r.text
+            assert r.json()["detail"]["code"] == "environment_not_found"
 
     @pytest.mark.asyncio
     async def test_member_machine_agent_report_and_pull_on_shared_env(
