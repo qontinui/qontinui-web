@@ -1,7 +1,7 @@
 """drop coord.policy_documents — prompt_documents cutover complete
 
 Revision ID: coord_prompt_docs_02_drop
-Revises: memhold_backfill_01
+Revises: devenv_07_org_sharing
 Create Date: 2026-07-17
 
 The teardown half of the session-autonomy-fabric Phase 2 chain
@@ -61,7 +61,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_prompt_docs_02_drop"
-down_revision: str = "memhold_backfill_01"
+down_revision: str = "devenv_07_org_sharing"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
