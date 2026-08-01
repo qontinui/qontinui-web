@@ -27,9 +27,10 @@ from app.crud.user import (
     get_user,
     get_user_activity,
     get_users,
-    update_user,
     update_user_avatar,
+    update_user_privileged,
     update_user_profile,
+    update_user_self,
 )
 from app.middleware.error_handler import not_found_error
 from app.middleware.rate_limit import user_limiter
@@ -157,7 +158,14 @@ async def update_user_me(
     user_update: UserUpdate,
     current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
-    user = await update_user(db, current_user, user_update)
+    # SELF-SERVICE: gated on ``get_current_active_user_async`` — any
+    # authenticated user. ``update_user_self`` applies fastapi-users'
+    # ``create_update_dict()``, which drops ``is_superuser`` / ``is_active`` /
+    # ``is_verified``. It previously shared the permissive helper with the
+    # superuser writer below, which let any caller self-promote via
+    # ``PUT /api/v1/users/me {"is_superuser": true}``. Plan:
+    # 2026-07-29-web-put-users-me-self-privilege-escalation.
+    user = await update_user_self(db, current_user, user_update)
     return user
 
 
@@ -324,13 +332,24 @@ async def update_user_by_id(
     # 2026-07-24-web-deactivation-must-revoke-coord-membership.
     target = user
 
+    # PRIVILEGED: gated on ``get_current_superuser_async``.
+    # ``update_user_privileged`` applies ``create_update_dict_superuser()``,
+    # so ``is_active`` / ``is_superuser`` / ``is_verified`` DO apply here —
+    # the ``is_active`` write is what ``apply_activation_transition``
+    # sequences the coord disable/enable around.
     async def _persist() -> UserModel:
-        return await update_user(db, target, user_update)
+        return await update_user_privileged(db, target, user_update)
 
     user = await apply_activation_transition(
         request=request,
         user=user,
-        requested_is_active=user_update.model_dump(exclude_unset=True).get("is_active"),
+        # Derived from the SAME dict the persist arm writes. Reading a raw
+        # ``model_dump`` here instead would let the coord decision and the
+        # local write diverge if the filter ever drops ``is_active`` —
+        # i.e. coord disables a principal web then leaves active, the exact
+        # divergence the deactivation plan exists to prevent. Mirrors
+        # ``auth/config.py::UserManager.update``.
+        requested_is_active=user_update.create_update_dict_superuser().get("is_active"),
         actor=current_user,
         persist=_persist,
     )

@@ -8,7 +8,8 @@ so the 118 coord-proxy routes hanging off it never read web's local
 web-only deactivation therefore revoked NOTHING. These tests pin the fix on
 BOTH deactivation writers:
 
-* ``PUT /api/v1/users/{user_id}``          (``users.py::update_user_by_id``)
+* ``PUT /api/v1/users/{user_id}``          (``users.py::update_user_by_id``,
+  which persists via ``crud.user.update_user_privileged``)
 * ``PATCH /api/v1/auth/users/{id}``        (the mounted fastapi-users users
   router → ``UserManager.update(..., safe=False)``) — exercised BOTH through
   the real mounted router and directly against the manager.
@@ -162,8 +163,11 @@ def users_ctx():
 
     applied: dict = {}
 
-    async def _fake_update_user(db, user, user_update):
-        applied["update"] = user_update.model_dump(exclude_unset=True)
+    async def _fake_update_user_privileged(db, user, user_update):
+        # Mirror the real helper's field policy (``create_update_dict_superuser``
+        # — excludes ``id``, and ``UserUpdate`` also drops ``password``), so this
+        # double is never MORE permissive than what it stands in for.
+        applied["update"] = user_update.create_update_dict_superuser()
         for field, value in applied["update"].items():
             setattr(user, field, value)
         return user
@@ -174,7 +178,10 @@ def users_ctx():
 
     with (
         patch("app.api.v1.endpoints.users.get_user", _fake_get_user),
-        patch("app.api.v1.endpoints.users.update_user", _fake_update_user),
+        patch(
+            "app.api.v1.endpoints.users.update_user_privileged",
+            _fake_update_user_privileged,
+        ),
         patch("app.api.v1.endpoints.users.audit_logger", audit),
     ):
         client = TestClient(_build_users_app(target, _admin()))
