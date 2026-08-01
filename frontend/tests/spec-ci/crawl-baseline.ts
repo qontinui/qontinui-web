@@ -180,6 +180,20 @@ export const PER_ROUTE_WAIVERS: Readonly<Record<string, PerRouteWaiver>> = {
       "coord-backed /admin/coord/* dashboard with no IR spec. Route-scoped " +
       "because exactly one crawl route owns this endpoint.",
   },
+  "/admin/coord/prompt-injections": {
+    serverPatterns: ["/api/v1/admin/prompt-injections"],
+    class: "ci-env",
+    note:
+      "CI-ENV-UNAVOIDABLE (hermetic lane). /api/v1/admin/prompt-injections is " +
+      "the backend proxy for the prompt-injection audit log dashboard: it " +
+      "forwards the caller bearer to coord GET /coord/prompt-injections. No " +
+      "coord runs in the hermetic Spec CI stack, so the proxy correctly 502s " +
+      "(_proxy_coord_get maps httpx.ConnectError -> 502 'coord is not " +
+      "reachable'). Same class as the /api/v1/operations/ global waiver — a " +
+      "coord-backed /admin/coord/* dashboard with no IR spec. Route-scoped " +
+      "because exactly one crawl route owns this endpoint; the pattern is a " +
+      "prefix so the /{event_id} detail read is covered by the same entry.",
+  },
   "/conditions": {
     serverPatterns: ["/api/v1/conditions/"],
     class: "ci-env",
