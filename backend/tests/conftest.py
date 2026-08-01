@@ -58,6 +58,40 @@ os.environ["BACKEND_CORS_ORIGIN_REGEX"] = r"^https://([a-z0-9-]+\.)*qontinui\.io
 os.environ["STORAGE_BACKEND"] = "local"
 os.environ["REDIS_ENABLED"] = "false"  # Disable Redis for tests
 
+# Keep the REAL cron-dispatch sweeper out of the test session.
+#
+# `test_client` below is session-scoped and enters `TestClient(app)` as a
+# context manager, which runs the lifespan — and the lifespan calls
+# `scheduler.start()` on the module-level singleton in `app.core.scheduler`.
+# Once ANY test touches that fixture, the app's background scheduler is live
+# for the REST of the session, ticking every 30s.
+#
+# Its `scheduled_dispatch` task calls `poll_and_dispatch_due()`, which claims
+# due rows `FOR UPDATE SKIP LOCKED` against whatever
+# `app.db.session.async_engine` currently points at. The DB-backed scheduler
+# tests repoint that module global at the test engine (see
+# `tests/test_scheduler_db.py::sched_db`), so the real sweeper races them for
+# their own seeded rows: it claims a row and advances `next_fire_at`, and the
+# test's own `poll_and_dispatch_due()` then reports `due: 0` instead of
+# `due: 1`. That is timing-dependent (does a 30s tick land inside the test?)
+# and order-dependent (did a `test_client` test run earlier?), which is why it
+# never reproduces when the file is run on its own. It has reddened unrelated
+# PRs on `TestDispatchFailure` and `TestNextFireAdvance` while `main` was green.
+#
+# Disable ONLY that task, via the per-task switch — NOT the global
+# `QONTINUI_SCHEDULER_ENABLED`. Killing the whole scheduler also stops
+# `memory_reindex` / `memory_consolidate` / `memory_bridge_sync`, and the
+# `test_memory_api_db.py` hybrid-query tests depend on those having run: with
+# the scheduler fully off, that file fails a varying 1-5 tests per run. Those
+# tests are relying on background work and are their own latent bug — but this
+# change is not the place to expose it, so keep the blast radius to the one
+# task that actually causes the scheduler flake.
+#
+# Task REGISTRATION is unaffected (a disabled task stays registered and is
+# skipped per tick), so `test_no_celery_import.py`'s inventory assertions and
+# `scheduler_status()` still see `scheduled_dispatch`.
+os.environ["QONTINUI_SCHEDULER_SCHEDULED_DISPATCH_ENABLED"] = "0"
+
 # Cloud-control side-effect import — must run before any `app.models` import
 # so cloud-control's add_model_registrar() hook is in place by the time
 # `app/models/__init__.py:506-508`'s `register_cloud_models()` fires.
