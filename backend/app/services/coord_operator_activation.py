@@ -328,8 +328,12 @@ async def apply_activation_transition(
 ) -> User:
     """Run ``persist`` and the coord sync in the order that stays fail-closed.
 
-    ``persist`` is the caller's local write (``crud.update_user`` /
-    ``BaseUserManager.update``). It is invoked exactly once on every path:
+    ``persist`` is the caller's local write
+    (``crud.user.update_user_privileged`` / ``BaseUserManager.update``). Both
+    are PRIVILEGED writers — the self-service arms
+    (``crud.user.update_user_self``, ``UserManager.update(safe=True)``) drop
+    ``is_active`` via fastapi-users' ``create_update_dict()`` and so never
+    reach here. ``persist`` is invoked exactly once on every path:
 
     * no ``is_active`` transition → ``persist`` only, zero coord traffic;
     * deactivation → coord disable, THEN ``persist``;

@@ -1,5 +1,5 @@
 import uuid
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi_users import schemas
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
@@ -73,13 +73,13 @@ class UserUpdate(schemas.BaseUserUpdate):
     company: str | None = None
     phone: str | None = None
 
-    def create_update_dict(self) -> dict:
-        data: dict = super().create_update_dict()
+    def create_update_dict(self) -> dict[str, Any]:
+        data: dict[str, Any] = super().create_update_dict()
         data.pop("password", None)
         return data
 
-    def create_update_dict_superuser(self) -> dict:
-        data: dict = super().create_update_dict_superuser()
+    def create_update_dict_superuser(self) -> dict[str, Any]:
+        data: dict[str, Any] = super().create_update_dict_superuser()
         data.pop("password", None)
         return data
 
@@ -113,7 +113,21 @@ class UserProfileResponse(BaseModel):
     )
 
 
-class UserProfileUpdate(BaseModel):
+# Base class note (kept OUT of the docstring on purpose: pydantic publishes
+# a model's docstring as the OpenAPI component ``description``, and the
+# committed openapi-schema*.json snapshots are a CI drift gate — internal
+# rationale does not belong in the public API spec).
+#
+# ``CreateUpdateDictModel`` is inherited purely for its ``create_update_dict()``
+# field policy: ``crud.user.update_user_profile`` writes through it, so the
+# library's excluded set (id / is_superuser / is_active / is_verified /
+# oauth_accounts) is enforced on this writer too. The three fields below are
+# all self-service, so the filter is inert today — it exists so that adding a
+# privileged field here later cannot reopen the ``PUT /me`` escalation.
+# Plan: 2026-07-29-web-put-users-me-self-privilege-escalation.
+# The base class adds no fields and no config, so the emitted JSON schema is
+# byte-identical to the previous ``BaseModel`` version.
+class UserProfileUpdate(schemas.CreateUpdateDictModel):
     """Fields that can be updated by the user"""
 
     full_name: str | None = None
