@@ -104,6 +104,49 @@ which were rows without a decision, an unresolvable payload record is a
 DECISION without a row: the operator adjudicated this text and it has nowhere
 to land, so completing the deploy would report success over lost work.
 
+Resolution is then CHECKED twice more, and both checks abort:
+
+* **The winner must be LIVE.** The ranking PREFERS a live row but does not
+  require one — with a single candidate it returns that candidate whatever its
+  state. A tombstoned / superseded / validity-ended winner is outside every
+  retrieval selector, so writing the operator's text onto it is lost work that
+  reports as ``landed``, with the hold released on top.
+* **The winner must be the one ``memhold_adjudicate_01`` already chose.** That
+  revision superseded each ``merged``/``loser`` sidecar ONTO its adjudicated
+  winner, and that pointer is a human decision already landed in prod. This
+  revision only RE-derives the same ranking, so a disagreement means the corpus
+  moved between the two applies and ~25 KB of content would go to a row the
+  adjudication did not pick. A NULL pointer is not a disagreement (there is
+  nothing to compare) and warns instead.
+
+Which holds come off
+--------------------
+
+⚠️ **Both releases are restricted to the set the payload COVERS**, and that
+restriction is load bearing rather than an optimisation. Keyed on the
+disposition alone they free every ``merged``/``loser`` sidecar and every
+``_WINNER_MATCH`` winner in the corpus — including a pair this payload says
+nothing about, and including the rows ``memhold_adjudicate_01`` deliberately
+left **INERT** for a human. A winner freed without its text rewritten keeps its
+PRE-adjudication body while ``decay_prune`` is armed on the sidecars that are
+its only provenance, and the run exits 0 with nothing logged.
+
+* **Sidecars** — released when a payload record covers their
+  ``(project, base_file)``.
+* **Winners** — released when NO uncovered ``merged``/``loser`` sidecar still
+  points at them. Deliberately *not* "only the rows this run wrote to": prod
+  holds 11 winners against 6 payload records, because five of them answer
+  sidecars dispositioned ``winner``, whose text was already correct. There is
+  nothing for this revision to write on those and nothing left to wait for.
+  What must never be released is a winner whose ``merged``/``loser`` input this
+  payload does not answer.
+
+Anything in that set still held after the releases is therefore, by
+construction, a pair the payload does not cover. Each is named at ERROR with
+its ``memory_id`` / project / base file and the migration **aborts** — the same
+reasoning ``unresolved`` already applies, since finishing the deploy would
+leave a hold regime nobody is coming back to lift.
+
 Interaction with the live-dedup unique index
 --------------------------------------------
 
@@ -116,31 +159,70 @@ to some other LIVE row in the same tenant, the UPDATE would raise a
 ``UniqueViolation``, and psycopg2's message for it names the index, not the
 record — an opaque way to fail a production deploy.
 
-So the collision is checked FIRST, per record, against
-:data:`_LIVE_DEDUP_PREDICATE` (a textual copy of the index's own predicate — a
-migration cannot import ``memory_store``). On a hit the record is SKIPPED, the
-colliding row is named at ERROR, and it is counted into the partition
-invariant. A skip is the right outcome: an identical live row already carries
-this text, so the adjudicated content is present in the corpus either way, and
-the operator can merge the two by hand with the log naming both ids.
+So the collision is checked per record against :data:`_LIVE_DEDUP_PREDICATE` (a
+textual copy of the index's own predicate — a migration cannot import
+``memory_store``). On a hit the record is skipped, the colliding row is named at
+ERROR with both ids, and the migration **ABORTS**. A skip on its own is not a
+safe outcome here for exactly the reason an unresolved record is not: this
+revision also RELEASES the holds, so completing the deploy would free the
+sidecars still carrying the losing text while the winner keeps its
+pre-adjudication body. The operator merges the two rows by hand and re-runs.
+
+⚠️ **The probe reads the END state, not the state mid-loop.** Every resolved
+target is excluded from it, because each one ends this run carrying its own
+payload hash — probing record A against a hash record B is about to vacate
+would report a collision that will not exist at COMMIT, and (since a collision
+now aborts) fail the deploy on the order the records happen to be listed in.
+Excluding them is safe because :func:`_assert_payload_integrity` has already
+rejected two records sharing a ``content_sha256``.
+
+That exclusion is only half the answer, because the index is a plain UNIQUE
+index and is enforced per STATEMENT rather than at COMMIT. Writing a record
+whose hash another not-yet-written target still holds would raise the
+``UniqueViolation`` anyway. So the writes are ORDERED: a record goes only once
+no other unwritten target still carries its ``content_hash``. A cycle (two rows
+each holding the other's target hash) cannot be untangled one statement at a
+time and is reported as such rather than left to fail on the index.
 
 Reversibility
 -------------
 
-Before overwriting, each row's ``content`` and ``content_hash`` are stashed
-into ``source.adjudication.prior_content`` / ``prior_content_hash``, and
-:func:`downgrade` restores from there. Yes, that puts the full prior text in
-JSONB — ~78 KB across 6 rows. That is nothing against ``memory_records``, and
-it is the difference between a downgrade that works and a docstring that claims
-one. The alternative (re-reading the pre-adjudication files at downgrade time)
-would make the rollback depend on a directory on one operator's laptop.
+The pre-adjudication text of each target ships in the **JSON payload**
+(``prior_content`` / ``prior_content_sha256``), not in the database. Stashing
+it in ``source.adjudication`` was the obvious thing and it is wrong:
+``coord.memory_records.source`` is returned verbatim to every memory-API caller
+— ``memory_store``'s record projection selects ``r.source``, and the API hands
+it back on ``/memory/query`` hits, ``/memory/records`` listings and graph nodes
+— so a stashed pre-image would put ~43 KB of the losing text straight back into
+the retrieval path this whole plan exists to clean, unlabelled and in the same
+hit as the adjudicated text. Only ``prior_content_hash`` is stamped on the row:
+a hash is not a leak and still proves what was replaced.
+
+That makes the rollback MORE trustworthy, not less. The JSON travels in the
+migrator image beside this revision (same reason the forward text does), so it
+is available wherever the downgrade can run — this does not reintroduce a
+dependency on a directory on one operator's laptop.
+:func:`_assert_payload_integrity` recomputes ``prior_content_sha256`` over the
+shipped bytes before anything is written, and each row is matched to its
+payload record by the ``prior_content_hash`` it was stamped with — so the
+restore is sha-VERIFIED rather than trusting whatever a JSONB column holds.
+
+A stamped row whose ``prior_content_hash`` matches no payload record is a row
+that had DRIFTED when the upgrade wrote it (upgrade logs that at WARNING). Its
+exact pre-image is not in the payload and is not recoverable, so the downgrade
+names it at ERROR and leaves it ALONE — stamp included — rather than writing
+bytes that were never on it.
 
 The downgrade restores ``content`` + ``content_hash``, re-NULLs ``embedding`` /
 ``embedding_model`` (so the restored text is re-embedded too — the pre-image
 vector is NOT stashed, because restoring the OLD vector over the OLD text is
 only correct if nothing else moved, and a NULL is unconditionally correct),
 drops the keys this revision added, and re-holds exactly the rows it released.
-It does NOT restore ``updated_at``.
+That last claim is made true by a MARKER: each release writes
+``source.adjudication.hold_released_by = 'memhold_adjudicate_02'`` and the
+re-hold keys on it, so a row that already read ``false`` before this revision
+ran is left alone instead of being "restored" to a hold this revision never
+lifted. It does NOT restore ``updated_at``.
 
 Invariants vs measurements
 --------------------------
@@ -149,10 +231,15 @@ Same discipline as ``memhold_adjudicate_01``: **assert invariants, log
 measurements.**
 
 * **Asserted** (:func:`_assert_content_invariants`, ``RuntimeError``): every
-  payload record resolved to exactly one row; landed + skipped-for-collision +
-  unresolved equals the payload size; no row outside the resolved set carries a
-  ``prior_content`` stash (i.e. nothing outside the resolved winners had its
-  content touched); no resolved row is an ``(part i/n)`` import chunk.
+  payload record resolved to exactly one row; that row is LIVE; it is the row
+  ``memhold_adjudicate_01``'s ``superseded_by`` pointer already names; no
+  record was skipped on a content-hash collision; landed +
+  skipped-for-collision + unresolved equals the payload size; no row outside
+  the resolved set carries a ``prior_content_hash`` stash (i.e. nothing outside
+  the resolved winners had its content touched); no resolved row is a
+  ``(part i/n)`` import chunk. Asserted separately, after the releases: no
+  ``merged``/``loser`` sidecar and no ``_WINNER_MATCH`` winner is left held
+  outside the payload's coverage.
 * **Logged only**: 6 records, 11 winners released, 12 sidecars released, 0
   still held, and the per-record drift between a row's current ``content_hash``
   and the payload's declared ``prior_content_sha256``. The row set can
@@ -433,15 +520,23 @@ _CHUNK_TITLE = re.compile(r"\(part\s+\d+\s*/\s*\d+\)")
 
 @dataclass(frozen=True)
 class _PayloadRecord:
-    """One adjudicated file: where it goes, what it says, and its two hashes."""
+    """One adjudicated file: where it goes, what it says, and what it replaces.
+
+    ``prior_content`` is the PRE-adjudication text of the target row, shipped
+    here rather than stashed in the database — see the module docstring's
+    Reversibility section. :func:`downgrade` restores from it and verifies
+    ``prior_content_sha256`` before writing.
+    """
 
     project: str
     base_file: str
     disposition: str
     content: str
     content_sha256: str
+    prior_content: str
     prior_content_sha256: str
     byte_length: int
+    prior_byte_length: int
 
 
 _REQUIRED_FIELDS = (
@@ -450,8 +545,10 @@ _REQUIRED_FIELDS = (
     "disposition",
     "content",
     "content_sha256",
+    "prior_content",
     "prior_content_sha256",
     "bytes",
+    "prior_bytes",
 )
 
 
@@ -518,8 +615,10 @@ def _load_payload() -> tuple[_PayloadRecord, ...]:
             disposition=str(entry["disposition"]),
             content=str(entry["content"]),
             content_sha256=str(entry["content_sha256"]),
+            prior_content=str(entry["prior_content"]),
             prior_content_sha256=str(entry["prior_content_sha256"]),
             byte_length=int(entry["bytes"]),
+            prior_byte_length=int(entry["prior_bytes"]),
         )
         if not record.content:
             raise RuntimeError(
@@ -527,6 +626,14 @@ def _load_payload() -> tuple[_PayloadRecord, ...]:
                 f"({record.project}/{record.base_file}) has empty content; "
                 "`content` is NOT NULL and an empty adjudication is a bug, "
                 "not a decision."
+            )
+        if not record.prior_content:
+            raise RuntimeError(
+                f"memhold_adjudicate_02's payload record {index} "
+                f"({record.project}/{record.base_file}) has empty "
+                "prior_content. It is the ONLY copy of the text this record "
+                "overwrites — the pre-image is no longer stashed in the row — "
+                "so an empty one is a downgrade that silently blanks a record."
             )
         records.append(record)
 
@@ -548,11 +655,18 @@ def _assert_payload_integrity(records: Sequence[_PayloadRecord]) -> None:
     fails means the shipped bytes are not the bytes the payload was generated
     from. That is corruption in transit, and it aborts.
 
-    Also rejects two structural impossibilities: two records aimed at the SAME
-    ``(project, base_file)`` (they would overwrite each other, and only the
-    last would be reversible), and two records with the SAME content (the
-    second would collide with the first on the live-dedup index — a self-
-    inflicted skip).
+    ``prior_content`` is checked the same way and for a sharper reason: it is
+    the ONLY copy of the text this record overwrites (the pre-image is no
+    longer stashed in the row — see the module docstring), so a corrupted one
+    is a downgrade that writes the wrong bytes over a production record.
+
+    Also rejects three structural impossibilities: two records aimed at the
+    SAME ``(project, base_file)`` (they would overwrite each other, and only
+    the last would be reversible), two records carrying the same ``base_file``
+    in DIFFERENT projects (``_WINNER_JOIN_ON`` accepts a NULL-project winner,
+    so both could resolve to that one row and the second write would overwrite
+    the first), and two records with the SAME content (the second would collide
+    with the first on the live-dedup index — a self-inflicted skip).
     """
     for record in records:
         actual = hashlib.sha256(record.content.encode("utf-8")).hexdigest()
@@ -564,12 +678,32 @@ def _assert_payload_integrity(records: Sequence[_PayloadRecord]) -> None:
                 f"{actual}. The text in this file is not the text that was "
                 "adjudicated — refusing to write it."
             )
+        prior_actual = hashlib.sha256(
+            record.prior_content.encode("utf-8")
+        ).hexdigest()
+        if prior_actual != record.prior_content_sha256:
+            raise RuntimeError(
+                "memhold_adjudicate_02 PAYLOAD CORRUPTED: "
+                f"{record.project}/{record.base_file} declares "
+                f"prior_content_sha256 {record.prior_content_sha256} but its "
+                f"shipped prior_content hashes to {prior_actual}. That text is "
+                "the only copy of what this record overwrites, so a corrupted "
+                "one is a downgrade that writes the wrong bytes."
+            )
         declared_bytes = len(record.content.encode("utf-8"))
         if declared_bytes != record.byte_length:
             raise RuntimeError(
                 "memhold_adjudicate_02 PAYLOAD CORRUPTED: "
                 f"{record.project}/{record.base_file} declares {record.byte_length} "
                 f"byte(s) but its shipped content is {declared_bytes}."
+            )
+        declared_prior_bytes = len(record.prior_content.encode("utf-8"))
+        if declared_prior_bytes != record.prior_byte_length:
+            raise RuntimeError(
+                "memhold_adjudicate_02 PAYLOAD CORRUPTED: "
+                f"{record.project}/{record.base_file} declares "
+                f"{record.prior_byte_length} prior byte(s) but its shipped "
+                f"prior_content is {declared_prior_bytes}."
             )
         if record.disposition not in _ADJUDICATED_DISPOSITIONS:
             raise RuntimeError(
@@ -596,6 +730,25 @@ def _assert_payload_integrity(records: Sequence[_PayloadRecord]) -> None:
             "memhold_adjudicate_02 PAYLOAD MALFORMED: "
             f"{duplicate_keys} appear more than once. Two texts for one target "
             "row overwrite each other and only the last is reversible."
+        )
+    # And the same base file under two DIFFERENT projects. `_WINNER_JOIN_ON`
+    # deliberately accepts a winner whose `source.project` is NULL — the first
+    # Phase-4a import pass wrote none — so two records sharing a base file can
+    # both resolve to that one NULL-project row, and the second write would
+    # overwrite the first record's text with no ERROR anywhere. Unreachable in
+    # today's payload (six distinct base files); this makes it code rather than
+    # a measurement.
+    base_files = [record.base_file for record in records]
+    duplicate_base_files = sorted(
+        {name for name in base_files if base_files.count(name) > 1}
+    )
+    if duplicate_base_files:
+        raise RuntimeError(
+            "memhold_adjudicate_02 PAYLOAD MALFORMED: base_file(s) "
+            f"{duplicate_base_files} appear under more than one project. The "
+            "winner join accepts a NULL-project 'topic-file' row, so both "
+            "records could resolve to the SAME row and the second text would "
+            "overwrite the first."
         )
     hashes = [record.content_sha256 for record in records]
     duplicate_hashes = sorted({h for h in hashes if hashes.count(h) > 1})
@@ -628,6 +781,8 @@ def _assert_content_invariants(
     collided: int,
     unresolved: int,
     chunked: int,
+    not_live: int,
+    pointer_mismatched: int,
     stray_content_rows: int,
 ) -> None:
     """Abort the migration when the writes and the payload disagree.
@@ -658,6 +813,38 @@ def _assert_content_invariants(
             "revision also RELEASES the holds — so completing the deploy would "
             "free the rows that still carry the losing text."
         )
+    if collided:
+        raise RuntimeError(
+            "memhold_adjudicate_02 INVARIANT VIOLATED: "
+            f"{collided} payload record(s) were SKIPPED on a content-hash "
+            "collision with another live row in the same tenant (see the ERROR "
+            "lines above for both ids). Exactly the reasoning that aborts on an "
+            "unresolved record applies: the adjudicated text did not land on "
+            "the winner, and this revision also RELEASES the holds — so "
+            "completing the deploy would free rows still carrying the losing "
+            "text while the winner keeps its pre-adjudication body. Merge the "
+            "two rows by hand, then re-run."
+        )
+    if not_live:
+        raise RuntimeError(
+            "memhold_adjudicate_02 INVARIANT VIOLATED: "
+            f"{not_live} resolved winner row(s) are NOT live — tombstoned, "
+            "superseded, or with their validity ended (see the ERROR lines "
+            "above for which). Writing the operator's adjudicated text onto a "
+            "row retrieval can never return is lost work that reports as "
+            "landed, and its hold would come off on top."
+        )
+    if pointer_mismatched:
+        raise RuntimeError(
+            "memhold_adjudicate_02 INVARIANT VIOLATED: "
+            f"{pointer_mismatched} resolved winner(s) disagree with the "
+            "superseded_by pointer memhold_adjudicate_01 already wrote (see the "
+            "ERROR lines above for which). That pointer IS the authoritative "
+            "answer to 'which row is this sidecar's winner' — it was landed in "
+            "prod by the previous revision — so a disagreement means the corpus "
+            "moved between the two applies and this run would send the "
+            "adjudicated text to a different row than the adjudication did."
+        )
     accounted = landed + collided + unresolved
     if accounted != payload_records:
         raise RuntimeError(
@@ -671,7 +858,7 @@ def _assert_content_invariants(
         raise RuntimeError(
             "memhold_adjudicate_02 INVARIANT VIOLATED: "
             f"{stray_content_rows} row(s) OUTSIDE the resolved winners carry a "
-            "source.adjudication.prior_content stash. Only this revision "
+            "source.adjudication.prior_content_hash stash. Only this revision "
             "writes that key, so a row carrying one is a row whose content was "
             "overwritten by mistake."
         )
@@ -712,21 +899,55 @@ _TARGET_STATE_SQL = f"""
 # Another LIVE row in the same tenant already holding this content_hash. Uses
 # the unique index's own partial predicate, so what it finds is exactly what
 # the index would have rejected.
+#
+# ⚠️ The exclusion is a LIST, not just this record's own row. The probe reads
+# live state, and every resolved target is about to take its payload text, so
+# probing one record against a row ANOTHER record is about to vacate reports a
+# collision that will not exist by COMMIT — an order-dependent false skip, and
+# under the invariants below a false ABORT of the whole deploy. Excluding every
+# row this run is itself updating is what makes the probe read the END state:
+# the invariants guarantee each of those rows ends on its own payload hash, and
+# `_assert_payload_integrity` has already rejected two records sharing one, so
+# no excluded row can be a real collision.
 _COLLISION_SQL = f"""
     SELECT memory_id, title
       FROM coord.memory_records
      WHERE tenant_id = :tenant_id
        AND content_hash = :content_hash
-       AND memory_id <> :memory_id
+       AND NOT (memory_id = ANY(CAST(:exclude_ids AS uuid[])))
        AND {_LIVE_DEDUP_PREDICATE}
      LIMIT 1
 """
 
+# The sidecars memhold_adjudicate_01 superseded onto a winner, for this
+# record's (project, base_file). That pointer is the AUTHORITATIVE answer to
+# "which topic-file row is this pair's winner" — a human's adjudication, landed
+# in prod by the previous revision — so this revision's re-derived ranking must
+# agree with it or abort. A NULL pointer is not a disagreement (nothing to
+# compare); a DIFFERENT one means the corpus moved between the two applies.
+_WINNER_POINTER_SQL = f"""
+    WITH {_SIDECAR_MATCH_CTE}
+    SELECT s.memory_id, m.superseded_by
+      FROM sidecar s
+      JOIN coord.memory_records m
+        ON m.memory_id = s.memory_id
+     WHERE m.tenant_id = :tenant_id
+       AND m.source->'adjudication'->>'disposition' IN ({_dispositions_sql()})
+       AND m.superseded_by IS NOT NULL
+"""
+
 # The write. `source.adjudication` does not exist on a winner row (Phase 3.3
-# stamped sidecars only), and `jsonb_set` only creates the LAST path element —
-# hence COALESCE to an empty object and a `||` merge rather than six nested
-# `jsonb_set` calls. `to_jsonb` on the pre-image so the stash survives content
-# containing anything at all.
+# stamped sidecars only). `jsonb_set` DOES create a missing one-level key, so
+# that is not why the COALESCE is here: the hazard it prevents is `NULL ||
+# jsonb`, which yields NULL — on a winner with no `adjudication` key the merge
+# operand would be NULL and the whole stamp would silently vanish. The `||`
+# merge rather than five nested `jsonb_set` calls is for legibility.
+#
+# `prior_content_hash` is stashed; the prior TEXT is not. It ships in the JSON
+# payload instead — `coord.memory_records.source` is returned verbatim to every
+# memory-API caller, so a stashed pre-image would put the losing text straight
+# back into the retrieval path this adjudication exists to clean. A hash is not
+# a leak and still proves what was replaced.
 _APPLY_TEXT_SQL = """
     UPDATE coord.memory_records m
        SET content = :content,
@@ -744,7 +965,6 @@ _APPLY_TEXT_SQL = """
                    'decided', CAST(:decided AS text),
                    'plan', CAST(:plan AS text),
                    'gate', CAST(:gate AS text),
-                   'prior_content', to_jsonb(m.content),
                    'prior_content_hash', to_jsonb(m.content_hash)
                ),
                true
@@ -753,35 +973,160 @@ _APPLY_TEXT_SQL = """
        AND m.content_hash IS DISTINCT FROM :content_hash
 """
 
-# Both hold releases key on the hold actually reading 'true', so the downgrade's
-# mirror ('false' → 'true') round-trips exactly and touches nothing it did not
-# free. `memhold_backfill_01` wrote the JSON boolean; `lower(... ->> ...)`
-# is the same TEXT comparison `_not_lifecycle_held` uses, so a malformed value
-# reads as not-held rather than aborting.
-_RELEASE_WINNERS_SQL = f"""
-    WITH sidecar AS ({_SIDECAR_KEY_CTE})
-    UPDATE coord.memory_records w
-       SET source = jsonb_set(
-               w.source, '{{lifecycle_hold}}', CAST('false' AS jsonb), true
+# The (project, base_file) pairs the payload covers, as a CTE. Bound as two
+# parallel text[] parameters rather than rendered as literals: these values come
+# from a JSON file, not from this module, so they are not transcription-guarded
+# constants like `_ADJUDICATED_DISPOSITIONS`.
+_COVERED_CTE = """
+    covered AS (
+        SELECT c.project, c.base_file
+          FROM unnest(
+                   CAST(:covered_projects AS text[]),
+                   CAST(:covered_base_files AS text[])
+               ) AS c(project, base_file)
+    )
+"""
+
+# Every `merged`/`loser` sidecar whose (project, base_file) NO payload record
+# covers — i.e. whose losing body is still the input to an adjudication this
+# run did not land. Requires `covered`.
+_PENDING_SIDECARS_CTE = f"""
+    pending AS (
+        SELECT s.memory_id, s.tenant_id, s.project, s.base_file
+          FROM ({_SIDECAR_ROW_CTE}) s
+          JOIN coord.memory_records m
+            ON m.memory_id = s.memory_id
+         WHERE m.source->'adjudication'->>'disposition'
+               IN ({_dispositions_sql()})
+           AND NOT EXISTS (
+                SELECT 1
+                  FROM covered c
+                 WHERE c.project = s.project
+                   AND c.base_file = s.base_file
            )
+    )
+"""
+
+# ⚠️ Both hold releases are restricted to the PAYLOAD-COVERED set, and that
+# restriction is the whole point rather than an optimisation. Keyed on the
+# disposition alone (as they were), they free every `merged`/`loser` sidecar and
+# every `_WINNER_MATCH` winner in the corpus — including a pair this payload
+# says nothing about, and including the rows `memhold_adjudicate_01` deliberately
+# left INERT for a human. A winner freed without its text rewritten keeps its
+# PRE-adjudication body with `decay_prune` now armed on the sidecars that are
+# its only provenance, and the run exits 0 with nothing logged.
+#
+# Both also key on the hold actually reading 'true', so the downgrade's mirror
+# round-trips exactly. `memhold_backfill_01` wrote the JSON boolean;
+# `lower(... ->> ...)` is the same TEXT comparison `_not_lifecycle_held` uses,
+# so a malformed value reads as not-held rather than aborting.
+#
+# Each released row is MARKED with `source.adjudication.hold_released_by`. The
+# downgrade keys its re-hold on that marker rather than on "reads false", so a
+# row that already read `false` before this revision ran is not re-held by a
+# rollback of a release that never happened.
+_HOLD_RELEASED_BY = revision
+
+
+def _release_marked_source(alias: str) -> str:
+    """``source`` with the hold cleared and this revision's marker merged in.
+
+    Takes the UPDATE's table alias so each statement can name its target
+    whatever the fragments it interpolates require — the winner release must
+    alias it ``w`` for ``_WINNER_MATCH`` / ``_WINNER_JOIN_ON`` to interpolate
+    verbatim rather than be re-typed with different prefixes.
+    """
+    return f"""
+    jsonb_set(
+        jsonb_set(
+            {alias}.source, '{{lifecycle_hold}}', CAST('false' AS jsonb), true
+        ),
+        '{{adjudication}}',
+        COALESCE({alias}.source->'adjudication', CAST('{{}}' AS jsonb))
+        || jsonb_build_object(
+            'hold_released_by', CAST('{_HOLD_RELEASED_BY}' AS text)
+        ),
+        true
+    )
+"""
+
+# A winner is released when NO uncovered `merged`/`loser` sidecar still points
+# at it. That is the correct granularity, and deliberately NOT "only the rows
+# this run wrote to": prod holds 11 winners against 6 payload records, because
+# five of them answer sidecars `memhold_adjudicate_01` dispositioned `winner` —
+# their text was already correct, so there is nothing for this revision to
+# write and nothing left to wait for. What must never be released is a winner
+# whose merged/loser input this payload does not answer.
+#
+# `pending` is aliased `s` so `_WINNER_JOIN_ON` — the shared, drift-guarded
+# winner predicate — can be interpolated verbatim instead of re-typed.
+_RELEASE_WINNERS_SQL = f"""
+    WITH sidecar AS ({_SIDECAR_KEY_CTE}),
+    {_COVERED_CTE},
+    {_PENDING_SIDECARS_CTE}
+    UPDATE coord.memory_records w
+       SET source = {_release_marked_source("w")}
      WHERE {_WINNER_MATCH}
        AND lower(w.source->>'lifecycle_hold') = 'true'
+       AND NOT EXISTS (
+            SELECT 1
+              FROM pending s
+             WHERE {_WINNER_JOIN_ON}
+       )
 """
 
 _RELEASE_SIDECARS_SQL = f"""
-    UPDATE coord.memory_records
-       SET source = jsonb_set(
-               source, '{{lifecycle_hold}}', CAST('false' AS jsonb), true
-           )
-     WHERE source->>'origin' = '{_SIDECAR_ORIGIN}'
-       AND source->'adjudication'->>'disposition' IN ({_dispositions_sql()})
-       AND lower(source->>'lifecycle_hold') = 'true'
+    WITH {_COVERED_CTE},
+    releasable AS (
+        SELECT DISTINCT s.memory_id
+          FROM ({_SIDECAR_ROW_CTE}) s
+          JOIN covered c
+            ON c.project = s.project
+           AND c.base_file = s.base_file
+    )
+    UPDATE coord.memory_records m
+       SET source = {_release_marked_source("m")}
+      FROM releasable r
+     WHERE m.memory_id = r.memory_id
+       AND m.source->'adjudication'->>'disposition' IN ({_dispositions_sql()})
+       AND lower(m.source->>'lifecycle_hold') = 'true'
 """
 
-# The end-state check: anything in the CONTESTED set — every sidecar plus every
-# topic-file winner — still reading held. Expected 0. Counted rather than
-# asserted: Phase 3.3 legitimately leaves an UNMAPPED or INERT sidecar held for
-# a human, and that is a thing to read, not a deploy to fail.
+# The ASSERTED end-state check: a `merged`/`loser` sidecar, or a `_WINNER_MATCH`
+# winner, that is STILL held after the releases above. By construction those are
+# exactly the rows the payload does not cover — the sidecars `pending` names,
+# and the winners still waiting on one — so each is an adjudication this deploy
+# did not complete. Reported individually and then aborted: the same reasoning
+# `unresolved` already applies, since finishing the deploy would leave a hold
+# regime nobody is coming back to lift.
+_UNCOVERED_HELD_SQL = f"""
+    WITH sidecar AS ({_SIDECAR_KEY_CTE}),
+    {_COVERED_CTE},
+    {_PENDING_SIDECARS_CTE}
+    SELECT CAST('merged/loser sidecar' AS text) AS kind,
+           p.memory_id,
+           p.project,
+           p.base_file
+      FROM pending p
+      JOIN coord.memory_records m
+        ON m.memory_id = p.memory_id
+     WHERE lower(m.source->>'lifecycle_hold') = 'true'
+     UNION ALL
+    SELECT CAST('topic-file winner' AS text) AS kind,
+           w.memory_id,
+           w.source->>'project',
+           w.source->>'file'
+      FROM coord.memory_records w
+     WHERE {_WINNER_MATCH}
+       AND lower(w.source->>'lifecycle_hold') = 'true'
+     ORDER BY 1, 3, 4
+"""
+
+# The LOGGED end-state measurement: anything in the CONTESTED set — every
+# sidecar plus every topic-file winner — still reading held. Expected 0. Wider
+# than the asserted check above and counted rather than asserted, because Phase
+# 3.3 legitimately leaves an UNMAPPED sidecar (no disposition at all) held for a
+# human, and that is a thing to read, not a deploy to fail.
 _STILL_HELD_SQL = f"""
     WITH sidecar AS ({_SIDECAR_KEY_CTE})
     SELECT count(*)
@@ -793,14 +1138,18 @@ _STILL_HELD_SQL = f"""
        )
 """
 
-# Restoring a stash is what makes the downgrade real. `->>` yields SQL text;
-# `content` / `content_hash` are TEXT columns, so no cast is needed. The
-# embedding is re-NULLed rather than restored — see the module docstring.
+# The downgrade's restore. The pre-image text comes from the shipped payload,
+# not from the row: it is matched to the row by the `prior_content_hash` this
+# revision stashed, and the payload's declared `prior_content_sha256` has
+# already been recomputed over the shipped bytes by
+# `_assert_payload_integrity`. So the rollback is sha-VERIFIED rather than
+# trusting whatever a JSONB column happens to hold.
+#
+# The embedding is re-NULLed rather than restored — see the module docstring.
 _RESTORE_TEXT_SQL = """
     WITH stripped AS (
         SELECT memory_id,
                (source->'adjudication')
-                 - 'prior_content'
                  - 'prior_content_hash'
                  - 'revision'
                  - 'disposition'
@@ -808,11 +1157,11 @@ _RESTORE_TEXT_SQL = """
                  - 'plan'
                  - 'gate' AS rest
           FROM coord.memory_records
-         WHERE source->'adjudication' ? 'prior_content'
+         WHERE memory_id = :memory_id
     )
     UPDATE coord.memory_records m
-       SET content = m.source->'adjudication'->>'prior_content',
-           content_hash = m.source->'adjudication'->>'prior_content_hash',
+       SET content = :prior_content,
+           content_hash = :prior_content_hash,
            embedding = NULL,
            embedding_model = NULL,
            updated_at = now(),
@@ -825,25 +1174,70 @@ _RESTORE_TEXT_SQL = """
      WHERE m.memory_id = s.memory_id
 """
 
-_REHOLD_WINNERS_SQL = f"""
-    WITH sidecar AS ({_SIDECAR_KEY_CTE})
-    UPDATE coord.memory_records w
-       SET source = jsonb_set(
-               w.source, '{{lifecycle_hold}}', CAST('true' AS jsonb), true
-           )
-     WHERE {_WINNER_MATCH}
-       AND lower(w.source->>'lifecycle_hold') = 'false'
+# Every row this revision stamped, with the pre-image hash that names which
+# payload record wrote it. The downgrade drives off this rather than
+# re-resolving the winners, so a corpus that moved since the apply cannot
+# redirect the restore onto a different row.
+_STAMPED_ROWS_SQL = f"""
+    SELECT memory_id,
+           content_hash,
+           source->'adjudication'->>'prior_content_hash' AS prior_content_hash
+      FROM coord.memory_records
+     WHERE source->'adjudication'->>'revision' = '{revision}'
+     ORDER BY memory_id
 """
 
-_REHOLD_SIDECARS_SQL = f"""
-    UPDATE coord.memory_records
-       SET source = jsonb_set(
-               source, '{{lifecycle_hold}}', CAST('true' AS jsonb), true
-           )
-     WHERE source->>'origin' = '{_SIDECAR_ORIGIN}'
-       AND source->'adjudication'->>'disposition' IN ({_dispositions_sql()})
-       AND lower(source->>'lifecycle_hold') = 'false'
+# The re-hold, keyed on the MARKER this revision's releases wrote — not on the
+# hold reading 'false'. A winner or sidecar that already read `false` before
+# this revision ran was never released by it, so re-holding it would be a
+# rollback of something that never happened. The marker is dropped with the
+# re-hold, and the `adjudication` object with it when nothing else remains.
+_REHOLD_RELEASED_SQL = """
+    WITH stripped AS (
+        SELECT memory_id,
+               (source->'adjudication') - 'hold_released_by' AS rest
+          FROM coord.memory_records
+         WHERE source->'adjudication'->>'hold_released_by' = :released_by
+    )
+    UPDATE coord.memory_records m
+       SET source = CASE
+                        WHEN s.rest = CAST('{}' AS jsonb)
+                            THEN jsonb_set(
+                                m.source,
+                                '{lifecycle_hold}',
+                                CAST('true' AS jsonb),
+                                true
+                            ) - 'adjudication'
+                        ELSE jsonb_set(
+                            jsonb_set(
+                                m.source,
+                                '{lifecycle_hold}',
+                                CAST('true' AS jsonb),
+                                true
+                            ),
+                            '{adjudication}',
+                            s.rest
+                        )
+                    END
+      FROM stripped s
+     WHERE m.memory_id = s.memory_id
 """
+
+
+def _covered_params(records: Sequence[_PayloadRecord]) -> dict[str, Any]:
+    """The payload's ``(project, base_file)`` pairs, as two parallel arrays."""
+    return {
+        "covered_projects": [record.project for record in records],
+        "covered_base_files": [record.base_file for record in records],
+    }
+
+
+def _covered_release_stmt(sql: str) -> sa.TextClause:
+    """A statement over the covered set, with its two ``text[]`` params typed."""
+    return sa.text(sql).bindparams(
+        sa.bindparam("covered_projects", type_=sa.ARRAY(sa.Text)),
+        sa.bindparam("covered_base_files", type_=sa.ARRAY(sa.Text)),
+    )
 
 
 def upgrade() -> None:
@@ -859,10 +1253,20 @@ def upgrade() -> None:
     collided = 0
     unresolved = 0
     chunked = 0
+    not_live = 0
+    pointer_mismatched = 0
     drifted = 0
 
+    # ------------------------------------------------------------------
+    # 1. RESOLVE every record first, and only then probe for collisions.
+    #    The probe reads live state, so a record checked mid-loop can be
+    #    skipped against a hash another record is about to vacate — an
+    #    order-dependent false skip, which under the invariants below is a
+    #    false ABORT of the whole deploy. Resolving first is what lets the
+    #    probe exclude every row this run is itself updating and therefore
+    #    read the END state instead of a half-written one.
+    # ------------------------------------------------------------------
     for record in records:
-        # -- resolve ------------------------------------------------------
         candidates = [
             row[0]
             for row in conn.execute(
@@ -914,6 +1318,76 @@ def upgrade() -> None:
             )
             continue
 
+        # -- liveness ------------------------------------------------------
+        # The ranking PREFERS a live winner but does not require one: with a
+        # single candidate it returns that candidate whatever its state.
+        # Writing the operator's text onto a tombstoned / superseded /
+        # validity-ended row puts it where retrieval can never return it,
+        # counts it as landed, and releases its hold on top of that.
+        if not bool(target["is_live"]):
+            not_live += 1
+            logger.error(
+                "memhold_adjudicate_02: NOT-LIVE winner row — memory_id=%s "
+                "title=%r for project=%s base_file=%s. It is tombstoned, "
+                "superseded or has its validity ended, so it is outside "
+                "uq_memory_records_tenant_content_hash_live and outside every "
+                "retrieval selector. The adjudicated text would land where "
+                "nothing can read it. Import or revive the winner and re-run.",
+                target_id,
+                target["title"],
+                record.project,
+                record.base_file,
+            )
+            continue
+
+        # -- agreement with the pointer memhold_adjudicate_01 wrote --------
+        # That revision superseded each `merged`/`loser` sidecar ONTO its
+        # adjudicated winner, so the pointer IS the answer to "which row is
+        # this pair's winner" — a human decision, already landed in prod. This
+        # revision merely re-derives the same ranking; a disagreement means the
+        # corpus moved between the two applies and the text would go to a row
+        # the adjudication did not choose. A NULL pointer is not a
+        # disagreement — there is nothing to compare — so it warns.
+        pointers = conn.execute(
+            sa.text(_WINNER_POINTER_SQL),
+            {
+                "project": record.project,
+                "base_file": record.base_file,
+                "tenant_id": target["tenant_id"],
+            },
+        ).all()
+        mismatched = [row for row in pointers if row[1] != target_id]
+        if mismatched:
+            pointer_mismatched += 1
+            for sidecar_id, superseded_by in mismatched:
+                logger.error(
+                    "memhold_adjudicate_02: WINNER POINTER MISMATCH — sidecar "
+                    "memory_id=%s (project=%s base_file=%s) was superseded by "
+                    "memhold_adjudicate_01 onto winner memory_id=%s, but this "
+                    "revision's ranking resolved memory_id=%s. The earlier "
+                    "pointer is the adjudication a human approved, so a "
+                    "disagreement means the corpus moved between the two "
+                    "applies and this run would send the text elsewhere.",
+                    sidecar_id,
+                    record.project,
+                    record.base_file,
+                    superseded_by,
+                    target_id,
+                )
+            continue
+        if not pointers:
+            logger.warning(
+                "memhold_adjudicate_02: no superseded_by pointer to cross-check "
+                "for project=%s base_file=%s (winner memory_id=%s). "
+                "memhold_adjudicate_01 supersedes every content-dispositioned "
+                "sidecar that has a winner, so an absent pointer means those "
+                "sidecars were never superseded and the re-derived ranking is "
+                "the only authority for where this text lands.",
+                record.project,
+                record.base_file,
+                target_id,
+            )
+
         # -- measurement: has the row moved since the payload was authored?
         current_hash = str(target["content_hash"])
         if current_hash not in (record.prior_content_sha256, record.content_sha256):
@@ -923,8 +1397,11 @@ def upgrade() -> None:
                 "memory_id=%s (project=%s base_file=%s) is %s, but the payload "
                 "was generated against %s. The row moved between authoring and "
                 "apply. Writing the adjudicated text anyway — the operator's "
-                "decision is authoritative — and the overwritten text is "
-                "stashed in source.adjudication.prior_content.",
+                "decision is authoritative — and stamping the pre-image hash "
+                "into source.adjudication.prior_content_hash. That row will "
+                "NOT round-trip: downgrade() matches that hash against the "
+                "shipped payload, finds no pre-image for it, and reports it "
+                "rather than writing bytes that were never on the row.",
                 target_id,
                 record.project,
                 record.base_file,
@@ -932,41 +1409,119 @@ def upgrade() -> None:
                 record.prior_content_sha256,
             )
 
-        # -- the live-dedup unique index ----------------------------------
-        if bool(target["is_live"]):
-            clash = (
-                conn.execute(
-                    sa.text(_COLLISION_SQL),
-                    {
-                        "tenant_id": target["tenant_id"],
-                        "content_hash": record.content_sha256,
-                        "memory_id": target_id,
-                    },
-                )
-                .mappings()
-                .first()
+    # ------------------------------------------------------------------
+    # 2. The live-dedup unique index, probed against the END state. Every
+    #    resolved target is excluded: each ends this run carrying its own
+    #    payload hash (the invariants below make that true), and
+    #    `_assert_payload_integrity` has already rejected two records sharing
+    #    a content_sha256 — so no excluded row can be a real collision.
+    # ------------------------------------------------------------------
+    exclude_ids = [str(target_id) for _, target_id in resolved]
+    collision_stmt = sa.text(_COLLISION_SQL).bindparams(
+        sa.bindparam("exclude_ids", type_=sa.ARRAY(sa.Text))
+    )
+    writable: list[tuple[_PayloadRecord, Any, str]] = []
+    for record, target_id in resolved:
+        target = (
+            conn.execute(sa.text(_TARGET_STATE_SQL), {"memory_id": target_id})
+            .mappings()
+            .one()
+        )
+        clash = (
+            conn.execute(
+                collision_stmt,
+                {
+                    "tenant_id": target["tenant_id"],
+                    "content_hash": record.content_sha256,
+                    "exclude_ids": exclude_ids,
+                },
             )
-            if clash is not None:
-                collided += 1
-                logger.error(
-                    "memhold_adjudicate_02: SKIPPED on a content-hash "
-                    "collision — memory_id=%s (project=%s base_file=%s) would "
-                    "take content_hash %s, which live row memory_id=%s "
-                    "(title=%r) in the same tenant already holds. "
-                    "uq_memory_records_tenant_content_hash_live would reject "
-                    "the write with an error naming only the index. The "
-                    "adjudicated text is already in the corpus on that row; "
-                    "merge the two by hand.",
-                    target_id,
-                    record.project,
-                    record.base_file,
-                    record.content_sha256,
-                    clash["memory_id"],
-                    clash["title"],
-                )
-                continue
+            .mappings()
+            .first()
+        )
+        if clash is not None:
+            collided += 1
+            logger.error(
+                "memhold_adjudicate_02: SKIPPED on a content-hash collision — "
+                "memory_id=%s (project=%s base_file=%s) would take "
+                "content_hash %s, which live row memory_id=%s (title=%r) in "
+                "the same tenant already holds. "
+                "uq_memory_records_tenant_content_hash_live would reject the "
+                "write with an error naming only the index. The adjudicated "
+                "text is already in the corpus on that row — but this revision "
+                "also RELEASES the holds, so the deploy ABORTS rather than "
+                "freeing rows that still carry the losing text. Merge the two "
+                "rows by hand and re-run.",
+                target_id,
+                record.project,
+                record.base_file,
+                record.content_sha256,
+                clash["memory_id"],
+                clash["title"],
+            )
+            continue
+        writable.append((record, target_id, str(target["content_hash"])))
 
-        # -- the write ----------------------------------------------------
+    # ------------------------------------------------------------------
+    # 3. Any defect at all aborts HERE, before a single row is written.
+    #    Every arm above logs and continues so the operator sees all of
+    #    them rather than the first, but writing part of a payload that is
+    #    already known to be un-completable buys nothing — and a partial
+    #    write can trip the live-dedup index against a row the abort was
+    #    about to name, replacing a clear message with an opaque one.
+    #    `_assert_content_invariants` raises on every one of these counters,
+    #    so this call cannot return.
+    # ------------------------------------------------------------------
+    if collided or unresolved or chunked or not_live or pointer_mismatched:
+        _assert_content_invariants(
+            payload_records=len(records),
+            landed=0,
+            collided=collided,
+            unresolved=unresolved,
+            chunked=chunked,
+            not_live=not_live,
+            pointer_mismatched=pointer_mismatched,
+            stray_content_rows=0,
+        )
+
+    # ------------------------------------------------------------------
+    # 4. The writes, ORDERED so no intermediate state trips the live-dedup
+    #    index. Excluding the other resolved targets from the probe above is
+    #    only half the answer: it correctly says "that row will not be
+    #    holding this hash at COMMIT", but the index is a plain UNIQUE index
+    #    and is enforced per STATEMENT, not at commit. Writing a record whose
+    #    hash another not-yet-written target still holds would raise a
+    #    UniqueViolation naming only the index — exactly the opaque failure
+    #    this revision goes out of its way to avoid.
+    #
+    #    So a record is written only once no OTHER unwritten target still
+    #    carries its content_hash. A cycle (two rows each holding the other's
+    #    target hash) cannot be untangled one statement at a time and is
+    #    reported as such rather than left to fail on the index.
+    # ------------------------------------------------------------------
+    ordered: list[tuple[_PayloadRecord, Any, str]] = []
+    unwritten = list(writable)
+    while unwritten:
+        for index, (record, target_id, _) in enumerate(unwritten):
+            blocked = any(
+                other_hash == record.content_sha256
+                for _, other_id, other_hash in unwritten
+                if other_id != target_id
+            )
+            if not blocked:
+                ordered.append(unwritten.pop(index))
+                break
+        else:
+            raise RuntimeError(
+                "memhold_adjudicate_02 INVARIANT VIOLATED: the remaining "
+                f"{len(unwritten)} payload write(s) form a content_hash cycle — "
+                "each target still holds a hash another one is about to take, "
+                "so no order of single-row UPDATEs avoids "
+                "uq_memory_records_tenant_content_hash_live. Reconcile those "
+                "rows by hand and re-run."
+            )
+
+    for record, target_id, _ in ordered:
         updated += conn.execute(
             sa.text(_APPLY_TEXT_SQL),
             {
@@ -1002,8 +1557,8 @@ def upgrade() -> None:
         if current_hash == record.content_sha256:
             landed += 1
 
-    # No row outside the resolved winners may carry a `prior_content` stash —
-    # only this revision writes that key, so one elsewhere is content
+    # No row outside the resolved winners may carry a `prior_content_hash`
+    # stash — only this revision writes that key, so one elsewhere is content
     # overwritten by mistake.
     exclusions = {
         f"id{index}": target_id
@@ -1018,7 +1573,7 @@ def upgrade() -> None:
                 f"""
                 SELECT count(*)
                   FROM coord.memory_records
-                 WHERE source->'adjudication' ? 'prior_content'
+                 WHERE source->'adjudication' ? 'prior_content_hash'
                    AND {not_resolved}
                 """
             ),
@@ -1033,15 +1588,53 @@ def upgrade() -> None:
         collided=collided,
         unresolved=unresolved,
         chunked=chunked,
+        not_live=not_live,
+        pointer_mismatched=pointer_mismatched,
         stray_content_rows=int(stray),
     )
 
     # ------------------------------------------------------------------
-    # The holds, AFTER the content lands. Everything in the contested set
-    # is now adjudicated, so nothing in it should remain held.
+    # 4. The holds, AFTER the content lands — and only over the set this
+    #    payload actually covers. Anything still held that the payload does
+    #    NOT cover is an adjudication this deploy did not complete, so it is
+    #    named row by row and then aborts, rather than being freed silently.
     # ------------------------------------------------------------------
-    winners_released = conn.execute(sa.text(_RELEASE_WINNERS_SQL)).rowcount
-    sidecars_released = conn.execute(sa.text(_RELEASE_SIDECARS_SQL)).rowcount
+    covered = _covered_params(records)
+    winners_released = conn.execute(
+        _covered_release_stmt(_RELEASE_WINNERS_SQL), covered
+    ).rowcount
+    sidecars_released = conn.execute(
+        _covered_release_stmt(_RELEASE_SIDECARS_SQL), covered
+    ).rowcount
+
+    uncovered_held = conn.execute(
+        _covered_release_stmt(_UNCOVERED_HELD_SQL), covered
+    ).all()
+    for kind, memory_id, project, base_file in uncovered_held:
+        logger.error(
+            "memhold_adjudicate_02: UNCOVERED ROW STILL HELD — %s memory_id=%s "
+            "project=%s base_file=%s. No payload record covers that "
+            "(project, base_file), so its adjudicated text was never written "
+            "and its hold is not this revision's to lift. Freeing it anyway "
+            "would arm decay_prune on the losing bodies while the winner still "
+            "carries pre-adjudication text — exactly what "
+            "memhold_adjudicate_01 held these rows to prevent.",
+            kind,
+            memory_id,
+            project,
+            base_file,
+        )
+    if uncovered_held:
+        raise RuntimeError(
+            "memhold_adjudicate_02 INVARIANT VIOLATED: "
+            f"{len(uncovered_held)} row(s) in the merged/loser sidecar + "
+            "topic-file winner set are still held and are NOT covered by the "
+            "payload (see the ERROR lines above for each). Completing the "
+            "deploy would declare the adjudication finished while leaving rows "
+            "whose text nobody is coming back to write. Extend the payload — "
+            "or adjudicate those rows — and re-run."
+        )
+
     still_held = conn.execute(sa.text(_STILL_HELD_SQL)).scalar() or 0
 
     logger.info(
@@ -1074,7 +1667,16 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Restore the pre-adjudication text from the stash and re-hold.
+    """Restore the pre-adjudication text from the payload, then re-hold.
+
+    The pre-image text comes from the shipped JSON, matched to each row by the
+    ``prior_content_hash`` this revision stamped, and its declared
+    ``prior_content_sha256`` was recomputed over the shipped bytes by
+    :func:`_assert_payload_integrity` before anything is written. A stamped row
+    whose stashed hash matches NO payload record is a row whose content had
+    drifted at apply time: its exact pre-image is not recoverable from here, so
+    it is named at ERROR and left ALONE — stamp included — rather than
+    overwritten with bytes that were never on it.
 
     Faithful for ``content`` and ``content_hash``. NOT faithful for
     ``embedding`` / ``embedding_model`` (re-NULLed, so the restored text is
@@ -1082,20 +1684,54 @@ def downgrade() -> None:
     ``updated_at``. See the module docstring.
     """
     _assert_no_drift()
+    records = _load_payload()
+    _assert_payload_integrity(records)
     conn = op.get_bind()
 
-    restored = conn.execute(sa.text(_RESTORE_TEXT_SQL)).rowcount
-    reheld_winners = conn.execute(sa.text(_REHOLD_WINNERS_SQL)).rowcount
-    reheld_sidecars = conn.execute(sa.text(_REHOLD_SIDECARS_SQL)).rowcount
+    by_prior_hash = {record.prior_content_sha256: record for record in records}
+
+    restored = 0
+    unrestorable = 0
+    for row in conn.execute(sa.text(_STAMPED_ROWS_SQL)).mappings().all():
+        record = by_prior_hash.get(str(row["prior_content_hash"]))
+        if record is None:
+            unrestorable += 1
+            logger.error(
+                "memhold_adjudicate_02 downgrade: NO PRE-IMAGE for "
+                "memory_id=%s — its source.adjudication.prior_content_hash is "
+                "%s, which no payload record declares. The row had drifted "
+                "from the payload when upgrade() wrote it (upgrade logs that "
+                "at WARNING), so the text this revision overwrote is not in "
+                "the shipped JSON and is not recoverable from here. Leaving "
+                "the row untouched, stamp included, rather than writing bytes "
+                "that were never on it.",
+                row["memory_id"],
+                row["prior_content_hash"],
+            )
+            continue
+        restored += conn.execute(
+            sa.text(_RESTORE_TEXT_SQL),
+            {
+                "memory_id": row["memory_id"],
+                "prior_content": record.prior_content,
+                "prior_content_hash": record.prior_content_sha256,
+            },
+        ).rowcount
+
+    reheld = conn.execute(
+        sa.text(_REHOLD_RELEASED_SQL), {"released_by": _HOLD_RELEASED_BY}
+    ).rowcount
 
     logger.info(
         "memhold_adjudicate_02 downgrade: restored content + content_hash on "
-        "%d row(s) from source.adjudication.prior_content and dropped this "
-        "revision's stamp; re-held %d topic-file winner(s) and %d '%s' "
-        "sidecar(s). embedding / embedding_model are re-NULLed rather than "
-        "restored, and updated_at is not restored.",
+        "%d row(s) from the shipped payload (sha-verified against the stamped "
+        "prior_content_hash) and dropped this revision's stamp; %d row(s) had "
+        "no recoverable pre-image and were left untouched. Re-held %d row(s) — "
+        "exactly those carrying this revision's hold_released_by marker, so a "
+        "row that already read false beforehand is left alone. embedding / "
+        "embedding_model are re-NULLed rather than restored, and updated_at is "
+        "not restored.",
         restored,
-        reheld_winners,
-        reheld_sidecars,
-        "/".join(_ADJUDICATED_DISPOSITIONS),
+        unrestorable,
+        reheld,
     )
