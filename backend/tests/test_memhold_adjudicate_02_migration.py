@@ -76,7 +76,7 @@ Then three walks:
   gone; exactly the released rows re-held.
 * **re-upgrade** — the selection is re-derivable.
 
-And five aborts, each on its own ephemeral database:
+And six aborts, each on its own ephemeral database:
 
 * a content-hash **collision** — no longer a survivable skip, because this
   revision also releases the holds;
@@ -85,7 +85,19 @@ And five aborts, each on its own ephemeral database:
 * a **not-live** resolved winner;
 * a winner that **disagrees** with the ``superseded_by`` pointer
   ``memhold_adjudicate_01`` already wrote;
-* an unresolvable record and a **chunked** winner.
+* an unresolvable record and a **chunked** winner;
+* one payload record's winner taken out of the ``'topic-file'`` set while the
+  corpus is otherwise fully seeded — the mutation guard on the no-op below.
+
+Plus the fork the last two cases sit either side of:
+
+* **no corpus at all** — an empty database, which is what CI provisions on
+  every run. Zero winners for every record there is nothing to do, not six
+  defects: no row carries losing text and no row is held, so there is nothing a
+  completed deploy could wrongly release. Asserted as a clean no-op over the
+  ``reverse`` job's exact walk (upgrade, downgrade one step, upgrade again).
+  Its counterpart above is what keeps that from being a blanket escape hatch:
+  with the corpus PRESENT, one record that will not resolve still aborts.
 
 Substrate comes from ``_alembic_harness`` (shared with the other migration
 tests): an ephemeral DB inside the test Postgres, skipped when none is
@@ -1625,3 +1637,183 @@ def test_memhold_adjudicate_02_aborts_and_rolls_back_on_a_defect() -> None:
         )
         assert after[chunked_title]["hold"] is True, "the hold must survive the abort"
         assert payload[chunk_key].content not in (after[chunked_title]["content"],)
+
+
+# ---------------------------------------------------------------------------
+# The corpus is not here at all — the no-op, and the abort that stays armed.
+# ---------------------------------------------------------------------------
+
+
+def _corpus_row_count(engine: Engine) -> int:
+    """Rows belonging to the adjudicated sidecar corpus — the guard's sentinel.
+
+    Recomputed here from the same two terms rather than imported, so a
+    silently-widened sentinel in the revision does not silently widen the test
+    that is supposed to bound it.
+    """
+    with engine.connect() as conn:
+        return int(
+            conn.execute(
+                text(
+                    """
+                    SELECT count(*)
+                      FROM coord.memory_records
+                     WHERE source ? 'adjudication'
+                        OR source->>'origin' = :origin
+                    """
+                ),
+                {"origin": _SIDECAR_ORIGIN},
+            ).scalar()
+            or 0
+        )
+
+
+@_PG_SKIP
+def test_an_empty_database_is_a_clean_no_op() -> None:
+    """No corpus at all ⇒ no writes, no releases, no abort — and re-runnable.
+
+    This is the case CI provisions on every single run: an empty database
+    walked with ``alembic upgrade head``. Every payload record resolves to
+    zero ``'topic-file'`` winners there, which the ``unresolved`` abort read as
+    six defects and failed the deploy on — so the revision could not be applied
+    to a NEW environment at all, and the ``reverse`` job (upgrade head, then
+    downgrade one step) could never even reach its downgrade.
+
+    Absence of the whole contested set is not the same situation as a record
+    that will not resolve. There is no losing text on any row, no hold on any
+    row, and therefore nothing a completed deploy could wrongly release — so
+    the correct behaviour is a clean no-op, which is what this asserts,
+    together with the ``reverse`` job's exact walk.
+    """
+    root = backend_root()
+
+    with ephemeral_database(admin_database_url(), "memhold_adjudicate_02_empty") as (
+        engine,
+        url,
+    ):
+        # Deliberately NOT seeded, and walked from scratch in one call — the
+        # CI reproduction verbatim.
+        applied = run_alembic(root, url, "upgrade", _REVISION_ID)
+        log = applied.stdout + applied.stderr
+
+        assert _corpus_row_count(engine) == 0, (
+            "the fixture is the absence of the corpus; a row here would make "
+            "the whole test vacuous"
+        )
+        assert "NO adjudicated sidecar corpus" in log, log
+        assert "NO-OP" in log, log
+        assert "INVARIANT VIOLATED" not in log, log
+        assert "UNRESOLVED payload record" not in log, (
+            "zero winners for a corpus that is not here is not an unresolved "
+            f"record; it is nothing to do:\n{log}"
+        )
+
+        with engine.connect() as conn:
+            assert (
+                conn.execute(text("SELECT count(*) FROM coord.memory_records")).scalar()
+                == 0
+            ), "a no-op writes no rows"
+            assert (
+                conn.execute(
+                    text(
+                        """
+                        SELECT count(*)
+                          FROM coord.memory_records
+                         WHERE source->'adjudication' ? 'hold_released_by'
+                        """
+                    )
+                ).scalar()
+                == 0
+            ), "a no-op releases no holds"
+
+        # The `reverse` job's second half: one step back down, then back up.
+        reversed_ = run_alembic(root, url, "downgrade", "-1")
+        reverse_log = reversed_.stdout + reversed_.stderr
+        assert "NO adjudicated sidecar corpus" in reverse_log, reverse_log
+        assert "INVARIANT VIOLATED" not in reverse_log, reverse_log
+
+        rerun = run_alembic(root, url, "upgrade", _REVISION_ID)
+        rerun_log = rerun.stdout + rerun.stderr
+        assert "NO adjudicated sidecar corpus" in rerun_log, rerun_log
+        assert "INVARIANT VIOLATED" not in rerun_log, rerun_log
+        with engine.connect() as conn:
+            assert (
+                conn.execute(text("SELECT count(*) FROM coord.memory_records")).scalar()
+                == 0
+            ), "a re-run of a no-op is still a no-op"
+
+
+@_PG_SKIP
+def test_a_missing_winner_still_aborts_when_the_corpus_is_present() -> None:
+    """The no-op guard must NOT become a blanket escape hatch.
+
+    The whole fixture is seeded — the corpus IS in this database — and then one
+    payload record's winner is taken out of the ``'topic-file'`` set, so that
+    record alone resolves to nothing. That is the situation the ``unresolved``
+    abort exists for: the operator adjudicated text that now has nowhere to
+    land, and this revision would go on to RELEASE the holds on the sidecars
+    still carrying the losing text.
+
+    Keyed correctly, the guard cannot see this: it asks whether the corpus is
+    ABSENT ENTIRELY, never whether a record resolved. Widen it to "always
+    return early" — the mutation this test exists to catch — and the deploy
+    completes silently instead of stopping.
+
+    The winner is de-originned rather than deleted so nothing else about the
+    fixture moves: the sidecar's ``superseded_by`` pointer still references the
+    row, which is exactly the prod shape where a winner drifted out of the
+    contested set.
+    """
+    root = backend_root()
+
+    with ephemeral_database(admin_database_url(), "memhold_adjudicate_02_gap") as (
+        engine,
+        url,
+    ):
+        run_alembic(root, url, "upgrade", _PARENT_REVISION_ID)
+        ids = _seed(engine)
+        tenant_id = ids["__tenant__"]
+
+        assert _corpus_row_count(engine) > 0, (
+            "this test is only meaningful with the corpus PRESENT — that is "
+            "the half of the fork the aborts are armed on"
+        )
+
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    UPDATE coord.memory_records
+                       SET source = jsonb_set(
+                               source, '{origin}', CAST('"retired"' AS jsonb), true
+                           )
+                     WHERE memory_id = :memory_id
+                    """
+                ),
+                {"memory_id": ids[_WINNER_REPAIR]},
+            )
+        before = _state(engine, tenant_id)
+
+        failed = _run_alembic_expecting_failure(root, url, "upgrade", _REVISION_ID)
+        log = failed.stdout + failed.stderr
+
+        assert "NO adjudicated sidecar corpus" not in log, (
+            "the corpus is present, so the no-op guard must not fire — if it "
+            f"did, every invariant below it is disarmed:\n{log}"
+        )
+        assert log.count("UNRESOLVED payload record") == 1, (
+            f"exactly the one record whose winner left the set:\n{log}"
+        )
+        assert _REPAIR_BASE in log, log
+        assert "INVARIANT VIOLATED" in log, log
+
+        after = _state(engine, tenant_id)
+        assert after == before, "the abort must roll back the whole run"
+        assert after[_SIDECAR_REPAIR]["hold"] is True, (
+            "the sidecar still carries the losing text and its adjudicated "
+            "text never landed, so its hold must survive"
+        )
+        assert after[_WINNER_RUNNER_CI]["hold"] is True, (
+            "one unresolvable record fails the whole deploy — no other pair's "
+            "hold comes off either"
+        )

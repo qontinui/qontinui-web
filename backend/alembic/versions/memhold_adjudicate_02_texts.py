@@ -253,6 +253,38 @@ every record is a WHOLE file: the Phase-4a import chunks a source file above
 anyway, the assumption is false and writing a whole file over part 1 of n would
 silently corrupt the record. That is an abort, not a warning.
 
+A database with no corpus at all
+--------------------------------
+
+⚠️ **Absence of the whole contested set is a NO-OP, not a defect** — and it is
+the one thing the ``unresolved`` abort must not be allowed to conflate with a
+record that will not resolve.
+
+An empty database has no sidecars, so all six payload records resolve to zero
+``'topic-file'`` winners and ``unresolved`` aborts. That is correct reasoning
+applied to the wrong situation: there is no losing text on any row, no hold on
+any row, and therefore nothing a completed deploy could wrongly release. It also
+meant this revision could not be applied to a NEW environment at all — a CI
+database provisioned empty and walked with ``alembic upgrade head`` fails here,
+which is how it was found.
+
+So :func:`upgrade` first asks whether the corpus is in this database at all,
+using the PREDECESSOR's own effect as the sentinel
+(:data:`_CONTESTED_CORPUS_SQL`): rows carrying a ``source.adjudication`` stamp —
+what ``memhold_adjudicate_01`` writes — or the Phase-4a import's
+``source.origin = 'sync-conflict-sidecar'`` mark. On zero it logs at INFO,
+writes nothing, releases nothing and returns.
+
+📌 **That guard is not an escape hatch and must never be widened into one.** It
+keys on the corpus being ABSENT ENTIRELY, never on a record failing to resolve.
+Past it every invariant is armed exactly as before — unresolved, collided,
+not-live, pointer-mismatch, chunked and uncovered-held all still abort — because
+once there is a corpus, a payload record with nowhere to land IS lost work with
+the holds about to come off. Prod holds 138 sidecar rows, so that is the arm
+that runs where it matters. :func:`downgrade` carries the mirror of the same
+check; its arms are already vacuous on such a database, so there it only keeps
+the two functions from diverging.
+
 Idempotency
 -----------
 
@@ -1224,6 +1256,50 @@ _REHOLD_RELEASED_SQL = """
 """
 
 
+# Does THIS database hold the contested corpus at all?
+#
+# Two terms, OR'd, because each answers a different half of the question:
+#
+# * ``source ? 'adjudication'`` is ``memhold_adjudicate_01``'s own effect — the
+#   stamp it writes on every sidecar it dispositions. Using the predecessor's
+#   effect as the sentinel is what makes "the set this revision finishes" and
+#   "the set it looks for" the same set by construction.
+# * ``source->>'origin' = _SIDECAR_ORIGIN`` is the Phase-4a import's mark on the
+#   sidecar rows themselves — the rows ``_SIDECAR_ROW_CTE`` resolves through.
+#   Kept beside the first term so a corpus that is PRESENT but was never
+#   adjudicated still counts as present, and still runs into the aborts below,
+#   instead of being waved through as "absent".
+#
+# Deliberately NOT restricted by tenant: a payload record carries no tenant of
+# its own, so the question this answers is about the DATABASE, not about one
+# tenant's slice of it.
+_CONTESTED_CORPUS_SQL = f"""
+    SELECT count(*)
+      FROM coord.memory_records
+     WHERE source ? 'adjudication'
+        OR source->>'origin' = '{_SIDECAR_ORIGIN}'
+"""
+
+
+def _contested_corpus_rows(conn: Any) -> int:
+    """How many rows here belong to the adjudicated sidecar corpus."""
+    return int(conn.execute(sa.text(_CONTESTED_CORPUS_SQL)).scalar() or 0)
+
+
+_ABSENT_CORPUS_LOG = (
+    "memhold_adjudicate_02: this database holds NO adjudicated sidecar corpus "
+    "(0 rows carry a source.adjudication stamp and 0 carry "
+    "source.origin = '%s'), so this revision is a NO-OP here: nothing was "
+    "written and no hold was released. That is the correct outcome for a fresh "
+    "database — a CI-provisioned one, a new environment, or a tenant that never "
+    "ran the Phase-4a import — where there is no contested text to write and no "
+    "hold regime to leave behind. It is NOT a general escape hatch: the "
+    "unresolved / collided / not-live / pointer-mismatch / uncovered-held "
+    "aborts are armed exactly when the corpus IS present, which is the only "
+    "case in which a payload record failing to resolve means lost work."
+)
+
+
 def _covered_params(records: Sequence[_PayloadRecord]) -> dict[str, Any]:
     """The payload's ``(project, base_file)`` pairs, as two parallel arrays."""
     return {
@@ -1246,6 +1322,34 @@ def upgrade() -> None:
     records = _load_payload()
     _assert_payload_integrity(records)
     conn = op.get_bind()
+
+    # ------------------------------------------------------------------
+    # 0. Is the contested corpus in this database AT ALL?
+    #
+    #    Everything below is armed for a corpus that is PRESENT. The
+    #    `unresolved` abort in particular exists to stop a deploy releasing
+    #    the holds on rows that still carry the losing text — and that is
+    #    only a thing that can happen when there ARE such rows. On a database
+    #    that never imported the sidecars (a CI-provisioned empty one, a fresh
+    #    environment, a tenant that never ran the Phase-4a import) there is
+    #    nothing to write and nothing to release, so the whole revision is a
+    #    no-op and aborting would mean it can never be applied to a new
+    #    environment at all.
+    #
+    #    Those two situations were conflated until now, and this is the ONLY
+    #    place they are told apart. Past this point the corpus is present and
+    #    every invariant is armed unchanged: a payload record that will not
+    #    resolve is still a DEFECT and still aborts the deploy.
+    #
+    #    Placed AFTER `_assert_no_drift` / `_load_payload` /
+    #    `_assert_payload_integrity` on purpose — those need no database and
+    #    they are the checks that catch a corrupt or drifted payload, so an
+    #    empty-database run should still run them rather than skipping the one
+    #    verification a fresh environment can do for free.
+    # ------------------------------------------------------------------
+    if _contested_corpus_rows(conn) == 0:
+        logger.info(_ABSENT_CORPUS_LOG, _SIDECAR_ORIGIN)
+        return
 
     resolved: list[tuple[_PayloadRecord, Any]] = []
     landed = 0
@@ -1687,6 +1791,20 @@ def downgrade() -> None:
     records = _load_payload()
     _assert_payload_integrity(records)
     conn = op.get_bind()
+
+    # The mirror of `upgrade`'s step 0. Both of this function's arms are ALREADY
+    # vacuous on a database that never held the corpus — `_STAMPED_ROWS_SQL`
+    # returns no rows and `_REHOLD_RELEASED_SQL` updates none — so unlike the
+    # upgrade this is not fixing a failure. It is here so the pair reads
+    # symmetrically and cannot diverge: a future downgrade arm that is not
+    # vacuous inherits the same "absent corpus is a clean no-op" answer instead
+    # of quietly becoming the next thing that cannot run on a fresh database.
+    # The sentinel is a strict superset of what the downgrade touches — every
+    # row this revision stamps or releases carries a `source.adjudication` key —
+    # so a zero count cannot hide work.
+    if _contested_corpus_rows(conn) == 0:
+        logger.info(_ABSENT_CORPUS_LOG, _SIDECAR_ORIGIN)
+        return
 
     by_prior_hash = {record.prior_content_sha256: record for record in records}
 
