@@ -525,6 +525,127 @@ class TestLivenessDedup:
 
 
 # ---------------------------------------------------------------------------
+# Clock-source independence
+# ---------------------------------------------------------------------------
+
+
+class TestValidityIsClockIndependent:
+    """Retrieval visibility must not turn on a wall-clock reading taken
+    AFTER the write.
+
+    ``valid_from`` / ``valid_until`` are stamped exclusively by the
+    writing transaction (column DEFAULT ``now()``; the supersede and
+    tombstone writers ``SET valid_until = now(), updated_at = now()``).
+    Nothing lets a caller set either. Comparing them to a clock read
+    later — on the API host, or on the same server after time sync
+    steps it BACKWARD — made freshly written rows briefly unretrievable
+    and freshly superseded rows briefly retrievable.
+
+    Each test below models a writer whose clock ran an hour ahead of the
+    reader's by moving the row's own timestamps together, exactly as a
+    skewed writing transaction would have stamped them. An hour is far
+    beyond any real skew, so these are deterministic: they do not wait
+    for a clock to misbehave, they encode the shape of it having done so.
+    """
+
+    def test_future_stamped_write_is_still_retrievable(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """A row whose writing transaction stamped it an hour into the
+        reader's future is visible IMMEDIATELY — read-your-own-write."""
+        content = "the axolotl regrows its limbs"
+        resp = mc.client.post(
+            "/api/v1/memory/records", json={"records": [_record(content)]}
+        )
+        memory_id = resp.json()["records"][0]["memory_id"]
+
+        # The writer's clock ran ahead: valid_from, created_at and
+        # updated_at all carry ITS now(), an hour past the reader's.
+        _exec(
+            db,
+            [
+                """
+                UPDATE coord.memory_records
+                SET valid_from = now() + interval '1 hour',
+                    created_at = now() + interval '1 hour',
+                    updated_at = now() + interval '1 hour'
+                WHERE tenant_id = :t
+                """
+            ],
+            t=str(mc.tenant_id),
+        )
+
+        hits = mc.client.post(
+            "/api/v1/memory/query", json={"query_text": "axolotl limbs"}
+        ).json()["hits"]
+        assert [h["memory_id"] for h in hits] == [memory_id]
+
+    def test_future_stamped_supersede_hides_the_old_row_immediately(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """The symmetric direction: a row whose validity ENDED an hour
+        into the reader's future is invisible IMMEDIATELY.
+
+        Supersede is the load-bearing case — unlike a tombstone it sets
+        no ``is_tombstone`` flag, and the retrieval filter carries no
+        ``superseded_by`` clause, so the old row's invisibility rests
+        entirely on ``valid_until``.
+        """
+        old_content = "the pangolin curls into a ball"
+        first = mc.client.post(
+            "/api/v1/memory/records", json={"records": [_record(old_content)]}
+        )
+        old_id = first.json()["records"][0]["memory_id"]
+        assert (
+            mc.client.post(
+                f"/api/v1/memory/records/{old_id}/supersede",
+                json={"title": "note", "content": "the numbat eats termites"},
+            ).status_code
+            == 200
+        )
+
+        # The superseding writer's clock ran ahead: valid_until and
+        # updated_at both carry ITS now().
+        _exec(
+            db,
+            [
+                """
+                UPDATE coord.memory_records
+                SET valid_until = now() + interval '1 hour',
+                    updated_at = now() + interval '1 hour'
+                WHERE memory_id = :m
+                """
+            ],
+            m=old_id,
+        )
+
+        hits = mc.client.post(
+            "/api/v1/memory/query", json={"query_text": "pangolin ball"}
+        ).json()["hits"]
+        assert hits == [], "a superseded row must not resurface on clock skew"
+
+    def test_explicit_as_of_still_time_travels(self, mc: MemoryClient) -> None:
+        """The caller-named instant is untouched by the above.
+
+        ``as_of`` asks "what did the corpus look like at X" — a genuine
+        wall-clock question — so a row written after X must NOT appear.
+        Guards against 'fixing' clock skew by dropping the predicate.
+        """
+        mc.client.post(
+            "/api/v1/memory/records",
+            json={"records": [_record("the quokka smiles for photographs")]},
+        )
+        body = mc.client.post(
+            "/api/v1/memory/query",
+            json={
+                "query_text": "quokka photographs",
+                "as_of": "2000-01-01T00:00:00Z",
+            },
+        ).json()
+        assert body["hits"] == [], "the row did not exist in the year 2000"
+
+
+# ---------------------------------------------------------------------------
 # Quota
 # ---------------------------------------------------------------------------
 
