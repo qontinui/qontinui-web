@@ -528,7 +528,13 @@ async def query_records(
     new-space query is served FTS-only rather than cosine-scored against
     documents the runner-paid reindex has not rewritten yet.
     """
-    as_of = payload.as_of or datetime.now(UTC)
+    # Left as ``None`` when the caller names no instant, so validity is
+    # evaluated against the row's OWN transaction-stamped timestamps
+    # rather than a clock read here. Substituting an app-host
+    # ``datetime.now(UTC)`` made a just-written record invisible to the
+    # query that follows it whenever the database clock ran ahead of this
+    # host's. See ``memory_store._EFFECTIVE_NOW_SQL``.
+    as_of = payload.as_of
     scopes: list[str] = (
         list(payload.scopes) if payload.scopes else list(_DEFAULT_QUERY_SCOPES)
     )
@@ -622,7 +628,8 @@ async def list_records(
         since=since,
         cursor=cursor_key,
         limit=limit,
-        now=datetime.now(UTC),
+        # No caller-named instant — see ``_EFFECTIVE_NOW_SQL``.
+        now=None,
     )
     links_by_source = await store.fetch_outbound_links(
         db, principal.tenant_id, [r["memory_id"] for r in rows]

@@ -441,6 +441,52 @@ async def find_by_hash(
     return UUID(str(found)) if found is not None else None
 
 
+# The instant validity is evaluated at.
+#
+# ``valid_from`` and ``valid_until`` are stamped EXCLUSIVELY by the
+# database, never by a caller: ``valid_from`` takes the column DEFAULT
+# ``now()``, and the two writers that end validity
+# (:func:`supersede_record`, :func:`tombstone_record`) both
+# ``SET valid_until = now(), updated_at = now()`` in one statement. No
+# request schema exposes either column. So every boundary a row carries
+# was produced by the SAME transaction that stamped that row's
+# ``created_at`` / ``updated_at``.
+#
+# Comparing those boundaries to a clock read LATER, on a different
+# connection or a different host, is what made retrieval flaky:
+#
+# * Cross-HOST. Binding an app-side ``datetime.now(UTC)`` made this a
+#   comparison between two machines' clocks. In production the API is
+#   ECS and the database is RDS — two hosts, two NTP disciplines — so a
+#   database clock a few hundred milliseconds ahead of the API host
+#   makes a JUST-WRITTEN row fail ``valid_from <= :as_of`` and vanish,
+#   and symmetrically leaves a JUST-DELETED row satisfying
+#   ``valid_until > :as_of``. A read-your-own-write break either way.
+#
+# * Non-MONOTONIC. Even one clock is not enough: a wall clock can step
+#   BACKWARD when time sync corrects it, so a later ``now()`` on the
+#   same server can read EARLIER than the ``now()`` that stamped the
+#   row. Measured on the containerised dev Postgres, ``valid_from``
+#   landed up to 605 ms in the future of a subsequent ``now()``, hiding
+#   freshly written records for the length of the correction.
+#
+# ``GREATEST(now(), r.updated_at, r.created_at)`` removes both. It is
+# never less than any boundary the row itself carries — those were
+# stamped by the same transaction as ``created_at``/``updated_at`` — so
+# a live row is ALWAYS visible and a validity-ended row is IMMEDIATELY
+# invisible, deterministically, whatever the wall clock is doing. It
+# still tracks real time for a boundary genuinely dated into the future
+# (no writer produces one today, but the columns permit it), because
+# ``now()`` dominates the row's own timestamps in that case.
+#
+# COALESCE preserves the caller-chosen time-travel ``as_of``: an instant
+# the CALLER names is legitimately theirs to supply, and asking "what
+# did the corpus look like at X" is a wall-clock question by definition.
+_EFFECTIVE_NOW_SQL = (
+    "COALESCE(CAST(:as_of AS timestamptz), GREATEST(now(), r.updated_at, r.created_at))"
+)
+
+
 def _validity_filters(
     *,
     kinds: list[str] | None,
@@ -451,15 +497,17 @@ def _validity_filters(
 ) -> tuple[str, dict[str, Any]]:
     """Shared WHERE fragment + params for both retrieval arms.
 
-    Tenant binding, tombstone/validity filtering (against ``:as_of``),
-    the scope rule (``agent``/``session`` rows require the matching
-    ``scope_ref``), and the optional kind/importance/recency filters.
+    Tenant binding, tombstone/validity filtering (against ``:as_of`` when
+    the caller named an instant, otherwise transaction-consistently — see
+    :data:`_EFFECTIVE_NOW_SQL`), the scope rule (``agent``/``session``
+    rows require the matching ``scope_ref``), and the optional
+    kind/importance/recency filters.
     """
     clauses = [
         "r.tenant_id = :tenant_id",
         "r.is_tombstone = false",
-        "r.valid_from <= :as_of",
-        "(r.valid_until IS NULL OR r.valid_until > :as_of)",
+        f"r.valid_from <= {_EFFECTIVE_NOW_SQL}",
+        f"(r.valid_until IS NULL OR r.valid_until > {_EFFECTIVE_NOW_SQL})",
         "r.scope IN :scopes",
         "(r.scope NOT IN ('agent', 'session') OR r.scope_ref = :scope_ref)",
     ]
@@ -581,7 +629,7 @@ async def vector_search(
     *,
     tenant_id: UUID,
     query_embedding: list[float],
-    as_of: datetime,
+    as_of: datetime | None,
     kinds: list[str] | None,
     scopes: list[str],
     scope_ref: str | None,
@@ -627,7 +675,7 @@ async def fts_search(
     *,
     tenant_id: UUID,
     query_text: str,
-    as_of: datetime,
+    as_of: datetime | None,
     kinds: list[str] | None,
     scopes: list[str],
     scope_ref: str | None,
@@ -1024,12 +1072,15 @@ async def list_records_page(
     since: datetime | None,
     cursor: tuple[datetime, UUID] | None,
     limit: int,
-    now: datetime,
+    now: datetime | None,
 ) -> list[dict[str, Any]]:
     """One keyset page of LIVE records, newest-first-stable.
 
     Liveness = not tombstoned, not superseded, validity not ended
-    (matching retrieval visibility). Ordering (and the keyset) is
+    (matching retrieval visibility, and evaluated the same
+    transaction-consistent way — ``now=None`` means "not at a
+    caller-named instant", see :data:`_EFFECTIVE_NOW_SQL`). Ordering
+    (and the keyset) is
     ``(created_at DESC, memory_id DESC)``; ``since`` filters on the
     freshest of ``updated_at`` / ``created_at`` so a sync pull picks up
     both new rows and in-place updates.
@@ -1038,7 +1089,8 @@ async def list_records_page(
         "r.tenant_id = :tenant_id",
         "r.is_tombstone = false",
         "r.superseded_by IS NULL",
-        "(r.valid_until IS NULL OR r.valid_until > CAST(:now AS timestamptz))",
+        "(r.valid_until IS NULL OR r.valid_until > COALESCE("
+        "CAST(:now AS timestamptz), GREATEST(now(), r.updated_at, r.created_at)))",
     ]
     params: dict[str, Any] = {"tenant_id": tenant_id, "now": now, "limit": limit}
     if kinds:
