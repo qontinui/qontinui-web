@@ -93,9 +93,9 @@ export const APPLICABILITY_META: Record<
       "The clause below is present in the active version of its document, so sessions are being checked.",
   },
   enforcement_disabled: {
-    label: "Switched off",
+    label: "Recording only — sessions are checked but never asked",
     detail:
-      "Enforcement is turned off here. Sessions are not checked, and no verdicts are recorded.",
+      "The check still runs. Every session's closing report is still looked for, and coord still reconciles it and records a verdict below. What is off is the correction: a session that skipped its report is left alone instead of being asked for one. This is the deliberate observe-first setting — it lets verdicts accumulate so the check's false-positive rate can be measured before it starts interrupting sessions.",
   },
   clause_absent: {
     label: "Inert — clause not in the active document",

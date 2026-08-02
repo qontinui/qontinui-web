@@ -108,6 +108,41 @@ describe("SessionComplianceSection", () => {
     );
   });
 
+  /**
+   * The switch controls the NUDGE, not the checking.
+   *
+   * `enabled: false` maps to `Applicability::ReportOnly` in the runner
+   * (`mcp/session_compliance.rs` — "see the module docs for why
+   * `enforcement_disabled` still emits"): the transcript is still scanned and a
+   * verdict is still POSTed at every turn end and session close. Only
+   * `clause_absent` / `document_missing` are `Inert`.
+   *
+   * The panel previously said "Sessions are not checked, and no verdicts are
+   * recorded", which is false — and would have contradicted the Recent-sessions
+   * table filling up directly beneath it once the runner side landed. A
+   * compliance feature that exists to catch claims contradicted by observed
+   * reality must not make one.
+   */
+  it("does not claim the off switch stops checking or recording", async () => {
+    routeGets({
+      config: {
+        ...CONFIG,
+        enabled: false,
+        applicable: false,
+        applicability_reason: "enforcement_disabled",
+      },
+    });
+
+    render(<SessionComplianceSection />);
+
+    const applicability = await screen.findByTestId("compliance-applicability");
+    expect(applicability).not.toHaveTextContent(/no verdicts are recorded/i);
+    expect(applicability).not.toHaveTextContent(/sessions are not checked/i);
+    // It must say the opposite, plainly.
+    expect(applicability).toHaveTextContent(/the check still runs/i);
+    expect(applicability).toHaveTextContent(/records a verdict/i);
+  });
+
   it("distinguishes an unresolved clause lookup from a removed clause", async () => {
     routeGets({
       config: {

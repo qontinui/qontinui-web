@@ -285,11 +285,15 @@ export function SessionComplianceEnforcementPanel({
         <div className="flex items-start justify-between gap-4 rounded-lg border border-border px-3 py-2.5">
           <div className="min-w-0">
             <Label htmlFor="compliance-enabled" className="text-sm">
-              Check this runner&apos;s sessions for their compliance report
+              Ask sessions to produce a missing compliance report
             </Label>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Off means those sessions run unchecked and no verdicts are
-              recorded. Nothing else changes.
+              This switch controls the <em>asking</em>, not the checking. Off,
+              sessions are still checked and verdicts are still recorded below
+              — a session that skipped its report is simply left alone. On, it
+              is asked once to produce the report, with coord&apos;s
+              observations attached. Only removing the clause below stops the
+              checking itself.
             </p>
           </div>
           <Switch
