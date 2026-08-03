@@ -6,7 +6,10 @@
  * Plan `2026-05-19-coordinator-production-readiness.md` Phase 4 (Wave 4).
  *
  * Inputs:
- *   - plan_slug   (preset by parent — disabled, contextual)
+ *   - work_unit_slug (preset by parent — disabled, contextual). Sent under
+ *     the `work_unit_slug` wire key since Stage 4a of plan
+ *     `2026-07-28-coord-post-plan-slug-surfaces-rename`; the value always
+ *     named a work-unit slug. See the wire-key note on `handleSubmit`.
  *   - plan_phase  (free-text; the plan owns phase nomenclature)
  *   - device_id   (dropdown, sourced from /operations/fleet/health)
  *   - repos       (multi-select checkbox list of known repos)
@@ -187,8 +190,19 @@ export function SpawnModal({
     setError(null);
     setSubmitting(true);
     try {
+      // Stage 4a of plan `2026-07-28-coord-post-plan-slug-surfaces-rename`:
+      // this writer moved from `plan_slug` to `work_unit_slug`. Coord's
+      // `SpawnRequest` opened the dual-accept window in Stage 2
+      // (`#[serde(alias = "plan_slug")]`, coord#1332, serving since
+      // 651c4e78), so the new key is understood by the deployed coord.
+      //
+      // Send exactly ONE of the two spellings, never both: serde's derive
+      // treats an alias as the SAME field, so a body carrying `plan_slug`
+      // AND `work_unit_slug` is rejected outright as a `duplicate field`
+      // error rather than resolved last-one-wins. Adding the new key
+      // alongside the old would therefore have broken every spawn.
       const body = {
-        plan_slug: planSlug,
+        work_unit_slug: planSlug,
         plan_phase: phase.trim(),
         device_id: deviceId,
         repos: allRepos,

@@ -3299,10 +3299,22 @@ async def get_memory_entry(
 # device state; allocate stays user-auth (legacy demo entrypoint).
 #
 # Wire shape (request):
-#   ``{ "plan_slug": str, "plan_phase": str, "device_id": str,
+#   ``{ "work_unit_slug": str, "plan_phase": str, "device_id": str,
 #       "repos": list[str], "intent": str,
 #       "declared_overlap_paths": list[str] | None,
 #       "initial_prompt": str }``
+#
+# ``work_unit_slug`` was spelled ``plan_slug`` until Stage 4a of plan
+# ``2026-07-28-coord-post-plan-slug-surfaces-rename``; the value always
+# named a work-unit slug. Coord still accepts the old name as a
+# deprecated serde alias (Stage 2, coord#1332) and drops it in Stage 4b,
+# so this proxy must not reintroduce it. Send one spelling or the other,
+# never both — coord treats the alias as the same field and rejects a
+# body carrying both as a ``duplicate field`` error.
+#
+# This route forwards ``body`` verbatim, so it imposes no shape of its
+# own; the note above documents what the ``/admin/coord/spawn`` page
+# sends and what coord accepts.
 #
 # Wire shape (response): coord's spawn payload passes through — at
 # minimum ``{ "agent_id": str, "agent_session_id": str, ...}``.
