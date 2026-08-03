@@ -130,7 +130,7 @@ class TestPostAgentsSpawn:
         mock_resp = _mock_response(json_data=coord_payload)
 
         body = {
-            "plan_slug": "2026-05-19-coordinator-production-readiness",
+            "work_unit_slug": "2026-05-19-coordinator-production-readiness",
             "plan_phase": "Phase 4",
             "device_id": "00000000-0000-0000-0000-deadbeefcafe",
             "repos": ["qontinui-web", "qontinui-coord"],
@@ -162,7 +162,7 @@ class TestPostAgentsSpawn:
 
             resp = unresolved_client.post(
                 f"{API_PREFIX}/agents/spawn",
-                json={"plan_slug": "x", "device_id": "y"},
+                json={"work_unit_slug": "x", "device_id": "y"},
             )
 
         assert resp.status_code == 403
@@ -179,7 +179,7 @@ class TestPostAgentsSpawn:
             _configure_mock_client(MockClient, instance)
             resp = client.post(
                 f"{API_PREFIX}/agents/spawn",
-                json={"plan_slug": "bogus"},
+                json={"work_unit_slug": "bogus"},
             )
         assert resp.status_code == 400
 
@@ -190,7 +190,7 @@ class TestPostAgentsSpawn:
             _configure_mock_client(MockClient, instance)
             resp = client.post(
                 f"{API_PREFIX}/agents/spawn",
-                json={"plan_slug": "x"},
+                json={"work_unit_slug": "x"},
             )
         assert resp.status_code == 502
 

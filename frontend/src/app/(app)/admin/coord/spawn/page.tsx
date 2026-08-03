@@ -225,7 +225,7 @@ export default function CoordSpawnPage() {
         <SpawnModal
           open={spawnTarget !== null}
           onClose={() => setSpawnTarget(null)}
-          planSlug={spawnTarget.slug}
+          workUnitSlug={spawnTarget.slug}
           initialPhase={spawnTarget.current_phase ?? ""}
         />
       )}

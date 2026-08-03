@@ -6,7 +6,13 @@
  * Plan `2026-05-19-coordinator-production-readiness.md` Phase 4 (Wave 4).
  *
  * Inputs:
- *   - plan_slug   (preset by parent — disabled, contextual)
+ *   - work_unit_slug (preset by parent — disabled, contextual).
+ *     Renamed from `plan_slug` by plan
+ *     `2026-07-28-coord-post-plan-slug-surfaces-rename` Stage 4a; it
+ *     always named a work-unit slug. Coord's SpawnRequest takes
+ *     `work_unit_slug` with `#[serde(alias = "plan_slug")]`, so send
+ *     exactly ONE of the two keys — an alias makes both spellings the
+ *     same field and a body carrying both fails with `duplicate field`.
  *   - plan_phase  (free-text; the plan owns phase nomenclature)
  *   - device_id   (dropdown, sourced from /operations/fleet/health)
  *   - repos       (multi-select checkbox list of known repos)
@@ -81,7 +87,7 @@ export interface SpawnModalProps {
   /** Called when the user dismisses the modal. */
   onClose: () => void;
   /** Plan slug to spawn for (set by the parent page row). */
-  planSlug: string;
+  workUnitSlug: string;
   /** Plan phase pre-seed; the user can override before submitting. */
   initialPhase?: string;
   /** Called after a successful spawn with the coord response body. */
@@ -91,7 +97,7 @@ export interface SpawnModalProps {
 export function SpawnModal({
   open,
   onClose,
-  planSlug,
+  workUnitSlug,
   initialPhase,
   onSuccess,
 }: SpawnModalProps) {
@@ -176,7 +182,7 @@ export function SpawnModal({
 
   const canSubmit =
     !submitting &&
-    planSlug.length > 0 &&
+    workUnitSlug.length > 0 &&
     phase.trim().length > 0 &&
     deviceId.length > 0 &&
     allRepos.length > 0 &&
@@ -188,7 +194,7 @@ export function SpawnModal({
     setSubmitting(true);
     try {
       const body = {
-        plan_slug: planSlug,
+        work_unit_slug: workUnitSlug,
         plan_phase: phase.trim(),
         device_id: deviceId,
         repos: allRepos,
@@ -224,7 +230,7 @@ export function SpawnModal({
       setSubmitting(false);
     }
   }, [
-    planSlug,
+    workUnitSlug,
     phase,
     deviceId,
     allRepos,
@@ -258,7 +264,7 @@ export function SpawnModal({
             <Label htmlFor="spawn-plan-slug">Plan</Label>
             <Input
               id="spawn-plan-slug"
-              value={planSlug}
+              value={workUnitSlug}
               readOnly
               disabled
               className="font-mono text-xs"

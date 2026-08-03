@@ -3299,10 +3299,19 @@ async def get_memory_entry(
 # device state; allocate stays user-auth (legacy demo entrypoint).
 #
 # Wire shape (request):
-#   ``{ "plan_slug": str, "plan_phase": str, "device_id": str,
+#   ``{ "work_unit_slug": str, "plan_phase": str, "device_id": str,
 #       "repos": list[str], "intent": str,
 #       "declared_overlap_paths": list[str] | None,
 #       "initial_prompt": str }``
+#
+# ``work_unit_slug`` was called ``plan_slug`` until plan
+# ``2026-07-28-coord-post-plan-slug-surfaces-rename`` Stage 4a; it always
+# named a work-unit slug. This route is a VERBATIM ``dict[str, Any]``
+# passthrough — it neither validates nor remaps keys — so whatever the
+# caller sends reaches coord unchanged. Coord's ``SpawnRequest`` accepts
+# ``work_unit_slug`` with ``#[serde(alias = "plan_slug")]`` for one
+# release; because a serde alias makes both spellings the SAME field, a
+# body carrying BOTH keys fails with ``duplicate field``. Send exactly one.
 #
 # Wire shape (response): coord's spawn payload passes through — at
 # minimum ``{ "agent_id": str, "agent_session_id": str, ...}``.
