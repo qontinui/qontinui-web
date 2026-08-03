@@ -218,9 +218,20 @@ export function SpawnModal({
       //                       NOT string[]
       //   - plan_phase:       Option<u32>, so a non-numeric phase must be
       //                       OMITTED rather than sent as a string
+      //
+      // The range check is not paranoia: `u32` is the constraint, so a phase
+      // like "99999999999" parses fine in JS and then 422s on coord for the
+      // very reason this block exists. Out of range → omit, same as no digits.
       const phaseDigits = phase.trim().match(/\d+/)?.[0];
-      const planPhase =
+      const parsedPhase =
         phaseDigits === undefined ? undefined : Number(phaseDigits);
+      const planPhase =
+        parsedPhase !== undefined &&
+        Number.isInteger(parsedPhase) &&
+        parsedPhase >= 0 &&
+        parsedPhase <= 4294967295
+          ? parsedPhase
+          : undefined;
 
       const body = {
         work_unit_slug: planSlug,
