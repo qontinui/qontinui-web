@@ -5392,10 +5392,41 @@ async def delete_priority_set(
 # is visible to developers. The POST/PATCH/DELETE writes stay on
 # ``require_coord_tenant_admin`` (coord's ``/admin/coord/me`` ``is_admin`` is the
 # source of truth; the web-side gate keeps the write surface from being silently
-# opened, and coord re-checks ``caller_is_admin`` on every write). Both
+# opened). Both
 # dependencies capture the caller's bearer so ``_proxy_coord_*`` forwards only
 # the bearer (coord derives the tenant). Coord 4xx error bodies pass through
 # verbatim via the ``_proxy_coord_*`` helpers.
+#
+# Coord re-checks admin on every write in this family, by mechanisms that
+# DIFFER per route — worth naming, because this comment previously said only
+# ``caller_is_admin``, which was true of one half and FALSE of the other:
+#
+# * ``/coord/composition-rules`` + ``/coord/priority-sets`` — an in-handler
+#   ``caller_is_admin`` helper (coord ``src/policies/priority_sets_routes.rs``)
+#   asking the TENANT-SCOPED question: is this operator admin *in the tenant the
+#   write lands in* (``operator_id`` AND ``tenant_id`` AND ``role='admin'``).
+# * ``/coord/policies`` — TWO layers, and both matter. OUTER: the
+#   ``require_role("admin")`` layer on coord's ``operator_admin_writes``
+#   sub-router, which rejects anonymous/device callers before any handler runs.
+#   INNER: a per-handler tenant-scoped check, the same question the siblings
+#   ask. The outer layer alone is NOT equivalent — it reads the operator's roles
+#   UNION across every tenant they belong to, so an admin of tenant B who is a
+#   plain member of their home tenant A would pass it while writing into A.
+#
+# Both are recent: coord#1327 (2026-08-03) added the outer layer, and its
+# follow-up added the inner tenant-scoped one. Before #1327 the
+# ``/coord/policies`` writes sat on coord's base router behind the ``TenantId``
+# extractor alone — so the ``require_coord_tenant_admin`` gate BELOW was the
+# ONLY admin enforcement anywhere in the path, and a non-admin tenant member
+# calling coord's HTTP API directly bypassed it entirely.
+#
+# Two lessons the old wording encodes. First: do not describe a downstream
+# control from memory of a sibling route. Second: "an admin gate is mounted" is
+# not the same claim as "an admin gate scoped to THIS tenant is mounted" — the
+# union-vs-tenant distinction is exactly what the first fix missed.
+# ``/coord/policies`` authors the rules the runner edge matcher executes (a
+# ``terminal_regex_match`` -> ``submit_prompt`` rule is typed into live agent
+# terminals fleet-wide), so it is the worst possible place to be vague.
 
 
 @router.get("/coord/policies")
