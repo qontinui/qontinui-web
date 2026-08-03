@@ -71,6 +71,91 @@ const KNOWN_REPOS = [
   "qontinui-dev-notes",
 ] as const;
 
+/**
+ * Narrow the operator's free-text phase to coord's `Option<u32>`.
+ *
+ * Takes the first run of digits ("Phase 4" and "Wave 4 — spawn UI" both give
+ * 4) and returns `undefined` when there is none, so the caller omits the field
+ * instead of sending a string.
+ *
+ * The range check is not paranoia: `u32` is the constraint, so a phase like
+ * "99999999999" parses fine in JS and then 422s on coord for the very reason
+ * this function exists. Out of range → omit, same as no digits.
+ */
+export function parsePlanPhase(text: string): number | undefined {
+  const phaseDigits = text.trim().match(/\d+/)?.[0];
+  const parsedPhase =
+    phaseDigits === undefined ? undefined : Number(phaseDigits);
+  return parsedPhase !== undefined &&
+    Number.isInteger(parsedPhase) &&
+    parsedPhase >= 0 &&
+    parsedPhase <= 4294967295
+    ? parsedPhase
+    : undefined;
+}
+
+/** The form state `buildSpawnRequestBody` needs. */
+export interface SpawnFormValues {
+  workUnitSlug: string;
+  /** Free text as typed; narrowed by `parsePlanPhase`. */
+  phase: string;
+  /** Coord device UUID, from `/operations/fleet/health`. */
+  deviceId: string;
+  repos: string[];
+  intent: string;
+  overlapPaths: string[];
+  initialPrompt: string;
+}
+
+/**
+ * Build the `POST /agents/spawn` body.
+ *
+ * Extracted from `handleSubmit` as a pure function purely so the wire shape
+ * can be unit-pinned — the modal needs a live `fetch`, so these key names and
+ * types were otherwise untested. Behaviour is unchanged.
+ *
+ * Stage 4a of plan `2026-07-28-coord-post-plan-slug-surfaces-rename` moved
+ * this writer from `plan_slug` to `work_unit_slug`. Coord's `SpawnRequest`
+ * opened the dual-accept window in Stage 2 (`#[serde(alias = "plan_slug")]`,
+ * coord#1332, serving since `651c4e78`).
+ *
+ * Send exactly ONE of the two spellings, never both: serde's derive treats an
+ * alias as the SAME field, so a body carrying `plan_slug` AND `work_unit_slug`
+ * is rejected outright as a `duplicate field` error rather than resolved
+ * last-one-wins. Adding the new key alongside the old would have broken every
+ * spawn. Stage 4b drops the alias, at which point `plan_slug` stops working
+ * entirely — `spawn_request_omits_legacy_plan_slug` is what keeps that honest.
+ *
+ * The field shapes are dictated by `SpawnRequest` (`agents_spawn.rs:86-104`),
+ * which axum extracts with `Json(req): Json<SpawnRequest>` — strict serde, so
+ * a mismatch is a hard 422 BEFORE any handler logic runs. This modal
+ * previously sent `device_id` (a key coord does not read, leaving the REQUIRED
+ * `target_device_id` absent), `repos` as bare strings, and `plan_phase` as
+ * free text, so every submit 422'd. Do not "simplify" these back:
+ *   - `target_device_id`: required `Uuid`, no `serde(default)`
+ *   - `repos`: `Vec<AllocateRepoSpec>` = `[{ repo, parent_sha? }]`, NOT
+ *     `string[]`. The `repo` is the BARE name — `agent_worktrees.repo` is bare,
+ *     unlike the `owner/name` full slug `repo_branches.repo` carries.
+ *   - `plan_phase`: `Option<u32>`, so a non-numeric phase must be OMITTED
+ *     rather than sent as a string
+ */
+export function buildSpawnRequestBody(
+  v: SpawnFormValues
+): Record<string, unknown> {
+  const planPhase = parsePlanPhase(v.phase);
+  return {
+    work_unit_slug: v.workUnitSlug,
+    // Omitted entirely when the operator's free-text phase carries no
+    // digits — the field is optional, and sending a string 422s.
+    ...(planPhase === undefined ? {} : { plan_phase: planPhase }),
+    target_device_id: v.deviceId,
+    repos: v.repos.map((repo) => ({ repo })),
+    intent: v.intent,
+    declared_overlap_paths: v.overlapPaths,
+    initial_prompt: v.initialPrompt,
+  };
+}
+
 interface FleetHealthDevice {
   device_id: string;
   hostname?: string;
@@ -194,56 +279,15 @@ export function SpawnModal({
     setError(null);
     setSubmitting(true);
     try {
-      // Stage 4a of plan `2026-07-28-coord-post-plan-slug-surfaces-rename`:
-      // this writer moved from `plan_slug` to `work_unit_slug`. Coord's
-      // `SpawnRequest` opened the dual-accept window in Stage 2
-      // (`#[serde(alias = "plan_slug")]`, coord#1332, serving since
-      // 651c4e78), so the new key is understood by the deployed coord.
-      //
-      // Send exactly ONE of the two spellings, never both: serde's derive
-      // treats an alias as the SAME field, so a body carrying `plan_slug`
-      // AND `work_unit_slug` is rejected outright as a `duplicate field`
-      // error rather than resolved last-one-wins. Adding the new key
-      // alongside the old would therefore have broken every spawn.
-      // The three field shapes below are dictated by coord's `SpawnRequest`
-      // (`agents_spawn.rs:86-104`), which axum extracts with
-      // `Json(req): Json<SpawnRequest>` — strict serde, so a mismatch is a
-      // hard 422 BEFORE any handler logic runs. This modal previously sent
-      // `device_id` (a key coord does not read, leaving the REQUIRED
-      // `target_device_id` absent), `repos` as bare strings, and
-      // `plan_phase` as free text, so every submit 422'd. Do not "simplify"
-      // these back:
-      //   - target_device_id: required Uuid, no serde(default)
-      //   - repos:            Vec<AllocateRepoSpec> = [{ repo, parent_sha? }],
-      //                       NOT string[]
-      //   - plan_phase:       Option<u32>, so a non-numeric phase must be
-      //                       OMITTED rather than sent as a string
-      //
-      // The range check is not paranoia: `u32` is the constraint, so a phase
-      // like "99999999999" parses fine in JS and then 422s on coord for the
-      // very reason this block exists. Out of range → omit, same as no digits.
-      const phaseDigits = phase.trim().match(/\d+/)?.[0];
-      const parsedPhase =
-        phaseDigits === undefined ? undefined : Number(phaseDigits);
-      const planPhase =
-        parsedPhase !== undefined &&
-        Number.isInteger(parsedPhase) &&
-        parsedPhase >= 0 &&
-        parsedPhase <= 4294967295
-          ? parsedPhase
-          : undefined;
-
-      const body = {
-        work_unit_slug: planSlug,
-        // Omitted entirely when the operator's free-text phase carries no
-        // digits — the field is optional, and sending a string 422s.
-        ...(planPhase === undefined ? {} : { plan_phase: planPhase }),
-        target_device_id: deviceId,
-        repos: allRepos.map((repo) => ({ repo })),
+      const body = buildSpawnRequestBody({
+        workUnitSlug: planSlug,
+        phase,
+        deviceId,
+        repos: allRepos,
         intent: intent.trim(),
-        declared_overlap_paths: parsedOverlapPaths,
-        initial_prompt: initialPrompt.trim(),
-      };
+        overlapPaths: parsedOverlapPaths,
+        initialPrompt: initialPrompt.trim(),
+      });
       const res = await fetch(`${API}/agents/spawn`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
