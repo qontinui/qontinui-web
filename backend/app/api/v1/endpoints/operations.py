@@ -3298,11 +3298,31 @@ async def get_memory_entry(
 # spawn route is admin-gated because it mints a coord agent and pins
 # device state; allocate stays user-auth (legacy demo entrypoint).
 #
-# Wire shape (request):
-#   ``{ "plan_slug": str, "plan_phase": str, "device_id": str,
-#       "repos": list[str], "intent": str,
-#       "declared_overlap_paths": list[str] | None,
-#       "initial_prompt": str }``
+# Wire shape (request) — dictated by coord's ``SpawnRequest``, which axum
+# extracts with strict serde, so a mismatch is a hard 422 before any
+# handler logic runs:
+#   ``{ "target_device_id": str (uuid, REQUIRED),
+#       "repos": list[{"repo": str, "parent_sha": str | None}] (REQUIRED),
+#       "initial_prompt": str (REQUIRED),
+#       "work_unit_slug": str | None, "plan_phase": int | None,
+#       "intent": str | None,
+#       "declared_overlap_paths": list[str] | None }``
+#
+# This comment previously documented ``device_id``, ``repos: list[str]``
+# and a string ``plan_phase`` — none of which coord accepts. That drift
+# was live in the /admin/coord/spawn modal (fixed alongside this note).
+#
+# ``work_unit_slug`` was spelled ``plan_slug`` until Stage 4a of plan
+# ``2026-07-28-coord-post-plan-slug-surfaces-rename``; the value always
+# named a work-unit slug. Coord still accepts the old name as a
+# deprecated serde alias (Stage 2, coord#1332) and drops it in Stage 4b,
+# so this proxy must not reintroduce it. Send one spelling or the other,
+# never both — coord treats the alias as the same field and rejects a
+# body carrying both as a ``duplicate field`` error.
+#
+# This route forwards ``body`` verbatim, so it imposes no shape of its
+# own; the note above documents what the ``/admin/coord/spawn`` page
+# sends and what coord accepts.
 #
 # Wire shape (response): coord's spawn payload passes through — at
 # minimum ``{ "agent_id": str, "agent_session_id": str, ...}``.

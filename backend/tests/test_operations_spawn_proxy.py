@@ -129,11 +129,14 @@ class TestPostAgentsSpawn:
         }
         mock_resp = _mock_response(json_data=coord_payload)
 
+        # Mirrors coord's SpawnRequest exactly. The route forwards the body
+        # verbatim, so this fixture doubles as web's documentation of the
+        # wire shape — it must not show a body coord would reject.
         body = {
-            "plan_slug": "2026-05-19-coordinator-production-readiness",
-            "plan_phase": "Phase 4",
-            "device_id": "00000000-0000-0000-0000-deadbeefcafe",
-            "repos": ["qontinui-web", "qontinui-coord"],
+            "work_unit_slug": "2026-05-19-coordinator-production-readiness",
+            "plan_phase": 4,
+            "target_device_id": "00000000-0000-0000-0000-deadbeefcafe",
+            "repos": [{"repo": "qontinui-web"}, {"repo": "qontinui-coord"}],
             "intent": "spawn-from-plan demo",
             "declared_overlap_paths": ["backend/app/api/v1/endpoints/operations.py"],
             "initial_prompt": "You are Wave 4 of the readiness rollout...",
@@ -162,7 +165,7 @@ class TestPostAgentsSpawn:
 
             resp = unresolved_client.post(
                 f"{API_PREFIX}/agents/spawn",
-                json={"plan_slug": "x", "device_id": "y"},
+                json={"work_unit_slug": "x", "target_device_id": "y"},
             )
 
         assert resp.status_code == 403
@@ -179,7 +182,7 @@ class TestPostAgentsSpawn:
             _configure_mock_client(MockClient, instance)
             resp = client.post(
                 f"{API_PREFIX}/agents/spawn",
-                json={"plan_slug": "bogus"},
+                json={"work_unit_slug": "bogus"},
             )
         assert resp.status_code == 400
 
@@ -190,7 +193,7 @@ class TestPostAgentsSpawn:
             _configure_mock_client(MockClient, instance)
             resp = client.post(
                 f"{API_PREFIX}/agents/spawn",
-                json={"plan_slug": "x"},
+                json={"work_unit_slug": "x"},
             )
         assert resp.status_code == 502
 
