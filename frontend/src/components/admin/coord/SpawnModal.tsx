@@ -81,6 +81,61 @@ interface FleetHealthPayload {
   devices?: FleetHealthDevice[];
 }
 
+/** Coord's `plan_phase` is an `Option<u32>`, but the Phase input is free
+ *  text by design (the plan owns phase nomenclature: "Phase 4", "Wave 4",
+ *  "3a"). Pull the FIRST integer out of the free text; return `undefined`
+ *  when there is none, so the caller omits the key instead of sending a
+ *  string. The field is `#[serde(default)]` and purely informational, so
+ *  omitting it spawns fine — whereas a string 422s the entire request. */
+export function parsePlanPhase(phase: string): number | undefined {
+  const match = phase.match(/\d+/);
+  if (!match) return undefined;
+  const n = Number.parseInt(match[0], 10);
+  return Number.isSafeInteger(n) && n >= 0 ? n : undefined;
+}
+
+/** Build the `POST /agents/spawn` body.
+ *
+ *  Extracted from the component so the wire contract is unit-testable —
+ *  this body must match coord's `SpawnRequest` (`agents_spawn.rs`)
+ *  EXACTLY. Coord extracts it with `Json(req): Json<SpawnRequest>`, i.e.
+ *  strict serde, so a shape mismatch is a hard 422 BEFORE any handler
+ *  logic runs. Until plan `2026-07-28-coord-post-plan-slug-surfaces-rename`
+ *  Stage 4a this surface had never worked: it sent `device_id` (which
+ *  `SpawnRequest` does not declare — and since the struct sets no
+ *  `deny_unknown_fields`, that key was silently IGNORED rather than
+ *  erroring, leaving the REQUIRED `target_device_id` absent), a
+ *  `Vec<String>` for `repos`, and a string `plan_phase`.
+ *
+ *  Send exactly ONE slug key: coord reads `work_unit_slug` with
+ *  `#[serde(alias = "plan_slug")]`, and a serde alias makes both spellings
+ *  the SAME field, so a body carrying both fails with `duplicate field`. */
+export function buildSpawnRequestBody(input: {
+  workUnitSlug: string;
+  phase: string;
+  deviceId: string;
+  repos: string[];
+  intent: string;
+  declaredOverlapPaths: string[];
+  initialPrompt: string;
+}): Record<string, unknown> {
+  const planPhase = parsePlanPhase(input.phase);
+  return {
+    work_unit_slug: input.workUnitSlug,
+    // `Option<u32>` — omitted entirely when the phase carries no integer.
+    ...(planPhase !== undefined ? { plan_phase: planPhase } : {}),
+    // REQUIRED `uuid::Uuid`, and named `target_device_id`, not `device_id`.
+    target_device_id: input.deviceId,
+    // `Vec<AllocateRepoSpec>` (`agent_worktrees.rs:114`), not `Vec<String>`.
+    // `parent_sha` is optional — omitting it lets coord branch off the
+    // authoritative `coord_main_sha` rather than a contaminated tree.
+    repos: input.repos.map((repo) => ({ repo })),
+    intent: input.intent.trim(),
+    declared_overlap_paths: input.declaredOverlapPaths,
+    initial_prompt: input.initialPrompt.trim(),
+  };
+}
+
 export interface SpawnModalProps {
   /** Whether the modal is open. */
   open: boolean;
@@ -180,6 +235,8 @@ export function SpawnModal({
     [overlapPaths]
   );
 
+  const parsedPhase = useMemo(() => parsePlanPhase(phase), [phase]);
+
   const canSubmit =
     !submitting &&
     workUnitSlug.length > 0 &&
@@ -193,15 +250,15 @@ export function SpawnModal({
     setError(null);
     setSubmitting(true);
     try {
-      const body = {
-        work_unit_slug: workUnitSlug,
-        plan_phase: phase.trim(),
-        device_id: deviceId,
+      const body = buildSpawnRequestBody({
+        workUnitSlug,
+        phase,
+        deviceId,
         repos: allRepos,
-        intent: intent.trim(),
-        declared_overlap_paths: parsedOverlapPaths,
-        initial_prompt: initialPrompt.trim(),
-      };
+        intent,
+        declaredOverlapPaths: parsedOverlapPaths,
+        initialPrompt,
+      });
       const res = await fetch(`${API}/agents/spawn`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -281,6 +338,18 @@ export function SpawnModal({
               placeholder='e.g. "Phase 4" or "Wave 4 — spawn UI"'
               data-testid="coord-spawn-phase"
             />
+            {/* Coord stores the phase as a number, so say which number this
+                free text resolves to instead of dropping it silently. */}
+            {phase.trim().length > 0 && (
+              <p
+                className="text-xs text-muted-foreground"
+                data-testid="coord-spawn-phase-hint"
+              >
+                {parsedPhase !== undefined
+                  ? `Sent to coord as phase ${parsedPhase}.`
+                  : "No number found — the phase will be omitted (it is informational only; the spawn still works)."}
+              </p>
+            )}
           </div>
 
           <div className="space-y-1.5">
