@@ -10,9 +10,13 @@
  *     the `work_unit_slug` wire key since Stage 4a of plan
  *     `2026-07-28-coord-post-plan-slug-surfaces-rename`; the value always
  *     named a work-unit slug. See the wire-key note on `handleSubmit`.
- *   - plan_phase  (free-text; the plan owns phase nomenclature)
- *   - device_id   (dropdown, sourced from /operations/fleet/health)
- *   - repos       (multi-select checkbox list of known repos)
+ *   - plan_phase  (free-text input; the leading integer is extracted and sent
+ *     as `plan_phase`, which coord types `Option<u32>`. A phase with no
+ *     digits is omitted from the body rather than sent as a string.)
+ *   - device_id   (dropdown, sourced from /operations/fleet/health) — sent
+ *     as `target_device_id`, the name coord requires
+ *   - repos       (multi-select checkbox list of known repos) — sent as
+ *     `[{ repo }]` objects, not bare strings
  *   - intent      (short free-text description)
  *   - declared_overlap_paths (newline-delimited list, optional)
  *   - initial_prompt (the agent's first-tick prompt body)
@@ -201,11 +205,30 @@ export function SpawnModal({
       // AND `work_unit_slug` is rejected outright as a `duplicate field`
       // error rather than resolved last-one-wins. Adding the new key
       // alongside the old would therefore have broken every spawn.
+      // The three field shapes below are dictated by coord's `SpawnRequest`
+      // (`agents_spawn.rs:86-104`), which axum extracts with
+      // `Json(req): Json<SpawnRequest>` — strict serde, so a mismatch is a
+      // hard 422 BEFORE any handler logic runs. This modal previously sent
+      // `device_id` (a key coord does not read, leaving the REQUIRED
+      // `target_device_id` absent), `repos` as bare strings, and
+      // `plan_phase` as free text, so every submit 422'd. Do not "simplify"
+      // these back:
+      //   - target_device_id: required Uuid, no serde(default)
+      //   - repos:            Vec<AllocateRepoSpec> = [{ repo, parent_sha? }],
+      //                       NOT string[]
+      //   - plan_phase:       Option<u32>, so a non-numeric phase must be
+      //                       OMITTED rather than sent as a string
+      const phaseDigits = phase.trim().match(/\d+/)?.[0];
+      const planPhase =
+        phaseDigits === undefined ? undefined : Number(phaseDigits);
+
       const body = {
         work_unit_slug: planSlug,
-        plan_phase: phase.trim(),
-        device_id: deviceId,
-        repos: allRepos,
+        // Omitted entirely when the operator's free-text phase carries no
+        // digits — the field is optional, and sending a string 422s.
+        ...(planPhase === undefined ? {} : { plan_phase: planPhase }),
+        target_device_id: deviceId,
+        repos: allRepos.map((repo) => ({ repo })),
         intent: intent.trim(),
         declared_overlap_paths: parsedOverlapPaths,
         initial_prompt: initialPrompt.trim(),
