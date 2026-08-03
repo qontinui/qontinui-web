@@ -13,8 +13,11 @@
  *     `work_unit_slug` with `#[serde(alias = "plan_slug")]`, so send
  *     exactly ONE of the two keys — an alias makes both spellings the
  *     same field and a body carrying both fails with `duplicate field`.
- *   - plan_phase  (free-text; the plan owns phase nomenclature)
- *   - device_id   (dropdown, sourced from /operations/fleet/health)
+ *   - plan_phase  (free-text; the plan owns phase nomenclature. Coord
+ *     types it as `Option<u32>`, so the first integer is parsed out and
+ *     the key is omitted when the text carries none.)
+ *   - target_device_id (dropdown, sourced from /operations/fleet/health.
+ *     Sent as `target_device_id`; coord does NOT read `device_id`.)
  *   - repos       (multi-select checkbox list of known repos)
  *   - intent      (short free-text description)
  *   - declared_overlap_paths (newline-delimited list, optional)
@@ -86,12 +89,19 @@ interface FleetHealthPayload {
  *  "3a"). Pull the FIRST integer out of the free text; return `undefined`
  *  when there is none, so the caller omits the key instead of sending a
  *  string. The field is `#[serde(default)]` and purely informational, so
- *  omitting it spawns fine — whereas a string 422s the entire request. */
+ *  omitting it spawns fine — whereas a string 422s the entire request.
+ *
+ *  Bounded to u32: a value coord cannot represent would 422 the whole
+ *  request, which is the exact failure mode this function exists to
+ *  avoid, so an out-of-range number is treated as "no phase". */
+const U32_MAX = 4294967295;
+
 export function parsePlanPhase(phase: string): number | undefined {
   const match = phase.match(/\d+/);
   if (!match) return undefined;
   const n = Number.parseInt(match[0], 10);
-  return Number.isSafeInteger(n) && n >= 0 ? n : undefined;
+  if (!Number.isSafeInteger(n) || n < 0 || n > U32_MAX) return undefined;
+  return n;
 }
 
 /** Build the `POST /agents/spawn` body.

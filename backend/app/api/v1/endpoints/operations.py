@@ -3298,11 +3298,21 @@ async def get_memory_entry(
 # spawn route is admin-gated because it mints a coord agent and pins
 # device state; allocate stays user-auth (legacy demo entrypoint).
 #
-# Wire shape (request):
-#   ``{ "work_unit_slug": str, "plan_phase": str, "device_id": str,
-#       "repos": list[str], "intent": str,
-#       "declared_overlap_paths": list[str] | None,
+# Wire shape (request) — this must match coord's ``SpawnRequest``
+# (``agents_spawn.rs``) exactly, because coord extracts it with
+# ``Json(req): Json<SpawnRequest>``, i.e. strict serde, so a mismatch is a
+# hard 422 before any handler logic runs:
+#   ``{ "work_unit_slug": str, "plan_phase": int | absent,
+#       "target_device_id": str (uuid),
+#       "repos": list[{"repo": str, "parent_sha": str | absent}],
+#       "intent": str, "declared_overlap_paths": list[str] | None,
 #       "initial_prompt": str }``
+#
+# Note ``target_device_id``, NOT ``device_id`` — and ``SpawnRequest``
+# declares no ``deny_unknown_fields``, so a stray ``device_id`` is silently
+# IGNORED rather than rejected, leaving the required field absent. That is
+# precisely how this surface stayed broken unnoticed until plan
+# ``2026-07-28-coord-post-plan-slug-surfaces-rename`` Stage 4a.
 #
 # ``work_unit_slug`` was called ``plan_slug`` until plan
 # ``2026-07-28-coord-post-plan-slug-surfaces-rename`` Stage 4a; it always

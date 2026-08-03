@@ -129,11 +129,13 @@ class TestPostAgentsSpawn:
         }
         mock_resp = _mock_response(json_data=coord_payload)
 
+        # Mirrors coord's SpawnRequest exactly — the route forwards
+        # verbatim, so this fixture doubles as the documented wire shape.
         body = {
             "work_unit_slug": "2026-05-19-coordinator-production-readiness",
-            "plan_phase": "Phase 4",
-            "device_id": "00000000-0000-0000-0000-deadbeefcafe",
-            "repos": ["qontinui-web", "qontinui-coord"],
+            "plan_phase": 4,
+            "target_device_id": "00000000-0000-0000-0000-deadbeefcafe",
+            "repos": [{"repo": "qontinui-web"}, {"repo": "qontinui-coord"}],
             "intent": "spawn-from-plan demo",
             "declared_overlap_paths": ["backend/app/api/v1/endpoints/operations.py"],
             "initial_prompt": "You are Wave 4 of the readiness rollout...",

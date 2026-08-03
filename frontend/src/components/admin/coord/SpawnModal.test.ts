@@ -39,6 +39,14 @@ describe("parsePlanPhase", () => {
     expect(parsePlanPhase("")).toBeUndefined();
     expect(parsePlanPhase("kickoff")).toBeUndefined();
   });
+
+  it("rejects a number coord's u32 cannot represent", () => {
+    // Sending this would 422 the whole spawn — the exact failure mode
+    // this parsing exists to avoid — so it degrades to "no phase".
+    expect(parsePlanPhase("4294967295")).toBe(4294967295);
+    expect(parsePlanPhase("4294967296")).toBeUndefined();
+    expect(parsePlanPhase("99999999999999999999")).toBeUndefined();
+  });
 });
 
 describe("buildSpawnRequestBody", () => {
