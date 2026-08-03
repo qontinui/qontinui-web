@@ -53,15 +53,31 @@ Cases covered (each is a distinct branch of the migration's WHERE clause)
    Once coord dual-writes (Stage 3b), a row can already carry a NEW-vocabulary
    slug that deliberately disagrees with the legacy one; re-running the backfill
    must not overwrite it with the stale value.
-4. **NULL source + populated target** — the guard's other arm
-   (``park_plan_slug IS NOT NULL``): a row coord bound only through the new
-   column keeps its value rather than being NULLed back out.
+   The row bound ONLY through the new column (NULL source, populated target)
+   is the same case, not a separate one: it is excluded by this same first arm.
+4. **Both columns NULL** — the second arm (``park_plan_slug IS NOT NULL``).
+
+   Be precise about what this arm does, because it is easy to over-claim: it is
+   **REDUNDANT for correctness**. Every row it excludes is either already
+   excluded by the first arm, or is a both-NULL row where the UPDATE would
+   write NULL over NULL — and this table carries no trigger and no
+   ``updated_at``, so that write changes no value anybody can read. Deleting
+   ``AND park_plan_slug IS NOT NULL`` produces byte-identical column contents.
+
+   What the arm actually buys is **avoided row-version churn**: without it,
+   every unbound parked row takes a new MVCC tuple for no reason. So that is
+   what is pinned here, via ``xmin`` — not a value assertion, which could not
+   tell the two predicates apart. The check discriminates: with the arm the
+   both-NULL row's ``xmin`` is unchanged across both upgrades; with the arm
+   deleted it changes. (``ALTER TABLE ... ADD COLUMN <nullable, no default>`` is
+   metadata-only on PG 11+, so the ADD itself does not disturb the baseline —
+   verified, not assumed.)
 
 Then three walks are asserted:
 
 * **re-run** (``stamp`` back to the parent, upgrade again) — the UPDATE
   re-executes over its OWN prior output. This is the prod-repair scenario, and
-  the case where cases 3 and 4 actually bite.
+  the case where case 3 actually bites.
 * **downgrade** — drops ONLY ``park_work_unit_slug``. ``park_plan_slug`` is
   still the live column at this stage, so a downgrade that touched it (or its
   values) would take the running coord's parked delivery down with it.
@@ -204,6 +220,25 @@ def _legacy_slugs(engine: Engine) -> dict[str, str | None]:
     return {r[0]: r[1] for r in rows}
 
 
+def _xmin(engine: Engine, to_address: str) -> str:
+    """The row's ``xmin`` — the txid that produced its current MVCC version.
+
+    An UPDATE that matches the row writes a new tuple and therefore a new
+    ``xmin``, whether or not the value it writes differs. That is exactly what
+    makes this readable as "was this row touched?", which no value assertion
+    can answer for a write of NULL over NULL.
+    """
+    with engine.connect() as conn:
+        value = conn.execute(
+            text(
+                "SELECT xmin::text FROM coord.session_messages WHERE to_address = :addr"
+            ),
+            {"addr": to_address},
+        ).scalar()
+    assert value is not None, f"no row for {to_address}"
+    return str(value)
+
+
 def _indexes_mentioning(engine: Engine, column: str) -> list[str]:
     """Index names on ``session_messages`` whose definition references ``column``."""
     with engine.connect() as conn:
@@ -259,6 +294,10 @@ def test_parkwuslug_01_backfills_copies_and_downgrades() -> None:
 
         _seed(engine)
 
+        # Case 4 baseline. _UNBOUND is the both-NULL row, so the second guard
+        # arm is the only thing standing between it and a pointless rewrite.
+        unbound_xmin = _xmin(engine, _UNBOUND)
+
         # ----------------------------------------------------------------
         # 2. Apply the revision — expand + backfill.
         # ----------------------------------------------------------------
@@ -277,6 +316,17 @@ def test_parkwuslug_01_backfills_copies_and_downgrades() -> None:
         # over-deliverable to undeliverable, which is the opposite failure but a
         # failure all the same.
         assert after[_UNBOUND] == (None, None)
+
+        # Case 4 — the second guard arm. A value assertion cannot see this: the
+        # UPDATE would write NULL over NULL, so the columns read identically
+        # either way. xmin can — an unmatched row keeps its tuple. The ADD
+        # COLUMN above is metadata-only (nullable, no default), so an unchanged
+        # xmin here means the UPDATE genuinely skipped the row.
+        assert _xmin(engine, _UNBOUND) == unbound_xmin, (
+            "the both-NULL row must not be rewritten: the second guard arm "
+            "(park_plan_slug IS NOT NULL) exists to spare every unbound parked "
+            "row a needless MVCC row version"
+        )
 
         # The source column is read-only to this revision — Stage 3d drops it,
         # not 3a.
@@ -324,8 +374,9 @@ def test_parkwuslug_01_backfills_copies_and_downgrades() -> None:
             "the backfill must not clobber a slug coord already dual-wrote"
         )
 
-        # Case 4 — the guard's other arm: a NULL source must not NULL out a
-        # populated target.
+        # Still case 3, not a second arm: this row is bound only through the new
+        # column, and `park_work_unit_slug IS NULL` is already false for it. The
+        # first arm is what spares it; the second never gets to weigh in.
         assert rerun[_NEW_ONLY] == (None, _SLUG_NEW_ONLY), (
             "a NULL park_plan_slug must not erase an existing park_work_unit_slug"
         )
@@ -334,6 +385,12 @@ def test_parkwuslug_01_backfills_copies_and_downgrades() -> None:
         assert rerun[_BOUND_A] == (_SLUG_A, _SLUG_A)
         assert rerun[_BOUND_B] == (_SLUG_B, _SLUG_B)
         assert rerun[_UNBOUND] == (None, None)
+
+        # Case 4 again, and this is the pass that matters: the re-run is where a
+        # missing second arm would rewrite every unbound row a SECOND time.
+        assert _xmin(engine, _UNBOUND) == unbound_xmin, (
+            "re-running must still leave the both-NULL row's tuple untouched"
+        )
 
         # ----------------------------------------------------------------
         # 4. Downgrade — drops the NEW column only. park_plan_slug is still the
