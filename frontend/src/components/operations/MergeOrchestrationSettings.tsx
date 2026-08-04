@@ -14,10 +14,17 @@
  *    `coord.tenant_repos`, with NULL=inherit display + edit per field.
  *    Inline edits PATCH `/api/v1/operations/pr-merge/repos/:repo/profile`.
  *
- * This page is **secondary** to the Phase 8 onboarding flow — most
- * users shouldn't have a reason to visit. The header note makes that
- * obvious; manual edits get stamped `profile_source='user_edit'` so
- * the audit re-run preserves them.
+ * Merge enablement is a BOOLEAN (`merge_enabled`), not the retired
+ * `rollout_state` tri-state, and it is written through the audited
+ * `POST /pr-merge/merge-enabled` route rather than either PATCH. Every
+ * control that renders it also renders whether the value is PINNED at that
+ * scope or inherited — coord serves `merge_enabled_override` (the raw pin)
+ * beside the resolved boolean precisely so this page can stop guessing.
+ *
+ * This page is a **calibration** surface, secondary to the Phase 8 onboarding
+ * flow — most users shouldn't have a reason to visit. The emergency stop is
+ * not here; it lives on the fleet page's merge-train view, which is the
+ * surface an operator is actually on during an incident.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -32,13 +39,13 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   AlertTriangle,
   Settings as SettingsIcon,
-  Power,
   Activity,
 } from "lucide-react";
 import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
 import { CoordAdminOnly } from "@/components/admin/coord/CoordAdminOnly";
 import { OPERATIONS_API } from "./utils";
+import type { MergeEnabledResponse } from "./mergeTypes";
 
 const log = createLogger("MergeOrchestrationSettings");
 
@@ -65,21 +72,22 @@ interface EscalatePolicy {
   disposition: EscalateDisposition;
 }
 
-type RolloutState = "dry_run" | "shadow" | "live";
-
 interface EffectiveProfile {
   tenant_id: string;
   repo: string;
   min_green_dwell: number; // seconds
   confidence_threshold: number;
   auto_merge_enabled: boolean;
-  // DERIVED from `rollout_state` at resolve time (true iff dry_run) — the
-  // legacy writable booleans were retired; rollout_state is the sole
-  // representation. Read-only convenience mirror of coord's EffectiveProfile.
-  dry_run: boolean;
-  // The resolved rollout state — the one canonical rollout field. Writes go
-  // through POST /pr-merge/rollout (never the settings PATCH).
-  rollout_state: RolloutState;
+  // The RESOLVED merge-enablement boolean — per-repo pin, else the tenant
+  // value, else coord's `true` default, with the tenant-wide `merge_paused`
+  // latch dominating all of it. Writes go through
+  // POST /pr-merge/merge-enabled (never the settings PATCH).
+  //
+  // Resolved-only: it cannot tell you whether this repo is PINNED or merely
+  // inheriting. That distinction lives in `merge_enabled_override` on the
+  // per-repo reads below, and rendering only this field is exactly the bug
+  // that made a whole fleet's pinned state invisible from this dashboard.
+  merge_enabled: boolean;
   rulebook_overrides: Record<string, unknown> | null;
   // The resolved escalate config, read back as typed policies. coord returns
   // `[]` for a default/unconfigured tenant; still guarded with `?? []` at every
@@ -105,6 +113,16 @@ interface RepoProfileResponse {
   tenant_id: string;
   repo: string;
   profile: EffectiveProfile;
+  // The RAW per-repo pin, alongside the resolved `profile.merge_enabled`:
+  //   true  → pinned on
+  //   false → pinned off
+  //   null  → not pinned; this repo inherits
+  //
+  // Declared because it is part of this response and a reader needs to know
+  // the pin is available here. The per-repo card nonetheless reads the pin off
+  // the repo-LIST row (same value, refreshed after every save), because this
+  // read is issued once per mount and would go stale — see RepoOverrideCard.
+  merge_enabled_override: boolean | null;
 }
 
 interface TenantRepoRow {
@@ -113,6 +131,10 @@ interface TenantRepoRow {
   framework_signals: string[];
   profile_source: string | null;
   profile_version: number | null;
+  /** Resolved merge enablement for this repo. */
+  merge_enabled: boolean;
+  /** Raw per-repo pin; `null` = inheriting. */
+  merge_enabled_override: boolean | null;
 }
 
 interface TenantReposResponse {
@@ -137,7 +159,19 @@ interface SloWindowMetrics {
 
 interface RepoSlo {
   repo: string;
-  current_rollout_state: "dry_run" | "shadow" | "live";
+  /**
+   * The retired tri-state. coord keeps serving it until it drops the column;
+   * nothing here renders it. Declared so the wire stays documented at the one
+   * place that reads this response — do NOT render it: a repo's merge posture
+   * is `merge_enabled` now, and showing both would give an operator two
+   * answers to one question.
+   */
+  current_rollout_state: string;
+  /** RESOLVED merge enablement (pin → tenant → default `true`, with the
+   *  tenant-wide pause dominating). */
+  merge_enabled: boolean;
+  /** RAW per-repo pin: `true`/`false` = pinned, `null` = inheriting. */
+  merge_enabled_override: boolean | null;
   windows: {
     last_7d: SloWindowMetrics;
     last_30d: SloWindowMetrics;
@@ -158,17 +192,135 @@ interface SloResponse {
   generated_at: string;
 }
 
-interface KillSwitchResponse {
-  scope: string;
-  previous_state: string | null;
-  new_state: string;
-  affected_repos: string[];
-}
+// `MergeEnabledResponse` (mergeTypes.ts) is the shared body of both
+// `POST /pr-merge/merge-enabled` and `POST /pr-merge/kill-switch`.
 
-interface RolloutResponse {
-  scope: string;
-  state: string;
-  affected_repos: string[];
+// ----------------------------------------------------------------------------
+// Tenant merge pause — a LATCH, not a default
+// ----------------------------------------------------------------------------
+
+/**
+ * The tenant-wide merge pause.
+ *
+ * **This is the emergency stop wearing a settings-page hat, so it is guarded
+ * like one.** coord has no tenant-tier `merge_enabled` column: a tenant-scoped
+ * write sets `tenant_merge_settings.merge_paused`, and that latch DOMINATES
+ * every per-repo pin by construction. Turning this off therefore stops the
+ * entire fleet — including repos an operator has deliberately pinned ON — so
+ * it gets the same discipline as `EmergencyStopControl` on the merge-train
+ * view: an operator-typed reason, a confirm that names the real blast radius,
+ * and no batching into the "Save tenant defaults" button. A latch that fires
+ * as a side effect of saving a dwell-time edit is precisely the surprise this
+ * plan exists to remove.
+ *
+ * The OFF direction goes through `/pr-merge/kill-switch`, not
+ * `/pr-merge/merge-enabled`, even though both write the same latch: only the
+ * kill-switch path writes the `coord.alerts(kind='kill_switch_fired')` row.
+ * Two doors to one destructive effect, one of them silent, is how a fleet gets
+ * paused with nothing in the audit trail to explain it. The ON direction lifts
+ * the latch through the merge-enabled route, which is the non-destructive
+ * direction and needs no alert.
+ */
+function TenantMergePauseControl({
+  paused,
+  onChanged,
+}: {
+  paused: boolean;
+  onChanged: () => void;
+}) {
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const flip = useCallback(
+    async (nextEnabled: boolean) => {
+      setError(null);
+      const reason = window.prompt(
+        nextEnabled
+          ? "Lift the tenant-wide merge pause. Reason (required):"
+          : "Pause merges for EVERY repo this tenant owns. Reason (required):"
+      );
+      if (reason === null) return;
+      if (reason.trim().length === 0) {
+        setError("Reason is required.");
+        return;
+      }
+      const ok = window.confirm(
+        nextEnabled
+          ? "Lift the tenant-wide pause. Repos pinned OFF stay off; every " +
+              "other repo resumes merging as soon as its PRs are green. " +
+              "Proceed?"
+          : "Pause merges for EVERY repo this tenant owns — INCLUDING repos " +
+              "pinned ON, because the tenant pause overrides every per-repo " +
+              "setting. In-flight merges drain; nothing new is pushed " +
+              "anywhere. Proceed?"
+      );
+      if (!ok) return;
+      setSubmitting(true);
+      try {
+        // OFF → the audited kill-switch door (writes the alert row).
+        // ON  → the merge-enabled door, clearing the latch.
+        const res = await httpClient.fetch(
+          nextEnabled
+            ? `${OPERATIONS_API}/pr-merge/merge-enabled`
+            : `${OPERATIONS_API}/pr-merge/kill-switch`,
+          {
+            method: "POST",
+            body: JSON.stringify(
+              nextEnabled
+                ? { scope: "tenant", enabled: true, reason: reason.trim() }
+                : { scope: "tenant", reason: reason.trim() }
+            ),
+          }
+        );
+        if (!res.ok) {
+          const detail = await res.text().catch(() => "");
+          throw new Error(`HTTP ${res.status}${detail ? `: ${detail}` : ""}`);
+        }
+        (await res.json()) as MergeEnabledResponse;
+        onChanged();
+      } catch (err) {
+        log.warn("tenant merge pause flip failed", err);
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [onChanged]
+  );
+
+  return (
+    <div
+      className={`flex items-start justify-between gap-3 rounded-md border px-3 py-2 ${
+        paused ? "border-red-500/60" : ""
+      }`}
+      data-testid="settings-tenant-pause"
+    >
+      <div>
+        <Label htmlFor="tenant-merge-pause">Merges enabled tenant-wide</Label>
+        <p className="text-xs text-muted-foreground">
+          A <strong>pause latch</strong>, not a default. Switching it off stops
+          merges on <strong>every repo this tenant owns</strong>, including
+          repos pinned on — the pause overrides every per-repo setting.
+          Switching it back on only lifts the pause: unpinned repos then follow
+          coord&apos;s built-in default and pinned repos keep their pin. Both
+          directions need a reason and are audited.
+        </p>
+        {error && (
+          <p className="text-xs text-red-300 flex items-center gap-1 mt-1">
+            <AlertTriangle className="h-3 w-3" />
+            {error}
+          </p>
+        )}
+      </div>
+      <Switch
+        id="tenant-merge-pause"
+        checked={!paused}
+        disabled={submitting}
+        onCheckedChange={(next) => void flip(next)}
+        data-testid="settings-merge-enabled"
+      />
+    </div>
+  );
 }
 
 // ----------------------------------------------------------------------------
@@ -191,9 +343,6 @@ function TenantDefaultsCard({
   const [autoMerge, setAutoMerge] = useState<boolean>(
     profile.auto_merge_enabled
   );
-  const [rolloutState, setRolloutState] = useState<RolloutState>(
-    profile.rollout_state
-  );
   const [autoFixRedMain, setAutoFixRedMain] = useState<boolean>(
     profile.auto_fix_red_main
   );
@@ -212,7 +361,6 @@ function TenantDefaultsCard({
     setMinDwell(String(profile.min_green_dwell));
     setConfidence(String(profile.confidence_threshold));
     setAutoMerge(profile.auto_merge_enabled);
-    setRolloutState(profile.rollout_state);
     setAutoFixRedMain(profile.auto_fix_red_main);
     setEscalatePathsText(
       (profile.escalate_policies ?? []).map((p) => p.glob).join("\n")
@@ -258,28 +406,6 @@ function TenantDefaultsCard({
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
       }
-      // Rollout state is NOT a settings-PATCH field — it goes through the
-      // rollout route (which audits the flip and enforces the shadow→live
-      // guard). Only fire it when the operator actually changed the value.
-      if (rolloutState !== profile.rollout_state) {
-        const rolloutRes = await httpClient.fetch(
-          `${OPERATIONS_API}/pr-merge/rollout`,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              scope: "tenant",
-              state: rolloutState,
-              reason: "dashboard: tenant settings save",
-            }),
-          }
-        );
-        if (!rolloutRes.ok) {
-          const detail = await rolloutRes.text().catch(() => "");
-          throw new Error(
-            `rollout: HTTP ${rolloutRes.status}${detail ? `: ${detail}` : ""}`
-          );
-        }
-      }
       onSaved();
     } catch (err) {
       log.warn("save tenant settings failed", err);
@@ -291,8 +417,6 @@ function TenantDefaultsCard({
     minDwell,
     confidence,
     autoMerge,
-    rolloutState,
-    profile.rollout_state,
     autoFixRedMain,
     shadowFloor,
     escalatePathsText,
@@ -356,43 +480,28 @@ function TenantDefaultsCard({
             </p>
           </div>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="flex items-center justify-between rounded-md border px-3 py-2">
-            <div>
-              <Label htmlFor="auto-merge">Auto-merge enabled</Label>
-              <p className="text-xs text-muted-foreground">
-                Master kill-switch on the auto-merge path.
-              </p>
-            </div>
-            <Switch
-              id="auto-merge"
-              checked={autoMerge}
-              onCheckedChange={setAutoMerge}
-              data-testid="settings-auto-merge"
-            />
+        <div className="flex items-center justify-between rounded-md border px-3 py-2">
+          <div>
+            <Label htmlFor="auto-merge">Auto-merge enabled</Label>
+            <p className="text-xs text-muted-foreground">
+              Master kill-switch on the auto-merge path.
+            </p>
           </div>
-          <div className="flex items-center justify-between rounded-md border px-3 py-2 gap-3">
-            <div>
-              <Label htmlFor="rollout-state">Rollout state</Label>
-              <p className="text-xs text-muted-foreground">
-                dry-run: full pipeline, no GitHub mutations. shadow: verdicts
-                recorded, nothing merges. live: full auto-merge. Promoting to
-                live requires passing through shadow first.
-              </p>
-            </div>
-            <select
-              id="rollout-state"
-              className="h-9 rounded-md border bg-background px-3 text-sm"
-              value={rolloutState}
-              onChange={(e) => setRolloutState(e.target.value as RolloutState)}
-              data-testid="settings-rollout-state"
-            >
-              <option value="dry_run">dry-run</option>
-              <option value="shadow">shadow</option>
-              <option value="live">live</option>
-            </select>
-          </div>
+          <Switch
+            id="auto-merge"
+            checked={autoMerge}
+            onCheckedChange={setAutoMerge}
+            data-testid="settings-auto-merge"
+          />
         </div>
+        {/* Full width, and NOT inside the two-up grid with the ordinary
+            toggles: this one latches the whole fleet, and sitting it beside a
+            calibration switch is what made it read as one. It also acts on
+            flip rather than on Save — see TenantMergePauseControl. */}
+        <TenantMergePauseControl
+          paused={!profile.merge_enabled}
+          onChanged={onSaved}
+        />
         <div className="flex items-start justify-between gap-3 rounded-md border border-amber-500/40 px-3 py-2">
           <div>
             <Label htmlFor="auto-fix-red-main">
@@ -453,31 +562,57 @@ function TenantDefaultsCard({
 
 function RepoOverrideCard({
   repoRow,
+  tenantPaused,
   onSaved,
 }: {
   repoRow: TenantRepoRow;
+  tenantPaused: boolean;
   onSaved: () => void;
 }) {
-  const [profile, setProfile] = useState<EffectiveProfile | null>(null);
+  const [repoProfile, setRepoProfile] = useState<RepoProfileResponse | null>(
+    null
+  );
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // Local edit state. `""`/`"inherit"` = leave unchanged; a value = override.
-  // The card is WRITE-ONLY: coord's RepoProfileResponse returns only the
-  // RESOLVED profile, not the raw per-repo overrides, so there is nothing to
-  // preload the fields from. To avoid clobbering overrides the operator did
-  // NOT touch, we track which fields were edited (`dirty`) and PATCH only
-  // those — an omitted field is left unchanged by coord's PatchField(absent).
-  // Full visibility/preload of existing overrides needs a coord API addition
-  // (dev-notes plan 2026-07-22-merge-settings-repo-override-preload, Option A).
+  // What coord currently STORES for this repo's merge-enablement pin, and what
+  // it currently RESOLVES to — both straight off the repo-list row.
+  //
+  // Deliberately NOT off the per-repo profile fetch, even though that read
+  // carries the same two fields: the fetch is keyed on the repo name and so
+  // never re-runs for a card that stays mounted, whereas the parent re-reads
+  // `/pr-merge/repos` after every save. Reading the pin from the fetch would
+  // leave the control showing the PRE-save pin — the same class of lie this
+  // change exists to remove, just one release later.
+  const storedPin: PinChoice = pinChoice(repoRow.merge_enabled_override);
+  const resolvedMergeEnabled = repoRow.merge_enabled;
+
+  // Local edit state. `""` = leave unchanged; a value = override.
+  // Most of this card is still WRITE-ONLY: coord's RepoProfileResponse returns
+  // the RESOLVED profile for the numeric/glob fields, not the raw per-repo
+  // overrides, so there is nothing to preload those from. To avoid clobbering
+  // overrides the operator did NOT touch, we track which fields were edited
+  // (`dirty`) and PATCH only those — an omitted field is left unchanged by
+  // coord's PatchField(absent). Full visibility/preload of the remaining
+  // overrides needs a coord API addition (dev-notes plan
+  // 2026-07-22-merge-settings-repo-override-preload, Option A).
+  //
+  // Merge enablement is the EXCEPTION and no longer write-only: coord serves
+  // `merge_enabled_override` (the raw pin) beside `profile.merge_enabled` (the
+  // resolved value), so that control below renders what is actually stored.
   const [confidenceOverride, setConfidenceOverride] = useState<string>("");
   const [escalatePathsExtraText, setEscalatePathsExtraText] =
     useState<string>("");
   const [labelBudget, setLabelBudget] = useState<string>("");
-  // Per-repo rollout state. "inherit" = leave the per-repo tier unset (no
-  // write); a concrete state POSTs /pr-merge/rollout with scope=repo:<repo>.
-  const [rolloutOverride, setRolloutOverride] = useState<
-    "inherit" | RolloutState
-  >("inherit");
+  // The pin as the operator has it staged. Starts at whatever is stored, so
+  // the rendered control and the database agree until someone changes it —
+  // and "changed" is exactly `mergePin !== storedPin`.
+  const [mergePin, setMergePin] = useState<PinChoice>(storedPin);
+  // Re-sync when coord's stored pin moves under us (this card's own save, or
+  // another operator's). Keyed on the stored value, so an operator's staged
+  // edit survives an unrelated parent re-render.
+  useEffect(() => {
+    setMergePin(storedPin);
+  }, [storedPin]);
   const [autoFixRedMainOverride, setAutoFixRedMainOverride] = useState<
     "inherit" | "true" | "false"
   >("inherit");
@@ -485,14 +620,6 @@ function RepoOverrideCard({
   const [dirty, setDirty] = useState<Set<string>>(new Set());
   const markDirty = useCallback((field: string) => {
     setDirty((prev) => (prev.has(field) ? prev : new Set(prev).add(field)));
-  }, []);
-  const unmarkDirty = useCallback((field: string) => {
-    setDirty((prev) => {
-      if (!prev.has(field)) return prev;
-      const next = new Set(prev);
-      next.delete(field);
-      return next;
-    });
   }, []);
 
   const [saving, setSaving] = useState(false);
@@ -513,7 +640,7 @@ function RepoOverrideCard({
       })
       .then((body) => {
         if (cancelled) return;
-        setProfile(body.profile);
+        setRepoProfile(body);
       })
       .catch((err) => {
         if (cancelled) return;
@@ -566,8 +693,8 @@ function RepoOverrideCard({
       }
 
       // Skip the PATCH entirely when no profile field changed (e.g. a
-      // rollout-only save) — an empty body is a wasted round-trip and
-      // needlessly couples the rollout POST to the PATCH succeeding.
+      // merge-enablement-only save) — an empty body is a wasted round-trip and
+      // needlessly couples the enablement POST to the PATCH succeeding.
       if (Object.keys(body).length > 0) {
         const url = `${OPERATIONS_API}/pr-merge/repos/${repoRow.repo}/profile`;
         const res = await httpClient.fetch(url, {
@@ -578,26 +705,28 @@ function RepoOverrideCard({
           throw new Error(`HTTP ${res.status}`);
         }
       }
-      // Rollout state is NOT a profile-PATCH field — a concrete selection
-      // POSTs the audited rollout route with a repo scope. "inherit" is the
-      // untouched default and sends nothing (the rollout route has no
-      // clear-to-inherit form).
-      if (dirty.has("rollout_state") && rolloutOverride !== "inherit") {
-        const rolloutRes = await httpClient.fetch(
-          `${OPERATIONS_API}/pr-merge/rollout`,
+      // Merge enablement is NOT a profile-PATCH field — it POSTs the audited
+      // merge-enabled route with a repo scope. Unlike every other field on
+      // this card it is not tracked by `dirty`: the control renders the STORED
+      // pin, so "the operator changed it" is exactly `mergePin !== storedPin`.
+      // All three values write, including `null` — clearing a pin back to
+      // inherit is a real action here, not a no-op placeholder.
+      if (mergePin !== storedPin) {
+        const res = await httpClient.fetch(
+          `${OPERATIONS_API}/pr-merge/merge-enabled`,
           {
             method: "POST",
             body: JSON.stringify({
               scope: `repo:${repoRow.repo}`,
-              state: rolloutOverride,
+              enabled: pinValue(mergePin),
               reason: "dashboard: per-repo override save",
             }),
           }
         );
-        if (!rolloutRes.ok) {
-          const detail = await rolloutRes.text().catch(() => "");
+        if (!res.ok) {
+          const detail = await res.text().catch(() => "");
           throw new Error(
-            `rollout: HTTP ${rolloutRes.status}${detail ? `: ${detail}` : ""}`
+            `merge-enabled: HTTP ${res.status}${detail ? `: ${detail}` : ""}`
           );
         }
       }
@@ -615,7 +744,8 @@ function RepoOverrideCard({
     confidenceOverride,
     escalatePathsExtraText,
     labelBudget,
-    rolloutOverride,
+    mergePin,
+    storedPin,
     autoFixRedMainOverride,
     onSaved,
   ]);
@@ -626,6 +756,12 @@ function RepoOverrideCard({
         <CardTitle className="flex items-center justify-between text-sm font-mono">
           <span>{repoRow.repo}</span>
           <div className="flex items-center gap-1">
+            <MergeEnabledBadge
+              enabled={resolvedMergeEnabled}
+              pin={storedPin}
+              tenantPaused={tenantPaused}
+              testId={`repo-merge-enabled-badge-${repoRow.repo}`}
+            />
             {repoRow.role !== "owner" && (
               <Badge variant="outline" className="text-[10px] uppercase">
                 {repoRow.role}
@@ -663,10 +799,14 @@ function RepoOverrideCard({
             {loadError}
           </p>
         )}
-        {profile && (
+        {repoProfile && (
+          // Merge posture deliberately NOT repeated here. This read is issued
+          // once per mount (dep array `[repoRow.repo]`), so a posture rendered
+          // from it would freeze at its pre-save value and then contradict the
+          // badge above — two answers on one card, which is the bug this
+          // change exists to kill. The badge is the single place it is stated.
           <p className="text-xs text-muted-foreground">
-            Effective: dwell={profile.min_green_dwell}s, rollout=
-            {profile.rollout_state}
+            Effective: dwell={repoProfile.profile.min_green_dwell}s
           </p>
         )}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -701,34 +841,25 @@ function RepoOverrideCard({
             />
           </div>
           <div className="space-y-1">
-            <Label>Rollout state override</Label>
+            <Label>Merge enabled override</Label>
             <select
               className="w-full h-9 rounded-md border bg-background px-3 text-sm"
-              value={rolloutOverride}
-              onChange={(e) => {
-                const v = e.target.value as "inherit" | RolloutState;
-                setRolloutOverride(v);
-                // "inherit" performs no write (the rollout route has no
-                // clear-to-inherit form), so it must not arm the save
-                // button as if it would.
-                if (v === "inherit") {
-                  unmarkDirty("rollout_state");
-                } else {
-                  markDirty("rollout_state");
-                }
-              }}
-              data-testid={`repo-rollout-state-${repoRow.repo}`}
+              value={mergePin}
+              onChange={(e) => setMergePin(e.target.value as PinChoice)}
+              data-testid={`repo-merge-enabled-${repoRow.repo}`}
             >
-              <option value="inherit">inherit tenant</option>
-              <option value="dry_run">dry-run</option>
-              <option value="shadow">shadow</option>
-              <option value="live">live</option>
+              <option value="inherit">
+                inherit tenant (currently{" "}
+                {resolvedMergeEnabled ? "enabled" : "paused"})
+              </option>
+              <option value="true">pin on (merges enabled)</option>
+              <option value="false">pin off (merges paused)</option>
             </select>
             <p className="text-xs text-muted-foreground">
-              Saved via the audited rollout route. Promoting to live requires
-              passing through shadow first. &quot;inherit tenant&quot; performs
-              no write: it leaves any existing per-repo override in place
-              (clearing an override needs a coord API addition).
+              {pinSentence(storedPin, resolvedMergeEnabled, tenantPaused)} Saved
+              via the audited merge-enabled route. Choosing &quot;inherit
+              tenant&quot; CLEARS the pin, so this repo follows the tenant
+              default again.
             </p>
           </div>
           <div className="space-y-1">
@@ -791,6 +922,111 @@ function RepoOverrideCard({
 }
 
 // ----------------------------------------------------------------------------
+// Merge-enablement: pinned vs inherited
+// ----------------------------------------------------------------------------
+//
+// coord stores a per-repo `merge_enabled_override` that is `true`, `false`, or
+// `null`, and separately RESOLVES `merge_enabled` from it. Those are two
+// different facts and this dashboard used to render only the second one, so
+// every per-repo control read "inherit" no matter what was actually pinned —
+// a switch whose position did not match the database.
+//
+// `PinChoice` is the raw pin as a form value; the resolved boolean is always
+// carried alongside it, never in place of it.
+
+type PinChoice = "inherit" | "true" | "false";
+
+/** Wire pin (`true` | `false` | `null`) → form value. */
+function pinChoice(override: boolean | null | undefined): PinChoice {
+  if (override === true) return "true";
+  if (override === false) return "false";
+  return "inherit";
+}
+
+/** Form value → wire pin. `null` is the clear-to-inherit form. */
+function pinValue(choice: PinChoice): boolean | null {
+  if (choice === "true") return true;
+  if (choice === "false") return false;
+  return null;
+}
+
+/**
+ * One sentence stating what is STORED and what it currently resolves to.
+ *
+ * Inheriting is reported as inheriting — never silently as its resolved value
+ * — because "off because this repo is pinned off" and "off because the tenant
+ * is paused" call for different fixes.
+ *
+ * The pinned arms state the resolved value too **whenever it disagrees with
+ * the pin**, which is exactly when the operator most needs to be told. A repo
+ * pinned ON under a tenant-wide pause resolves OFF: saying only "Pinned ON"
+ * there would let an operator who just stopped the fleet read the page as
+ * confirmation that it is still running.
+ */
+function pinSentence(
+  pin: PinChoice,
+  resolved: boolean,
+  tenantPaused = false
+): string {
+  if (pin === "inherit") {
+    return `Not pinned — inheriting, and currently ${
+      resolved ? "enabled" : "paused"
+    }.`;
+  }
+  const pinned = pin === "true";
+  if (pinned === resolved) {
+    return pinned ? "Pinned ON for this repo." : "Pinned OFF for this repo.";
+  }
+  // Pin and reality disagree. Name the cause when we can prove it (the tenant
+  // pause is the only tier that outranks a pin); otherwise say only what is
+  // observed rather than guessing at a reason.
+  const because = tenantPaused ? " because the tenant is paused" : "";
+  return pinned
+    ? `Pinned ON — but merges are OFF here${because}.`
+    : `Pinned OFF — but merges currently resolve ON${because}.`;
+}
+
+/**
+ * The resolved merge posture, with the pin's provenance on it.
+ *
+ * Green/red is the resolved answer to "will this repo merge?"; the dashed
+ * outline and the "inherited" word are the answer to "is that pinned here, or
+ * is it just what the tier above says today?".
+ */
+function MergeEnabledBadge({
+  enabled,
+  pin,
+  tenantPaused = false,
+  testId,
+}: {
+  enabled: boolean;
+  pin: PinChoice;
+  tenantPaused?: boolean;
+  testId?: string;
+}) {
+  const inherited = pin === "inherit";
+  const color = enabled
+    ? "border-green-500/60 text-green-300"
+    : "border-red-500/60 text-red-300";
+  return (
+    <Badge
+      variant="outline"
+      className={`uppercase tracking-wide ${color} ${
+        inherited ? "border-dashed" : ""
+      }`}
+      title={pinSentence(pin, enabled, tenantPaused)}
+      data-testid={testId}
+      data-pin={pin}
+    >
+      {enabled ? "merges on" : "merges off"}
+      <span className="ml-1 normal-case opacity-70">
+        {inherited ? "· inherited" : "· pinned"}
+      </span>
+    </Badge>
+  );
+}
+
+// ----------------------------------------------------------------------------
 // Helpers
 // ----------------------------------------------------------------------------
 
@@ -804,119 +1040,6 @@ function parseFloatOrThrow(field: string, raw: string): number {
   const n = parseFloat(raw);
   if (Number.isNaN(n)) throw new Error(`${field}: not a valid number`);
   return n;
-}
-
-// ----------------------------------------------------------------------------
-// Phase 9 D9.4 — Emergency kill-switch button
-// ----------------------------------------------------------------------------
-
-/// Single-purpose card: a red "Emergency stop" button that POSTs
-/// /pr-merge/kill-switch and surfaces the response. Confirmation modal
-/// (browser-native confirm()) guards against accidental clicks — the
-/// dashboard's primary UI control for D9.4.
-function KillSwitchCard({ onKilled }: { onKilled: () => void }) {
-  const [reason, setReason] = useState<string>("");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [lastResponse, setLastResponse] = useState<KillSwitchResponse | null>(
-    null
-  );
-
-  const handleClick = useCallback(async () => {
-    setError(null);
-    if (reason.trim().length === 0) {
-      setError("Reason is required.");
-      return;
-    }
-    // Browser-native confirm() — minimal-dependency confirmation modal.
-    // Phase 9 D9.4 calls for "confirmation modal" without specifying
-    // the implementation; window.confirm() is the smallest-blast-radius
-    // path that meets the surface-before-bypass discipline.
-    const ok = window.confirm(
-      "Flip rollout_state for the entire tenant to dry_run. " +
-        "In-flight merges will drain; new PRs will not auto-merge. " +
-        "Proceed?"
-    );
-    if (!ok) return;
-    setSubmitting(true);
-    try {
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/kill-switch`,
-        {
-          method: "POST",
-          body: JSON.stringify({ scope: "tenant", reason: reason.trim() }),
-        }
-      );
-      if (!res.ok) {
-        const body = await res.text().catch(() => "");
-        throw new Error(`HTTP ${res.status}${body ? `: ${body}` : ""}`);
-      }
-      const data = (await res.json()) as KillSwitchResponse;
-      setLastResponse(data);
-      setReason("");
-      onKilled();
-    } catch (err) {
-      log.warn("kill-switch failed", err);
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSubmitting(false);
-    }
-  }, [reason, onKilled]);
-
-  return (
-    <Card className="border-red-500/60" data-testid="kill-switch-card">
-      <CardHeader className="pb-2">
-        <CardTitle className="flex items-center gap-2 text-base text-red-300">
-          <Power className="h-4 w-4" />
-          Emergency stop
-        </CardTitle>
-        <p className="text-xs text-muted-foreground mt-1">
-          Flip every repo this tenant owns to <code>rollout_state=dry_run</code>
-          . In-flight merges drain naturally; the orchestrator stops firing new
-          merges immediately. Use when a calibration regression is firing
-          unwanted merges. The action is auditable + reversible (re-enable via
-          tenant settings above).
-        </p>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="space-y-1">
-          <Label htmlFor="kill-switch-reason">Reason (required)</Label>
-          <Input
-            id="kill-switch-reason"
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            placeholder="e.g. specialist confidence calibration regressed; investigating"
-            data-testid="kill-switch-reason"
-          />
-        </div>
-        {error && (
-          <p className="text-xs text-red-300 flex items-center gap-1">
-            <AlertTriangle className="h-3 w-3" />
-            {error}
-          </p>
-        )}
-        {lastResponse && (
-          <p
-            className="text-xs text-amber-300"
-            data-testid="kill-switch-last-response"
-          >
-            Kill switch fired — previous_state=
-            <code>{lastResponse.previous_state ?? "(null)"}</code>, new_state=
-            <code>{lastResponse.new_state}</code>, affected_repos=
-            {lastResponse.affected_repos.length}.
-          </p>
-        )}
-        <Button
-          variant="destructive"
-          onClick={handleClick}
-          disabled={submitting}
-          data-testid="kill-switch-fire"
-        >
-          {submitting ? "Firing..." : "Fire kill switch"}
-        </Button>
-      </CardContent>
-    </Card>
-  );
 }
 
 // ----------------------------------------------------------------------------
@@ -958,44 +1081,39 @@ function fmtSecs(value: number | null): string {
   return `${value.toFixed(1)}s`;
 }
 
-function RolloutStateBadge({ state }: { state: string }) {
-  const color =
-    state === "live"
-      ? "border-green-500/60 text-green-300"
-      : state === "shadow"
-        ? "border-amber-500/60 text-amber-300"
-        : "border-red-500/60 text-red-300";
-  return (
-    <Badge variant="outline" className={`uppercase tracking-wide ${color}`}>
-      {state.replace("_", "-")}
-    </Badge>
-  );
-}
-
-/// Per-repo rollout promote/demote control (Phase 9 D9.4 counterpart to
-/// the kill-switch). One button per non-current target state, POSTing
-/// /pr-merge/rollout with scope=repo:<repo>. Reason is collected via
-/// window.prompt + the flip is guarded by window.confirm — the same
-/// minimal-dependency confirmation discipline as KillSwitchCard.
-/// Promoting to `live` relies on coord's shadow→live guard (a dry_run
-/// repo must pass through shadow first; coord 409s otherwise).
-function RolloutStateControl({
+/**
+ * Per-repo merge-enablement control: one switch, plus a clear-the-pin action.
+ *
+ * The switch position is the PIN when there is one and the resolved value when
+ * there is not, and the line under it always says which of those you are
+ * looking at — an operator flipping this must never be surprised about what
+ * they were flipping FROM.
+ *
+ * Reason is collected via window.prompt and enabling is guarded by
+ * window.confirm — the same minimal-dependency confirmation discipline the
+ * emergency stop uses.
+ */
+function MergeEnabledControl({
   repo,
-  current,
+  resolved,
+  pin,
+  tenantPaused = false,
   onChanged,
 }: {
   repo: string;
-  current: RepoSlo["current_rollout_state"];
+  resolved: boolean;
+  pin: PinChoice;
+  tenantPaused?: boolean;
   onChanged: () => void;
 }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const setState = useCallback(
-    async (target: RepoSlo["current_rollout_state"]) => {
+  const write = useCallback(
+    async (enabled: boolean | null, promptLabel: string) => {
       setError(null);
       const reason = window.prompt(
-        `Set ${repo} rollout_state ${current} → ${target}. Reason (required):`
+        `${repo}: ${promptLabel} Reason (required):`
       );
       if (reason === null) return;
       if (reason.trim().length === 0) {
@@ -1003,7 +1121,7 @@ function RolloutStateControl({
         return;
       }
       if (
-        target === "live" &&
+        enabled === true &&
         !window.confirm(
           `${repo}: the orchestrator will start pushing REAL merges to main ` +
             "for green, unblocked PRs in this repo. Proceed?"
@@ -1014,12 +1132,12 @@ function RolloutStateControl({
       setSubmitting(true);
       try {
         const res = await httpClient.fetch(
-          `${OPERATIONS_API}/pr-merge/rollout`,
+          `${OPERATIONS_API}/pr-merge/merge-enabled`,
           {
             method: "POST",
             body: JSON.stringify({
               scope: `repo:${repo}`,
-              state: target,
+              enabled,
               reason: reason.trim(),
             }),
           }
@@ -1028,41 +1146,64 @@ function RolloutStateControl({
           const body = await res.text().catch(() => "");
           throw new Error(`HTTP ${res.status}${body ? `: ${body}` : ""}`);
         }
-        (await res.json()) as RolloutResponse;
+        (await res.json()) as MergeEnabledResponse;
         onChanged();
       } catch (err) {
-        log.warn("rollout promote failed", err);
+        log.warn("merge-enabled write failed", err);
         setError(err instanceof Error ? err.message : String(err));
       } finally {
         setSubmitting(false);
       }
     },
-    [repo, current, onChanged]
+    [repo, onChanged]
   );
 
-  const targets: RepoSlo["current_rollout_state"][] = [
-    "dry_run",
-    "shadow",
-    "live",
-  ];
+  // Pinned → show the PIN (this switch edits the pin, so it must show the
+  // thing it edits). Not pinned → show what it resolves to. Either way the
+  // sentence below carries the resolved value whenever the two disagree, so a
+  // pinned-ON switch under a tenant pause never reads as "merges are running".
+  const checked = pin === "inherit" ? resolved : pin === "true";
   return (
     <div className="pt-1 border-t border-border/40 space-y-1">
-      <div className="flex items-center gap-1.5">
-        <span className="text-muted-foreground">Set state:</span>
-        {targets.map((t) => (
+      <div className="flex items-center gap-2">
+        <Label htmlFor={`merge-enabled-${repo}`} className="text-xs">
+          Merge enabled
+        </Label>
+        <Switch
+          id={`merge-enabled-${repo}`}
+          checked={checked}
+          disabled={submitting}
+          onCheckedChange={(next) =>
+            void write(
+              next,
+              next
+                ? "pin merges ON for this repo."
+                : "pin merges OFF for this repo."
+            )
+          }
+          data-testid={`merge-enabled-switch-${repo}`}
+        />
+        {pin !== "inherit" && (
           <Button
-            key={t}
             size="sm"
-            variant={t === "live" ? "default" : "outline"}
+            variant="outline"
             className="h-6 px-2 text-xs"
-            disabled={submitting || t === current}
-            onClick={() => setState(t)}
-            data-testid={`rollout-set-${t}-${repo}`}
+            disabled={submitting}
+            onClick={() =>
+              void write(null, "clear the pin and inherit the tenant default.")
+            }
+            data-testid={`merge-enabled-clear-${repo}`}
           >
-            {t.replace("_", "-")}
+            Clear pin
           </Button>
-        ))}
+        )}
       </div>
+      <p
+        className="text-muted-foreground"
+        data-testid={`merge-enabled-provenance-${repo}`}
+      >
+        {pinSentence(pin, resolved, tenantPaused)}
+      </p>
       {error && (
         <p className="text-red-300 flex items-center gap-1">
           <AlertTriangle className="h-3 w-3" />
@@ -1075,9 +1216,11 @@ function RolloutStateControl({
 
 function SloRepoCard({
   slo,
+  tenantPaused,
   onChanged,
 }: {
   slo: RepoSlo;
+  tenantPaused: boolean;
   onChanged: () => void;
 }) {
   const w = slo.windows.last_7d;
@@ -1087,7 +1230,12 @@ function SloRepoCard({
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center justify-between text-sm font-mono">
           <span>{slo.repo}</span>
-          <RolloutStateBadge state={slo.current_rollout_state} />
+          <MergeEnabledBadge
+            enabled={slo.merge_enabled}
+            pin={pinChoice(slo.merge_enabled_override)}
+            tenantPaused={tenantPaused}
+            testId={`slo-merge-enabled-badge-${slo.repo}`}
+          />
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-2 text-xs">
@@ -1146,9 +1294,11 @@ function SloRepoCard({
           {w30.total_decisions} in 30d ({w30.shadow_decisions} shadow).
         </p>
         <CoordAdminOnly>
-          <RolloutStateControl
+          <MergeEnabledControl
             repo={slo.repo}
-            current={slo.current_rollout_state}
+            resolved={slo.merge_enabled}
+            pin={pinChoice(slo.merge_enabled_override)}
+            tenantPaused={tenantPaused}
             onChanged={onChanged}
           />
         </CoordAdminOnly>
@@ -1159,9 +1309,11 @@ function SloRepoCard({
 
 function SloDashboardCard({
   data,
+  tenantPaused,
   onChanged,
 }: {
   data: SloResponse | null;
+  tenantPaused: boolean;
   onChanged: () => void;
 }) {
   if (data === null) {
@@ -1192,9 +1344,10 @@ function SloDashboardCard({
           </Badge>
         </CardTitle>
         <p className="text-xs text-muted-foreground mt-1">
-          Per-(tenant, repo) rollout metrics, 7-day windows. Thresholds from
-          plan §8: ≥95% auto-merge / ≤5% override / ≥95% shadow agreement before
-          promoting from <code>shadow</code> to <code>live</code>.
+          Per-(tenant, repo) merge metrics, 7-day windows. Thresholds from plan
+          §8: ≥95% auto-merge success / ≤5% operator override. Each card&apos;s
+          badge is the repo&apos;s resolved merge posture, marked{" "}
+          <em>pinned</em> or <em>inherited</em>.
         </p>
       </CardHeader>
       <CardContent>
@@ -1205,7 +1358,12 @@ function SloDashboardCard({
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             {data.repos.map((r) => (
-              <SloRepoCard key={r.repo} slo={r} onChanged={onChanged} />
+              <SloRepoCard
+                key={r.repo}
+                slo={r}
+                tenantPaused={tenantPaused}
+                onChanged={onChanged}
+              />
             ))}
           </div>
         )}
@@ -1289,6 +1447,16 @@ export function MergeOrchestrationSettings() {
     []
   );
 
+  // Is the tenant-wide pause latched?
+  //
+  // coord has no tenant-tier `merge_enabled` column, and the per-repo default
+  // is `true`, so the TENANT profile (repo="") can only resolve false when
+  // `tenant_merge_settings.merge_paused` is set. That makes this a sound
+  // reading of the latch rather than a guess — and it is the only signal for
+  // it the dashboard gets. `null` profile is UNKNOWN, not "not paused": the
+  // banner stays silent rather than asserting the fleet is running.
+  const tenantPaused = profile !== null && !profile.merge_enabled;
+
   return (
     <div className="space-y-4">
       <Card>
@@ -1310,14 +1478,45 @@ export function MergeOrchestrationSettings() {
           </CardContent>
         </Card>
       )}
-      {/* Phase 9 D9.4 — Emergency kill switch (red border, prominent).
-          Admin-only mutation control. */}
-      <CoordAdminOnly>
-        <KillSwitchCard onKilled={triggerReload} />
-      </CoordAdminOnly>
+      {/* The tenant pause, stated ONCE and above everything.
+
+          Without this the latch has no indicator anywhere: an operator who
+          has just stopped the fleet opens this page, sees per-repo switches
+          still reading ON (they show the PIN, which the pause outranks), and
+          concludes the stop did not take. Read-only and ungated — every
+          member should be able to see that merging is off, even though only
+          an admin can lift it. */}
+      {tenantPaused && (
+        <Card className="border-red-500/60" data-testid="tenant-paused-banner">
+          <CardContent className="pt-4">
+            <p className="text-xs text-red-300 flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span>
+                <strong>Merges are paused tenant-wide.</strong> Nothing lands on
+                any repo this tenant owns, including repos pinned on — the pause
+                overrides every per-repo setting below. Lift it with the
+                &ldquo;Merges enabled tenant-wide&rdquo; switch in Tenant
+                defaults.
+              </span>
+            </p>
+          </CardContent>
+        </Card>
+      )}
+      {/* The emergency stop does NOT live here. A destructive, tenant-wide
+          red button at the top of a calibration page is the wrong blast
+          radius in the wrong place: this page is where you tune dwell times,
+          not where you go mid-incident. It now sits per-repo on the merge
+          train's incident view (MergeTrainActivity), still CoordAdminOnly.
+          The tenant pause LATCH is still reachable from Tenant defaults below
+          — it is a settings-shaped control with an incident-shaped blast
+          radius, so it carries the same confirm + typed-reason discipline. */}
       {/* Phase 9 D9.6 — SLO Dashboard. Read-only metrics render for all
-          members; the embedded rollout promote control is itself gated. */}
-      <SloDashboardCard data={slo} onChanged={triggerReload} />
+          members; the embedded merge-enabled control is itself gated. */}
+      <SloDashboardCard
+        data={slo}
+        tenantPaused={tenantPaused}
+        onChanged={triggerReload}
+      />
       {/* Tenant defaults + per-repo overrides are tenant-config writes —
           admin only. */}
       <CoordAdminOnly>
@@ -1355,6 +1554,7 @@ export function MergeOrchestrationSettings() {
                   <RepoOverrideCard
                     key={r.repo}
                     repoRow={r}
+                    tenantPaused={tenantPaused}
                     onSaved={triggerReload}
                   />
                 ))}

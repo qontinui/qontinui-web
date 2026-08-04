@@ -4,15 +4,18 @@
  * /admin/coord/merge-settings — PR Merge Orchestrator operator console.
  *
  * Mounts the (previously orphaned) MergeOrchestrationSettings component:
- * tenant merge defaults + per-repo overrides, the Phase 9 D9.6 SLO
- * dashboard with per-repo rollout promote/demote controls
- * (dry_run/shadow/live), and the D9.4 emergency kill-switch.
+ * tenant merge defaults + per-repo overrides, and the Phase 9 D9.6 SLO
+ * dashboard with per-repo `merge_enabled` switches.
  *
- * This page is the interactive surface coord's rollout-promote guard
- * requires: `POST /pr-merge/rollout` rejects non-interactive bearers
- * (403 non_interactive_write_forbidden), so promoting a repo to `live`
- * is only possible from a logged-in dashboard session — i.e. here.
+ * This page is the interactive surface coord's write guard requires:
+ * `POST /pr-merge/merge-enabled` rejects non-interactive bearers
+ * (403 non_interactive_write_forbidden), so enabling merges on a repo is
+ * only possible from a logged-in dashboard session — i.e. here.
  * Admin-gating + CoordNav come from the /admin/coord layout.
+ *
+ * The emergency stop is deliberately NOT here. It lives per-repo on the
+ * fleet page's merge-train view (`MergeTrainActivity`), because that is the
+ * surface an operator is on mid-incident — this one is for calibration.
  */
 
 import { MergeOrchestrationSettings } from "@/components/operations/MergeOrchestrationSettings";

@@ -361,6 +361,25 @@ export interface TrainHealth {
 }
 
 /**
+ * The shared response body of coord's two merge-enablement mutations —
+ * `POST /pr-merge/merge-enabled` (pin/clear) and `POST /pr-merge/kill-switch`
+ * (the emergency pause). They deliberately return the SAME shape, so a caller
+ * reports the outcome identically whichever door it used.
+ *
+ * `previous_merge_enabled` / `merge_enabled` are the RESOLVED booleans before
+ * and after the write; `null` means "not pinned at this scope" (inheriting).
+ * `affected_repos` is every repo the write reaches — one entry for a repo
+ * scope, the tenant's whole fleet for a tenant scope, which is what makes the
+ * blast radius legible in the confirmation UI.
+ */
+export interface MergeEnabledResponse {
+  scope: string;
+  previous_merge_enabled: boolean | null;
+  merge_enabled: boolean | null;
+  affected_repos: string[];
+}
+
+/**
  * Strip credentials out of coord-authored error text before it reaches the DOM.
  *
  * coord's merge scheduler stores the failing git command verbatim in

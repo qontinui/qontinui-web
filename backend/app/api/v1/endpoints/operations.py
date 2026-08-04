@@ -2201,11 +2201,25 @@ async def post_pr_merge_suggestion_mute(
     )
 
 
-# ---- Phase 9 D9.4 + D9.6 — rollout substrate proxies ----------------------
+# ---- Merge-enablement substrate proxies ------------------------------------
 #
 # Two endpoints proxying the coord-side ``src/pr_merge/rollout_routes.rs``
-# (kill-switch) + ``src/pr_merge/slo_routes.rs`` (SLO dashboard). Both
-# tenant-scoped via the ``X-Qontinui-Tenant-Id`` header.
+# (merge-enablement + kill-switch) + ``src/pr_merge/slo_routes.rs`` (SLO
+# dashboard). Both tenant-scoped via the ``X-Qontinui-Tenant-Id`` header.
+#
+# The substrate underneath is a BOOLEAN, not the retired ``rollout_state``
+# tri-state (plan `2026-07-29-retire-merge-rollout-tristate-and-fix-the-dead-
+# kill-switch`):
+#
+# - ``coord.tenant_repo_profiles.merge_enabled`` — per-repo pin, default
+#   ``true``. ``NULL`` means "not pinned" (inherit).
+# - ``coord.tenant_merge_settings.merge_paused`` — a tenant-wide latch that
+#   DOMINATES every per-repo value. This is what the kill switch sets, and
+#   what makes it work: the old kill switch wrote a tenant-tier
+#   ``rollout_state`` that every per-repo row outranked, so it reported
+#   success and stopped nothing.
+#
+# ``dry_run`` / ``shadow`` / ``live`` no longer exist anywhere on this wire.
 
 
 @router.post("/pr-merge/kill-switch")
@@ -2213,8 +2227,9 @@ async def post_pr_merge_kill_switch(
     body: dict[str, Any],
     tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
-    """Emergency-stop: flip the calling tenant's rollout_state to
-    ``dry_run``. Body shape::
+    """Emergency-stop: latch ``merge_paused`` so nothing real-pushes.
+
+    Body shape (unchanged — ``reason`` is REQUIRED and must be non-blank)::
 
         {
             "scope": "tenant" | "repo:<owner/name>",
@@ -2223,9 +2238,10 @@ async def post_pr_merge_kill_switch(
 
     Coord:
     1. Verifies the tenant owns the repo (when scope=repo).
-    2. UPDATE ``coord.tenant_merge_settings.rollout_state='dry_run'``
-       (scope=tenant) or ``coord.tenant_repo_profiles.rollout_state=
-       'dry_run'`` (scope=repo).
+    2. Sets ``coord.tenant_merge_settings.merge_paused=true`` (scope=tenant)
+       or ``coord.tenant_repo_profiles.merge_enabled=false`` (scope=repo).
+       The tenant-wide pause DOMINATES every per-repo pin, so it cannot be
+       outranked the way the retired tenant-tier ``rollout_state`` was.
     3. Invalidates the settings cache (process-local + Redis pubsub).
     4. INSERTs a ``coord.user_overrides(override_kind=
        'kill_switch_activated')`` row.
@@ -2233,7 +2249,9 @@ async def post_pr_merge_kill_switch(
        severity='warning')`` row.
     6. Stamps ``auth_sso::audit_mutation``.
 
-    Returns ``{ "scope", "previous_state", "new_state", "affected_repos" }``.
+    Returns the same body as ``/pr-merge/merge-enabled``:
+    ``{ "scope", "previous_merge_enabled", "merge_enabled",
+    "affected_repos" }``.
     """
     return await _proxy_coord_post(
         "/pr-merge/kill-switch",
@@ -2242,41 +2260,45 @@ async def post_pr_merge_kill_switch(
     )
 
 
-@router.post("/pr-merge/rollout")
-async def post_pr_merge_rollout(
+@router.post("/pr-merge/merge-enabled")
+async def post_pr_merge_merge_enabled(
     body: dict[str, Any],
     tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
-    """Rollout promote — set the tenant's (or a specific repo's)
-    rollout_state to an arbitrary target. Body shape::
+    """Pin (or clear) merge enablement for the tenant or one repo.
+
+    Body shape::
 
         {
-            "scope": "tenant" | "repo:<owner/name>",
-            "state": "dry_run" | "shadow" | "live",
-            "reason": "<operator's stated reason>",
-            "force": false
+            "scope": "tenant" | "repo:<owner/name>",   # optional, default tenant
+            "enabled": true | false | null,            # REQUIRED key
+            "reason": "<operator's stated reason>"     # optional
         }
 
-    The promote counterpart to the kill-switch's downward-only flip.
+    ``enabled`` is a REQUIRED key — omitting it is a 400, so "I forgot to
+    send it" can never read as "clear the pin". ``true``/``false`` pin the
+    value; ``null`` clears the pin back to inherit and is accepted at
+    **repo scope only** (``scope="tenant"`` with ``enabled=null`` is a 400 —
+    there is no tier above the tenant to inherit from).
+
     Coord:
     1. Verifies the tenant owns the repo (when scope=repo).
-    2. UPSERTs the per-tenant or per-repo ``rollout_state`` (a
-       never-configured repo is created rather than no-op'd).
-    3. Requires the current resolved state to be ``shadow`` when
-       promoting to ``live`` unless ``force=true``.
-    4. Invalidates the settings cache + writes a
-       ``coord.user_overrides(override_kind='rollout_promote')`` audit
-       row.
+    2. UPSERTs the per-tenant or per-repo ``merge_enabled`` (a
+       never-configured repo is created rather than no-op'd), or NULLs it
+       for the clear form.
+    3. Invalidates the settings cache + writes a
+       ``coord.user_overrides`` audit row.
 
     Coord additionally rejects non-interactive bearers on this mutation
-    (``403 non_interactive_write_forbidden``) — the promote is reserved
+    (``403 non_interactive_write_forbidden``) — enabling merges is reserved
     for a logged-in dashboard session, which is exactly what this proxy
     forwards.
 
-    Returns ``{ "scope", "state", "affected_repos" }``.
+    Returns ``{ "scope", "previous_merge_enabled", "merge_enabled",
+    "affected_repos" }``.
     """
     return await _proxy_coord_post(
-        "/pr-merge/rollout",
+        "/pr-merge/merge-enabled",
         body,
         tenant_id=tenant_id,
     )
@@ -2290,11 +2312,15 @@ async def get_pr_merge_slo(
     last 7/30 days.
 
     Returns ``{ "tenant_id", "repos": [...], "kill_switch_history_last_30d":
-    [...], "generated_at" }`` where each repo carries
-    ``current_rollout_state`` + 7/30 day windows of
+    [...], "generated_at" }`` where each repo carries ``merge_enabled`` (the
+    RESOLVED boolean) + ``merge_enabled_override`` (the RAW per-repo pin:
+    ``true``/``false`` = pinned, ``null`` = inheriting) + 7/30 day windows of
     ``auto_merge_success_rate``, ``escalation_rate``,
     ``operator_override_rate``, ``shadow_vs_live_agreement_rate``,
     ``total_decisions``, ``shadow_decisions``.
+
+    Each repo still carries the legacy ``current_rollout_state`` string until
+    coord drops the column; nothing on this dashboard reads it any more.
 
     Drives MergeOrchestrationSettings.tsx's SLO Dashboard section.
     """

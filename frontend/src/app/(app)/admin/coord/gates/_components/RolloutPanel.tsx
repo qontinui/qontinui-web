@@ -56,7 +56,11 @@ function RepoStateGroup({
       ) : (
         <div className="flex flex-wrap gap-1.5">
           {repos.map((repo) => (
-            <Badge key={repo} variant="outline" className="font-mono text-[11px]">
+            <Badge
+              key={repo}
+              variant="outline"
+              className="font-mono text-[11px]"
+            >
               {repo}
             </Badge>
           ))}
@@ -70,7 +74,10 @@ export function RolloutPanel({ rollouts }: { rollouts: RolloutOverview }) {
   const { auto_merge, features } = rollouts;
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4" data-testid="rollout-panel">
+    <div
+      className="grid grid-cols-1 lg:grid-cols-2 gap-4"
+      data-testid="rollout-panel"
+    >
       {/* ---- Auto-merge per-repo tri-state ---- */}
       <Card>
         <CardHeader>
@@ -80,6 +87,27 @@ export function RolloutPanel({ rollouts }: { rollouts: RolloutOverview }) {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* LEGACY — no longer maintained. These buckets are keyed on
+              `coord.tenant_repo_profiles.rollout_state`, the tri-state retired
+              by plan
+              `2026-07-29-retire-merge-rollout-tristate-and-fix-the-dead-kill-switch`.
+              Merge posture is `merge_enabled` now, and after that plan's
+              Phase 2-4 NOTHING writes `rollout_state` except the
+              clear-to-inherit path — so a repo whose merges are switched off
+              still shows here under `live`, forever.
+
+              Do not add to this panel and do not read merge posture from it:
+              /admin/coord/merge-settings renders the real thing (resolved
+              value + whether it is pinned). Phase 5 deletes the column and
+              this panel with it. */}
+          <p
+            className="text-xs text-amber-300"
+            data-testid="rollout-panel-legacy-notice"
+          >
+            Legacy view — these buckets read the retired{" "}
+            <code>rollout_state</code> column, which is no longer written. For
+            current merge posture see Merge settings.
+          </p>
           <RepoStateGroup state="live" repos={auto_merge.live} />
           <RepoStateGroup state="shadow" repos={auto_merge.shadow} />
           <RepoStateGroup state="dry_run" repos={auto_merge.dry_run} />
@@ -103,7 +131,10 @@ export function RolloutPanel({ rollouts }: { rollouts: RolloutOverview }) {
               No feature flags reported.
             </p>
           ) : (
-            <ul className="divide-y divide-border" data-testid="rollout-features">
+            <ul
+              className="divide-y divide-border"
+              data-testid="rollout-features"
+            >
               {features.map((f: FeatureRollout) => (
                 <li
                   key={f.name}
@@ -111,17 +142,21 @@ export function RolloutPanel({ rollouts }: { rollouts: RolloutOverview }) {
                   data-testid="rollout-feature-row"
                 >
                   <div className="min-w-0">
-                    <div className="text-sm font-medium truncate" title={f.name}>
+                    <div
+                      className="text-sm font-medium truncate"
+                      title={f.name}
+                    >
                       {f.name}
                     </div>
                     <div className="text-[11px] text-muted-foreground">
                       source: {f.source}
-                      {f.threshold != null && (
-                        <> · threshold: {f.threshold}</>
-                      )}
+                      {f.threshold != null && <> · threshold: {f.threshold}</>}
                     </div>
                   </div>
-                  <Badge variant={tierTone(f.tier)} className="uppercase shrink-0">
+                  <Badge
+                    variant={tierTone(f.tier)}
+                    className="uppercase shrink-0"
+                  >
                     {f.tier}
                   </Badge>
                 </li>
