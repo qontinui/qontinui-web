@@ -29,10 +29,10 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import structlog
 from sqlalchemy import CursorResult, Float, Text, bindparam, text
@@ -207,6 +207,55 @@ def _supersede_target_is_safe(
 _LIVE_JOB_INPUT_DEDUP_PREDICATE = (
     "status IN ('pending', 'claimed') OR (status = 'done' AND kind = 'synthesis')"
 )
+
+# The dedup-merge for ``anchors`` (plan
+# ``2026-07-29-memory-anchored-derived-records`` Phase 2).
+#
+# Content-hash dedup used to be ``ON CONFLICT ... DO NOTHING``, which made
+# re-writing an identical record IN ORDER TO ATTACH AN ANCHOR a silent
+# no-op — and that is precisely how Phase 6 backfills anchors ("anchors are
+# added when a record is next written"). So the conflict action MERGES the
+# incoming array into the stored one, and touches NOTHING else: dedup keeps
+# its exact previous meaning (the existing row's id, ``deduped=True``, every
+# other column as it was).
+#
+# * **UNION, never replace.** A second writer of the same content must not
+#   be able to drop a first writer's anchor. Replacement would make the
+#   last writer of any deduped content the sole owner of its anchors.
+# * **Identity is the whole JSON object**, which is why every ``Anchor``
+#   variant forbids extra keys — an unconstrained key would mint a
+#   near-duplicate that is "the same anchor" to a human.
+# * ``DISTINCT ... ORDER BY`` makes the merge IDEMPOTENT and
+#   order-independent: writing the same record twice yields a byte-identical
+#   array, so a sync mirror never sees spurious churn.
+# * The guard ``WHERE excluded.anchors <> '[]'::jsonb`` restores DO NOTHING
+#   for the overwhelmingly common anchorless write — no row is locked, no
+#   ``updated_at`` moves, and RETURNING yields nothing, exactly as before.
+#   (The ``::jsonb`` cast is load-bearing: ``jsonb <> unknown`` has no
+#   resolvable operator.)
+# * COALESCE is belt-and-braces for a NOT NULL column: the guard already
+#   guarantees the concatenation is non-empty, so ``jsonb_agg`` cannot
+#   return NULL here.
+_ANCHOR_MERGE_CONFLICT_ACTION = """
+    DO UPDATE SET anchors = COALESCE(
+            (SELECT jsonb_agg(DISTINCT elem ORDER BY elem)
+               FROM jsonb_array_elements(
+                        memory_records.anchors || excluded.anchors
+                    ) AS elem),
+            '[]'::jsonb)
+        WHERE excluded.anchors <> '[]'::jsonb
+"""
+
+
+def _anchors_json(anchors: list[dict[str, Any]] | None) -> str:
+    """Render an anchor array for the ``CAST(:anchors AS jsonb)`` bind.
+
+    ``None`` and ``[]`` are the same thing to the store — "this writer
+    has no anchors" — and both must land as the empty array, never NULL:
+    the column is NOT NULL and the merge guard compares against
+    ``'[]'::jsonb``.
+    """
+    return json.dumps(anchors or [])
 
 
 def format_pgvector(vector: list[float]) -> str:
@@ -521,6 +570,7 @@ async def insert_record(
     importance: float,
     source: dict[str, Any],
     consolidated_from: list[UUID] | None = None,
+    anchors: list[dict[str, Any]] | None = None,
 ) -> tuple[UUID, bool]:
     """Insert one record, deduping on ``(tenant_id, content_hash)``
     against LIVE rows only.
@@ -536,27 +586,45 @@ async def insert_record(
     together; both may be ``None``, storing the row unvectorized (still
     FTS-retrievable) for the reindex sweep to embed later. Callers
     validate the pair — this layer stores what it is handed.
+
+    ``anchors`` are MERGED on conflict rather than discarded — see
+    :data:`_ANCHOR_MERGE_CONFLICT_ACTION`. A conflicting write with a
+    non-empty array is still a dedup (``deduped=True``, the existing
+    row's id, every other column untouched); it just no longer throws
+    the anchor away.
+
+    ``memory_id`` is generated HERE rather than by the column default.
+    That is what makes ``deduped`` exact under the merge: with
+    ``DO UPDATE`` the RETURNING clause yields a row for the insert AND
+    the merge cases alike, so "did anything come back" no longer
+    discriminates them — but "is the id the one I proposed" does,
+    deterministically and without leaning on ``xmax`` implementation
+    details.
     """
-    inserted = (
+    proposed_id = uuid4()
+    returned = (
         await session.execute(
             text(
                 f"""
                 INSERT INTO coord.memory_records
-                    (tenant_id, scope, scope_ref, kind, title, content,
-                     content_hash, embedding, embedding_model, importance,
-                     source, consolidated_from)
+                    (memory_id, tenant_id, scope, scope_ref, kind, title,
+                     content, content_hash, embedding, embedding_model,
+                     importance, source, consolidated_from, anchors)
                 VALUES
-                    (:tenant_id, :scope, :scope_ref, :kind, :title, :content,
-                     :content_hash, CAST(:embedding AS vector),
+                    (:memory_id, :tenant_id, :scope, :scope_ref, :kind,
+                     :title, :content, :content_hash,
+                     CAST(:embedding AS vector),
                      :embedding_model, :importance, CAST(:source AS jsonb),
-                     CAST(:consolidated_from AS uuid[]))
+                     CAST(:consolidated_from AS uuid[]),
+                     CAST(:anchors AS jsonb))
                 ON CONFLICT (tenant_id, content_hash)
                     WHERE {_LIVE_DEDUP_PREDICATE}
-                    DO NOTHING
+                    {_ANCHOR_MERGE_CONFLICT_ACTION}
                 RETURNING memory_id
                 """
             ),
             {
+                "memory_id": proposed_id,
                 "tenant_id": tenant_id,
                 "scope": scope,
                 "scope_ref": scope_ref,
@@ -569,12 +637,18 @@ async def insert_record(
                 "importance": importance,
                 "source": json.dumps(source),
                 "consolidated_from": consolidated_from,
+                "anchors": _anchors_json(anchors),
             },
         )
     ).scalar_one_or_none()
-    if inserted is not None:
-        return UUID(str(inserted)), False
+    if returned is not None:
+        returned_id = UUID(str(returned))
+        # The proposed id came back => the INSERT arm won. Any other id
+        # is the pre-existing live row the merge arm updated.
+        return returned_id, returned_id != proposed_id
 
+    # Nothing returned: a conflict whose merge guard was false (the
+    # incoming array was empty), i.e. the old DO NOTHING path exactly.
     existing = (
         await session.execute(
             text(
@@ -605,6 +679,10 @@ class MemoryRecordInsert:
     embedding_model: str | None
     importance: float
     source: dict[str, Any]
+    # Typed references to the ground truth this record asserts about
+    # (plan §3.1). Defaulted so every existing construction site keeps
+    # working and lands the empty array, i.e. today's behaviour.
+    anchors: list[dict[str, Any]] = field(default_factory=list)
 
 
 async def insert_records_batch(
@@ -624,18 +702,29 @@ async def insert_records_batch(
     Returns ``(memory_id, deduped)`` per item, in item order — conflicts
     against an existing LIVE row report that row's id with
     ``deduped=True``, exactly like :func:`insert_record`.
+
+    Anchors merge on conflict here too (:data:`_ANCHOR_MERGE_CONFLICT_ACTION`),
+    and ids are proposed client-side for the same reason
+    :func:`insert_record` proposes them — under ``DO UPDATE`` the returned
+    id, not the presence of a returned row, is what separates an insert
+    from a merge.
     """
     if not items:
         return []
+    proposed: dict[str, UUID] = {i.content_hash: uuid4() for i in items}
     stmt = text(
         f"""
         INSERT INTO coord.memory_records
-            (tenant_id, scope, scope_ref, kind, title, content,
-             content_hash, embedding, embedding_model, importance, source)
-        SELECT :tenant_id, u.scope, u.scope_ref, u.kind, u.title,
-               u.content, u.content_hash, CAST(u.embedding AS vector),
-               u.embedding_model, u.importance, CAST(u.source AS jsonb)
+            (memory_id, tenant_id, scope, scope_ref, kind, title, content,
+             content_hash, embedding, embedding_model, importance, source,
+             anchors)
+        SELECT CAST(u.memory_id AS uuid), :tenant_id, u.scope, u.scope_ref,
+               u.kind, u.title, u.content, u.content_hash,
+               CAST(u.embedding AS vector),
+               u.embedding_model, u.importance, CAST(u.source AS jsonb),
+               CAST(u.anchors AS jsonb)
         FROM unnest(
+                 CAST(:memory_ids AS text[]),
                  CAST(:scopes AS text[]),
                  CAST(:scope_refs AS text[]),
                  CAST(:kinds AS text[]),
@@ -645,15 +734,18 @@ async def insert_records_batch(
                  CAST(:embeddings AS text[]),
                  CAST(:embedding_models AS text[]),
                  CAST(:importances AS float8[]),
-                 CAST(:sources AS text[])
-             ) AS u(scope, scope_ref, kind, title, content, content_hash,
-                    embedding, embedding_model, importance, source)
+                 CAST(:sources AS text[]),
+                 CAST(:anchors AS text[])
+             ) AS u(memory_id, scope, scope_ref, kind, title, content,
+                    content_hash, embedding, embedding_model, importance,
+                    source, anchors)
         ON CONFLICT (tenant_id, content_hash)
             WHERE {_LIVE_DEDUP_PREDICATE}
-            DO NOTHING
+            {_ANCHOR_MERGE_CONFLICT_ACTION}
         RETURNING memory_id, content_hash
         """
     ).bindparams(
+        bindparam("memory_ids", type_=ARRAY(Text())),
         bindparam("scopes", type_=ARRAY(Text())),
         bindparam("scope_refs", type_=ARRAY(Text())),
         bindparam("kinds", type_=ARRAY(Text())),
@@ -664,11 +756,13 @@ async def insert_records_batch(
         bindparam("embedding_models", type_=ARRAY(Text())),
         bindparam("importances", type_=ARRAY(Float())),
         bindparam("sources", type_=ARRAY(Text())),
+        bindparam("anchors", type_=ARRAY(Text())),
     )
     rows = await session.execute(
         stmt,
         {
             "tenant_id": tenant_id,
+            "memory_ids": [str(proposed[i.content_hash]) for i in items],
             "scopes": [i.scope for i in items],
             "scope_refs": [i.scope_ref for i in items],
             "kinds": [i.kind for i in items],
@@ -679,13 +773,23 @@ async def insert_records_batch(
             "embedding_models": [i.embedding_model for i in items],
             "importances": [i.importance for i in items],
             "sources": [json.dumps(i.source) for i in items],
+            "anchors": [_anchors_json(i.anchors) for i in items],
         },
     )
-    inserted: dict[str, UUID] = {
+    returned: dict[str, UUID] = {
         str(r.content_hash): UUID(str(r.memory_id)) for r in rows
     }
+    # Split the returned rows: the proposed id came back => INSERT arm;
+    # any other id => the merge arm updated the pre-existing live row,
+    # which is a dedup exactly as DO NOTHING was.
+    inserted: dict[str, UUID] = {
+        h: mid for h, mid in returned.items() if proposed.get(h) == mid
+    }
+    merged: dict[str, UUID] = {
+        h: mid for h, mid in returned.items() if proposed.get(h) != mid
+    }
 
-    conflicted = [i.content_hash for i in items if i.content_hash not in inserted]
+    conflicted = [i.content_hash for i in items if i.content_hash not in returned]
     existing: dict[str, UUID] = {}
     if conflicted:
         lookup = text(
@@ -705,10 +809,16 @@ async def insert_records_batch(
         new_id = inserted.get(item.content_hash)
         if new_id is not None:
             results.append((new_id, False))
-        else:
-            # Same invariant as insert_record's scalar_one: a conflict
-            # means a live row with this hash exists.
-            results.append((existing[item.content_hash], True))
+            continue
+        merged_id = merged.get(item.content_hash)
+        if merged_id is not None:
+            # Anchors merged onto the pre-existing live row. Still a
+            # dedup — same id, same every-other-column, deduped=True.
+            results.append((merged_id, True))
+            continue
+        # Same invariant as insert_record's scalar_one: a conflict
+        # means a live row with this hash exists.
+        results.append((existing[item.content_hash], True))
     return results
 
 
@@ -1114,6 +1224,151 @@ async def fts_search(
     return [UUID(str(r.memory_id)) for r in rows]
 
 
+def glob_to_posix_regex(glob: str) -> str:
+    """Translate a path glob into an anchored POSIX ARE for Postgres ``~``.
+
+    ``*`` -> ``.*``, ``?`` -> ``.``, ``[...]`` (with ``!`` negation
+    normalised to ``^``) passes through as a bracket expression, and
+    every other character is escaped to a literal. ``**`` collapses to
+    ``*``.
+
+    ``*`` deliberately crosses ``/``, so ``backend/*`` matches
+    ``backend/app/services/memory_store.py``. This is the FORGIVING
+    direction on purpose: the failure this feature must not have is
+    silently withholding a memory the session needed, and a
+    slightly-over-inclusive recall is visible to the reader while a
+    missing one is not.
+
+    Translating rather than using ``LIKE`` is what keeps ``[...]``
+    working — ``LIKE`` has no character classes, so a glob-to-LIKE
+    rewrite would silently mis-match a class instead of failing.
+    """
+    out: list[str] = ["^"]
+    i = 0
+    n = len(glob)
+    while i < n:
+        c = glob[i]
+        if c == "*":
+            while i + 1 < n and glob[i + 1] == "*":
+                i += 1
+            out.append(".*")
+        elif c == "?":
+            out.append(".")
+        elif c == "[":
+            j = i + 1
+            if j < n and glob[j] in ("!", "^"):
+                j += 1
+            if j < n and glob[j] == "]":
+                j += 1
+            while j < n and glob[j] != "]":
+                j += 1
+            if j >= n:
+                # Unterminated class — a literal '[', never a regex error
+                # that would 500 the whole query.
+                out.append("\\[")
+            else:
+                inner = glob[i + 1 : j]
+                if inner.startswith("!"):
+                    inner = "^" + inner[1:]
+                out.append("[" + inner + "]")
+                i = j
+        else:
+            out.append(re.escape(c))
+        i += 1
+    out.append("$")
+    return "".join(out)
+
+
+async def anchored_search(
+    session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    anchored_to: list[tuple[str, str]],
+    as_of: datetime | None,
+    kinds: list[str] | None,
+    scopes: list[str],
+    scope_ref: str | None,
+    min_importance: float | None,
+    since: datetime | None,
+    limit: int,
+) -> list[UUID]:
+    """Anchor-keyed proactive recall (plan §3.4 / Phase 5).
+
+    Live records anchored to any of the ``(repo, path_glob)`` clauses,
+    best-first by ``importance x freshness``. Tenant-bound and
+    validity-filtered through the SAME :func:`_validity_filters` fragment
+    the two retrieval arms use, so this arm can never surface a record
+    the query arms would have hidden.
+
+    Two-stage by construction, which is the whole reason the Phase 1 GIN
+    index exists:
+
+    1. ``anchors @> '[{"repo": ...}]'::jsonb`` per clause, OR-ed —
+       a containment probe the default-``jsonb_ops`` GIN index answers,
+       narrowing the corpus to rows anchored in those repos.
+    2. The glob is applied AFTER, over the narrowed rows only, by
+       expanding each row's array with ``jsonb_array_elements`` and
+       matching ``path`` against the translated regex. Anchor types with
+       no ``path`` (``pr`` / ``migration`` / ``schema`` / ``flag``) yield
+       SQL NULL there and therefore never match — a ``pr`` anchor on the
+       right repo is correctly not a path hit.
+
+    Both stages must pass on the SAME anchor object, which is why stage 2
+    re-checks ``repo``: without it, a record anchored to ``repo A/path X``
+    and ``repo B/path Y`` would match the clause ``(A, Y*)`` that
+    describes neither anchor.
+    """
+    if not anchored_to:
+        return []
+    where, params = _validity_filters(
+        kinds=kinds,
+        scopes=scopes,
+        scope_ref=scope_ref,
+        min_importance=min_importance,
+        since=since,
+    )
+    containment: list[str] = []
+    element_match: list[str] = []
+    for idx, (repo, path_glob) in enumerate(anchored_to):
+        containment.append(f"r.anchors @> CAST(:anchor_repo_{idx} AS jsonb)")
+        element_match.append(
+            f"(a->>'repo' = :anchor_repo_name_{idx}"
+            f" AND a->>'path' ~ :anchor_path_re_{idx})"
+        )
+        params[f"anchor_repo_{idx}"] = json.dumps([{"repo": repo}])
+        params[f"anchor_repo_name_{idx}"] = repo
+        params[f"anchor_path_re_{idx}"] = glob_to_posix_regex(path_glob)
+    stmt = text(
+        f"""
+        SELECT r.memory_id
+        FROM coord.memory_records r
+        WHERE {where}
+          AND r.anchors <> '[]'::jsonb
+          AND ({" OR ".join(containment)})
+          AND EXISTS (
+              SELECT 1
+              FROM jsonb_array_elements(r.anchors) AS a
+              WHERE {" OR ".join(element_match)}
+          )
+        ORDER BY {_retention_score_sql("now()")} DESC,
+                 r.created_at DESC, r.memory_id DESC
+        LIMIT :limit
+        """
+    ).bindparams(bindparam("scopes", expanding=True))
+    if "kinds" in params:
+        stmt = stmt.bindparams(bindparam("kinds", expanding=True))
+    rows = await session.execute(
+        stmt,
+        {
+            **params,
+            "tenant_id": tenant_id,
+            "as_of": as_of,
+            "limit": limit,
+        },
+    )
+    return [UUID(str(r.memory_id)) for r in rows]
+
+
 async def fetch_records(
     session: AsyncSession, tenant_id: UUID, memory_ids: list[UUID]
 ) -> dict[UUID, dict[str, Any]]:
@@ -1123,7 +1378,7 @@ async def fetch_records(
     stmt = text(
         """
         SELECT memory_id, title, content, kind, scope, scope_ref,
-               importance, created_at, source
+               importance, created_at, source, anchors, anchor_state
         FROM coord.memory_records
         WHERE tenant_id = :tenant_id AND memory_id IN :ids
         """
@@ -1156,14 +1411,21 @@ async def bump_access(
 async def get_record(
     session: AsyncSession, tenant_id: UUID, memory_id: UUID
 ) -> dict[str, Any] | None:
-    """One row by id, tenant-bound (cross-tenant reads come back None)."""
+    """One row by id, tenant-bound (cross-tenant reads come back None).
+
+    Carries ``anchors`` because this is the row the supersede path
+    inherits from: a successor that omits ``anchors`` takes its
+    predecessor's, and it can only do that if they are read here.
+    ``anchor_state`` is deliberately NOT selected — it is the watcher's
+    verdict about the OLD row and is never inherited.
+    """
     row = (
         (
             await session.execute(
                 text(
                     """
                 SELECT memory_id, tenant_id, scope, scope_ref, kind, title,
-                       content, content_hash, importance, source,
+                       content, content_hash, importance, source, anchors,
                        is_tombstone, superseded_by, valid_from, valid_until,
                        created_at
                 FROM coord.memory_records
@@ -1750,7 +2012,7 @@ async def list_records_page(
         f"""
         SELECT r.memory_id, r.title, r.content, r.kind, r.scope, r.scope_ref,
                r.importance, r.content_hash, r.created_at, r.updated_at,
-               r.source
+               r.source, r.anchors, r.anchor_state
         FROM coord.memory_records r
         WHERE {" AND ".join(clauses)}
         ORDER BY r.created_at DESC, r.memory_id DESC
@@ -1773,12 +2035,25 @@ async def list_records_page(
 # Phase 4 — lifecycle sweeps (decay / consolidation / reindex)
 # ===========================================================================
 
+
 # The SQL retention-score expression. MUST stay in lockstep with
 # ``memory_lifecycle.retention_score`` — the DB test asserts agreement.
 # Age is measured against COALESCE(last_accessed_at, created_at) in days.
-_RETENTION_SCORE_SQL = f"""
+#
+# ``now_expr`` exists so the SAME expression can serve two different
+# clocks without being written twice. The sweeps bind an explicit
+# ``:now`` (one instant for the whole pass, and the instant the test
+# asserts Python agreement at); the Phase 5 anchored-recall ranking uses
+# the database's ``now()`` directly, because it is a RANKING and has no
+# business introducing an app-host clock read (or a second meaning for
+# ``:now``) into a request path that deliberately has none — see
+# :data:`_EFFECTIVE_NOW_SQL`. ``importance * exp(-age/horizon)`` IS
+# "importance x freshness", so the anchored arm ranks on the store's one
+# freshness curve rather than inventing a second one.
+def _retention_score_sql(now_expr: str = "CAST(:now AS timestamptz)") -> str:
+    return f"""
     importance * exp(
-        -(EXTRACT(EPOCH FROM (CAST(:now AS timestamptz)
+        -(EXTRACT(EPOCH FROM ({now_expr}
                               - COALESCE(last_accessed_at, created_at)))
           / 86400.0)
         / ({DECAY_BASE_HORIZON_DAYS}
@@ -1786,6 +2061,9 @@ _RETENTION_SCORE_SQL = f"""
                     / CAST({DECAY_ACCESS_CAP} AS double precision)))
     )
 """
+
+
+_RETENTION_SCORE_SQL = _retention_score_sql()
 
 
 def parse_pgvector(literal: str) -> list[float]:
@@ -1834,6 +2112,20 @@ async def decay_invalidate(
     retrieval-invisible while a human is still adjudicating it, and the
     ``source.decayed_at`` stamp it earns here is what later makes it
     eligible for the PHYSICAL delete in :func:`decay_prune`.
+
+    **ANCHORED rows are exempt** (``anchors = '[]'::jsonb``; plan
+    ``2026-07-29-memory-anchored-derived-records`` §3.2). A record that
+    names its ground truth is not a timeless narrative assertion whose
+    confidence erodes with age — it is true exactly as long as the
+    artifact holds, so age is evidence neither way and its visibility is
+    governed by ``anchor_state`` via :func:`anchor_gone_sweep` instead.
+    Keying the exemption on the anchor ARRAY (rather than on a separate
+    provenance enum) is what makes "decay-exempt but uninvalidatable"
+    unrepresentable: exempt and anchored are the same bit.
+
+    The ``::jsonb`` cast is load-bearing, not decorative — ``jsonb =
+    unknown`` has no resolvable operator, and it is the same spelling the
+    migration's partial index predicate uses, so the planner can match it.
     """
     result = await session.execute(
         text(
@@ -1846,6 +2138,7 @@ async def decay_invalidate(
                                           CAST(:now_iso AS text))
             WHERE is_tombstone = false
               AND (valid_until IS NULL OR valid_until > CAST(:now AS timestamptz))
+              AND anchors = '[]'::jsonb
               AND {_not_lifecycle_held()}
               AND {_RETENTION_SCORE_SQL} < :threshold
             """
@@ -1853,6 +2146,90 @@ async def decay_invalidate(
         {"now": now, "now_iso": now.isoformat(), "threshold": threshold},
     )
     return int(cast("CursorResult[Any]", result).rowcount or 0)
+
+
+async def anchor_gone_sweep(session: AsyncSession, *, now: datetime) -> tuple[int, int]:
+    """The ``gone``/un-``gone`` half of the daily pass (plan §3.2 + Phase 3).
+
+    Two set-based UPDATEs over disjoint row sets, returning
+    ``(hidden, restored)``:
+
+    1. **Hide.** ``anchor_state = 'gone'`` — every anchor the record has
+       resolved to "no longer exists" (the roll-up is unanimity-gated, so
+       a single dead anchor among live ones is ``moved``, never this) —
+       gets ``valid_until = :now``, which is the existing retrieval
+       -invisibility mechanism and needs no new machinery.
+    2. **Restore.** A row this sweep hid whose ``anchor_state`` is no
+       longer ``gone`` gets ``valid_until`` back to NULL.
+
+    Two constraints make this safe, and both are load-bearing:
+
+    * **It must NOT stamp ``source.decayed_at``.** :func:`decay_prune`
+      physically DELETEs any row whose ``valid_until`` is older than the
+      90-day grace AND which carries a terminal marker — tombstone,
+      ``superseded_by``, or ``jsonb_exists(source, 'decayed_at')``.
+      Reusing ``decayed_at`` would let a single watcher misfire
+      permanently destroy a true memory 90 days later. This sweep stamps
+      a DISTINCT ``source.anchor_gone_at``, which no prune predicate
+      reads — so a ``gone`` record is hidden but always recoverable.
+      Hiding is reversible; deletion is not.
+    * **``anchor_gone_at`` is also the provenance token that makes
+      un-invalidation safe.** A file is restored, a revert lands, a
+      resolver bug is fixed — without step 2 a single false ``gone`` is
+      permanent, which is exactly what the watcher's failure discipline
+      was written to avoid. Step 2 therefore keys on the marker, NEVER on
+      ``valid_until`` alone: a user-set ``valid_until`` carries no marker
+      and is never touched.
+
+    Both halves honour :func:`_not_lifecycle_held`, symmetrically. The
+    hide half must (it is an automatic writer that hides a live record —
+    the hold's whole purpose); the restore half does for the same reason
+    read the other way — while a human is mid-adjudication the automatic
+    path leaves the row exactly as they found it. A held row is not
+    stranded by this: ``anchor_gone_at`` is not a prune marker, and
+    releasing the hold lets the next daily pass restore it.
+
+    Both halves are idempotent: after the hide, ``valid_until`` is no
+    longer in the future so the row drops out; after the restore, the
+    marker is gone so the row drops out.
+    """
+    hidden = await session.execute(
+        text(
+            f"""
+            UPDATE coord.memory_records
+            SET valid_until = :now,
+                updated_at = :now,
+                source = source
+                    || jsonb_build_object('anchor_gone_at',
+                                          CAST(:now_iso AS text))
+            WHERE anchor_state = 'gone'
+              AND anchors <> '[]'::jsonb
+              AND is_tombstone = false
+              AND (valid_until IS NULL OR valid_until > CAST(:now AS timestamptz))
+              AND {_not_lifecycle_held()}
+            """
+        ),
+        {"now": now, "now_iso": now.isoformat()},
+    )
+    restored = await session.execute(
+        text(
+            f"""
+            UPDATE coord.memory_records
+            SET valid_until = NULL,
+                updated_at = :now,
+                source = source - 'anchor_gone_at'
+            WHERE anchor_state <> 'gone'
+              AND jsonb_exists(source, 'anchor_gone_at')
+              AND valid_until IS NOT NULL
+              AND {_not_lifecycle_held()}
+            """
+        ),
+        {"now": now},
+    )
+    return (
+        int(cast("CursorResult[Any]", hidden).rowcount or 0),
+        int(cast("CursorResult[Any]", restored).rowcount or 0),
+    )
 
 
 async def decay_prune(session: AsyncSession, *, now: datetime, grace_days: int) -> int:

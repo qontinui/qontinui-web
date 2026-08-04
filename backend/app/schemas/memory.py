@@ -21,10 +21,10 @@ rows). There is no server-side embed fallback.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal, get_args
+from typing import Annotated, Any, Literal, get_args
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.services.memory_vectors import ACCEPTED_EMBEDDING_MODEL_TAGS, EMBEDDING_DIM
 
@@ -80,6 +80,132 @@ MAX_GRAPH_DEPTH = 5
 DEFAULT_LIST_LIMIT = 100
 MAX_LIST_LIMIT = 500
 MAX_LINKS_PER_RECORD = 32
+# Anchors per record (plan ``2026-07-29-memory-anchored-derived-records``
+# §3.1). Same shape of cap as MAX_LINKS_PER_RECORD and for the same
+# reason: the array is read whole with its record and re-resolved by the
+# watcher on every tick, so an unbounded array is an unbounded fan-out of
+# GitHub/twin reads per row.
+MAX_ANCHORS_PER_RECORD = 16
+# ``anchored_to`` clauses per proactive-recall query (Phase 5). One clause
+# per declared-intent glob; a session declaring more than this many is
+# asking for a corpus scan, not a recall.
+MAX_ANCHORED_TO_CLAUSES = 16
+
+
+# --------------------------------------------------------------------------
+# Anchors — typed references to the ground truth a record asserts about
+# --------------------------------------------------------------------------
+#
+# Plan ``2026-07-29-memory-anchored-derived-records`` §3.1. Five variants,
+# discriminated on ``type``, each chosen because coord already knows how to
+# read it. There is deliberately **no ``symbol`` variant**: coord's
+# ``symbol_claims`` are coordination claims about who is EDITING a symbol,
+# not a symbol index, and coord has no parser for any fleet language — so a
+# ``symbol`` resolver would be larger than the rest of the plan. A record
+# that wants symbol granularity anchors the ``blob``.
+#
+# Every variant forbids extra keys. Anchor IDENTITY is the whole JSON
+# object (that is what the dedup-merge in ``memory_store.insert_record``
+# unions on), so an unconstrained extra key would mint a second anchor
+# that is "the same anchor" to a human and a distinct one to the store.
+#
+# ``anchor_state`` is NOT here and never will be: it is the watcher's
+# roll-up verdict, writer-inaccessible by construction (see
+# ``MemoryRecordIn._anchor_state_is_writer_inaccessible``).
+
+
+class _AnchorBase(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class BlobAnchor(_AnchorBase):
+    """A file at a known content revision.
+
+    ``sha`` is the GIT BLOB sha — exactly what
+    ``GET /repos/{repo}/contents/{path}`` returns, so resolving this
+    anchor costs the watcher one call it already makes and no separate
+    sha lookup.
+    """
+
+    type: Literal["blob"]
+    repo: str = Field(min_length=1, max_length=256)
+    path: str = Field(min_length=1, max_length=1024)
+    sha: str = Field(min_length=1, max_length=64)
+
+
+class PRAnchor(_AnchorBase):
+    """A pull request, resolved against coord's PR twin."""
+
+    type: Literal["pr"]
+    repo: str = Field(min_length=1, max_length=256)
+    number: int = Field(ge=1)
+
+
+class MigrationAnchor(_AnchorBase):
+    """An alembic revision, resolved against ``coord.migration_revisions``."""
+
+    type: Literal["migration"]
+    revision: str = Field(min_length=1, max_length=256)
+
+
+class SchemaAnchor(_AnchorBase):
+    """A database object (``coord.memory_records.access_count``)."""
+
+    type: Literal["schema"]
+    object: str = Field(min_length=1, max_length=512)
+
+
+class FlagAnchor(_AnchorBase):
+    """A catalogued feature flag, resolved against coord's flag registry."""
+
+    type: Literal["flag"]
+    name: str = Field(min_length=1, max_length=256)
+
+
+# Discriminated on ``type`` so an unrecognized type is a clean 422 naming
+# the tag, never a silently-accepted blob-shaped object that the watcher
+# would later fail to resolve (and, failing, leave in whatever state it
+# was already in — an anchor nothing can check is worse than no anchor).
+Anchor = Annotated[
+    BlobAnchor | PRAnchor | MigrationAnchor | SchemaAnchor | FlagAnchor,
+    Field(discriminator="type"),
+]
+
+
+class AnchoredTo(BaseModel):
+    """One proactive-recall clause: ``{repo, path_glob}`` (Phase 5).
+
+    ``path_glob`` matches an anchor's ``path`` with ``*`` / ``?`` /
+    ``[...]`` glob syntax. ``repo`` is exact — it is what the GIN
+    containment index narrows on before the glob is applied.
+    """
+
+    repo: str = Field(min_length=1, max_length=256)
+    path_glob: str = Field(min_length=1, max_length=1024)
+
+
+def reject_derived_anchor_state(data: Any) -> Any:
+    """Reject a caller-supplied ``anchor_state`` on any write shape (422).
+
+    ``anchor_state`` is a DERIVED column — the anchor watcher's roll-up
+    verdict over the record's array — exactly like coord's derived
+    work-unit statuses. Pydantic's default posture for an unknown key is
+    to IGNORE it, which here would mean a writer that believes it pinned
+    a record to ``fresh`` silently did nothing. A loud rejection is the
+    only honest answer: the field is not writable by anyone, ever, over
+    this API.
+
+    Shared by every shape that can create a row (``MemoryRecordIn``,
+    ``SupersedeRequest``) so the two cannot drift — a write path that
+    quietly accepted the field would be a hole in the same wall.
+    """
+    if isinstance(data, dict) and "anchor_state" in data:
+        raise ValueError(
+            "anchor_state is derived — it is maintained by the anchor "
+            "watcher from the record's anchors and is not writable over "
+            "this API; send 'anchors' instead"
+        )
+    return data
 
 
 class MemoryLinkIn(BaseModel):
@@ -161,6 +287,14 @@ class MemoryRecordIn(BaseModel):
     ``embedding`` is computed by the CALLER. Omit it (with
     ``embedding_model``) to store the row unvectorized — it is still
     retrievable via FTS and is picked up by the reindex sweep.
+
+    ``anchors`` names the ground truth this record asserts something
+    about. A record with a non-empty array is decay-EXEMPT: its
+    visibility is governed by the watcher's ``anchor_state`` rather than
+    by the Ebbinghaus curve. Re-writing an identical record with a new
+    anchor MERGES the anchor onto the existing live row (see
+    ``memory_store.insert_record``'s ON CONFLICT clause), which is the
+    only supported way to anchor an existing record.
     """
 
     title: str = Field(min_length=1, max_length=512)
@@ -173,8 +307,16 @@ class MemoryRecordIn(BaseModel):
     links: list[MemoryLinkIn] | None = Field(
         default=None, max_length=MAX_LINKS_PER_RECORD
     )
+    anchors: list[Anchor] = Field(
+        default_factory=list, max_length=MAX_ANCHORS_PER_RECORD
+    )
     embedding: list[float] | None = None
     embedding_model: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _anchor_state_is_writer_inaccessible(cls, data: Any) -> Any:
+        return reject_derived_anchor_state(data)
 
     @model_validator(mode="after")
     def _embedding_input_valid(self) -> MemoryRecordIn:
@@ -257,6 +399,16 @@ class MemoryQueryRequest(BaseModel):
             "exactly the same validity/scope filters as the other arms."
         ),
     )
+    # Anchor-keyed proactive recall (plan §3.4 / Phase 5): "what do I know
+    # about the files this session is touching", keyed on what the caller
+    # is TOUCHING rather than on what it thought to ask. Results come back
+    # in ``anchored_hits``, ranked by importance x freshness — NOT fused
+    # into ``hits``, whose RRF ranking means something else. DEFAULT-OFF
+    # behind ``settings.MEMORY_ANCHORED_RECALL_ENABLED``; when the flag is
+    # off the arm is skipped and ``anchored_arm`` says so.
+    anchored_to: list[AnchoredTo] | None = Field(
+        default=None, max_length=MAX_ANCHORED_TO_CLAUSES
+    )
 
     @model_validator(mode="after")
     def _query_embedding_input_valid(self) -> MemoryQueryRequest:
@@ -270,7 +422,20 @@ class MemoryQueryRequest(BaseModel):
 
 
 class MemoryQueryHit(BaseModel):
-    """One fused retrieval hit."""
+    """One fused retrieval hit.
+
+    ``anchor_state`` is the watcher's roll-up verdict over the record's
+    anchors — ``none`` (anchorless, today's Ebbinghaus lifecycle),
+    ``fresh``, ``moved`` or ``gone``. It is carried on every hit because
+    ``moved`` is ADVISORY: the record stays retrievable and normally
+    ranked, and the only thing that makes it useful is that the reader
+    is told the ground truth shifted under it. A flag the response does
+    not carry is a flag nobody can act on.
+
+    Typed ``str`` rather than a ``Literal`` on purpose: this is a READ
+    shape over a column the watcher owns, and a value this build has
+    never heard of must render, not 500.
+    """
 
     memory_id: UUID
     title: str
@@ -280,6 +445,7 @@ class MemoryQueryHit(BaseModel):
     importance: float
     created_at: datetime
     source: dict[str, Any]
+    anchor_state: str = "none"
     rrf_score: float
     vector_rank: int | None = None
     fts_rank: int | None = None
@@ -330,6 +496,21 @@ class MemoryQueryResponse(BaseModel):
     hits: list[MemoryQueryHit]
     vector_arm: Literal["hybrid", "skipped_no_embedding", "skipped_migrating"]
     link_arm: Literal["expanded", "skipped_disabled", "skipped_no_seeds"]
+    # Anchor-keyed proactive recall (Phase 5), kept OUT of ``hits``: it
+    # ranks by importance x freshness, not by RRF, so folding it in would
+    # silently change what ``hits``' ordering means the moment the flag
+    # flips on. ``anchored_arm`` is the same honesty contract as
+    # ``vector_arm`` — a caller must never have to infer from an empty
+    # list whether the arm ran and found nothing or never ran at all:
+    #
+    # * ``ran``               — the arm executed; ``anchored_hits`` is its result.
+    # * ``not_requested``     — no ``anchored_to`` clauses were sent.
+    # * ``skipped_disabled``  — clauses WERE sent but
+    #   ``MEMORY_ANCHORED_RECALL_ENABLED`` is off (the default until the
+    #   efficacy harness measures the injected context against its token
+    #   cost).
+    anchored_arm: Literal["ran", "not_requested", "skipped_disabled"] = "not_requested"
+    anchored_hits: list[MemoryQueryHit] = Field(default_factory=list)
 
 
 class SupersedeRequest(BaseModel):
@@ -340,6 +521,28 @@ class SupersedeRequest(BaseModel):
     inherited — it belongs to the OLD content and would be a lie about
     the new one; omit it and the successor lands unvectorized (NULL) for
     the reindex sweep to pick up.
+
+    ``anchors`` follows the INHERIT rule, not the embedding rule, and is
+    three-valued on purpose (see the call site in
+    ``endpoints/memory.py:supersede_record`` for the full argument):
+
+    * **omitted / ``null``** — the successor INHERITS the superseded
+      record's anchors. Superseding is how a record is corrected, and a
+      correction is almost always about the same artifact; dropping the
+      binding would silently demote an anchored record back onto the
+      time-decay curve whose terminus is a hard delete.
+    * **``[]``** — deliberately un-anchor. This is the escape hatch that
+      makes inheritance safe: a rewrite that genuinely no longer asserts
+      anything about the old artifact can say so explicitly.
+    * **non-empty** — replaces the inherited set wholesale. Supersede is
+      the explicit, human-initiated path, so "this is what the record is
+      about now" is authoritative rather than additive.
+
+    ``anchor_state`` is NOT inherited under any of the three: it is the
+    watcher's derived verdict about the OLD row's anchors, so the
+    successor starts at the column default ``none`` and is re-resolved on
+    the next tick. Inheriting a verdict would assert a check that never
+    ran against this row.
     """
 
     title: str = Field(min_length=1, max_length=512)
@@ -349,8 +552,16 @@ class SupersedeRequest(BaseModel):
     scope_ref: str | None = Field(default=None, max_length=512)
     importance: float | None = Field(default=None, ge=0.0, le=1.0)
     source: dict[str, Any] | None = None
+    anchors: list[Anchor] | None = Field(
+        default=None, max_length=MAX_ANCHORS_PER_RECORD
+    )
     embedding: list[float] | None = None
     embedding_model: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _anchor_state_is_writer_inaccessible(cls, data: Any) -> Any:
+        return reject_derived_anchor_state(data)
 
     @model_validator(mode="after")
     def _embedding_input_valid(self) -> SupersedeRequest:
@@ -596,6 +807,19 @@ class MemoryRecordOut(BaseModel):
     The query-hit field shape plus sync-relevant extras
     (``scope_ref`` / ``content_hash`` / ``updated_at``) and the record's
     outbound ``links``.
+
+    This is the SYNC/LIST shape, so it carries the anchor array ITSELF
+    and not just the roll-up: a mirror that pulled records without their
+    anchors would round-trip them back anchorless on the next write, and
+    the dedup-merge (union, never replace) would then be unable to tell
+    "this writer has no anchors to add" from "this writer dropped them".
+
+    ``anchors`` is typed as raw objects rather than the ``Anchor``
+    discriminated union. On the WRITE side an unknown ``type`` must be a
+    loud 422; on the READ side it must render — the watcher and a future
+    coord build own this column's vocabulary, and a list endpoint that
+    500s on a type this build predates would take the whole sync page
+    down with it.
     """
 
     memory_id: UUID
@@ -609,6 +833,8 @@ class MemoryRecordOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     source: dict[str, Any]
+    anchors: list[dict[str, Any]] = Field(default_factory=list)
+    anchor_state: str = "none"
     links: list[MemoryLinkOut]
 
 
