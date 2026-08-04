@@ -1,0 +1,212 @@
+[
+  {
+    "key": "sccache-wedge-original",
+    "title": "sccache client pileup stalls all runner cargo builds",
+    "content": "When the sccache server on port 4230 stops responding, every cargo build on the machine blocks in the sccache client rather than falling through to a local compile. Symptom is a fleet-wide cargo stall with no error output. Clear it by killing the sccache server process and letting the next build respawn it.",
+    "kind": "reference",
+    "importance": 0.7
+  },
+  {
+    "key": "sccache-wedge-correction",
+    "title": "CORRECTION: RUSTC_WRAPPER= alone does NOT escape the sccache wedge",
+    "content": "Setting RUSTC_WRAPPER to empty does not free a build already blocked on the sccache client, because the wrapper is resolved once per cargo invocation and peers hold the same stalled socket. The only reliable escape is stopping the sccache server itself. This supersedes the earlier guidance that unsetting the wrapper was sufficient.",
+    "kind": "reference",
+    "importance": 0.9
+  },
+  {
+    "key": "coord-health-sha-original",
+    "title": "coord /health build_sha reads empty — cannot verify the serving revision",
+    "content": "The coord health endpoint returns a null build_sha, so an agent cannot confirm which commit is actually serving. Use the ECS task definition image tag as the serving-revision signal instead of the health payload.",
+    "kind": "reference",
+    "importance": 0.6
+  },
+  {
+    "key": "coord-health-sha-correction",
+    "title": "CORRECTED: coord /health build_sha is POPULATED — valid serving-SHA signal again",
+    "content": "The coord health endpoint now returns a populated build_sha and it is a valid signal for which commit is serving. The earlier record claiming it reads empty is stale and should not be used to justify the task-definition workaround.",
+    "kind": "reference",
+    "importance": 0.9
+  },
+  {
+    "key": "gate-spawn-selfverify-original",
+    "title": "A gate continuation can verify its own spawn path",
+    "content": "Registering a gate with a continuation and reading back the dispatch record is enough to confirm the spawn path works end to end.",
+    "kind": "feedback",
+    "importance": 0.5
+  },
+  {
+    "key": "gate-spawn-selfverify-correction",
+    "title": "CORRECTION: a gate verifying its own spawn path is ONE-SIDED",
+    "content": "A gate that checks its own continuation dispatch can report success while the spawn never actually ran, because dispatch and consumption are separate records. Read continuation_consumed_outcome, not the dispatch timestamp — a null outcome means the continuation was never claimed, which is worse than a recorded spawn failure.",
+    "kind": "feedback",
+    "importance": 0.95
+  },
+  {
+    "key": "proxy-denial-original",
+    "title": "coord_write_prompt_document denial through the proxy looks like a transport bug",
+    "content": "Calls to coord_write_prompt_document over the loopback proxy come back denied. This resembles the dead-transport failure mode where a cached proxy nonce has rotated.",
+    "kind": "reference",
+    "importance": 0.5
+  },
+  {
+    "key": "proxy-denial-correction",
+    "title": "CORRECTION: coord_write_prompt_document's proxy denial is a DELIBERATE control",
+    "content": "The denial is an intentional authorization control on policy-document writes, not a rotated nonce and not a dead transport. Do not run the transport-revival cascade against it — the call is refused by design and will keep being refused over every door.",
+    "kind": "reference",
+    "importance": 0.9
+  },
+  {
+    "key": "pullrequest-only-ci-wedge",
+    "title": "A repo whose CI is pull_request-triggered only wedges a global merge slot",
+    "content": "Coord pushes a merge-candidate branch and waits for check runs on that ref. A repo whose only workflows trigger on pull_request produces no runs on the candidate branch, the CI timeout expires, the scheduler requeues, and one of the three global merge permits is consumed forever. Diagnose by comparing each open proposal's age against the same response's suggested stuck threshold.",
+    "kind": "reference",
+    "importance": 0.9
+  },
+  {
+    "key": "merge-slot-caps",
+    "title": "No merge candidate looks exactly like a wedge but is usually slot caps",
+    "content": "An absent merge candidate is more often the per-repo concurrency cap than a genuine wedge. Queued and dry-rebasing proposals hold permits without any observable candidate branch, so counting candidate branches gives a wrong occupancy numerator.",
+    "kind": "reference",
+    "importance": 0.7
+  },
+  {
+    "key": "query-metric-allowlist",
+    "title": "A query_metric rejection means the name is not allowlisted, not that the series is absent",
+    "content": "coord_query_metric point-reads only whitelisted metric names. A rejection is an allowlist miss, not evidence that the underlying series does not exist. Reading present false as a zero value manufactures a false verdict; check family_declared first.",
+    "kind": "reference",
+    "importance": 0.8
+  },
+  {
+    "key": "metrics-alb-403",
+    "title": "The raw metrics endpoint returns 403 through the load balancer when an Authorization header is present",
+    "content": "Scraping the coord metrics endpoint with a bearer token fails with 403 at the load balancer, which mimics authentication drift and misleads agents into debugging credentials. Scrape with the metrics token header instead, or point-read the value through the MCP tool that reads the in-process registry.",
+    "kind": "reference",
+    "importance": 0.8
+  },
+  {
+    "key": "alembic-sole-authorship",
+    "title": "Alembic in the web backend is the sole author of the coord schema",
+    "content": "No Rust code may issue DDL against coord tables. A coord read of a new column requires the web migration adding that column to land and reach head in production first, or the read queries a column that does not exist.",
+    "kind": "rule",
+    "importance": 0.95
+  },
+  {
+    "key": "migration-consumer-order",
+    "title": "Hold a migration consumer in draft until the column is verified in production",
+    "content": "A pull request that reads a newly added column must stay in draft until the migration adding it is confirmed applied in the production schema. Dependency labels do not enforce this ordering.",
+    "kind": "rule",
+    "importance": 0.8
+  },
+  {
+    "key": "db-test-self-skip",
+    "title": "A database-gated test suite that self-skips reports a vacuous green",
+    "content": "When the test database is unreachable or an extension is missing, the suite skips wholesale and the check still goes green. A skip and a pass are the same colour in the check list, so confirm executed case counts in the run log rather than trusting the badge.",
+    "kind": "reference",
+    "importance": 0.85
+  },
+  {
+    "key": "gitleaks-red-means-it-ran",
+    "title": "A red secret scan means the scanner executed",
+    "content": "A failing gitleaks check is evidence the scan ran and found something, and the finding count appears in the job output. Treating the red as scanner flake skips a real finding.",
+    "kind": "reference",
+    "importance": 0.7
+  },
+  {
+    "key": "runner-lifecycle-rule",
+    "title": "Never stop, restart, kill or rebuild a running runner",
+    "content": "Neither the primary nor a secondary runner may be terminated. Killing node or powershell processes terminates live agent sessions on the same machine. Verify code changes on an ephemeral instance spawned through the supervisor instead.",
+    "kind": "rule",
+    "importance": 1.0
+  },
+  {
+    "key": "temp-runner-verification",
+    "title": "Verify runner changes on a temporary instance from the supervisor",
+    "content": "The supervisor builds the code into its own pool and spawns an isolated instance on a separate port with its own bridge, at zero cost to the primary. Stop the instance when the check is done.",
+    "kind": "reference",
+    "importance": 0.75
+  },
+  {
+    "key": "worktree-isolation-rule",
+    "title": "Edit work runs in an allocated worktree, never the primary checkout",
+    "content": "Two concurrent sessions editing the same checkout clobber each other's uncommitted work. Create an isolated worktree per session off the remote default branch and treat that path as the repository root for every edit.",
+    "kind": "rule",
+    "importance": 0.9
+  },
+  {
+    "key": "stale-checkout-phantom-findings",
+    "title": "Grepping a stale checkout produces phantom dead-code findings",
+    "content": "A local checkout hundreds of commits behind the remote default branch reports symbols as unused that live code references. Re-derive every citation against the fetched remote branch before asserting anything about the tree.",
+    "kind": "reference",
+    "importance": 0.8
+  },
+  {
+    "key": "rebase-land-sha-rewrite",
+    "title": "Fast-forward landing rewrites commit hashes, so a pre-land branch head rots a gate",
+    "content": "A gate anchored to a branch head hash never clears once the change lands, because the landing rewrites the hash. Anchor on a post-land hash on the default branch, or on a file-existence predicate instead.",
+    "kind": "reference",
+    "importance": 0.85
+  },
+  {
+    "key": "pr-state-trap",
+    "title": "A closed pull request with merged false can still mean the work shipped",
+    "content": "Fast-forward landing closes the request without marking it merged, so the state field is a misleading signal. Check whether the commit is an ancestor of the default branch instead of reading the request state.",
+    "kind": "reference",
+    "importance": 0.85
+  },
+  {
+    "key": "no-output-write-lost",
+    "title": "A coord write returning no output is presumed lost",
+    "content": "An empty result from a coordination write means the cached transport was dead, not that the tool was masked. Presume the write did not land, re-issue it over a door confirmed live, and verify by reading the record back. A retry succeeding is never evidence the original landed.",
+    "kind": "rule",
+    "importance": 0.95
+  },
+  {
+    "key": "masked-tool-vs-dead-transport",
+    "title": "An unknown-method error and an empty result are different failures",
+    "content": "An unknown or method-not-found error means the tool is absent from this session's allow set, and the documented fallback applies. An empty result means the tool was present but its transport was dead, so that fallback never fires and the write must be presumed lost.",
+    "kind": "reference",
+    "importance": 0.8
+  },
+  {
+    "key": "powershell-wildcard-trap",
+    "title": "A question mark is a wildcard in PowerShell's like operators",
+    "content": "Filtering porcelain status output with a not-like pattern containing question marks matches every two-character prefix and empties the list, so a dirty-tree guard built that way always passes. Use a literal comparison instead.",
+    "kind": "reference",
+    "importance": 0.7
+  },
+  {
+    "key": "grep-count-dead-guard",
+    "title": "Piping a count through a fallback echo defeats a continuous-integration guard",
+    "content": "Writing a count command with an or-echo-zero fallback makes the guard succeed on every input except an empty one, because the count command already returns zero as text when it matches nothing. The guard silently never fails.",
+    "kind": "reference",
+    "importance": 0.7
+  },
+  {
+    "key": "session-memory-single-writer",
+    "title": "Coordination memory is the single writer; the cross-account file sync is retired",
+    "content": "The hourly file synchronisation task, its hooks and its conflict-resolution commands were deleted once the coordination store became the only writer. There is nothing left to reconcile between accounts, and the local index files are a bounded cache rather than the corpus.",
+    "kind": "observation",
+    "importance": 0.8
+  },
+  {
+    "key": "memory-cache-is-not-corpus",
+    "title": "The local boot index is a bounded cache, not the corpus",
+    "content": "The rendered index holds only titles up to a byte budget and indexes a fraction of the stored records. A topic absent from it is unknown rather than absent, and a stale render means no credential was available rather than an empty store.",
+    "kind": "observation",
+    "importance": 0.85
+  },
+  {
+    "key": "access-count-unused-signal",
+    "title": "The retrieval access counter feeds only the decay half-life",
+    "content": "Every query increments an access counter on the records it returns, and that counter currently influences nothing except how slowly a record decays. Which records are retrieved repeatedly versus retrieved once is a free relevance prior that no ranking path reads.",
+    "kind": "observation",
+    "importance": 0.75
+  },
+  {
+    "key": "vector-arm-caller-gated",
+    "title": "The semantic arm runs only when the caller supplies a query vector",
+    "content": "The query endpoint never computes a vector itself. Without a caller-supplied one the semantic half is skipped and the answer is full-text only, which the response reports explicitly so an agent cannot mistake one for the other.",
+    "kind": "observation",
+    "importance": 0.9
+  }
+]

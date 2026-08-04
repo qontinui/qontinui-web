@@ -637,7 +637,33 @@ async def vector_search(
     since: datetime | None,
     arm_limit: int = ARM_LIMIT,
 ) -> list[tuple[UUID, float]]:
-    """Semantic arm: HNSW cosine top-N as ``(memory_id, similarity)``."""
+    """Semantic arm: HNSW cosine top-N as ``(memory_id, similarity)``.
+
+    **Ties are broken in Python, deliberately not in SQL.** Cosine ties are
+    common — any two records equidistant from the query, and under a sparse
+    space every record sharing no vocabulary with it sits at the same
+    distance — and Postgres returns tied rows in whatever physical order it
+    finds them. Two identical queries therefore produced different
+    rankings, which fed different RRF ranks and moved MRR by ~4% between
+    runs: enough to masquerade as a ranking regression, and enough to make
+    a recorded benchmark baseline meaningless (plan
+    ``2026-07-29-memory-recall-efficacy-benchmark`` §6 item 2).
+
+    Adding ``content_hash`` to the SQL ``ORDER BY`` fixes that and is the
+    obvious move — but it silently **destroys the HNSW index scan**. A
+    secondary sort key the index cannot provide forces the planner to a
+    sequential scan plus a top-N sort: measured on 5k rows, `Index Scan
+    using hnsw` (0.16 ms) became `Seq Scan` + heapsort (0.94 ms), and that
+    gap widens LINEARLY with corpus size against a 500k-row per-tenant
+    quota. So the SQL keeps its index-friendly distance-only ordering, and
+    the stable tiebreak happens on the ``arm_limit``-bounded result set
+    here, where it is free.
+
+    ``content_hash`` is the tiebreak key because it derives from the
+    content and is therefore identical across machines and across a
+    re-seed; ``memory_id`` is a random UUID, so ordering on it alone is
+    reproducible only within one corpus instance.
+    """
     where, params = _validity_filters(
         kinds=kinds,
         scopes=scopes,
@@ -648,7 +674,8 @@ async def vector_search(
     stmt = text(
         f"""
         SELECT r.memory_id,
-               1 - (r.embedding <=> CAST(:qvec AS vector)) AS cosine_similarity
+               1 - (r.embedding <=> CAST(:qvec AS vector)) AS cosine_similarity,
+               r.content_hash
         FROM coord.memory_records r
         WHERE {where} AND r.embedding IS NOT NULL
         ORDER BY r.embedding <=> CAST(:qvec AS vector)
@@ -667,7 +694,15 @@ async def vector_search(
             "arm_limit": arm_limit,
         },
     )
-    return [(UUID(str(r.memory_id)), float(r.cosine_similarity)) for r in rows]
+    # Stable tiebreak over the bounded result set — see the docstring for why
+    # this is not an ORDER BY. Sorting on the NEGATED similarity keeps
+    # best-first while making `content_hash` the ascending secondary key.
+    hits = [
+        (UUID(str(r.memory_id)), float(r.cosine_similarity), str(r.content_hash))
+        for r in rows
+    ]
+    hits.sort(key=lambda h: (-h[1], h[2]))
+    return [(memory_id, similarity) for memory_id, similarity, _hash in hits]
 
 
 async def fts_search(
@@ -683,7 +718,22 @@ async def fts_search(
     since: datetime | None,
     arm_limit: int = ARM_LIMIT,
 ) -> list[UUID]:
-    """Lexical arm: websearch FTS top-N ids, ``ts_rank_cd``-ordered."""
+    """Lexical arm: websearch FTS top-N ids, ``ts_rank_cd``-ordered.
+
+    ``content_hash`` then ``memory_id`` close the ordering for the same
+    reproducibility reason as :func:`vector_search`: ``created_at`` alone
+    does not break every tie, since records written in one batch share a
+    transaction timestamp.
+
+    Here the tiebreak IS in the SQL, unlike the vector arm — and the
+    asymmetry is deliberate rather than an oversight. ``ts_rank_cd`` is
+    computed per row, so no index can supply this ordering and the plan
+    already pays for a top-N heapsort over the ``@@``-matched set; adding
+    sort keys to a sort that must happen anyway is free (measured
+    identical plan and runtime on 5k rows). The vector arm's ordering, by
+    contrast, IS index-supplied, so the same change there would trade the
+    HNSW scan for a sequential one.
+    """
     where, params = _validity_filters(
         kinds=kinds,
         scopes=scopes,
@@ -699,7 +749,7 @@ async def fts_search(
         FROM coord.memory_records r
         WHERE {where}
           AND r.content_tsv @@ websearch_to_tsquery('english', :q)
-        ORDER BY fts_score DESC, r.created_at DESC
+        ORDER BY fts_score DESC, r.created_at DESC, r.content_hash, r.memory_id
         LIMIT :arm_limit
         """
     ).bindparams(bindparam("scopes", expanding=True))
