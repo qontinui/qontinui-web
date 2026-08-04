@@ -82,6 +82,27 @@ export type ApplicabilityReason =
   | "clause_absent"
   | "document_missing";
 
+/**
+ * The single description of what coord does when the check is NOT applicable —
+ * enforcement switched off, or the named clause absent from the active document.
+ *
+ * It is a shared constant because this page used to state the same behaviour
+ * twice, independently: once in {@link APPLICABILITY_META}.`enforcement_disabled`
+ * and once in {@link VERDICT_META}.`not_applicable`. They drifted into flatly
+ * contradicting each other — one claimed coord "still reconciles", the other
+ * that "nothing was checked" — and a reader had no way to tell which was true.
+ *
+ * Coord's own code settles it. `applicable = !disabled && via.is_some()`, and a
+ * false `applicable` short-circuits ahead of reconciliation, writing an empty
+ * `items` array with the note "no claim was reconciled". So: the session is
+ * recorded, and nothing in it is checked.
+ *
+ * Both surfaces compose this string, so the next correction lands in one place
+ * or not at all.
+ */
+export const NOT_APPLICABLE_BEHAVIOUR =
+  "coord records the session but reconciles none of its claims against what it independently observed";
+
 /** Plain-language rendering of each reason, for an operator who has read no plan. */
 export const APPLICABILITY_META: Record<
   ApplicabilityReason,
@@ -93,9 +114,9 @@ export const APPLICABILITY_META: Record<
       "The clause below is present in the active version of its document, so sessions are being checked.",
   },
   enforcement_disabled: {
-    label: "Recording only — sessions are checked but never asked",
+    label: "Recording only — sessions are logged, their claims are not checked",
     detail:
-      "The check still runs. Every session's closing report is still looked for, and coord still reconciles it and records a verdict below. What is off is the correction: a session that skipped its report is left alone instead of being asked for one. This is the deliberate observe-first setting — it lets verdicts accumulate so the check's false-positive rate can be measured before it starts interrupting sessions.",
+      `Sessions still reach coord and still appear in the table below, so you can see who ran and read what they reported. What is not happening is the verification: ${NOT_APPLICABLE_BEHAVIOUR}, which is why those rows show "—" for unconfirmed claims rather than a count — there is no count, because nothing was examined. No session is asked for a report it skipped either. Switch this on to start reconciling and asking.`,
   },
   clause_absent: {
     label: "Inert — clause not in the active document",
@@ -244,7 +265,7 @@ export const VERDICT_META: Record<
     label: "Not applicable",
     variant: "secondary",
     detail:
-      "Enforcement was off for this session, or the clause it names was absent from the active document, so nothing was checked.",
+      `Enforcement was off for this session, or the clause it names was absent from the active document, so ${NOT_APPLICABLE_BEHAVIOUR}. This is the absence of a check, not a clean result.`,
   },
 };
 
@@ -489,6 +510,24 @@ export function shapeCheckedCount(row: SessionComplianceRow): number {
  */
 export function isReportAbsent(row: SessionComplianceRow): boolean {
   return row.reason === "absent" || row.reconciliation?.reason === "absent";
+}
+
+/**
+ * True when coord filed a verdict without examining a single claim.
+ *
+ * These rows carry an empty `items` array, so {@link unreconciledCount} derives
+ * `0` from them — and `0` is exactly what a perfectly clean reconciliation
+ * looks like. Rendering the numeral would make an unexamined session
+ * indistinguishable from a verified one, which is the same failure as
+ * fabricating absence and is worse here, because it errs toward reassurance.
+ *
+ * Keyed on the verdict coord explicitly wrote, never inferred from an empty
+ * `items` array — a list projection that omits `reconciliation` would otherwise
+ * mark every row unexamined. See {@link NOT_APPLICABLE_BEHAVIOUR} for what
+ * coord actually did.
+ */
+export function isUnexamined(row: SessionComplianceRow): boolean {
+  return row.verdict === "not_applicable";
 }
 
 /**

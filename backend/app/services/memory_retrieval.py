@@ -2,11 +2,18 @@
 
 Phase 1 of ``D:/qontinui-root/plans/2026-07-10-tenant-agentic-memory-web-backend.md``.
 
-Reciprocal Rank Fusion (RRF) over the two retrieval arms the memory API
-runs against ``coord.memory_records``:
+Reciprocal Rank Fusion (RRF) over N **named** retrieval arms run against
+``coord.memory_records``. Arms are keyed by name rather than by argument
+position so provenance can never be silently re-attributed when a caller
+drops an arm instead of passing it empty. The arms in use today:
 
-* the pgvector HNSW cosine arm (semantic), and
-* the ``tsvector``/``websearch_to_tsquery`` arm (lexical).
+* ``"vector"`` — the pgvector HNSW cosine arm (semantic),
+* ``"fts"`` — the ``tsvector``/``websearch_to_tsquery`` arm (lexical), and
+* ``"link"`` — one-hop expansion over the ``coord.memory_links`` graph
+  (``2026-07-29-memory-link-expansion-retrieval-arm.md``).
+
+Nothing here is limited to those three: any name-keyed mapping fuses, and
+the tie-break stays total and reproducible for unknown arm names.
 
 Kept free of SQL and I/O so the fusion math is unit-testable in
 isolation (see ``tests/test_memory_rrf.py``).
@@ -14,66 +21,116 @@ isolation (see ``tests/test_memory_rrf.py``).
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 # Standard RRF smoothing constant (Cormack et al.): score contribution
 # of a rank-r hit is 1 / (K + r) with 1-based ranks.
 RRF_K = 60
 
+# Tie-break arm precedence. Arms named here sort in *this* order (not in
+# ``dict`` insertion order); any other arm name follows, sorted
+# alphabetically, so an unknown future arm still yields a total,
+# reproducible ordering.
+CANONICAL_ARMS = ("vector", "fts", "link")
+
+# Sentinel rank for "this document is absent from this arm" — sorts last.
+_ABSENT_RANK = 1 << 30
+
 
 @dataclass(frozen=True)
 class FusedHit[IdT]:
-    """One fused result: the id plus its per-arm provenance."""
+    """One fused result: the id plus its per-arm provenance.
+
+    ``ranks`` holds an entry only for the arms the document actually
+    appeared in — an absent arm is an absent key, never a ``None`` value.
+
+    ``frozen=True`` here means "no attribute rebinding", NOT hashable and
+    NOT deeply immutable: the ``ranks`` dict makes instances unhashable
+    (``set(fused)`` / using a hit as a dict key raises ``TypeError``) and
+    leaves the mapping itself mutable. Nothing hashes a ``FusedHit``
+    today; de-duplicate on ``hit.id`` if you ever need to.
+    """
 
     id: IdT
     rrf_score: float
-    vector_rank: int | None
-    fts_rank: int | None
+    ranks: dict[str, int]
+
+    @property
+    def vector_rank(self) -> int | None:
+        """1-based rank in the semantic arm, or ``None`` if absent."""
+        return self.ranks.get("vector")
+
+    @property
+    def fts_rank(self) -> int | None:
+        """1-based rank in the lexical arm, or ``None`` if absent."""
+        return self.ranks.get("fts")
+
+    @property
+    def link_rank(self) -> int | None:
+        """1-based rank in the graph-expansion arm, or ``None`` if absent."""
+        return self.ranks.get("link")
+
+
+def _tie_break_arm_order(arm_names: Sequence[str]) -> tuple[str, ...]:
+    """Canonical arms first (in ``CANONICAL_ARMS`` order), then the rest sorted."""
+    present = set(arm_names)
+    known = [name for name in CANONICAL_ARMS if name in present]
+    unknown = sorted(present.difference(CANONICAL_ARMS))
+    return (*known, *unknown)
 
 
 def rrf_fuse[IdT](
-    vector_ids: Sequence[IdT],
-    fts_ids: Sequence[IdT],
+    arms: Mapping[str, Sequence[IdT]],
     *,
     k: int = RRF_K,
 ) -> list[FusedHit[IdT]]:
-    """Fuse two ranked id lists with Reciprocal Rank Fusion.
+    """Fuse N named ranked id lists with Reciprocal Rank Fusion.
 
     ``score(d) = Σ_arms 1 / (k + rank_arm(d))`` with 1-based ranks; a
     document absent from an arm simply contributes nothing for that arm.
 
     Args:
-        vector_ids: ids from the semantic arm, best-first.
-        fts_ids: ids from the lexical arm, best-first.
+        arms: ranked id lists keyed by arm name, each best-first (e.g.
+            ``{"vector": [...], "fts": [...], "link": [...]}``). Empty
+            arms are permitted and contribute nothing.
         k: RRF smoothing constant (60 per the plan).
 
     Returns:
-        All distinct ids, sorted by fused score descending. Ties break
-        by (vector_rank, fts_rank) ascending — i.e. deterministic and
-        favoring the semantically closer document — with absent ranks
-        sorting last.
+        All distinct ids, sorted by fused score descending. Ties break by
+        each arm's rank ascending, arms considered in ``CANONICAL_ARMS``
+        order followed by any remaining arm names alphabetically — i.e.
+        deterministic and favoring the semantically closer document —
+        with absent ranks sorting last.
     """
-    vector_rank = {doc_id: i + 1 for i, doc_id in enumerate(vector_ids)}
-    fts_rank = {doc_id: i + 1 for i, doc_id in enumerate(fts_ids)}
+    arm_order = _tie_break_arm_order(list(arms))
+    ranks_by_arm: dict[str, dict[IdT, int]] = {
+        name: {doc_id: i + 1 for i, doc_id in enumerate(arms[name])}
+        for name in arm_order
+    }
 
-    hits: list[FusedHit] = []
-    for doc_id in {*vector_rank, *fts_rank}:
-        vr = vector_rank.get(doc_id)
-        fr = fts_rank.get(doc_id)
-        score = 0.0
-        if vr is not None:
-            score += 1.0 / (k + vr)
-        if fr is not None:
-            score += 1.0 / (k + fr)
-        hits.append(FusedHit(id=doc_id, rrf_score=score, vector_rank=vr, fts_rank=fr))
+    # Seed the id set in a deterministic order (arm precedence, then
+    # within-arm rank) so the sort below never depends on set iteration.
+    ordered_ids: dict[IdT, None] = {}
+    for name in arm_order:
+        for doc_id in arms[name]:
+            ordered_ids.setdefault(doc_id, None)
 
-    _absent = 1 << 30
-    hits.sort(
-        key=lambda h: (
-            -h.rrf_score,
-            h.vector_rank if h.vector_rank is not None else _absent,
-            h.fts_rank if h.fts_rank is not None else _absent,
+    hits: list[FusedHit[IdT]] = []
+    for doc_id in ordered_ids:
+        doc_ranks = {
+            name: rank
+            for name in arm_order
+            if (rank := ranks_by_arm[name].get(doc_id)) is not None
+        }
+        score = sum(1.0 / (k + rank) for rank in doc_ranks.values())
+        hits.append(FusedHit(id=doc_id, rrf_score=score, ranks=doc_ranks))
+
+    def _sort_key(hit: FusedHit[IdT]) -> tuple[float, ...]:
+        return (
+            -hit.rrf_score,
+            *(float(hit.ranks.get(name, _ABSENT_RANK)) for name in arm_order),
         )
-    )
+
+    hits.sort(key=_sort_key)
     return hits
