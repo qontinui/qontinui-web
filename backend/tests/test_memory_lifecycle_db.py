@@ -131,8 +131,15 @@ def _seed(
     source: dict[str, Any] | None = None,
     anchors: list[dict[str, Any]] | None = None,
     anchor_state: str = "none",
+    content_hash: str | None = None,
 ) -> UUID:
-    """Insert one row with full control over lifecycle-relevant columns."""
+    """Insert one row with full control over lifecycle-relevant columns.
+
+    ``content_hash`` defaults to a per-row unique value; pass it
+    explicitly to build the CONTENT TWIN the restore's live-twin guard
+    exists to detect (that guard is about two rows sharing a hash, which
+    the default deliberately makes impossible).
+    """
     memory_id = uuid4()
     _exec(
         engine,
@@ -157,7 +164,7 @@ def _seed(
         kind=kind,
         title=content[:40],
         content=content,
-        content_hash=f"hash-{memory_id}",
+        content_hash=content_hash if content_hash is not None else f"hash-{memory_id}",
         embedding=store.format_pgvector(embedding) if embedding else None,
         embedding_model=embedding_model,
         importance=importance,
@@ -643,6 +650,201 @@ class TestAnchorGoneSweep:
         stats = _run(db, lambda s: decay_once(s, now=NOW))
         assert stats["anchor_gone_hidden"] == 1
         assert _visible_ids(db, tenant) == set()
+
+
+class TestAnchorRestoreCannotBreakTheSweep:
+    """F1 — the restore is the only writer that re-enters the live-dedup index.
+
+    ``uq_memory_records_tenant_content_hash_live`` is partial on
+    ``valid_until IS NULL``: ending validity FREES a content hash, so
+    un-ending it can collide with whatever took the hash meanwhile. The
+    whole daily pass is one transaction, so an uncaught collision would
+    roll back the decay sweep, skip the prune and the session expiry, and
+    re-raise at 03:10 every night forever.
+    """
+
+    def _hidden_with_twin(
+        self, db: AsyncEngine, tenant: UUID, *, shared_hash: str = "shared-hash"
+    ) -> tuple[UUID, UUID]:
+        """A restorable hidden row plus a LIVE row holding its hash."""
+        hidden = _seed(
+            db,
+            tenant,
+            content="the hidden original",
+            content_hash=shared_hash,
+            valid_until_days_ago=1,
+            anchors=[_BLOB_ANCHOR],
+            # The watcher has already withdrawn the verdict: this row is
+            # restorable in every respect except the twin.
+            anchor_state="fresh",
+            source={"anchor_gone_at": "2026-06-01T00:00:00+00:00"},
+        )
+        twin = _seed(
+            db,
+            tenant,
+            content="the hidden original",
+            content_hash=shared_hash,
+        )
+        return hidden, twin
+
+    def test_live_twin_does_not_abort_the_daily_pass(self, db: AsyncEngine) -> None:
+        tenant = uuid4()
+        hidden, twin = self._hidden_with_twin(db, tenant)
+        # A row the decay half must still invalidate, to prove the rest of
+        # the pass actually ran rather than being rolled back.
+        stale = _seed(db, tenant, content="stale", importance=0.5, age_days=720)
+
+        stats = _run(db, lambda s: decay_once(s, now=NOW))
+
+        assert stats["anchor_gone_restored"] == 0
+        assert stats["anchor_gone_restore_blocked"] == 1
+        # The rest of the pass completed.
+        assert stats["invalidated"] == 1
+        assert _row(db, stale, "valid_until") is not None
+        # Both rows survive; only the twin is retrievable.
+        assert _exists(db, hidden)
+        assert _visible_ids(db, tenant) == {twin}
+
+    def test_blocked_row_keeps_its_marker_and_restores_once_the_twin_goes(
+        self, db: AsyncEngine
+    ) -> None:
+        """Skip means WAIT, not give up — dropping the marker would be fatal."""
+        tenant = uuid4()
+        hidden, twin = self._hidden_with_twin(db, tenant)
+        _run(db, lambda s: decay_once(s, now=NOW))
+        # The provenance token is intact, so the row is still restorable.
+        assert _row(db, hidden, "source->>'anchor_gone_at'") is not None
+        assert _row(db, hidden, "valid_until") is not None
+
+        # The twin is tombstoned, which frees the hash again.
+        _exec(
+            db,
+            [
+                "UPDATE coord.memory_records SET is_tombstone = true WHERE memory_id = :m"
+            ],
+            m=twin,
+        )
+        stats = _run(db, lambda s: decay_once(s, now=NOW))
+        assert stats["anchor_gone_restore_blocked"] == 0
+        assert stats["anchor_gone_restored"] == 1
+        assert _row(db, hidden, "valid_until") is None
+        assert _row(db, hidden, "source->>'anchor_gone_at'") is None
+        assert _visible_ids(db, tenant) == {hidden}
+
+    def test_a_dead_twin_does_not_block(self, db: AsyncEngine) -> None:
+        """The guard tracks the INDEX predicate, not merely "a row exists"."""
+        tenant = uuid4()
+        hidden = _seed(
+            db,
+            tenant,
+            content="the hidden original",
+            content_hash="dead-twin-hash",
+            valid_until_days_ago=1,
+            anchors=[_BLOB_ANCHOR],
+            anchor_state="fresh",
+            source={"anchor_gone_at": "2026-06-01T00:00:00+00:00"},
+        )
+        # Same hash, but superseded => outside the partial unique index.
+        _seed(
+            db,
+            tenant,
+            content="the hidden original",
+            content_hash="dead-twin-hash",
+            valid_until_days_ago=2,
+            superseded_by=hidden,
+        )
+        stats = _run(db, lambda s: decay_once(s, now=NOW))
+        assert stats["anchor_gone_restore_blocked"] == 0
+        assert stats["anchor_gone_restored"] == 1
+        assert _row(db, hidden, "valid_until") is None
+
+    def test_a_twin_in_another_tenant_does_not_block(self, db: AsyncEngine) -> None:
+        """The unique index is per-tenant; the guard must be too."""
+        tenant = uuid4()
+        other = uuid4()
+        hidden = _seed(
+            db,
+            tenant,
+            content="the hidden original",
+            content_hash="cross-tenant-hash",
+            valid_until_days_ago=1,
+            anchors=[_BLOB_ANCHOR],
+            anchor_state="fresh",
+            source={"anchor_gone_at": "2026-06-01T00:00:00+00:00"},
+        )
+        _seed(
+            db,
+            other,
+            content="the hidden original",
+            content_hash="cross-tenant-hash",
+        )
+        stats = _run(db, lambda s: decay_once(s, now=NOW))
+        assert stats["anchor_gone_restore_blocked"] == 0
+        assert stats["anchor_gone_restored"] == 1
+        assert _visible_ids(db, tenant) == {hidden}
+
+
+class TestAnchorRestoreRespectsTerminalStates:
+    """F2 — un-hiding a WATCHER verdict, never resurrecting a dead row.
+
+    ``_validity_filters`` enforces supersession purely through
+    ``valid_until`` and never looks at ``superseded_by``, so NULLing
+    ``valid_until`` on a superseded row would put it back into retrieval
+    competing with its own successor — and leave it unprunable forever.
+    """
+
+    def test_superseded_row_is_never_restored(self, db: AsyncEngine) -> None:
+        tenant = uuid4()
+        successor = _seed(db, tenant, content="the corrected claim")
+        superseded = _seed(
+            db,
+            tenant,
+            content="the original claim",
+            valid_until_days_ago=1,
+            superseded_by=successor,
+            anchors=[_BLOB_ANCHOR],
+            anchor_state="fresh",
+            source={"anchor_gone_at": "2026-06-01T00:00:00+00:00"},
+        )
+        stats = _run(db, lambda s: decay_once(s, now=NOW))
+        assert stats["anchor_gone_restored"] == 0
+        # Still terminated, still invisible, still not competing.
+        assert _row(db, superseded, "valid_until") is not None
+        assert _row(db, superseded, "superseded_by") is not None
+        assert _visible_ids(db, tenant) == {successor}
+
+    def test_tombstoned_row_is_never_restored(self, db: AsyncEngine) -> None:
+        tenant = uuid4()
+        deleted = _seed(
+            db,
+            tenant,
+            content="the deleted claim",
+            valid_until_days_ago=1,
+            is_tombstone=True,
+            anchors=[_BLOB_ANCHOR],
+            anchor_state="fresh",
+            source={"anchor_gone_at": "2026-06-01T00:00:00+00:00"},
+        )
+        stats = _run(db, lambda s: decay_once(s, now=NOW))
+        assert stats["anchor_gone_restored"] == 0
+        assert _row(db, deleted, "valid_until") is not None
+        assert _row(db, deleted, "is_tombstone") is True
+        assert _visible_ids(db, tenant) == set()
+
+    def test_an_anchorless_row_is_never_restored(self, db: AsyncEngine) -> None:
+        """Tightening predicate: no anchors, nothing for this sweep to say."""
+        tenant = uuid4()
+        stray = _seed(
+            db,
+            tenant,
+            content="a marker with no anchors",
+            valid_until_days_ago=1,
+            anchor_state="fresh",
+            source={"anchor_gone_at": "2026-06-01T00:00:00+00:00"},
+        )
+        stats = _run(db, lambda s: decay_once(s, now=NOW))
+        assert stats["anchor_gone_restored"] == 0
+        assert _row(db, stray, "valid_until") is not None
 
 
 # ---------------------------------------------------------------------------
@@ -1692,3 +1894,183 @@ class TestSupersedeGuardCorrelation:
         """Cheap, deterministic guard against re-introducing the bare name."""
         rendered = store._supersede_target_is_safe(target="new_memory_id")
         assert "back.superseded_by = memory_records.memory_id" in rendered
+
+
+def _seed_anchor_cluster(
+    db: AsyncEngine,
+    tenant: UUID,
+    *,
+    anchored: set[int],
+) -> list[UUID]:
+    """``_seed_hold_cluster`` geometry, anchoring ``anchored`` indices.
+
+    Deliberately the SAME geometry the hold tests use, so the only
+    variable between an excluded and an included member is the array the
+    exemption keys on.
+    """
+    return [
+        _seed(
+            db,
+            tenant,
+            content=f"episode number {i}",
+            kind="episode",
+            importance=0.4 + i * 0.05,
+            age_days=float(30 - i),
+            embedding=_blend(0, i + 1, 0.93),
+            anchors=[_BLOB_ANCHOR] if i in anchored else None,
+            anchor_state="fresh" if i in anchored else "none",
+        )
+        for i in range(5)
+    ]
+
+
+class TestAnchoredRowsAreConsolidationExempt:
+    """The decay exemption is worthless if clustering supersedes the row.
+
+    Phase 3 makes an anchored record immune to ``decay_invalidate``; the
+    synthesis path would then supersede it anyway — and supersession is
+    STRICTLY worse than decay, because ``superseded_by`` IS one of
+    ``decay_prune``'s terminal markers and therefore ends in a physical
+    delete after the grace window. "Invalidate by ground truth, not by
+    clock" fails if a clustering job is the thing that kills the record.
+    """
+
+    def test_anchored_candidate_is_excluded_and_its_twin_is_not(
+        self, db: AsyncEngine
+    ) -> None:
+        """The direct assertion — one selector, two otherwise-identical rows."""
+        tenant = uuid4()
+        anchored = _seed(
+            db,
+            tenant,
+            content="an anchored observation",
+            kind="observation",
+            embedding=_axis(3),
+            anchors=[_BLOB_ANCHOR],
+            anchor_state="fresh",
+        )
+        twin = _seed(
+            db,
+            tenant,
+            content="an anchorless observation",
+            kind="observation",
+            embedding=_axis(3),
+        )
+
+        candidates = _run(
+            db,
+            lambda s: store.fetch_cluster_candidates(s, tenant, now=NOW, limit=1000),
+        )
+        ids = {c["memory_id"] for c in candidates}
+        assert twin in ids
+        assert anchored not in ids
+
+    def test_an_all_anchored_cluster_enqueues_nothing(self, db: AsyncEngine) -> None:
+        tenant = uuid4()
+        members = _seed_anchor_cluster(db, tenant, anchored=set(range(5)))
+
+        stats = _run(db, lambda s: consolidate_tenant(s, tenant, now=NOW))
+        assert stats["cluster_candidates"] == 0
+        assert stats["clusters"] == 0
+        assert stats["enqueued"] == 0
+        assert _job_rows(db, tenant) == []
+        _assert_live(db, *members)
+
+    def test_unanchored_cluster_still_enqueues(self, db: AsyncEngine) -> None:
+        """Positive control: identical geometry, no anchors → a job appears."""
+        tenant = uuid4()
+        _seed_anchor_cluster(db, tenant, anchored=set())
+
+        stats = _run(db, lambda s: consolidate_tenant(s, tenant, now=NOW))
+        assert stats["cluster_candidates"] == 5
+        assert stats["clusters"] == 1
+        assert stats["enqueued"] == 1
+
+    def test_in_flight_job_cannot_supersede_a_later_anchored_member(
+        self, db: AsyncEngine
+    ) -> None:
+        """The race the selector alone cannot close.
+
+        Consolidation enqueues every 10 minutes, so a job that named a row
+        while it was still anchorless is almost always in flight when
+        Phase 6's dedup-merge backfills an anchor onto it.
+        ``supersede_many`` re-checks — the same two-gate idiom the
+        lifecycle hold uses, for the same reason.
+        """
+        tenant = uuid4()
+        # 1. Enqueue with every member ANCHORLESS, so target_ids names all five.
+        members = _seed_anchor_cluster(db, tenant, anchored=set())
+        stats = _run(db, lambda s: consolidate_tenant(s, tenant, now=NOW))
+        assert stats["enqueued"] == 1
+        job_id = UUID(str(_job_rows(db, tenant)[0]["job_id"]))
+        _run(
+            db,
+            lambda s: store.claim_jobs(
+                s, tenant, limit=4, kinds=["synthesis"], worker="r"
+            ),
+        )
+
+        # 2. Backfill an anchor onto one member AFTER the job exists.
+        anchored = members[0]
+        _exec(
+            db,
+            [
+                "UPDATE coord.memory_records "
+                "SET anchors = CAST(:a AS jsonb), anchor_state = 'fresh' "
+                "WHERE memory_id = :m"
+            ],
+            a=json.dumps([_BLOB_ANCHOR]),
+            m=anchored,
+        )
+        assert {UUID(str(m)) for m in _job_rows(db, tenant)[0]["target_ids"]} == set(
+            members
+        ), "the in-flight job still names the newly-anchored member"
+
+        # 3. The runner posts its result against that stale target set.
+        new_id = _run(
+            db,
+            lambda s: store.record_synthesis_result(
+                s,
+                tenant,
+                job_id,
+                "Distilled model for the cluster",
+                embedding=None,
+                embedding_model=None,
+                now=NOW,
+            ),
+        )
+        assert new_id is not None
+
+        # The synthesis is not cancelled — the anchorless members are
+        # superseded exactly as before.
+        for member in members[1:]:
+            assert _row(db, member, "superseded_by") == new_id
+
+        # The anchored member survives its own already-enqueued job, and
+        # so never acquires the `superseded_by` terminal marker that would
+        # make decay_prune delete it 90 days on.
+        _assert_live(db, anchored)
+        assert _row(db, anchored, "superseded_by") is None
+        assert _row(db, anchored, "valid_until") is None
+
+    def test_exemption_survives_the_whole_daily_pass(self, db: AsyncEngine) -> None:
+        """Both mechanisms together: neither the clock nor the clusterer."""
+        tenant = uuid4()
+        anchored = _seed(
+            db,
+            tenant,
+            content="an old anchored observation",
+            kind="observation",
+            importance=0.5,
+            age_days=720,
+            embedding=_axis(4),
+            anchors=[_BLOB_ANCHOR],
+            anchor_state="fresh",
+        )
+        _run(db, lambda s: consolidate_tenant(s, tenant, now=NOW))
+        _run(db, lambda s: decay_once(s, now=NOW))
+
+        _assert_live(db, anchored)
+        assert _row(db, anchored, "superseded_by") is None
+        assert _row(db, anchored, "valid_until") is None
+        assert _row(db, anchored, "source->>'decayed_at'") is None

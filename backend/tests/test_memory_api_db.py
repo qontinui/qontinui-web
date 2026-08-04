@@ -4162,3 +4162,281 @@ class TestSupersedeCarriesAnchors:
         )
         assert resp.status_code == 404
         assert _anchors_of(foreign, foreign_id) == [_STORE_BLOB]
+
+
+class TestGlobTranslationIsAlwaysValidARE:
+    """F3 — an invalid pattern here is a 500, not a bad match.
+
+    Both reproducers below are ORDINARY glob syntax a caller can send:
+    ``[[:alpha:]]`` is a correct POSIX class, and ``[z-a]`` is a plain
+    typo. The first cut of the translator consumed the class's own ``]``
+    as its terminator (``brackets [] not balanced``) and passed reversed
+    ranges straight through (``invalid character range``).
+    """
+
+    NASTY = [
+        "[z-a]",
+        "[[:alpha:]]",
+        "[[:alpha:][:digit:]]",
+        "[[:nosuchclass:]]",
+        "[]",
+        "[!]",
+        "[^]",
+        "[a\\b]",
+        "[[=a=]]",
+        "[[.hyphen.]]",
+        "src/[unterminated",
+        "src/[[:alpha:]",
+        "[]]",
+        "[!]]",
+        "[-a]",
+        "[a-]",
+        "[--0]",
+        "**/[a-z]*.py",
+        "[\\]",
+        "[a-b-c]",
+        "*[",
+        "[[",
+        "]]",
+        "a{b,c}d",
+        "(a|b)",
+        "^$.|+()",
+    ]
+
+    @pytest.mark.parametrize("glob", NASTY)
+    def test_postgres_accepts_every_emitted_pattern(
+        self, db: AsyncEngine, glob: str
+    ) -> None:
+        """Postgres — not Python's `re` — is the authority on `~`."""
+        regex = store.glob_to_posix_regex(glob)
+        # Must not raise. The value is irrelevant; acceptance is the point.
+        _scalar(
+            db,
+            "SELECT CAST(:p AS text) ~ CAST(:re AS text)",
+            p="backend/app/services/memory_store.py",
+            re=regex,
+        )
+
+    @pytest.mark.parametrize(
+        ("glob", "path", "matches"),
+        [
+            # A well-formed POSIX class now WORKS rather than exploding.
+            ("[[:alpha:]]", "a", True),
+            ("[[:alpha:]]", "1", False),
+            ("[[:digit:]][[:digit:]]", "42", True),
+            ("src/[[:lower:]]ain.rs", "src/main.rs", True),
+            # A rejected group degrades to LITERAL text, never to a 500
+            # and never to a silent match-everything.
+            ("[z-a]", "[z-a]", True),
+            ("[z-a]", "a", False),
+            ("[[:nosuchclass:]]", "[[:nosuchclass:]]", True),
+            ("[[=a=]]", "[[=a=]]", True),
+            ("[]", "[]", True),
+            # Still-correct behaviour for the shapes that always worked.
+            ("src/[am]ain.rs", "src/main.rs", True),
+            ("src/[!m]ain.rs", "src/main.rs", False),
+            ("src/[!m]ain.rs", "src/rain.rs", True),
+            ("[a-z]*.py", "memory_store.py", True),
+        ],
+    )
+    def test_semantics_of_the_repaired_and_degraded_groups(
+        self, db: AsyncEngine, glob: str, path: str, matches: bool
+    ) -> None:
+        got = _scalar(
+            db,
+            "SELECT CAST(:p AS text) ~ CAST(:re AS text)",
+            p=path,
+            re=store.glob_to_posix_regex(glob),
+        )
+        assert got is matches
+
+    def test_a_rejected_group_cannot_5xx_the_query_endpoint(
+        self, mc: MemoryClient, anchored_recall_on: None
+    ) -> None:
+        """End to end: the reproducer reaches `~` through a real request."""
+        _write_one(mc, "the store anchored fact", anchors=[_STORE_BLOB])
+        resp = mc.client.post(
+            "/api/v1/memory/query",
+            json={
+                "query_text": "zzzznothinglexicallymatching",
+                "anchored_to": [
+                    {"repo": "qontinui-web", "path_glob": "backend/[z-a]pp/**"},
+                    {"repo": "qontinui-web", "path_glob": "backend/[[:alpha:]]pp/**"},
+                ],
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["anchored_arm"] == "ran"
+
+
+class TestBatchToleratesIntraBatchDuplicates:
+    """F5 — `ON CONFLICT DO UPDATE` cannot touch one row twice.
+
+    Where `DO NOTHING` silently ignored a repeated content_hash, the merge
+    raises `ON CONFLICT DO UPDATE command cannot affect row a second
+    time`. The store collapses duplicates itself rather than leaving that
+    as an unasserted precondition on a public function.
+    """
+
+    def _insert(
+        self, db: AsyncEngine, tenant: UUID, items: list[Any]
+    ) -> list[tuple[Any, bool]]:
+        """Drive the store function directly — this is a store contract."""
+
+        async def _go() -> list[tuple[Any, bool]]:
+            maker = async_sessionmaker(db, class_=AsyncSession, expire_on_commit=False)
+            async with maker() as session:
+                out = await store.insert_records_batch(
+                    session, tenant_id=tenant, items=items
+                )
+                await session.commit()
+                return out
+
+        return asyncio.run(_go())
+
+    def _item(self, content_hash: str, title: str, anchors: list[Any]) -> Any:
+        return store.MemoryRecordInsert(
+            scope="tenant",
+            scope_ref=None,
+            kind="fact",
+            title=title,
+            content="the duplicated content",
+            content_hash=content_hash,
+            embedding=None,
+            embedding_model=None,
+            importance=0.5,
+            source={},
+            anchors=anchors,
+        )
+
+    def test_duplicate_hashes_do_not_raise_and_map_to_one_row(
+        self, db: AsyncEngine
+    ) -> None:
+        tenant = uuid4()
+        results = self._insert(
+            db,
+            tenant,
+            [
+                self._item("dup", "first", [_STORE_BLOB]),
+                self._item("dup", "second", [_PR_ANCHOR]),
+            ],
+        )
+        assert len(results) == 2
+        first, second = results
+        assert first[0] == second[0]
+        assert first[1] is False
+        assert second[1] is True
+
+        rows = _scalar(
+            db,
+            "SELECT count(*) FROM coord.memory_records WHERE tenant_id = :t",
+            t=tenant,
+        )
+        assert rows == 1
+
+    def test_collapsed_duplicates_union_their_anchors(self, db: AsyncEngine) -> None:
+        """Dropping the later item's anchors would be the same silent loss
+        the ON CONFLICT merge exists to prevent, moved one layer out."""
+        tenant = uuid4()
+        self._insert(
+            db,
+            tenant,
+            [
+                self._item("dup", "first", [_STORE_BLOB]),
+                self._item("dup", "second", [_PR_ANCHOR]),
+                self._item("dup", "third", [_STORE_BLOB]),
+            ],
+        )
+        stored = _scalar(
+            db,
+            "SELECT anchors FROM coord.memory_records WHERE tenant_id = :t",
+            t=tenant,
+        )
+        stored = json.loads(stored) if isinstance(stored, str) else stored
+        assert sorted(stored, key=lambda a: a["type"]) == sorted(
+            [_STORE_BLOB, _PR_ANCHOR], key=lambda a: a["type"]
+        )
+
+    def test_first_occurrence_supplies_every_other_column(
+        self, db: AsyncEngine
+    ) -> None:
+        """Matches the write endpoint's own first-occurrence-wins rule."""
+        tenant = uuid4()
+        self._insert(
+            db,
+            tenant,
+            [
+                self._item("dup", "the winning title", []),
+                self._item("dup", "the losing title", []),
+            ],
+        )
+        title = _scalar(
+            db,
+            "SELECT title FROM coord.memory_records WHERE tenant_id = :t",
+            t=tenant,
+        )
+        assert title == "the winning title"
+
+    def test_duplicates_against_an_existing_live_row_still_merge(
+        self, db: AsyncEngine
+    ) -> None:
+        tenant = uuid4()
+        self._insert(db, tenant, [self._item("dup", "original", [])])
+        results = self._insert(
+            db,
+            tenant,
+            [
+                self._item("dup", "again", [_STORE_BLOB]),
+                self._item("dup", "again too", [_PR_ANCHOR]),
+            ],
+        )
+        assert all(deduped for _mid, deduped in results)
+        stored = _scalar(
+            db,
+            "SELECT anchors FROM coord.memory_records WHERE tenant_id = :t",
+            t=tenant,
+        )
+        stored = json.loads(stored) if isinstance(stored, str) else stored
+        assert len(stored) == 2
+
+
+class TestMergeMovesUpdatedAt:
+    """F4 — a backfilled anchor an incremental sync never sees is inert."""
+
+    def test_backfilled_anchor_is_visible_to_an_incremental_pull(
+        self, mc: MemoryClient
+    ) -> None:
+        content = "the fact a mirror already holds"
+        memory_id = _write_one(mc, content)
+        before = mc.client.get("/api/v1/memory/records").json()["records"][0]
+        watermark = before["updated_at"]
+
+        mc.client.post(
+            "/api/v1/memory/records",
+            json={"records": [_record(content, anchors=[_STORE_BLOB])]},
+        )
+
+        # Exactly the query a sync mirror issues after `watermark`.
+        page = mc.client.get(
+            "/api/v1/memory/records", params={"since": watermark}
+        ).json()["records"]
+        assert [r["memory_id"] for r in page] == [memory_id]
+        assert page[0]["anchors"] == [_STORE_BLOB]
+
+    def test_a_no_op_merge_causes_no_churn(self, mc: MemoryClient) -> None:
+        """Re-writing an anchor the row already has must not touch the row."""
+        content = "the already-anchored fact"
+        _write_one(mc, content, anchors=[_STORE_BLOB])
+        before = mc.client.get("/api/v1/memory/records").json()["records"][0]
+
+        mc.client.post(
+            "/api/v1/memory/records",
+            json={"records": [_record(content, anchors=[_STORE_BLOB])]},
+        )
+        after = mc.client.get("/api/v1/memory/records").json()["records"][0]
+        assert after["updated_at"] == before["updated_at"]
+        # ...and an incremental pull at that watermark sees nothing new.
+        page = mc.client.get(
+            "/api/v1/memory/records", params={"since": before["updated_at"]}
+        ).json()["records"]
+        assert page == []
