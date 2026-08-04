@@ -36,7 +36,7 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from qontinui_schemas.generated.per_type.memory_restore_request import (
     MemoryRestoreRequest,
 )
@@ -4242,17 +4242,65 @@ class NotifyWhenGreenRequest(BaseModel):
     optional ``continuation_prompt`` becomes the gate's continuation
     spawn ``initial_prompt`` so the gate engine can hand a follow-up
     prompt to an agent when the repo goes green.
+
+    ``gate_class`` is coord's freeform gate-classification string
+    (recommended vocabulary: ``security-surface`` / ``routine-review`` /
+    ``ops-confirm``). Coord's per-tenant ``gate_clearance`` policy matrix
+    keys off it to decide who may clear the resulting gate, so dropping
+    it silently would silently change an authorization outcome.
+
+    ``extra="forbid"`` is deliberate: before ``gate_class`` was declared
+    here, a caller that sent it had the field swallowed at validation —
+    no 400, no log line, and a gate registered under the wrong clearance
+    rules. Rejecting unknown keys makes the NEXT such drift a typed 422
+    instead of another silent swallow. The only in-tree caller
+    (``CiStatusPanel.tsx``) sends exactly ``repo`` + ``head_sha``.
+
+    A BLANK ``gate_class`` is rejected rather than forwarded. Coord's
+    ``normalize_gate_class`` trims and empty-filters it back to ``None``,
+    so ``""`` / ``"   "`` would register an UNCLASSIFIED gate under the
+    default clearance authority with no 4xx and no warning — the same
+    silent-authorization-downgrade this model exists to close, just moved
+    one layer down. Coord calls a blank class "an authoring accident, not
+    a class"; this rejects it at the edge, where the caller can see it.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     repo: str
     head_sha: str
     continuation_prompt: str | None = None
+    gate_class: str | None = None
+
+    @field_validator("gate_class")
+    @classmethod
+    def _gate_class_not_blank(cls, v: str | None) -> str | None:
+        """Reject a blank class; normalize a good one by stripping it."""
+        if v is None:
+            return None
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError(
+                "gate_class must be non-blank when supplied "
+                "(omit the field entirely for an unclassified gate)"
+            )
+        return stripped
 
 
 class NotifyWhenGreenResponse(BaseModel):
-    """Response for ``POST /operations/ci-status/notify-when-green``."""
+    """Response for ``POST /operations/ci-status/notify-when-green``.
+
+    ``warnings`` carries coord's ``RegisterGateOutcome.warnings`` through
+    verbatim. This endpoint is the fleet's only caller-supplied
+    ``gate_class`` producer, so it is also the only transport that can
+    surface coord's warning that a requested ``gate_class`` was NOT
+    stored (coord's gate-insert cascade narrows to a shape without the
+    column when the column is missing). Declaring it here keeps that
+    signal reachable instead of having FastAPI filter it away.
+    """
 
     gate_id: UUID
+    warnings: list[str] = Field(default_factory=list)
 
 
 @router.get("/ci-status", response_model=CiStatusResponse)
@@ -4290,8 +4338,18 @@ async def post_ci_status_notify_when_green(
     ``target_device_id`` which the dashboard does not supply today, so
     the prompt rides along for when a target is bound).
 
-    Proxies to coord ``POST /coord/gates/register`` with the tenant
-    header and returns ``{"gate_id": <uuid>}``.
+    When ``gate_class`` is set it is forwarded verbatim — coord's gate
+    register door accepts it as a freeform string and its per-tenant
+    ``gate_clearance`` matrix uses it to decide who may clear the gate.
+    Omitted (rather than sent as an explicit ``null``) when unset, matching
+    the ``continuation_spawn`` convention above and the other optional-field
+    proxies in this module.
+
+    Proxies to coord ``POST /coord/gates/register`` with the operator's
+    forwarded bearer and returns ``{"gate_id": <uuid>, "warnings": [...]}``.
+    (The ``X-Qontinui-Tenant-Id`` header was retired in fleet-auth T2b —
+    ``_tenant_headers`` forwards the bearer plus the optional active-tenant
+    switcher selection, and coord resolves the tenant server-side.)
     """
     register_body: dict[str, Any] = {
         "claim_kind": "ci_notify",
@@ -4306,6 +4364,8 @@ async def post_ci_status_notify_when_green(
         register_body["continuation_spawn"] = {
             "initial_prompt": body.continuation_prompt,
         }
+    if body.gate_class is not None:
+        register_body["gate_class"] = body.gate_class
     return await _proxy_coord_post(
         "/coord/gates/register", register_body, tenant_id=tenant_id
     )
