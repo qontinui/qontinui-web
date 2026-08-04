@@ -2074,3 +2074,219 @@ class TestAnchoredRowsAreConsolidationExempt:
         assert _row(db, anchored, "superseded_by") is None
         assert _row(db, anchored, "valid_until") is None
         assert _row(db, anchored, "source->>'decayed_at'") is None
+
+
+class TestAnchorRestoreTieBreak:
+    """F1, second form: two rows that are BOTH restorable on one hash.
+
+    The live-twin probe cannot see this pair — neither has a LIVE twin,
+    because being non-live is exactly what makes them restorable — so it
+    passes for both and one UPDATE pushes both into
+    ``uq_memory_records_tenant_content_hash_live``. Same fatal
+    consequence as the original F1: ``decay_once`` aborts, the prune and
+    the session-expiry sweep never run, and it re-raises every night.
+
+    Reachable with no race at all: row A anchored to X is hidden when X
+    goes gone, which frees hash H; a writer re-posts identical content
+    (nothing live holds H) and, identical content implying identical
+    ground truth, gives it the same anchor; X is still gone so B is
+    hidden too; X comes back and both roll up to ``fresh`` together.
+    """
+
+    def _twin_pair(
+        self, db: AsyncEngine, tenant: UUID, *, count: int = 2
+    ) -> list[UUID]:
+        """``count`` mutually-restorable rows sharing one content hash."""
+        return [
+            _seed(
+                db,
+                tenant,
+                content="identical body",
+                content_hash="shared-restorable-hash",
+                valid_until_days_ago=1,
+                anchors=[_BLOB_ANCHOR],
+                # The watcher has withdrawn the verdict on both, in lockstep.
+                anchor_state="fresh",
+                source={"anchor_gone_at": "2026-06-01T00:00:00+00:00"},
+            )
+            for _ in range(count)
+        ]
+
+    def test_two_mutually_restorable_rows_do_not_abort_the_pass(
+        self, db: AsyncEngine
+    ) -> None:
+        tenant = uuid4()
+        pair = self._twin_pair(db, tenant)
+        # A row the decay half must still invalidate, proving the rest of
+        # the pass ran rather than being rolled back.
+        stale = _seed(db, tenant, content="stale", importance=0.5, age_days=720)
+
+        stats = _run(db, lambda s: decay_once(s, now=NOW))
+
+        assert stats["anchor_gone_restored"] == 1
+        assert stats["anchor_gone_restore_blocked"] == 1
+        assert stats["invalidated"] == 1
+        assert _row(db, stale, "valid_until") is not None
+        # Exactly one is live; the index invariant is intact.
+        assert _visible_ids(db, tenant) == {min(pair)}
+
+    def test_the_lowest_memory_id_wins_deterministically(self, db: AsyncEngine) -> None:
+        """UUIDs carry a total order, so the winner cannot depend on scan order."""
+        tenant = uuid4()
+        pair = self._twin_pair(db, tenant)
+        winner, loser = min(pair), max(pair)
+
+        _run(db, lambda s: decay_once(s, now=NOW))
+
+        assert _row(db, winner, "valid_until") is None
+        assert _row(db, winner, "source->>'anchor_gone_at'") is None
+        # The deferred row keeps its marker — it is not given up on.
+        assert _row(db, loser, "valid_until") is not None
+        assert _row(db, loser, "source->>'anchor_gone_at'") is not None
+
+    def test_the_deferred_row_is_counted_so_the_warning_fires(
+        self, db: AsyncEngine
+    ) -> None:
+        """The observability must cover the case that survives the guard.
+
+        A deferred row is NOT blocked by a live twin, so folding it into
+        the same counter is the only thing that makes it visible at all.
+        """
+        tenant = uuid4()
+        self._twin_pair(db, tenant, count=3)
+        stats = _run(db, lambda s: decay_once(s, now=NOW))
+        assert stats["anchor_gone_restored"] == 1
+        assert stats["anchor_gone_restore_blocked"] == 2
+
+    def test_state_is_stable_across_repeated_passes(self, db: AsyncEngine) -> None:
+        """Never a second violation, and never a flapping winner."""
+        tenant = uuid4()
+        pair = self._twin_pair(db, tenant)
+        winner = min(pair)
+
+        first = _run(db, lambda s: decay_once(s, now=NOW))
+        assert first["anchor_gone_restored"] == 1
+        for _ in range(3):
+            later = _run(db, lambda s: decay_once(s, now=NOW))
+            # From now on the loser is blocked by the ORDINARY live-twin
+            # probe, because the winner is live — still counted, still
+            # never restored, still no violation.
+            assert later["anchor_gone_restored"] == 0
+            assert later["anchor_gone_restore_blocked"] == 1
+        assert _visible_ids(db, tenant) == {winner}
+
+    def test_a_single_restorable_row_is_unaffected(self, db: AsyncEngine) -> None:
+        """Positive control: the tie-break must not block the normal case."""
+        tenant = uuid4()
+        (solo,) = self._twin_pair(db, tenant, count=1)
+        stats = _run(db, lambda s: decay_once(s, now=NOW))
+        assert stats["anchor_gone_restored"] == 1
+        assert stats["anchor_gone_restore_blocked"] == 0
+        assert _visible_ids(db, tenant) == {solo}
+
+    def test_peers_in_another_tenant_do_not_defer(self, db: AsyncEngine) -> None:
+        """The unique index is per-tenant; the tie-break must be too."""
+        tenant, other = uuid4(), uuid4()
+        (mine,) = self._twin_pair(db, tenant, count=1)
+        self._twin_pair(db, other, count=1)
+
+        stats = _run(db, lambda s: decay_once(s, now=NOW))
+        assert stats["anchor_gone_restored"] == 2
+        assert stats["anchor_gone_restore_blocked"] == 0
+        assert _visible_ids(db, tenant) == {mine}
+
+
+class TestAnchoredRowsAreNearDupExempt:
+    """F9 — the third supersede mechanism, and the broadest of them.
+
+    ``find_near_duplicate_pairs`` runs FIRST in ``consolidate_tenant``,
+    covers ALL kinds (not just episode/observation), and ``apply_merge``
+    supersedes the loser unconditionally — and ``superseded_by`` is one of
+    ``decay_prune``'s terminal markers, so a merged-away anchored record
+    is on a path to a physical delete. The fold also carries importance
+    and access_count across but NOT anchors.
+    """
+
+    def _dup_pair(
+        self, db: AsyncEngine, tenant: UUID, *, anchored: set[int]
+    ) -> list[UUID]:
+        """The ``TestNearDupMerge`` geometry: cosine 0.99^2 = 0.98 > 0.95."""
+        return [
+            _seed(
+                db,
+                tenant,
+                content=f"near dup {i}",
+                importance=0.8 - i * 0.3,
+                access_count=3 - i,
+                age_days=float(i),
+                embedding=_blend(0, i + 1, 0.99),
+                anchors=[_BLOB_ANCHOR] if i in anchored else None,
+                anchor_state="fresh" if i in anchored else "none",
+            )
+            for i in range(2)
+        ]
+
+    def test_unanchored_pair_still_merges(self, db: AsyncEngine) -> None:
+        """Positive control — identical geometry, no anchors."""
+        tenant = uuid4()
+        survivor, loser = self._dup_pair(db, tenant, anchored=set())
+        stats = _run(db, lambda s: consolidate_tenant(s, tenant, now=NOW))
+        assert stats["merges"] == 1
+        assert _row(db, loser, "superseded_by") == survivor
+
+    def test_an_anchor_on_the_loser_side_blocks_the_merge(
+        self, db: AsyncEngine
+    ) -> None:
+        tenant = uuid4()
+        survivor, loser = self._dup_pair(db, tenant, anchored={1})
+        stats = _run(db, lambda s: consolidate_tenant(s, tenant, now=NOW))
+        assert stats["merges"] == 0
+        assert _row(db, loser, "superseded_by") is None
+        assert _row(db, loser, "valid_until") is None
+        assert _row(db, survivor, "superseded_by") is None
+
+    def test_an_anchor_on_the_survivor_side_blocks_the_merge(
+        self, db: AsyncEngine
+    ) -> None:
+        """Both join sides, exactly as the lifecycle hold does it.
+
+        Excluding one side would not be enough: which row is ``a`` and
+        which is ``b`` is an ordering accident, and the exemption has to
+        survive whichever side the anchored row lands on.
+        """
+        tenant = uuid4()
+        survivor, loser = self._dup_pair(db, tenant, anchored={0})
+        stats = _run(db, lambda s: consolidate_tenant(s, tenant, now=NOW))
+        assert stats["merges"] == 0
+        assert _row(db, loser, "superseded_by") is None
+        assert _row(db, survivor, "superseded_by") is None
+
+    def test_pairs_never_reach_the_selector_at_all(self, db: AsyncEngine) -> None:
+        """Asserted at the selector, so apply_merge can never see the pair."""
+        tenant = uuid4()
+        self._dup_pair(db, tenant, anchored={1})
+        pairs = _run(
+            db,
+            lambda s: store.find_near_duplicate_pairs(
+                s,
+                tenant,
+                now=NOW,
+                min_similarity=0.95,
+                window_days=90,
+                pair_limit=100,
+            ),
+        )
+        assert pairs == []
+
+    def test_anchored_row_survives_a_whole_consolidate_and_decay_pass(
+        self, db: AsyncEngine
+    ) -> None:
+        """The near-dup arm runs before the cluster arm; neither may touch it."""
+        tenant = uuid4()
+        survivor, loser = self._dup_pair(db, tenant, anchored={0, 1})
+        _run(db, lambda s: consolidate_tenant(s, tenant, now=NOW))
+        _run(db, lambda s: decay_once(s, now=NOW))
+        for member in (survivor, loser):
+            _assert_live(db, member)
+            assert _row(db, member, "superseded_by") is None
+            assert _row(db, member, "source->>'decayed_at'") is None
