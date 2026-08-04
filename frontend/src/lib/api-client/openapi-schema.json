@@ -27102,7 +27102,8 @@
         "type": "object"
       },
       "NotifyWhenGreenRequest": {
-        "description": "Body for ``POST /operations/ci-status/notify-when-green``.\n\nRegisters a ``CiGreen`` gate bound to ``(repo, head_sha)``. The\noptional ``continuation_prompt`` becomes the gate's continuation\nspawn ``initial_prompt`` so the gate engine can hand a follow-up\nprompt to an agent when the repo goes green.",
+        "additionalProperties": false,
+        "description": "Body for ``POST /operations/ci-status/notify-when-green``.\n\nRegisters a ``CiGreen`` gate bound to ``(repo, head_sha)``. The\noptional ``continuation_prompt`` becomes the gate's continuation\nspawn ``initial_prompt`` so the gate engine can hand a follow-up\nprompt to an agent when the repo goes green.\n\n``gate_class`` is coord's freeform gate-classification string\n(recommended vocabulary: ``security-surface`` / ``routine-review`` /\n``ops-confirm``). Coord's per-tenant ``gate_clearance`` policy matrix\nkeys off it to decide who may clear the resulting gate, so dropping\nit silently would silently change an authorization outcome.\n\n``extra=\"forbid\"`` is deliberate: before ``gate_class`` was declared\nhere, a caller that sent it had the field swallowed at validation \u2014\nno 400, no log line, and a gate registered under the wrong clearance\nrules. Rejecting unknown keys makes the NEXT such drift a typed 422\ninstead of another silent swallow. The only in-tree caller\n(``CiStatusPanel.tsx``) sends exactly ``repo`` + ``head_sha``.\n\nA BLANK ``gate_class`` is rejected rather than forwarded. Coord's\n``normalize_gate_class`` trims and empty-filters it back to ``None``,\nso ``\"\"`` / ``\"   \"`` would register an UNCLASSIFIED gate under the\ndefault clearance authority with no 4xx and no warning \u2014 the same\nsilent-authorization-downgrade this model exists to close, just moved\none layer down. Coord calls a blank class \"an authoring accident, not\na class\"; this rejects it at the edge, where the caller can see it.",
         "properties": {
           "continuation_prompt": {
             "anyOf": [
@@ -27114,6 +27115,17 @@
               }
             ],
             "title": "Continuation Prompt"
+          },
+          "gate_class": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gate Class"
           },
           "head_sha": {
             "title": "Head Sha",
@@ -27132,12 +27144,19 @@
         "type": "object"
       },
       "NotifyWhenGreenResponse": {
-        "description": "Response for ``POST /operations/ci-status/notify-when-green``.",
+        "description": "Response for ``POST /operations/ci-status/notify-when-green``.\n\n``warnings`` carries coord's ``RegisterGateOutcome.warnings`` through\nverbatim. This endpoint is the fleet's only caller-supplied\n``gate_class`` producer, so it is also the only transport that can\nsurface coord's warning that a requested ``gate_class`` was NOT\nstored (coord's gate-insert cascade narrows to a shape without the\ncolumn when the column is missing). Declaring it here keeps that\nsignal reachable instead of having FastAPI filter it away.",
         "properties": {
           "gate_id": {
             "format": "uuid",
             "title": "Gate Id",
             "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
           }
         },
         "required": [
@@ -74214,7 +74233,7 @@
     },
     "/api/v1/operations/ci-status/notify-when-green": {
       "post": {
-        "description": "Register a ``CiGreen`` gate for ``(repo, head_sha)``.\n\nBuilds coord's ``RegisterGateRequest`` (``gate_routes.rs``) with a\nclaim anchor (``claim_kind=\"ci_notify\"``,\n``resource_key=\"ci-notify:<repo>\"``) and the snake-case-tagged\n``CiGreen`` predicate (``{\"kind\":\"ci_green\",\"repo\":...,\n\"head_sha\":...}``). When ``continuation_prompt`` is set, it is\ncarried as the continuation spawn's ``initial_prompt`` \u2014 coord's\n``spawn_continuation`` reads that key (best-effort; it also wants a\n``target_device_id`` which the dashboard does not supply today, so\nthe prompt rides along for when a target is bound).\n\nProxies to coord ``POST /coord/gates/register`` with the tenant\nheader and returns ``{\"gate_id\": <uuid>}``.",
+        "description": "Register a ``CiGreen`` gate for ``(repo, head_sha)``.\n\nBuilds coord's ``RegisterGateRequest`` (``gate_routes.rs``) with a\nclaim anchor (``claim_kind=\"ci_notify\"``,\n``resource_key=\"ci-notify:<repo>\"``) and the snake-case-tagged\n``CiGreen`` predicate (``{\"kind\":\"ci_green\",\"repo\":...,\n\"head_sha\":...}``). When ``continuation_prompt`` is set, it is\ncarried as the continuation spawn's ``initial_prompt`` \u2014 coord's\n``spawn_continuation`` reads that key (best-effort; it also wants a\n``target_device_id`` which the dashboard does not supply today, so\nthe prompt rides along for when a target is bound).\n\nWhen ``gate_class`` is set it is forwarded verbatim \u2014 coord's gate\nregister door accepts it as a freeform string and its per-tenant\n``gate_clearance`` matrix uses it to decide who may clear the gate.\nOmitted (rather than sent as an explicit ``null``) when unset, matching\nthe ``continuation_spawn`` convention above and the other optional-field\nproxies in this module.\n\nProxies to coord ``POST /coord/gates/register`` with the operator's\nforwarded bearer and returns ``{\"gate_id\": <uuid>, \"warnings\": [...]}``.\n(The ``X-Qontinui-Tenant-Id`` header was retired in fleet-auth T2b \u2014\n``_tenant_headers`` forwards the bearer plus the optional active-tenant\nswitcher selection, and coord resolves the tenant server-side.)",
         "operationId": "api_v1_operations_ci_status_notify_when_green_post",
         "requestBody": {
           "content": {
