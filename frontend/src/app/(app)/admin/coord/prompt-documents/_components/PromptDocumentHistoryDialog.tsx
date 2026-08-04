@@ -175,8 +175,26 @@ export function PromptDocumentHistoryDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
+      {/*
+        A COLUMN, not the base component's grid, and every child below sized
+        against it.
+
+        This dialog previously capped itself at 90vh with `overflow-hidden`
+        while stacking a header, a 65vh-tall diff region, the restore
+        confirmation and the action row inside it. Past roughly 90vh the
+        remainder was simply clipped — and because the cap was
+        `overflow-hidden` rather than `overflow-y-auto`, there was no scrolling
+        to it either. On a shorter viewport that put the restore
+        confirmation's own Cancel and Restore buttons off the bottom of a
+        dialog that could not be scrolled: the operator was shown a
+        confirmation they could read and could not answer.
+
+        So the diff region flexes and shrinks (`min-h-0 flex-1`) while the
+        confirmation and the action row are `shrink-0`. A control that
+        confirms a write must never be the thing that gets pushed out of view.
+      */}
       <DialogContent
-        className="max-h-[90vh] max-w-4xl overflow-hidden"
+        className="flex max-h-[90vh] max-w-4xl flex-col overflow-hidden"
         data-testid="prompt-document-history"
       >
         <DialogHeader>
@@ -193,7 +211,7 @@ export function PromptDocumentHistoryDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid max-h-[65vh] grid-cols-[minmax(0,14rem)_1fr] gap-4 overflow-hidden">
+        <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,14rem)_1fr] gap-4 overflow-hidden">
           {/* Version list */}
           <div className="overflow-y-auto pr-1" data-testid="version-list">
             {loadingList ? (
@@ -248,7 +266,7 @@ export function PromptDocumentHistoryDialog({
           </div>
 
           {/* Diff pane */}
-          <div className="overflow-hidden rounded-md border border-border">
+          <div className="flex min-h-0 flex-col overflow-hidden rounded-md border border-border">
             {loadingSnapshot ? (
               <p className="py-12 text-center text-sm text-muted-foreground">
                 Loading version…
@@ -285,7 +303,7 @@ export function PromptDocumentHistoryDialog({
                   )}
                 </div>
                 <div
-                  className="max-h-[55vh] overflow-auto bg-background"
+                  className="min-h-0 flex-1 overflow-auto bg-background"
                   data-testid="version-diff"
                 >
                   <table className="w-full border-collapse font-mono text-xs">
@@ -329,7 +347,7 @@ export function PromptDocumentHistoryDialog({
         {/* Restore — offered only next to the diff that justifies it. */}
         {confirmingRestore && canRestore && (
           <div
-            className="space-y-2 rounded-lg border border-border bg-muted/40 px-3 py-3"
+            className="shrink-0 space-y-2 rounded-lg border border-border bg-muted/40 px-3 py-3"
             data-testid="restore-version-confirm"
           >
             <p className="text-sm">
@@ -376,7 +394,7 @@ export function PromptDocumentHistoryDialog({
           </div>
         )}
 
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="flex shrink-0 justify-end gap-2 pt-2">
           {canRestore && !confirmingRestore && (
             <Button
               variant="outline"

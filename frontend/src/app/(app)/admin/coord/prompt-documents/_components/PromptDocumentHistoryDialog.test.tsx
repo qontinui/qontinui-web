@@ -83,6 +83,49 @@ function renderDialog(onRestoreVersion = vi.fn().mockResolvedValue(true)) {
 }
 
 describe("PromptDocumentHistoryDialog restore", () => {
+  /**
+   * The confirmation must be ANSWERABLE, not merely present.
+   *
+   * Shipped, this dialog capped itself at 90vh with `overflow-hidden` while
+   * stacking a header, a 65vh diff region, the confirmation and the action row
+   * inside it. The confirmation rendered — and its Cancel/Restore buttons fell
+   * off the bottom of a dialog that could not be scrolled. The operator could
+   * read a question they had no way to answer, which is worse than the control
+   * being absent, because absence is legible and this looked like a hang.
+   *
+   * **This test cannot see that.** jsdom has no layout engine: every element
+   * here reports zero height, so the four behavioural tests around it all
+   * passed against the broken build and always would. What it pins is the
+   * structural invariant the fix rests on — the scrollable region is the one
+   * that flexes, and the controls are the ones that do not — so a future edit
+   * reintroducing a fixed-height clip has to delete an assertion that says why.
+   * Verifying it is actually on screen needs a real viewport.
+   */
+  it("keeps the confirmation's controls out of the region that scrolls", async () => {
+    const user = userEvent.setup();
+    renderDialog();
+
+    await user.click(await screen.findByTestId("restore-version"));
+
+    // The dialog is a column whose overflow is delegated to a child...
+    const dialog = screen.getByTestId("prompt-document-history");
+    expect(dialog.className).toContain("flex-col");
+
+    // ...that child being the diff, which absorbs the height pressure.
+    const diff = screen.getByTestId("version-diff");
+    expect(diff.className).toContain("flex-1");
+    expect(diff.className).toContain("overflow-auto");
+    // A fixed viewport-height cap here is what pushed the buttons off-screen.
+    expect(diff.className).not.toMatch(/max-h-\[\d+vh\]/);
+
+    // The confirmation never shrinks and never scrolls away.
+    const confirm = screen.getByTestId("restore-version-confirm");
+    expect(confirm.className).toContain("shrink-0");
+    expect(
+      screen.getByTestId("restore-version-confirm-button")
+    ).toBeInTheDocument();
+  });
+
   it("offers restore for a prior version once its diff is on screen", async () => {
     renderDialog();
 

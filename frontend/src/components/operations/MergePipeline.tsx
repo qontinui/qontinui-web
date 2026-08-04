@@ -1059,6 +1059,7 @@ export function MergePipeline() {
           loaded={loaded}
           healthLoaded={trainHealthLoaded}
           query={query}
+          onActed={refetch}
         />
       ) : !loaded ? (
         <div className="space-y-2">

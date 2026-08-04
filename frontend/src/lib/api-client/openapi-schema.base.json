@@ -78416,7 +78416,7 @@
     },
     "/api/v1/operations/pr-merge/kill-switch": {
       "post": {
-        "description": "Emergency-stop: flip the calling tenant's rollout_state to\n``dry_run``. Body shape::\n\n    {\n        \"scope\": \"tenant\" | \"repo:<owner/name>\",\n        \"reason\": \"<operator's stated reason>\"\n    }\n\nCoord:\n1. Verifies the tenant owns the repo (when scope=repo).\n2. UPDATE ``coord.tenant_merge_settings.rollout_state='dry_run'``\n   (scope=tenant) or ``coord.tenant_repo_profiles.rollout_state=\n   'dry_run'`` (scope=repo).\n3. Invalidates the settings cache (process-local + Redis pubsub).\n4. INSERTs a ``coord.user_overrides(override_kind=\n   'kill_switch_activated')`` row.\n5. INSERTs a ``coord.alerts(kind='kill_switch_fired',\n   severity='warning')`` row.\n6. Stamps ``auth_sso::audit_mutation``.\n\nReturns ``{ \"scope\", \"previous_state\", \"new_state\", \"affected_repos\" }``.",
+        "description": "Emergency-stop: latch ``merge_paused`` so nothing real-pushes.\n\nBody shape (unchanged \u2014 ``reason`` is REQUIRED and must be non-blank)::\n\n    {\n        \"scope\": \"tenant\" | \"repo:<owner/name>\",\n        \"reason\": \"<operator's stated reason>\"\n    }\n\nCoord:\n1. Verifies the tenant owns the repo (when scope=repo).\n2. Sets ``coord.tenant_merge_settings.merge_paused=true`` (scope=tenant)\n   or ``coord.tenant_repo_profiles.merge_enabled=false`` (scope=repo).\n   The tenant-wide pause DOMINATES every per-repo pin, so it cannot be\n   outranked the way the retired tenant-tier ``rollout_state`` was.\n3. Invalidates the settings cache (process-local + Redis pubsub).\n4. INSERTs a ``coord.user_overrides(override_kind=\n   'kill_switch_activated')`` row.\n5. INSERTs a ``coord.alerts(kind='kill_switch_fired',\n   severity='warning')`` row.\n6. Stamps ``auth_sso::audit_mutation``.\n\nReturns the same body as ``/pr-merge/merge-enabled``:\n``{ \"scope\", \"previous_merge_enabled\", \"merge_enabled\",\n\"affected_repos\" }``.",
         "operationId": "api_v1_operations_pr_merge_kill_switch_post",
         "requestBody": {
           "content": {
@@ -78480,6 +78480,55 @@
           }
         },
         "summary": "Get Pr Merge Merge Economics",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/pr-merge/merge-enabled": {
+      "post": {
+        "description": "Pin (or clear) merge enablement for the tenant or one repo.\n\nBody shape::\n\n    {\n        \"scope\": \"tenant\" | \"repo:<owner/name>\",   # optional, default tenant\n        \"enabled\": true | false | null,            # REQUIRED key\n        \"reason\": \"<operator's stated reason>\"     # optional\n    }\n\n``enabled`` is a REQUIRED key \u2014 omitting it is a 400, so \"I forgot to\nsend it\" can never read as \"clear the pin\". ``true``/``false`` pin the\nvalue; ``null`` clears the pin back to inherit and is accepted at\n**repo scope only** (``scope=\"tenant\"`` with ``enabled=null`` is a 400 \u2014\nthere is no tier above the tenant to inherit from).\n\nCoord:\n1. Verifies the tenant owns the repo (when scope=repo).\n2. UPSERTs the per-tenant or per-repo ``merge_enabled`` (a\n   never-configured repo is created rather than no-op'd), or NULLs it\n   for the clear form.\n3. Invalidates the settings cache + writes a\n   ``coord.user_overrides`` audit row.\n\nCoord additionally rejects non-interactive bearers on this mutation\n(``403 non_interactive_write_forbidden``) \u2014 enabling merges is reserved\nfor a logged-in dashboard session, which is exactly what this proxy\nforwards.\n\nReturns ``{ \"scope\", \"previous_merge_enabled\", \"merge_enabled\",\n\"affected_repos\" }``.",
+        "operationId": "api_v1_operations_pr_merge_merge_enabled_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Pr Merge Merge Enabled Api V1 Operations Pr Merge Merge Enabled Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Pr Merge Merge Enabled",
         "tags": [
           "operations"
         ]
@@ -79141,55 +79190,6 @@
         ]
       }
     },
-    "/api/v1/operations/pr-merge/rollout": {
-      "post": {
-        "description": "Rollout promote \u2014 set the tenant's (or a specific repo's)\nrollout_state to an arbitrary target. Body shape::\n\n    {\n        \"scope\": \"tenant\" | \"repo:<owner/name>\",\n        \"state\": \"dry_run\" | \"shadow\" | \"live\",\n        \"reason\": \"<operator's stated reason>\",\n        \"force\": false\n    }\n\nThe promote counterpart to the kill-switch's downward-only flip.\nCoord:\n1. Verifies the tenant owns the repo (when scope=repo).\n2. UPSERTs the per-tenant or per-repo ``rollout_state`` (a\n   never-configured repo is created rather than no-op'd).\n3. Requires the current resolved state to be ``shadow`` when\n   promoting to ``live`` unless ``force=true``.\n4. Invalidates the settings cache + writes a\n   ``coord.user_overrides(override_kind='rollout_promote')`` audit\n   row.\n\nCoord additionally rejects non-interactive bearers on this mutation\n(``403 non_interactive_write_forbidden``) \u2014 the promote is reserved\nfor a logged-in dashboard session, which is exactly what this proxy\nforwards.\n\nReturns ``{ \"scope\", \"state\", \"affected_repos\" }``.",
-        "operationId": "api_v1_operations_pr_merge_rollout_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": true,
-                "title": "Body",
-                "type": "object"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Post Pr Merge Rollout Api V1 Operations Pr Merge Rollout Post"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Post Pr Merge Rollout",
-        "tags": [
-          "operations"
-        ]
-      }
-    },
     "/api/v1/operations/pr-merge/settings": {
       "get": {
         "description": "Tenant-scoped read of the per-tenant merge settings. Returns the\nresolved EffectiveProfile (global \u2192 tenant tier, no per-repo\noverrides applied).",
@@ -79261,7 +79261,7 @@
     },
     "/api/v1/operations/pr-merge/slo": {
       "get": {
-        "description": "Per-tenant SLO dashboard \u2014 per-(tenant, repo) metrics over the\nlast 7/30 days.\n\nReturns ``{ \"tenant_id\", \"repos\": [...], \"kill_switch_history_last_30d\":\n[...], \"generated_at\" }`` where each repo carries\n``current_rollout_state`` + 7/30 day windows of\n``auto_merge_success_rate``, ``escalation_rate``,\n``operator_override_rate``, ``shadow_vs_live_agreement_rate``,\n``total_decisions``, ``shadow_decisions``.\n\nDrives MergeOrchestrationSettings.tsx's SLO Dashboard section.",
+        "description": "Per-tenant SLO dashboard \u2014 per-(tenant, repo) metrics over the\nlast 7/30 days.\n\nReturns ``{ \"tenant_id\", \"repos\": [...], \"kill_switch_history_last_30d\":\n[...], \"generated_at\" }`` where each repo carries ``merge_enabled`` (the\nRESOLVED boolean) + ``merge_enabled_override`` (the RAW per-repo pin:\n``true``/``false`` = pinned, ``null`` = inheriting) + 7/30 day windows of\n``auto_merge_success_rate``, ``escalation_rate``,\n``operator_override_rate``, ``shadow_vs_live_agreement_rate``,\n``total_decisions``, ``shadow_decisions``.\n\nEach repo still carries the legacy ``current_rollout_state`` string until\ncoord drops the column; nothing on this dashboard reads it any more.\n\nDrives MergeOrchestrationSettings.tsx's SLO Dashboard section.",
         "operationId": "api_v1_operations_pr_merge_slo_get",
         "responses": {
           "200": {

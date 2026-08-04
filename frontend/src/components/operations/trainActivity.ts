@@ -12,8 +12,9 @@
 // (2) is the reason this module exists. A pause has causes at three different
 // altitudes, and only one of them is visible in per-PR data:
 //
-//   - FLEET  — leader lease lapsing, or a tenant frozen in `dry_run`. Both
-//              stall every repo at once and no PR row shows either.
+//   - FLEET  — leader lease lapsing, or merges disabled/paused for the
+//              tenant. Both stall every repo at once and no PR row shows
+//              either.
 //   - REPO   — the train is mid-phase (dry-rebasing / candidate CI / landing),
 //              or serialized behind an overlapping proposal.
 //   - PR     — the candidate PRs are individually blocked (red CI, conflicts,
@@ -137,6 +138,11 @@ export type PauseSeverity =
 export type PauseReasonCode =
   | "leader-lease-stale"
   | "no-ci-runners"
+  /** LEGACY NAME, live meaning. Raised when coord judged a PR landable and
+   *  then did not push it — merges off/paused for the repo or tenant, or
+   *  auto-merge never enabled. It is not the retired `rollout_state=dry_run`.
+   *  The string is a stable identifier (ranking key + `data-testid` suffix),
+   *  so it is renamed with coord's `/pr-merge/health` keys, not before. */
   | "dry-run-freeze"
   | "orchestrator-stalled"
   /** This repo is at its per-repo in-flight cap, so the dequeue skips it —
@@ -250,6 +256,10 @@ export interface RepoTrainRow {
   inFlightCount: number;
   /** Parked `conflict` proposals at the repo's current heads. */
   conflictCount: number;
+  /** coord reported this repo under `/pr-merge/health`'s legacy `dry_run`
+   *  key: a PR was judged landable and then not pushed. The key name is
+   *  historical (see buildTrainSummary) — the cause today is merges being
+   *  off/paused for the repo or tenant, or auto-merge never enabled. */
   frozenDryRun: boolean;
   /** One-line answer to "what is this repo's train doing". */
   headline: string;
@@ -462,8 +472,7 @@ export function buildTrainSummary(
   rows: RepoTrainRow[],
   now: number = Date.now()
 ): TrainSummary {
-  const healthMissing =
-    health === null || Object.keys(health).length === 0;
+  const healthMissing = health === null || Object.keys(health).length === 0;
 
   const lastMergedAt = health?.last_merged_at ?? null;
   const sinceLastMergeSecs = secsSince(lastMergedAt, now);
@@ -473,10 +482,19 @@ export function buildTrainSummary(
   const leaseAgeSecs = health?.leader?.heartbeat_age_seconds ?? null;
   const hydrationEnabled = health?.hydration_enabled ?? null;
   const staleBacklog = health?.pr_state_stale_backlog ?? null;
-  const dryRunRepos = health?.dry_run?.repos ?? [];
-  const dryRunBlocked = health?.dry_run?.would_merge_blocked_by_dry_run ?? 0;
+  // LEGACY WIRE KEYS. coord still sends `dry_run.repos` /
+  // `dry_run.would_merge_blocked_by_dry_run` on `/pr-merge/health`, but the
+  // tri-state they were named for is gone: the field now carries repos where
+  // coord evaluated a PR as landable and then did NOT push, i.e.
+  // `!merge_permitted()`. Renaming the keys needs coord and web to move
+  // together, so the local names mirror the wire and only the operator-facing
+  // strings below describe the real cause. Do not infer `rollout_state` from
+  // these names.
+  const mergeBlockedRepos = health?.dry_run?.repos ?? [];
+  const mergeBlockedPrs = health?.dry_run?.would_merge_blocked_by_dry_run ?? 0;
   const readyUnmergedCount = health?.ready_unmerged?.count ?? 0;
-  const readyUnmergedMaxAgeSecs = health?.ready_unmerged?.max_age_seconds ?? null;
+  const readyUnmergedMaxAgeSecs =
+    health?.ready_unmerged?.max_age_seconds ?? null;
 
   const activeRepoCount = rows.filter((r) => r.activity.kind !== "idle").length;
   const inFlightCount = rows.reduce((n, r) => n + r.inFlightCount, 0);
@@ -498,20 +516,24 @@ export function buildTrainSummary(
     });
   }
 
-  // 2. dry_run freeze (coord issue #776). The signature is a frozen
+  // 2. Merge suppression (coord issue #776). The signature is a frozen
   //    `last_merged_at` alongside an ADVANCING `last_predicate_eval_at`: the
   //    engine is evaluating and deciding "would merge", then suppressing it.
-  if (dryRunBlocked > 0 || dryRunRepos.length > 0) {
+  if (mergeBlockedPrs > 0 || mergeBlockedRepos.length > 0) {
     banners.push({
       code: "dry-run-freeze",
       severity: "blocking",
-      label: "Frozen in dry-run",
+      label: "Merges suppressed",
       detail:
-        `${dryRunBlocked} ready PR${dryRunBlocked === 1 ? "" : "s"} ` +
-        `suppressed because ${dryRunRepos.length} repo` +
-        `${dryRunRepos.length === 1 ? " is" : "s are"} in ` +
-        `rollout_state=dry_run (${dryRunRepos.map(shortRepo).join(", ")}). ` +
-        `The predicate keeps evaluating; the merges are simply never executed.`,
+        `${mergeBlockedPrs} ready PR${mergeBlockedPrs === 1 ? "" : "s"} ` +
+        `evaluated as landable and then NOT pushed, across ` +
+        `${mergeBlockedRepos.length} repo` +
+        `${mergeBlockedRepos.length === 1 ? "" : "s"} ` +
+        `(${mergeBlockedRepos.map(shortRepo).join(", ")}). The predicate ` +
+        `keeps evaluating; the merges are simply never executed. Two ` +
+        `settings can cause this: the repo (or the whole tenant) has merges ` +
+        `switched off, or the tenant never enabled auto-merge at all — ` +
+        `check both in Merge settings.`,
     });
   }
 
@@ -576,7 +598,8 @@ export function buildTrainSummary(
     }
   }
 
-  // 3. The suppressed-train signature, independent of dry_run: evaluation is
+  // 3. The suppressed-train signature, independent of merge enablement:
+  //    evaluation is
   //    fresh but nothing has landed in a long time. This is what "long pauses
   //    between merges" looks like when the cause is NOT per-PR.
   const EVAL_FRESH_SECS = 15 * 60;
@@ -650,7 +673,7 @@ export function buildTrainSummary(
     leaseAgeSecs,
     hydrationEnabled,
     staleBacklog,
-    dryRunRepos,
+    dryRunRepos: mergeBlockedRepos,
     readyUnmergedCount,
     readyUnmergedMaxAgeSecs,
     activeRepoCount,
@@ -677,7 +700,7 @@ interface Leg {
  * repo.
  *
  * A repo appears if the train has ANY signal for it: an in-flight or parked
- * proposal, an open PR, a ready-unmerged entry, or a dry-run freeze. Repos with
+ * proposal, an open PR, a ready-unmerged entry, or suppressed merges. Repos with
  * nothing at all are omitted rather than rendered as empty idle rows.
  */
 export function buildRepoTrainRows(
@@ -794,11 +817,14 @@ export function buildRepoTrainRows(
     const lastError =
       redactSecrets(newestParked?.proposal.error ?? null) ||
       redactSecrets(
-        ready.find((r) => r.latest_proposal_error)?.latest_proposal_error ?? null
+        ready.find((r) => r.latest_proposal_error)?.latest_proposal_error ??
+          null
       ) ||
       null;
 
-    const severity: PauseSeverity = reasons.some((r) => r.severity === "blocking")
+    const severity: PauseSeverity = reasons.some(
+      (r) => r.severity === "blocking"
+    )
       ? "blocking"
       : reasons.some((r) => r.severity === "waiting")
         ? "waiting"
@@ -814,7 +840,8 @@ export function buildRepoTrainRows(
       lastActivityAt: lastTouch.get(repo) ?? null,
       openPrCount: repoPrs.length,
       inFlightCount: inFlight.length,
-      conflictCount: parked.filter((l) => l.proposal.status === "conflict").length,
+      conflictCount: parked.filter((l) => l.proposal.status === "conflict")
+        .length,
       frozenDryRun,
       headline: headlineFor(activity, reasons, repoPrs.length),
       severity,
@@ -1019,10 +1046,12 @@ function deriveReasons(args: {
     reasons.push({
       code: "dry-run-freeze",
       severity: "blocking",
-      label: "Frozen in dry-run",
+      label: "Merges suppressed",
       detail:
-        "This repo's rollout_state is dry_run — coord evaluates every PR and " +
-        "then suppresses the merge. Nothing will land until it is set to live.",
+        "coord evaluates every PR in this repo and then suppresses the " +
+        "merge, so nothing will land. Either merges are switched off for " +
+        "this repo or paused tenant-wide (Merge settings → the repo card, or " +
+        "the tenant pause), or the tenant has never enabled auto-merge.",
       prCount: 0,
       oldestSecs: null,
       prNumbers: [],
@@ -1165,9 +1194,11 @@ function detailFor(code: PauseReasonCode, prs: PrRow[]): string {
         : `${n} PR${plural} still running checks — a normal wait.`;
     }
     case "conflict-strand":
-      return `${n} PR${plural} stranded in conflict for over a day. coord will ` +
+      return (
+        `${n} PR${plural} stranded in conflict for over a day. coord will ` +
         `keep re-proposing and failing; ${n === 1 ? "it needs" : "they need"} ` +
-        `a manual rebase.`;
+        `a manual rebase.`
+      );
     case "conflicts": {
       // Absent `conflict_age_secs` is NO EVIDENCE, not evidence of freshness —
       // coord omits it on older deploys and on any PR with no conflict
@@ -1189,16 +1220,20 @@ function detailFor(code: PauseReasonCode, prs: PrRow[]): string {
     case "review-required":
       return `${n} PR${plural} awaiting review approval or a required check.`;
     case "blast-radius-block":
-      return `${n} PR${plural} blocked by the blast-radius gate (removes a ` +
-        `referenced export).`;
+      return (
+        `${n} PR${plural} blocked by the blast-radius gate (removes a ` +
+        `referenced export).`
+      );
     case "draft":
       return `${n} draft PR${plural} — intentionally held, not a stall.`;
     // Reached only when coord's health read is unavailable, so there is no
     // readiness-onset clock and no proposal error to quote — but this is the
     // single most important reason, so it still gets real copy.
     case "orchestrator-stalled":
-      return `${n} PR${plural} green, CLEAN and unlanded with no fresh merge ` +
-        `proposal. The train should have taken ${n === 1 ? "it" : "them"}.`;
+      return (
+        `${n} PR${plural} green, CLEAN and unlanded with no fresh merge ` +
+        `proposal. The train should have taken ${n === 1 ? "it" : "them"}.`
+      );
     default:
       return `${n} PR${plural}.`;
   }
@@ -1211,8 +1246,7 @@ function headlineFor(
 ): string {
   if (activity.kind !== "idle") {
     const dwell = formatDuration(activity.dwellSecs);
-    const behind =
-      activity.behind > 0 ? `, ${activity.behind} behind it` : "";
+    const behind = activity.behind > 0 ? `, ${activity.behind} behind it` : "";
     return `${activity.label} for ${dwell}${behind}`;
   }
   const top = reasons[0];
@@ -1220,7 +1254,8 @@ function headlineFor(
     return openPrCount === 0 ? "Nothing to do" : "Idle";
   }
   if (top.code === "no-candidates") return top.detail;
-  const age = top.oldestSecs != null ? `, oldest ${formatDuration(top.oldestSecs)}` : "";
+  const age =
+    top.oldestSecs != null ? `, oldest ${formatDuration(top.oldestSecs)}` : "";
   return `Idle — ${top.prCount || ""} ${top.label.toLowerCase()}${age}`.replace(
     /\s+/g,
     " "
@@ -1241,10 +1276,15 @@ function headlineFor(
  * does not mean what it says.
  */
 function compareRepoRows(a: RepoTrainRow, b: RepoTrainRow): number {
-  const active = Number(b.activity.kind !== "idle") - Number(a.activity.kind !== "idle");
+  const active =
+    Number(b.activity.kind !== "idle") - Number(a.activity.kind !== "idle");
   if (active !== 0) return active;
 
-  const SEV: Record<PauseSeverity, number> = { blocking: 0, waiting: 1, info: 2 };
+  const SEV: Record<PauseSeverity, number> = {
+    blocking: 0,
+    waiting: 1,
+    info: 2,
+  };
   const sev = SEV[a.severity] - SEV[b.severity];
   if (sev !== 0) return sev;
 
