@@ -1,11 +1,10 @@
 """project.agent_commands + project.agent_command_versions
 
 Revision ID: avac_01_agent_commands
-Revises: memhold_adjudicate_02
+Revises: merge_enabled_01
 Create Date: 2026-08-04
 
-Phase 1 of plan
-``D:/qontinui-root/plans/2026-07-29-account-versioned-agent-commands.md``
+Phase 1 of plan ``2026-07-29-account-versioned-agent-commands``
 (account-versioned agent commands).
 
 The runner ships its fleet commands (``/vet-plan``, ``/implement-plan``, …)
@@ -42,7 +41,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "avac_01_agent_commands"
-down_revision: str | Sequence[str] | None = "memhold_adjudicate_02"
+down_revision: str | Sequence[str] | None = "merge_enabled_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
