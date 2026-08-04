@@ -29,7 +29,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any, cast
 from uuid import UUID, uuid4
@@ -98,9 +98,25 @@ NARROW_SCOPES = ("agent", "session")
 # time rather than silently, but the coupling is easy to miss from here.
 # :data:`_RETRIEVAL_LIVE_PREDICATE` HAS that shape, which is the concrete
 # reason the two are not interchangeable here.
-_LIVE_DEDUP_PREDICATE = (
-    "is_tombstone = false AND superseded_by IS NULL AND valid_until IS NULL"
-)
+#
+# ``prefix`` is a table alias with its trailing dot (``"live."``), empty for
+# the unprefixed form an ``ON CONFLICT ... WHERE`` arbiter clause needs — and
+# empty is what :data:`_LIVE_DEDUP_PREDICATE` below is built from, so the
+# flat-``AND``-chain contract `_live_predicate_for` depends on is unchanged.
+# The prefixed form exists for :func:`anchor_gone_sweep`'s live-twin probe,
+# which correlates two references to this same table and therefore cannot rely
+# on unqualified names resolving to the one it means.
+
+
+def _live_dedup_predicate(prefix: str = "") -> str:
+    return (
+        f"{prefix}is_tombstone = false "
+        f"AND {prefix}superseded_by IS NULL "
+        f"AND {prefix}valid_until IS NULL"
+    )
+
+
+_LIVE_DEDUP_PREDICATE = _live_dedup_predicate()
 
 
 class SupersedeRefused(RuntimeError):
@@ -236,14 +252,33 @@ _LIVE_JOB_INPUT_DEDUP_PREDICATE = (
 # * COALESCE is belt-and-braces for a NOT NULL column: the guard already
 #   guarantees the concatenation is non-empty, so ``jsonb_agg`` cannot
 #   return NULL here.
-_ANCHOR_MERGE_CONFLICT_ACTION = """
-    DO UPDATE SET anchors = COALESCE(
+# * **The merge arm DOES move ``updated_at``, and must.** The anchorless
+#   guard above is about not churning rows that gained nothing; a row that
+#   actually gained an anchor has changed, and the incremental sync
+#   (:func:`list_records_page`, which filters on
+#   ``GREATEST(updated_at, created_at) > :since``) is exactly the consumer
+#   ``MemoryRecordOut`` exists to feed anchors to. Leaving ``updated_at``
+#   still would backfill an anchor that no mirror ever pulls — Phase 6
+#   would land in the database and nowhere else.
+# * The second guard, ``anchors IS DISTINCT FROM <merged>``, keeps that
+#   from becoming churn of its own: re-writing a record with an anchor it
+#   already carries computes the same array, changes nothing, and takes no
+#   row lock. It also keeps the merge IDEMPOTENT at the ``updated_at``
+#   level, not just at the value level. When it suppresses the update the
+#   statement returns no row for that hash, which both callers already
+#   read as "conflicted" and resolve through their existing-row lookup.
+_ANCHOR_UNION_EXPR = """COALESCE(
             (SELECT jsonb_agg(DISTINCT elem ORDER BY elem)
                FROM jsonb_array_elements(
                         memory_records.anchors || excluded.anchors
                     ) AS elem),
-            '[]'::jsonb)
+            '[]'::jsonb)"""
+
+_ANCHOR_MERGE_CONFLICT_ACTION = f"""
+    DO UPDATE SET anchors = {_ANCHOR_UNION_EXPR},
+                  updated_at = now()
         WHERE excluded.anchors <> '[]'::jsonb
+          AND memory_records.anchors IS DISTINCT FROM {_ANCHOR_UNION_EXPR}
 """
 
 
@@ -695,10 +730,6 @@ async def insert_records_batch(
     as :func:`insert_record`, in ONE round-trip (plus one dedup lookup
     when any row conflicted).
 
-    Callers must pre-dedupe intra-batch: each item's ``content_hash``
-    must be unique within ``items`` (the write endpoint keeps the first
-    occurrence and reports later intra-batch duplicates itself).
-
     Returns ``(memory_id, deduped)`` per item, in item order — conflicts
     against an existing LIVE row report that row's id with
     ``deduped=True``, exactly like :func:`insert_record`.
@@ -708,10 +739,41 @@ async def insert_records_batch(
     :func:`insert_record` proposes them — under ``DO UPDATE`` the returned
     id, not the presence of a returned row, is what separates an insert
     from a merge.
+
+    **Intra-batch duplicate ``content_hash`` values are collapsed HERE,
+    not left to the caller.** ``ON CONFLICT ... DO UPDATE`` cannot touch
+    the same row twice in one command — Postgres raises ``ON CONFLICT DO
+    UPDATE command cannot affect row a second time`` — where the previous
+    ``DO NOTHING`` simply ignored the repeat. Leaving that as a caller
+    precondition would be a new, unasserted way for a public store
+    function to hard-error, protected only by a dict construction in a
+    different module; the one live caller happens to satisfy it, and the
+    next one would not.
+
+    The collapse mirrors the write endpoint's own rule exactly, so the
+    two cannot disagree: the FIRST occurrence supplies every column, and
+    later occurrences contribute only their ANCHORS, unioned in. Union
+    rather than "first wins" because dropping a later duplicate's anchors
+    would be the same silent anchor loss the ON CONFLICT merge exists to
+    prevent, just moved one layer out. Every occurrence still gets its
+    own result entry; the later ones report ``deduped=True``.
     """
     if not items:
         return []
-    proposed: dict[str, UUID] = {i.content_hash: uuid4() for i in items}
+    unique: list[MemoryRecordInsert] = []
+    first_of: dict[str, int] = {}
+    for item in items:
+        seen = first_of.get(item.content_hash)
+        if seen is None:
+            first_of[item.content_hash] = len(unique)
+            unique.append(item)
+            continue
+        if item.anchors:
+            head = unique[seen]
+            union = list(head.anchors)
+            union.extend(a for a in item.anchors if a not in union)
+            unique[seen] = replace(head, anchors=union)
+    proposed: dict[str, UUID] = {i.content_hash: uuid4() for i in unique}
     stmt = text(
         f"""
         INSERT INTO coord.memory_records
@@ -762,18 +824,18 @@ async def insert_records_batch(
         stmt,
         {
             "tenant_id": tenant_id,
-            "memory_ids": [str(proposed[i.content_hash]) for i in items],
-            "scopes": [i.scope for i in items],
-            "scope_refs": [i.scope_ref for i in items],
-            "kinds": [i.kind for i in items],
-            "titles": [i.title for i in items],
-            "contents": [i.content for i in items],
-            "content_hashes": [i.content_hash for i in items],
-            "embeddings": [_format_pgvector_opt(i.embedding) for i in items],
-            "embedding_models": [i.embedding_model for i in items],
-            "importances": [i.importance for i in items],
-            "sources": [json.dumps(i.source) for i in items],
-            "anchors": [_anchors_json(i.anchors) for i in items],
+            "memory_ids": [str(proposed[i.content_hash]) for i in unique],
+            "scopes": [i.scope for i in unique],
+            "scope_refs": [i.scope_ref for i in unique],
+            "kinds": [i.kind for i in unique],
+            "titles": [i.title for i in unique],
+            "contents": [i.content for i in unique],
+            "content_hashes": [i.content_hash for i in unique],
+            "embeddings": [_format_pgvector_opt(i.embedding) for i in unique],
+            "embedding_models": [i.embedding_model for i in unique],
+            "importances": [i.importance for i in unique],
+            "sources": [json.dumps(i.source) for i in unique],
+            "anchors": [_anchors_json(i.anchors) for i in unique],
         },
     )
     returned: dict[str, UUID] = {
@@ -789,7 +851,7 @@ async def insert_records_batch(
         h: mid for h, mid in returned.items() if proposed.get(h) != mid
     }
 
-    conflicted = [i.content_hash for i in items if i.content_hash not in returned]
+    conflicted = [i.content_hash for i in unique if i.content_hash not in returned]
     existing: dict[str, UUID] = {}
     if conflicted:
         lookup = text(
@@ -804,11 +866,17 @@ async def insert_records_batch(
         )
         existing = {str(r.content_hash): UUID(str(r.memory_id)) for r in found}
 
+    # One entry per ORIGINAL item, in the caller's order. A hash that
+    # appeared more than once resolves to the same row every time; only
+    # its first occurrence can report ``deduped=False``.
     results: list[tuple[UUID, bool]] = []
+    emitted: set[str] = set()
     for item in items:
+        repeat = item.content_hash in emitted
+        emitted.add(item.content_hash)
         new_id = inserted.get(item.content_hash)
         if new_id is not None:
-            results.append((new_id, False))
+            results.append((new_id, repeat))
             continue
         merged_id = merged.get(item.content_hash)
         if merged_id is not None:
@@ -1224,13 +1292,141 @@ async def fts_search(
     return [UUID(str(r.memory_id)) for r in rows]
 
 
+# POSIX character-class names Postgres accepts inside a bracket expression.
+# Anything else (``[:nope:]``) raises "invalid character class" AT MATCH TIME,
+# which on this code path means a 500 on a request, so the translator emits a
+# named class only when the name is in this set.
+_POSIX_CLASS_NAMES = frozenset(
+    {
+        "alnum",
+        "alpha",
+        "ascii",
+        "blank",
+        "cntrl",
+        "digit",
+        "graph",
+        "lower",
+        "print",
+        "punct",
+        "space",
+        "upper",
+        "word",
+        "xdigit",
+    }
+)
+
+
+def _scan_bracket_group(glob: str, start: int) -> int | None:
+    """Index of the ``]`` closing the group opened at ``start``, or None.
+
+    ``start`` points at the ``[``. Handles the two positions where a
+    ``]`` is NOT a terminator: immediately after the (optionally negated)
+    opening bracket, where it is a literal; and inside a POSIX
+    ``[: :]`` / ``[= =]`` / ``[. .]`` sub-expression, whose own closing
+    ``]`` belongs to the sub-expression.
+
+    That second case is the one the first cut of this function got wrong:
+    scanning ``[[:alpha:]]`` naively stopped at the class's own ``]``,
+    emitted ``[[:alpha:]`` and then escaped the real terminator, handing
+    Postgres ``brackets [] not balanced``.
+    """
+    n = len(glob)
+    j = start + 1
+    if j < n and glob[j] in ("!", "^"):
+        j += 1
+    if j < n and glob[j] == "]":
+        j += 1
+    while j < n:
+        if glob[j] == "[" and j + 1 < n and glob[j + 1] in (":", "=", "."):
+            close = glob.find(glob[j + 1] + "]", j + 2)
+            if close == -1:
+                return None
+            j = close + 2
+            continue
+        if glob[j] == "]":
+            return j
+        j += 1
+    return None
+
+
+def _translate_bracket_group(inner: str) -> str | None:
+    """A provably-valid ARE bracket expression, or None to reject.
+
+    This is a WHITELIST, not a sanitizer, and deliberately so. Postgres —
+    not Python's ``re`` — is the authority on what ``~`` accepts, and the
+    two genuinely disagree (Python happily compiles the malformed
+    ``[[:alpha:]\\]`` this function's predecessor emitted). A
+    compile-check against ``re`` would therefore hand back false
+    confidence. Emitting only shapes we have positively verified is the
+    only way a pure function can guarantee the operator will not raise.
+
+    Accepted atoms: an optional leading negation, an optional leading
+    literal ``]``, POSIX ``[:name:]`` classes with a known name, single
+    literal characters, and ``a-b`` ranges with ``ord(a) <= ord(b)``.
+    Everything else — an empty group, a backslash (special inside ARE
+    brackets, unlike POSIX), an unknown class name, an equivalence class,
+    a reversed range like ``[z-a]``, a ``-`` in a position ARE does not
+    allow (``[a-b-c]``) — returns None, and the caller then emits the
+    whole group as literal text.
+    """
+    body: list[str] = []
+    if inner[:1] in ("!", "^"):
+        body.append("^")
+        inner = inner[1:]
+    if not inner:
+        return None
+    out: list[str] = []
+    i = 0
+    n = len(inner)
+    if inner[0] == "]":
+        # A literal ']' is only legal as the first element.
+        out.append("]")
+        i = 1
+    while i < n:
+        c = inner[i]
+        if c == "[" and i + 1 < n and inner[i + 1] == ":":
+            close = inner.find(":]", i + 2)
+            if close == -1:
+                return None
+            name = inner[i + 2 : close]
+            if name not in _POSIX_CLASS_NAMES:
+                return None
+            out.append(f"[:{name}:]")
+            i = close + 2
+            continue
+        if c in ("\\", "]") or (c == "[" and i + 1 < n and inner[i + 1] in ("=", ".")):
+            return None
+        # A range, but only when '-' sits between two literals.
+        if i + 2 < n and inner[i + 1] == "-":
+            lo, hi = c, inner[i + 2]
+            if lo in ("\\", "[") or hi in ("\\", "]", "["):
+                return None
+            if ord(lo) > ord(hi):
+                return None
+            out.append(f"{lo}-{hi}")
+            i += 3
+            # ``[a-b-c]`` is invalid ARE: a '-' straight after a COMPLETED
+            # range is neither a literal nor the start of another one.
+            # Only a trailing '-' is a literal there.
+            if i < n and inner[i] == "-" and i != n - 1:
+                return None
+            continue
+        # A bare '-' is a literal only as the first or the last element.
+        if c == "-" and out and i != n - 1:
+            return None
+        out.append(c)
+        i += 1
+    if not out:
+        return None
+    return "[" + "".join(body) + "".join(out) + "]"
+
+
 def glob_to_posix_regex(glob: str) -> str:
     """Translate a path glob into an anchored POSIX ARE for Postgres ``~``.
 
     ``*`` -> ``.*``, ``?`` -> ``.``, ``[...]`` (with ``!`` negation
-    normalised to ``^``) passes through as a bracket expression, and
-    every other character is escaped to a literal. ``**`` collapses to
-    ``*``.
+    normalised to ``^``) becomes a bracket expression, and every other
+    character is escaped to a literal. ``**`` collapses to ``*``.
 
     ``*`` deliberately crosses ``/``, so ``backend/*`` matches
     ``backend/app/services/memory_store.py``. This is the FORGIVING
@@ -1242,6 +1438,19 @@ def glob_to_posix_regex(glob: str) -> str:
     Translating rather than using ``LIKE`` is what keeps ``[...]``
     working — ``LIKE`` has no character classes, so a glob-to-LIKE
     rewrite would silently mis-match a class instead of failing.
+
+    **The output is always a valid ARE.** This function feeds an operator
+    on a REQUEST path, where an invalid pattern is not a bad match but a
+    500 — and the inputs that produce one (``[z-a]``, ``[[:alpha:]]``)
+    are ordinary glob syntax a caller can reasonably send, not attacks.
+    Any bracket group :func:`_translate_bracket_group` will not vouch for
+    is emitted as LITERAL text instead: the glob then matches a path that
+    contains those characters verbatim, which is a wrong-but-harmless
+    narrowing rather than a failed query.
+
+    Catastrophic backtracking is NOT addressed here — a pathological
+    ``*a*a*a*`` is still expensive. That is a separate, non-blocking
+    concern (a statement timeout is its proper remedy, not a translator).
     """
     out: list[str] = ["^"]
     i = 0
@@ -1255,23 +1464,18 @@ def glob_to_posix_regex(glob: str) -> str:
         elif c == "?":
             out.append(".")
         elif c == "[":
-            j = i + 1
-            if j < n and glob[j] in ("!", "^"):
-                j += 1
-            if j < n and glob[j] == "]":
-                j += 1
-            while j < n and glob[j] != "]":
-                j += 1
-            if j >= n:
-                # Unterminated class — a literal '[', never a regex error
-                # that would 500 the whole query.
-                out.append("\\[")
+            end = _scan_bracket_group(glob, i)
+            group = None if end is None else _translate_bracket_group(glob[i + 1 : end])
+            if end is not None and group is not None:
+                out.append(group)
+                i = end
             else:
-                inner = glob[i + 1 : j]
-                if inner.startswith("!"):
-                    inner = "^" + inner[1:]
-                out.append("[" + inner + "]")
-                i = j
+                # Unterminated, or a shape we will not vouch for: the
+                # whole group degrades to literal text rather than
+                # risking an invalid pattern at the operator.
+                literal_end = i if end is None else end
+                out.append(re.escape(glob[i : literal_end + 1]))
+                i = literal_end
         else:
             out.append(re.escape(c))
         i += 1
@@ -2148,11 +2352,13 @@ async def decay_invalidate(
     return int(cast("CursorResult[Any]", result).rowcount or 0)
 
 
-async def anchor_gone_sweep(session: AsyncSession, *, now: datetime) -> tuple[int, int]:
+async def anchor_gone_sweep(
+    session: AsyncSession, *, now: datetime
+) -> tuple[int, int, int]:
     """The ``gone``/un-``gone`` half of the daily pass (plan §3.2 + Phase 3).
 
-    Two set-based UPDATEs over disjoint row sets, returning
-    ``(hidden, restored)``:
+    Two set-based UPDATEs over disjoint row sets plus one observability
+    count, returning ``(hidden, restored, restore_blocked)``:
 
     1. **Hide.** ``anchor_state = 'gone'`` — every anchor the record has
        resolved to "no longer exists" (the roll-up is unanimity-gated, so
@@ -2192,6 +2398,71 @@ async def anchor_gone_sweep(session: AsyncSession, *, now: datetime) -> tuple[in
     Both halves are idempotent: after the hide, ``valid_until`` is no
     longer in the future so the row drops out; after the restore, the
     marker is gone so the row drops out.
+
+    **The restore is the only writer in this module that sets
+    ``valid_until`` back to NULL, which makes it the only one that can
+    push a row back INTO the partial unique index**
+    ``uq_memory_records_tenant_content_hash_live`` (partial on
+    ``is_tombstone = false AND superseded_by IS NULL AND valid_until IS
+    NULL``). Ending validity is what FREES a content hash for a fresh
+    write; un-ending it can therefore collide with whatever took the hash
+    in the meantime. Two guards follow from that, and neither is
+    optional:
+
+    * **The live-twin guard.** Row R is hidden as ``gone``; any writer
+      re-writes the same content, sees no live row for that hash, and
+      inserts R2; the anchor comes back and the restore tries to make R
+      live again -> ``duplicate key value violates unique constraint``.
+      Because the whole daily pass runs in ONE transaction
+      (``scheduler._run_committed``), that exception rolls back
+      :func:`decay_invalidate` and skips :func:`decay_prune` and
+      :func:`expire_closed_session_records` — and it re-raises at 03:10
+      every night thereafter. One restorable anchor would permanently
+      disable the entire memory lifecycle. So a row with a live twin is
+      SKIPPED, and — deliberately — **keeps its ``anchor_gone_at``
+      marker** so a later night retries once the twin is gone. Dropping
+      the marker would make R permanently unrestorable; tombstoning R
+      would destroy a row on the strength of a watcher verdict. Nothing
+      is lost by waiting: R2 carries byte-identical content and is live.
+      The skip is counted and returned so it is observable rather than
+      silent.
+    * **The liveness guards.** The restore carries ``is_tombstone =
+      false`` and ``superseded_by IS NULL`` — the hide half's guard plus
+      the one it did not need. A hidden row is still supersedable
+      (:func:`get_record` has no liveness gate), and
+      :func:`_validity_filters` enforces supersession PURELY through
+      ``valid_until``, never through ``superseded_by``. So NULLing
+      ``valid_until`` on a superseded row would return it to retrieval to
+      compete with its own successor, and leave it permanently
+      unprunable. §7.5b is about un-hiding a WATCHER verdict; it is never
+      about resurrecting a row a human or the consolidation path
+      terminated.
+
+    ``anchors <> '[]'::jsonb`` on both halves is what lets the planner
+    use the partial index ``idx_memory_records_tenant_anchor_state``; it
+    is also simply true of every row either half can legitimately touch.
+    """
+    # One text for the restorable set and one for the live-twin probe,
+    # used by BOTH the UPDATE and the blocked-count query so the two can
+    # never drift into disagreeing about what was skipped.
+    restorable = f"""
+        r.anchor_state <> 'gone'
+        AND r.anchors <> '[]'::jsonb
+        AND jsonb_exists(r.source, 'anchor_gone_at')
+        AND r.valid_until IS NOT NULL
+        AND r.is_tombstone = false
+        AND r.superseded_by IS NULL
+        AND {_not_lifecycle_held("r.")}
+    """
+    live_twin = f"""
+        EXISTS (
+            SELECT 1
+            FROM coord.memory_records live
+            WHERE live.tenant_id = r.tenant_id
+              AND live.content_hash = r.content_hash
+              AND live.memory_id <> r.memory_id
+              AND {_live_dedup_predicate("live.")}
+        )
     """
     hidden = await session.execute(
         text(
@@ -2214,21 +2485,32 @@ async def anchor_gone_sweep(session: AsyncSession, *, now: datetime) -> tuple[in
     restored = await session.execute(
         text(
             f"""
-            UPDATE coord.memory_records
+            UPDATE coord.memory_records AS r
             SET valid_until = NULL,
                 updated_at = :now,
-                source = source - 'anchor_gone_at'
-            WHERE anchor_state <> 'gone'
-              AND jsonb_exists(source, 'anchor_gone_at')
-              AND valid_until IS NOT NULL
-              AND {_not_lifecycle_held()}
+                source = r.source - 'anchor_gone_at'
+            WHERE {restorable}
+              AND NOT {live_twin}
             """
         ),
         {"now": now},
     )
+    blocked = (
+        await session.execute(
+            text(
+                f"""
+                SELECT count(*)
+                FROM coord.memory_records AS r
+                WHERE {restorable}
+                  AND {live_twin}
+                """
+            )
+        )
+    ).scalar_one()
     return (
         int(cast("CursorResult[Any]", hidden).rowcount or 0),
         int(cast("CursorResult[Any]", restored).rowcount or 0),
+        int(blocked),
     )
 
 
@@ -2795,6 +3077,27 @@ async def fetch_cluster_candidates(
     AFTER the flag was set ever names it as a member. Jobs enqueued
     BEFORE it was set already do, which is why ``supersede_many`` re-checks
     the hold at apply time.
+
+    **ANCHORED rows are excluded on exactly the same grounds as the decay
+    exemption**, and the predicate is written byte-for-byte the same
+    (``anchors = '[]'::jsonb``) so the two read as ONE rule applied to the
+    two lifecycle mechanisms rather than as two coincidences —
+    see :func:`decay_invalidate`, plan
+    ``2026-07-29-memory-anchored-derived-records`` §3.2. Without it the
+    plan's thesis is defeated in the most direct way available: Phase 3
+    makes an anchored record immune to the clock, and then a clustering
+    job supersedes it anyway. Supersession invalidates it exactly as
+    thoroughly as decay would have, and is STRICTLY WORSE — unlike the
+    ``anchor_gone_at`` marker, ``superseded_by`` IS one of
+    :func:`decay_prune`'s terminal markers, so it ends in a physical
+    delete 90 days later. A record that survives the clock and dies to a
+    clustering job has not been invalidated by its ground truth.
+
+    Keyed on ``anchors``, never on kind or origin — §3.2's "one column
+    decides both the lifecycle and the invalidation source", so no record
+    can sit in an inconsistent combination of the two. Do not "clean up"
+    this predicate without also removing the decay one; they are the same
+    rule and neither is meaningful alone.
     """
     rows = await session.execute(
         text(
@@ -2808,6 +3111,7 @@ async def fetch_cluster_candidates(
               AND superseded_by IS NULL
               AND (valid_until IS NULL OR valid_until > CAST(:now AS timestamptz))
               AND embedding IS NOT NULL
+              AND anchors = '[]'::jsonb
               AND {_not_lifecycle_held()}
             ORDER BY created_at ASC, memory_id ASC
             LIMIT :limit
@@ -2857,6 +3161,17 @@ async def supersede_many(
     hold: automatic supersession respects the flag, explicit
     caller-initiated supersession (how a held record is adjudicated)
     overrides it.
+
+    **The anchor exemption is applied here too, for the same reason the
+    hold is** — and following the hold's idiom rather than inventing a
+    second one. :func:`fetch_cluster_candidates` keeps an anchored row out
+    of NEW clusters, but consolidation enqueues every 10 minutes, so a job
+    that named a row while it was still anchorless is almost always in
+    flight at the moment Phase 6's dedup-merge backfills an anchor onto
+    it. This is the only place that job's supersession is applied, so
+    without the re-check the exemption has exactly the race window the
+    hold's own docstring calls "worse than no hold — it reads as
+    protection while silently failing".
     """
     if not member_ids:
         return
@@ -2867,6 +3182,7 @@ async def supersede_many(
             valid_until = :now,
             updated_at = :now
         WHERE tenant_id = :tenant_id AND memory_id IN :member_ids
+          AND anchors = '[]'::jsonb
           AND {_not_lifecycle_held()}
           AND {_supersede_target_is_safe(target="new_memory_id")}
         """

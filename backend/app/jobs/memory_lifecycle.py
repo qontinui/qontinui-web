@@ -112,13 +112,25 @@ async def decay_once(
     invalidated = await store.decay_invalidate(
         session, now=now, threshold=DECAY_SCORE_THRESHOLD
     )
-    anchor_gone_hidden, anchor_gone_restored = await store.anchor_gone_sweep(
-        session, now=now
-    )
+    (
+        anchor_gone_hidden,
+        anchor_gone_restored,
+        anchor_gone_restore_blocked,
+    ) = await store.anchor_gone_sweep(session, now=now)
     pruned = await store.decay_prune(
         session, now=now, grace_days=DECAY_PRUNE_GRACE_DAYS
     )
     session_expired = await store.expire_closed_session_records(session, now=now)
+    if anchor_gone_restore_blocked:
+        # Not an error, but not nothing either: each of these is a record
+        # whose anchor came back and which STAYS HIDDEN because a live
+        # row now holds its content hash. It retries every night, so a
+        # count that never falls to zero means a permanent twin — worth
+        # a human look, and invisible without this line.
+        logger.warning(
+            "memory_anchor_restore_blocked_by_live_twin",
+            blocked=anchor_gone_restore_blocked,
+        )
     logger.info(
         "memory_decay_completed",
         invalidated=invalidated,
@@ -126,6 +138,7 @@ async def decay_once(
         session_expired=session_expired,
         anchor_gone_hidden=anchor_gone_hidden,
         anchor_gone_restored=anchor_gone_restored,
+        anchor_gone_restore_blocked=anchor_gone_restore_blocked,
     )
     return {
         "invalidated": invalidated,
@@ -133,6 +146,7 @@ async def decay_once(
         "session_expired": session_expired,
         "anchor_gone_hidden": anchor_gone_hidden,
         "anchor_gone_restored": anchor_gone_restored,
+        "anchor_gone_restore_blocked": anchor_gone_restore_blocked,
     }
 
 

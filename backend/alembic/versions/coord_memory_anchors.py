@@ -55,6 +55,15 @@ Design notes
   ``idx_memory_records_tenant_anchor_state`` on ``(tenant_id, anchor_state)
   WHERE anchors <> '[]'::jsonb`` narrows, since anchored rows are expected to
   stay a small minority of the corpus for a long time.
+
+  That partial index serves the ANCHORED side only — the watcher's
+  enumeration and both halves of the ``anchor_gone_sweep``, all of which
+  filter ``anchors <> '[]'::jsonb``. It emphatically does **not** serve
+  Phase 3's decay exemption, whose predicate ``anchors = '[]'::jsonb`` is the
+  index's exact COMPLEMENT: no row the exemption selects is in this index.
+  (An earlier draft of this note claimed otherwise. The exemption needs no
+  index of its own — ``decay_invalidate`` is a full-corpus sweep that has to
+  visit every anchorless row anyway.)
 * ``anchor_state`` is TEXT + a **named** CHECK rather than a PG enum — same
   rationale as the sibling ``scope`` / ``kind`` columns: text+CHECK evolves
   without ``ALTER TYPE`` acrobatics. It is named explicitly (rather than left
