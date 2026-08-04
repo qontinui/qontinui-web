@@ -1,0 +1,156 @@
+"""coord memory_anchor_observations — the anchor watcher's oplog
+
+Revision ID: coord_memory_anchor_obs
+Revises: coord_memory_anchors
+Create Date: 2026-08-04
+
+Phase 4 of plan ``2026-07-29-memory-anchored-derived-records``
+(``D:/qontinui-root/plans/2026-07-29-memory-anchored-derived-records.md``).
+
+Phase 1 (``coord_memory_anchors``) gave ``coord.memory_records`` its
+``anchors`` array and its ``anchor_state`` roll-up. This revision gives the
+coord-side anchor watcher somewhere to *record what it saw* on each tick: one
+append-only row per tenant per tick, carrying the §3.2 roll-up counts plus the
+per-anchor findings.
+
+* ``anchored_records``  — records with a non-empty ``anchors`` array, i.e. the
+                          watcher's working set for this tenant.
+* ``fresh`` / ``moved``
+  / ``gone``            — how those records rolled up (plan §3.2). ``gone``
+                          only on unanimity, so these three sum to
+                          ``anchored_records`` minus ``unresolved``.
+* ``unresolved``        — records left at their previous ``anchor_state``
+                          because at least one anchor could not be *checked*
+                          (fetch error, unreachable twin, unknown anchor
+                          type). Plan §3.3: **resolution failure is not
+                          ``gone``** — this column is the tenant-scoped
+                          companion of the fleet counter
+                          ``coord_memory_anchor_resolve_failed_total``.
+* ``distinct_anchors``  — distinct anchors cited by this tenant's records.
+                          Anchors are resolved once fleet-wide and the
+                          *result* fanned back per tenant (§3.3), so this is a
+                          citation count, not a fetch count; it is expected to
+                          exceed the number actually fetched fleet-wide only
+                          when tenants cite the same anchor.
+* ``detail``            — ``JSONB NOT NULL DEFAULT '[]'::jsonb``. The
+                          per-anchor findings: which anchor moved, from what
+                          sha, when it was checked. Plan §3.2 puts this here
+                          rather than in a new column on ``memory_records``,
+                          because the watcher already writes an append-only
+                          oplog and that is where its findings belong —
+                          ``anchor_state`` stays a plain indexable TEXT
+                          roll-up.
+
+Design notes
+============
+
+* **Why a new table rather than ``coord.memory_observations``.** The sibling
+  memory oplog cannot carry these rows. Every one of its columns
+  (``row_count``, ``bytes``, ``embedding_coverage``, ``quota_utilization``,
+  ``drift_class``) is a NOT NULL memory-census aggregate an anchor tick has no
+  value for, and it has no JSONB detail column to put the findings in. Worse,
+  coord's ``memory_observer::latest_observations`` reads ``DISTINCT ON
+  (tenant_id) ... ORDER BY observed_at DESC`` — an anchor row inserted there
+  would *become* "the latest observation" for the tenant and corrupt both
+  ``coord_query_memory_state`` and the whole ``coord_memory_*`` gauge family.
+  Two watchers, two oplogs.
+* **Posture mirrors ``coord.memory_observations`` deliberately.** Same
+  ``UUID PRIMARY KEY DEFAULT gen_random_uuid()`` surrogate; same
+  ``tenant_id UUID NOT NULL`` **carrying no FK** — history rows must never
+  block a tenant delete and are pruned by the watcher, not by cascade; same
+  ``observed_at TIMESTAMPTZ NOT NULL DEFAULT now()``; same lone
+  ``(tenant_id, observed_at DESC)`` index. Consistency with the sibling oplog
+  is worth more here than any local preference.
+* **No unique constraint — this is a history oplog.** The same tenant recurs
+  every tick, exactly as in ``coord.memory_observations``. Nothing dedupes.
+* **The ``::jsonb`` cast on the default is load-bearing, not decorative.** An
+  untyped ``'[]'`` leaves the literal's type unresolved where a ``jsonb`` one
+  is required; every jsonb literal in this plan's DDL — here, and Phase 1's
+  ``anchors <> '[]'::jsonb`` index predicate — carries the explicit cast.
+* **One index, one question.** The read pattern is "latest rows for this
+  tenant" — the shadow window of Phase 4 reads the newest tick to compare the
+  ``moved`` rate against the ``gone`` rate. ``(tenant_id, observed_at DESC)``
+  serves both that and the ``DISTINCT ON (tenant_id)`` latest-per-tenant shape
+  the sibling observer uses. The counts are read, never filtered on, so they
+  get no indexes.
+* **The counts are BIGINT, not INTEGER**, matching ``memory_observations``'
+  ``row_count`` / ``bytes``: an oplog column that can only ever be widened by
+  a rewrite is not worth the four bytes.
+* Idempotency: every DDL uses ``IF NOT EXISTS`` / ``IF EXISTS`` so a re-run
+  against an already-applied DB is a no-op.
+
+Hand-written rather than autogenerated: ``alembic revision --autogenerate`` is
+banned in this repo and ``./scripts/safe_migrate.sh`` does not exist here.
+
+*Deploy order:* this migration must land and deploy **before** the coord build
+carrying ``anchor_observer.rs`` — the 2026-07-13 missing-column incident class.
+The table name must also be added to coord's
+``schema_manifest::ALEMBIC_OWNED_TABLES``; that edit lives in the coord repo
+and is not made here.
+"""
+
+from collections.abc import Sequence
+
+from alembic import op
+
+# revision identifiers, used by Alembic.
+revision: str = "coord_memory_anchor_obs"
+down_revision: str | Sequence[str] | None = "coord_memory_anchors"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
+
+# Index name, stated once so upgrade and downgrade cannot drift.
+_IX_TENANT_OBSERVED = "idx_memory_anchor_observations_tenant_observed"
+
+
+def upgrade() -> None:
+    """Create coord.memory_anchor_observations + its latest-per-tenant index."""
+    # ----------------------------------------------------------------
+    # 1. The oplog table. Raw SQL rather than op.create_table for the
+    #    same reason as the sibling coord.memory_observations: the
+    #    IF NOT EXISTS idempotency guard and the '[]'::jsonb default
+    #    both want to be stated literally.
+    # ----------------------------------------------------------------
+    op.execute(
+        """
+        CREATE TABLE IF NOT EXISTS coord.memory_anchor_observations (
+            id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id          UUID NOT NULL,
+            observed_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+            anchored_records   BIGINT NOT NULL,
+            fresh              BIGINT NOT NULL,
+            moved              BIGINT NOT NULL,
+            gone               BIGINT NOT NULL,
+            unresolved         BIGINT NOT NULL,
+            distinct_anchors   BIGINT NOT NULL,
+            detail             JSONB NOT NULL DEFAULT '[]'::jsonb
+        )
+        """
+    )
+
+    # ----------------------------------------------------------------
+    # 2. Latest-per-tenant lookup + staleness window — the same access
+    #    shape (and the same index posture) as
+    #    idx_memory_observations_tenant_observed.
+    # ----------------------------------------------------------------
+    op.execute(
+        f"""
+        CREATE INDEX IF NOT EXISTS {_IX_TENANT_OBSERVED}
+            ON coord.memory_anchor_observations (tenant_id, observed_at DESC)
+        """
+    )
+
+
+def downgrade() -> None:
+    """Reverse: drop the index, then the table.
+
+    ``DROP TABLE`` would take the index with it, but it is dropped
+    explicitly first for symmetry with its explicit CREATE — and so a
+    partially-applied upgrade downgrades cleanly either way. The index
+    name is schema-qualified: an index lives in its table's schema, and
+    ``DROP INDEX`` does not resolve through ``search_path`` the way the
+    table reference does. Nothing references this table, so a plain
+    ``DROP TABLE`` suffices.
+    """
+    op.execute(f"DROP INDEX IF EXISTS coord.{_IX_TENANT_OBSERVED}")
+    op.execute("DROP TABLE IF EXISTS coord.memory_anchor_observations")
