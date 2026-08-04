@@ -22,6 +22,7 @@ from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
     admin_dev,
+    agent_commands,
     agent_registry,
     agent_sessions,
     ai_prompts,
@@ -349,6 +350,10 @@ api_router.include_router(
 )
 # Skills (user-created parameterized step templates)
 api_router.include_router(skills.router, prefix="/skills", tags=["skills"])
+# Agent commands (account overrides of the runner's embedded default commands)
+api_router.include_router(
+    agent_commands.router, prefix="/agent-commands", tags=["agent-commands"]
+)
 # Unified workflows (workflow definitions - source of truth)
 api_router.include_router(
     unified_workflows.router, prefix="/unified-workflows", tags=["unified-workflows"]
