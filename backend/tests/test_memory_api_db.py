@@ -254,6 +254,35 @@ _SETUP_SQL = [
     CREATE INDEX IF NOT EXISTS idx_memory_links_tenant_target
         ON coord.memory_links (tenant_id, target_id)
     """,
+    # Mirrors alembic/versions/coord_memory_anchors.py. Written as ALTERs
+    # rather than folded into the CREATE TABLE above so a PERSISTENT test
+    # DB whose table predates the anchors migration is upgraded in place —
+    # the `IF NOT EXISTS` on the CREATE would otherwise make the widened
+    # shape a no-op, exactly the trap the kind-CHECK drop+re-add above
+    # already works around.
+    """
+    ALTER TABLE coord.memory_records
+        ADD COLUMN IF NOT EXISTS anchors JSONB NOT NULL DEFAULT '[]'::jsonb,
+        ADD COLUMN IF NOT EXISTS anchor_state TEXT NOT NULL DEFAULT 'none'
+    """,
+    """
+    ALTER TABLE coord.memory_records
+        DROP CONSTRAINT IF EXISTS memory_records_anchor_state_check
+    """,
+    """
+    ALTER TABLE coord.memory_records
+        ADD CONSTRAINT memory_records_anchor_state_check
+            CHECK (anchor_state IN ('none', 'fresh', 'moved', 'gone'))
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_memory_records_anchors_gin
+        ON coord.memory_records USING gin (anchors)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_memory_records_tenant_anchor_state
+        ON coord.memory_records (tenant_id, anchor_state)
+        WHERE anchors <> '[]'::jsonb
+    """,
 ]
 
 
@@ -3419,3 +3448,717 @@ class TestStatsContentFacets:
         facets = _facets(mc)
         assert facets["live_row_count"] == 2
         assert facets["importance"]["above_0_8"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Anchors — write path, dedup-merge, read path, proactive recall
+# (plan 2026-07-29-memory-anchored-derived-records, Phases 2/5/6)
+# ---------------------------------------------------------------------------
+
+_STORE_BLOB = {
+    "type": "blob",
+    "repo": "qontinui-web",
+    "path": "backend/app/services/memory_store.py",
+    "sha": "a" * 40,
+}
+_ENDPOINT_BLOB = {
+    "type": "blob",
+    "repo": "qontinui-web",
+    "path": "backend/app/api/v1/endpoints/memory.py",
+    "sha": "b" * 40,
+}
+_COORD_BLOB = {
+    "type": "blob",
+    "repo": "qontinui-coord",
+    "path": "src/memory_observer.rs",
+    "sha": "c" * 40,
+}
+_PR_ANCHOR = {"type": "pr", "repo": "qontinui-runner", "number": 832}
+
+
+def _anchors_of(mc: MemoryClient, memory_id: str) -> list[dict[str, Any]]:
+    """The stored anchor array of one record, via the LIST (sync) shape."""
+    body = mc.client.get("/api/v1/memory/records").json()
+    by_id = {r["memory_id"]: r for r in body["records"]}
+    return list(by_id[memory_id]["anchors"])
+
+
+def _set_anchor_state(engine: AsyncEngine, memory_id: str, state: str) -> None:
+    """Stand in for the coord watcher, which owns this column."""
+    _exec(
+        engine,
+        [
+            "UPDATE coord.memory_records SET anchor_state = :s "
+            "WHERE memory_id = CAST(:m AS uuid)"
+        ],
+        s=state,
+        m=memory_id,
+    )
+
+
+@pytest.fixture()
+def anchored_recall_on() -> Generator[None, None, None]:
+    """Turn Phase 5's default-OFF flag on for the duration of one test.
+
+    Patched rather than set in the environment because ``settings`` is a
+    process-wide singleton read at request time: leaving it flipped would
+    silently enable proactive recall for every later test in the session.
+    """
+    from app.core.config import settings
+
+    previous = settings.MEMORY_ANCHORED_RECALL_ENABLED
+    settings.MEMORY_ANCHORED_RECALL_ENABLED = True
+    try:
+        yield
+    finally:
+        settings.MEMORY_ANCHORED_RECALL_ENABLED = previous
+
+
+class TestAnchorWritePath:
+    def test_anchors_round_trip_through_the_sync_shape(self, mc: MemoryClient) -> None:
+        memory_id = _write_one(
+            mc, "the anchored pelican fact", anchors=[_STORE_BLOB, _PR_ANCHOR]
+        )
+        body = mc.client.get("/api/v1/memory/records").json()
+        (record,) = body["records"]
+        assert record["memory_id"] == memory_id
+        assert sorted(record["anchors"], key=lambda a: a["type"]) == sorted(
+            [_STORE_BLOB, _PR_ANCHOR], key=lambda a: a["type"]
+        )
+        # The watcher has not run, so the roll-up is still the default.
+        assert record["anchor_state"] == "none"
+
+    def test_anchorless_write_stores_the_empty_array(self, mc: MemoryClient) -> None:
+        memory_id = _write_one(mc, "the plain marmot fact")
+        assert _anchors_of(mc, memory_id) == []
+
+    def test_unknown_anchor_type_is_422(self, mc: MemoryClient) -> None:
+        resp = mc.client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    _record(
+                        "the bogus anchor fact",
+                        anchors=[{"type": "symbol", "symbol": "observe_tick"}],
+                    )
+                ]
+            },
+        )
+        # `symbol` was cut in vetting — coord has no symbol index and no
+        # parser, so an accepted symbol anchor would be unresolvable.
+        assert resp.status_code == 422, resp.text
+        assert "symbol" in resp.text
+
+    def test_malformed_anchor_of_a_known_type_is_422(self, mc: MemoryClient) -> None:
+        resp = mc.client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    # A blob anchor with no sha: the watcher would have
+                    # nothing to compare against.
+                    _record(
+                        "the shaless fact",
+                        anchors=[{"type": "blob", "repo": "r", "path": "p"}],
+                    )
+                ]
+            },
+        )
+        assert resp.status_code == 422, resp.text
+
+    def test_writer_supplied_anchor_state_is_422(self, mc: MemoryClient) -> None:
+        """anchor_state is derived — the watcher's, never a writer's.
+
+        Pydantic's default for an unknown key is to IGNORE it, which would
+        let a writer believe it pinned a record to fresh while nothing
+        happened. A loud 422 is the only honest answer.
+        """
+        resp = mc.client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    _record(
+                        "the self-certifying fact",
+                        anchors=[_STORE_BLOB],
+                        anchor_state="fresh",
+                    )
+                ]
+            },
+        )
+        assert resp.status_code == 422, resp.text
+        assert "anchor_state" in resp.text
+        # And nothing was written.
+        assert mc.client.get("/api/v1/memory/records").json()["records"] == []
+
+    def test_anchor_state_is_rejected_even_without_anchors(
+        self, mc: MemoryClient
+    ) -> None:
+        resp = mc.client.post(
+            "/api/v1/memory/records",
+            json={"records": [_record("plain fact", anchor_state="gone")]},
+        )
+        assert resp.status_code == 422, resp.text
+
+
+class TestDedupPreservesAnchors:
+    """Verification 7.5c — and the whole of Phase 6's backfill strategy.
+
+    Before this, dedup was ``ON CONFLICT ... DO NOTHING``: re-writing an
+    identical record in order to attach an anchor was a silent no-op, so
+    "anchors are added when a record is next written" attached nothing.
+    """
+
+    def test_rewriting_verbatim_with_an_anchor_attaches_it(
+        self, mc: MemoryClient
+    ) -> None:
+        content = "the runner reaps abandoned claims every 60 seconds"
+        first_id = _write_one(mc, content)
+        assert _anchors_of(mc, first_id) == []
+
+        second = mc.client.post(
+            "/api/v1/memory/records",
+            json={"records": [_record(content, anchors=[_STORE_BLOB])]},
+        )
+        assert second.status_code == 200, second.text
+        body = second.json()
+        # Still a dedup in every observable respect: same row, same id.
+        assert body["deduped_count"] == 1
+        (result,) = body["records"]
+        assert result["deduped"] is True
+        assert result["memory_id"] == first_id
+
+        page = mc.client.get("/api/v1/memory/records").json()["records"]
+        assert len(page) == 1
+        assert page[0]["anchors"] == [_STORE_BLOB]
+
+    def test_merge_is_a_union_never_a_replace(self, mc: MemoryClient) -> None:
+        """A second writer must not be able to drop a first writer's anchor."""
+        content = "the supervisor publishes on 9875"
+        memory_id = _write_one(mc, content, anchors=[_STORE_BLOB])
+        mc.client.post(
+            "/api/v1/memory/records",
+            json={"records": [_record(content, anchors=[_ENDPOINT_BLOB])]},
+        )
+        anchors = _anchors_of(mc, memory_id)
+        assert sorted(anchors, key=lambda a: a["path"]) == sorted(
+            [_STORE_BLOB, _ENDPOINT_BLOB], key=lambda a: a["path"]
+        )
+
+    def test_merge_dedupes_by_anchor_identity_and_is_idempotent(
+        self, mc: MemoryClient
+    ) -> None:
+        content = "gitleaks red means it ran"
+        memory_id = _write_one(mc, content, anchors=[_STORE_BLOB])
+        for _ in range(3):
+            mc.client.post(
+                "/api/v1/memory/records",
+                json={"records": [_record(content, anchors=[_STORE_BLOB])]},
+            )
+        assert _anchors_of(mc, memory_id) == [_STORE_BLOB]
+
+    def test_anchorless_rewrite_leaves_existing_anchors_alone(
+        self, mc: MemoryClient
+    ) -> None:
+        """The overwhelmingly common write must stay pure DO NOTHING."""
+        content = "coord is the sole merge authority"
+        memory_id = _write_one(mc, content, anchors=[_STORE_BLOB])
+        resp = mc.client.post(
+            "/api/v1/memory/records", json={"records": [_record(content)]}
+        )
+        assert resp.json()["records"][0]["memory_id"] == memory_id
+        assert resp.json()["deduped_count"] == 1
+        assert _anchors_of(mc, memory_id) == [_STORE_BLOB]
+
+    def test_merge_is_tenant_scoped(self, mc: MemoryClient, db: AsyncEngine) -> None:
+        """Identical content in another tenant is a different record."""
+        content = "the same sentence in two tenants"
+        mine = _write_one(mc, content, anchors=[_STORE_BLOB])
+
+        foreign = MemoryClient(db)
+        theirs = _write_one(foreign, content, anchors=[_COORD_BLOB])
+        assert theirs != mine
+        assert _anchors_of(mc, mine) == [_STORE_BLOB]
+        assert _anchors_of(foreign, theirs) == [_COORD_BLOB]
+
+    def test_a_batch_carrying_new_and_anchor_bearing_duplicates(
+        self, mc: MemoryClient
+    ) -> None:
+        """The set-based path merges too, in one statement."""
+        existing = _write_one(mc, "an established fact about the train")
+        resp = mc.client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    _record(
+                        "an established fact about the train", anchors=[_STORE_BLOB]
+                    ),
+                    _record("a brand new fact about the train", anchors=[_PR_ANCHOR]),
+                ]
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        first, second = resp.json()["records"]
+        assert first["memory_id"] == existing
+        assert first["deduped"] is True
+        assert second["deduped"] is False
+        assert _anchors_of(mc, existing) == [_STORE_BLOB]
+        assert _anchors_of(mc, second["memory_id"]) == [_PR_ANCHOR]
+
+
+class TestAnchorStateOnQueryHits:
+    def test_moved_is_carried_on_the_hit_and_the_record_still_returns(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """3.2 — moved is ADVISORY: flagged, retrievable, normally ranked."""
+        memory_id = _write_one(
+            mc, "the moved cormorant fact", anchors=[_STORE_BLOB, _PR_ANCHOR]
+        )
+        _set_anchor_state(db, memory_id, "moved")
+
+        resp = mc.client.post(
+            "/api/v1/memory/query",
+            json={
+                "query_text": "moved cormorant",
+                "query_embedding": _client_vector("the moved cormorant fact"),
+                "query_embedding_model": EMBEDDING_MODEL_TAG,
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        (hit,) = resp.json()["hits"]
+        assert hit["memory_id"] == memory_id
+        assert hit["anchor_state"] == "moved"
+
+    def test_anchorless_hits_report_none(self, mc: MemoryClient) -> None:
+        _write_one(mc, "the unanchored heron fact")
+        resp = mc.client.post(
+            "/api/v1/memory/query", json={"query_text": "unanchored heron"}
+        )
+        (hit,) = resp.json()["hits"]
+        assert hit["anchor_state"] == "none"
+
+
+class TestAnchoredProactiveRecall:
+    """Phase 5 — shipped DEFAULT-OFF; the flag is the contract."""
+
+    def test_default_off_reports_skipped_disabled(self, mc: MemoryClient) -> None:
+        _write_one(mc, "the store anchored fact", anchors=[_STORE_BLOB])
+        resp = mc.client.post(
+            "/api/v1/memory/query",
+            json={
+                "query_text": "irrelevant",
+                "anchored_to": [
+                    {"repo": "qontinui-web", "path_glob": "backend/app/services/*"}
+                ],
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        # Never silently empty: the arm says it did not run.
+        assert body["anchored_arm"] == "skipped_disabled"
+        assert body["anchored_hits"] == []
+
+    def test_not_requested_when_no_clauses_are_sent(self, mc: MemoryClient) -> None:
+        resp = mc.client.post("/api/v1/memory/query", json={"query_text": "anything"})
+        assert resp.json()["anchored_arm"] == "not_requested"
+
+    def test_enabled_arm_returns_records_anchored_to_the_glob(
+        self, mc: MemoryClient, anchored_recall_on: None
+    ) -> None:
+        store_fact = _write_one(mc, "the store anchored fact", anchors=[_STORE_BLOB])
+        endpoint_fact = _write_one(
+            mc, "the endpoint anchored fact", anchors=[_ENDPOINT_BLOB]
+        )
+        coord_fact = _write_one(mc, "the coord anchored fact", anchors=[_COORD_BLOB])
+        pr_fact = _write_one(mc, "the pr anchored fact", anchors=[_PR_ANCHOR])
+        plain_fact = _write_one(mc, "the plain unanchored fact")
+
+        resp = mc.client.post(
+            "/api/v1/memory/query",
+            json={
+                "query_text": "zzzznothinglexicallymatching",
+                "anchored_to": [
+                    {"repo": "qontinui-web", "path_glob": "backend/app/services/*"}
+                ],
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["anchored_arm"] == "ran"
+        assert [h["memory_id"] for h in body["anchored_hits"]] == [store_fact]
+        # The glob narrows within the repo, the repo narrows across repos,
+        # and a path-less anchor type on a matching repo is not a path hit.
+        returned = {h["memory_id"] for h in body["anchored_hits"]}
+        assert endpoint_fact not in returned
+        assert coord_fact not in returned
+        assert pr_fact not in returned
+        assert plain_fact not in returned
+        # It is a SEPARATE arm — hits keeps its RRF meaning.
+        assert body["hits"] == []
+
+    def test_multiple_clauses_union(
+        self, mc: MemoryClient, anchored_recall_on: None
+    ) -> None:
+        store_fact = _write_one(mc, "the store anchored fact", anchors=[_STORE_BLOB])
+        coord_fact = _write_one(mc, "the coord anchored fact", anchors=[_COORD_BLOB])
+        resp = mc.client.post(
+            "/api/v1/memory/query",
+            json={
+                "query_text": "zzzznothinglexicallymatching",
+                "anchored_to": [
+                    {"repo": "qontinui-web", "path_glob": "backend/**"},
+                    {"repo": "qontinui-coord", "path_glob": "src/*.rs"},
+                ],
+            },
+        )
+        assert {h["memory_id"] for h in resp.json()["anchored_hits"]} == {
+            store_fact,
+            coord_fact,
+        }
+
+    def test_a_clause_must_match_repo_and_path_on_the_same_anchor(
+        self, mc: MemoryClient, anchored_recall_on: None
+    ) -> None:
+        """Two anchors must not combine into a match neither one is."""
+        _write_one(mc, "the cross-matched fact", anchors=[_STORE_BLOB, _COORD_BLOB])
+        resp = mc.client.post(
+            "/api/v1/memory/query",
+            json={
+                "query_text": "zzzznothinglexicallymatching",
+                # qontinui-web (from _STORE_BLOB) + src/*.rs (from
+                # _COORD_BLOB) describes no anchor this record has.
+                "anchored_to": [{"repo": "qontinui-web", "path_glob": "src/*.rs"}],
+            },
+        )
+        assert resp.json()["anchored_hits"] == []
+
+    def test_invisible_records_never_surface(
+        self, mc: MemoryClient, db: AsyncEngine, anchored_recall_on: None
+    ) -> None:
+        """The arm reuses the shipped validity filter, so gone stays gone."""
+        memory_id = _write_one(mc, "the hidden anchored fact", anchors=[_STORE_BLOB])
+        _exec(
+            db,
+            [
+                "UPDATE coord.memory_records SET valid_until = now() "
+                "WHERE memory_id = CAST(:m AS uuid)"
+            ],
+            m=memory_id,
+        )
+        resp = mc.client.post(
+            "/api/v1/memory/query",
+            json={
+                "query_text": "zzzznothinglexicallymatching",
+                "anchored_to": [
+                    {"repo": "qontinui-web", "path_glob": "backend/app/services/*"}
+                ],
+            },
+        )
+        assert resp.json()["anchored_hits"] == []
+
+    def test_ranked_by_importance_times_freshness(
+        self, mc: MemoryClient, anchored_recall_on: None
+    ) -> None:
+        low = _write_one(
+            mc,
+            "the low importance anchored fact",
+            anchors=[_STORE_BLOB],
+            importance=0.1,
+        )
+        high = _write_one(
+            mc,
+            "the high importance anchored fact",
+            anchors=[_STORE_BLOB],
+            importance=0.9,
+        )
+        resp = mc.client.post(
+            "/api/v1/memory/query",
+            json={
+                "query_text": "zzzznothinglexicallymatching",
+                "anchored_to": [
+                    {"repo": "qontinui-web", "path_glob": "backend/app/services/*"}
+                ],
+            },
+        )
+        # Same age, so importance decides.
+        assert [h["memory_id"] for h in resp.json()["anchored_hits"]] == [high, low]
+
+    def test_tenant_isolation(
+        self, mc: MemoryClient, db: AsyncEngine, anchored_recall_on: None
+    ) -> None:
+        foreign = MemoryClient(db)
+        foreign_id = _write_one(
+            foreign, "another tenant's anchored fact", anchors=[_STORE_BLOB]
+        )
+        mine = _write_one(mc, "my own anchored fact", anchors=[_STORE_BLOB])
+
+        clause = {
+            "query_text": "zzzznothinglexicallymatching",
+            "anchored_to": [
+                {"repo": "qontinui-web", "path_glob": "backend/app/services/*"}
+            ],
+        }
+        mine_body = mc.client.post("/api/v1/memory/query", json=clause).json()
+        assert [h["memory_id"] for h in mine_body["anchored_hits"]] == [mine]
+
+        their_body = foreign.client.post("/api/v1/memory/query", json=clause).json()
+        assert [h["memory_id"] for h in their_body["anchored_hits"]] == [foreign_id]
+
+    def test_too_many_clauses_is_422(self, mc: MemoryClient) -> None:
+        resp = mc.client.post(
+            "/api/v1/memory/query",
+            json={
+                "query_text": "x",
+                "anchored_to": [
+                    {"repo": f"repo-{i}", "path_glob": "*"} for i in range(17)
+                ],
+            },
+        )
+        assert resp.status_code == 422
+
+
+class TestGlobTranslation:
+    """Pure-function cover for the glob -> POSIX ARE translation."""
+
+    @pytest.mark.parametrize(
+        ("glob", "path", "matches"),
+        [
+            ("backend/app/services/*", "backend/app/services/memory_store.py", True),
+            ("backend/app/services/*", "backend/app/api/memory.py", False),
+            # `*` crosses `/` on purpose — the forgiving direction.
+            ("backend/*", "backend/app/services/memory_store.py", True),
+            ("backend/**", "backend/app/services/memory_store.py", True),
+            ("*.py", "memory_store.py", True),
+            ("*.py", "memory_store.rs", False),
+            ("src/?.rs", "src/a.rs", True),
+            ("src/?.rs", "src/ab.rs", False),
+            ("src/[am]ain.rs", "src/main.rs", True),
+            ("src/[!m]ain.rs", "src/main.rs", False),
+            # Regex metacharacters in a glob are literals, not patterns.
+            ("a.b", "axb", False),
+            ("a.b", "a.b", True),
+            ("a+b", "a+b", True),
+            # An unterminated class must not blow up.
+            ("src/[unterminated", "src/[unterminated", True),
+        ],
+    )
+    def test_translation(
+        self, db: AsyncEngine, glob: str, path: str, matches: bool
+    ) -> None:
+        # Asserted against POSTGRES's regex engine, not Python's — the
+        # translation's only consumer is the `~` operator.
+        got = _scalar(
+            db,
+            "SELECT CAST(:p AS text) ~ CAST(:re AS text)",
+            p=path,
+            re=store.glob_to_posix_regex(glob),
+        )
+        assert got is matches
+
+
+class TestSupersedeCarriesAnchors:
+    """Phase 6's "superseded, or corrected" arm.
+
+    A correction is the single highest-value moment to carry an anchor:
+    it is exactly what the anchor discipline exists to make mechanical.
+    """
+
+    def test_successor_inherits_anchors_when_none_are_supplied(
+        self, mc: MemoryClient
+    ) -> None:
+        """THE decision, pinned by assertion: omission INHERITS.
+
+        Dropping them here would silently demote an anchored record back
+        onto the time-decay curve, whose terminus is a hard delete —
+        unbounded and invisible. A wrongly-inherited anchor is bounded
+        and reversible by comparison.
+        """
+        old_id = _write_one(
+            mc, "the reaper runs every 60 seconds", anchors=[_STORE_BLOB, _PR_ANCHOR]
+        )
+        resp = mc.client.post(
+            f"/api/v1/memory/records/{old_id}/supersede",
+            json={
+                "title": "corrected",
+                "content": "the reaper runs every 30 seconds",
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        new_id = resp.json()["memory_id"]
+        assert new_id != old_id
+
+        anchors = _anchors_of(mc, new_id)
+        assert sorted(anchors, key=lambda a: a["type"]) == sorted(
+            [_STORE_BLOB, _PR_ANCHOR], key=lambda a: a["type"]
+        )
+
+    def test_inherited_successor_is_decay_exempt(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """The inheritance is load-bearing, not cosmetic.
+
+        An anchorless successor would be swept onto the Ebbinghaus curve;
+        this asserts the successor actually lands in the exempt class, by
+        asking `decay_invalidate`'s own exemption predicate.
+        """
+        old_id = _write_one(mc, "an anchored claim", anchors=[_STORE_BLOB])
+        resp = mc.client.post(
+            f"/api/v1/memory/records/{old_id}/supersede",
+            json={"title": "corrected", "content": "a corrected anchored claim"},
+        )
+        new_id = resp.json()["memory_id"]
+        exempt = _scalar(
+            db,
+            "SELECT anchors <> '[]'::jsonb FROM coord.memory_records "
+            "WHERE memory_id = CAST(:m AS uuid)",
+            m=new_id,
+        )
+        assert exempt is True
+
+    def test_explicit_empty_array_deliberately_un_anchors(
+        self, mc: MemoryClient
+    ) -> None:
+        """The escape hatch that makes inheriting safe.
+
+        A rewrite that genuinely no longer asserts anything about the old
+        artifact can say so — and that must be distinguishable from
+        simply not mentioning anchors.
+        """
+        old_id = _write_one(mc, "a claim about a file", anchors=[_STORE_BLOB])
+        resp = mc.client.post(
+            f"/api/v1/memory/records/{old_id}/supersede",
+            json={
+                "title": "now about something else",
+                "content": "a claim that changed subject entirely",
+                "anchors": [],
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        assert _anchors_of(mc, resp.json()["memory_id"]) == []
+
+    def test_supplied_anchors_replace_rather_than_merge(self, mc: MemoryClient) -> None:
+        """Supersede is the explicit human path: authoritative, not additive."""
+        old_id = _write_one(mc, "the original claim", anchors=[_STORE_BLOB])
+        resp = mc.client.post(
+            f"/api/v1/memory/records/{old_id}/supersede",
+            json={
+                "title": "retargeted",
+                "content": "the retargeted claim",
+                "anchors": [_COORD_BLOB],
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        assert _anchors_of(mc, resp.json()["memory_id"]) == [_COORD_BLOB]
+
+    def test_anchorless_predecessor_yields_anchorless_successor(
+        self, mc: MemoryClient
+    ) -> None:
+        """Inheritance of nothing is nothing — no accidental anchoring."""
+        old_id = _write_one(mc, "a plain unanchored claim")
+        resp = mc.client.post(
+            f"/api/v1/memory/records/{old_id}/supersede",
+            json={"title": "corrected", "content": "a corrected plain claim"},
+        )
+        assert _anchors_of(mc, resp.json()["memory_id"]) == []
+
+    def test_successor_can_anchor_a_previously_unanchored_record(
+        self, mc: MemoryClient
+    ) -> None:
+        """The other half of Phase 6: correction is also a place to ADD one."""
+        old_id = _write_one(mc, "an unanchored claim about the store")
+        resp = mc.client.post(
+            f"/api/v1/memory/records/{old_id}/supersede",
+            json={
+                "title": "now anchored",
+                "content": "a corrected claim about the store",
+                "anchors": [_STORE_BLOB],
+            },
+        )
+        assert _anchors_of(mc, resp.json()["memory_id"]) == [_STORE_BLOB]
+
+    def test_anchor_state_is_not_inherited(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """A verdict about the OLD row must not be asserted about the new one."""
+        old_id = _write_one(mc, "a moved claim", anchors=[_STORE_BLOB])
+        _set_anchor_state(db, old_id, "moved")
+        resp = mc.client.post(
+            f"/api/v1/memory/records/{old_id}/supersede",
+            json={"title": "corrected", "content": "a corrected moved claim"},
+        )
+        new_id = resp.json()["memory_id"]
+        page = mc.client.get("/api/v1/memory/records").json()["records"]
+        (successor,) = [r for r in page if r["memory_id"] == new_id]
+        # Anchors carried, verdict reset for the watcher to re-resolve.
+        assert successor["anchors"] == [_STORE_BLOB]
+        assert successor["anchor_state"] == "none"
+
+    def test_writer_supplied_anchor_state_is_422_on_supersede_too(
+        self, mc: MemoryClient
+    ) -> None:
+        """The derived-column wall has no hole in the supersede shape."""
+        old_id = _write_one(mc, "a claim to correct", anchors=[_STORE_BLOB])
+        resp = mc.client.post(
+            f"/api/v1/memory/records/{old_id}/supersede",
+            json={
+                "title": "corrected",
+                "content": "a corrected claim",
+                "anchor_state": "fresh",
+            },
+        )
+        assert resp.status_code == 422, resp.text
+        assert "anchor_state" in resp.text
+
+    def test_unknown_anchor_type_is_422_on_supersede_too(
+        self, mc: MemoryClient
+    ) -> None:
+        old_id = _write_one(mc, "a claim to retarget")
+        resp = mc.client.post(
+            f"/api/v1/memory/records/{old_id}/supersede",
+            json={
+                "title": "retargeted",
+                "content": "a retargeted claim",
+                "anchors": [{"type": "symbol", "symbol": "observe_tick"}],
+            },
+        )
+        assert resp.status_code == 422, resp.text
+
+    def test_too_many_anchors_is_422_on_both_write_shapes(
+        self, mc: MemoryClient
+    ) -> None:
+        """The same cap, from the same constant, on both write shapes."""
+        from app.schemas.memory import MAX_ANCHORS_PER_RECORD
+
+        over_cap = [
+            {"type": "flag", "name": f"flag-{i}"}
+            for i in range(MAX_ANCHORS_PER_RECORD + 1)
+        ]
+        fresh = mc.client.post(
+            "/api/v1/memory/records",
+            json={"records": [_record("an over-anchored new fact", anchors=over_cap)]},
+        )
+        assert fresh.status_code == 422, fresh.text
+
+        old_id = _write_one(mc, "a claim to over-anchor")
+        resp = mc.client.post(
+            f"/api/v1/memory/records/{old_id}/supersede",
+            json={
+                "title": "over-anchored",
+                "content": "an over-anchored claim",
+                "anchors": over_cap,
+            },
+        )
+        assert resp.status_code == 422, resp.text
+
+    def test_inheritance_is_tenant_bound(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """A foreign record is a 404, so there is nothing to inherit from."""
+        foreign = MemoryClient(db)
+        foreign_id = _write_one(
+            foreign, "another tenant's anchored claim", anchors=[_STORE_BLOB]
+        )
+        resp = mc.client.post(
+            f"/api/v1/memory/records/{foreign_id}/supersede",
+            json={"title": "hijack", "content": "hijacked content"},
+        )
+        assert resp.status_code == 404
+        assert _anchors_of(foreign, foreign_id) == [_STORE_BLOB]

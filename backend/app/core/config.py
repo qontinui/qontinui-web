@@ -387,6 +387,26 @@ class Settings(BaseSettings):
         description="Maximum number of runner tokens a user can create",
     )
 
+    # Anchor-keyed proactive memory recall (plan
+    # 2026-07-29-memory-anchored-derived-records, Phase 5).
+    #
+    # DEFAULT-OFF, and it must stay off until the separate efficacy
+    # harness (2026-07-29-memory-recall-efficacy-benchmark) can measure
+    # the injected context's value against its token cost. Proactive
+    # recall spends tokens on EVERY session whether or not the records
+    # help, so "it seems useful" is not evidence — turning it on without
+    # the measurement is how a retrieval feature becomes a permanent
+    # unmeasured tax. With the flag off, `POST /memory/query` still
+    # ACCEPTS `anchored_to` and reports `anchored_arm="skipped_disabled"`
+    # rather than silently returning nothing.
+    MEMORY_ANCHORED_RECALL_ENABLED: bool = Field(
+        default=False,
+        description=(
+            "Enable anchor-keyed proactive recall on POST /memory/query "
+            "(anchored_to). Off until the recall-efficacy benchmark runs."
+        ),
+    )
+
     # Database query timing settings
     SLOW_QUERY_THRESHOLD_MS: int = Field(
         default=100,

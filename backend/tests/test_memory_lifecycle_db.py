@@ -129,6 +129,8 @@ def _seed(
     is_tombstone: bool = False,
     superseded_by: UUID | None = None,
     source: dict[str, Any] | None = None,
+    anchors: list[dict[str, Any]] | None = None,
+    anchor_state: str = "none",
 ) -> UUID:
     """Insert one row with full control over lifecycle-relevant columns."""
     memory_id = uuid4()
@@ -140,13 +142,14 @@ def _seed(
                 (memory_id, tenant_id, scope, kind, title, content,
                  content_hash, embedding, embedding_model, importance,
                  access_count, last_accessed_at, valid_until,
-                 superseded_by, is_tombstone, source, created_at)
+                 superseded_by, is_tombstone, source, created_at,
+                 anchors, anchor_state)
             VALUES
                 (:memory_id, :tenant_id, 'tenant', :kind, :title, :content,
                  :content_hash, CAST(:embedding AS vector), :embedding_model,
                  :importance, :access_count, :last_accessed_at, :valid_until,
                  :superseded_by, :is_tombstone, CAST(:source AS jsonb),
-                 :created_at)
+                 :created_at, CAST(:anchors AS jsonb), :anchor_state)
             """
         ],
         memory_id=memory_id,
@@ -173,6 +176,8 @@ def _seed(
         is_tombstone=is_tombstone,
         source=json.dumps(source or {}),
         created_at=NOW - timedelta(days=age_days),
+        anchors=json.dumps(anchors or []),
+        anchor_state=anchor_state,
     )
     return memory_id
 
@@ -332,6 +337,312 @@ class TestDecaySweep:
         assert not _exists(db, victim)
         assert _exists(db, referrer)
         assert _row(db, referrer, "superseded_by") is None
+
+
+# ---------------------------------------------------------------------------
+# Anchors — decay exemption, the gone sweep, un-invalidation
+# (plan 2026-07-29-memory-anchored-derived-records, Phase 3)
+# ---------------------------------------------------------------------------
+
+_BLOB_ANCHOR = {
+    "type": "blob",
+    "repo": "qontinui-web",
+    "path": "backend/app/services/memory_store.py",
+    "sha": "0" * 40,
+}
+_FLAG_ANCHOR = {"type": "flag", "name": "merge_rollout"}
+_MIGRATION_ANCHOR = {"type": "migration", "revision": "coord_memory_links"}
+
+
+def _visible_ids(engine: AsyncEngine, tenant_id: UUID) -> set[UUID]:
+    """Ids the RETRIEVAL-visibility predicate currently admits.
+
+    ``list_records_page``'s liveness is the same not-tombstoned /
+    not-superseded / validity-not-ended rule the query arms apply, so
+    "left retrieval" and "came back to retrieval" are asserted against
+    the shipped predicate rather than against a hand-rolled copy of it.
+    """
+    rows = _run(
+        engine,
+        lambda s: store.list_records_page(
+            s,
+            tenant_id=tenant_id,
+            kinds=None,
+            since=None,
+            cursor=None,
+            limit=100,
+            now=None,
+        ),
+    )
+    return {row["memory_id"] for row in rows}
+
+
+class TestAnchorMigrationIsInert:
+    """Verification §7.1 — the added columns change nothing for old rows."""
+
+    def test_existing_rows_read_back_empty_anchors_and_none_state(
+        self, db: AsyncEngine
+    ) -> None:
+        tenant = uuid4()
+        # Seeded WITHOUT touching either new column: this is what every
+        # pre-migration row looks like once the ADD COLUMN defaults land.
+        legacy = _seed(db, tenant, content="pre-anchor row", importance=0.9)
+        # Asserted as ::text so the check is on the STORED value, not on
+        # whatever the driver's jsonb codec happens to hand back.
+        assert _row(db, legacy, "anchors::text") == "[]"
+        assert _row(db, legacy, "anchor_state") == "none"
+        # ...and it still behaves exactly as it did: fresh, visible,
+        # untouched by the sweep.
+        stats = _run(db, lambda s: decay_once(s, now=NOW))
+        assert stats["invalidated"] == 0
+        assert stats["anchor_gone_hidden"] == 0
+        assert stats["anchor_gone_restored"] == 0
+        assert _visible_ids(db, tenant) == {legacy}
+        assert _row(db, legacy, "valid_until") is None
+
+
+class TestAnchoredRowsAreDecayExempt:
+    """Verification §7.2 — age is not evidence about an anchored record."""
+
+    def test_anchored_row_survives_decay_its_twin_does_not(
+        self, db: AsyncEngine
+    ) -> None:
+        tenant = uuid4()
+        # Identical rows in every decay-relevant respect (importance 0.5,
+        # 720 days old, never accessed => score well under 0.05). The ONLY
+        # difference is the anchor array.
+        anchorless = _seed(
+            db, tenant, content="unanchored", importance=0.5, age_days=720
+        )
+        anchored = _seed(
+            db,
+            tenant,
+            content="anchored",
+            importance=0.5,
+            age_days=720,
+            anchors=[_BLOB_ANCHOR],
+            anchor_state="fresh",
+        )
+
+        stats = _run(db, lambda s: decay_once(s, now=NOW))
+        assert stats["invalidated"] == 1
+
+        assert _row(db, anchorless, "valid_until") is not None
+        assert _row(db, anchorless, "source->>'decayed_at'") is not None
+        # The anchored twin is untouched: no valid_until, no decay stamp.
+        assert _row(db, anchored, "valid_until") is None
+        assert _row(db, anchored, "source->>'decayed_at'") is None
+        assert _visible_ids(db, tenant) == {anchored}
+
+    def test_exemption_survives_a_second_pass(self, db: AsyncEngine) -> None:
+        """The sweep is daily; exemption that only held once is no exemption."""
+        tenant = uuid4()
+        anchored = _seed(
+            db,
+            tenant,
+            content="anchored, ancient",
+            importance=0.1,
+            age_days=3000,
+            anchors=[_FLAG_ANCHOR],
+            anchor_state="fresh",
+        )
+        for _ in range(3):
+            _run(db, lambda s: decay_once(s, now=NOW))
+        assert _row(db, anchored, "valid_until") is None
+        assert _visible_ids(db, tenant) == {anchored}
+
+
+class TestAnchorGoneSweep:
+    """Verification §7.5b — gone hides, un-gone restores, prune never bites."""
+
+    def test_gone_row_leaves_retrieval_and_carries_its_own_marker(
+        self, db: AsyncEngine
+    ) -> None:
+        tenant = uuid4()
+        gone = _seed(
+            db,
+            tenant,
+            content="anchored at a deleted file",
+            anchors=[_BLOB_ANCHOR],
+            anchor_state="gone",
+        )
+        keeper = _seed(
+            db,
+            tenant,
+            content="anchored at a live file",
+            anchors=[_FLAG_ANCHOR],
+            anchor_state="fresh",
+        )
+
+        stats = _run(db, lambda s: decay_once(s, now=NOW))
+        assert stats["anchor_gone_hidden"] == 1
+        assert _visible_ids(db, tenant) == {keeper}
+        assert _row(db, gone, "valid_until") is not None
+        assert _row(db, gone, "source->>'anchor_gone_at'") is not None
+        # THE constraint: never the prune's marker. Reusing decayed_at
+        # would make one watcher misfire a permanent delete 90 days on.
+        assert _row(db, gone, "source->>'decayed_at'") is None
+        assert _exists(db, gone)
+
+    def test_hide_is_idempotent(self, db: AsyncEngine) -> None:
+        tenant = uuid4()
+        gone = _seed(
+            db,
+            tenant,
+            content="stays gone",
+            anchors=[_BLOB_ANCHOR],
+            anchor_state="gone",
+        )
+        first = _run(db, lambda s: decay_once(s, now=NOW))
+        second = _run(db, lambda s: decay_once(s, now=NOW))
+        assert first["anchor_gone_hidden"] == 1
+        assert second["anchor_gone_hidden"] == 0
+        assert _exists(db, gone)
+
+    def test_flipping_back_to_fresh_restores_retrieval_and_nulls_valid_until(
+        self, db: AsyncEngine
+    ) -> None:
+        tenant = uuid4()
+        record = _seed(
+            db,
+            tenant,
+            content="a file that came back",
+            anchors=[_BLOB_ANCHOR],
+            anchor_state="gone",
+        )
+        _run(db, lambda s: decay_once(s, now=NOW))
+        assert _visible_ids(db, tenant) == set()
+
+        # The watcher re-resolves the anchor and withdraws its verdict.
+        _exec(
+            db,
+            [
+                "UPDATE coord.memory_records SET anchor_state = 'fresh' "
+                "WHERE memory_id = :m"
+            ],
+            m=record,
+        )
+        stats = _run(db, lambda s: decay_once(s, now=NOW))
+        assert stats["anchor_gone_restored"] == 1
+        assert _visible_ids(db, tenant) == {record}
+        assert _row(db, record, "valid_until") is None
+        # The provenance token is consumed, so a later pass is a no-op.
+        assert _row(db, record, "source->>'anchor_gone_at'") is None
+        again = _run(db, lambda s: decay_once(s, now=NOW))
+        assert again["anchor_gone_restored"] == 0
+
+    def test_restore_never_touches_a_user_set_valid_until(
+        self, db: AsyncEngine
+    ) -> None:
+        """The marker, not ``valid_until``, is what makes un-hiding safe."""
+        tenant = uuid4()
+        user_scheduled = _seed(
+            db,
+            tenant,
+            content="explicitly time-boxed by a human",
+            valid_until_days_ago=1,
+            anchors=[_MIGRATION_ANCHOR],
+            anchor_state="fresh",
+        )
+        stats = _run(db, lambda s: decay_once(s, now=NOW))
+        assert stats["anchor_gone_restored"] == 0
+        # Still ended, still invisible — the sweep has no business
+        # resurrecting a boundary it did not set.
+        assert _row(db, user_scheduled, "valid_until") is not None
+        assert _visible_ids(db, tenant) == set()
+
+    def test_gone_row_is_never_pruned_past_the_grace_window(
+        self, db: AsyncEngine
+    ) -> None:
+        """A watcher verdict must never reach a hard delete."""
+        tenant = uuid4()
+        long_gone = _seed(
+            db,
+            tenant,
+            content="hidden by the watcher months ago",
+            # Well past DECAY_PRUNE_GRACE_DAYS (90).
+            valid_until_days_ago=400,
+            anchors=[_BLOB_ANCHOR],
+            anchor_state="gone",
+            source={"anchor_gone_at": "2025-06-01T00:00:00+00:00"},
+        )
+        # Positive control: same age, but a genuine terminal marker.
+        decayed = _seed(
+            db,
+            tenant,
+            content="decayed months ago",
+            valid_until_days_ago=400,
+            source={"decayed_at": "2025-06-01T00:00:00+00:00"},
+        )
+
+        stats = _run(db, lambda s: decay_once(s, now=NOW))
+        assert stats["pruned"] == 1
+        assert not _exists(db, decayed)
+        assert _exists(db, long_gone)
+        # And it is still recoverable: flip the verdict, get it back.
+        _exec(
+            db,
+            [
+                "UPDATE coord.memory_records SET anchor_state = 'fresh' "
+                "WHERE memory_id = :m"
+            ],
+            m=long_gone,
+        )
+        _run(db, lambda s: decay_once(s, now=NOW))
+        assert _visible_ids(db, tenant) == {long_gone}
+
+    def test_moved_record_stays_retrievable(self, db: AsyncEngine) -> None:
+        """Verification §7.5d — partial invalidation must not hide.
+
+        Three anchors, one of them dead: the roll-up is ``moved`` (gone
+        only on unanimity, §3.2), and the web side's whole job is to NOT
+        hide it. ``moved`` is advisory — the reader is told, not denied.
+        """
+        tenant = uuid4()
+        partly = _seed(
+            db,
+            tenant,
+            content="two anchors live, one deleted",
+            importance=0.5,
+            age_days=720,  # also old enough to decay, were it not anchored
+            anchors=[_BLOB_ANCHOR, _FLAG_ANCHOR, _MIGRATION_ANCHOR],
+            anchor_state="moved",
+        )
+        stats = _run(db, lambda s: decay_once(s, now=NOW))
+        assert stats["anchor_gone_hidden"] == 0
+        assert stats["invalidated"] == 0
+        assert _visible_ids(db, tenant) == {partly}
+        assert _row(db, partly, "valid_until") is None
+        assert _row(db, partly, "anchor_state") == "moved"
+
+    def test_lifecycle_hold_defers_both_halves(self, db: AsyncEngine) -> None:
+        """The hold is honoured symmetrically, and strands nothing."""
+        tenant = uuid4()
+        held = _seed(
+            db,
+            tenant,
+            content="held while a human adjudicates",
+            anchors=[_BLOB_ANCHOR],
+            anchor_state="gone",
+            source={"lifecycle_hold": True},
+        )
+        stats = _run(db, lambda s: decay_once(s, now=NOW))
+        assert stats["anchor_gone_hidden"] == 0
+        assert _visible_ids(db, tenant) == {held}
+
+        # Releasing the hold hands the row back to the sweep.
+        _exec(
+            db,
+            [
+                "UPDATE coord.memory_records "
+                "SET source = source || '{\"lifecycle_hold\": false}'::jsonb "
+                "WHERE memory_id = :m"
+            ],
+            m=held,
+        )
+        stats = _run(db, lambda s: decay_once(s, now=NOW))
+        assert stats["anchor_gone_hidden"] == 1
+        assert _visible_ids(db, tenant) == set()
 
 
 # ---------------------------------------------------------------------------
