@@ -64,6 +64,32 @@ Contract for the coord-side consumer (read this before writing the Rust)
      — never a bare ``UPDATE``, which would silently no-op (zero rows
      affected) for a first-ever chunk and lose the bytes forever.
 
+   **Resolution recorded after the coord side shipped: that UPSERT
+   mandate is scoped to INCREMENTS. coord's decrements are a bare
+   ``UPDATE``, deliberately, and that is the better shape.** The rule
+   above was derived from one failure — a first-ever chunk losing its
+   bytes — and that is an *increment* failure. For a decrement the
+   asymmetry inverts. An absent row already reads as zero, so there is
+   nothing to decrement; an INSERT arm can only write a negative value
+   (rejected by ``tenant_warm_bytes_bytes_nonnegative``, which aborts the
+   whole statement — the 5-minute ``prune_closed_sessions`` and hourly
+   ``gc_warm_output`` sweeps would then fail on *every tick* until some
+   append happened to create the row) or a meaningless clamped zero that
+   makes ``EXCLUDED.bytes`` useless on the conflict arm, per point 3
+   below. A bare ``UPDATE`` matches nothing, affects zero rows, and can
+   never create a counter row — which is exactly the wanted behaviour.
+   So the shipped contract is: **increments UPSERT, decrements
+   ``UPDATE``**, pinned in ``qontinui-coord``'s ``src/sessions.rs`` by
+   ``a_tenant_with_no_counter_row_reads_zero_and_the_first_append_creates_it``
+   and
+   ``a_delete_path_on_a_tenant_with_no_counter_row_never_violates_the_check``.
+   Both shapes are safe; this note exists because the seventh mutation
+   path's author will read this migration before reading that code, and
+   an unqualified "never a bare ``UPDATE``" points them at the one shape
+   that wedges both sweeps. (The abbreviated ``COMMENT ON TABLE`` below
+   carries the same increment-scoped wording, for the same reason it is
+   worth stating here.)
+
    The alternative contract — "a row exists for every tenant" — was
    rejected: it cannot be honored without a trigger or an insert on the
    tenant-creation path, i.e. it would make a *second* component
@@ -100,10 +126,14 @@ Contract for the coord-side consumer (read this before writing the Rust)
    Phase 3's reconcile job exists precisely to recompute the true SUM and
    repair. Robustness outranks convenience here.
 
-   **Consequence coord must design for: every decrement must be clamped
-   on BOTH arms of the upsert.** Clamping only the ``DO UPDATE`` arm is a
-   trap, and the natural symmetric decrement is exactly the shape that
-   falls into it::
+   **Consequence coord must design for: any decrement written as an
+   upsert must be clamped on BOTH arms.** (coord's shipped decrements are
+   a bare ``UPDATE`` and so sidestep this entirely — see the resolution
+   note under point 1. The analysis below is why: it is what makes the
+   upsert form unattractive for a decrement in the first place, and it
+   remains the trap for anyone who reaches for one anyway.) Clamping only
+   the ``DO UPDATE`` arm is a trap, and the natural symmetric decrement is
+   exactly the shape that falls into it::
 
        -- WRONG. $2 is negative; the DO UPDATE arm is clamped, the
        -- INSERT arm is not.
