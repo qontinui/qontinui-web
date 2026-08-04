@@ -53,6 +53,16 @@ const LOCAL_EXTRA_SETTINGS: NavigationItem[] = [
     color: "#FFD700",
     platforms: ["web"],
   },
+  {
+    id: "settings-agent-commands",
+    label: "Agent Commands",
+    icon: "Terminal",
+    description:
+      "Customize the command procedures the runner provisions into new sessions (account override → embedded default)",
+    route: "/settings/agent-commands",
+    color: "#FFD700",
+    platforms: ["web"],
+  },
 ];
 
 function getSettingsNavItems(): {

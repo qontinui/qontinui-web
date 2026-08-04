@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "plan": "2026-07-29-memory-recall-efficacy-benchmark",
+  "embedding_source": "hashing-stub-v1",
+  "notes": [
+    "embedding_source names where the vectors in records.json/cases.json came from.",
+    "'hashing-stub-v1' means NO vectors are committed and the harness derives them",
+    "from the deterministic bag-of-words stub at seed time. Under that tag the hybrid",
+    "arm exercises fusion MECHANICS only — it says nothing about semantic quality,",
+    "because the stub makes vocabulary-mismatch cases near-orthogonal exactly like FTS.",
+    "To make the hybrid arm meaningful, regenerate with real vectors from the deployed",
+    "space and flip this tag to 'minilm-l6-v2-256@sentence-transformers'. See README.md.",
+    "The backend embeds nothing by design, so real vectors are always generated",
+    "out-of-band by a runner and committed as data."
+  ]
+}

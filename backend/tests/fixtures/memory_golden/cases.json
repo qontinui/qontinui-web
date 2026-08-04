@@ -1,0 +1,186 @@
+[
+  {
+    "case_id": "corr-sccache-wrapper",
+    "query_text": "how do I escape a stuck sccache build",
+    "relevant": ["sccache-wedge-correction", "sccache-wedge-original"],
+    "class": "correction",
+    "correction": {
+      "corrector": "sccache-wedge-correction",
+      "corrected": "sccache-wedge-original"
+    },
+    "rationale": "Querying the wedge topic must surface the correction, and must rank it above the record whose guidance it overturns — acting on the superseded record wastes a build cycle."
+  },
+  {
+    "case_id": "corr-coord-health-sha",
+    "query_text": "can I trust coord health build_sha to tell me what is serving",
+    "relevant": ["coord-health-sha-correction", "coord-health-sha-original"],
+    "class": "correction",
+    "correction": {
+      "corrector": "coord-health-sha-correction",
+      "corrected": "coord-health-sha-original"
+    },
+    "rationale": "The corrected record recommends a workaround that is no longer needed. Surfacing it above the correction sends an agent down a dead path."
+  },
+  {
+    "case_id": "corr-gate-spawn-selfverify",
+    "query_text": "is checking a gate's own continuation dispatch enough to prove the spawn worked",
+    "relevant": ["gate-spawn-selfverify-correction", "gate-spawn-selfverify-original"],
+    "class": "correction",
+    "correction": {
+      "corrector": "gate-spawn-selfverify-correction",
+      "corrected": "gate-spawn-selfverify-original"
+    },
+    "rationale": "The strongest correction pair in the set: the corrected record asserts a verification is sufficient when it is provably one-sided."
+  },
+  {
+    "case_id": "corr-proxy-denial",
+    "query_text": "why is coord_write_prompt_document denied over the proxy",
+    "relevant": ["proxy-denial-correction", "proxy-denial-original"],
+    "class": "correction",
+    "correction": {
+      "corrector": "proxy-denial-correction",
+      "corrected": "proxy-denial-original"
+    },
+    "rationale": "The corrected record misclassifies a deliberate control as a transport fault, which sends an agent through an irrelevant recovery cascade."
+  },
+  {
+    "case_id": "vocab-fleet-concurrency-tax",
+    "query_text": "why is the fleet only landing two changes at a time",
+    "relevant": ["pullrequest-only-ci-wedge"],
+    "class": "vocabulary_mismatch",
+    "rationale": "The query is phrased as an observed symptom and shares almost no content words with the record, which is written in the vocabulary of triggers, candidate refs and permits. Full-text retrieval cannot bridge this; a real semantic arm should."
+  },
+  {
+    "case_id": "vocab-metric-invisible",
+    "query_text": "the number I need is not coming back from coord",
+    "relevant": ["query-metric-allowlist"],
+    "class": "vocabulary_mismatch",
+    "rationale": "Symptom-phrased query against a record written in allowlist vocabulary. Shares only the word coord."
+  },
+  {
+    "case_id": "vocab-credential-red-herring",
+    "query_text": "my token suddenly stopped working against the metrics url",
+    "relevant": ["metrics-alb-403"],
+    "class": "vocabulary_mismatch",
+    "rationale": "The record's value is precisely that this looks like a credential problem and is not one. The query uses the misleading vocabulary an agent would actually reach for."
+  },
+  {
+    "case_id": "vocab-guard-never-fires",
+    "query_text": "my check passes no matter what I feed it",
+    "relevant": ["grep-count-dead-guard", "powershell-wildcard-trap"],
+    "class": "vocabulary_mismatch",
+    "rationale": "Two records describe different mechanisms for the same failure shape — a guard that cannot fail. Neither shares content words with the query."
+  },
+  {
+    "case_id": "vocab-lost-write",
+    "query_text": "the call came back with nothing at all, did it work",
+    "relevant": ["no-output-write-lost", "masked-tool-vs-dead-transport"],
+    "class": "vocabulary_mismatch",
+    "rationale": "The highest-cost recall failure in this set: not surfacing these means an agent reports a write as landed when it was lost."
+  },
+  {
+    "case_id": "recency-sccache-escape",
+    "query_text": "unset RUSTC_WRAPPER to get around sccache",
+    "relevant": ["sccache-wedge-correction"],
+    "class": "recency_conflict",
+    "rationale": "The query states the superseded belief as fact. Only the correction is relevant — returning the original record as the top hit would confirm the agent's wrong prior."
+  },
+  {
+    "case_id": "recency-health-sha-workaround",
+    "query_text": "use the task definition image tag to find the serving commit",
+    "relevant": ["coord-health-sha-correction"],
+    "class": "recency_conflict",
+    "rationale": "The query quotes the stale workaround verbatim, so full-text retrieval will rank the stale record first by construction. Only the correction is judged relevant."
+  },
+  {
+    "case_id": "recency-runner-restart",
+    "query_text": "restart the runner to pick up my change",
+    "relevant": ["runner-lifecycle-rule", "temp-runner-verification"],
+    "class": "recency_conflict",
+    "rationale": "The query proposes a prohibited action. The prohibition and its sanctioned alternative must both surface; returning neither is the failure that costs live sessions."
+  },
+  {
+    "case_id": "general-coord-schema-authorship",
+    "query_text": "who is allowed to write coord schema migrations",
+    "relevant": ["alembic-sole-authorship"],
+    "class": "general",
+    "rationale": "Direct lexical match — a baseline sanity case. If this misses, the harness is measuring a broken seed rather than ranking quality."
+  },
+  {
+    "case_id": "general-new-column-ordering",
+    "query_text": "coord needs to read a column my migration adds",
+    "relevant": ["alembic-sole-authorship", "migration-consumer-order"],
+    "class": "general",
+    "rationale": "Two records jointly answer the question: the authorship rule and the draft-hold ordering. Recall at 5 should capture both."
+  },
+  {
+    "case_id": "general-green-check-lies",
+    "query_text": "the test suite went green but I do not think it ran",
+    "relevant": ["db-test-self-skip"],
+    "class": "general",
+    "rationale": "Moderate lexical overlap. Directly relevant to this harness: its own suite skips wholesale without a database."
+  },
+  {
+    "case_id": "general-gate-anchor-choice",
+    "query_text": "which commit sha should I anchor a landing gate on",
+    "relevant": ["rebase-land-sha-rewrite"],
+    "class": "general",
+    "rationale": "Anchoring on the wrong hash rots the gate open, so a miss here is expensive and slow to notice."
+  },
+  {
+    "case_id": "general-did-it-ship",
+    "query_text": "the pull request is closed but not marked merged",
+    "relevant": ["pr-state-trap", "rebase-land-sha-rewrite"],
+    "class": "general",
+    "rationale": "Both records describe consequences of the same fast-forward landing mechanism."
+  },
+  {
+    "case_id": "general-stale-tree-findings",
+    "query_text": "is this symbol actually dead code",
+    "relevant": ["stale-checkout-phantom-findings"],
+    "class": "general",
+    "rationale": "Guards against acting on a stale local tree — a recurring source of confidently wrong findings."
+  },
+  {
+    "case_id": "general-concurrent-edits",
+    "query_text": "another session overwrote my uncommitted changes",
+    "relevant": ["worktree-isolation-rule"],
+    "class": "general",
+    "rationale": "Symptom to rule. The record states the isolation requirement that prevents it."
+  },
+  {
+    "case_id": "general-memory-absent-or-unknown",
+    "query_text": "the topic is not in my local memory index, does it exist",
+    "relevant": ["memory-cache-is-not-corpus"],
+    "class": "general",
+    "rationale": "The absent-versus-unknown distinction. Reading absence as emptiness is the error the record exists to prevent."
+  },
+  {
+    "case_id": "general-secret-scan-red",
+    "query_text": "the secret scan is red, is it flaky",
+    "relevant": ["gitleaks-red-means-it-ran"],
+    "class": "general",
+    "rationale": "Dismissing the red as flake skips a real finding."
+  },
+  {
+    "case_id": "general-why-is-retrieval-weak",
+    "query_text": "why does memory search miss things that are clearly stored",
+    "relevant": ["vector-arm-caller-gated"],
+    "class": "general",
+    "rationale": "The record this whole plan orbits: retrieval is full-text only unless the caller supplies a vector."
+  },
+  {
+    "case_id": "general-relevance-signal-unused",
+    "query_text": "do we track which memories actually get used",
+    "relevant": ["access-count-unused-signal"],
+    "class": "general",
+    "rationale": "Phase 4 of this plan turns this record's observation into a published counter."
+  },
+  {
+    "case_id": "general-memory-sync-status",
+    "query_text": "how do memories get reconciled between accounts",
+    "relevant": ["session-memory-single-writer"],
+    "class": "general",
+    "rationale": "The honest answer is that they no longer are — the sync was retired. A stale mental model here sends an agent looking for a task that does not exist."
+  }
+]
