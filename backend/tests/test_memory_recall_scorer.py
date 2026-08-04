@@ -376,6 +376,43 @@ class TestGoldenSetValidation:
         with pytest.raises(fx.GoldenSetError, match="embeddings are partial"):
             fx.load_golden_set(tmp_path)
 
+    def test_a_fully_embedded_fixture_LOADS(self, tmp_path) -> None:
+        """The passing case of the all-or-nothing check — the one that broke.
+
+        The partial-embedding guard built its error message eagerly and
+        indexed `missing[0]`, so a VALID fully-embedded fixture raised
+        IndexError instead of loading. It went unnoticed because the
+        committed fixture carried no vectors, leaving the whole branch
+        unreached: the rejection tests above all passed while the success
+        path was broken. Only committing real vectors exposed it.
+        """
+        records = [
+            {**self.RECORD, "embedding": [0.0] * 384},
+            {**self.RECORD, "key": "r2", "embedding": [0.1] * 384},
+        ]
+        cases = [{**self.CASE, "query_embedding": [0.2] * 384}]
+        self._write(
+            tmp_path,
+            {"embedding_source": fx.REAL_EMBEDDING_SOURCE},
+            records,
+            cases,
+        )
+        gs = fx.load_golden_set(tmp_path)
+        assert gs.vectors_committed is True
+        assert gs.has_real_vectors is True
+        assert len(gs.records) == 2
+        assert gs.cases[0].query_embedding is not None
+
+    def test_embedded_corpus_without_case_vectors_is_rejected(self, tmp_path) -> None:
+        self._write(
+            tmp_path,
+            self.MANIFEST,
+            [{**self.RECORD, "embedding": [0.0] * 384}],
+            [self.CASE],
+        )
+        with pytest.raises(fx.GoldenSetError, match="no query_embedding"):
+            fx.load_golden_set(tmp_path)
+
     def test_unknown_embedding_source_is_rejected(self, tmp_path) -> None:
         self._write(
             tmp_path,
