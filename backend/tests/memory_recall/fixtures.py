@@ -331,19 +331,28 @@ def load_golden_set(directory: Path | None = None) -> GoldenSet:
     # makes the hybrid arm score a subset of the corpus while the FTS arm
     # scores all of it, so the two arms would not be comparable — which is
     # the entire point of running both.
+    # NOTE: `_require(cond, msg)` evaluates `msg` EAGERLY — it is an ordinary
+    # argument, not a lambda. So the message must never index a list that is
+    # empty in the PASSING case. An earlier version interpolated
+    # `missing[0]` directly and raised IndexError exactly when the fixture was
+    # valid, which stayed invisible for as long as no fixture carried vectors
+    # (`any_embedded` was False, so this block never ran at all). Build the
+    # message only inside the failure branch.
     if any_embedded:
         missing = [r.key for r in records if r.embedding is None]
-        _require(
-            not missing,
-            f"records.json: embeddings are partial — {len(missing)} record(s) "
-            f"have none (first: {missing[0]!r}). Embed all or none.",
-        )
+        if missing:
+            raise GoldenSetError(
+                f"records.json: embeddings are partial — {len(missing)} "
+                f"record(s) have none (first: {missing[0]!r}). Embed all or "
+                "none: a hybrid arm scoring a subset while the FTS arm scores "
+                "everything makes the two arms incomparable."
+            )
         case_missing = [c.case_id for c in cases if c.query_embedding is None]
-        _require(
-            not case_missing,
-            f"cases.json: corpus is embedded but {len(case_missing)} case(s) "
-            f"have no query_embedding (first: {case_missing[0]!r})",
-        )
+        if case_missing:
+            raise GoldenSetError(
+                f"cases.json: corpus is embedded but {len(case_missing)} "
+                f"case(s) have no query_embedding (first: {case_missing[0]!r})"
+            )
 
     return GoldenSet(embedding_source=source, records=records, cases=cases)
 
