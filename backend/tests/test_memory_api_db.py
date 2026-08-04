@@ -4440,3 +4440,148 @@ class TestMergeMovesUpdatedAt:
             "/api/v1/memory/records", params={"since": before["updated_at"]}
         ).json()["records"]
         assert page == []
+
+
+class TestBatchAnchorsUnionAcrossOccurrences:
+    """F10 — the endpoint must not drop anchors before the store sees them.
+
+    Intra-batch duplicates collapse to the FIRST occurrence for every
+    column, which is right for all of them except anchors: two records
+    with identical content are two writers making the same claim, and the
+    second naming its ground truth does not make the first's naming
+    wrong. Taking only the first occurrence's anchors defeated the
+    store's ON CONFLICT union and its intra-batch collapse from one layer
+    above, before either could see the anchor.
+    """
+
+    def test_anchor_on_the_second_occurrence_is_not_dropped(
+        self, mc: MemoryClient
+    ) -> None:
+        content = "the twice-written fact"
+        resp = mc.client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    _record(content),
+                    _record(content, anchors=[_STORE_BLOB]),
+                ]
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        first, second = resp.json()["records"]
+        assert first["memory_id"] == second["memory_id"]
+        assert second["deduped"] is True
+        assert _anchors_of(mc, first["memory_id"]) == [_STORE_BLOB]
+
+    def test_anchors_union_across_every_occurrence(self, mc: MemoryClient) -> None:
+        content = "the thrice-written fact"
+        resp = mc.client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    _record(content, anchors=[_STORE_BLOB]),
+                    _record(content),
+                    _record(content, anchors=[_PR_ANCHOR, _STORE_BLOB]),
+                ]
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        memory_id = resp.json()["records"][0]["memory_id"]
+        anchors = _anchors_of(mc, memory_id)
+        assert sorted(anchors, key=lambda a: a["type"]) == sorted(
+            [_STORE_BLOB, _PR_ANCHOR], key=lambda a: a["type"]
+        )
+
+    def test_first_occurrence_still_wins_every_other_column(
+        self, mc: MemoryClient
+    ) -> None:
+        """Only anchors union; the long-standing rule is otherwise unchanged."""
+        content = "the fact with two titles"
+        resp = mc.client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    _record(content, title="the winning title", importance=0.9),
+                    _record(
+                        content,
+                        title="the losing title",
+                        importance=0.1,
+                        anchors=[_STORE_BLOB],
+                    ),
+                ]
+            },
+        )
+        memory_id = resp.json()["records"][0]["memory_id"]
+        (row,) = mc.client.get("/api/v1/memory/records").json()["records"]
+        assert row["memory_id"] == memory_id
+        assert row["title"] == "the winning title"
+        assert row["importance"] == pytest.approx(0.9)
+        assert row["anchors"] == [_STORE_BLOB]
+
+    def test_backfill_fires_when_the_anchor_arrives_on_a_later_duplicate(
+        self, mc: MemoryClient
+    ) -> None:
+        """The `write_hashes` predicate must key on the UNION.
+
+        A known-duplicate hash only enters the batch when it has an anchor
+        to contribute. Keying that on the FIRST occurrence meant an anchor
+        arriving on a later duplicate never reached Postgres at all — the
+        Phase 6 backfill silently did not happen, which is the exact
+        failure the dedup-merge was built to fix.
+        """
+        content = "the already-stored fact"
+        memory_id = _write_one(mc, content)
+        assert _anchors_of(mc, memory_id) == []
+
+        resp = mc.client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    _record(content),
+                    _record(content, anchors=[_STORE_BLOB]),
+                ]
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        assert all(r["memory_id"] == memory_id for r in resp.json()["records"])
+        assert _anchors_of(mc, memory_id) == [_STORE_BLOB]
+
+    def test_an_all_anchorless_duplicate_group_still_writes_nothing_extra(
+        self, mc: MemoryClient
+    ) -> None:
+        """Negative control: no anchors anywhere → no batch entry, no churn."""
+        content = "the plain repeated fact"
+        memory_id = _write_one(mc, content)
+        before = mc.client.get("/api/v1/memory/records").json()["records"][0]
+
+        resp = mc.client.post(
+            "/api/v1/memory/records",
+            json={"records": [_record(content), _record(content)]},
+        )
+        assert resp.json()["deduped_count"] == 2
+        after = mc.client.get("/api/v1/memory/records").json()["records"][0]
+        assert after["memory_id"] == memory_id
+        assert after["updated_at"] == before["updated_at"]
+
+    def test_union_is_visible_to_an_incremental_sync(self, mc: MemoryClient) -> None:
+        """End to end with F4: the unioned anchor reaches a mirror."""
+        content = "the fact a mirror already holds"
+        memory_id = _write_one(mc, content)
+        watermark = mc.client.get("/api/v1/memory/records").json()["records"][0][
+            "updated_at"
+        ]
+
+        mc.client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    _record(content),
+                    _record(content, anchors=[_PR_ANCHOR]),
+                ]
+            },
+        )
+        page = mc.client.get(
+            "/api/v1/memory/records", params={"since": watermark}
+        ).json()["records"]
+        assert [r["memory_id"] for r in page] == [memory_id]
+        assert page[0]["anchors"] == [_PR_ANCHOR]
