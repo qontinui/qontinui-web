@@ -362,3 +362,50 @@ class TestDeleteOverride:
         assert [
             v.version_number for v in await _versions(ac_db, UUID(recreated.id))
         ] == [1]
+
+
+# ---------------------------------------------------------------------------
+# Checksum conformance
+# ---------------------------------------------------------------------------
+
+
+def test_checksum_matches_the_canonical_cross_surface_definition() -> None:
+    """``compute_body_checksum`` must equal ``agent_command_checksum`` in
+    ``qontinui-schemas/rust/src/agent_commands.rs``.
+
+    Three surfaces write this field (this service, the runner, the frontend).
+    The canonical definition exists precisely so they cannot each invent one,
+    so pin it here rather than trusting the two implementations to drift
+    together. Vector recomputed from the Rust rule: strip CR, sha256 the UTF-8
+    bytes, prefix ``sha256-``.
+    """
+    from app.services.agent_command_service import compute_body_checksum
+
+    assert (
+        compute_body_checksum("# vet-plan\r\nline two\r\n")
+        == "sha256-d7edd01afb1634bb5ff178f923569f5df7bac8df5aa0cf5d2869cb5c027476b7"
+    )
+
+
+def test_checksum_is_cr_invariant() -> None:
+    """A CRLF hop must NOT change the checksum.
+
+    The body crosses Postgres, JSON and a Windows filesystem before any two
+    checksums are compared. If line endings moved the digest, an unchanged
+    command would report as changed — the only thing this field exists to
+    detect. This is why the digest is taken over CR-stripped content and not
+    over the raw bytes.
+    """
+    from app.services.agent_command_service import compute_body_checksum
+
+    assert compute_body_checksum("a\r\nb\r\n") == compute_body_checksum("a\nb\n")
+
+
+def test_checksum_carries_the_algorithm_prefix() -> None:
+    """The ``sha256-`` prefix names the algorithm inline, so a future change is
+    distinguishable rather than silently reinterpreted."""
+    from app.services.agent_command_service import compute_body_checksum
+
+    digest = compute_body_checksum("# body")
+    assert digest.startswith("sha256-")
+    assert len(digest) == len("sha256-") + 64

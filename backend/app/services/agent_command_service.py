@@ -111,13 +111,27 @@ class AgentCommandVersionListResponse(BaseModel):
 
 
 def compute_body_checksum(body: str) -> str:
-    """SHA-256 hex digest of a command body.
+    """Canonical agent-command checksum: ``"sha256-<hex>"`` over the
+    LF-normalized body.
 
-    Same rule the rest of the backend applies to content hashes
-    (``memory_store._content_hash``, ``memory_bridge._content_hash``): the
-    digest is over UTF-8 bytes, so it is reproducible off the wire.
+    This MUST stay byte-identical to ``agent_command_checksum`` in
+    ``qontinui-schemas/rust/src/agent_commands.rs`` — the canonical definition
+    for all three writing surfaces (this service, the runner, the frontend).
+    Two things are load-bearing and neither is the obvious default:
+
+    * **CR-stripping.** The body crosses Postgres, JSON and a Windows
+      filesystem before any two checksums are compared. A single CRLF hop
+      would report an unchanged command as changed — which is the only thing
+      this field exists to detect.
+    * **The ``sha256-`` prefix.** It names the algorithm inline, so a future
+      change is distinguishable rather than silently reinterpreted.
+
+    Deliberately NOT the bare ``hashlib.sha256(body).hexdigest()`` used by
+    ``memory_store._content_hash`` — that rule is for a different content type
+    that never crosses a Windows filesystem.
     """
-    return hashlib.sha256(body.encode("utf-8")).hexdigest()
+    normalized = body.replace("\r", "")
+    return f"sha256-{hashlib.sha256(normalized.encode('utf-8')).hexdigest()}"
 
 
 def _command_to_response(command: AgentCommand) -> AgentCommandResponse:
