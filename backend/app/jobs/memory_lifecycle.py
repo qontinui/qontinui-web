@@ -94,6 +94,16 @@ async def decay_once(
     ``scope='session'`` rows 7 days after their session closed, plus
     orphan cleanup).
 
+    It also runs the ANCHOR sweep (plan
+    ``2026-07-29-memory-anchored-derived-records`` Phase 3): anchored
+    records are exempt from the Ebbinghaus half above, and their
+    visibility is driven instead by the watcher's ``anchor_state`` —
+    ``gone`` hides the row, un-``gone`` gives it back. It runs BEFORE the
+    prune purely for readability; the two cannot interact, because the
+    marker the anchor sweep stamps (``source.anchor_gone_at``) is
+    deliberately NOT one of the prune's terminal markers. That is the
+    point: a watcher verdict must never reach a hard delete.
+
     The job reaper is deliberately NOT bundled here — it is queue-liveness
     machinery, not retention, and runs on its own frequent cadence. See
     :func:`reap_once`.
@@ -101,6 +111,9 @@ async def decay_once(
     now = now or datetime.now(UTC)
     invalidated = await store.decay_invalidate(
         session, now=now, threshold=DECAY_SCORE_THRESHOLD
+    )
+    anchor_gone_hidden, anchor_gone_restored = await store.anchor_gone_sweep(
+        session, now=now
     )
     pruned = await store.decay_prune(
         session, now=now, grace_days=DECAY_PRUNE_GRACE_DAYS
@@ -111,11 +124,15 @@ async def decay_once(
         invalidated=invalidated,
         pruned=pruned,
         session_expired=session_expired,
+        anchor_gone_hidden=anchor_gone_hidden,
+        anchor_gone_restored=anchor_gone_restored,
     )
     return {
         "invalidated": invalidated,
         "pruned": pruned,
         "session_expired": session_expired,
+        "anchor_gone_hidden": anchor_gone_hidden,
+        "anchor_gone_restored": anchor_gone_restored,
     }
 
 

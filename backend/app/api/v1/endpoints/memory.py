@@ -92,6 +92,7 @@ from app.api.deps import (
     current_active_user_optional,
     get_async_db,
 )
+from app.core.config import settings
 from app.models.user import User
 from app.schemas.memory import (
     DEFAULT_LIST_LIMIT,
@@ -400,10 +401,27 @@ async def write_records(
     # occurrence — that record's scope/kind/title/importance/source AND
     # its embedding win; later occurrences report ``deduped=True`` onto
     # the same row.
-    new_hashes = list(new_by_hash)
     first_index: dict[str, int] = {}
     for i, h in enumerate(hashes):
         first_index.setdefault(h, i)
+
+    # ANCHOR-BEARING known duplicates go through the batch statement TOO,
+    # even though step 3 established their content already exists live.
+    # This is the entire mechanism of the plan's Phase 6 backfill:
+    # "anchors are added when a record is next written". Skipping them
+    # here — which is what this endpoint did before anchors existed,
+    # because a known duplicate had literally nothing to contribute —
+    # would send them down the ``find_by_hash`` short-circuit in step 5,
+    # the write would never reach Postgres, and the ON CONFLICT merge
+    # that Phase 6 depends on would never fire. They cost no quota: they
+    # create no row, so ``incoming_rows``/``incoming_bytes`` above stay
+    # correct.
+    write_hashes = list(new_by_hash)
+    write_hashes.extend(
+        h
+        for h in dict.fromkeys(hashes)
+        if h in already_stored and payload.records[first_index[h]].anchors
+    )
     batch_items = [
         store.MemoryRecordInsert(
             scope=payload.records[first_index[h]].scope,
@@ -416,14 +434,18 @@ async def write_records(
             embedding_model=payload.records[first_index[h]].embedding_model,
             importance=payload.records[first_index[h]].importance,
             source=payload.records[first_index[h]].source,
+            anchors=[
+                a.model_dump(mode="json")
+                for a in payload.records[first_index[h]].anchors
+            ],
         )
-        for h in new_hashes
+        for h in write_hashes
     ]
     batch_results = await store.insert_records_batch(
         db, tenant_id=principal.tenant_id, items=batch_items
     )
     outcome_by_hash: dict[str, tuple[UUID, bool]] = dict(
-        zip(new_hashes, batch_results, strict=True)
+        zip(write_hashes, batch_results, strict=True)
     )
 
     # 5. Per-record responses, in request order.
@@ -454,6 +476,7 @@ async def write_records(
                 embedding_model=rec.embedding_model,
                 importance=rec.importance,
                 source=rec.source,
+                anchors=[a.model_dump(mode="json") for a in rec.anchors],
             )
             # Later intra-batch occurrences dedup onto this row.
             outcome_by_hash[h] = (memory_id, True)
@@ -551,6 +574,19 @@ async def query_records(
     tenant: the old and new spaces are not interchangeable, so a
     new-space query is served FTS-only rather than cosine-scored against
     documents the runner-paid reindex has not rewritten yet.
+
+    Every hit carries ``anchor_state``. ``moved`` means the ground truth
+    the record is anchored to changed under it: the record is still
+    retrievable and normally ranked (§3.2 makes ``moved`` advisory on
+    purpose — silently hiding a true memory is the failure mode that
+    matters), and the flag is how a reader learns to check.
+
+    ``anchored_to`` is the separate PROACTIVE arm (Phase 5): records
+    anchored to the files the caller is touching, ranked by importance x
+    freshness, returned in ``anchored_hits`` rather than fused into
+    ``hits``. It is gated on ``MEMORY_ANCHORED_RECALL_ENABLED``, which is
+    OFF by default; ``anchored_arm`` always says which of ran /
+    not_requested / skipped_disabled happened.
     """
     # Left as ``None`` when the caller names no instant, so validity is
     # evaluated against the row's OWN transaction-stamped timestamps
@@ -617,7 +653,28 @@ async def query_records(
     # weaker lexical one instead of being cut before it competes.
     top = fused[: payload.limit]
 
-    rows = await store.fetch_records(db, principal.tenant_id, [h.id for h in top])
+    # Anchor-keyed proactive recall (Phase 5). Runs only when the caller
+    # asked AND the flag is on; the arm's own state is reported either
+    # way, so an empty ``anchored_hits`` is never ambiguous between
+    # "found nothing" and "never ran".
+    anchored_arm: Literal["ran", "not_requested", "skipped_disabled"]
+    anchored_ids: list[UUID] = []
+    if not payload.anchored_to:
+        anchored_arm = "not_requested"
+    elif not settings.MEMORY_ANCHORED_RECALL_ENABLED:
+        anchored_arm = "skipped_disabled"
+    else:
+        anchored_ids = await store.anchored_search(
+            db,
+            anchored_to=[(c.repo, c.path_glob) for c in payload.anchored_to],
+            limit=payload.limit,
+            **filter_kwargs,
+        )
+        anchored_arm = "ran"
+
+    rows = await store.fetch_records(
+        db, principal.tenant_id, [h.id for h in top] + anchored_ids
+    )
     similarity = dict(vector_hits)
 
     hits: list[MemoryQueryHit] = []
@@ -635,6 +692,7 @@ async def query_records(
                 importance=row["importance"],
                 created_at=row["created_at"],
                 source=row["source"] or {},
+                anchor_state=row["anchor_state"],
                 rrf_score=fh.rrf_score,
                 vector_rank=fh.vector_rank,
                 fts_rank=fh.fts_rank,
@@ -645,8 +703,41 @@ async def query_records(
             )
         )
 
-    await store.bump_access(db, principal.tenant_id, [h.memory_id for h in hits])
-    return MemoryQueryResponse(hits=hits, vector_arm=vector_arm, link_arm=link_arm)
+    anchored_hits: list[MemoryQueryHit] = []
+    for anchored_id in anchored_ids:
+        row = rows.get(anchored_id)
+        if row is None:  # pragma: no cover — the arm is tenant-bound
+            continue
+        anchored_hits.append(
+            MemoryQueryHit(
+                memory_id=anchored_id,
+                title=row["title"],
+                content=row["content"],
+                kind=row["kind"],
+                scope=row["scope"],
+                importance=row["importance"],
+                created_at=row["created_at"],
+                source=row["source"] or {},
+                anchor_state=row["anchor_state"],
+                # This arm ranks by importance x freshness, not by RRF —
+                # ``anchored_ids`` is already best-first. A fabricated
+                # rrf_score would read as a fusion rank it never had.
+                rrf_score=0.0,
+            )
+        )
+
+    await store.bump_access(
+        db,
+        principal.tenant_id,
+        [h.memory_id for h in hits] + [h.memory_id for h in anchored_hits],
+    )
+    return MemoryQueryResponse(
+        hits=hits,
+        vector_arm=vector_arm,
+        link_arm=link_arm,
+        anchored_arm=anchored_arm,
+        anchored_hits=anchored_hits,
+    )
 
 
 @router.get("/records", response_model=ListRecordsResponse)
@@ -697,6 +788,8 @@ async def list_records(
             created_at=row["created_at"],
             updated_at=row["updated_at"],
             source=row["source"] or {},
+            anchors=row["anchors"] or [],
+            anchor_state=row["anchor_state"],
             links=[
                 MemoryLinkOut(
                     link_id=link["link_id"],
@@ -797,6 +890,10 @@ async def supersede_record(
     cross-tenant ids — never disclosed). The successor's ``embedding`` is
     the caller's (of the replacement content) or NULL — the old row's
     vector is never inherited, and nothing is embedded server-side.
+
+    ``anchors`` ARE inherited when omitted (unlike ``embedding``) — see
+    the comment on the insert below for why the two go opposite ways.
+    This is the "superseded, or corrected" arm of the plan's Phase 6.
     """
     old = await store.get_record(db, principal.tenant_id, memory_id)
     if old is None:
@@ -814,6 +911,50 @@ async def supersede_record(
     log_redactions("memory_supersede", combined)
 
     content_hash = _content_hash(rc.text)
+
+    # ANCHOR INHERITANCE (plan 2026-07-29-memory-anchored-derived-records,
+    # Phase 6's "superseded, or corrected" arm).
+    #
+    # Omitting `anchors` INHERITS the superseded record's. That is the
+    # opposite of what `embedding` does two lines down, and the asymmetry
+    # is deliberate: an embedding is a function OF THE CONTENT, so
+    # carrying it onto rewritten text makes it a lie about that text. An
+    # anchor is not about the content — it names the ARTIFACT the record
+    # asserts something about, and superseding is precisely how a record
+    # about that artifact gets corrected. The predecessor's binding is
+    # therefore still the best available claim about the successor.
+    #
+    # The decision rests on which way the mistake costs more, and the two
+    # directions are not symmetric:
+    #
+    # * A WRONGLY INHERITED anchor gets the record `moved` (advisory,
+    #   still retrievable, normally ranked) or at worst `gone` — which
+    #   requires UNANIMITY across every anchor, only HIDES the row, is
+    #   never a prune marker, and is un-invalidated automatically by
+    #   `anchor_gone_sweep` the moment the verdict is withdrawn. Bounded
+    #   and reversible.
+    # * A WRONGLY DROPPED anchor is silent and unbounded: the successor
+    #   falls back onto the Ebbinghaus curve, earns `source.decayed_at`
+    #   around day 207, and `decay_prune` PHYSICALLY DELETES it 90 days
+    #   after that. Nothing in the system ever notices the demotion.
+    #
+    # This is the same "hiding is reversible, deletion is not" rule that
+    # made `anchor_gone_at` a distinct marker from `decayed_at`, applied
+    # to inheritance. So: inherit by default, and let an explicit `[]`
+    # un-anchor a rewrite that genuinely changed subject — the escape
+    # hatch is what makes the default safe. A non-empty array REPLACES
+    # wholesale rather than merging, because supersede is the explicit
+    # human path and "here is what this record is about now" should be
+    # authoritative, not additive.
+    #
+    # `anchor_state` is never inherited: the successor is a new row and
+    # takes the column default `none`, so the watcher re-resolves it
+    # rather than the row asserting a check that never ran against it.
+    inherited_anchors: list[dict[str, Any]] = (
+        [a.model_dump(mode="json") for a in payload.anchors]
+        if payload.anchors is not None
+        else list(old["anchors"] or [])
+    )
 
     new_id, deduped = await store.insert_record(
         db,
@@ -834,6 +975,7 @@ async def supersede_record(
             else float(old["importance"])
         ),
         source=payload.source if payload.source is not None else (old["source"] or {}),
+        anchors=inherited_anchors,
     )
     if new_id == memory_id:
         raise HTTPException(
