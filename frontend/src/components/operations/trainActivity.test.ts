@@ -66,9 +66,9 @@ describe("redactSecrets", () => {
     expect(redactSecrets("header was ghp_abcdefghij0123456789xyz")).toBe(
       "header was gh*_***"
     );
-    expect(
-      redactSecrets("token github_pat_11ABCDEFG0123456789_abcdefg")
-    ).toBe("token github_pat_***");
+    expect(redactSecrets("token github_pat_11ABCDEFG0123456789_abcdefg")).toBe(
+      "token github_pat_***"
+    );
   });
 
   it("strips a tokenless credential URL (the other git form)", () => {
@@ -163,9 +163,9 @@ describe("fallbackMergeStatus", () => {
   });
 
   it("prefers coord's own verdict when present", () => {
-    expect(effectiveMergeStatus(pr({ merge_status: "blast-radius-block" }))).toBe(
-      "blast-radius-block"
-    );
+    expect(
+      effectiveMergeStatus(pr({ merge_status: "blast-radius-block" }))
+    ).toBe("blast-radius-block");
     // Draft would win the fallback, but coord's token is authoritative.
     expect(
       effectiveMergeStatus(pr({ pr_state: "draft", merge_status: "ci-failed" }))
@@ -177,7 +177,11 @@ describe("buildRepoTrainRows — current activity", () => {
   it("reports the most-advanced in-flight phase and its dwell", () => {
     const rows = buildRepoTrainRows(
       [
-        proposal({ proposal_id: "p-land", status: "landing", updated_at: ago(120) }),
+        proposal({
+          proposal_id: "p-land",
+          status: "landing",
+          updated_at: ago(120),
+        }),
         proposal({ proposal_id: "p-q", status: "queued", updated_at: ago(30) }),
       ],
       [],
@@ -281,9 +285,9 @@ describe("buildRepoTrainRows — why it is paused", () => {
     expect(row.severity).toBe("blocking");
     // The health-derived stall replaces the generic per-PR bucket rather than
     // double-reporting the same PR.
-    expect(row.reasons.filter((r) => r.code === "orchestrator-stalled")).toHaveLength(
-      1
-    );
+    expect(
+      row.reasons.filter((r) => r.code === "orchestrator-stalled")
+    ).toHaveLength(1);
     expect(row.reasons.map((r) => r.code)).toContain("ci-pending");
   });
 
@@ -354,13 +358,19 @@ describe("buildRepoTrainRows — why it is paused", () => {
     expect(conflict!.oldestSecs).toBeNull();
   });
 
-  it("flags a dry-run frozen repo even with no PRs and no proposals", () => {
+  it("flags a merge-suppressed repo even with no PRs and no proposals", () => {
+    // `dry_run` is coord's LEGACY wire key for "judged landable, not pushed";
+    // the reason it raises must describe merge enablement, not the retired
+    // tri-state whose controls no longer exist anywhere in the dashboard.
     const rows = buildRepoTrainRows([], [], {
       dry_run: { would_merge_blocked_by_dry_run: 2, repos: ["qontinui/web"] },
     });
     expect(rows).toHaveLength(1);
     expect(rows[0]!.frozenDryRun).toBe(true);
-    expect(rows[0]!.reasons[0]!.code).toBe("dry-run-freeze");
+    const reason = rows[0]!.reasons[0]!;
+    expect(reason.code).toBe("dry-run-freeze");
+    expect(reason.label).toBe("Merges suppressed");
+    expect(reason.detail).not.toMatch(/rollout_state|dry.?run|set to live/i);
   });
 
   it("does not treat train-accepted PRs as a pause", () => {
@@ -389,7 +399,10 @@ describe("buildRepoTrainRows — why it is paused", () => {
   it("ignores merged and closed PR rows", () => {
     const rows = buildRepoTrainRows(
       [],
-      [pr({ pr_number: 5, pr_state: "merged" }), pr({ pr_number: 6, pr_state: "closed" })],
+      [
+        pr({ pr_number: 5, pr_state: "merged" }),
+        pr({ pr_number: 6, pr_state: "closed" }),
+      ],
       null,
       NOW
     );
@@ -408,7 +421,12 @@ describe("buildRepoTrainRows — ordering", () => {
         }),
       ],
       [
-        pr({ repo: "org/waiting", pr_number: 1, ci_lifecycle: "pending", ci_conclusion: null }),
+        pr({
+          repo: "org/waiting",
+          pr_number: 1,
+          ci_lifecycle: "pending",
+          ci_conclusion: null,
+        }),
         pr({ repo: "org/blocked", pr_number: 2, ci_conclusion: "failure" }),
       ],
       null,
@@ -820,7 +838,10 @@ describe("slot-cap saturation", () => {
     // saturated fleet read as "this repo has nothing waiting" — the queued
     // legs are already in hand from the merge queue.
     const rows = buildRepoTrainRows(
-      [proposal({ status: "queued" }), proposal({ proposal_id: "q2", status: "queued" })],
+      [
+        proposal({ status: "queued" }),
+        proposal({ proposal_id: "q2", status: "queued" }),
+      ],
       [],
       { slots: slots({ repos: undefined, repos_at_cap: undefined }) },
       NOW
@@ -841,7 +862,12 @@ describe("slot-cap saturation", () => {
           saturated: false,
           repos_at_cap: undefined,
           repos: [
-            { repo: "qontinui/web", in_flight: 2, queued: 3, at_repo_cap: true },
+            {
+              repo: "qontinui/web",
+              in_flight: 2,
+              queued: 3,
+              at_repo_cap: true,
+            },
           ],
         }),
       },
@@ -884,11 +910,7 @@ describe("slot-cap saturation", () => {
 
 describe("buildTrainSummary", () => {
   it("computes the pause clock from last_merged_at", () => {
-    const s = buildTrainSummary(
-      { last_merged_at: ago(7200) },
-      [],
-      NOW
-    );
+    const s = buildTrainSummary({ last_merged_at: ago(7200) }, [], NOW);
     expect(s.sinceLastMergeSecs).toBe(7200);
     expect(s.healthMissing).toBe(false);
   });
@@ -912,7 +934,7 @@ describe("buildTrainSummary", () => {
     expect(b?.detail).toContain("20m");
   });
 
-  it("raises the dry-run freeze banner (coord issue #776)", () => {
+  it("raises the merge-suppression banner (coord issue #776)", () => {
     const s = buildTrainSummary(
       {
         last_merged_at: ago(100),
@@ -924,6 +946,11 @@ describe("buildTrainSummary", () => {
     const b = s.banners.find((x) => x.code === "dry-run-freeze");
     expect(b?.severity).toBe("blocking");
     expect(b?.detail).toContain("3 ready PRs");
+    // Must not name the retired tri-state, and must point at the two settings
+    // that can actually cause this — including `auto_merge_enabled`, which
+    // defaults off and is out of this plan's scope.
+    expect(b?.detail).not.toMatch(/rollout_state|dry.?run/i);
+    expect(b?.detail).toMatch(/auto-merge/i);
   });
 
   it("detects the suppressed-train signature: evaluating but not landing", () => {
@@ -956,7 +983,11 @@ describe("buildTrainSummary", () => {
 
   it("warns loudly when hydration is disabled", () => {
     const s = buildTrainSummary(
-      { last_merged_at: ago(60), hydration_enabled: false, pr_state_stale_backlog: 12 },
+      {
+        last_merged_at: ago(60),
+        hydration_enabled: false,
+        pr_state_stale_backlog: 12,
+      },
       [],
       NOW
     );
@@ -968,8 +999,14 @@ describe("buildTrainSummary", () => {
   it("counts in-flight proposals and active repos from the rows", () => {
     const rows = buildRepoTrainRows(
       [
-        proposal({ status: "landing", repos: [{ repo: "a/b", branch: "x", head_sha: "s" }] }),
-        proposal({ status: "awaiting-ci", repos: [{ repo: "c/d", branch: "y", head_sha: "t" }] }),
+        proposal({
+          status: "landing",
+          repos: [{ repo: "a/b", branch: "x", head_sha: "s" }],
+        }),
+        proposal({
+          status: "awaiting-ci",
+          repos: [{ repo: "c/d", branch: "y", head_sha: "t" }],
+        }),
       ],
       [],
       null,
