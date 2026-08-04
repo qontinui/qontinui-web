@@ -288,12 +288,13 @@ export function SessionComplianceEnforcementPanel({
               Ask sessions to produce a missing compliance report
             </Label>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              This switch controls the <em>asking</em>, not the checking. Off,
-              sessions are still checked and verdicts are still recorded below
-              — a session that skipped its report is simply left alone. On, it
-              is asked once to produce the report, with coord&apos;s
-              observations attached. Only removing the clause below stops the
-              checking itself.
+              Off, sessions are still <em>recorded</em> — they appear in the
+              table below and you can read what they reported — but none of
+              their claims are reconciled, and a session that skipped its report
+              is left alone. On, coord checks each report against what it
+              observed, and a session that skipped one is asked for it, with
+              those observations attached. Removing the clause below switches
+              off the recording too.
             </p>
           </div>
           <Switch

@@ -42,6 +42,11 @@ vi.mock("sonner", () => ({
 }));
 
 import { SessionComplianceSection } from "./SessionComplianceSection";
+import {
+  APPLICABILITY_META,
+  NOT_APPLICABLE_BEHAVIOUR,
+  VERDICT_META,
+} from "../compliance-types";
 
 const CONFIG = {
   enabled: true,
@@ -117,13 +122,22 @@ describe("SessionComplianceSection", () => {
    * verdict is still POSTed at every turn end and session close. Only
    * `clause_absent` / `document_missing` are `Inert`.
    *
-   * The panel previously said "Sessions are not checked, and no verdicts are
-   * recorded", which is false — and would have contradicted the Recent-sessions
-   * table filling up directly beneath it once the runner side landed. A
-   * compliance feature that exists to catch claims contradicted by observed
-   * reality must not make one.
+   * But coord does NOT reconcile those rows. `applicable = !disabled &&
+   * via.is_some()`, and a false `applicable` short-circuits ahead of
+   * reconciliation, writing an empty `items` array with the note "no claim was
+   * reconciled". Recorded, and not checked.
+   *
+   * This page has now got that wrong in BOTH directions. It first said
+   * "Sessions are not checked, and no verdicts are recorded" — false, and
+   * contradicted by the table filling up directly beneath it once the runner
+   * side landed. The correction overshot to "The check still runs ... coord
+   * still reconciles it and records a verdict below" — also false, and pinned
+   * by the version of this test that used to live here. A compliance feature
+   * built to catch claims contradicted by observed reality must not keep making
+   * them, so this fences both errors, and the drift test below removes the
+   * duplication that let the second one through.
    */
-  it("does not claim the off switch stops checking or recording", async () => {
+  it("claims neither that recording stops nor that reconciliation happens", async () => {
     routeGets({
       config: {
         ...CONFIG,
@@ -136,11 +150,63 @@ describe("SessionComplianceSection", () => {
     render(<SessionComplianceSection />);
 
     const applicability = await screen.findByTestId("compliance-applicability");
+    // Not the original understatement...
     expect(applicability).not.toHaveTextContent(/no verdicts are recorded/i);
     expect(applicability).not.toHaveTextContent(/sessions are not checked/i);
-    // It must say the opposite, plainly.
-    expect(applicability).toHaveTextContent(/the check still runs/i);
-    expect(applicability).toHaveTextContent(/records a verdict/i);
+    // ...and not the overcorrection that replaced it.
+    expect(applicability).not.toHaveTextContent(/the check still runs/i);
+    expect(applicability).not.toHaveTextContent(/still reconciles/i);
+    // What is actually true: recorded, unverified.
+    expect(applicability).toHaveTextContent(/reconciles none of its claims/i);
+  });
+
+  /**
+   * The root cause of that overcorrection: one coord behaviour described by two
+   * hand-written strings with nothing tying them together, so a fix to one left
+   * the other contradicting it on the same page — the banner claiming coord
+   * "still reconciles" while the verdict chip said "nothing was checked".
+   * Both now compose the shared constant.
+   */
+  it("describes 'not applicable' identically wherever it explains it", () => {
+    expect(APPLICABILITY_META.enforcement_disabled.detail).toContain(
+      NOT_APPLICABLE_BEHAVIOUR
+    );
+    expect(VERDICT_META.not_applicable.detail).toContain(
+      NOT_APPLICABLE_BEHAVIOUR
+    );
+  });
+
+  /**
+   * `not_applicable` rows carry an empty `items` array, so the unconfirmed
+   * count derives 0 — identical to a flawless reconciliation. Eight such rows
+   * shipped reading "0 unconfirmed claims" when the truth was that nothing had
+   * been examined. An absence of evidence must never render as evidence of
+   * absence, least of all as a reassuring numeral.
+   */
+  it("shows no count at all for a session whose claims were never examined", async () => {
+    routeGets({
+      sessions: {
+        sessions: [
+          {
+            id: "sc-3",
+            claude_session_id: "sess-na",
+            verdict: "not_applicable",
+            reason: "enforcement_disabled",
+            report: { items: [] },
+            reconciliation: { items: [], unreconciled_refs: [] },
+            checked_at: "2026-08-04T12:00:00Z",
+            finalized: true,
+          },
+        ],
+      },
+    });
+
+    render(<SessionComplianceSection />);
+
+    const row = await screen.findByTestId("compliance-session-sess-na");
+    const count = within(row).getByTestId("unconfirmed-count");
+    expect(count).toHaveTextContent("—");
+    expect(count).not.toHaveTextContent("0");
   });
 
   it("distinguishes an unresolved clause lookup from a removed clause", async () => {

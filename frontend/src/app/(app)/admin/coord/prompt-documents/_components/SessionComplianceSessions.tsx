@@ -25,6 +25,7 @@ import {
   COMPLIANCE_VERDICTS,
   VERDICT_META,
   isReportAbsent,
+  isUnexamined,
   shapeCheckedCount,
   unreconciledCount,
   type ComplianceVerdict,
@@ -159,6 +160,10 @@ export function SessionComplianceSessions({
                 const unreconciled = unreconciledCount(row);
                 const shaped = shapeCheckedCount(row);
                 const absent = isReportAbsent(row);
+                // Both mean "no number exists", for different reasons: nothing
+                // was reported, or nothing was examined. Neither may render as
+                // a count — least of all as `0`, which reads as "all clear".
+                const noCount = absent || isUnexamined(row);
                 return (
                   <TableRow
                     key={row.id}
@@ -205,12 +210,20 @@ export function SessionComplianceSessions({
                     <TableCell className="text-right">
                       <span
                         className={
-                          unreconciled > 0
+                          !noCount && unreconciled > 0
                             ? "text-sm font-medium text-warning"
                             : "text-sm text-muted-foreground"
                         }
+                        title={
+                          absent
+                            ? "No report was emitted, so there was nothing to reconcile."
+                            : isUnexamined(row)
+                              ? "Nothing was examined for this session, so there is no count — not a count of zero."
+                              : undefined
+                        }
+                        data-testid="unconfirmed-count"
                       >
-                        {absent ? "—" : unreconciled}
+                        {noCount ? "—" : unreconciled}
                       </span>
                       {shaped > 0 && (
                         <p
