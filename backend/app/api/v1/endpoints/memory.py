@@ -405,6 +405,28 @@ async def write_records(
     for i, h in enumerate(hashes):
         first_index.setdefault(h, i)
 
+    # ANCHORS ARE UNIONED ACROSS EVERY OCCURRENCE of a hash, not taken
+    # from the first one. Every OTHER column still comes from the first
+    # occurrence — that is the long-standing rule and it is unchanged —
+    # but anchors are the one field where "first wins" is data loss:
+    # two records with identical content are two writers making the same
+    # claim, and the second naming its ground truth does not make the
+    # first's naming wrong. Taking only ``records[first_index[h]].anchors``
+    # dropped the anchor outright whenever the anchored occurrence was not
+    # the first, which is the same silent-loss direction the store's own
+    # ON CONFLICT union and its intra-batch collapse both exist to
+    # prevent — and it defeated them from one layer above, before either
+    # could see the anchor. The union here is what makes the store's
+    # docstring parity ("later occurrences contribute only their
+    # ANCHORS") actually true of the caller.
+    anchors_by_hash: dict[str, list[dict[str, Any]]] = {}
+    for i, h in enumerate(hashes):
+        bucket = anchors_by_hash.setdefault(h, [])
+        for anchor in payload.records[i].anchors:
+            dumped = anchor.model_dump(mode="json")
+            if dumped not in bucket:
+                bucket.append(dumped)
+
     # ANCHOR-BEARING known duplicates go through the batch statement TOO,
     # even though step 3 established their content already exists live.
     # This is the entire mechanism of the plan's Phase 6 backfill:
@@ -416,11 +438,14 @@ async def write_records(
     # that Phase 6 depends on would never fire. They cost no quota: they
     # create no row, so ``incoming_rows``/``incoming_bytes`` above stay
     # correct.
+    #
+    # The predicate keys on the UNION, not on the first occurrence: an
+    # anchor arriving on a later duplicate of an already-stored hash has
+    # to be able to pull that hash into the batch, or the backfill it was
+    # written to perform never reaches Postgres at all.
     write_hashes = list(new_by_hash)
     write_hashes.extend(
-        h
-        for h in dict.fromkeys(hashes)
-        if h in already_stored and payload.records[first_index[h]].anchors
+        h for h in dict.fromkeys(hashes) if h in already_stored and anchors_by_hash[h]
     )
     batch_items = [
         store.MemoryRecordInsert(
@@ -434,10 +459,7 @@ async def write_records(
             embedding_model=payload.records[first_index[h]].embedding_model,
             importance=payload.records[first_index[h]].importance,
             source=payload.records[first_index[h]].source,
-            anchors=[
-                a.model_dump(mode="json")
-                for a in payload.records[first_index[h]].anchors
-            ],
+            anchors=anchors_by_hash[h],
         )
         for h in write_hashes
     ]

@@ -682,8 +682,12 @@ async def insert_record(
         # is the pre-existing live row the merge arm updated.
         return returned_id, returned_id != proposed_id
 
-    # Nothing returned: a conflict whose merge guard was false (the
-    # incoming array was empty), i.e. the old DO NOTHING path exactly.
+    # Nothing returned: a conflict whose merge guard was false, which is
+    # the old DO NOTHING path exactly. EITHER of the two guard terms can
+    # be the reason — the incoming array was empty, or (since the
+    # ``updated_at`` fix) every incoming anchor was already present, so
+    # the union equals the stored array and the row is deliberately left
+    # untouched. Both are a plain dedup and resolve the same way.
     existing = (
         await session.execute(
             text(
@@ -1445,8 +1449,14 @@ def glob_to_posix_regex(glob: str) -> str:
     are ordinary glob syntax a caller can reasonably send, not attacks.
     Any bracket group :func:`_translate_bracket_group` will not vouch for
     is emitted as LITERAL text instead: the glob then matches a path that
-    contains those characters verbatim, which is a wrong-but-harmless
-    narrowing rather than a failed query.
+    contains those characters verbatim. That is a DIFFERENT match set,
+    not a subset — ``[z-a]`` stops matching ``a`` and starts matching the
+    four characters ``[z-a]`` — so a degraded group can both miss records
+    it was meant to find and, in principle, find one it was not. It is
+    still the right trade against a 500: recall is advisory here (this is
+    the proactive arm, and the caller also gets ``hits``), the degradation
+    is confined to the one malformed clause, and the alternative is that
+    the whole query fails.
 
     Catastrophic backtracking is NOT addressed here — a pathological
     ``*a*a*a*`` is still expensive. That is a separate, non-blocking
@@ -2299,6 +2309,33 @@ async def compute_retention_scores(
     return {UUID(str(r.memory_id)): float(r.score) for r in rows}
 
 
+def _anchor_restorable(prefix: str = "") -> str:
+    """SQL predicate: this row is one :func:`anchor_gone_sweep` may un-hide.
+
+    A row THIS sweep hid (``source.anchor_gone_at`` — never a user-set
+    ``valid_until``, which carries no marker) whose watcher verdict is no
+    longer ``gone``, and which no other mechanism has since terminated.
+
+    Prefixable for the same reason :func:`_live_dedup_predicate` is: the
+    restore correlates this table against ITSELF to break a tie between
+    two mutually-restorable rows, so both sides need the identical
+    predicate under different aliases. Writing it twice by hand is
+    exactly how the tie-break and the set it is meant to arbitrate would
+    drift apart.
+
+    ``prefix`` is a table alias with its trailing dot (``"r."``).
+    """
+    return f"""
+        {prefix}anchor_state <> 'gone'
+        AND {prefix}anchors <> '[]'::jsonb
+        AND jsonb_exists({prefix}source, 'anchor_gone_at')
+        AND {prefix}valid_until IS NOT NULL
+        AND {prefix}is_tombstone = false
+        AND {prefix}superseded_by IS NULL
+        AND {_not_lifecycle_held(prefix)}
+    """
+
+
 async def decay_invalidate(
     session: AsyncSession, *, now: datetime, threshold: float
 ) -> int:
@@ -2426,6 +2463,16 @@ async def anchor_gone_sweep(
       is lost by waiting: R2 carries byte-identical content and is live.
       The skip is counted and returned so it is observable rather than
       silent.
+    * **The mutual-restore tie-break.** The live-twin probe alone is not
+      enough, because two rows sharing a hash can BOTH be restorable in
+      the same pass, and then neither has a live twin — being non-live is
+      what makes them restorable. One statement would push both into the
+      index and raise the same fatal violation. The restore is therefore
+      capped at one row per ``(tenant_id, content_hash)``, lowest
+      ``memory_id`` winning, with the deferred rows folded into the
+      blocked count. See ``earlier_restorable_peer`` below for the full
+      reachability argument; the short version is that it needs no race,
+      only a re-post of identical content while the anchor is gone.
     * **The liveness guards.** The restore carries ``is_tombstone =
       false`` and ``superseded_by IS NULL`` — the hide half's guard plus
       the one it did not need. A hidden row is still supersedable
@@ -2442,18 +2489,11 @@ async def anchor_gone_sweep(
     use the partial index ``idx_memory_records_tenant_anchor_state``; it
     is also simply true of every row either half can legitimately touch.
     """
-    # One text for the restorable set and one for the live-twin probe,
-    # used by BOTH the UPDATE and the blocked-count query so the two can
-    # never drift into disagreeing about what was skipped.
-    restorable = f"""
-        r.anchor_state <> 'gone'
-        AND r.anchors <> '[]'::jsonb
-        AND jsonb_exists(r.source, 'anchor_gone_at')
-        AND r.valid_until IS NOT NULL
-        AND r.is_tombstone = false
-        AND r.superseded_by IS NULL
-        AND {_not_lifecycle_held("r.")}
-    """
+    # One text for the restorable set and one each for the two ways a
+    # restore must stand down, all shared by the UPDATE and the
+    # blocked-count query so they can never drift into disagreeing about
+    # what was skipped.
+    restorable = _anchor_restorable("r.")
     live_twin = f"""
         EXISTS (
             SELECT 1
@@ -2462,6 +2502,40 @@ async def anchor_gone_sweep(
               AND live.content_hash = r.content_hash
               AND live.memory_id <> r.memory_id
               AND {_live_dedup_predicate("live.")}
+        )
+    """
+    # The MUTUAL-restore collision the live-twin probe cannot see. Two
+    # rows can share a content hash and both be restorable at once, and
+    # then neither has a LIVE twin — being non-live is exactly what makes
+    # them restorable — so the probe above passes for both and one
+    # statement pushes both into the partial unique index.
+    #
+    # It is reachable by ordinary operations, not by a race: row A
+    # anchored to X is hidden when X goes gone, which frees hash H;
+    # ``existing_hashes`` and the ON CONFLICT arbiter both key on
+    # :data:`_LIVE_DEDUP_PREDICATE`, so a writer re-posting identical
+    # content sees nothing live and inserts B with the same H — and,
+    # identical content implying identical ground truth, the same anchor;
+    # X is still gone so B is hidden too; X comes back and A and B roll
+    # up to ``fresh`` in lockstep.
+    #
+    # So the restore is made AT MOST ONE ROW PER (tenant_id,
+    # content_hash) by a deterministic tie-break: lowest ``memory_id``
+    # wins. UUIDs carry a total order, so the winner is stable across
+    # runs and does not depend on scan order. The deferred rows keep
+    # their ``anchor_gone_at`` marker and are folded into the blocked
+    # count, so the warning fires for them; from the next pass on they
+    # are blocked by the ordinary live-twin probe instead, because the
+    # winner is live by then. Nothing is lost either way — every row in
+    # the group carries byte-identical content.
+    earlier_restorable_peer = f"""
+        EXISTS (
+            SELECT 1
+            FROM coord.memory_records o
+            WHERE o.tenant_id = r.tenant_id
+              AND o.content_hash = r.content_hash
+              AND o.memory_id < r.memory_id
+              AND {_anchor_restorable("o.")}
         )
     """
     hidden = await session.execute(
@@ -2491,6 +2565,7 @@ async def anchor_gone_sweep(
                 source = r.source - 'anchor_gone_at'
             WHERE {restorable}
               AND NOT {live_twin}
+              AND NOT {earlier_restorable_peer}
             """
         ),
         {"now": now},
@@ -2502,7 +2577,7 @@ async def anchor_gone_sweep(
                 SELECT count(*)
                 FROM coord.memory_records AS r
                 WHERE {restorable}
-                  AND {live_twin}
+                  AND ({live_twin} OR {earlier_restorable_peer})
                 """
             )
         )
@@ -2889,6 +2964,30 @@ async def find_near_duplicate_pairs(
     result set would be collapsed by the heuristic the hold exists to
     pre-empt. Excluding one side would not be enough — the hold has to
     survive whichever side of the join the row lands on.
+
+    **ANCHORED rows are excluded from BOTH sides too, on the same
+    grounds and by the same both-sides reasoning** (plan
+    ``2026-07-29-memory-anchored-derived-records`` §3.2; the predicate is
+    spelled exactly as in :func:`decay_invalidate` and
+    :func:`fetch_cluster_candidates` so all three read as ONE rule).
+    :func:`apply_merge` supersedes the loser unconditionally, and
+    ``superseded_by`` IS one of :func:`decay_prune`'s terminal markers —
+    so without this a near-dup merge invalidates an anchored record as
+    thoroughly as decay would have AND puts it on a path to a physical
+    delete, which is precisely what the exemption exists to prevent.
+
+    This arm is BROADER than the clustering one: 0.95 cosine over a
+    90-day window across ALL kinds, where :func:`fetch_cluster_candidates`
+    only ever sees ``episode``/``observation``. It also runs FIRST in
+    ``consolidate_tenant``, so an anchored row reaches it before the
+    clustering gate ever gets a chance.
+
+    Gating the SELECTOR (rather than :func:`apply_merge`) is both the
+    hold's precedent and sufficient here: with anchored rows excluded from
+    both join sides, no pair this returns can contain one, so
+    ``apply_merge``'s fold — which carries ``importance`` and
+    ``access_count`` across but NOT ``anchors`` — can no longer drop an
+    anchor, because there is never an anchor on either side to drop.
     """
     rows = await session.execute(
         text(
@@ -2915,6 +3014,8 @@ async def find_near_duplicate_pairs(
               AND a.embedding IS NOT NULL AND b.embedding IS NOT NULL
               AND a.created_at > CAST(:now AS timestamptz)
                                  - make_interval(days => :window_days)
+              AND a.anchors = '[]'::jsonb
+              AND b.anchors = '[]'::jsonb
               AND {_not_lifecycle_held("a.")}
               AND {_not_lifecycle_held("b.")}
               AND (a.embedding <=> b.embedding) < :max_distance
