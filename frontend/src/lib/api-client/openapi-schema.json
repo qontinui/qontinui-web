@@ -25256,6 +25256,92 @@
         "title": "MatchLocation",
         "type": "object"
       },
+      "MemoryAgeFacet": {
+        "description": "Age distribution of the LIVE corpus, in days since ``created_at``.\n\nAll three are ``null`` on an empty corpus rather than a fabricated\n``0``: \"there is nothing to measure\" is a different statement from\n\"everything was written today\", and collapsing them is the same\nabsence-reads-as-a-value bug these facets exist to prevent.",
+        "properties": {
+          "oldest_days": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest Days"
+          },
+          "p50_days": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P50 Days"
+          },
+          "p90_days": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P90 Days"
+          }
+        },
+        "title": "MemoryAgeFacet",
+        "type": "object"
+      },
+      "MemoryFacets": {
+        "description": "What is actually IN the corpus \u2014 the content half of ``/stats``.\n\nEvery field here is computed over RETRIEVAL-LIVE rows only\n(``is_tombstone = false AND superseded_by IS NULL AND valid_from <=\nnow AND (valid_until IS NULL OR valid_until > now)``) \u2014 the rows\n``POST /memory/query`` and ``GET /memory/records`` can actually\nreturn. Note ``valid_until > now``, not ``valid_until IS NULL``: a\nrow whose validity is dated into the FUTURE is still retrievable, and\nthe session-expiry sweep dates validity seven days out, so counting\nthose rows dead would report ``by_scope[\"session\"] == 0`` to a caller\nwhose next query returns session rows.\n\n**Retrieval-live MODULO ``scope_ref`` narrowing.** These counts are\nNOT an exact equivalence with what a given caller's query returns.\nRetrieval additionally requires ``agent``- and ``session``-scoped rows\nto carry that caller's own ``scope_ref``, which is caller-dependent\nand has no tenant-wide answer, so it is not applied here. A specific\ncaller's ``agent`` / ``session`` buckets can therefore be SMALLER than\nreported; no bucket can be larger. Everything else \u2014 the tenant- and\nrunner-scoped rows, and every other facet \u2014 is exactly the retrieval\nset.\n\n**Denominator invariant.** ``/stats`` carries three different\nliveness definitions, and they do not agree by design::\n\n    sum(by_kind) == sum(by_scope) == facets.live_row_count <= row_count\n\nThe first two equalities hold BY CONSTRUCTION: every facet number\ncomes from a single ``SELECT``, so all of them describe one snapshot\nand no concurrent write can split them.\n\nThe ``<= row_count`` relation is WEAKER \u2014 ``row_count`` is measured by\na separate statement in the same request, at READ COMMITTED, so it is\nnot snapshot-atomic with the facets. Under concurrent writes a\nresponse can briefly show ``live_row_count > row_count``. Treat that\nrelation as a design statement about the two predicates, not as an\nassertion about any one payload.\n\n* ``row_count`` / ``bytes`` filter on ``is_tombstone = false`` ONLY \u2014\n  superseded and decay-invalidated rows still count, deliberately:\n  they remain retrievable-storage lineage, and the definition matches\n  the coord twin census so quota posture and census never disagree.\n* ``embedding_coverage`` filters on nothing at all \u2014 every row,\n  tombstones included.\n* these facets use the retrieval-live predicate above.\n\nSo ``sum(by_kind) < row_count`` is CORRECT, not a miscount. It is\npublished as ``live_row_count`` rather than left implicit precisely\nso a caller never has to guess which of two numbers in one payload\nis the denominator \u2014 an unexplained gap is the same class of\nmiscounted-absence bug as a silently omitted bucket.\n\n``by_kind`` and ``by_scope`` are EXHAUSTIVE and zero-filled over all\nof :data:`MEMORY_KINDS` / :data:`MEMORY_SCOPES`. An empty bucket is\nreported as ``0``, never omitted, so \"no ``feedback`` records exist\"\nis distinguishable from \"``feedback`` was not measured\".\n\n``anchor_state`` is deliberately ABSENT until\n``2026-07-29-memory-anchored-derived-records.md`` Phase 1 lands; a\nnull placeholder would claim the dimension is measured and empty.",
+        "properties": {
+          "age": {
+            "$ref": "#/components/schemas/MemoryAgeFacet"
+          },
+          "by_kind": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Kind",
+            "type": "object"
+          },
+          "by_scope": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Scope",
+            "type": "object"
+          },
+          "importance": {
+            "$ref": "#/components/schemas/MemoryImportanceFacet"
+          },
+          "live_row_count": {
+            "title": "Live Row Count",
+            "type": "integer"
+          },
+          "recent_titles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Recent Titles",
+            "type": "array"
+          }
+        },
+        "required": [
+          "live_row_count",
+          "by_kind",
+          "by_scope",
+          "age",
+          "importance",
+          "recent_titles"
+        ],
+        "title": "MemoryFacets",
+        "type": "object"
+      },
       "MemoryGraphEdge": {
         "description": "One ``coord.memory_links`` edge among the visited nodes.",
         "properties": {
@@ -25422,6 +25508,40 @@
           "edges"
         ],
         "title": "MemoryGraphResponse",
+        "type": "object"
+      },
+      "MemoryImportanceFacet": {
+        "description": "Importance distribution of the LIVE corpus.\n\n``p50`` / ``p90`` are ``null`` on an empty corpus (same reasoning as\n:class:`MemoryAgeFacet`). ``above_0_8`` is a count, so ``0`` is the\nhonest answer for an empty corpus and it is never null.",
+        "properties": {
+          "above_0_8": {
+            "default": 0,
+            "title": "Above 0 8",
+            "type": "integer"
+          },
+          "p50": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P50"
+          },
+          "p90": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P90"
+          }
+        },
+        "title": "MemoryImportanceFacet",
         "type": "object"
       },
       "MemoryJobOut": {
@@ -26065,15 +26185,30 @@
         "type": "object"
       },
       "MemoryStatsResponse": {
-        "description": "``GET /memory/stats`` \u2014 usage + quota posture for the tenant.",
+        "description": "``GET /memory/stats`` \u2014 usage + quota posture + content facets.\n\nThe quota fields describe PLUMBING (storage, queue and adjudication\nbacklog); :attr:`facets` describes CONTENT. ``corpus_complete`` says\nwhether the content half can be trusted as whole-corpus \u2014 see its\ncomment below.",
         "properties": {
           "bytes": {
             "title": "Bytes",
             "type": "integer"
           },
+          "corpus_complete": {
+            "default": false,
+            "title": "Corpus Complete",
+            "type": "boolean"
+          },
           "embedding_coverage": {
             "title": "Embedding Coverage",
             "type": "number"
+          },
+          "facets": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemoryFacets"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "lifecycle_held": {
             "default": 0,
@@ -73090,7 +73225,7 @@
     },
     "/api/v1/memory/stats": {
       "get": {
-        "description": "Usage + quota posture for the caller's tenant.",
+        "description": "Usage + quota posture + content facets for the caller's tenant.\n\nThe quota fields answer \"is the plumbing healthy\"; ``facets`` answers\n\"what is in here\" \u2014 the read an agent needs BEFORE guessing at query\nvocabulary. ``corpus_complete`` distinguishes a genuinely small\ncorpus from a facet read that degraded.",
         "operationId": "api_v1_memory_stats_get",
         "responses": {
           "200": {
