@@ -52,6 +52,7 @@ from sqlalchemy.pool import NullPool
 
 from app.api.deps import get_async_db
 from app.api.v1.endpoints.memory import MemoryPrincipal, get_memory_tenant, router
+from app.schemas.memory import MAX_QUERY_LIMIT
 from app.services import memory_store as store
 from app.services.memory_vectors import EMBEDDING_DIM, EMBEDDING_MODEL_TAG
 from tests.conftest import TEST_DATABASE_URL
@@ -2649,3 +2650,419 @@ class TestListRecords:
 
         bad = mc.client.get("/api/v1/memory/records", params={"cursor": "not-a-cursor"})
         assert bad.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Link-expansion retrieval arm
+# (2026-07-29-memory-link-expansion-retrieval-arm.md, Phase 2)
+# ---------------------------------------------------------------------------
+
+
+def _insert_fanout(
+    engine: AsyncEngine,
+    *,
+    tenant_id: UUID,
+    source_id: str,
+    target_ids: list[str],
+    relation: str = "related",
+) -> None:
+    """Insert many outbound edges from one source in a single statement.
+
+    The fan-out fixture needs more neighbours than ``store.ARM_LIMIT``, and
+    one round trip per edge would dominate the test's runtime. Targets are
+    passed as a comma-joined string and re-split server-side so no array
+    bind type is needed.
+    """
+    _exec(
+        engine,
+        [
+            "INSERT INTO coord.memory_links "
+            "(tenant_id, source_id, target_id, relation) "
+            "SELECT CAST(:t AS uuid), CAST(:s AS uuid), CAST(g AS uuid), :rel "
+            "FROM unnest(string_to_array(:targets, ',')) AS g"
+        ],
+        t=str(tenant_id),
+        s=source_id,
+        rel=relation,
+        targets=",".join(target_ids),
+    )
+
+
+def _insert_edge(
+    engine: AsyncEngine,
+    *,
+    tenant_id: UUID,
+    source_id: str,
+    target_id: str,
+    relation: str = "depends_on",
+) -> None:
+    """Insert an edge straight into ``coord.memory_links``.
+
+    The write API deliberately refuses to resolve a link whose target is
+    dead or belongs to another tenant (``resolve_link_targets``) — which
+    is exactly the fixture state the validity/scope guard below has to
+    exercise. So these tests declare edges directly, then assert on the
+    QUERY response: the whole bug class here is a filter that was written
+    but not joined, and it can only be caught from the outside.
+    """
+    _exec(
+        engine,
+        [
+            "INSERT INTO coord.memory_links "
+            "(tenant_id, source_id, target_id, relation) VALUES "
+            "(CAST(:t AS uuid), CAST(:s AS uuid), CAST(:g AS uuid), :rel)"
+        ],
+        t=str(tenant_id),
+        s=source_id,
+        g=target_id,
+        rel=relation,
+    )
+
+
+class TestLinkExpansionArm:
+    """One-hop ``coord.memory_links`` expansion as a third RRF arm.
+
+    Every query here is deliberately EMBEDDING-LESS. ``vector_search``
+    has no similarity floor (``ORDER BY ... LIMIT arm_limit``), so at
+    test corpus sizes the semantic arm returns *every* row — which would
+    make a "reachable only by edge" record indistinguishable from a
+    weak cosine hit. FTS-only keeps the arm attribution honest.
+    """
+
+    SEED = "postgres connection pool exhausted under load"
+    NEIGHBOUR = "the marmoset ledger tallies quarterly returns"
+    QUERY = "postgres connection pool exhausted"
+
+    def _query(
+        self, mc: MemoryClient, *, expansion: bool, **extra: Any
+    ) -> dict[str, Any]:
+        resp = mc.client.post(
+            "/api/v1/memory/query",
+            json={"query_text": self.QUERY, "link_expansion": expansion, **extra},
+        )
+        assert resp.status_code == 200, resp.text
+        body: dict[str, Any] = resp.json()
+        return body
+
+    def _seed_and_neighbour(
+        self,
+        mc: MemoryClient,
+        db: AsyncEngine,
+        *,
+        reverse: bool = False,
+        relation: str = "depends_on",
+        **neighbour_extra: Any,
+    ) -> tuple[str, str]:
+        """Write the text-matching seed + a non-matching neighbour, edge them."""
+        seed_id = _write_one(mc, self.SEED)
+        neighbour_id = _write_one(mc, self.NEIGHBOUR, **neighbour_extra)
+        source, target = (neighbour_id, seed_id) if reverse else (seed_id, neighbour_id)
+        _insert_edge(
+            db,
+            tenant_id=mc.tenant_id,
+            source_id=source,
+            target_id=target,
+            relation=relation,
+        )
+        return seed_id, neighbour_id
+
+    def test_link_only_neighbour_surfaces_only_with_expansion(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        seed_id, neighbour_id = self._seed_and_neighbour(mc, db)
+
+        off = self._query(mc, expansion=False)
+        assert off["link_arm"] == "skipped_disabled"
+        assert [h["memory_id"] for h in off["hits"]] == [seed_id]
+
+        on = self._query(mc, expansion=True)
+        assert on["link_arm"] == "expanded"
+        by_id = {h["memory_id"]: h for h in on["hits"]}
+        assert set(by_id) == {seed_id, neighbour_id}
+
+        # Reached purely by association: marked as such, and NOT given a
+        # fabricated cosine score.
+        neighbour = by_id[neighbour_id]
+        assert neighbour["link_rank"] == 1
+        assert neighbour["vector_rank"] is None
+        assert neighbour["fts_rank"] is None
+        assert neighbour["cosine_similarity"] is None
+        # Hydrated like any other hit (fetch_records ran for it).
+        assert neighbour["content"] == self.NEIGHBOUR
+
+        # The seed is NOT re-emitted by the link arm (it would otherwise
+        # double-count itself in the fuse).
+        assert by_id[seed_id]["fts_rank"] == 1
+        assert by_id[seed_id]["link_rank"] is None
+
+    def test_link_only_hit_bumps_access_like_any_other(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        _seed_id, neighbour_id = self._seed_and_neighbour(mc, db)
+        self._query(mc, expansion=True)
+        assert (
+            _scalar(
+                db,
+                "SELECT access_count FROM coord.memory_records WHERE memory_id = :m",
+                m=neighbour_id,
+            )
+            == 1
+        )
+
+    def test_expansion_is_bidirectional(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """The edge points neighbour -> seed; the neighbour still surfaces."""
+        _seed_id, neighbour_id = self._seed_and_neighbour(mc, db, reverse=True)
+        on = self._query(mc, expansion=True)
+        assert on["link_arm"] == "expanded"
+        hit = next(h for h in on["hits"] if h["memory_id"] == neighbour_id)
+        assert hit["link_rank"] == 1
+        assert hit["fts_rank"] is None
+
+    def test_cross_tenant_edges_never_expand(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """Neither a foreign NEIGHBOUR nor a foreign-stamped EDGE expands."""
+        seed_id = _write_one(mc, self.SEED)
+
+        foreign = MemoryClient(db)
+        foreign_id = _write_one(foreign, self.NEIGHBOUR)
+        # (a) Edge stamped with OUR tenant, pointing at THEIR record.
+        _insert_edge(
+            db, tenant_id=mc.tenant_id, source_id=seed_id, target_id=foreign_id
+        )
+        # (b) Edge stamped with THEIR tenant, pointing at one of OURS.
+        mine_id = _write_one(mc, "an unrelated pangolin ledger entry")
+        _insert_edge(
+            db,
+            tenant_id=foreign.tenant_id,
+            source_id=seed_id,
+            target_id=mine_id,
+            relation="related",
+        )
+
+        on = self._query(mc, expansion=True)
+        assert on["link_arm"] == "expanded"
+        assert [h["memory_id"] for h in on["hits"]] == [seed_id]
+
+    # -- The validity / scope guard: a leak here is cross-principal, not
+    # -- staleness. All four neighbours must stay absent WITH expansion on.
+
+    def test_tombstoned_neighbour_never_expands(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        _seed_id, neighbour_id = self._seed_and_neighbour(mc, db)
+        assert (
+            mc.client.delete(f"/api/v1/memory/records/{neighbour_id}").status_code
+            == 204
+        )
+        on = self._query(mc, expansion=True)
+        assert on["link_arm"] == "expanded"
+        assert neighbour_id not in {h["memory_id"] for h in on["hits"]}
+
+    def test_validity_expired_neighbour_never_expands(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        _seed_id, neighbour_id = self._seed_and_neighbour(mc, db)
+        _exec(
+            db,
+            [
+                "UPDATE coord.memory_records "
+                "SET valid_until = now() - interval '1 day' "
+                "WHERE memory_id = CAST(:m AS uuid)"
+            ],
+            m=neighbour_id,
+        )
+        on = self._query(mc, expansion=True)
+        assert on["link_arm"] == "expanded"
+        assert neighbour_id not in {h["memory_id"] for h in on["hits"]}
+
+    def test_session_scoped_neighbour_needs_the_matching_scope_ref(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        _seed_id, neighbour_id = self._seed_and_neighbour(
+            mc, db, scope="session", scope_ref="sess-999"
+        )
+        # Default scopes — the narrow row is another session's business.
+        assert neighbour_id not in {
+            h["memory_id"] for h in self._query(mc, expansion=True)["hits"]
+        }
+        # Scope named, ref withheld: still invisible.
+        named = self._query(mc, expansion=True, scopes=["tenant", "session"])
+        assert neighbour_id not in {h["memory_id"] for h in named["hits"]}
+        # Positive control — the row IS reachable to the session that owns
+        # it, so the assertions above are testing the guard, not a typo.
+        owned = self._query(
+            mc,
+            expansion=True,
+            scopes=["tenant", "session"],
+            scope_ref="sess-999",
+        )
+        assert neighbour_id in {h["memory_id"] for h in owned["hits"]}
+
+    def test_kind_filtered_neighbour_never_expands(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        _seed_id, neighbour_id = self._seed_and_neighbour(mc, db, kind="rule")
+        filtered = self._query(mc, expansion=True, kinds=["fact"])
+        assert filtered["link_arm"] == "expanded"
+        assert neighbour_id not in {h["memory_id"] for h in filtered["hits"]}
+        # Positive control: without the filter it expands.
+        assert neighbour_id in {
+            h["memory_id"] for h in self._query(mc, expansion=True)["hits"]
+        }
+
+    def test_link_arm_reports_no_seeds_when_nothing_matched(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """Requested, but the vector+FTS fuse gave nothing to hop from."""
+        self._seed_and_neighbour(mc, db)
+        resp = mc.client.post(
+            "/api/v1/memory/query",
+            json={
+                "query_text": "nothing whatsoever matches this quokka",
+                "link_expansion": True,
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["hits"] == []
+        assert body["link_arm"] == "skipped_no_seeds"
+
+    def test_link_arm_defaults_to_skipped_disabled(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """The field is opt-in: omitting it must not run the arm."""
+        _seed_id, neighbour_id = self._seed_and_neighbour(mc, db)
+        resp = mc.client.post("/api/v1/memory/query", json={"query_text": self.QUERY})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["link_arm"] == "skipped_disabled"
+        assert neighbour_id not in {h["memory_id"] for h in body["hits"]}
+
+    def test_stronger_relation_and_nearer_seed_rank_first(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """Ranking is (seed_rank, relation_weight), de-duplicated to the best."""
+        seed_id = _write_one(mc, self.SEED)
+        weak_id = _write_one(mc, "the marmoset ledger tallies quarterly returns")
+        strong_id = _write_one(mc, "the aardwolf ledger tallies monthly returns")
+        _insert_edge(
+            db,
+            tenant_id=mc.tenant_id,
+            source_id=seed_id,
+            target_id=weak_id,
+            relation="related",  # weight 0.4
+        )
+        _insert_edge(
+            db,
+            tenant_id=mc.tenant_id,
+            source_id=strong_id,
+            target_id=seed_id,
+            relation="supersedes",  # weight 1.0, inbound half
+        )
+        # A second, weaker edge to the SAME neighbour: it must not be
+        # emitted twice, and must keep its best (strongest) pairing.
+        _insert_edge(
+            db,
+            tenant_id=mc.tenant_id,
+            source_id=seed_id,
+            target_id=strong_id,
+            relation="related",
+        )
+
+        on = self._query(mc, expansion=True)
+        assert on["link_arm"] == "expanded"
+        by_id = {h["memory_id"]: h for h in on["hits"]}
+        assert by_id[strong_id]["link_rank"] == 1
+        assert by_id[weak_id]["link_rank"] == 2
+
+    def test_hub_seed_does_not_starve_the_other_seeds(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """A seed with more neighbours than the arm cap must not drain it.
+
+        Regression for the seed-major ordering the arm shipped with:
+        ``ORDER BY seed_rank, relation_weight DESC, neighbour_id`` let seed
+        #1 take every one of the ``ARM_LIMIT`` slots before seed #2 got
+        one — so a hub returned ``ARM_LIMIT`` neighbours ordered by lowest
+        UUID (uncorrelated with relevance) and every other seed contributed
+        nothing. The hub here is the *strongest* lexical match (it repeats
+        the query phrase, so it takes ``fts_rank`` 1 — asserted below,
+        because the whole fixture is vacuous if it doesn't) and owns
+        ``ARM_LIMIT + 5`` neighbours, so under seed-major order it drains
+        every slot and BOTH thin seeds are starved. Round-robin ordering
+        gives every seed its best neighbour before any seed's second, so
+        both thin neighbours survive.
+        """
+        hub_seed = _write_one(mc, f"{self.SEED}; {self.SEED} again and again")
+        thin_a_seed = _write_one(mc, self.SEED + " while retrying with backoff")
+        thin_b_seed = _write_one(mc, self.SEED + " during a sizing review")
+
+        # The hub's fan-out exceeds the arm's total capacity on its own.
+        # One batched write: 55 round trips would dominate the runtime.
+        resp = mc.client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    _record(f"unrelated hub neighbour {i} about wombat husbandry")
+                    for i in range(store.ARM_LIMIT + 5)
+                ]
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        fanout = [str(r["memory_id"]) for r in resp.json()["records"]]
+        assert len(fanout) == store.ARM_LIMIT + 5
+        _insert_fanout(
+            db, tenant_id=mc.tenant_id, source_id=hub_seed, target_ids=fanout
+        )
+
+        thin_a_neighbour = _write_one(mc, "the lone quokka almanac of tidal charts")
+        thin_b_neighbour = _write_one(mc, "the lone tapir almanac of lunar charts")
+        _insert_edge(
+            db,
+            tenant_id=mc.tenant_id,
+            source_id=thin_a_seed,
+            target_id=thin_a_neighbour,
+            relation="related",
+        )
+        _insert_edge(
+            db,
+            tenant_id=mc.tenant_id,
+            source_id=thin_b_seed,
+            target_id=thin_b_neighbour,
+            relation="related",
+        )
+
+        on = self._query(mc, expansion=True, limit=MAX_QUERY_LIMIT)
+        assert on["link_arm"] == "expanded"
+        by_id = {h["memory_id"]: h for h in on["hits"]}
+
+        # All three seeds are in the fuse head, so all three feed the arm —
+        # and the HUB is seed #1, which is what makes seed-major ordering
+        # starve the other two rather than merely reorder them.
+        assert {hub_seed, thin_a_seed, thin_b_seed} <= set(by_id)
+        assert by_id[hub_seed]["fts_rank"] == 1
+
+        # The starvation assertion: neither thin seed's only neighbour was
+        # crowded out by the hub, and both were reached ONLY by the graph.
+        for neighbour in (thin_a_neighbour, thin_b_neighbour):
+            assert neighbour in by_id, "a thin seed's neighbour was starved"
+            assert by_id[neighbour]["link_rank"] is not None
+            assert by_id[neighbour]["vector_rank"] is None
+            assert by_id[neighbour]["fts_rank"] is None
+
+        # Round-robin means every seed's BEST neighbour outranks any seed's
+        # second, so the thin neighbours (each its seed's only, hence best)
+        # land ahead of all but the hub's own first.
+        hub_ranks = sorted(by_id[n]["link_rank"] for n in fanout if n in by_id)
+        assert len(hub_ranks) >= 2, "the hub barely contributed — fixture is wrong"
+        for neighbour in (thin_a_neighbour, thin_b_neighbour):
+            assert by_id[neighbour]["link_rank"] <= hub_ranks[1], (
+                "a thin seed's best neighbour ranked below the hub's second"
+            )
+
+        # And the arm still respects its overall cap.
+        link_hits = [h for h in on["hits"] if h["link_rank"] is not None]
+        assert len(link_hits) <= store.ARM_LIMIT

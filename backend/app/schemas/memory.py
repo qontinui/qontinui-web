@@ -231,6 +231,18 @@ class MemoryQueryRequest(BaseModel):
     as_of: datetime | None = None
     min_importance: float | None = Field(default=None, ge=0.0, le=1.0)
     limit: int = Field(default=DEFAULT_QUERY_LIMIT, ge=1, le=MAX_QUERY_LIMIT)
+    link_expansion: bool = Field(
+        default=False,
+        description=(
+            "Run the third retrieval arm: one-hop expansion over the "
+            "memory-link graph from the head of the vector+FTS fuse, "
+            "re-fused by RRF. Default OFF pending the recall-efficacy "
+            "harness (2026-07-29-memory-recall-efficacy-benchmark.md) — "
+            "an unmeasured retrieval change defaulted on is how ranking "
+            "quietly regresses. The expansion is tenant-bound and passes "
+            "exactly the same validity/scope filters as the other arms."
+        ),
+    )
 
     @model_validator(mode="after")
     def _query_embedding_input_valid(self) -> MemoryQueryRequest:
@@ -257,6 +269,12 @@ class MemoryQueryHit(BaseModel):
     rrf_score: float
     vector_rank: int | None = None
     fts_rank: int | None = None
+    # Rank in the one-hop coord.memory_links expansion arm. A hit with
+    # this set and BOTH other ranks null was pulled in purely by
+    # association — the class of hit that must stay identifiable (it is
+    # what the efficacy harness evaluates, and what the runner would
+    # otherwise mislabel as a lexical hit).
+    link_rank: int | None = None
     cosine_similarity: float | None = None
 
 
@@ -278,10 +296,26 @@ class MemoryQueryResponse(BaseModel):
       runner-paid reindex drains the tenant back to a single space. This
       is driven off actual corpus state, never a timer or a flag, so it
       clears itself the moment the last foreign-tag vector is rewritten.
+
+    ``link_arm`` is REQUIRED and un-defaulted for exactly the same
+    reason: a result that never consulted the graph must never be
+    indistinguishable from one that did, and the arm is default-off, so
+    "did it run" is the common question rather than the rare one. Its
+    three states are the only ways the arm can end:
+
+    * ``expanded`` — the expansion query RAN. (It running and finding no
+      neighbour is still ``expanded``: the graph was consulted and had
+      nothing to add, which is a different fact from not consulting it.)
+    * ``skipped_disabled`` — the request did not set ``link_expansion``,
+      so no expansion query was issued.
+    * ``skipped_no_seeds`` — the arm was requested, but the vector+FTS
+      fuse returned nothing to expand FROM. One-hop expansion is
+      seeded by the other arms' heads; with no head there is no hop.
     """
 
     hits: list[MemoryQueryHit]
     vector_arm: Literal["hybrid", "skipped_no_embedding", "skipped_migrating"]
+    link_arm: Literal["expanded", "skipped_disabled", "skipped_no_seeds"]
 
 
 class SupersedeRequest(BaseModel):

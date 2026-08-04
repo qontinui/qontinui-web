@@ -861,6 +861,21 @@ async def tombstone_record(
 # ``backend/alembic/versions/coord_memory_links.py``). All edge SQL lives
 # here with the rest of the ``coord.*`` memory literals.
 
+# Ranking weights for the link-expansion retrieval arm
+# (``2026-07-29-memory-link-expansion-retrieval-arm.md`` §3). Relation is
+# WEIGHTED, never filtered: a stronger relation orders its neighbour
+# earlier in the arm, but the arm's fused contribution is still
+# ``1/(k + rank)``, so no weight can swamp the semantic arm. Higher is
+# better. ``supersedes`` leads because the successor is almost always the
+# record the caller actually wanted. Any relation absent from this map
+# (a future vocabulary addition) weighs 0.0 — ranked last, never dropped.
+LINK_RELATION_WEIGHTS: dict[str, float] = {
+    "supersedes": 1.0,
+    "depends_on": 0.8,
+    "implements": 0.6,
+    "related": 0.4,
+}
+
 
 @dataclass(frozen=True)
 class MemoryLinkInsert:
@@ -1000,6 +1015,220 @@ async def fetch_outbound_links(
         d["target_id"] = UUID(str(d["target_id"]))
         out.setdefault(d["source_id"], []).append(d)
     return out
+
+
+async def link_expansion(
+    session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    seed_ids: list[UUID],
+    as_of: datetime | None,
+    kinds: list[str] | None,
+    scopes: list[str],
+    scope_ref: str | None,
+    min_importance: float | None,
+    since: datetime | None,
+    arm_limit: int = ARM_LIMIT,
+) -> list[UUID]:
+    """Graph arm: one-hop neighbours of ``seed_ids``, best-first ids.
+
+    The third RRF arm
+    (``2026-07-29-memory-link-expansion-retrieval-arm.md``). ``seed_ids``
+    are the head of the vector+FTS fuse, in rank order; the result is the
+    records one edge away from them that the caller is allowed to see.
+
+    Four properties are load-bearing:
+
+    * **Bidirectional, spelled as a ``UNION ALL`` of two directional
+      halves — never a single ``OR``.** An ``implements`` edge is
+      evidence in both directions, so restricting to outbound (as
+      :func:`graph_edges` does) would halve the recall benefit. But
+      ``WHERE tenant_id = :t AND (source_id = ANY(...) OR target_id =
+      ANY(...))`` leaves the planner to find a BitmapOr and degrades to a
+      scan of the tenant's edge partition when it doesn't. Two halves let
+      each drive its own index (``idx_memory_links_tenant_source`` /
+      ``idx_memory_links_tenant_target``).
+    * **Each half is a correlated ``LATERAL`` per seed, not a join
+      against a seed relation.** This is the difference between the arm
+      costing one index descent per seed and costing a scan of the
+      tenant's whole edge partition, and it is NOT a matter of taste —
+      it was measured (PostgreSQL 16, 100k records / 60k edges for the
+      subject tenant among 201 tenants, EXPLAIN of the SQL SQLAlchemy
+      actually emits, ``plan_cache_mode = force_generic_plan``). Spelled
+      as a join against a ``seeds`` relation, PostgreSQL prices
+      ``tenant_id = $1`` off ``ndistinct`` under a **generic** plan —
+      ~309 rows, not the tenant's real ~60k — and picks a hash join,
+      reading every edge the tenant owns and discarding ~99.9% of them:
+      ``Index Cond: (tenant_id = $4)`` alone with **59,990 rows scanned
+      to produce 7**, at 317 ms cold / 131 ms warm. Which half flips is
+      planner-dependent
+      (a variant of the same shape degraded in both halves at 72 ms), so
+      neither half can be assumed safe. Two candidate fixes were measured
+      and both FAILED: ``NOT MATERIALIZED`` on the seeds CTE still hash
+      joins the full partition (25 ms), and the seed ids inlined as
+      ``= ANY(:seeds)`` or ``IN (...)`` land the ScalarArrayOp as a
+      post-scan ``Filter`` rather than an index cond (16 / 24 ms — still
+      59,990 rows removed by filter). A ``LATERAL`` carrying a ``LIMIT``
+      cannot be flattened into a hash join, so the parameterized inner
+      index scan is *structural* rather than a planner preference:
+      measured
+      ``Index Cond: ((tenant_id = $4) AND (source_id = s.seed_id))`` on
+      ``idx_memory_links_tenant_source`` and
+      ``Index Cond: ((tenant_id = $4) AND (target_id = s_1.seed_id))``
+      on ``idx_memory_links_tenant_target``, no ``Seq Scan`` at any node,
+      at 1.6 ms. (Plan §7 item 7 is exactly this assertion.)
+    * **Validity- and scope-filtered exactly like the other two arms.**
+      The neighbour is JOINed to ``coord.memory_records`` and put through
+      :func:`_validity_filters`. Without that join this arm would surface
+      tombstoned records, validity-expired records, and — worst — another
+      agent's or another session's ``scope_ref``-gated rows to a caller
+      who never named that ref. That is a cross-principal leak, not a
+      staleness bug. (:func:`graph_edges` has this hole today; the plan
+      leaves ``POST /graph`` alone but the arm must not inherit it.)
+    * **Seeds are excluded.** A seed already ranks in the arms that
+      produced it; re-emitting it here would double-count it in the fuse.
+      The exclusion sits INSIDE each ``LATERAL`` so a seed-to-seed edge
+      cannot consume a fan-out slot it can never be emitted from.
+
+    **Ranking is round-robin across seeds, not seed-major.** Each seed's
+    neighbours are ranked within that seed (``relation_weight``
+    descending — :data:`LINK_RELATION_WEIGHTS` — then ``neighbour_id`` as
+    the deterministic tie-break), and the arm is ordered by
+    ``(fanout_rank, seed_rank, relation_weight DESC, neighbour_id)``:
+    every seed's best neighbour before any seed's second. Ordering
+    seed-major instead (``seed_rank`` first) lets ONE hub seed drain the
+    whole arm — a seed with 200 ``related`` edges would fill all
+    ``arm_limit`` slots ordered by lowest UUID, which is uncorrelated
+    with relevance, and seeds 2..N would contribute nothing. ``seed_rank``
+    is 1-based (``WITH ORDINALITY``) and stays in the key as the
+    tie-break between seeds at equal fan-out depth, so seed quality still
+    matters — it just no longer starves.
+
+    **Fan-out is capped per seed, before the validity join and the
+    sort.** ``arm_limit`` doubles as the per-seed bound: no single seed
+    can contribute more than the whole arm, so a tighter cap would be
+    lossy (one seed legitimately supplies all 50 when the others have no
+    neighbours) and a looser one would let a hub's degree drive the join
+    and the sort. Uncapped, every edge touching any seed was
+    materialized, joined and ``DISTINCT ON``-sorted before being cut to
+    ``arm_limit`` — join and sort work that scaled with the hub's degree
+    rather than with the arm's size. Measured on the same fixture, the
+    validity join dropped from 217 probes to 66.
+
+    A neighbour reachable from several seeds or relations is emitted
+    ONCE, under its BEST (lowest fan-out rank, then lowest seed_rank,
+    then highest weight) pairing.
+    """
+    if not seed_ids:
+        return []
+    where, params = _validity_filters(
+        kinds=kinds,
+        scopes=scopes,
+        scope_ref=scope_ref,
+        min_importance=min_importance,
+        since=since,
+    )
+    stmt = text(
+        f"""
+        WITH seeds(seed_id, seed_rank) AS (
+            SELECT s.seed_id, s.ord
+            FROM unnest(CAST(:seed_ids AS uuid[]))
+                 WITH ORDINALITY AS s(seed_id, ord)
+        ),
+        weights(relation, weight) AS (
+            SELECT w.relation, w.weight
+            FROM unnest(CAST(:link_relations AS text[]),
+                        CAST(:link_weights AS float8[]))
+                 AS w(relation, weight)
+        ),
+        neighbours(neighbour_id, seed_rank, relation_weight) AS (
+            SELECT n.neighbour_id, s.seed_rank, n.relation_weight
+            FROM seeds s
+            CROSS JOIN LATERAL (
+                SELECT l.target_id AS neighbour_id,
+                       COALESCE(w.weight, 0.0) AS relation_weight
+                FROM coord.memory_links l
+                LEFT JOIN weights w ON w.relation = l.relation
+                WHERE l.tenant_id = :tenant_id
+                  AND l.source_id = s.seed_id
+                  AND l.target_id <> ALL (CAST(:seed_ids AS uuid[]))
+                ORDER BY COALESCE(w.weight, 0.0) DESC, l.target_id ASC
+                LIMIT :arm_limit
+            ) n
+            UNION ALL
+            SELECT n.neighbour_id, s.seed_rank, n.relation_weight
+            FROM seeds s
+            CROSS JOIN LATERAL (
+                SELECT l.source_id AS neighbour_id,
+                       COALESCE(w.weight, 0.0) AS relation_weight
+                FROM coord.memory_links l
+                LEFT JOIN weights w ON w.relation = l.relation
+                WHERE l.tenant_id = :tenant_id
+                  AND l.target_id = s.seed_id
+                  AND l.source_id <> ALL (CAST(:seed_ids AS uuid[]))
+                ORDER BY COALESCE(w.weight, 0.0) DESC, l.source_id ASC
+                LIMIT :arm_limit
+            ) n
+        ),
+        per_seed AS (
+            SELECT DISTINCT ON (n.seed_rank, n.neighbour_id)
+                   n.seed_rank AS seed_rank,
+                   n.neighbour_id AS neighbour_id,
+                   n.relation_weight AS relation_weight
+            FROM neighbours n
+            ORDER BY n.seed_rank, n.neighbour_id, n.relation_weight DESC
+        ),
+        capped AS (
+            SELECT q.neighbour_id, q.seed_rank, q.relation_weight, q.fanout_rank
+            FROM (
+                SELECT p.neighbour_id, p.seed_rank, p.relation_weight,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY p.seed_rank
+                           ORDER BY p.relation_weight DESC, p.neighbour_id ASC
+                       ) AS fanout_rank
+                FROM per_seed p
+            ) q
+            WHERE q.fanout_rank <= :arm_limit
+        ),
+        best AS (
+            SELECT DISTINCT ON (c.neighbour_id)
+                   c.neighbour_id AS neighbour_id,
+                   c.fanout_rank AS fanout_rank,
+                   c.seed_rank AS seed_rank,
+                   c.relation_weight AS relation_weight
+            FROM capped c
+            JOIN coord.memory_records r ON r.memory_id = c.neighbour_id
+            WHERE {where}
+            ORDER BY c.neighbour_id, c.fanout_rank ASC, c.seed_rank ASC,
+                     c.relation_weight DESC
+        )
+        SELECT neighbour_id
+        FROM best
+        ORDER BY fanout_rank ASC, seed_rank ASC,
+                 relation_weight DESC, neighbour_id ASC
+        LIMIT :arm_limit
+        """
+    ).bindparams(
+        bindparam("scopes", expanding=True),
+        bindparam("seed_ids", type_=ARRAY(Text())),
+        bindparam("link_relations", type_=ARRAY(Text())),
+        bindparam("link_weights", type_=ARRAY(Float())),
+    )
+    if "kinds" in params:
+        stmt = stmt.bindparams(bindparam("kinds", expanding=True))
+    rows = await session.execute(
+        stmt,
+        {
+            **params,
+            "tenant_id": tenant_id,
+            "as_of": as_of,
+            "seed_ids": [str(s) for s in seed_ids],
+            "link_relations": list(LINK_RELATION_WEIGHTS),
+            "link_weights": list(LINK_RELATION_WEIGHTS.values()),
+            "arm_limit": arm_limit,
+        },
+    )
+    return [UUID(str(r.neighbour_id)) for r in rows]
 
 
 async def graph_edges(

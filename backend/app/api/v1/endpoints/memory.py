@@ -24,7 +24,9 @@ Endpoints (mounted under ``/api/v1/memory``):
   runs only when the caller supplies ``query_embedding`` (+ its
   ``query_embedding_model``) AND the tenant's corpus is entirely at the
   deployed tag; otherwise the query degrades to FTS-only. The response's
-  ``vector_arm`` always says which of the three happened.
+  ``vector_arm`` always says which of the three happened. An opt-in
+  third arm (``link_expansion=true``) adds one-hop ``coord.memory_links``
+  expansion of the fuse's head, reported in ``link_arm``.
 * ``POST /graph``                        — bounded outbound traversal of
   ``coord.memory_links`` from a root record → ``{nodes, edges}``.
 * ``POST /records/{id}/supersede``       — insert replacement, end the
@@ -146,6 +148,14 @@ COORD_SERVICE_SUBJECT = "coord-memory-proxy"
 # Scopes a query sees when it doesn't ask for narrower ones. `agent` /
 # `session` rows require an explicit opt-in + matching scope_ref.
 _DEFAULT_QUERY_SCOPES = ["tenant", "runner"]
+
+# How many heads of the FIRST (vector+FTS) fuse seed the link-expansion
+# arm. Deliberately independent of the caller's `limit`: the seed slice
+# is taken PRE-limit, so a `limit=3` query still expands from the best
+# 10 combined hits. Small on purpose — one hop from a bounded seed set is
+# what keeps a graph arm from turning into a full-table scan (the per-arm
+# fan-out is separately capped by store.ARM_LIMIT).
+LINK_SEED_COUNT = 10
 
 
 @dataclass(frozen=True)
@@ -511,7 +521,16 @@ async def query_records(
 ) -> MemoryQueryResponse:
     """Hybrid retrieval: pgvector cosine + websearch FTS, RRF-fused.
 
-    Both arms are tenant-bound and validity-filtered (tombstones out,
+    Optionally a THIRD arm: with ``link_expansion=true`` the endpoint
+    fuses twice — once over vector+FTS to pick the top
+    :data:`LINK_SEED_COUNT` seeds, then again after one-hop expansion of
+    those seeds over ``coord.memory_links``. ``link_arm`` says which of
+    ``expanded`` / ``skipped_disabled`` / ``skipped_no_seeds`` happened,
+    and a hit reached only that way carries ``link_rank`` with both other
+    ranks null. The arm is default-OFF until the recall-efficacy harness
+    can say whether it helps.
+
+    All arms are tenant-bound and validity-filtered (tombstones out,
     ``valid_from``/``valid_until`` against now() or ``as_of``).
     ``agent``/``session``-scoped rows are only visible when the request
     names those scopes AND supplies the matching ``scope_ref``.
@@ -567,7 +586,30 @@ async def query_records(
         vector_arm = "hybrid"
     fts_ids = await store.fts_search(db, query_text=payload.query_text, **filter_kwargs)
 
-    fused = rrf_fuse([mid for mid, _sim in vector_hits], fts_ids)
+    vector_ids = [mid for mid, _sim in vector_hits]
+    # First fuse: picks the SEEDS. They must be the best COMBINED
+    # evidence, not the head of either arm alone — hence a fuse rather
+    # than a concatenation, and hence two fuses rather than one.
+    fused_2 = rrf_fuse({"vector": vector_ids, "fts": fts_ids})
+
+    link_arm: Literal["expanded", "skipped_disabled", "skipped_no_seeds"]
+    seed_ids = [h.id for h in fused_2[:LINK_SEED_COUNT]]
+    if not payload.link_expansion:
+        link_arm = "skipped_disabled"
+        fused = fused_2
+    elif not seed_ids:
+        # Nothing matched either arm, so there is nothing to hop FROM.
+        # Reported distinctly from `expanded`: no expansion query ran.
+        link_arm = "skipped_no_seeds"
+        fused = fused_2
+    else:
+        link_ids = await store.link_expansion(db, seed_ids=seed_ids, **filter_kwargs)
+        link_arm = "expanded"
+        # Second fuse: the answer. Pure in-memory math over <= 3x50 ids.
+        fused = rrf_fuse({"vector": vector_ids, "fts": fts_ids, "link": link_ids})
+
+    # Sliced only AFTER the re-fuse, so a link-only hit can displace a
+    # weaker lexical one instead of being cut before it competes.
     top = fused[: payload.limit]
 
     rows = await store.fetch_records(db, principal.tenant_id, [h.id for h in top])
@@ -591,12 +633,15 @@ async def query_records(
                 rrf_score=fh.rrf_score,
                 vector_rank=fh.vector_rank,
                 fts_rank=fh.fts_rank,
+                link_rank=fh.link_rank,
+                # A link-only hit has no cosine score, and inventing one
+                # would misreport how it was found. `None` is the answer.
                 cosine_similarity=similarity.get(fh.id),
             )
         )
 
     await store.bump_access(db, principal.tenant_id, [h.memory_id for h in hits])
-    return MemoryQueryResponse(hits=hits, vector_arm=vector_arm)
+    return MemoryQueryResponse(hits=hits, vector_arm=vector_arm, link_arm=link_arm)
 
 
 @router.get("/records", response_model=ListRecordsResponse)
