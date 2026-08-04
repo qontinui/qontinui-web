@@ -35,13 +35,14 @@ import json
 import math
 from collections.abc import AsyncGenerator, Generator
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -52,7 +53,7 @@ from sqlalchemy.pool import NullPool
 
 from app.api.deps import get_async_db
 from app.api.v1.endpoints.memory import MemoryPrincipal, get_memory_tenant, router
-from app.schemas.memory import MAX_QUERY_LIMIT
+from app.schemas.memory import MAX_QUERY_LIMIT, RECENT_TITLES_SAMPLE
 from app.services import memory_store as store
 from app.services.memory_vectors import EMBEDDING_DIM, EMBEDDING_MODEL_TAG
 from tests.conftest import TEST_DATABASE_URL
@@ -3066,3 +3067,355 @@ class TestLinkExpansionArm:
         # And the arm still respects its overall cap.
         link_hits = [h for h in on["hits"] if h["link_rank"] is not None]
         assert len(link_hits) <= store.ARM_LIMIT
+
+
+# ---------------------------------------------------------------------------
+# GET /stats content facets — "what is IN the corpus", not "is the plumbing ok"
+#
+# The rest of /stats reports storage, queue and adjudication posture. These
+# tests cover the content half, and specifically the three ways it can lie:
+# a missing bucket read as "unknown", a dead row counted as retrievable, and
+# a degraded read read as a small corpus.
+# ---------------------------------------------------------------------------
+
+# The full CHECK-mirrored value sets, spelled out rather than imported from
+# app.schemas.memory: importing the very tuples the implementation zero-fills
+# FROM would make the exhaustiveness assertion tautological.
+_ALL_KINDS = {
+    "observation",
+    "fact",
+    "mental_model",
+    "episode",
+    "feedback",
+    "reference",
+    "rule",
+    "library",
+}
+_ALL_SCOPES = {"tenant", "runner", "agent", "session"}
+
+
+def _facets(mc: MemoryClient) -> dict[str, Any]:
+    """The facets block off a HEALTHY /stats read.
+
+    Asserts ``corpus_complete`` on the way through, so no test below can
+    accidentally make its assertions against a degraded payload.
+    """
+    body = mc.client.get("/api/v1/memory/stats").json()
+    assert body["corpus_complete"] is True, body
+    facets = body["facets"]
+    assert facets is not None, body
+    return cast(dict[str, Any], facets)
+
+
+def _backdate(engine: AsyncEngine, memory_id: str, days: int) -> None:
+    _exec(
+        engine,
+        [
+            "UPDATE coord.memory_records SET created_at = now() - "
+            "make_interval(days => :d) WHERE memory_id = :m"
+        ],
+        m=memory_id,
+        d=days,
+    )
+
+
+class TestStatsContentFacets:
+    def test_by_kind_and_by_scope_are_exhaustive_and_zero_filled(
+        self, mc: MemoryClient
+    ) -> None:
+        """Every kind and scope has a bucket, including the empty ones.
+
+        The zeros are the assertion: a caller must be able to read "no
+        `feedback` records exist" off the payload, and an omitted key
+        says only "not measured".
+        """
+        _write_one(mc, "observation one about the tapir", kind="observation")
+        _write_one(mc, "observation two about the okapi", kind="observation")
+        _write_one(mc, "a feedback note about the ibex", kind="feedback")
+        _write_one(mc, "runner-scoped fact about the saiga", scope="runner")
+        _write_one(mc, "agent-scoped fact about the dhole", scope="agent")
+
+        facets = _facets(mc)
+        assert set(facets["by_kind"]) == _ALL_KINDS
+        assert facets["by_kind"] == {
+            "observation": 2,
+            "fact": 2,
+            "feedback": 1,
+            "mental_model": 0,
+            "episode": 0,
+            "reference": 0,
+            "rule": 0,
+            "library": 0,
+        }
+        assert set(facets["by_scope"]) == _ALL_SCOPES
+        assert facets["by_scope"] == {
+            "tenant": 3,
+            "runner": 1,
+            "agent": 1,
+            "session": 0,
+        }
+        assert facets["live_row_count"] == 5
+
+    def test_empty_corpus_is_a_confident_zero_not_a_blind_spot(
+        self, mc: MemoryClient
+    ) -> None:
+        """Zero rows still yields every bucket, null percentiles, and
+        ``corpus_complete=True`` — "there is nothing here" is a real
+        answer, distinct from "I could not look"."""
+        body = mc.client.get("/api/v1/memory/stats").json()
+        assert body["corpus_complete"] is True
+        facets = body["facets"]
+        assert facets["live_row_count"] == 0
+        assert set(facets["by_kind"]) == _ALL_KINDS
+        assert set(facets["by_kind"].values()) == {0}
+        assert set(facets["by_scope"]) == _ALL_SCOPES
+        assert set(facets["by_scope"].values()) == {0}
+        # Null, not a fabricated 0 — nothing has a median age.
+        assert facets["age"] == {
+            "p50_days": None,
+            "p90_days": None,
+            "oldest_days": None,
+        }
+        assert facets["importance"]["p50"] is None
+        assert facets["importance"]["p90"] is None
+        # A count, though, is honestly zero.
+        assert facets["importance"]["above_0_8"] == 0
+        assert facets["recent_titles"] == []
+
+    def test_tombstoned_superseded_and_expired_rows_are_never_counted(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """All three flavours of dead row are excluded — the facets
+        describe what retrieval can actually return."""
+        _write_one(mc, "the enduring vicuna fact")
+
+        tombstoned = _write_one(mc, "the doomed dodo fact")
+        mc.client.delete(f"/api/v1/memory/records/{tombstoned}")
+
+        outdated = _write_one(mc, "the outdated auk fact")
+        assert (
+            mc.client.post(
+                f"/api/v1/memory/records/{outdated}/supersede",
+                json={"title": "note", "content": "the corrected auk fact"},
+            ).status_code
+            == 200
+        )
+
+        # Validity simply ENDED: no tombstone, no successor. This is the
+        # arm neither of the other two covers.
+        expired = _write_one(mc, "the lapsed quagga fact")
+        _exec(
+            db,
+            [
+                "UPDATE coord.memory_records "
+                "SET valid_until = now() - interval '1 hour' "
+                "WHERE memory_id = :m"
+            ],
+            m=expired,
+        )
+
+        facets = _facets(mc)
+        # The enduring row plus the supersede successor, nothing else.
+        assert facets["live_row_count"] == 2
+        assert facets["by_kind"]["fact"] == 2
+        assert facets["by_scope"]["tenant"] == 2
+        titles = facets["recent_titles"]
+        assert len(titles) == 2
+
+    def test_future_dated_validity_is_counted_and_agrees_with_get_records(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """A row whose validity ends in the FUTURE is still retrievable,
+        so the facets must still count it.
+
+        This is the ``expire_closed_session_records`` shape: the daily
+        sweep stamps ``valid_until = closed_at + interval '7 days'`` on
+        session-scoped rows, so for up to a week those rows are returned
+        by ``/memory/query`` and listed by ``GET /records``. Dedup
+        liveness (``valid_until IS NULL``) would count them dead and
+        report ``by_scope["session"] == 0`` to a caller whose very next
+        query returns them — absence read as a value, the exact failure
+        this surface exists to prevent.
+
+        The two existing expiry fixtures both date ``valid_until`` into
+        the PAST, which is why neither caught it. ``GET /records`` is
+        asserted alongside because "the facets and the listing disagree
+        for the same tenant" is the observable symptom.
+        """
+        _write_one(mc, "the plainly live pika fact")
+        pending = _write_one(
+            mc,
+            "the seven-days-left session note about the markhor",
+            title="expiring-soon",
+            scope="session",
+            scope_ref=str(uuid4()),
+        )
+        _exec(
+            db,
+            [
+                "UPDATE coord.memory_records "
+                "SET valid_until = now() + interval '7 days' "
+                "WHERE memory_id = :m"
+            ],
+            m=pending,
+        )
+
+        facets = _facets(mc)
+        assert facets["live_row_count"] == 2
+        assert facets["by_scope"]["session"] == 1
+        assert facets["by_scope"]["tenant"] == 1
+        assert "expiring-soon" in facets["recent_titles"]
+
+        listed_ids = {
+            r["memory_id"]
+            for r in mc.client.get("/api/v1/memory/records").json()["records"]
+        }
+        assert pending in listed_ids
+        assert len(listed_ids) == facets["live_row_count"]
+
+    def test_facets_are_tenant_scoped(self, mc: MemoryClient, db: AsyncEngine) -> None:
+        foreign = MemoryClient(db)
+        _write_one(foreign, "foreign wombat observation", kind="observation")
+
+        mine = _facets(mc)
+        assert mine["live_row_count"] == 0
+        assert mine["by_kind"]["observation"] == 0
+        assert mine["recent_titles"] == []
+
+        theirs = _facets(foreign)
+        assert theirs["live_row_count"] == 1
+        assert theirs["by_kind"]["observation"] == 1
+
+    def test_denominator_invariant_holds_and_the_two_predicates_differ(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """``sum(by_kind) == sum(by_scope) == live_row_count < row_count``.
+
+        The STRICT inequality is the point. ``row_count`` filters on
+        ``is_tombstone = false`` alone (superseded and validity-ended rows
+        still charge quota); the facets use the full live predicate. On a
+        fixture carrying one of each dead-but-not-tombstoned flavour the
+        two numbers MUST diverge — an equality here would mean the facets
+        had quietly adopted the quota predicate.
+        """
+        _write_one(mc, "the standing saola fact")
+
+        outdated = _write_one(mc, "the superseded serval fact")
+        assert (
+            mc.client.post(
+                f"/api/v1/memory/records/{outdated}/supersede",
+                json={"title": "note", "content": "the corrected serval fact"},
+            ).status_code
+            == 200
+        )
+        expired = _write_one(mc, "the lapsed lynx fact")
+        _exec(
+            db,
+            [
+                "UPDATE coord.memory_records "
+                "SET valid_until = now() - interval '1 hour' "
+                "WHERE memory_id = :m"
+            ],
+            m=expired,
+        )
+
+        body = mc.client.get("/api/v1/memory/stats").json()
+        facets = body["facets"]
+        assert sum(facets["by_kind"].values()) == facets["live_row_count"]
+        assert sum(facets["by_scope"].values()) == facets["live_row_count"]
+        assert facets["live_row_count"] < body["row_count"]
+        # Concretely: standing + successor are live; the superseded
+        # original and the lapsed row still count against quota.
+        assert facets["live_row_count"] == 2
+        assert body["row_count"] == 4
+
+    def test_degraded_facet_read_is_not_a_silently_smaller_corpus(
+        self, mc: MemoryClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A facet read that fails returns ``corpus_complete=False`` and a
+        null block — never smaller numbers under a confident flag."""
+        _write_one(mc, "the measurable markhor fact")
+        healthy = mc.client.get("/api/v1/memory/stats").json()
+        assert healthy["corpus_complete"] is True
+        assert healthy["facets"]["live_row_count"] == 1
+
+        async def _boom(*_args: Any, **_kwargs: Any) -> None:
+            raise OperationalError(
+                "SELECT ...", {}, Exception("canceling statement due to timeout")
+            )
+
+        monkeypatch.setattr(store, "facets", _boom)
+        degraded = mc.client.get("/api/v1/memory/stats").json()
+        assert degraded["corpus_complete"] is False
+        assert degraded["facets"] is None
+        # The plumbing half is read before the facets and is unaffected —
+        # the degradation is named and scoped, never a quiet undercount.
+        assert degraded["row_count"] == healthy["row_count"]
+        assert degraded["quota_bytes"] == healthy["quota_bytes"]
+
+    def test_a_broken_facets_query_raises_instead_of_degrading(
+        self, mc: MemoryClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """``ProgrammingError`` is a BUG, not degradation.
+
+        An undefined column, a bad function name, or schema drift after a
+        migration would otherwise null the facets on every ``/stats`` call
+        for every tenant, permanently, with a log line as the only trace.
+        The handler must let it out — same reasoning that keeps
+        ``TypeError`` uncaught there.
+        """
+        _write_one(mc, "the measurable muntjac fact")
+
+        async def _boom(*_args: Any, **_kwargs: Any) -> None:
+            raise ProgrammingError(
+                "SELECT ...", {}, Exception('column "kind_libary" does not exist')
+            )
+
+        monkeypatch.setattr(store, "facets", _boom)
+        with pytest.raises(ProgrammingError):
+            mc.client.get("/api/v1/memory/stats")
+
+    def test_recent_titles_are_a_capped_newest_first_sample(
+        self, mc: MemoryClient
+    ) -> None:
+        """A bounded vocabulary sample, not a listing (GET /records is)."""
+        total = RECENT_TITLES_SAMPLE + 5
+        for i in range(total):
+            _write_one(mc, f"sampled saola fact {i}", title=f"title-{i:02d}")
+
+        facets = _facets(mc)
+        assert facets["live_row_count"] == total
+        assert len(facets["recent_titles"]) == RECENT_TITLES_SAMPLE
+        # Newest first: the last RECENT_TITLES_SAMPLE written, most
+        # recent leading. Titles sort in write order, so descending
+        # lexical order is descending recency.
+        assert facets["recent_titles"] == sorted(facets["recent_titles"], reverse=True)
+        assert set(facets["recent_titles"]) == {
+            f"title-{i:02d}" for i in range(5, total)
+        }
+
+    def test_age_and_importance_describe_the_live_corpus(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        old = _write_one(mc, "a low-importance takin note", importance=0.2)
+        _write_one(mc, "a high-importance kouprey note", importance=0.9)
+        _backdate(db, old, days=10)
+
+        facets = _facets(mc)
+        assert facets["age"]["oldest_days"] == pytest.approx(10.0, abs=0.1)
+        assert facets["age"]["p50_days"] == pytest.approx(5.0, abs=0.1)
+        assert facets["age"]["p90_days"] == pytest.approx(9.0, abs=0.2)
+        assert facets["importance"]["p50"] == pytest.approx(0.55, abs=0.01)
+        assert facets["importance"]["above_0_8"] == 1
+
+    def test_importance_of_exactly_0_8_is_not_above_0_8(self, mc: MemoryClient) -> None:
+        """``importance`` is REAL, so the threshold is compared in REAL
+        precision. Against a float8 ``0.8`` literal the column promotes to
+        0.80000001..., and a record stored at exactly 0.8 would be counted
+        as above it."""
+        _write_one(mc, "a boundary-valued binturong note", importance=0.8)
+        _write_one(mc, "a just-over binturong note", importance=0.81)
+
+        facets = _facets(mc)
+        assert facets["live_row_count"] == 2
+        assert facets["importance"]["above_0_8"] == 1

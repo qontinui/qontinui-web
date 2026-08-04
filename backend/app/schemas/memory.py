@@ -21,7 +21,7 @@ rows). There is no server-side embed fallback.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -40,6 +40,20 @@ MemoryKind = Literal[
     "library",
 ]
 MemoryScope = Literal["tenant", "runner", "agent", "session"]
+
+# The exhaustive bucket lists the ``/stats`` content facets zero-fill over,
+# DERIVED from the Literals above rather than re-typed. A new kind or scope
+# therefore appears in the facets the moment it appears in the CHECK mirror,
+# and can never be silently missing from a facet payload — which is the whole
+# point of exhaustive buckets: a caller must be able to tell "no ``feedback``
+# records exist" from "``feedback`` was omitted".
+MEMORY_KINDS: tuple[str, ...] = get_args(MemoryKind)
+MEMORY_SCOPES: tuple[str, ...] = get_args(MemoryScope)
+
+# Cap on the ``recent_titles`` vocabulary SAMPLE (see :class:`MemoryFacets`).
+# Small and fixed on purpose — it is not a listing.
+RECENT_TITLES_SAMPLE = 20
+
 # Mirror the coord.memory_links relation CHECK (coord_memory_links migration).
 MemoryLinkRelation = Literal["depends_on", "implements", "supersedes", "related"]
 
@@ -378,8 +392,116 @@ class LifecycleHoldResponse(BaseModel):
     held: bool
 
 
+class MemoryAgeFacet(BaseModel):
+    """Age distribution of the LIVE corpus, in days since ``created_at``.
+
+    All three are ``null`` on an empty corpus rather than a fabricated
+    ``0``: "there is nothing to measure" is a different statement from
+    "everything was written today", and collapsing them is the same
+    absence-reads-as-a-value bug these facets exist to prevent.
+    """
+
+    p50_days: float | None = None
+    p90_days: float | None = None
+    oldest_days: float | None = None
+
+
+class MemoryImportanceFacet(BaseModel):
+    """Importance distribution of the LIVE corpus.
+
+    ``p50`` / ``p90`` are ``null`` on an empty corpus (same reasoning as
+    :class:`MemoryAgeFacet`). ``above_0_8`` is a count, so ``0`` is the
+    honest answer for an empty corpus and it is never null.
+    """
+
+    p50: float | None = None
+    p90: float | None = None
+    above_0_8: int = 0
+
+
+class MemoryFacets(BaseModel):
+    """What is actually IN the corpus — the content half of ``/stats``.
+
+    Every field here is computed over RETRIEVAL-LIVE rows only
+    (``is_tombstone = false AND superseded_by IS NULL AND valid_from <=
+    now AND (valid_until IS NULL OR valid_until > now)``) — the rows
+    ``POST /memory/query`` and ``GET /memory/records`` can actually
+    return. Note ``valid_until > now``, not ``valid_until IS NULL``: a
+    row whose validity is dated into the FUTURE is still retrievable, and
+    the session-expiry sweep dates validity seven days out, so counting
+    those rows dead would report ``by_scope["session"] == 0`` to a caller
+    whose next query returns session rows.
+
+    **Retrieval-live MODULO ``scope_ref`` narrowing.** These counts are
+    NOT an exact equivalence with what a given caller's query returns.
+    Retrieval additionally requires ``agent``- and ``session``-scoped rows
+    to carry that caller's own ``scope_ref``, which is caller-dependent
+    and has no tenant-wide answer, so it is not applied here. A specific
+    caller's ``agent`` / ``session`` buckets can therefore be SMALLER than
+    reported; no bucket can be larger. Everything else — the tenant- and
+    runner-scoped rows, and every other facet — is exactly the retrieval
+    set.
+
+    **Denominator invariant.** ``/stats`` carries three different
+    liveness definitions, and they do not agree by design::
+
+        sum(by_kind) == sum(by_scope) == facets.live_row_count <= row_count
+
+    The first two equalities hold BY CONSTRUCTION: every facet number
+    comes from a single ``SELECT``, so all of them describe one snapshot
+    and no concurrent write can split them.
+
+    The ``<= row_count`` relation is WEAKER — ``row_count`` is measured by
+    a separate statement in the same request, at READ COMMITTED, so it is
+    not snapshot-atomic with the facets. Under concurrent writes a
+    response can briefly show ``live_row_count > row_count``. Treat that
+    relation as a design statement about the two predicates, not as an
+    assertion about any one payload.
+
+    * ``row_count`` / ``bytes`` filter on ``is_tombstone = false`` ONLY —
+      superseded and decay-invalidated rows still count, deliberately:
+      they remain retrievable-storage lineage, and the definition matches
+      the coord twin census so quota posture and census never disagree.
+    * ``embedding_coverage`` filters on nothing at all — every row,
+      tombstones included.
+    * these facets use the retrieval-live predicate above.
+
+    So ``sum(by_kind) < row_count`` is CORRECT, not a miscount. It is
+    published as ``live_row_count`` rather than left implicit precisely
+    so a caller never has to guess which of two numbers in one payload
+    is the denominator — an unexplained gap is the same class of
+    miscounted-absence bug as a silently omitted bucket.
+
+    ``by_kind`` and ``by_scope`` are EXHAUSTIVE and zero-filled over all
+    of :data:`MEMORY_KINDS` / :data:`MEMORY_SCOPES`. An empty bucket is
+    reported as ``0``, never omitted, so "no ``feedback`` records exist"
+    is distinguishable from "``feedback`` was not measured".
+
+    ``anchor_state`` is deliberately ABSENT until
+    ``2026-07-29-memory-anchored-derived-records.md`` Phase 1 lands; a
+    null placeholder would claim the dimension is measured and empty.
+    """
+
+    live_row_count: int
+    by_kind: dict[str, int]
+    by_scope: dict[str, int]
+    age: MemoryAgeFacet
+    importance: MemoryImportanceFacet
+    # A SAMPLE, not a listing: at most RECENT_TITLES_SAMPLE titles,
+    # newest-first. It exists to expose the corpus's VOCABULARY so a
+    # follow-up POST /memory/query can use words that are actually in
+    # there. The paginated listing is GET /memory/records.
+    recent_titles: list[str]
+
+
 class MemoryStatsResponse(BaseModel):
-    """``GET /memory/stats`` — usage + quota posture for the tenant."""
+    """``GET /memory/stats`` — usage + quota posture + content facets.
+
+    The quota fields describe PLUMBING (storage, queue and adjudication
+    backlog); :attr:`facets` describes CONTENT. ``corpus_complete`` says
+    whether the content half can be trusted as whole-corpus — see its
+    comment below.
+    """
 
     row_count: int
     bytes: int
@@ -401,6 +523,19 @@ class MemoryStatsResponse(BaseModel):
     # adjudication backlog. This is the "how much is left to decide"
     # number; it falls to zero when every hold has been released.
     lifecycle_held: int = 0
+    # Content facets — null exactly when they could not be computed over
+    # the whole live corpus.
+    facets: MemoryFacets | None = None
+    # The anti-UNKNOWN signal. True means the facets above were computed
+    # over the WHOLE live corpus; false means the facet read degraded and
+    # `facets` is null. It is never true alongside quietly smaller
+    # numbers, because a caller cannot distinguish a partial read from a
+    # small corpus — the same honesty contract coord's
+    # `coord_query_memory_state` already states: store unreachable or no
+    # observation yet is a blind spot, NEVER an empty confident success.
+    # Defaults false so a response constructed without measuring the
+    # corpus claims nothing about it.
+    corpus_complete: bool = False
 
 
 # --------------------------------------------------------------------------

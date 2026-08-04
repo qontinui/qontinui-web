@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, cast
@@ -38,6 +39,11 @@ from sqlalchemy import CursorResult, Float, Text, bindparam, text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.schemas.memory import (
+    MEMORY_KINDS,
+    MEMORY_SCOPES,
+    RECENT_TITLES_SAMPLE,
+)
 from app.services.memory_lifecycle import (
     DECAY_ACCESS_CAP,
     DECAY_BASE_HORIZON_DAYS,
@@ -72,6 +78,12 @@ NARROW_SCOPES = ("agent", "session")
 # dedup lookup and every ON CONFLICT target in this module MUST use exactly
 # this predicate — a broader check would resurrect the swallowed-re-write
 # data-loss bug this index exists to prevent.
+#
+# This is DEDUP-liveness and it is NOT what retrieval returns: ``valid_until
+# IS NULL`` excludes a row whose validity is dated into the FUTURE, which
+# ``/memory/query`` and ``GET /records`` both still return. Anything
+# describing "what a query could find" must use
+# :data:`_RETRIEVAL_LIVE_PREDICATE` instead.
 _LIVE_DEDUP_PREDICATE = (
     "is_tombstone = false AND superseded_by IS NULL AND valid_until IS NULL"
 )
@@ -194,6 +206,200 @@ async def embedding_coverage(session: AsyncSession, tenant_id: UUID) -> float:
     ).one()
     total = int(row.total)
     return 1.0 if total == 0 else int(row.embedded) / total
+
+
+@dataclass(frozen=True)
+class MemoryFacetAge:
+    """Age of the live corpus in days since ``created_at``.
+
+    ``None`` on an empty corpus — there is no median age of nothing, and
+    a fabricated ``0.0`` would read as "everything was written today".
+    """
+
+    p50_days: float | None
+    p90_days: float | None
+    oldest_days: float | None
+
+
+@dataclass(frozen=True)
+class MemoryFacetImportance:
+    """Importance distribution of the live corpus."""
+
+    p50: float | None
+    p90: float | None
+    above_0_8: int
+
+
+@dataclass(frozen=True)
+class MemoryContentFacets:
+    """What is in the live corpus — see ``schemas.memory.MemoryFacets``
+    for the response-level contract and the denominator invariant."""
+
+    live_row_count: int
+    by_kind: dict[str, int]
+    by_scope: dict[str, int]
+    age: MemoryFacetAge
+    importance: MemoryFacetImportance
+    recent_titles: list[str]
+
+
+# The per-bucket FILTER columns, generated from the SAME tuples the
+# zero-fill would have used, so the exhaustive-bucket guarantee cannot
+# drift from the SQL. Both value sets are Literal members of this
+# codebase (``[a-z_]+`` only) — never caller input — so interpolating
+# them as SQL literals is safe; the assertion below keeps it that way if
+# a future kind arrives with punctuation in it.
+if not all(re.fullmatch(r"[a-z][a-z_]*", v) for v in (*MEMORY_KINDS, *MEMORY_SCOPES)):
+    raise ValueError("memory kind/scope values must be bare lowercase identifiers")
+
+_BUCKET_FACET_COLUMNS = "".join(
+    f",\n                    count(*) FILTER (WHERE r.{column} = '{value}')"
+    f" AS {column}_{value}"
+    for column, values in (("kind", MEMORY_KINDS), ("scope", MEMORY_SCOPES))
+    for value in values
+)
+
+
+async def facets(session: AsyncSession, tenant_id: UUID) -> MemoryContentFacets:
+    """Content facets for ``tenant_id`` over RETRIEVAL-LIVE rows only.
+
+    The companion to :func:`get_usage`: that one reports storage posture,
+    this one reports what is actually IN the store.
+
+    **Liveness is :data:`_RETRIEVAL_LIVE_PREDICATE`, not
+    :data:`_LIVE_DEDUP_PREDICATE`.** The two differ on ``valid_until``,
+    and the difference is not hypothetical:
+    :func:`expire_closed_session_records` stamps ``valid_until = closed_at
+    + interval '7 days'`` on session-scoped rows, so for up to a week
+    those rows are returned by ``/memory/query`` and listed by ``GET
+    /records`` while dedup-liveness counts them dead. Measuring them dead
+    here would report ``by_scope["session"] == 0`` at a caller whose very
+    next query returns session rows — the absence-reads-as-a-value bug
+    this surface exists to prevent, in the dangerous direction.
+
+    These counts therefore describe the retrieval-live corpus **modulo
+    ``scope_ref`` narrowing**: ``_validity_filters`` additionally requires
+    ``agent``/``session`` rows to carry the caller's own ``scope_ref``,
+    which is caller-dependent and has no tenant-wide answer. A specific
+    caller's ``agent``/``session`` buckets can therefore be SMALLER than
+    reported; no bucket can be larger.
+
+    **The predicate is deliberately NOT the one :func:`get_usage` uses**,
+    and the two must not be reconciled. ``get_usage`` counts every
+    non-tombstone row (superseded and validity-ended rows included)
+    because that is what quota charges for and what the coord twin census
+    mirrors; a live-only quota count would under-charge, and a
+    non-tombstone facet count would promise retrieval hits that
+    supersession and validity have already taken away.
+    :func:`embedding_coverage` filters on nothing at all, a third
+    definition again. The gap is real and is published as
+    ``live_row_count`` so no caller has to infer which denominator a facet
+    belongs to.
+
+    **One statement, one snapshot.** Every number here — the two grouped
+    tallies, the percentiles, ``live_row_count`` and the title sample —
+    comes back from a SINGLE ``SELECT``. The request session runs at the
+    Postgres default READ COMMITTED, so separate statements would each
+    take a fresh snapshot and a concurrent write between them could make
+    ``sum(by_kind) != sum(by_scope) != live_row_count`` under a
+    ``corpus_complete=True`` flag. Folding them makes::
+
+        sum(by_kind) == sum(by_scope) == live_row_count
+
+    true BY CONSTRUCTION rather than by timing, and collapses three scans
+    into one. The ``<= get_usage().row_count`` half of the published
+    invariant is NOT snapshot-atomic — ``get_usage`` is a separate call in
+    the handler — and the response schema says so.
+
+    ``by_kind`` / ``by_scope`` are exhaustive over
+    :data:`~app.schemas.memory.MEMORY_KINDS` /
+    :data:`~app.schemas.memory.MEMORY_SCOPES` because the FILTER columns
+    are GENERATED from those tuples: a kind with no rows comes back as
+    ``0`` instead of vanishing. Omission and emptiness are different
+    answers.
+
+    ``recent_titles`` is a bounded vocabulary sample
+    (:data:`~app.schemas.memory.RECENT_TITLES_SAMPLE` titles, newest
+    first), not a listing — :func:`list_records_page` (``GET
+    /memory/records``) is the paginated listing. It rides in the same
+    statement as an uncorrelated scalar subquery, so it is drawn from the
+    same snapshot as the counts.
+
+    The bucket tallies ride existing indexes
+    (``idx_memory_records_tenant_kind_created``,
+    ``idx_memory_records_tenant_scope``).
+
+    ``importance`` is REAL, so the 0.8 threshold is cast to REAL too:
+    comparing a float4 against a float8 literal promotes the column to
+    0.8000000119..., which would count a record stored at exactly 0.8 as
+    being ABOVE 0.8. Casting the literal keeps the comparison in the
+    column's own precision, where 0.8 is not above 0.8.
+    """
+    agg = (
+        await session.execute(
+            text(
+                f"""
+                SELECT
+                    count(*) AS live_row_count{_BUCKET_FACET_COLUMNS},
+                    percentile_cont(0.5) WITHIN GROUP (
+                        ORDER BY {_FACET_AGE_DAYS_SQL}
+                    ) AS age_p50_days,
+                    percentile_cont(0.9) WITHIN GROUP (
+                        ORDER BY {_FACET_AGE_DAYS_SQL}
+                    ) AS age_p90_days,
+                    max({_FACET_AGE_DAYS_SQL}) AS age_oldest_days,
+                    percentile_cont(0.5) WITHIN GROUP (ORDER BY r.importance)
+                        AS importance_p50,
+                    percentile_cont(0.9) WITHIN GROUP (ORDER BY r.importance)
+                        AS importance_p90,
+                    count(*) FILTER (
+                        WHERE r.importance > CAST(0.8 AS real)
+                    ) AS importance_above_0_8,
+                    (
+                        SELECT COALESCE(
+                            array_agg(
+                                t.title
+                                ORDER BY t.created_at DESC, t.memory_id DESC
+                            ),
+                            ARRAY[]::text[]
+                        )
+                        FROM (
+                            SELECT r.title, r.created_at, r.memory_id
+                            FROM coord.memory_records r
+                            WHERE r.tenant_id = :tenant_id
+                              AND {_RETRIEVAL_LIVE_PREDICATE}
+                            ORDER BY r.created_at DESC, r.memory_id DESC
+                            LIMIT :titles_limit
+                        ) t
+                    ) AS recent_titles
+                FROM coord.memory_records r
+                WHERE r.tenant_id = :tenant_id
+                  AND {_RETRIEVAL_LIVE_PREDICATE}
+                """
+            ),
+            {"tenant_id": tenant_id, "titles_limit": RECENT_TITLES_SAMPLE},
+        )
+    ).one()
+
+    def _opt_float(value: Any) -> float | None:
+        return None if value is None else float(value)
+
+    return MemoryContentFacets(
+        live_row_count=int(agg.live_row_count),
+        by_kind={k: int(getattr(agg, f"kind_{k}")) for k in MEMORY_KINDS},
+        by_scope={s: int(getattr(agg, f"scope_{s}")) for s in MEMORY_SCOPES},
+        age=MemoryFacetAge(
+            p50_days=_opt_float(agg.age_p50_days),
+            p90_days=_opt_float(agg.age_p90_days),
+            oldest_days=_opt_float(agg.age_oldest_days),
+        ),
+        importance=MemoryFacetImportance(
+            p50=_opt_float(agg.importance_p50),
+            p90=_opt_float(agg.importance_p90),
+            above_0_8=int(agg.importance_above_0_8),
+        ),
+        recent_titles=[str(t) for t in (agg.recent_titles or [])],
+    )
 
 
 async def insert_record(
@@ -482,8 +688,44 @@ async def find_by_hash(
 # COALESCE preserves the caller-chosen time-travel ``as_of``: an instant
 # the CALLER names is legitimately theirs to supply, and asking "what
 # did the corpus look like at X" is a wall-clock question by definition.
-_EFFECTIVE_NOW_SQL = (
-    "COALESCE(CAST(:as_of AS timestamptz), GREATEST(now(), r.updated_at, r.created_at))"
+_EFFECTIVE_NOW_ROW_SQL = "GREATEST(now(), r.updated_at, r.created_at)"
+
+_EFFECTIVE_NOW_SQL = f"COALESCE(CAST(:as_of AS timestamptz), {_EFFECTIVE_NOW_ROW_SQL})"
+
+# RETRIEVAL-liveness: the rows ``/memory/query`` and ``GET /memory/records``
+# can actually return, as opposed to the DEDUP-liveness of
+# :data:`_LIVE_DEDUP_PREDICATE`. The difference is ``valid_until``: dedup
+# demands it be NULL, retrieval admits any boundary still in the future.
+# That gap is load-bearing — :func:`expire_closed_session_records` stamps
+# ``valid_until = closed_at + interval '7 days'`` on session-scoped rows, so
+# for up to a week those rows are retrievable while dedup counts them dead.
+#
+# Requires the table to be aliased ``r`` (it embeds
+# :data:`_EFFECTIVE_NOW_ROW_SQL`), and it takes no ``:as_of`` bind: this is
+# the predicate for aggregates over the corpus AS IT IS, not at a
+# caller-named instant.
+#
+# NOT reproduced here: ``_validity_filters``'s scope rule
+# (``scope NOT IN ('agent','session') OR scope_ref = :scope_ref``), which is
+# caller-dependent and has no tenant-wide answer. Any aggregate built on
+# this constant is therefore retrieval-live MODULO scope_ref narrowing, and
+# must say so where it is published.
+_RETRIEVAL_LIVE_PREDICATE = (
+    "r.is_tombstone = false"
+    " AND r.superseded_by IS NULL"
+    f" AND r.valid_from <= {_EFFECTIVE_NOW_ROW_SQL}"
+    f" AND (r.valid_until IS NULL OR r.valid_until > {_EFFECTIVE_NOW_ROW_SQL})"
+)
+
+# Row age in days, for :func:`facets`. Measured against the same
+# clock-skew-safe effective now, NOT a bare ``now()``: the backward clock
+# step documented above (605 ms, measured) can leave ``created_at`` AHEAD
+# of a later ``now()``, which would render a freshly written corpus's
+# ``p50_days`` as a small NEGATIVE number. ``GREATEST(now(), r.updated_at,
+# r.created_at)`` is never less than the row's own ``created_at``, so the
+# age is >= 0 by construction.
+_FACET_AGE_DAYS_SQL = (
+    f"EXTRACT(EPOCH FROM ({_EFFECTIVE_NOW_ROW_SQL} - r.created_at)) / 86400.0"
 )
 
 
