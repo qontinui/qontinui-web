@@ -191,15 +191,21 @@ test.describe("Admin - Coord spawn-from-plan", () => {
       timeout: 5000,
     });
 
-    // Confirm the body coord received.
+    // Confirm the body coord received. The keys below are coord's
+    // `SpawnRequest` shape as built by `buildSpawnRequestBody`
+    // (SpawnModal.tsx) and pinned by SpawnModal.test.ts — `work_unit_slug`
+    // (renamed from `plan_slug` in Stage 4a of
+    // `2026-07-28-coord-post-plan-slug-surfaces-rename`),
+    // `target_device_id` (NOT `device_id`, which coord silently ignores),
+    // and `repos` as AllocateRepoSpec objects rather than bare strings.
     expect(capturedBody).not.toBeNull();
-    expect(capturedBody?.plan_slug).toBe(
+    expect(capturedBody?.work_unit_slug).toBe(
       "2026-05-19-coordinator-production-readiness"
     );
-    expect(capturedBody?.device_id).toBe(
+    expect(capturedBody?.target_device_id).toBe(
       "00000000-0000-0000-0000-deadbeefcafe"
     );
-    expect(capturedBody?.repos).toEqual(["qontinui-web"]);
+    expect(capturedBody?.repos).toEqual([{ repo: "qontinui-web" }]);
     expect(capturedBody?.intent).toBe("test spawn from e2e");
   });
 });
