@@ -9,7 +9,7 @@
 // doing, and why are the gaps between merges so long?") is a property of the
 // train, not of any PR. A PR row can say "I am green and unlanded"; only this
 // view can say "…because the leader lease lapsed 20 minutes ago", or
-// "…because this repo is frozen in dry_run", or "…because another proposal
+// "…because merges are switched off for this repo", or "…because another proposal
 // touching the same files is holding the slot".
 //
 // Reading order is deliberate and top-down by altitude:
@@ -17,6 +17,9 @@
 //   2. Fleet banners — causes that stall every repo at once. If one is
 //      present, the per-repo rows below it are consequences, not causes.
 //   3. Per-repo rows — current phase + dwell, then the ranked reasons.
+//   4. Inside an opened row, last: the emergency stop for THAT repo. This is
+//      the incident surface, so it is where the brake belongs; it defaults to
+//      the one repo you opened rather than the whole tenant.
 //
 // Colour follows the palette rule this file's sibling documents at length:
 // **colour encodes who has to do something.** Red = someone must act (coord is
@@ -25,8 +28,11 @@
 // yellow CI, blue landing) and are never red, because a busy train is not a
 // problem.
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   AlertTriangle,
@@ -37,9 +43,14 @@ import {
   GitMerge,
   Info,
   Pause,
+  Power,
   Snowflake,
 } from "lucide-react";
-import { relativeTime } from "./utils";
+import { CoordAdminOnly } from "@/components/admin/coord/CoordAdminOnly";
+import { createLogger } from "@/lib/logger";
+import { httpClient } from "@/services/service-factory";
+import { OPERATIONS_API, relativeTime } from "./utils";
+import type { MergeEnabledResponse } from "./mergeTypes";
 import {
   formatDuration,
   type PauseReason,
@@ -49,6 +60,8 @@ import {
   type TrainBanner,
   type TrainSummary,
 } from "./trainActivity";
+
+const log = createLogger("MergeTrainActivity");
 
 // ----------------------------------------------------------------------------
 // Visuals
@@ -183,9 +196,7 @@ function TrainHeader({
           // likely to be misread as "nothing is stuck", and a hard zero from a
           // failed read is a false all-clear.
           value={
-            summary.healthMissing
-              ? "—"
-              : String(summary.readyUnmergedCount)
+            summary.healthMissing ? "—" : String(summary.readyUnmergedCount)
           }
           // Colour by AGE, not by count. A PR that went green ten seconds ago
           // is legitimately "ready, unlanded"; painting that red would make the
@@ -228,7 +239,9 @@ function TrainHeader({
             <Stat
               label="Queued for a slot"
               value={String(summary.slots.queued_depth)}
-              tone={summary.slots.queued_depth > 0 ? "text-amber-200" : undefined}
+              tone={
+                summary.slots.queued_depth > 0 ? "text-amber-200" : undefined
+              }
               hint={
                 summary.slots.oldest_queued_wait_seconds != null
                   ? `oldest has waited ${formatDuration(summary.slots.oldest_queued_wait_seconds)}`
@@ -283,7 +296,7 @@ function TrainHeader({
           <p className="text-xs text-muted-foreground">
             coord&apos;s <code>/pr-merge/health</code> read is unavailable, so
             every fleet-level signal above is missing, not zero — the pause
-            clock, leader lease, dry-run freeze, slot saturation and the
+            clock, leader lease, merge suppression, slot saturation and the
             ready-but-unlanded backlog all read &ldquo;—&rdquo;. Per-repo
             activity below is still derived from the merge queue and PR list.
           </p>
@@ -345,7 +358,181 @@ function ReasonChip({ reason }: { reason: PauseReason }) {
   );
 }
 
-function RepoDetail({ row }: { row: RepoTrainRow }) {
+// ----------------------------------------------------------------------------
+// Emergency stop
+// ----------------------------------------------------------------------------
+
+/**
+ * The merge brake, in the place you are already standing when you need it.
+ *
+ * It used to be a red tenant-wide button at the top of the calibration page
+ * (`MergeOrchestrationSettings`), which got both things wrong: nobody opens a
+ * page about dwell thresholds during an incident, and the ONLY scope it
+ * offered was every repo the tenant owns. It lives here instead — the view
+ * that answers "what is the train doing and why" — scoped by default to the
+ * one repo whose row you opened, which is the repo you were already reading
+ * about.
+ *
+ * Tenant-wide is still reachable (a bad calibration can fire across the whole
+ * fleet, and "uninstall the GitHub App" is not an acceptable brake), but it is
+ * a deliberate second choice with its own blunt confirmation naming the blast
+ * radius. Both scopes are audited coord-side and both are reversible from the
+ * merge-settings page.
+ */
+function EmergencyStopControl({
+  repo,
+  onActed,
+}: {
+  repo: string;
+  onActed?: () => void;
+}) {
+  const [reason, setReason] = useState("");
+  const [tenantWide, setTenantWide] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<MergeEnabledResponse | null>(null);
+
+  const fire = useCallback(async () => {
+    setError(null);
+    const trimmed = reason.trim();
+    // coord requires a non-blank reason and the audit row is the whole point
+    // of having a brake, so refuse locally rather than surfacing a 400.
+    if (trimmed.length === 0) {
+      setError("Reason is required.");
+      return;
+    }
+    const scope = tenantWide ? "tenant" : `repo:${repo}`;
+    const ok = window.confirm(
+      tenantWide
+        ? "Pause merges for EVERY repo this tenant owns. This latch " +
+            "overrides every per-repo setting, so nothing lands anywhere " +
+            "until it is lifted. In-flight merges drain; nothing new is " +
+            "pushed. Proceed?"
+        : `Pause merges for ${repo}. In-flight merges drain; coord keeps ` +
+            "evaluating PRs but pushes nothing to this repo. Proceed?"
+    );
+    if (!ok) return;
+    setSubmitting(true);
+    try {
+      const res = await httpClient.fetch(
+        `${OPERATIONS_API}/pr-merge/kill-switch`,
+        {
+          method: "POST",
+          body: JSON.stringify({ scope, reason: trimmed }),
+        }
+      );
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        throw new Error(`HTTP ${res.status}${body ? `: ${body}` : ""}`);
+      }
+      const data = (await res.json()) as MergeEnabledResponse;
+      setResult(data);
+      setReason("");
+      setTenantWide(false);
+      onActed?.();
+    } catch (err) {
+      log.warn("emergency stop failed", err);
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }, [reason, tenantWide, repo, onActed]);
+
+  return (
+    <div
+      className="space-y-2 rounded-md border border-red-500/40 px-2.5 py-2"
+      data-testid={`emergency-stop-${repo}`}
+    >
+      <div className="flex items-center gap-1.5">
+        <Power className="h-3.5 w-3.5 shrink-0 text-red-200" />
+        <h5 className="text-[11px] font-semibold uppercase tracking-wide text-red-200">
+          Emergency stop
+        </h5>
+      </div>
+      {/* This paragraph tracks the checkbox below it. It is the sentence a
+          hurried operator actually reads, so leaving it repo-scoped while the
+          button and the confirm had gone tenant-wide would put the reassuring
+          copy and the real blast radius on the same screen, disagreeing. */}
+      <p
+        className="text-xs text-muted-foreground"
+        data-testid={`emergency-stop-blurb-${repo}`}
+      >
+        {tenantWide ? (
+          <>
+            Pauses merges for <strong>every repo this tenant owns</strong>,
+            including repos pinned on — the tenant pause overrides every
+            per-repo setting. Audited and reversible — lift it from Merge
+            settings.
+          </>
+        ) : (
+          <>
+            Pauses merges for <span className="font-mono">{repo}</span> only.
+            Audited and reversible — re-enable from Merge settings.
+          </>
+        )}
+      </p>
+      <div className="space-y-1">
+        <Label htmlFor={`emergency-stop-reason-${repo}`} className="text-xs">
+          Reason (required)
+        </Label>
+        <Input
+          id={`emergency-stop-reason-${repo}`}
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="e.g. bad rebase landing on main; investigating"
+          data-testid={`emergency-stop-reason-${repo}`}
+        />
+      </div>
+      <label className="flex items-center gap-2 text-xs text-muted-foreground">
+        <input
+          type="checkbox"
+          checked={tenantWide}
+          onChange={(e) => setTenantWide(e.target.checked)}
+          data-testid={`emergency-stop-tenant-wide-${repo}`}
+        />
+        Stop every repo in this tenant instead (overrides all per-repo settings)
+      </label>
+      {error && (
+        <p className="flex items-center gap-1 text-xs text-red-200">
+          <AlertTriangle className="h-3 w-3" />
+          {error}
+        </p>
+      )}
+      {result && (
+        <p
+          className="text-xs text-amber-200"
+          data-testid={`emergency-stop-result-${repo}`}
+        >
+          Stopped <code>{result.scope}</code> — merge_enabled{" "}
+          <code>{String(result.previous_merge_enabled)}</code> →{" "}
+          <code>{String(result.merge_enabled)}</code>,{" "}
+          {result.affected_repos.length} repo(s) affected.
+        </p>
+      )}
+      <Button
+        variant="destructive"
+        size="sm"
+        disabled={submitting}
+        onClick={() => void fire()}
+        data-testid={`emergency-stop-fire-${repo}`}
+      >
+        {submitting
+          ? "Stopping…"
+          : tenantWide
+            ? "Stop merges tenant-wide"
+            : "Stop merges for this repo"}
+      </Button>
+    </div>
+  );
+}
+
+function RepoDetail({
+  row,
+  onActed,
+}: {
+  row: RepoTrainRow;
+  onActed?: () => void;
+}) {
   const a = row.activity;
   return (
     <div
@@ -370,8 +557,8 @@ function RepoDetail({ row }: { row: RepoTrainRow }) {
             {a.branch && <Field label="Branch">{a.branch}</Field>}
             {a.behind > 0 && (
               <Field label="Behind it">
-                {a.behind} more proposal{a.behind === 1 ? "" : "s"} for this repo
-                waiting on this one
+                {a.behind} more proposal{a.behind === 1 ? "" : "s"} for this
+                repo waiting on this one
               </Field>
             )}
             {a.requeueCount > 0 && (
@@ -432,9 +619,7 @@ function RepoDetail({ row }: { row: RepoTrainRow }) {
                       .slice(0, 10)
                       .map((n) => `#${n}`)
                       .join(" ")}
-                    {r.prNumbers.length > 10 &&
-                      ` +${r.prNumbers.length - 10}`}
-                    )
+                    {r.prNumbers.length > 10 && ` +${r.prNumbers.length - 10}`})
                   </span>
                 )}
               </li>
@@ -485,6 +670,13 @@ function RepoDetail({ row }: { row: RepoTrainRow }) {
         last train activity{" "}
         {row.lastActivityAt ? relativeTime(row.lastActivityAt) : "unknown"}
       </p>
+
+      {/* Last, and only inside the opened row: the brake is for the repo you
+          are reading about, and a destructive control has no business
+          competing with the diagnosis above it. */}
+      <CoordAdminOnly>
+        <EmergencyStopControl repo={row.repo} onActed={onActed} />
+      </CoordAdminOnly>
     </div>
   );
 }
@@ -525,10 +717,12 @@ function RepoRow({
   row,
   expanded,
   onToggle,
+  onActed,
 }: {
   row: RepoTrainRow;
   expanded: boolean;
   onToggle: () => void;
+  onActed?: () => void;
 }) {
   const active = row.activity.kind !== "idle";
   return (
@@ -563,7 +757,7 @@ function RepoRow({
         {row.frozenDryRun && (
           <Snowflake
             className="h-3.5 w-3.5 shrink-0 text-red-200"
-            aria-label="frozen in dry-run"
+            aria-label="merges suppressed"
           />
         )}
 
@@ -604,7 +798,7 @@ function RepoRow({
         </span>
       </button>
 
-      {expanded && <RepoDetail row={row} />}
+      {expanded && <RepoDetail row={row} onActed={onActed} />}
     </div>
   );
 }
@@ -629,6 +823,11 @@ export interface MergeTrainActivityProps {
   healthLoaded?: boolean;
   /** Free-text filter shared with the other tabs (matches repo name). */
   query?: string;
+  /**
+   * Refetch hook fired after an operator mutation (the per-repo emergency
+   * stop). Optional: the tab renders read-only without it.
+   */
+  onActed?: () => void;
 }
 
 export function MergeTrainActivity({
@@ -637,11 +836,14 @@ export function MergeTrainActivity({
   loaded,
   healthLoaded = true,
   query = "",
+  onActed,
 }: MergeTrainActivityProps) {
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const q = query.trim().toLowerCase();
-  const visible = q ? rows.filter((r) => r.repo.toLowerCase().includes(q)) : rows;
+  const visible = q
+    ? rows.filter((r) => r.repo.toLowerCase().includes(q))
+    : rows;
 
   if (!loaded) {
     return (
@@ -676,6 +878,7 @@ export function MergeTrainActivity({
               onToggle={() =>
                 setExpanded((k) => (k === row.repo ? null : row.repo))
               }
+              onActed={onActed}
             />
           ))}
         </div>

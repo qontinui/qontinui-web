@@ -237,8 +237,20 @@ function AccountRow({
               >
                 {r.repo}
               </Link>
+              {/* LEGACY — no longer maintained. `rollout_state` is the
+                  tri-state retired by plan
+                  `2026-07-29-retire-merge-rollout-tristate-and-fix-the-dead-kill-switch`;
+                  after its Phase 2-4 nothing writes the column except the
+                  clear-to-inherit path, so this badge freezes at whatever the
+                  repo was enrolled with. Kept only as a provenance hint on an
+                  onboarding list, never as merge posture — Merge settings owns
+                  that. Phase 5 drops the column and this badge. */}
               {r.rollout_state && (
-                <Badge variant="secondary" className="text-[10px]">
+                <Badge
+                  variant="secondary"
+                  className="text-[10px]"
+                  title="Legacy enrollment state — not current merge posture. See Merge settings."
+                >
                   {r.rollout_state}
                 </Badge>
               )}
