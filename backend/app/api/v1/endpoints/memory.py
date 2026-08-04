@@ -82,6 +82,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse, Response
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import ValidationError
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
+from sqlalchemy.exc import TimeoutError as SATimeoutError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
@@ -101,10 +103,13 @@ from app.schemas.memory import (
     JobResultResponse,
     LifecycleHoldResponse,
     ListRecordsResponse,
+    MemoryAgeFacet,
+    MemoryFacets,
     MemoryGraphEdge,
     MemoryGraphNode,
     MemoryGraphRequest,
     MemoryGraphResponse,
+    MemoryImportanceFacet,
     MemoryJobOut,
     MemoryKind,
     MemoryLinkOut,
@@ -944,12 +949,93 @@ async def delete_record(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+async def _stats_facets(db: AsyncSession, tenant_id: UUID) -> MemoryFacets | None:
+    """Content facets, or ``None`` when the read could not complete.
+
+    ``None`` is the honest answer to a degraded read and drives
+    ``corpus_complete=False``. The alternative — returning whatever
+    partial aggregate came back — is the failure this whole surface
+    exists to prevent: a caller cannot tell a partial read from a small
+    corpus, so smaller-but-confident numbers are worse than no numbers.
+    Same contract coord's ``coord_query_memory_state`` already states:
+    unreachable is a blind spot, NEVER an empty confident success.
+
+    Only TRANSIENT infrastructure failures degrade: a statement timeout
+    on a very large corpus or a dropped connection
+    (:class:`~sqlalchemy.exc.OperationalError`), a pool checkout timeout
+    (:class:`sqlalchemy.exc.TimeoutError`), or an ``asyncio`` timeout
+    (the builtin :class:`TimeoutError`, which ``asyncio.TimeoutError``
+    aliases). Anything else propagates.
+
+    The catch is deliberately NOT ``SQLAlchemyError``. That would swallow
+    ``ProgrammingError`` (undefined column or function, syntax error) and
+    ``DataError`` — the shapes a genuine defect in the hand-written facets
+    SQL, or schema drift after a migration, actually take. Those are not
+    degradation; they are permanent, they would silently null the facets
+    on EVERY ``/stats`` call for every tenant, and the only trace would be
+    a log line. Same reasoning that keeps ``TypeError`` uncaught here: a
+    bug must be loud. Let them 500.
+
+    Logged at ``error``, not ``warning``: even the transient arm means the
+    surface is currently answering "I could not look", which is worth
+    paging on if it persists.
+
+    Called LAST in the handler and rolling back on failure, because a
+    failed statement aborts the surrounding transaction: the plumbing
+    fields are already read by then, and the rollback leaves the session
+    in a state the request-scoped ``commit()`` can still close. The
+    rollback is itself guarded — it runs on a connection that may be the
+    very thing that just failed, and a raising rollback inside the
+    graceful-degradation handler would turn ``/stats`` into a 500, which
+    is exactly what this path exists to avoid.
+    """
+    try:
+        facets = await store.facets(db, tenant_id)
+    except (OperationalError, SATimeoutError, TimeoutError) as exc:
+        try:
+            await db.rollback()
+        except SQLAlchemyError as rollback_exc:
+            logger.warning(
+                "memory_stats_facets_rollback_failed",
+                tenant_id=str(tenant_id),
+                error=str(rollback_exc),
+            )
+        logger.error(
+            "memory_stats_facets_degraded",
+            tenant_id=str(tenant_id),
+            error=str(exc),
+        )
+        return None
+    return MemoryFacets(
+        live_row_count=facets.live_row_count,
+        by_kind=facets.by_kind,
+        by_scope=facets.by_scope,
+        age=MemoryAgeFacet(
+            p50_days=facets.age.p50_days,
+            p90_days=facets.age.p90_days,
+            oldest_days=facets.age.oldest_days,
+        ),
+        importance=MemoryImportanceFacet(
+            p50=facets.importance.p50,
+            p90=facets.importance.p90,
+            above_0_8=facets.importance.above_0_8,
+        ),
+        recent_titles=facets.recent_titles,
+    )
+
+
 @router.get("/stats", response_model=MemoryStatsResponse)
 async def memory_stats(
     principal: MemoryPrincipal = Depends(get_memory_tenant),
     db: AsyncSession = Depends(get_async_db),
 ) -> MemoryStatsResponse:
-    """Usage + quota posture for the caller's tenant."""
+    """Usage + quota posture + content facets for the caller's tenant.
+
+    The quota fields answer "is the plumbing healthy"; ``facets`` answers
+    "what is in here" — the read an agent needs BEFORE guessing at query
+    vocabulary. ``corpus_complete`` distinguishes a genuinely small
+    corpus from a facet read that degraded.
+    """
     usage = await store.get_usage(db, principal.tenant_id)
     coverage = await store.embedding_coverage(db, principal.tenant_id)
     held = await store.count_lifecycle_held(db, principal.tenant_id)
@@ -960,6 +1046,7 @@ async def memory_stats(
         usage.bytes / usage.quota_bytes if usage.quota_bytes > 0 else 0.0,
         usage.row_count / usage.quota_rows if usage.quota_rows > 0 else 0.0,
     )
+    facets = await _stats_facets(db, principal.tenant_id)
     return MemoryStatsResponse(
         row_count=usage.row_count,
         bytes=usage.bytes,
@@ -972,6 +1059,8 @@ async def memory_stats(
         synthesis_jobs_done=job_counts["done"],
         synthesis_jobs_failed=job_counts["failed"],
         lifecycle_held=held,
+        facets=facets,
+        corpus_complete=facets is not None,
     )
 
 
