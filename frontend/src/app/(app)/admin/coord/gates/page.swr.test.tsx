@@ -47,6 +47,7 @@ const EMPTY_COUNTS = {
 };
 const EMPTY_ROLLOUTS = {
   auto_merge: { enabled: [], disabled: [] },
+  auto_merge_enabled: true,
   features: [],
 };
 

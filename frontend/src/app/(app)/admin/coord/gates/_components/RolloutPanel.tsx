@@ -9,9 +9,16 @@
  * of plan
  * `2026-07-29-retire-merge-rollout-tristate-and-fix-the-dead-kill-switch`, so a
  * repo whose merges were switched off still showed under `live` forever. Phase 5
- * dropped the column and repointed coord's `auto_merge` block at the resolved
- * `merge_enabled` axis, which is what the engine and the land seam actually
- * gate on — so these buckets are live again rather than decorative.
+ * dropped the column and repointed coord's `auto_merge` block at
+ * `merge_permitted()` — the COMPOSED verdict, `auto_merge_enabled &&
+ * merge_enabled` — so these buckets are live again rather than decorative.
+ *
+ * Note that is deliberately NOT the same axis the scheduler's cross-owner land
+ * seam uses: that gate reads `merge_enabled` ALONE on purpose (plan F7 — feeding
+ * it the composed verdict would let a co-owner who never opted into auto-merge
+ * veto a repo that lands today). A gate must not tighten; a display must not
+ * overstate. So this panel and the land seam can legitimately disagree for a
+ * tenant with `auto_merge_enabled = false`, and that is the intended reading.
  */
 
 import { Badge } from "@/components/ui/badge";
@@ -78,7 +85,7 @@ function RepoStateGroup({
 }
 
 export function RolloutPanel({ rollouts }: { rollouts: RolloutOverview }) {
-  const { auto_merge, features } = rollouts;
+  const { auto_merge, auto_merge_enabled, features } = rollouts;
 
   return (
     <div
@@ -94,12 +101,26 @@ export function RolloutPanel({ rollouts }: { rollouts: RolloutOverview }) {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* RESOLVED posture, not the raw pin: coord folds the dominant
-              tenant-wide `merge_paused` pause into each repo before bucketing,
-              so a paused tenant's repos all land under `disabled`. To see
-              WHICH lever put a repo there — a per-repo pin or the tenant
-              pause — use /admin/coord/merge-settings, which renders the
-              resolved value alongside the raw override. */}
+          {/* RESOLVED verdict, not the raw pin. THREE levers can land a repo
+              under `disabled`, and they are not equally visible:
+                1. a per-repo `merge_enabled = false` pin,
+                2. the dominant tenant-wide `merge_paused`,
+                3. the tenant never setting `auto_merge_enabled` — which
+                   defaults FALSE and disables EVERY repo at once.
+              (3) is called out below its own banner because an all-`disabled`
+              board with every pin inheriting is otherwise causeless. For (1)
+              vs (2) use /admin/coord/merge-settings, which renders the resolved
+              value alongside the raw override. */}
+          {auto_merge_enabled === false && (
+            <p
+              className="text-xs text-amber-300"
+              data-testid="rollout-automerge-tenant-off"
+            >
+              This tenant has not enabled auto-merge, so every repo below is
+              disabled regardless of its per-repo setting. Turn it on in Merge
+              settings.
+            </p>
+          )}
           {/* `?? []` is NOT belt-and-braces: this panel also renders on the
               coord-DOWN path (the gates page shows `coord_error` as an additive
               banner, not a gate), and during a deploy window an older coord can
