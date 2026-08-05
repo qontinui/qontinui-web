@@ -96,6 +96,7 @@ from app.core.config import settings
 from app.models.user import User
 from app.schemas.memory import (
     DEFAULT_LIST_LIMIT,
+    MAX_ANCHORS_PER_RECORD,
     MAX_LIST_LIMIT,
     ClaimJobsRequest,
     ClaimJobsResponse,
@@ -419,13 +420,49 @@ async def write_records(
     # could see the anchor. The union here is what makes the store's
     # docstring parity ("later occurrences contribute only their
     # ANCHORS") actually true of the caller.
+    #
+    # ...but the union MUST be re-capped, because it crosses records and
+    # ``MAX_ANCHORS_PER_RECORD`` does not. That cap is enforced on the
+    # pydantic request model, i.e. per INCOMING RECORD; nothing below
+    # here re-checks it (``MemoryRecordInsert.anchors`` is a bare
+    # ``list[dict]``, ``insert_records_batch`` binds it verbatim, and the
+    # column carries no length CHECK). So a single request of
+    # ``MAX_RECORDS_PER_REQUEST`` identical-content records, each with a
+    # full and DISTINCT set of 16 legal anchors, unions to 1600 on one
+    # row with every record passing its own 422 — and at zero quota cost,
+    # since none of them creates a row.
+    #
+    # The cap's reason is not tidiness: the array is read whole with its
+    # record and RE-RESOLVED BY THE WATCHER EVERY TICK, so its length is
+    # a per-tick fan-out of GitHub/twin reads for that one row. 1600
+    # anchors is 1600 resolver reads per tick, forever.
+    #
+    # Truncation rather than rejection, at this layer: every record in
+    # such a request is individually legal, so there is nothing honest to
+    # 422 about — and silently keeping the first N matches the
+    # "first occurrence wins every other column" rule this function
+    # already applies right above. The drop is logged (counts only) the
+    # same way dropped graph links are, so it is lossy but never silent
+    # to an operator.
     anchors_by_hash: dict[str, list[dict[str, Any]]] = {}
+    truncated_anchors = 0
     for i, h in enumerate(hashes):
         bucket = anchors_by_hash.setdefault(h, [])
         for anchor in payload.records[i].anchors:
             dumped = anchor.model_dump(mode="json")
-            if dumped not in bucket:
-                bucket.append(dumped)
+            if dumped in bucket:
+                continue
+            if len(bucket) >= MAX_ANCHORS_PER_RECORD:
+                truncated_anchors += 1
+                continue
+            bucket.append(dumped)
+    if truncated_anchors:
+        logger.info(
+            "memory_anchors_truncated",
+            tenant_id=str(principal.tenant_id),
+            dropped=truncated_anchors,
+            cap=MAX_ANCHORS_PER_RECORD,
+        )
 
     # ANCHOR-BEARING known duplicates go through the batch statement TOO,
     # even though step 3 established their content already exists live.
