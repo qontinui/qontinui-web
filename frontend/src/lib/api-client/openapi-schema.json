@@ -2533,7 +2533,7 @@
         "type": "object"
       },
       "AppConfigUpdate": {
-        "description": "Partial update of an app's fleet-fresh config.\n\nOnly the fields the operator edits from the fleet UI. ``None`` leaves a\nfield unchanged (build/start commands can be cleared by sending an empty\nstring).",
+        "description": "Partial update of an app's fleet-fresh config.\n\nOnly the fields the operator edits from the fleet UI. ``None`` leaves a\nfield unchanged (build/start commands are cleared by sending a blank\nvalue: empty or whitespace-only).",
         "properties": {
           "build_command": {
             "anyOf": [
