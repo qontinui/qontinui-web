@@ -1,7 +1,7 @@
 """coord.session_messages park_work_unit_slug — expand + backfill (Stage 3a)
 
 Revision ID: parkwuslug_01
-Revises: memhold_adjudicate_02
+Revises: memhold_adjudicate_03
 Create Date: 2026-08-03
 
 Stage 3a (EXPAND half) of plan
@@ -75,7 +75,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "parkwuslug_01"
-down_revision: str | Sequence[str] | None = "memhold_adjudicate_02"
+down_revision: str | Sequence[str] | None = "memhold_adjudicate_03"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

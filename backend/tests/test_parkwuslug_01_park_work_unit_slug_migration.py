@@ -93,6 +93,7 @@ the default ``localhost:5432``.
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -111,8 +112,17 @@ from tests._alembic_harness import (
 # The revision under test and its parent. Both are pinned explicitly rather
 # than using "head" so a later migration landing on top cannot silently change
 # what this test walks.
+#
+# `_PARENT_REVISION_ID` MUST stay equal to the revision's own `down_revision`;
+# `test_the_pinned_parent_matches_the_revisions_down_revision` below enforces
+# it. Re-pointing a stale PR onto a new main head edits only the migration, and
+# a parent left behind here is not a cosmetic mismatch: the walks below rewind
+# with `stamp`/`downgrade` to `_PARENT_REVISION_ID` and then `upgrade`, so too
+# far a rewind REPLAYS every intervening revision. None of them are idempotent,
+# so the test dies on a `DuplicateTable` raised by an unrelated migration.
 _REVISION_ID = "parkwuslug_01"
-_PARENT_REVISION_ID = "memhold_adjudicate_02"
+_PARENT_REVISION_ID = "memhold_adjudicate_03"
+_REVISION_FILENAME = "parkwuslug_01_park_work_unit_slug_expand.py"
 
 # Addresses the seeded rows are keyed by. Parked rows are exactly the
 # claim:/resource: ones — a session: address is resolved at send time and never
@@ -132,6 +142,32 @@ _SLUG_DUAL_LEGACY = "legacy-vocabulary-slug"
 # different from the legacy value so a clobber is visible rather than a no-op.
 _SLUG_DUAL_NEW = "new-vocabulary-slug"
 _SLUG_NEW_ONLY = "born-after-the-rename"
+
+
+def test_the_pinned_parent_matches_the_revisions_down_revision() -> None:
+    """`_PARENT_REVISION_ID` is the revision's real parent — no database needed.
+
+    Every walk below rewinds to `_PARENT_REVISION_ID` and upgrades forward. That
+    only exercises THIS revision while the pin names its actual parent. Let the
+    two drift and the rewind lands further back, `upgrade` replays a stretch of
+    unrelated non-idempotent revisions, and the failure surfaces as a
+    `DuplicateTable` from a migration this test never meant to touch — a red
+    that reads as someone else's bug. Cheap to assert, expensive to diagnose.
+    """
+    source = (backend_root() / "alembic" / "versions" / _REVISION_FILENAME).read_text(
+        encoding="utf-8"
+    )
+    match = re.search(
+        r'^down_revision[^=]*=\s*["\'](?P<parent>[^"\']+)["\']',
+        source,
+        re.MULTILINE,
+    )
+    assert match is not None, f"no down_revision found in {_REVISION_FILENAME}"
+    assert match.group("parent") == _PARENT_REVISION_ID, (
+        f"{_REVISION_FILENAME} declares down_revision="
+        f"{match.group('parent')!r} but this test pins "
+        f"_PARENT_REVISION_ID={_PARENT_REVISION_ID!r}. Re-point both together."
+    )
 
 
 def _seed(engine: Engine) -> None:
