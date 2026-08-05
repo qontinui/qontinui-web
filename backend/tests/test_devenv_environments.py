@@ -439,6 +439,25 @@ class TestDerivedKeys:
             "tauri",
         ]
 
+    def test_probe_scope_kind_is_derived(self) -> None:
+        """Capture provenance is reported but is never an apply action.
+
+        ``probe_scope_kind`` records WHICH scope the node/python/rustc probes
+        ran in. No version manager can install a scope, so it must never be
+        counted as actionable drift — but it must still be REPORTED, because a
+        runner uses it to decide whether canonical's toolchain numbers are
+        comparable with its own at all.
+        """
+        from app.services import devenv_section_policy as sp
+
+        assert sp.is_derived_key("versions", "probe_scope_kind") is True
+        derived = sp.derived_keys_map(
+            {"versions": {"node": "22.1.0", "probe_scope_kind": "default"}}
+        )
+        assert derived == {"versions": ["probe_scope_kind"]}
+        # Scoped to `versions` — it is not a blanket key name.
+        assert sp.is_derived_key("services", "probe_scope_kind") is False
+
     def test_machine_facts_are_not_derived(self) -> None:
         """node/python/rustc are shelled machine facts — they stay applyable."""
         from app.services import devenv_section_policy as sp

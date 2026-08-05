@@ -68,6 +68,27 @@ _DERIVED_KEYS: dict[str, frozenset[str]] = {
             "node_package_name",
             "python_constraint",
             "tauri",
+            # Capture PROVENANCE, not a fact about the toolchain: which scope
+            # the ``node``/``python``/``rustc`` probes were measured in
+            # (``default`` = the box's home directory, i.e. its default
+            # toolchain; ``declared`` = an operator-declared project tree;
+            # ``inherited`` = no home directory resolvable). Emitted by the
+            # runner's ``collect_versions``.
+            #
+            # It is classified "derived" for the same operational reason the
+            # repo-derived keys are: it is REPORTED but is never an apply
+            # action — no version manager can install a scope. It differs in
+            # WHY, which is worth stating: the repo keys converge by pulling
+            # the repo, whereas this one converges by an operator running
+            # ``env scope-root`` on one of the two boxes.
+            #
+            # It exists so a runner can tell whether canonical's toolchain
+            # numbers are even COMPARABLE with its own before acting on them.
+            # Two boxes measuring different scopes are not measuring the same
+            # thing, and the runner's ``versions`` apply refuses on a mismatch
+            # rather than installing a version that was observed somewhere
+            # else (plan 2026-07-02-..., the residual slice 1a left open).
+            "probe_scope_kind",
         }
     ),
 }
