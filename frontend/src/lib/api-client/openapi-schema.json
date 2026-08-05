@@ -52337,7 +52337,7 @@
     },
     "/api/v1/agent-registry": {
       "get": {
-        "description": "The current user's effective agent list.\n\nProxies coord ``GET /coord/agent-registry`` (registry rows + prefs;\noperator bearer forwarded, tenant resolved coord-side from it) and\noverlays the caller's own prefs into the effective shape the settings\npage renders.",
+        "description": "The current user's effective agent list, as folded by coord.\n\nProxies ``GET /coord/agent-registry/effective-for`` and returns its\n``EffectiveAgent`` rows unchanged \u2014 ``enabled``, ``disposition`` and\n``source`` are coord's, not re-derived here. The operator bearer is\nforwarded and the tenant resolved coord-side from it; the folded user is\nalways the authenticated caller, never a client-supplied id.",
         "operationId": "api_v1_agent_registry_get",
         "responses": {
           "200": {
