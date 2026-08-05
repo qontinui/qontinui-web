@@ -2226,10 +2226,45 @@ async def fetch_cluster_candidates(
     now: datetime,
     limit: int,
 ) -> list[dict[str, Any]]:
-    """Live ``episode``/``observation`` rows for synthesis clustering.
+    """Live ``episode`` rows for synthesis clustering.
 
     Returns oldest-first dicts with the parsed embedding (each carries
     ``memory_id, title, content, importance, created_at, embedding``).
+
+    ## Why ``episode`` only
+
+    This selector used to read ``kind IN ('episode', 'observation')``, and that
+    ``observation`` term cost 597 hand-authored documents.
+
+    Consolidation is destructive by construction: `record_synthesis_result`
+    supersedes every member behind the distilled ``mental_model``, and
+    ``superseded_by`` is one of the three terminal markers `decay_prune` reads,
+    so a consumed member is deleted 90 days later. That endpoint is correct for
+    EPISODES — a hundred "ran the suite, green" events genuinely are disposable
+    once you hold "the suite is stable" — and this function's own producer says
+    so: `synthesis_job_input` is documented as "One episode cluster, as a
+    ``synthesis`` job."
+
+    ``observation`` is a different animal. It is the DEFAULT kind for
+    general-purpose writes (`coord_memory_record`'s mapping sends `project`
+    notes there), so including it pointed a summarizer at the general case
+    rather than the episodic one. On 2026-07-28 the weekly sweep consumed 597
+    imported topic-file documents that way — an 11,235-byte document replaced in
+    retrieval by a 1,203-byte paraphrase, 1.5 ms after the paraphrase was
+    written. Measured afterwards: 643 invisible ``origin='topic-file'`` rows,
+    597 superseded onto a ``source.synthesis_job`` row, and ZERO clock-decayed.
+    Supersession, not decay, is what consumed the corpus.
+
+    Narrowing to the kind this path was designed for fixes that at the source
+    rather than by exempting classes one at a time. The alternative considered
+    and rejected was re-keying those documents onto a non-consolidatable kind:
+    it repairs a closed historical population (the file sync retired in Phase
+    3b) while leaving every NEW ``observation`` — which is what agents write
+    today — enrolled in the same lifecycle.
+
+    Near-duplicate merge (`find_near_duplicate_pairs`, cosine > 0.95) is a
+    SEPARATE supersede path and is deliberately untouched: collapsing genuine
+    duplicates is not lossy in the way distillation is.
 
     Rows held by :func:`_not_lifecycle_held` are excluded. This is the
     DOMINANT supersede path of the two: a cluster that survives synthesis
@@ -2249,7 +2284,7 @@ async def fetch_cluster_candidates(
                    CAST(embedding AS text) AS embedding_text
             FROM coord.memory_records
             WHERE tenant_id = :tenant_id
-              AND kind IN ('episode', 'observation')
+              AND kind = 'episode'
               AND is_tombstone = false
               AND superseded_by IS NULL
               AND (valid_until IS NULL OR valid_until > CAST(:now AS timestamptz))
