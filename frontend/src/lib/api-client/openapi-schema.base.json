@@ -66752,7 +66752,7 @@
     },
     "/api/v1/fleet/apps/{app_id}": {
       "patch": {
-        "description": "Edit an app's update strategy + build/start commands.\n\nFields left ``None`` are unchanged. ``build_command`` / ``start_command``\ncan be cleared by sending an empty string.",
+        "description": "Edit an app's update strategy + build/start commands.\n\nFields left ``None`` are unchanged. ``build_command`` / ``start_command``\nare cleared by sending a blank value (empty or whitespace-only).",
         "operationId": "api_v1_fleet_apps_app_id_patch",
         "parameters": [
           {
