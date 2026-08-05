@@ -88,6 +88,70 @@ _LIVE_DEDUP_PREDICATE = (
     "is_tombstone = false AND superseded_by IS NULL AND valid_until IS NULL"
 )
 
+
+class SupersedeRefused(RuntimeError):
+    """An explicit ``superseded_by`` write was rejected by the safety guard.
+
+    Raised only by :func:`mark_superseded` (the explicit, caller-initiated
+    path). The automatic set-based writers skip and log instead — aborting a
+    scheduled sweep is what turns a data defect into a fleet-wide outage.
+    """
+
+
+def _live_predicate_for(alias: str) -> str:
+    """:data:`_LIVE_DEDUP_PREDICATE` with every column qualified by ``alias``.
+
+    Derived from the one constant rather than re-typed, so a change to the
+    liveness definition cannot drift between the dedup lookups and the
+    supersede guard below.
+    """
+    return " AND ".join(
+        f"{alias}.{atom.strip()}" for atom in _LIVE_DEDUP_PREDICATE.split(" AND ")
+    )
+
+
+def _supersede_target_is_safe(
+    *, target: str, subject: str = "memory_id", table: str = "coord.memory_records"
+) -> str:
+    """SQL guard every ``superseded_by`` write MUST carry.
+
+    Two conditions, both as a WHERE **predicate** rather than a ranking key:
+
+    1. **The target must be LIVE.** Pointing a supersession at a row that is
+       itself tombstoned / superseded / validity-ended buries the lineage for
+       nothing: the subject leaves retrieval and the row that replaced it is
+       not in retrieval either, so the document is simply gone. This is the
+       shape that orphaned ``4a14e94e…`` — part 1/2 was superseded onto a
+       DEAD sync-conflict sidecar which itself pointed at the live part 2/2.
+    2. **No back-edge.** Refuse A→B when B→A already exists, which is what
+       mints a supersede 2-cycle. `memhold_adjudicate_01` created one
+       (2026-08-01) because it treated liveness as an ``ORDER BY`` key and
+       never checked the reverse edge; the resulting cycle failed
+       `memhold_adjudicate_02`'s ``not_live`` invariant, which deferred every
+       migration PR fleet-wide for >5h on 2026-08-04.
+
+    Why a predicate and not a sort key: a ranking PREFERS a live target but
+    with a single candidate returns it whatever its state, so ranking cannot
+    express "never". Only a WHERE can.
+
+    ``target`` and ``subject`` are bind-parameter NAMES (rendered ``:name``),
+    never values — this fragment is interpolated into f-strings, so it must
+    never carry caller data.
+    """
+    return f"""
+        EXISTS (
+            SELECT 1 FROM {table} tgt
+             WHERE tgt.memory_id = :{target}
+               AND {_live_predicate_for("tgt")}
+        )
+        AND NOT EXISTS (
+            SELECT 1 FROM {table} back
+             WHERE back.memory_id = :{target}
+               AND back.superseded_by = {subject}
+        )
+    """
+
+
 # The KIND-AWARE liveness predicate of the ``uq_memory_jobs_live_input``
 # partial unique index (see the ``memory_jobs_02_kind_aware_dedupe``
 # migration). An in-flight (pending/claimed) job of either kind dedupes, and
@@ -1104,15 +1168,21 @@ async def mark_superseded(
     gated at their selector". Any NEW automatic caller of this function
     must bring its own gate; adding one without it silently re-opens the
     hole this comment exists to name.
+
+    Carries :func:`_supersede_target_is_safe`. This path is EXPLICIT, so a
+    refused write RAISES rather than no-opping: a human asked for this edge
+    and must be told it was rejected. The automatic set-based writers skip
+    and log instead — a sweep must never abort (qontinui-web#904).
     """
-    await session.execute(
+    result = await session.execute(
         text(
-            """
+            f"""
             UPDATE coord.memory_records
             SET superseded_by = :new_memory_id,
                 valid_until = now(),
                 updated_at = now()
             WHERE tenant_id = :tenant_id AND memory_id = :old_memory_id
+              AND {_supersede_target_is_safe(target="new_memory_id")}
             """
         ),
         {
@@ -1121,6 +1191,14 @@ async def mark_superseded(
             "new_memory_id": new_memory_id,
         },
     )
+    if int(cast("CursorResult[Any]", result).rowcount or 0) == 0:
+        raise SupersedeRefused(
+            f"refusing to supersede {old_memory_id} onto {new_memory_id}: "
+            "either the subject row does not exist in this tenant, or the "
+            "target is not live (tombstoned / superseded / validity ended), or "
+            "the target already points back at this row, which would form a "
+            "supersede cycle. Revive or re-point the target first."
+        )
 
 
 async def tombstone_record(
@@ -2200,14 +2278,15 @@ async def apply_merge(
             "now": now,
         },
     )
-    await session.execute(
+    result = await session.execute(
         text(
-            """
+            f"""
             UPDATE coord.memory_records
             SET superseded_by = :survivor_id,
                 valid_until = :now,
                 updated_at = :now
             WHERE tenant_id = :tenant_id AND memory_id = :loser_id
+              AND {_supersede_target_is_safe(target="survivor_id")}
             """
         ),
         {
@@ -2217,6 +2296,18 @@ async def apply_merge(
             "now": now,
         },
     )
+    if int(cast("CursorResult[Any]", result).rowcount or 0) == 0:
+        logger.warning(
+            "memory_supersede_refused_near_duplicate_fold",
+            loser_id=str(decision.loser_id),
+            survivor_id=str(decision.survivor_id),
+            tenant_id=str(tenant_id),
+            reason=(
+                "survivor is not live, or it already points back at the loser "
+                "(back-edge). The importance/access_count fold still applied; "
+                "the two rows stay separate and live."
+            ),
+        )
 
 
 async def fetch_cluster_candidates(
@@ -2349,9 +2440,10 @@ async def supersede_many(
             updated_at = :now
         WHERE tenant_id = :tenant_id AND memory_id IN :member_ids
           AND {_not_lifecycle_held()}
+          AND {_supersede_target_is_safe(target="new_memory_id")}
         """
     ).bindparams(bindparam("member_ids", expanding=True))
-    await session.execute(
+    result = await session.execute(
         stmt,
         {
             "tenant_id": tenant_id,
@@ -2360,6 +2452,155 @@ async def supersede_many(
             "now": now,
         },
     )
+    # Skipped rows are held, or the guard refused. Both are expected outcomes
+    # of a scheduled sweep, so this reports rather than raises — but it must
+    # not report NOTHING, which is how the 2026-08-04 corruption stayed
+    # invisible until it wedged a migration.
+    skipped = len(member_ids) - int(cast("CursorResult[Any]", result).rowcount or 0)
+    if skipped > 0:
+        logger.warning(
+            "memory_supersede_skipped_members",
+            skipped=skipped,
+            requested=len(member_ids),
+            new_memory_id=str(new_memory_id),
+            tenant_id=str(tenant_id),
+            reason=(
+                "each member was either lifecycle-held or refused by the "
+                "supersede guard (target not live, or a back-edge that would "
+                "form a cycle)"
+            ),
+        )
+
+
+# ===========================================================================
+# Corruption detection (Change 4)
+#
+# The 2026-08-04 incident's whole cost was that supersede corruption was only
+# discoverable by wedging a migration — and therefore the fleet. These are the
+# cheap periodic reads that surface it BEFORE it becomes a migration-time
+# abort. Read-only by construction: none of them writes.
+# ===========================================================================
+
+# A part-suffixed title, reduced to its DOCUMENT identity. Chunked imports
+# title parts "<doc> (part i/n)"; `memhold_adjudicate_02._CHUNK_TITLE` matches
+# the same shape.
+_PART_SUFFIX_RE = r"\s*\(part\s+\d+\s*/\s*\d+\)\s*$"
+
+
+async def find_supersede_cycles(
+    session: AsyncSession, *, tenant_id: UUID | None = None
+) -> list[dict[str, Any]]:
+    """Supersede 2-cycles: A→B while B→A. Expected empty.
+
+    This is the shape `memhold_adjudicate_01` minted on 2026-08-01 and the
+    one that failed `_02`'s ``not_live`` invariant. Measured 0 fleet-wide on
+    2026-08-05 — this exists to keep it 0.
+    """
+    where = "WHERE b.superseded_by = a.memory_id"
+    params: dict[str, Any] = {}
+    if tenant_id is not None:
+        where += " AND a.tenant_id = :tenant_id"
+        params["tenant_id"] = tenant_id
+    rows = await session.execute(
+        text(
+            f"""
+            SELECT a.memory_id AS a_id, b.memory_id AS b_id,
+                   a.tenant_id, a.title AS a_title, b.title AS b_title
+              FROM coord.memory_records a
+              JOIN coord.memory_records b ON b.memory_id = a.superseded_by
+            {where}
+            """
+        ),
+        params,
+    )
+    return [dict(r) for r in rows.mappings()]
+
+
+async def find_supersede_edges_into_non_live(
+    session: AsyncSession, *, tenant_id: UUID | None = None
+) -> list[dict[str, Any]]:
+    """Rows superseded onto a target that is itself NOT live.
+
+    The GENERAL defect a liveness-as-sort-key ranking produces; the 2-cycle
+    is only its most spectacular special case. A cycle check alone would have
+    MISSED ``4a14e94e…``, whose damage is a chain — part 1/2 → a dead
+    sync-conflict sidecar → the live part 2/2 — not a cycle.
+    """
+    where = (
+        "WHERE m.superseded_by IS NOT NULL AND NOT (" + _live_predicate_for("s") + ")"
+    )
+    params: dict[str, Any] = {}
+    if tenant_id is not None:
+        where += " AND m.tenant_id = :tenant_id"
+        params["tenant_id"] = tenant_id
+    rows = await session.execute(
+        text(
+            f"""
+            SELECT m.memory_id, m.tenant_id, m.title,
+                   s.memory_id AS target_id, s.title AS target_title
+              FROM coord.memory_records m
+              JOIN coord.memory_records s ON s.memory_id = m.superseded_by
+            {where}
+            ORDER BY m.title
+            """
+        ),
+        params,
+    )
+    return [dict(r) for r in rows.mappings()]
+
+
+async def find_orphaned_document_parts(
+    session: AsyncSession, *, tenant_id: UUID | None = None
+) -> list[dict[str, Any]]:
+    """Non-live part-N of a multi-part document whose other parts are LIVE.
+
+    The shape that silently loses half a document: the orphan leaves
+    retrieval while its siblings stay, and `decay_prune` physically DELETEs
+    it once ``valid_until`` passes the 90-day grace.
+
+    ⚠️ The predicate requires the superseder to be a DIFFERENT document.
+    Without that term this also matches ordinary re-import dedup — part 1 of
+    an import superseded onto part 1 of a LATER import of the same file — and
+    "reviving" one of those resurrects a duplicate. Measured 2026-08-05: the
+    loose shape matches 8 rows, of which 1 is exactly that false positive
+    (``f689235f``, ``MEMORY.pre-compaction-2026-07-08``).
+    """
+    where = ""
+    params: dict[str, Any] = {}
+    if tenant_id is not None:
+        where = "AND p.tenant_id = :tenant_id"
+        params["tenant_id"] = tenant_id
+    rows = await session.execute(
+        text(
+            f"""
+            WITH parts AS (
+                SELECT memory_id, tenant_id, title, source,
+                       regexp_replace(title, '{_PART_SUFFIX_RE}', '') AS doc,
+                       superseded_by, valid_until, is_tombstone,
+                       ({_LIVE_DEDUP_PREDICATE}) AS is_live
+                  FROM coord.memory_records
+                 WHERE title ~ '\\(part\\s+\\d+\\s*/\\s*\\d+\\)'
+            )
+            SELECT p.memory_id, p.tenant_id, p.doc, p.valid_until,
+                   p.superseded_by, s.title AS superseder_title
+              FROM parts p
+              JOIN coord.memory_records s ON s.memory_id = p.superseded_by
+             WHERE NOT p.is_live
+               AND p.is_tombstone = false
+               AND EXISTS (
+                    SELECT 1 FROM parts sib
+                     WHERE sib.tenant_id = p.tenant_id AND sib.doc = p.doc
+                       AND sib.is_live AND sib.memory_id <> p.memory_id
+               )
+               AND regexp_replace(s.title, '{_PART_SUFFIX_RE}', '')
+                   IS DISTINCT FROM p.doc
+               {where}
+             ORDER BY p.doc
+            """
+        ),
+        params,
+    )
+    return [dict(r) for r in rows.mappings()]
 
 
 def cluster_items_from_rows(rows: list[dict[str, Any]]) -> list[ClusterItem]:

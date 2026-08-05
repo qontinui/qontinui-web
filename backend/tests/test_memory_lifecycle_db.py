@@ -1111,3 +1111,202 @@ class TestReindex:
         assert stats["enqueued_jobs"] == 2
         assert len(_job_rows(db, tenant_a)) == 1
         assert len(_job_rows(db, tenant_b)) == 1
+
+
+class TestSupersedeGuard:
+    """The back-edge / dead-target guard on every ``superseded_by`` writer.
+
+    `memhold_adjudicate_01` treated a winner's liveness as an ``ORDER BY`` key
+    and never checked the reverse edge, so it pointed A at B while B already
+    pointed at A. That 2-cycle failed `memhold_adjudicate_02`'s ``not_live``
+    invariant, held ``applied_head`` behind ``chain_head``, and — via coord's
+    ``touches_migration`` deferral — deferred EVERY migration PR fleet-wide for
+    more than 5h on 2026-08-04.
+
+    A ranking cannot express "never": with a single candidate it returns that
+    candidate whatever its state. Only a WHERE predicate can, which is what
+    ``_supersede_target_is_safe`` adds to all three writers.
+    """
+
+    def test_back_edge_is_refused(self, db: AsyncEngine) -> None:
+        """A to B exists; attempting B to A must be refused, not written.
+
+        This is the exact construction that produced the 2026-08-04 cycle.
+        """
+        tenant = uuid4()
+        a = _seed(db, tenant, content="cycle side a")
+        b = _seed(db, tenant, content="cycle side b")
+
+        # A->B lands: B is live and does not point back.
+        _run(
+            db,
+            lambda s: store.mark_superseded(
+                s, tenant_id=tenant, old_memory_id=a, new_memory_id=b
+            ),
+        )
+        assert _row(db, a, "superseded_by") is not None
+
+        # B->A must NOT land: A already points at B.
+        with pytest.raises(store.SupersedeRefused) as excinfo:
+            _run(
+                db,
+                lambda s: store.mark_superseded(
+                    s, tenant_id=tenant, old_memory_id=b, new_memory_id=a
+                ),
+            )
+        assert "cycle" in str(excinfo.value)
+
+        # B is untouched - no cycle exists.
+        assert _row(db, b, "superseded_by") is None
+        assert _row(db, b, "valid_until") is None
+
+    def test_supersede_onto_a_dead_target_is_refused(self, db: AsyncEngine) -> None:
+        """The shape that orphaned ``4a14e94e``.
+
+        Its chain was part 1/2 -> a sync-conflict sidecar that was ITSELF not
+        live -> the live part 2/2. Pointing at a dead row buries the lineage:
+        the subject leaves retrieval and its replacement is not in retrieval
+        either, so the document is simply gone.
+        """
+        tenant = uuid4()
+        subject = _seed(db, tenant, content="subject")
+        dead = _seed(db, tenant, content="already retired", valid_until_days_ago=1)
+
+        with pytest.raises(store.SupersedeRefused):
+            _run(
+                db,
+                lambda s: store.mark_superseded(
+                    s, tenant_id=tenant, old_memory_id=subject, new_memory_id=dead
+                ),
+            )
+        _assert_live(db, subject)
+
+    def test_live_target_still_supersedes(self, db: AsyncEngine) -> None:
+        """Positive control: the guard must not block the ordinary path."""
+        tenant = uuid4()
+        old = _seed(db, tenant, content="old")
+        new = _seed(db, tenant, content="new")
+
+        _run(
+            db,
+            lambda s: store.mark_superseded(
+                s, tenant_id=tenant, old_memory_id=old, new_memory_id=new
+            ),
+        )
+        assert _row(db, old, "superseded_by") is not None
+        assert _row(db, old, "valid_until") is not None
+
+    def test_supersede_many_skips_a_dead_target_without_raising(
+        self, db: AsyncEngine
+    ) -> None:
+        """The AUTOMATIC path skips and reports - it must never abort a sweep.
+
+        A raising sweep is how a data defect becomes a fleet-wide outage
+        (qontinui-web#904, ~25h). The asymmetry with ``mark_superseded`` is
+        deliberate: explicit callers get an error, scheduled ones get a log.
+        """
+        tenant = uuid4()
+        members = [_seed(db, tenant, content=f"member {i}") for i in range(3)]
+        dead = _seed(db, tenant, content="dead synthesis", valid_until_days_ago=1)
+
+        _run(db, lambda s: store.supersede_many(s, tenant, members, dead, now=NOW))
+        # No exception, and nothing was superseded onto the dead row.
+        _assert_live(db, *members)
+
+    def test_supersede_many_still_works_for_a_live_target(
+        self, db: AsyncEngine
+    ) -> None:
+        tenant = uuid4()
+        members = [_seed(db, tenant, content=f"m{i}") for i in range(3)]
+        summary = _seed(db, tenant, content="the synthesis")
+
+        _run(db, lambda s: store.supersede_many(s, tenant, members, summary, now=NOW))
+        for m in members:
+            assert _row(db, m, "superseded_by") is not None
+
+
+class TestCorruptionDetection:
+    """The Change 4 read-only detection surface."""
+
+    def test_finds_a_cycle_and_a_dead_edge(self, db: AsyncEngine) -> None:
+        tenant = uuid4()
+        a = _seed(db, tenant, content="cyc a")
+        b = _seed(db, tenant, content="cyc b", superseded_by=a)
+        _exec(
+            db,
+            ["UPDATE coord.memory_records SET superseded_by = :b WHERE memory_id = :a"],
+            a=a,
+            b=b,
+        )
+
+        cycles = _run(db, lambda s: store.find_supersede_cycles(s, tenant_id=tenant))
+        assert {r["a_id"] for r in cycles} == {a, b}
+
+        edges = _run(
+            db,
+            lambda s: store.find_supersede_edges_into_non_live(s, tenant_id=tenant),
+        )
+        # Both ends of a cycle are superseded onto a non-live row.
+        assert {r["memory_id"] for r in edges} == {a, b}
+
+    def test_clean_corpus_reports_nothing(self, db: AsyncEngine) -> None:
+        tenant = uuid4()
+        old = _seed(db, tenant, content="old")
+        new = _seed(db, tenant, content="new")
+        _run(
+            db,
+            lambda s: store.mark_superseded(
+                s, tenant_id=tenant, old_memory_id=old, new_memory_id=new
+            ),
+        )
+        assert (
+            _run(db, lambda s: store.find_supersede_cycles(s, tenant_id=tenant)) == []
+        )
+        assert (
+            _run(
+                db,
+                lambda s: store.find_supersede_edges_into_non_live(s, tenant_id=tenant),
+            )
+            == []
+        )
+
+    def test_finds_an_orphaned_document_part(self, db: AsyncEngine) -> None:
+        """Non-live part-1 of a live document, superseded CROSS-document."""
+        tenant = uuid4()
+        other = _seed(db, tenant, content="beta-doc (part 1/2)")
+        orphan = _seed(
+            db,
+            tenant,
+            content="alpha-doc (part 1/2)",
+            superseded_by=other,
+            valid_until_days_ago=1,
+        )
+        _seed(db, tenant, content="alpha-doc (part 2/2)")
+
+        found = _run(
+            db, lambda s: store.find_orphaned_document_parts(s, tenant_id=tenant)
+        )
+        assert [r["memory_id"] for r in found] == [orphan]
+
+    def test_same_document_reimport_is_not_reported(self, db: AsyncEngine) -> None:
+        """The false positive that a shape-only sweep would revive.
+
+        ``f689235f`` - part 1 of an import superseded onto part 1 of a LATER
+        import of the SAME file - is ordinary dedup. Reviving it resurrects a
+        duplicate, so the detector must not name it.
+        """
+        tenant = uuid4()
+        newer = _seed(db, tenant, content="alpha-doc (part 1/5)")
+        _seed(
+            db,
+            tenant,
+            content="alpha-doc (part 1/2)",
+            superseded_by=newer,
+            valid_until_days_ago=1,
+        )
+        _seed(db, tenant, content="alpha-doc (part 2/2)")
+
+        found = _run(
+            db, lambda s: store.find_orphaned_document_parts(s, tenant_id=tenant)
+        )
+        assert found == []
