@@ -80,7 +80,7 @@ def _good_envelope() -> dict:
             "would_reap": 0,
         },
         "rollouts": {
-            "auto_merge": {"live": [], "shadow": [], "dry_run": []},
+            "auto_merge": {"enabled": [], "disabled": []},
             "features": [],
         },
     }

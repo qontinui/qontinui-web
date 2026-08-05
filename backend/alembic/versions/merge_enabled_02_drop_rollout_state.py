@@ -74,6 +74,15 @@ beyond it (the SLO window aggregate still filters
 decision), and the index still serves that scan. Dropping it would be an
 unrelated performance change riding a schema retirement.
 
+Idempotency
+------------
+All DDL is ``DROP … IF EXISTS``, and the pre-drop reads are each guarded on
+``information_schema.columns`` — separately per table, because the two drops are
+separate statements and a run interrupted between them leaves exactly that skew.
+So a re-run against an already-dropped database logs "already absent" and the
+DDL no-ops, rather than raising ``UndefinedColumn`` from a bare
+``SELECT rollout_state`` before any of the idempotent DDL is reached.
+
 Downgrade is STRUCTURAL ONLY — and it makes a sibling downgrade lossy
 ----------------------------------------------------------------------
 
@@ -118,8 +127,16 @@ depends_on: str | Sequence[str] | None = None
 
 # Read the posture being destroyed, BEFORE destroying it. Logged, never
 # asserted: every outcome is legitimate, so none of it is a reason to fail a
-# deploy. This is the only surviving record of what each row held — the
+# deploy. This is the only surviving record of what the FLEET held — the
 # downgrade cannot reconstruct it (see the module docstring).
+#
+# Deliberately aggregate, NOT per-`(tenant_id, repo)` like `merge_enabled_01`'s
+# row-by-row enumeration. That revision logged identities because it was
+# FLIPPING behaviour and a mis-flipped repo had to be nameable. This one flips
+# nothing: `merge_enabled` has been the sole authority since 2026-08-04, it
+# survives the drop, and per-repo posture is readable from it directly. What is
+# genuinely lost is only the retired token's distribution, which is what these
+# aggregates preserve.
 _FINAL_PER_REPO_STATE_SQL = """
     SELECT rollout_state, count(*)
       FROM coord.tenant_repo_profiles
@@ -158,6 +175,32 @@ _CROSSTAB_SQL = """
      ORDER BY 1 NULLS LAST, 2 NULLS LAST
 """
 
+# Guard for the pre-drop reads. The DDL below is all `IF EXISTS`, but the reads
+# are NOT self-guarding: a bare `SELECT rollout_state` raises `UndefinedColumn`
+# on a database where the column is already gone, and it raises BEFORE any of
+# the idempotent DDL runs. Alembic will not re-run a revision on its own, and a
+# downgrade→upgrade cycle is safe (the downgrade re-creates both columns first),
+# so the realistic trigger is a manual re-run or a stamp mismatch — but the
+# `IF EXISTS` scaffolding here advertises a re-runnability that the reads would
+# otherwise break, which is worse than not claiming it.
+_ROLLOUT_STATE_STILL_PRESENT_SQL = """
+    SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_schema = 'coord'
+           AND table_name = 'tenant_repo_profiles'
+           AND column_name = 'rollout_state'
+    )
+"""
+
+_TENANT_ROLLOUT_STATE_STILL_PRESENT_SQL = """
+    SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_schema = 'coord'
+           AND table_name = 'tenant_merge_settings'
+           AND column_name = 'rollout_state'
+    )
+"""
+
 
 def upgrade() -> None:
     """Log the final posture, then drop both columns and their CHECKs."""
@@ -168,30 +211,52 @@ def upgrade() -> None:
     # 1. Record what is being destroyed. The downgrade cannot bring these
     #    values back, so the migrator log is the only artifact that will
     #    ever say what the fleet's last tri-state posture was.
+    #
+    #    Skipped — but ONLY the reads — on a re-run against an already-dropped
+    #    database. The DDL still runs unconditionally below: it is all
+    #    `IF EXISTS`, and skipping it wholesale would leave a half-dropped
+    #    database (repo table done, tenant table not) permanently half-dropped.
     # ------------------------------------------------------------------
-    for state, count in bind.execute(sa.text(_FINAL_PER_REPO_STATE_SQL)).fetchall():
+    if bind.execute(sa.text(_ROLLOUT_STATE_STILL_PRESENT_SQL)).scalar():
+        for state, count in bind.execute(sa.text(_FINAL_PER_REPO_STATE_SQL)).fetchall():
+            logger.info(
+                "merge_enabled_02: FINAL tenant_repo_profiles.rollout_state=%s → %d row(s)%s",
+                state,
+                count,
+                " (inherit)" if state is None else "",
+            )
+
+        # The joint distribution, NOT a divergence alert — see `_CROSSTAB_SQL`
+        # for why a divergence predicate would fire on the whole fleet and mean
+        # nothing.
+        for state, enabled, count in bind.execute(sa.text(_CROSSTAB_SQL)).fetchall():
+            logger.info(
+                "merge_enabled_02: CROSSTAB rollout_state=%s merge_enabled=%s → %d row(s)",
+                state,
+                enabled,
+                count,
+            )
+    else:
         logger.info(
-            "merge_enabled_02: FINAL tenant_repo_profiles.rollout_state=%s → %d row(s)%s",
-            state,
-            count,
-            " (inherit)" if state is None else "",
-        )
-    for state, count in bind.execute(sa.text(_FINAL_TENANT_STATE_SQL)).fetchall():
-        logger.info(
-            "merge_enabled_02: FINAL tenant_merge_settings.rollout_state=%s → %d row(s)%s",
-            state,
-            count,
-            " (inherit)" if state is None else "",
+            "merge_enabled_02: coord.tenant_repo_profiles.rollout_state is "
+            "already absent — nothing left to record there."
         )
 
-    # The joint distribution, NOT a divergence alert — see `_CROSSTAB_SQL` for
-    # why a divergence predicate would fire on the whole fleet and mean nothing.
-    for state, enabled, count in bind.execute(sa.text(_CROSSTAB_SQL)).fetchall():
+    # The tenant table is probed independently: the two drops are separate
+    # statements, so a run interrupted between them leaves exactly the skew
+    # this second guard covers.
+    if bind.execute(sa.text(_TENANT_ROLLOUT_STATE_STILL_PRESENT_SQL)).scalar():
+        for state, count in bind.execute(sa.text(_FINAL_TENANT_STATE_SQL)).fetchall():
+            logger.info(
+                "merge_enabled_02: FINAL tenant_merge_settings.rollout_state=%s → %d row(s)%s",
+                state,
+                count,
+                " (inherit)" if state is None else "",
+            )
+    else:
         logger.info(
-            "merge_enabled_02: CROSSTAB rollout_state=%s merge_enabled=%s → %d row(s)",
-            state,
-            enabled,
-            count,
+            "merge_enabled_02: coord.tenant_merge_settings.rollout_state is "
+            "already absent — nothing left to record there."
         )
 
     # ------------------------------------------------------------------
