@@ -64,14 +64,27 @@ fix for the productive defect lives in ``memory_store``, not here.
 
 ## What it deliberately does NOT revive, and why the predicate is narrow
 
-The LOOSE shape — "non-live part of a live multi-part document" — matches
-**eight** rows, and three of the four extra ones must not be touched:
+The LOOSE shape — "non-live part of a live multi-part document" — matched
+**eight** rows when this revision was written, and four of them must not be
+touched. Re-measured after the rebase (see "Chain" below) it matches **five**,
+and the difference is fully accounted for:
 
 * **Three** (``c2beda78``, ``bca4dffa``, ``d88f28f7``) were superseded onto a
   live ``mental_model`` carrying ``source.synthesis_job``. Those belong to
-  `memrestore_01_synthesis_superseded_documents`, this revision's PARENT, which
-  restores all 597 of them. Handling them here would fight the chain head, so
-  the predicate excludes ``jsonb_exists(superseder.source,'synthesis_job')``.
+  `memrestore_01_synthesis_superseded_documents`, which restores all 597 of
+  them. `memrestore_01` **has since applied** — prod's stamped head is
+  ``coord_primary_trees_selfheal_backfill``, two revisions past it — so those
+  three are live again and no longer match the loose shape at all. That is why
+  the loose count fell 8 → 5, and it is the *expected* consequence of the
+  parent landing, not drift.
+
+  The ``NOT jsonb_exists(superseder.source,'synthesis_job')`` term is kept
+  regardless. It is what held the two revisions apart before `memrestore_01`
+  applied, and it still guards every environment whose corpus has not had that
+  restore pass run against it (a fresh test database, a replayed chain, a
+  future synthesis fold that re-creates the shape). Dropping it because prod
+  happens to be past that point would make the predicate depend on apply
+  ORDER — exactly the coupling the term exists to remove.
 * **One** (``f689235f``, ``MEMORY.pre-compaction-2026-07-08 (part 1/5)``) was
   superseded onto ``18ec67bb`` — the SAME title and the SAME
   ``source.file``, from a later re-import of the same document (project
@@ -82,7 +95,21 @@ Hence the discriminating term: the superseder's part-stripped title must be
 DISTINCT FROM the orphan's. Cross-document supersession is the defect
 signature; same-document supersession is the import working as intended. A
 sweep of the shape ALONE would have quietly resurrected a duplicate — which is
-why the shape is not the predicate.
+why the shape is not the predicate. ``f689235f`` STILL matches the loose shape
+in the re-measurement above and is STILL excluded, so this term is doing live
+work, not historical work.
+
+## Chain
+
+Authored against `memrestore_01_synthesis_superseded_documents`, then re-pointed
+on 2026-08-05 when two siblings landed underneath it: `memrestore_01` gained a
+child (``coord_tenant_repo_unenroll_01``), so chaining here would have forked
+the graph and `alembic-heads-pr` failed the PR on a 2-head chain. The parent is
+now ``coord_primary_trees_selfheal_backfill``, the single head of `origin/main`
+and — verified read-only against prod — the head prod has actually STAMPED.
+`memrestore_01` remains an ANCESTOR two revisions back, so everything this
+docstring says about the two revisions dividing the work still holds; only the
+edge moved.
 
 ## Why the hold is set HERE and not by hand
 
@@ -93,11 +120,19 @@ So a hold set out of band risks wedging a future memhold revision. **The hold
 must be set BY the revision that also accounts for it** — that is the whole
 reason this is a migration rather than a DML fix.
 
-Baseline measured 2026-08-05: **0** rows carry ``lifecycle_hold='true'``
-fleet-wide (149 read ``'false'``, 5488 have no key). `memrestore_01` creates 597
-the moment it applies. This revision's holds are therefore additive to either
-state, and every row it holds is marked ``source.memhold_adjudicate_03`` so its
-own coverage query — and any successor's — can name them exactly.
+Baseline when this revision was written: **0** rows carried
+``lifecycle_hold='true'`` fleet-wide (149 read ``'false'``, 5488 had no key),
+and `memrestore_01` was noted as creating 597 the moment it applied. It has
+since applied, and the re-measurement on 2026-08-05 is exactly that prediction
+landing: **597** now read ``'true'`` (all 597 stamped ``source.restore_2026_08_04``,
+`memrestore_01`'s provenance key), 149 read ``'false'``, 4920 have no key.
+
+This revision's holds are additive to either state, because ``_COVERED_HELD``
+is keyed on ``source.memhold_adjudicate_03`` and not on ``lifecycle_hold``
+alone — it subtracts this revision's OWN rows and is blind to
+`memrestore_01`'s 597. Verified: **0** rows currently carry
+``source.memhold_adjudicate_03``, so the coverage query reports 0 before the
+apply and 4 after, whatever else holds the corpus.
 
 The hold is a STOPGAP with a named exit, the same one `memrestore_01` names:
 these rows re-enter `fetch_cluster_candidates`' selector once live, and
@@ -110,7 +145,7 @@ alongside this revision) has demonstrably held.
 Every failure mode here reports and continues. A migration that raises fails
 coord's pre-deploy migration drift gate, which blocks EVERY coord deploy
 fleet-wide — qontinui-web#904 blocked it ~25h, and the 2026-08-04 incident
-blocked it >5h. `memrestore_01` settled this policy one revision earlier and
+blocked it >5h. `memrestore_01` settled this policy earlier in the chain and
 this revision follows it: a skipped row is visible in the logs and recoverable
 on the next pass; a blocked fleet is neither.
 
@@ -119,7 +154,7 @@ because that is unrepairable by a later pass and is precisely what a subsequent
 memhold revision's invariant will trip over.
 
 Revision ID: memhold_adjudicate_03
-Revises: memrestore_01_synthesis_superseded_documents
+Revises: coord_primary_trees_selfheal_backfill
 Create Date: 2026-08-05
 """
 
@@ -134,7 +169,7 @@ from alembic import op
 logger = logging.getLogger("alembic.runtime.migration")
 
 revision: str = "memhold_adjudicate_03"
-down_revision: str = "memrestore_01_synthesis_superseded_documents"
+down_revision: str = "coord_primary_trees_selfheal_backfill"
 branch_labels = None
 depends_on = None
 
@@ -187,8 +222,8 @@ _TARGETS = f"""
        -- cross-document supersession is the defect signature; same-document is
        -- ordinary re-import dedup and must be left alone.
        AND regexp_replace(s.title, '{_PART_SUFFIX}', '') IS DISTINCT FROM p.doc
-       -- the synthesis-superseded set belongs to memrestore_01 (this
-       -- revision's parent), which restores all 597 of them.
+       -- the synthesis-superseded set belongs to memrestore_01 (an ancestor,
+       -- two revisions back), which restores all 597 of them.
        AND NOT jsonb_exists(s.source, 'synthesis_job')
      ORDER BY p.doc
 """
@@ -278,6 +313,13 @@ _REASON = (
 # moved. A mismatch does not abort — that would hand a fleet-wide deploy block
 # to ordinary corpus drift — but it is reported at ERROR so the difference is
 # adjudicated deliberately instead of silently revived.
+#
+# RE-VERIFIED read-only against prod on 2026-08-05 after the rebase onto
+# `coord_primary_trees_selfheal_backfill`, precisely because `memrestore_01` had
+# applied in between and could have altered rows this revision targets. It did
+# not: `_TARGETS` returns these same FOUR ids, no extras and none missing, and
+# all four remain non-live with their recorded `superseded_by` intact. The
+# supersede-cycle count — the one condition that aborts — is 0.
 _VERIFIED_TARGETS = {
     "c997972f-5fcc-4006-82b0-8dff65ff51a4": "[MSI] _index-archive-2026-07-04",
     "8e0efa14-69dd-47d0-982d-f9fbcf281dc7": "[MSI] _index-archive-2026-07-14",

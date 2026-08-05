@@ -19,7 +19,11 @@ Cases covered (each a distinct branch of ``_TARGETS``)
    title and file) — NOT revived. Ordinary dedup; reviving it resurrects a
    duplicate. This is ``f689235f…``'s shape.
 4. **Orphan whose superseder carries ``source.synthesis_job``** — NOT revived.
-   Owned by ``memrestore_01``, this revision's parent, which restores all 597.
+   Owned by ``memrestore_01`` (an ancestor two revisions back), which restores
+   all 597. Asserted here even though `memrestore_01` has now applied in prod
+   and removed that shape THERE: the term must keep holding in any environment
+   whose chain is replayed, which is exactly what this ephemeral-database test
+   is.
 5. **Non-live part with NO live sibling** — NOT revived. A wholly retired
    document is not an orphaned half.
 6. **A live part** — untouched.
@@ -66,7 +70,12 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "memhold_adjudicate_03"
-_PARENT_REVISION_ID = "memrestore_01_synthesis_superseded_documents"
+# The revision this one chains off. Re-pointed 2026-08-05 from
+# `memrestore_01_synthesis_superseded_documents` when two siblings landed
+# underneath it and chaining there would have forked the graph. Tests upgrade to
+# exactly this revision before seeding, so it must track `down_revision` — seed
+# at the wrong point and the fixtures no longer describe the real pre-state.
+_PARENT_REVISION_ID = "coord_primary_trees_selfheal_backfill"
 
 _ORIGIN = "topic-file"
 
