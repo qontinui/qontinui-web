@@ -134,19 +134,28 @@ _FINAL_TENANT_STATE_SQL = """
      ORDER BY 1 NULLS LAST
 """
 
-# The rows where the two representations DISAGREE at drop time. A per-repo row
-# reading `live` but pinned `merge_enabled = false` (or vice versa) means the
-# retirement changed that repo's posture, and after the drop there is no way to
-# notice. Expected to be empty — Phases 2-4 have been serving the `merge_enabled`
-# axis since 2026-08-04, so `rollout_state` has been inert, not authoritative —
-# but "expected empty" is exactly the claim worth a receipt.
-_DIVERGENCE_SQL = """
-    SELECT tenant_id, repo, rollout_state, merge_enabled
+# The full (rollout_state × merge_enabled) cross-tab, recorded before the drop.
+#
+# ⚠️ There is deliberately NO "divergence" predicate here, and the reason is the
+# whole point of Phase 1. It is tempting to flag rows where
+# `(rollout_state = 'live') <> merge_enabled` as a posture change worth an alert
+# — but that would fire on almost every row in the fleet and mean nothing.
+# `merge_enabled_01` mapped `shadow → true` (the soak had no exit) and
+# un-audited `dry_run → true` (plan F3: `dry_run` is what enrollment stamped, so
+# it recorded "nobody touched this repo", not "somebody stopped it"). Per plan
+# F1's histogram — 44 of 44 profile rows non-NULL, overwhelmingly the enrollment
+# artifact — such a predicate would report the entire fleet as diverged while
+# every one of those rows is exactly what Phase 1 intended.
+#
+# The two tokens are NOT one-to-one, and no single mapping is "correct": that
+# ambiguity is precisely why Phase 1 needed audit markers to split `dry_run`.
+# So this records the joint distribution and lets a future reader apply whatever
+# mapping their question needs, instead of freezing one guess into an alert.
+_CROSSTAB_SQL = """
+    SELECT rollout_state, merge_enabled, count(*)
       FROM coord.tenant_repo_profiles
-     WHERE rollout_state IS NOT NULL
-       AND merge_enabled IS NOT NULL
-       AND (rollout_state = 'live') <> merge_enabled
-     ORDER BY tenant_id, repo
+     GROUP BY rollout_state, merge_enabled
+     ORDER BY 1 NULLS LAST, 2 NULLS LAST
 """
 
 
@@ -175,28 +184,14 @@ def upgrade() -> None:
             " (inherit)" if state is None else "",
         )
 
-    diverged = bind.execute(sa.text(_DIVERGENCE_SQL)).fetchall()
-    if diverged:
-        logger.warning(
-            "merge_enabled_02: %d repo(s) where the retired rollout_state and the "
-            "live merge_enabled pin DISAGREE. merge_enabled is authoritative and "
-            "has been since merge_enabled_01 went live — these are recorded so a "
-            "posture change is attributable after the column is gone:",
-            len(diverged),
-        )
-        for tenant_id, repo, rollout_state, merge_enabled in diverged:
-            logger.warning(
-                "merge_enabled_02:   DIVERGED tenant=%s repo=%s "
-                "rollout_state=%s merge_enabled=%s",
-                tenant_id,
-                repo,
-                rollout_state,
-                merge_enabled,
-            )
-    else:
+    # The joint distribution, NOT a divergence alert — see `_CROSSTAB_SQL` for
+    # why a divergence predicate would fire on the whole fleet and mean nothing.
+    for state, enabled, count in bind.execute(sa.text(_CROSSTAB_SQL)).fetchall():
         logger.info(
-            "merge_enabled_02: no row disagrees between rollout_state and "
-            "merge_enabled — the drop changes no repo's effective posture."
+            "merge_enabled_02: CROSSTAB rollout_state=%s merge_enabled=%s → %d row(s)",
+            state,
+            enabled,
+            count,
         )
 
     # ------------------------------------------------------------------
