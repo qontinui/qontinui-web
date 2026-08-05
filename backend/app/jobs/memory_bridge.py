@@ -105,10 +105,17 @@ async def bridge_sync_once(
 
     if not to_upsert and not to_tombstone:
         logger.debug("memory_bridge_in_sync", source_count=len(source_keys))
-        return {"upserted": 0, "superseded": 0, "tombstoned": 0, "enqueued": 0}
+        return {
+            "upserted": 0,
+            "superseded": 0,
+            "supersede_refused": 0,
+            "tombstoned": 0,
+            "enqueued": 0,
+        }
 
     upserted = 0
     superseded = 0
+    refused = 0
     enqueued = 0
     for tenant_id, names in to_upsert.items():
         contents = await store.fetch_bridge_source_contents(session, tenant_id, names)
@@ -169,13 +176,37 @@ async def bridge_sync_once(
                 to_embed.append((memory_id, content))
             prior = bridged.get((tenant_id, name))
             if prior is not None and prior[0] != memory_id:
-                await store.mark_superseded(
-                    session,
-                    tenant_id=tenant_id,
-                    old_memory_id=prior[0],
-                    new_memory_id=memory_id,
-                )
-                superseded += 1
+                # `mark_superseded` RAISES when its safety guard refuses the
+                # edge (target not live, or a back-edge that would form a
+                # supersede cycle). That contract is written for the EXPLICIT
+                # caller — the memory API's supersede endpoint, where a human
+                # asked for the edge and must be told it was rejected.
+                #
+                # This caller is the opposite: `bridge_sync_once` runs on the
+                # scheduler's 15-minute `memory_bridge_sync` cadence, and an
+                # unhandled raise here kills the whole pass — every remaining
+                # tenant and name in `ordered` included. That is precisely the
+                # sweep-aborts-and-takes-the-fleet-with-it failure this guard
+                # exists to prevent, so the automatic caller reports and
+                # continues. The stale bridged row simply stays live; the next
+                # pass retries it once the corpus is repaired.
+                try:
+                    await store.mark_superseded(
+                        session,
+                        tenant_id=tenant_id,
+                        old_memory_id=prior[0],
+                        new_memory_id=memory_id,
+                    )
+                    superseded += 1
+                except store.SupersedeRefused:
+                    refused += 1
+                    logger.warning(
+                        "memory_bridge_supersede_refused",
+                        tenant_id=str(tenant_id),
+                        name=name,
+                        old_memory_id=str(prior[0]),
+                        new_memory_id=str(memory_id),
+                    )
             upserted += 1
 
         # One embedding job per tenant per pass, for the rows just landed.
@@ -210,6 +241,7 @@ async def bridge_sync_once(
     return {
         "upserted": upserted,
         "superseded": superseded,
+        "supersede_refused": refused,
         "tombstoned": tombstoned,
         "enqueued": enqueued,
     }
