@@ -356,44 +356,45 @@ def _render_effective(rows: list[dict[str, Any]]) -> list[AgentRegistryEntry]:
 async def get_agent_registry(
     user: User = Depends(get_registry_user),
 ) -> AgentRegistryResponse:
-    """The current user's effective agent list — folded by COORD, not here.
+    """The current user's effective agent list, as folded by coord.
 
-    Proxies coord ``GET /coord/agent-registry/effective-for?user_id=…``,
-    which returns ``EffectiveAgent`` rows already carrying ``enabled``,
-    ``disposition`` and ``source``. The operator bearer is forwarded and the
-    tenant is resolved coord-side from it; ``user_id`` names which user's
-    prefs to fold and comes from the AUTHENTICATED caller, never the client.
-
-    ## Why this does not re-derive the fold
-
-    It used to, and it was wrong the entire time. This route called
-    ``GET /coord/agent-registry`` — the RAW rows door, which serializes
-    ``AgentRegistryRow`` (``default_enabled``, ``allowed_dispositions``) —
-    and then read ``row.get("enabled", True)`` and
-    ``row.get("disposition") or "block"``. **Neither key exists on that
-    route.** Both reads always took their fallback, so:
-
-    * every agent the operator had DISABLED rendered as **enabled**, and
-    * every agent's disposition rendered ``block``,
-
-    regardless of configuration. A settings page asserting an authorization
-    state that is not the system's is the same failure shape as the
-    2026-08-03 spawn outage, where the UI showed ``enabled: true`` for
-    continuations the runner was refusing.
-
-    The fix deletes the fold rather than repairing it. ``resolve_effective``
-    is one decision — ``pref.enabled ?? default_enabled``,
-    ``pref.disposition ?? degrade`` — and it lives in coord. A web-side copy
-    was a THIRD independent implementation of it (beside coord's
-    ``fold_strictest`` and the runner's ``lookup_row``), i.e. one more place
-    to drift, which is precisely the problem this work exists to remove.
-
-    Note the fallback value was wrong too: coord defaults an unset
-    disposition to ``degrade``, matching served policy ``production-and-cost``
-    ``agent-spawn-authorization`` ("a disable arriving with NO recorded
-    disposition falls back to degrade — the only option that both honours the
-    cost decision and keeps the gate"). Web was defaulting to ``block``.
+    Proxies ``GET /coord/agent-registry/effective-for`` and returns its
+    ``EffectiveAgent`` rows unchanged — ``enabled``, ``disposition`` and
+    ``source`` are coord's, not re-derived here. The operator bearer is
+    forwarded and the tenant resolved coord-side from it; the folded user is
+    always the authenticated caller, never a client-supplied id.
     """
+    # ── Why this does NOT re-derive the fold ────────────────────────────────
+    # Deliberately a comment, not docstring prose: this text would otherwise
+    # ship verbatim as the route `description` in the committed OpenAPI
+    # snapshot, which coord's route-serving observer reads as the declared
+    # external surface. An API description should describe the API, not carry
+    # a post-mortem.
+    #
+    # This route used to call `GET /coord/agent-registry` — the RAW rows door,
+    # which serializes AgentRegistryRow (`default_enabled`,
+    # `allowed_dispositions`) — and then read `row.get("enabled", True)` and
+    # `row.get("disposition") or "block"`. NEITHER KEY EXISTS ON THAT ROUTE, so
+    # both reads always took their fallback: every agent the operator had
+    # disabled rendered as ENABLED, and every disposition rendered `block`,
+    # regardless of configuration. A settings page asserting an authorization
+    # state that is not the system's is the same failure shape as the
+    # 2026-08-03 spawn outage, where the UI showed `enabled: true` for
+    # continuations the runner was refusing.
+    #
+    # The fix deletes the fold rather than repairing it. `resolve_effective` is
+    # ONE decision (`pref.enabled ?? default_enabled`,
+    # `pref.disposition ?? degrade`) and it lives in coord; the web-side copy
+    # was a THIRD independent implementation of it, beside coord's
+    # `fold_strictest` and the runner's `lookup_row` — one more place to drift,
+    # which is precisely what this work exists to remove.
+    #
+    # The fallback VALUE was wrong too: coord defaults an unset disposition to
+    # `degrade`, per served policy `production-and-cost`
+    # `agent-spawn-authorization` ("a disable arriving with NO recorded
+    # disposition falls back to degrade — the only option that both honours the
+    # cost decision and keeps the gate"). Web defaulted to `block`,
+    # misreporting the gate as hard-stopping work.
     user_id = str(user.id)
     try:
         payload = await _coord_request(
