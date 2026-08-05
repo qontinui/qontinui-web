@@ -204,7 +204,7 @@ def _pick_survivor(
 
 @dataclass(frozen=True)
 class ClusterItem:
-    """One clustering candidate (a live episode/observation row)."""
+    """One clustering candidate (a live episode row)."""
 
     memory_id: UUID
     embedding: list[float]
