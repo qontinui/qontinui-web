@@ -86,7 +86,7 @@ from tests._alembic_harness import (
 # far a rewind REPLAYS every intervening revision. None of them are idempotent,
 # so the test dies on a `DuplicateTable` raised by an unrelated migration.
 _REVISION_ID = "coord_tenant_warm_bytes_01"
-_PARENT_REVISION_ID = "memhold_adjudicate_03"
+_PARENT_REVISION_ID = "parkwuslug_01"
 _REVISION_FILENAME = "coord_tenant_warm_bytes_01_counter_table.py"
 
 _CHECK_NAME = "tenant_warm_bytes_bytes_nonnegative"
