@@ -423,6 +423,68 @@ def _seed_episode_cluster(db: AsyncEngine, tenant: UUID) -> list[UUID]:
     ]
 
 
+def _seed_observation_cluster(db: AsyncEngine, tenant: UUID) -> list[UUID]:
+    """`_seed_episode_cluster`'s geometry, seeded as ``observation``.
+
+    Identical similarity, importance and ages — the ONLY difference is the
+    kind. That is what makes the pair of tests below a control: if the
+    observation cluster stopped being enqueued for any reason other than the
+    kind (bad embeddings, a threshold change, a broken fixture), the episode
+    test would fail too and the pair would not read as a passing guard.
+    """
+    return [
+        _seed(
+            db,
+            tenant,
+            content=f"observation number {i}",
+            kind="observation",
+            importance=0.4 + i * 0.05,
+            age_days=float(30 - i),
+            embedding=_blend(0, i + 1, 0.93),
+        )
+        for i in range(5)
+    ]
+
+
+class TestConsolidationConsumesEpisodesOnly:
+    """Distillation supersedes its members, so it must only reach ``episode``.
+
+    `record_synthesis_result` points every cluster member at the distilled
+    ``mental_model``, and ``superseded_by`` is a `decay_prune` terminal marker
+    — so a consumed member is DELETED 90 days later. That endpoint is correct
+    for episodes and wrong for a durable authored record.
+
+    The 2026-07-28 sweep consumed 597 imported topic-file documents this way,
+    filed as ``kind='observation'`` by the memory cutover. ``observation`` is
+    also the DEFAULT kind for `coord_memory_record`, so leaving it in the
+    selector pointed a summarizer at the general case rather than the episodic
+    one.
+    """
+
+    def test_observation_cluster_is_never_enqueued(self, db: AsyncEngine) -> None:
+        tenant = uuid4()
+        members = _seed_observation_cluster(db, tenant)
+
+        stats = _run(db, lambda s: consolidate_tenant(s, tenant, now=NOW))
+
+        assert stats["cluster_candidates"] == 0
+        assert stats["clusters"] == 0
+        assert stats["enqueued"] == 0
+        assert _job_rows(db, tenant) == []
+        _assert_live(db, *members)
+
+    def test_episode_cluster_still_enqueues(self, db: AsyncEngine) -> None:
+        """The positive control — same geometry, kind=episode."""
+        tenant = uuid4()
+        _seed_episode_cluster(db, tenant)
+
+        stats = _run(db, lambda s: consolidate_tenant(s, tenant, now=NOW))
+
+        assert stats["cluster_candidates"] == 5
+        assert stats["clusters"] == 1
+        assert stats["enqueued"] == 1
+
+
 def _job_rows(db: AsyncEngine, tenant: UUID) -> list[dict[str, Any]]:
     async def _go() -> list[dict[str, Any]]:
         async with db.connect() as conn:
