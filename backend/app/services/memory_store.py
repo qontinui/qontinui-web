@@ -2443,8 +2443,10 @@ async def anchor_gone_sweep(
     ``is_tombstone = false AND superseded_by IS NULL AND valid_until IS
     NULL``). Ending validity is what FREES a content hash for a fresh
     write; un-ending it can therefore collide with whatever took the hash
-    in the meantime. Two guards follow from that, and neither is
-    optional:
+    in the meantime. Three guards follow from that, and none is
+    optional — the first two each close a DIFFERENT way the collision
+    arises, and the third keeps the restore from resurrecting a row some
+    other mechanism deliberately terminated:
 
     * **The live-twin guard.** Row R is hidden as ``gone``; any writer
       re-writes the same content, sees no live row for that hash, and
@@ -2982,12 +2984,32 @@ async def find_near_duplicate_pairs(
     ``consolidate_tenant``, so an anchored row reaches it before the
     clustering gate ever gets a chance.
 
-    Gating the SELECTOR (rather than :func:`apply_merge`) is both the
-    hold's precedent and sufficient here: with anchored rows excluded from
-    both join sides, no pair this returns can contain one, so
-    ``apply_merge``'s fold — which carries ``importance`` and
-    ``access_count`` across but NOT ``anchors`` — can no longer drop an
-    anchor, because there is never an anchor on either side to drop.
+    Gating the SELECTOR (rather than :func:`apply_merge`) is the hold's
+    precedent: with anchored rows excluded from both join sides, no pair
+    this returns was anchored AS OF THIS SELECT, so ``apply_merge``'s
+    fold — which carries ``importance`` and ``access_count`` across but
+    NOT ``anchors`` — has nothing to drop.
+
+    **"As of this SELECT" is the whole caveat, and it is a real window,
+    not a formality.** ``consolidate_tenant`` runs at READ COMMITTED, so
+    an anchor committed BETWEEN this SELECT and :func:`apply_merge` is
+    invisible here and the loser is still superseded — exactly the window
+    that function's own docstring already documents for the sibling
+    lifecycle-hold gate, and left open there for the same reasons. The
+    consequence is worse for anchors than for holds: ``apply_merge`` sets
+    ``superseded_by``, which IS one of :func:`decay_prune`'s terminal
+    markers, so a record anchored inside that window is not merely hidden
+    but on a 90-day path to physical deletion.
+
+    Re-checking in :func:`apply_merge`'s loser UPDATE would NOT be the
+    fix — it would no-op the loser while the survivor UPDATE still folded
+    in that loser's ``importance`` and ``access_count``, double-counting
+    them into a row whose partner never died. Closing this properly means
+    making the pair application atomic with its selection, which is the
+    same open question the hold has; it is deliberately not solved here.
+    Do not read the paragraph above as "anchored rows cannot reach
+    ``apply_merge``" — read it as "anchored rows cannot be SELECTED",
+    which is a narrower claim and the only one this predicate makes.
     """
     rows = await session.execute(
         text(

@@ -4585,3 +4585,128 @@ class TestBatchAnchorsUnionAcrossOccurrences:
         ).json()["records"]
         assert [r["memory_id"] for r in page] == [memory_id]
         assert page[0]["anchors"] == [_PR_ANCHOR]
+
+
+class TestAnchorUnionRespectsTheCap:
+    """The cross-record union must not defeat ``MAX_ANCHORS_PER_RECORD``.
+
+    The cap is enforced on the pydantic request model, i.e. per INCOMING
+    RECORD. The union crosses records, and nothing below it re-checks:
+    ``MemoryRecordInsert.anchors`` is a bare ``list[dict]``,
+    ``insert_records_batch`` binds it verbatim, and the column has no
+    length CHECK. So a request whose every record is individually legal
+    could land an arbitrarily long array on one row — at zero quota cost,
+    because none of those records creates a row.
+
+    That matters because the cap's reason is per-tick fan-out: the array
+    is re-resolved by the watcher on every tick, so its length is a
+    standing multiplier on GitHub/twin reads for that row.
+    """
+
+    def test_worst_case_request_lands_within_the_cap(self, mc: MemoryClient) -> None:
+        """MAX_RECORDS_PER_REQUEST records x MAX_ANCHORS_PER_RECORD distinct.
+
+        Measured 1600 on one row (100x the cap) before the re-cap.
+        """
+        from app.schemas.memory import MAX_ANCHORS_PER_RECORD, MAX_RECORDS_PER_REQUEST
+
+        records = [
+            _record(
+                "one identical body",
+                anchors=[
+                    {"type": "flag", "name": f"flag-{r}-{k}"}
+                    for k in range(MAX_ANCHORS_PER_RECORD)
+                ],
+            )
+            for r in range(MAX_RECORDS_PER_REQUEST)
+        ]
+        resp = mc.client.post("/api/v1/memory/records", json={"records": records})
+        # Every record is individually legal, so the request is accepted...
+        assert resp.status_code == 200, resp.text
+        page = mc.client.get("/api/v1/memory/records").json()["records"]
+        assert len(page) == 1
+        # ...and the union it collapses to is still capped.
+        assert len(page[0]["anchors"]) <= MAX_ANCHORS_PER_RECORD
+
+    def test_truncation_keeps_the_first_anchors_seen(self, mc: MemoryClient) -> None:
+        """Same first-occurrence-wins rule the rest of the collapse uses."""
+        from app.schemas.memory import MAX_ANCHORS_PER_RECORD
+
+        first = [
+            {"type": "flag", "name": f"early-{k}"}
+            for k in range(MAX_ANCHORS_PER_RECORD)
+        ]
+        resp = mc.client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    _record("one body", anchors=first),
+                    _record("one body", anchors=[{"type": "flag", "name": "late"}]),
+                ]
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        (row,) = mc.client.get("/api/v1/memory/records").json()["records"]
+        assert row["anchors"] == first
+        assert {"type": "flag", "name": "late"} not in row["anchors"]
+
+    def test_union_below_the_cap_is_untouched(self, mc: MemoryClient) -> None:
+        """Positive control — the re-cap must not clip an ordinary union."""
+        resp = mc.client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    _record("a body", anchors=[_STORE_BLOB]),
+                    _record("a body", anchors=[_PR_ANCHOR]),
+                ]
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        (row,) = mc.client.get("/api/v1/memory/records").json()["records"]
+        assert sorted(row["anchors"], key=lambda a: a["type"]) == sorted(
+            [_STORE_BLOB, _PR_ANCHOR], key=lambda a: a["type"]
+        )
+
+    def test_duplicates_across_records_do_not_consume_cap_budget(
+        self, mc: MemoryClient
+    ) -> None:
+        """Identity dedup happens before the cap, so repeats are free."""
+        from app.schemas.memory import MAX_ANCHORS_PER_RECORD
+
+        full = [
+            {"type": "flag", "name": f"f-{k}"} for k in range(MAX_ANCHORS_PER_RECORD)
+        ]
+        resp = mc.client.post(
+            "/api/v1/memory/records",
+            json={"records": [_record("a body", anchors=full) for _ in range(5)]},
+        )
+        assert resp.status_code == 200, resp.text
+        (row,) = mc.client.get("/api/v1/memory/records").json()["records"]
+        assert len(row["anchors"]) == MAX_ANCHORS_PER_RECORD
+        assert row["anchors"] == full
+
+    def test_backfill_onto_an_existing_row_is_capped_too(
+        self, mc: MemoryClient
+    ) -> None:
+        """The known-duplicate path reaches the same bucket."""
+        from app.schemas.memory import MAX_ANCHORS_PER_RECORD
+
+        content = "an already-stored body"
+        memory_id = _write_one(mc, content)
+        resp = mc.client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    _record(
+                        content,
+                        anchors=[
+                            {"type": "flag", "name": f"g-{r}-{k}"}
+                            for k in range(MAX_ANCHORS_PER_RECORD)
+                        ],
+                    )
+                    for r in range(8)
+                ]
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        assert len(_anchors_of(mc, memory_id)) <= MAX_ANCHORS_PER_RECORD
