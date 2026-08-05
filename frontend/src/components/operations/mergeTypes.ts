@@ -351,8 +351,11 @@ export interface TrainHealth {
     max_age_seconds?: number | null;
     prs?: ReadyUnmergedPr[];
   } | null;
-  /** coord issue #776 — repos frozen in `rollout_state=dry_run` merge nothing
-   *  while still evaluating, producing an otherwise silent freeze. */
+  /** coord issue #776 — repos where merging is suppressed merge nothing while
+   *  still evaluating, producing an otherwise silent freeze. LEGACY WIRE KEY:
+   *  coord computes it from `merge_permitted()`, not from the deleted
+   *  `rollout_state` tri-state, and kept the old name so a rename could not
+   *  silently zero the detector. Rename both sides together or not at all. */
   dry_run?: {
     would_merge_blocked_by_dry_run?: number;
     repos?: string[];

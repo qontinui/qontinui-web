@@ -1,8 +1,17 @@
 "use client";
 
 /**
- * RolloutPanel — auto-merge per-repo tri-state chips (live/shadow/dry_run)
+ * RolloutPanel — auto-merge per-repo enablement chips (enabled/disabled)
  * + the feature-enablement tier list (name, tier chip, source, threshold).
+ *
+ * The auto-merge buckets used to be the `live`/`shadow`/`dry_run` tri-state and
+ * had gone stale-by-construction: nothing wrote `rollout_state` after Phase 2-4
+ * of plan
+ * `2026-07-29-retire-merge-rollout-tristate-and-fix-the-dead-kill-switch`, so a
+ * repo whose merges were switched off still showed under `live` forever. Phase 5
+ * dropped the column and repointed coord's `auto_merge` block at the resolved
+ * `merge_enabled` axis, which is what the engine and the land seam actually
+ * gate on — so these buckets are live again rather than decorative.
  */
 
 import { Badge } from "@/components/ui/badge";
@@ -23,15 +32,13 @@ function tierTone(tier: FeatureTier): ChipTone {
 }
 
 const STATE_LABEL = {
-  live: "live",
-  shadow: "shadow",
-  dry_run: "dry-run",
+  enabled: "enabled",
+  disabled: "disabled",
 } as const;
 
 const STATE_TONE: Record<keyof typeof STATE_LABEL, ChipTone> = {
-  live: "default",
-  shadow: "secondary",
-  dry_run: "outline",
+  enabled: "default",
+  disabled: "destructive",
 };
 
 function RepoStateGroup({
@@ -78,39 +85,23 @@ export function RolloutPanel({ rollouts }: { rollouts: RolloutOverview }) {
       className="grid grid-cols-1 lg:grid-cols-2 gap-4"
       data-testid="rollout-panel"
     >
-      {/* ---- Auto-merge per-repo tri-state ---- */}
+      {/* ---- Auto-merge per-repo enablement ---- */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <GitMerge className="h-4 w-4" />
-            Auto-merge rollout
+            Auto-merge enablement
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* LEGACY — no longer maintained. These buckets are keyed on
-              `coord.tenant_repo_profiles.rollout_state`, the tri-state retired
-              by plan
-              `2026-07-29-retire-merge-rollout-tristate-and-fix-the-dead-kill-switch`.
-              Merge posture is `merge_enabled` now, and after that plan's
-              Phase 2-4 NOTHING writes `rollout_state` except the
-              clear-to-inherit path — so a repo whose merges are switched off
-              still shows here under `live`, forever.
-
-              Do not add to this panel and do not read merge posture from it:
-              /admin/coord/merge-settings renders the real thing (resolved
-              value + whether it is pinned). Phase 5 deletes the column and
-              this panel with it. */}
-          <p
-            className="text-xs text-amber-300"
-            data-testid="rollout-panel-legacy-notice"
-          >
-            Legacy view — these buckets read the retired{" "}
-            <code>rollout_state</code> column, which is no longer written. For
-            current merge posture see Merge settings.
-          </p>
-          <RepoStateGroup state="live" repos={auto_merge.live} />
-          <RepoStateGroup state="shadow" repos={auto_merge.shadow} />
-          <RepoStateGroup state="dry_run" repos={auto_merge.dry_run} />
+          {/* RESOLVED posture, not the raw pin: coord folds the dominant
+              tenant-wide `merge_paused` pause into each repo before bucketing,
+              so a paused tenant's repos all land under `disabled`. To see
+              WHICH lever put a repo there — a per-repo pin or the tenant
+              pause — use /admin/coord/merge-settings, which renders the
+              resolved value alongside the raw override. */}
+          <RepoStateGroup state="enabled" repos={auto_merge.enabled} />
+          <RepoStateGroup state="disabled" repos={auto_merge.disabled} />
         </CardContent>
       </Card>
 

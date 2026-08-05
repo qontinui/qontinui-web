@@ -159,14 +159,6 @@ interface SloWindowMetrics {
 
 interface RepoSlo {
   repo: string;
-  /**
-   * The retired tri-state. coord keeps serving it until it drops the column;
-   * nothing here renders it. Declared so the wire stays documented at the one
-   * place that reads this response — do NOT render it: a repo's merge posture
-   * is `merge_enabled` now, and showing both would give an operator two
-   * answers to one question.
-   */
-  current_rollout_state: string;
   /** RESOLVED merge enablement (pin → tenant → default `true`, with the
    *  tenant-wide pause dominating). */
   merge_enabled: boolean;

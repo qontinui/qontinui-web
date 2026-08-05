@@ -40,7 +40,7 @@ const ENROLLED_ORG = {
   account_login: "portofino",
   account_type: "Organization",
   installation_id: 222,
-  repos: [{ repo: "portofino/web", rollout_state: "dry_run", profile_source: "auto" }],
+  repos: [{ repo: "portofino/web", merge_enabled: false, profile_source: "auto" }],
 };
 
 function jsonResponse(body: unknown, status: number): Response {
@@ -92,7 +92,7 @@ describe("<ConnectedOrgs> enroll/sync button", () => {
             {
               ...EMPTY_ORG,
               repos: [
-                { repo: "acme/web", rollout_state: "dry_run", profile_source: "auto" },
+                { repo: "acme/web", merge_enabled: null, profile_source: "auto" },
               ],
             },
           ],

@@ -795,8 +795,6 @@ describe("<MergeOrchestrationSettings> SLO per-repo merge-enabled control", () =
         repos: [
           {
             repo: REPO,
-            // coord still serves the legacy tri-state; nothing renders it.
-            current_rollout_state: "dry_run",
             merge_enabled: resolved,
             merge_enabled_override: pin,
             windows: { last_7d: emptyWindow(), last_30d: emptyWindow() },
@@ -962,7 +960,6 @@ describe("<MergeOrchestrationSettings> pinned-ON repo under a tenant pause", () 
         repos: [
           {
             repo: REPO,
-            current_rollout_state: "live",
             merge_enabled: false,
             merge_enabled_override: true,
             windows: { last_7d: emptyWindow(), last_30d: emptyWindow() },
