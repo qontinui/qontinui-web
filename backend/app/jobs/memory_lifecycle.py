@@ -250,9 +250,9 @@ async def consolidate_tenant(
     logger.info(
         "memory_consolidation_completed",
         tenant_id=str(tenant_id),
-        # cluster_candidates = eligible episode/observation rows after the
-        # near-dup merge; distinguishes "too few episodes" from "episodes too
-        # diverse to cluster" without a DB query.
+        # cluster_candidates = eligible episode rows after the near-dup
+        # merge; distinguishes "too few episodes" from "episodes too diverse
+        # to cluster" without a DB query.
         cluster_candidates=len(candidates),
         candidate_pairs=len(pairs),
         merges=len(decisions),
