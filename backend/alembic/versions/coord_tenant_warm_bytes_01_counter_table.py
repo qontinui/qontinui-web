@@ -1,7 +1,7 @@
 """coord tenant_warm_bytes — incremental warm-tier byte counter + backfill
 
 Revision ID: coord_tenant_warm_bytes_01
-Revises: memhold_adjudicate_02
+Revises: coord_primary_trees_selfheal_backfill
 Create Date: 2026-08-04
 
 Phase 2a (the qontinui-web half) of plan
@@ -307,7 +307,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_tenant_warm_bytes_01"
-down_revision: str = "memhold_adjudicate_02"
+down_revision: str = "coord_primary_trees_selfheal_backfill"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
