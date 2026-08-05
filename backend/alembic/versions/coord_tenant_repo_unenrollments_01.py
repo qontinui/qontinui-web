@@ -1,7 +1,7 @@
 """coord.tenant_repo_unenrollments — the repo un-enrollment tombstone
 
 Revision ID: coord_tenant_repo_unenroll_01
-Revises: coord_memory_obs_access_distribution
+Revises: memrestore_01_synthesis_superseded_documents
 Create Date: 2026-08-04
 
 Backs the un-enrollment path in the plan
@@ -82,7 +82,7 @@ single-authored coord tables. Coord registers it in ``ALEMBIC_OWNED_TABLES``
 but deliberately NOT in ``CRITICAL_BOOT_TABLES``: a missing tombstone table
 must degrade to ``503 schema_migration_pending``, never block boot.
 
-Chains off ``coord_memory_obs_access_distribution`` — the verified single head
+Chains off ``memrestore_01_synthesis_superseded_documents`` — the verified single head
 of the alembic graph at authoring time — so the graph does NOT fork.
 """
 
@@ -96,8 +96,8 @@ from alembic import op
 # revision identifiers, used by Alembic.
 revision: str = "coord_tenant_repo_unenroll_01"
 # CRITICAL: chain off the current single head so the alembic graph does NOT
-# fork. coord_memory_obs_access_distribution is the verified head.
-down_revision: str | Sequence[str] | None = "coord_memory_obs_access_distribution"
+# fork. memrestore_01_synthesis_superseded_documents is the verified head.
+down_revision: str | Sequence[str] | None = "memrestore_01_synthesis_superseded_documents"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
