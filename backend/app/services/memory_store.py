@@ -84,6 +84,20 @@ NARROW_SCOPES = ("agent", "session")
 # ``/memory/query`` and ``GET /records`` both still return. Anything
 # describing "what a query could find" must use
 # :data:`_RETRIEVAL_LIVE_PREDICATE` instead.
+#
+# The supersede guard (`_supersede_target_is_safe`) deliberately keeps THIS
+# one rather than the retrieval predicate: it asks "may this row be the target
+# of a supersession", and a row whose validity is dated into the future is
+# still on its way OUT. Superseding onto it would bury the lineage the moment
+# that date passes.
+#
+# ⚠️ Must remain a FLAT ``AND``-chain of bare column atoms:
+# `_live_predicate_for` splits it on " AND " to qualify each atom with a table
+# alias. A parenthesised ``OR`` — e.g. "(valid_until IS NULL OR valid_until >
+# now())" — would render as "tgt.(valid_until IS NULL ...". It fails at parse
+# time rather than silently, but the coupling is easy to miss from here.
+# :data:`_RETRIEVAL_LIVE_PREDICATE` HAS that shape, which is the concrete
+# reason the two are not interchangeable here.
 _LIVE_DEDUP_PREDICATE = (
     "is_tombstone = false AND superseded_by IS NULL AND valid_until IS NULL"
 )
@@ -111,7 +125,10 @@ def _live_predicate_for(alias: str) -> str:
 
 
 def _supersede_target_is_safe(
-    *, target: str, subject: str = "memory_id", table: str = "coord.memory_records"
+    *,
+    target: str,
+    subject: str = "memory_records.memory_id",
+    table: str = "coord.memory_records",
 ) -> str:
     """SQL guard every ``superseded_by`` write MUST carry.
 
@@ -134,10 +151,33 @@ def _supersede_target_is_safe(
     with a single candidate returns it whatever its state, so ranking cannot
     express "never". Only a WHERE can.
 
-    ``target`` and ``subject`` are bind-parameter NAMES (rendered ``:name``),
-    never values — this fragment is interpolated into f-strings, so it must
-    never carry caller data.
+    ⚠️ ``subject`` MUST stay a QUALIFIED column reference naming the UPDATE's
+    own target table. An unqualified ``memory_id`` resolves against the
+    INNERMOST range table — ``back`` — so the back-edge clause silently
+    collapses to ``back.superseded_by = back.memory_id`` ("does the target
+    point at itself"), which is never true. Postgres then plans it as an
+    uncorrelated ``InitPlan`` that never reads the outer row at all, and the
+    guard reads as present while doing nothing. All three call sites UPDATE
+    ``coord.memory_records`` without an alias, so ``memory_records.memory_id``
+    is the correlated reference.
+
+    Under today's :data:`_LIVE_DEDUP_PREDICATE` the back-edge term is
+    REDUNDANT: a row B with ``B.superseded_by = A`` is by definition not live,
+    so condition 1 already refuses it. It is kept as the braces to condition
+    1's belt — the day someone relaxes liveness (e.g. lets superseded-but-
+    still-valid rows count as live), it becomes the only thing standing
+    between this codebase and the 2026-08-04 cycle.
+
+    ``target`` is a bind-parameter NAME (rendered ``:name``); ``subject`` and
+    ``table`` are SQL identifiers. None of the three ever carries caller data —
+    this fragment is interpolated into f-strings, so every call site passes a
+    string literal. The guard below enforces that rather than trusting it.
     """
+    if not target.isidentifier():
+        raise ValueError(f"target must be a bind-parameter name, got {target!r}")
+    for ident in (subject, table):
+        if not all(part.isidentifier() for part in ident.split(".")):
+            raise ValueError(f"not a plain SQL identifier: {ident!r}")
     return f"""
         EXISTS (
             SELECT 1 FROM {table} tgt
@@ -2259,25 +2299,16 @@ async def apply_merge(
     *,
     now: datetime,
 ) -> None:
-    """Apply one near-dup merge: fold into survivor, supersede loser."""
-    await session.execute(
-        text(
-            """
-            UPDATE coord.memory_records
-            SET importance = :importance,
-                access_count = :access_count,
-                updated_at = :now
-            WHERE tenant_id = :tenant_id AND memory_id = :survivor_id
-            """
-        ),
-        {
-            "tenant_id": tenant_id,
-            "survivor_id": decision.survivor_id,
-            "importance": decision.folded_importance,
-            "access_count": decision.folded_access_count,
-            "now": now,
-        },
-    )
+    """Apply one near-dup merge: supersede loser, then fold into survivor.
+
+    The supersede runs FIRST, and the fold is skipped when it is refused.
+    Folding first would leave the fold standing on a refusal — and
+    ``folded_access_count`` is a SUM, so a pair that keeps failing the guard
+    (both rows still live, same kind, still inside the ``window_days``
+    selector) re-folds every pass and the survivor's ``access_count`` compounds
+    without bound. ``access_count`` feeds ``retention_score``, so that inflates
+    the survivor's decay resistance off a merge that never happened.
+    """
     result = await session.execute(
         text(
             f"""
@@ -2296,6 +2327,25 @@ async def apply_merge(
             "now": now,
         },
     )
+    if int(cast("CursorResult[Any]", result).rowcount or 0) != 0:
+        await session.execute(
+            text(
+                """
+                UPDATE coord.memory_records
+                SET importance = :importance,
+                    access_count = :access_count,
+                    updated_at = :now
+                WHERE tenant_id = :tenant_id AND memory_id = :survivor_id
+                """
+            ),
+            {
+                "tenant_id": tenant_id,
+                "survivor_id": decision.survivor_id,
+                "importance": decision.folded_importance,
+                "access_count": decision.folded_access_count,
+                "now": now,
+            },
+        )
     if int(cast("CursorResult[Any]", result).rowcount or 0) == 0:
         logger.warning(
             "memory_supersede_refused_near_duplicate_fold",
@@ -2304,8 +2354,9 @@ async def apply_merge(
             tenant_id=str(tenant_id),
             reason=(
                 "survivor is not live, or it already points back at the loser "
-                "(back-edge). The importance/access_count fold still applied; "
-                "the two rows stay separate and live."
+                "(back-edge). The importance/access_count fold was SKIPPED too, "
+                "so the merge is a complete no-op; the two rows stay separate "
+                "and live."
             ),
         )
 
@@ -2452,24 +2503,64 @@ async def supersede_many(
             "now": now,
         },
     )
-    # Skipped rows are held, or the guard refused. Both are expected outcomes
-    # of a scheduled sweep, so this reports rather than raises — but it must
-    # not report NOTHING, which is how the 2026-08-04 corruption stayed
-    # invisible until it wedged a migration.
+    # A skipped member is either lifecycle-HELD or guard-REFUSED, and the two
+    # mean opposite things: a held member is routine (the hold is working), a
+    # refusal means the target is dead or a cycle exists. Reporting one mixed
+    # count would bury the corruption signal in routine noise on every pass.
+    #
+    # They separate cleanly because the guard reads the TARGET only, and the
+    # target is the same for every member: either it is safe and every skip is
+    # a hold, or it is unsafe and every member was refused. So one probe of the
+    # target attributes the whole batch — no per-row query.
     skipped = len(member_ids) - int(cast("CursorResult[Any]", result).rowcount or 0)
     if skipped > 0:
-        logger.warning(
-            "memory_supersede_skipped_members",
-            skipped=skipped,
-            requested=len(member_ids),
-            new_memory_id=str(new_memory_id),
-            tenant_id=str(tenant_id),
-            reason=(
-                "each member was either lifecycle-held or refused by the "
-                "supersede guard (target not live, or a back-edge that would "
-                "form a cycle)"
-            ),
+        # Spelled out rather than reusing `_supersede_target_is_safe`: that
+        # fragment's back-edge arm is CORRELATED to the UPDATE's current row
+        # (`memory_records.memory_id`), which has no referent in a bare SELECT.
+        # The batch question is "does the target point back at ANY member".
+        target_safe = bool(
+            await session.scalar(
+                text(
+                    f"""
+                    SELECT EXISTS (
+                        SELECT 1 FROM coord.memory_records tgt
+                         WHERE tgt.memory_id = :new_memory_id
+                           AND {_live_predicate_for("tgt")}
+                    )
+                    AND NOT EXISTS (
+                        SELECT 1 FROM coord.memory_records back
+                         WHERE back.memory_id = :new_memory_id
+                           AND back.superseded_by
+                               = ANY(CAST(:member_ids AS uuid[]))
+                    )
+                    """
+                ),
+                {
+                    "new_memory_id": new_memory_id,
+                    "member_ids": [str(m) for m in member_ids],
+                },
+            )
         )
+        if target_safe:
+            logger.info(
+                "memory_supersede_skipped_held_members",
+                held=skipped,
+                requested=len(member_ids),
+                new_memory_id=str(new_memory_id),
+                tenant_id=str(tenant_id),
+            )
+        else:
+            logger.warning(
+                "memory_supersede_refused_unsafe_target",
+                refused=skipped,
+                requested=len(member_ids),
+                new_memory_id=str(new_memory_id),
+                tenant_id=str(tenant_id),
+                reason=(
+                    "the consolidation target is not live, or it already points "
+                    "back at a member (a back-edge that would form a cycle)"
+                ),
+            )
 
 
 # ===========================================================================
@@ -2495,8 +2586,12 @@ async def find_supersede_cycles(
     This is the shape `memhold_adjudicate_01` minted on 2026-08-01 and the
     one that failed `_02`'s ``not_live`` invariant. Measured 0 fleet-wide on
     2026-08-05 — this exists to keep it 0.
+
+    ``a.memory_id < b.memory_id`` de-duplicates the symmetric join: a cycle
+    satisfies the join from BOTH ends, so without it every cycle is reported
+    twice and any count derived from this reads double.
     """
-    where = "WHERE b.superseded_by = a.memory_id"
+    where = "WHERE b.superseded_by = a.memory_id AND a.memory_id < b.memory_id"
     params: dict[str, Any] = {}
     if tenant_id is not None:
         where += " AND a.tenant_id = :tenant_id"

@@ -42,6 +42,26 @@ tombstone) once ``valid_until`` passes ``DECAY_PRUNE_GRACE_DAYS`` (90), which
 dates its loss at **2026-10-26 16:20 UTC**. Nothing is past the grace window
 yet (measured: 0), so this revision is ahead of the clock, not behind it.
 
+⚠️ **`memhold_adjudicate_01` did NOT write these edges, and this revision does
+not claim it did.** `_01` selects `source->>'origin' = 'sync-conflict-sidecar'`
+(`_SIDECAR_ROW_CTE`) and writes ``superseded_by`` on the SIDECAR, pointing it
+at a topic-file winner. All four rows above are ``origin='topic-file'``, and
+their ``valid_until`` stamps (2026-07-28 16:20; 2026-08-01 15:30 and 15:40) do
+not match `_01`'s single apply instant (2026-08-01 15:00:59). The likeliest
+writer is the automatic consolidation path, whose folding is not in itself
+wrong.
+
+That matters because it narrows the claim this revision makes. The defect is a
+property of the RESULT, not of a writer: a document left HALF folded, part N
+dark while its siblings stay live. That is incoherent whoever produced it —
+and asymmetric in consequence, because the dark part is on ``decay_prune``'s
+DELETE clock and the live parts are not. Reviving restores the document to a
+consistent state; it does not overturn an adjudication, and it is reversible
+via ``downgrade()``. The plan's own root-cause narrative (liveness as a sort
+key) is still correct about the CLASS of bug and about the fleet wedge; it is
+the attribution of these four specific edges that does not hold up, and the
+fix for the productive defect lives in ``memory_store``, not here.
+
 ## What it deliberately does NOT revive, and why the predicate is narrow
 
 The LOOSE shape — "non-live part of a live multi-part document" — matches
@@ -226,10 +246,46 @@ _REVIVE = f"""
      WHERE memory_id = :memory_id
 """
 
+# ⚠️ States what is OBSERVED, not who did it.
+#
+# An earlier draft of this revision blamed `memhold_adjudicate_01`. That is
+# FALSE and the provenance would have been a lie in the corpus. `_01`'s
+# `_SIDECAR_ROW_CTE` selects `source->>'origin' = 'sync-conflict-sidecar'` and
+# its UPDATE writes `superseded_by` on the SIDECAR, pointing it at a
+# topic-file winner. Every row below is `origin='topic-file'` and points AT a
+# non-sidecar-winner direction, so `_01` cannot have written any of these
+# edges — and their `valid_until` stamps (2026-07-28 16:20, 2026-08-01 15:30,
+# 15:40) do not match `_01`'s single apply instant (2026-08-01 15:00:59)
+# either.
+#
+# What actually wrote them is NOT established. The likeliest writer is the
+# automatic consolidation path (`apply_merge` / `supersede_many`), whose whole
+# job is to fold near-duplicates — and folding is not in itself wrong. The
+# defect this revision repairs is narrower and is a property of the RESULT,
+# not of any writer: a document was left HALF folded, with part N dark while
+# its siblings stayed live. A partially-folded document is incoherent whoever
+# produced it, and the dark part is on `decay_prune`'s DELETE clock while the
+# live parts are not.
 _REASON = (
-    "memhold_adjudicate_01 superseded this part onto a different document "
-    "because its winner ranking treated liveness as a sort key, not a predicate"
+    "part-N of a multi-part document was superseded onto a DIFFERENT document "
+    "while sibling parts stayed live, leaving the document half-dark and the "
+    "dark part on decay_prune's DELETE clock; writer not established"
 )
+
+# The rows verified in prod on 2026-08-05, read-only, by this module's own
+# `_TARGETS`. Pinned so the apply is checked against a MEASURED set rather than
+# trusting a shape query re-evaluated weeks later against a corpus that has
+# moved. A mismatch does not abort — that would hand a fleet-wide deploy block
+# to ordinary corpus drift — but it is reported at ERROR so the difference is
+# adjudicated deliberately instead of silently revived.
+_VERIFIED_TARGETS = {
+    "c997972f-5fcc-4006-82b0-8dff65ff51a4": "[MSI] _index-archive-2026-07-04",
+    "8e0efa14-69dd-47d0-982d-f9fbcf281dc7": "[MSI] _index-archive-2026-07-14",
+    "81707c99-9680-435b-99dc-039a052bf22f": "[MSI] _index-archive-2026-07-19",
+    "4a14e94e-77cc-4028-b392-259b436a3719": (
+        "[qontinui-coord] pr-1060-specimen-never-lands"
+    ),
+}
 
 
 # ---------------------------------------------------------------------------
@@ -362,6 +418,36 @@ def upgrade() -> None:
         "memhold_adjudicate_03: %d orphaned multi-part document row(s) in scope",
         len(targets),
     )
+
+    # ------------------------------------------------------------------
+    # Reconcile the shape query against the set MEASURED in prod. Reported,
+    # never raised: this revision revives rows and sets holds, and handing a
+    # fleet-wide deploy block to ordinary corpus drift is the failure mode the
+    # whole plan exists to stop. But an unreviewed row must not be revived
+    # silently either — a revive is a lifecycle decision, and the difference
+    # between "the sweep found what we verified" and "the sweep found
+    # something else" is exactly what a human needs to see.
+    # ------------------------------------------------------------------
+    found = {str(r["memory_id"]) for r in targets}
+    expected = set(_VERIFIED_TARGETS)
+    for extra in sorted(found - expected):
+        logger.error(
+            "memhold_adjudicate_03: UNVERIFIED target %s — it matches the "
+            "orphaned-part shape but was NOT in the set measured read-only "
+            "against prod on 2026-08-05. It is being revived and held, which "
+            "is reversible via downgrade(), but adjudicate it: the shape also "
+            "matches ordinary re-import dedup and synthesis supersession, and "
+            "only the cross-document terms above separate them.",
+            extra,
+        )
+    for missing in sorted(expected - found):
+        logger.warning(
+            "memhold_adjudicate_03: verified target %s (%s) NO LONGER matches "
+            "the shape — already repaired, re-superseded, or deleted. Nothing "
+            "to do for it.",
+            missing,
+            _VERIFIED_TARGETS[missing],
+        )
 
     revived = 0
     skipped = 0

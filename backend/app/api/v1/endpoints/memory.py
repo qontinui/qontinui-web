@@ -840,12 +840,23 @@ async def supersede_record(
             status_code=status.HTTP_409_CONFLICT,
             detail=("replacement content is identical to the record being superseded"),
         )
-    await store.mark_superseded(
-        db,
-        tenant_id=principal.tenant_id,
-        old_memory_id=memory_id,
-        new_memory_id=new_id,
-    )
+    try:
+        await store.mark_superseded(
+            db,
+            tenant_id=principal.tenant_id,
+            old_memory_id=memory_id,
+            new_memory_id=new_id,
+        )
+    except store.SupersedeRefused as exc:
+        # The supersede guard rejected the edge: the replacement is not live,
+        # or it already points back at this record (which would form a
+        # supersede cycle — the 2026-08-04 corruption). This is a conflict with
+        # the corpus's current state, not a server fault, so it must not
+        # surface as a 500. 409 matches the identical-content case above.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
     return SupersedeResponse(
         memory_id=new_id, superseded_memory_id=memory_id, deduped=deduped
     )

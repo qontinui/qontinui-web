@@ -1240,7 +1240,10 @@ class TestCorruptionDetection:
         )
 
         cycles = _run(db, lambda s: store.find_supersede_cycles(s, tenant_id=tenant))
-        assert {r["a_id"] for r in cycles} == {a, b}
+        # Reported ONCE, not twice: a cycle satisfies the symmetric join from
+        # both ends, and a double-counted cycle inflates any alert built on it.
+        assert len(cycles) == 1
+        assert {cycles[0]["a_id"], cycles[0]["b_id"]} == {a, b}
 
         edges = _run(
             db,
@@ -1310,3 +1313,71 @@ class TestCorruptionDetection:
             db, lambda s: store.find_orphaned_document_parts(s, tenant_id=tenant)
         )
         assert found == []
+
+
+class TestSupersedeGuardCorrelation:
+    """The back-edge arm must be CORRELATED to the row being updated.
+
+    An earlier draft defaulted ``subject`` to a bare ``memory_id``. Inside the
+    subquery that resolves against the INNERMOST range table (``back``), so the
+    clause collapsed to ``back.superseded_by = back.memory_id`` - "does the
+    target point at ITSELF" - which is never true. Postgres then plans it as an
+    uncorrelated InitPlan that never reads the outer row, and the guard reads
+    as present while doing nothing.
+
+    That bug is invisible to a behavioural test, because under today's liveness
+    definition a row B with ``B.superseded_by = A`` is already not live, so the
+    liveness arm refuses the write regardless and every end-to-end assertion
+    still passes. So this asserts the SQL semantics directly.
+    """
+
+    def test_back_edge_arm_reads_the_outer_row(self, db: AsyncEngine) -> None:
+        """Evaluate the rendered back-edge arm against a real A<-B pair.
+
+        Seeds B.superseded_by = A, then asks the arm about (subject=A,
+        target=B) and (subject=C, target=B). A correlated clause answers TRUE
+        then FALSE. The uncorrelated bug answers FALSE for both, because
+        ``back.superseded_by`` (=A) never equals ``back.memory_id`` (=B).
+        """
+        tenant = uuid4()
+        a = _seed(db, tenant, content="back-edge target of b")
+        c = _seed(db, tenant, content="unrelated third row")
+        b = _seed(db, tenant, content="points at a", superseded_by=a)
+
+        sql = """
+            SELECT EXISTS (
+                SELECT 1 FROM coord.memory_records back
+                 WHERE back.memory_id = :target
+                   AND back.superseded_by = memory_records.memory_id
+            ) AS hit
+              FROM coord.memory_records
+             WHERE memory_records.memory_id = :subject
+        """
+        hit_a = _scalar(db, sql, target=b, subject=a)
+        hit_c = _scalar(db, sql, target=b, subject=c)
+
+        assert hit_a is True, (
+            "the back-edge arm must SEE the outer row: B points at A, so asking "
+            "about subject=A must be a hit. FALSE here means the clause "
+            "collapsed to back.superseded_by = back.memory_id and the guard is "
+            "inert."
+        )
+        assert hit_c is False, (
+            "and it must DISCRIMINATE: B does not point at C, so subject=C is "
+            "not a hit. Equal results for both subjects would mean the clause "
+            "never read the outer row at all."
+        )
+
+    def test_guard_rejects_a_non_identifier_subject(self) -> None:
+        """The fragment is f-string-interpolated, so it must not accept data."""
+        with pytest.raises(ValueError):
+            store._supersede_target_is_safe(
+                target="t", subject="memory_id; DROP TABLE coord.memory_records"
+            )
+        with pytest.raises(ValueError):
+            store._supersede_target_is_safe(target="not a bind name")
+
+    def test_default_subject_is_qualified(self) -> None:
+        """Cheap, deterministic guard against re-introducing the bare name."""
+        rendered = store._supersede_target_is_safe(target="new_memory_id")
+        assert "back.superseded_by = memory_records.memory_id" in rendered
