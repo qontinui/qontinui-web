@@ -187,6 +187,17 @@ def upgrade() -> None:
         # `prior_*` mirrors the key names `memhold_adjudicate_01` used, so the
         # provenance shape is one idiom across the memory revisions rather than
         # a new one per author. downgrade() reads these back.
+        #
+        # The casts are spelled `CAST(:x AS text)` and NOT `:x::text` on purpose.
+        # `sa.text()` finds binds with `(?<![\w:\\]):(\w+)(?!:)` — that trailing
+        # `(?!:)` exists to leave PostgreSQL's `::` cast operator alone, and it
+        # backtracks rather than failing: given `:prior_valid_until::text` it
+        # registers a bind named `prior_valid_unti` (one character short) and
+        # emits the ORIGINAL `:prior_valid_until::text` into the compiled SQL.
+        # The `:name` then reaches PostgreSQL literally — `syntax error at or
+        # near ":"` — while the value silently never binds. That is exactly how
+        # this revision failed to apply on 2026-08-04 (run 30947022520). Do not
+        # "simplify" these back to `::text`.
         conn.execute(
             sa.text(
                 """
@@ -200,8 +211,8 @@ def upgrade() -> None:
                            '{restore_2026_08_04}',
                            jsonb_build_object(
                                'reason', 'synthesis job superseded its own source document',
-                               'prior_valid_until', to_jsonb(:prior_valid_until::text),
-                               'prior_superseded_by', to_jsonb(:prior_superseded_by::text),
+                               'prior_valid_until', to_jsonb(CAST(:prior_valid_until AS text)),
+                               'prior_superseded_by', to_jsonb(CAST(:prior_superseded_by AS text)),
                                'held_pending', 'reclassification out of kind=observation'
                            ),
                            true)
