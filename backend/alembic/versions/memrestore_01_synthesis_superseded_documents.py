@@ -187,6 +187,17 @@ def upgrade() -> None:
         # `prior_*` mirrors the key names `memhold_adjudicate_01` used, so the
         # provenance shape is one idiom across the memory revisions rather than
         # a new one per author. downgrade() reads these back.
+        #
+        # The casts are spelled `CAST(:x AS text)` and NOT `:x::text` on purpose.
+        # `sa.text()` finds binds with `(?<![\w:\\]):(\w+)(?!:)` — that trailing
+        # `(?!:)` exists to leave PostgreSQL's `::` cast operator alone, and it
+        # backtracks rather than failing: given `:prior_valid_until::text` it
+        # registers a bind named `prior_valid_unti` (one character short) and
+        # emits the ORIGINAL `:prior_valid_until::text` into the compiled SQL.
+        # The `:name` then reaches PostgreSQL literally — `syntax error at or
+        # near ":"` — while the value silently never binds. That is exactly how
+        # this revision failed to apply on 2026-08-04 (run 30947022520). Do not
+        # "simplify" these back to `::text`.
         conn.execute(
             sa.text(
                 """
@@ -200,8 +211,8 @@ def upgrade() -> None:
                            '{restore_2026_08_04}',
                            jsonb_build_object(
                                'reason', 'synthesis job superseded its own source document',
-                               'prior_valid_until', to_jsonb(:prior_valid_until::text),
-                               'prior_superseded_by', to_jsonb(:prior_superseded_by::text),
+                               'prior_valid_until', to_jsonb(CAST(:prior_valid_until AS text)),
+                               'prior_superseded_by', to_jsonb(CAST(:prior_superseded_by AS text)),
                                'held_pending', 'reclassification out of kind=observation'
                            ),
                            true)
@@ -232,10 +243,27 @@ def downgrade() -> None:
     put back to the ``valid_until`` / ``superseded_by`` it actually had — never
     a blanket re-invalidation, which would catch rows that were live all along.
 
-    The hold is released on the way back only if THIS revision set it. A row
-    that already carried a hold from a `memhold_*` revision keeps it: the
-    absence of a recorded prior hold state is why the flag is dropped rather
-    than set false, leaving `_not_lifecycle_held`'s "absent key" reading intact.
+    ``lifecycle_hold`` is DROPPED rather than set false, so
+    `_not_lifecycle_held`'s "absent key" reading stays intact.
+
+    ⚠️ That drop is UNCONDITIONAL, and this docstring used to claim otherwise —
+    that "the hold is released on the way back only if THIS revision set it".
+    It does not: nothing records the prior hold state, so `downgrade()` cannot
+    distinguish a hold this revision applied from one a `memhold_*` revision
+    already had, and a row in both sets comes back unheld. The header's
+    measured table suggests the overlap is empty (the adjudicated rows have
+    topic-file / sync-conflict superseders, not synthesis ones, so they are not
+    in `_TARGETS`) — but a `memhold_adjudicate_01` WINNER is itself a
+    topic-file row, and one that the 2026-07-28 sweep later consumed WOULD be
+    in scope. Unmeasured, not proven empty.
+
+    The durable fix is to stash the prior hold state in the provenance block
+    alongside `prior_valid_until` and honour it here. That is deliberately NOT
+    done in this revision: it is the hotfix for an un-appliable migration that
+    is wedging the merge train, and widening it means widening the blast radius
+    on 597 rows. Tracked as a follow-up; the claim is corrected here rather than
+    left standing, because an operator reading it before a rollback would
+    otherwise expect a guarantee the SQL never made.
     """
     conn = op.get_bind()
     conn.execute(
