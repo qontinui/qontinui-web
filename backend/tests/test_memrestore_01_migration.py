@@ -10,32 +10,46 @@ at all, which is how it reached prod's migrator broken.
 What broke, and why a test would have caught it
 ===============================================
 
-The revision recorded each row's prior lifecycle state with::
-
-    to_jsonb(:prior_valid_until::text)
+The revision recorded each row's prior lifecycle state by writing a bind
+parameter immediately before a PostgreSQL cast operator — ``to_jsonb`` of
+``prior_valid_until``, colon-prefixed, butted straight against a ``::text``.
 
 ``sa.text()`` finds binds with ``(?<![\\w:\\\\]):(\\w+)(?!:)``. That trailing
 ``(?!:)`` is there to leave PostgreSQL's ``::`` cast operator alone — but the
 regex **backtracks** instead of failing: it registers a bind named
-``prior_valid_unti`` (one character short) and emits the original
-``:prior_valid_until::text`` into the compiled SQL. The ``:name`` then reaches
-PostgreSQL literally (``syntax error at or near ":"``) while the value silently
-never binds. Run 30947022520 died exactly there, at the first of 597 rows, and
-because ``touches_migration`` defers every ``alembic/versions/`` PR while the
-stamped head and the chain head differ, it wedged the whole merge train.
+``prior_valid_unti`` (one character short) and emits the author's original text
+into the compiled SQL. The colon-name then reaches PostgreSQL literally
+(``syntax error at or near ":"``) while the value silently never binds. Run
+30947022520 died exactly there, at the first of 597 rows, and because
+``touches_migration`` defers every ``alembic/versions/`` PR while the stamped
+head and the chain head differ, it wedged the whole merge train.
 
 The fix is ``CAST(:prior_valid_until AS text)`` — the same idiom this file's own
 fixture INSERT uses, and the one the sibling migration tests already use.
+
+⚠️ This docstring deliberately does NOT spell the broken form literally.
+:func:`test_no_hazard_survives_a_raw_rescan` scans raw file text, so a verbatim
+example here would be a permanent self-inflicted failure.
 
 Coverage here
 =============
 
 :func:`test_no_revision_binds_a_param_adjacent_to_a_cast` is the guard for the
 CLASS. It needs no database, so it never skips, and it sweeps **every** revision
-rather than this one: for each ``sa.text()`` literal it compares the binds
-SQLAlchemy actually registers against the ``:name`` tokens the author plainly
-wrote, and fails on either a bind SQLAlchemy invented (the truncation above) or
-one it will not substitute. It would have failed on this revision as authored.
+and the application package rather than this one file: for each SQL literal it
+compares the binds SQLAlchemy actually registers against the ``:name`` tokens
+the author plainly wrote, and fails on either a bind SQLAlchemy invented (the
+truncation above) or one it will not substitute. It would have failed on this
+revision as authored.
+
+It covers ``op.execute("…")`` as well as ``text("…")``, because
+``alembic.ddl.impl.DefaultImpl._exec`` wraps a plain string in ``text()``
+itself — so a bare ``op.execute`` string is byte-for-byte the same hazard, and
+it is the more common idiom in this tree.
+
+:func:`test_no_hazard_survives_a_raw_rescan` closes what the AST walk cannot
+reach: f-strings and SQL held in local variables, which no static resolution
+recovers. It scans raw file text instead, so it needs no resolution at all.
 
 :func:`test_memrestore_01_restores_only_the_synthesis_superseded` is the
 data-semantics walk, over four fixtures chosen as the distinct branches:
@@ -116,9 +130,21 @@ def _embedding(seed: int) -> str:
 # the whole point is to disagree with it where SQLAlchemy is surprising.
 _AUTHOR_BIND = re.compile(r"(?<![\w:\\]):(\w+)")
 
+# The hazard itself, for the resolution-free rescan: a colon-prefixed name
+# butted straight against a cast operator. The lookbehind keeps ordinary column
+# casts out (`created_at::text` is preceded by a word character).
+_HAZARD = re.compile(r"(?<![\w:\\]):(\w+)::")
+
+
+# Calls whose first string argument is executed as SQL. ``execute`` is here
+# because `alembic.ddl.impl.DefaultImpl._exec` does `if isinstance(construct,
+# str): construct = text(construct)` — so `op.execute("…")` goes through the
+# very same bind detection as `text("…")` and carries the identical hazard.
+_SQL_CALLS = frozenset({"text", "execute", "exec_driver_sql"})
+
 
 def _text_literals(tree: ast.Module) -> list[tuple[int, str]]:
-    """Every string that reaches ``text()`` — inline or via a module constant."""
+    """Every string executed as SQL — inline or via a module-level constant."""
     consts: dict[str, tuple[str, int]] = {}
     for node in tree.body:
         if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant):
@@ -133,7 +159,7 @@ def _text_literals(tree: ast.Module) -> list[tuple[int, str]]:
             continue
         func = node.func
         name = func.id if isinstance(func, ast.Name) else getattr(func, "attr", None)
-        if name != "text":
+        if name not in _SQL_CALLS:
             continue
         arg = node.args[0]
         if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
@@ -152,42 +178,97 @@ def test_no_revision_binds_a_param_adjacent_to_a_cast() -> None:
     SQL, so PostgreSQL raises a syntax error at apply time and the value never
     binds. Spell casts ``CAST(:name AS text)`` instead.
 
-    Swept across every revision rather than just ``memrestore_01`` — the defect
-    is a property of the idiom, not of one author, and a migration that fails
-    this way is only discoverable in the migrator, against production.
+    Swept across every revision AND ``app/`` rather than just ``memrestore_01``
+    — the defect is a property of the idiom, not of one author. In a migration
+    it is only discoverable in the migrator against production; in ``app/`` it
+    ships to runtime instead, which is worse.
     """
-    versions = backend_root() / "alembic" / "versions"
+    roots = [backend_root() / "alembic" / "versions", backend_root() / "app"]
     scanned = 0
+    unreadable = 0
     problems: list[str] = []
 
-    for path in sorted(versions.rglob("*.py")):
-        if "__pycache__" in str(path):
-            continue
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
-        except SyntaxError:  # pragma: no cover - a broken revision fails elsewhere
-            continue
-        for lineno, sql in _text_literals(tree):
-            if ":" not in sql:
+    for root in roots:
+        for path in sorted(root.rglob("*.py")):
+            if "__pycache__" in str(path):
                 continue
-            scanned += 1
-            written = set(_AUTHOR_BIND.findall(sql))
             try:
-                registered = set(sa.text(sql)._bindparams.keys())
-            except Exception:  # pragma: no cover - not a bind-detection failure
+                tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
+            except SyntaxError:  # pragma: no cover - a broken module fails elsewhere
+                unreadable += 1
                 continue
-            phantom = sorted(registered - written)
-            lost = sorted(written - registered)
-            if phantom or lost:
-                problems.append(
-                    f"{path.name}:{lineno} — SQLAlchemy registered {phantom or '[]'} "
-                    f"but the SQL writes {lost or '[]'}. A `:name` immediately "
-                    f"followed by `::` is not bound; use CAST(:name AS type)."
-                )
+            for lineno, sql in _text_literals(tree):
+                if ":" not in sql:
+                    continue
+                scanned += 1
+                written = set(_AUTHOR_BIND.findall(sql))
+                try:
+                    registered = set(sa.text(sql)._bindparams.keys())
+                except Exception as exc:
+                    # Never swallowed: `_bindparams` is private, so a SQLAlchemy
+                    # rename would otherwise turn this whole guard green while
+                    # checking nothing.
+                    problems.append(
+                        f"{path.name}:{lineno} — could not read binds ({exc!r}). "
+                        f"If SQLAlchemy moved `_bindparams`, fix this guard; do "
+                        f"not let it pass vacuously."
+                    )
+                    continue
+                phantom = sorted(registered - written)
+                lost = sorted(written - registered)
+                if phantom or lost:
+                    problems.append(
+                        f"{path.name}:{lineno} — SQLAlchemy registered "
+                        f"{phantom or '[]'} but the SQL writes {lost or '[]'}. A "
+                        f"bind name butted against a cast operator does not bind; "
+                        f"use CAST(:name AS type)."
+                    )
 
-    assert scanned > 0, "swept no SQL literals — the AST walk is broken, not clean"
+    # A floor, not `> 0`: a walk regression that resolves one literal instead of
+    # a hundred would otherwise stay green. 178 resolve today across both roots.
+    assert scanned >= 100, (
+        f"swept only {scanned} SQL literals — the AST walk regressed, "
+        f"this is not a clean result"
+    )
+    assert unreadable == 0, f"{unreadable} module(s) failed to parse; coverage is a lie"
     assert not problems, "bind parameters that will not bind:\n  " + "\n  ".join(
         problems
+    )
+
+
+def test_no_hazard_survives_a_raw_rescan() -> None:
+    """The AST walk cannot resolve f-strings or local-variable SQL. This can.
+
+    :func:`test_no_revision_binds_a_param_adjacent_to_a_cast` only sees strings
+    it can statically resolve to a literal — roughly 1500 of them, but it gives
+    up on f-strings and on SQL assembled in a local. Those are exactly where a
+    future author could reintroduce the defect and pass the other guard.
+
+    This one gives up on resolution entirely and scans raw file text, so it
+    covers f-strings, ``.format()``, concatenation and dollar-quoted bodies
+    alike. Full-line comments are skipped so a revision may still *explain* the
+    hazard; real SQL never lives on a line that starts with ``#``.
+    """
+    roots = [backend_root() / "alembic" / "versions", backend_root() / "app"]
+    hits: list[str] = []
+    files = 0
+
+    for root in roots:
+        for path in sorted(root.rglob("*.py")):
+            if "__pycache__" in str(path):
+                continue
+            files += 1
+            text_ = path.read_text(encoding="utf-8", errors="replace")
+            for lineno, line in enumerate(text_.splitlines(), 1):
+                if line.lstrip().startswith("#"):
+                    continue
+                for match in _HAZARD.finditer(line):
+                    hits.append(f"{path.name}:{lineno} — :{match.group(1)} + cast")
+
+    assert files >= 100, f"scanned only {files} files — the walk regressed"
+    assert not hits, (
+        "a bind parameter is butted against a cast operator and will not bind; "
+        "use CAST(:name AS type):\n  " + "\n  ".join(hits)
     )
 
 

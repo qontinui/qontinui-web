@@ -243,10 +243,27 @@ def downgrade() -> None:
     put back to the ``valid_until`` / ``superseded_by`` it actually had — never
     a blanket re-invalidation, which would catch rows that were live all along.
 
-    The hold is released on the way back only if THIS revision set it. A row
-    that already carried a hold from a `memhold_*` revision keeps it: the
-    absence of a recorded prior hold state is why the flag is dropped rather
-    than set false, leaving `_not_lifecycle_held`'s "absent key" reading intact.
+    ``lifecycle_hold`` is DROPPED rather than set false, so
+    `_not_lifecycle_held`'s "absent key" reading stays intact.
+
+    ⚠️ That drop is UNCONDITIONAL, and this docstring used to claim otherwise —
+    that "the hold is released on the way back only if THIS revision set it".
+    It does not: nothing records the prior hold state, so `downgrade()` cannot
+    distinguish a hold this revision applied from one a `memhold_*` revision
+    already had, and a row in both sets comes back unheld. The header's
+    measured table suggests the overlap is empty (the adjudicated rows have
+    topic-file / sync-conflict superseders, not synthesis ones, so they are not
+    in `_TARGETS`) — but a `memhold_adjudicate_01` WINNER is itself a
+    topic-file row, and one that the 2026-07-28 sweep later consumed WOULD be
+    in scope. Unmeasured, not proven empty.
+
+    The durable fix is to stash the prior hold state in the provenance block
+    alongside `prior_valid_until` and honour it here. That is deliberately NOT
+    done in this revision: it is the hotfix for an un-appliable migration that
+    is wedging the merge train, and widening it means widening the blast radius
+    on 597 rows. Tracked as a follow-up; the claim is corrected here rather than
+    left standing, because an operator reading it before a rollback would
+    otherwise expect a guarantee the SQL never made.
     """
     conn = op.get_bind()
     conn.execute(
