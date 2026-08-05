@@ -107,9 +107,10 @@ child (``coord_tenant_repo_unenroll_01``), so chaining here would have forked
 the graph and `alembic-heads-pr` failed the PR on a 2-head chain. The parent is
 now ``coord_primary_trees_selfheal_backfill``, the single head of `origin/main`
 and — verified read-only against prod — the head prod has actually STAMPED.
-`memrestore_01` remains an ANCESTOR two revisions back, so everything this
-docstring says about the two revisions dividing the work still holds; only the
-edge moved.
+`memrestore_01` remains an ANCESTOR three revisions back (two intervening:
+``coord_tenant_repo_unenroll_01``, then ``coord_primary_trees_selfheal_backfill``),
+so everything this docstring says about the two revisions dividing the work
+still holds; only the edge moved.
 
 ## Why the hold is set HERE and not by hand
 
@@ -120,19 +121,25 @@ So a hold set out of band risks wedging a future memhold revision. **The hold
 must be set BY the revision that also accounts for it** — that is the whole
 reason this is a migration rather than a DML fix.
 
-Baseline when this revision was written: **0** rows carried
+Baseline before `memrestore_01` applied: **0** rows carried
 ``lifecycle_hold='true'`` fleet-wide (149 read ``'false'``, 5488 had no key),
 and `memrestore_01` was noted as creating 597 the moment it applied. It has
-since applied, and the re-measurement on 2026-08-05 is exactly that prediction
-landing: **597** now read ``'true'`` (all 597 stamped ``source.restore_2026_08_04``,
+since applied, and the re-measurement is exactly that prediction landing:
+**597** now read ``'true'`` (all 597 stamped ``source.restore_2026_08_04``,
 `memrestore_01`'s provenance key), 149 read ``'false'``, 4920 have no key.
+(The no-key column falls 5488 → 4920 rather than to 4891 because the corpus
+also GREW by ~29 rows between the two reads — it is a live corpus, not a
+frozen one. The two totals are not meant to balance.)
 
 This revision's holds are additive to either state, because ``_COVERED_HELD``
 is keyed on ``source.memhold_adjudicate_03`` and not on ``lifecycle_hold``
 alone — it subtracts this revision's OWN rows and is blind to
 `memrestore_01`'s 597. Verified: **0** rows currently carry
 ``source.memhold_adjudicate_03``, so the coverage query reports 0 before the
-apply and 4 after, whatever else holds the corpus.
+apply and one row per REVIVED target after. On the corpus as measured that is
+4, since ``_COLLIDES`` currently finds no collision for any target; a target
+skipped on a live-dedup collision takes the ``continue`` before ``_REVIVE`` and
+so is never stamped, which would make it fewer.
 
 The hold is a STOPGAP with a named exit, the same one `memrestore_01` names:
 these rows re-enter `fetch_cluster_candidates`' selector once live, and
@@ -223,15 +230,22 @@ _TARGETS = f"""
        -- ordinary re-import dedup and must be left alone.
        AND regexp_replace(s.title, '{_PART_SUFFIX}', '') IS DISTINCT FROM p.doc
        -- the synthesis-superseded set belongs to memrestore_01 (an ancestor,
-       -- two revisions back), which restores all 597 of them.
+       -- three revisions back), which restores all 597 of them.
        AND NOT jsonb_exists(s.source, 'synthesis_job')
      ORDER BY p.doc
 """
 
 # Would reviving this row collide with a row that is ALREADY live? Mirrors the
 # partial unique index's own predicate, so what it finds is what the index would
-# reject. Measured 0 for all four targets on 2026-08-05; re-checked at apply
-# time regardless, because the corpus moves.
+# reject. Measured 0 for all four targets before `memrestore_01` applied.
+#
+# RE-MEASURED read-only against prod after it applied, because this is the query
+# the restore pass could most plausibly have disturbed: `_COLLIDES` searches for
+# a LIVE row sharing (tenant_id, content_hash), and `memrestore_01` turned 597
+# rows live, enlarging exactly that search space. Still **0** hits for all four
+# targets, and none of those 597 shares a (tenant_id, content_hash) with any
+# target — so the restore pass did not enlarge the collision surface for THIS
+# revision at all. Re-checked at apply time regardless, because the corpus moves.
 _COLLIDES = f"""
     SELECT memory_id, title FROM coord.memory_records o
      WHERE o.tenant_id = :tenant_id

@@ -4,8 +4,12 @@ The revision authors **no schema**. Its whole contract is WHICH rows it revives
 and which it refuses to touch — and the refusals are the interesting half,
 because the loose shape it is derived from ("a non-live part-N of a live
 multi-part document") matches rows that must be left exactly where they are.
-Measured against prod on 2026-08-05 the loose shape matched 8 rows and the
-correct answer was 4; the four seeded negatives below are the other four.
+Measured against prod BEFORE `memrestore_01` applied, the loose shape matched 8
+rows and the correct answer was 4; the four seeded negatives below are the other
+four. (Re-measured after it applied, the loose shape matches 5 — `memrestore_01`
+restored its 3 synthesis-superseded rows, so they no longer present as non-live.
+Both reads are dated 2026-08-05, so the discriminator is that apply, not the
+date. The in-scope answer is 4 either way.)
 
 Cases covered (each a distinct branch of ``_TARGETS``)
 =====================================================
@@ -19,11 +23,15 @@ Cases covered (each a distinct branch of ``_TARGETS``)
    title and file) — NOT revived. Ordinary dedup; reviving it resurrects a
    duplicate. This is ``f689235f…``'s shape.
 4. **Orphan whose superseder carries ``source.synthesis_job``** — NOT revived.
-   Owned by ``memrestore_01`` (an ancestor two revisions back), which restores
-   all 597. Asserted here even though `memrestore_01` has now applied in prod
-   and removed that shape THERE: the term must keep holding in any environment
-   whose chain is replayed, which is exactly what this ephemeral-database test
-   is.
+   Owned by ``memrestore_01`` (an ancestor three revisions back), which restores
+   all 597. Still asserted even though `memrestore_01` has now applied in prod
+   and removed that shape THERE, because the term must keep holding wherever the
+   corpus has not had that restore pass run against it. Note the fixture
+   survives by SEED ORDER, not by chain replay: ``_seed()`` runs after the
+   upgrade to ``_PARENT_REVISION_ID``, so `memrestore_01` executes against an
+   empty corpus and never sees ``_SYNTH_ORPHAN``. Seeding BEFORE it would let
+   `memrestore_01` revive the fixture and this case would assert on already-live
+   data.
 5. **Non-live part with NO live sibling** — NOT revived. A wholly retired
    document is not an orphaned half.
 6. **A live part** — untouched.
