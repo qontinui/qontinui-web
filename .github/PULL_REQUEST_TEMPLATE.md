@@ -16,8 +16,10 @@ Thanks for the PR. Fill in the sections that apply; remove the rest.
 
 Skip this section if the PR doesn't touch the database schema.
 
-- [ ] Migration added under `backend/alembic/versions/` with a clear
-      revision ID and `down_revision` chain.
+- [ ] Migration **hand-authored** under `backend/alembic/versions/` with a
+      clear revision ID and `down_revision` chain, and `alembic heads`
+      prints exactly one head (the required `alembic-heads-pr` check will
+      red this PR on a forked chain).
 - [ ] Every `op.create_table` / `op.add_column` / `op.alter_column` /
       `op.drop_column` / `op.drop_table` / `op.create_index` /
       `op.drop_index` / `op.create_foreign_key` / `op.drop_constraint`
@@ -27,15 +29,15 @@ Skip this section if the PR doesn't touch the database schema.
       `schema=` keyword argument with one of:
       `project`, `coord`, `agent`, `auth`, `public`.
       (Pre-commit gate `alembic-schema-arg-gate` enforces this for
-      `_staged_consolidation/` files; reviewer eyes enforce it for
-      `versions/` until the consolidation transplant lands.)
-- [ ] If running `alembic revision --autogenerate`: reviewed the
-      generated revision for false positives. Specifically, BEFORE
-      the consolidation transplant lands, autogenerate proposes
-      `op.drop_table(..., schema="runner")` for every runner-managed
-      table. Discard those — the consolidation chain in
-      `_staged_consolidation/` handles the runner-schema retirement
-      via `consolidation_phase2_zz_final_runner_cleanup`.
+      **both** `versions/` and `_staged_consolidation/` — its `files:`
+      pattern is `^backend/alembic/(_staged_consolidation|versions)/.*\.py$`.
+      The required `forbid-public-schema` check is the server-side half.)
+- [ ] **Did NOT run `alembic revision --autogenerate`.** Raw autogenerate is
+      prohibited: no SQLAlchemy models back the `coord` schema, so it has
+      nothing to compare against there and emits spurious drops — most
+      visibly `op.drop_table(..., schema="runner")` for every runner-managed
+      table, which is Atlas-managed and must not be touched by alembic.
+      Hand-author the `upgrade()` / `downgrade()` bodies instead.
 - [ ] Cross-schema FKs (e.g. `project.* → coord.*`) use schema-qualified
       ForeignKey strings (e.g. `sa.ForeignKey("coord.tasks.id")`).
 - [ ] Downgrade reverses upgrade where reasonable; documented in
