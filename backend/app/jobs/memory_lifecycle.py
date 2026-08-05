@@ -124,9 +124,18 @@ async def decay_once(
     if anchor_gone_restore_blocked:
         # Not an error, but not nothing either: each of these is a record
         # whose anchor came back and which STAYS HIDDEN because a live
-        # row now holds its content hash. It retries every night, so a
-        # count that never falls to zero means a permanent twin — worth
-        # a human look, and invisible without this line.
+        # row now holds its content hash. It retries every night, and is
+        # invisible without this line.
+        #
+        # A count that never falls to zero is EXPECTED, not a symptom.
+        # When N rows share one content hash and all become restorable
+        # together, the sweep's tie-break restores exactly one and defers
+        # the rest; from the next pass on those N-1 are blocked by the
+        # ordinary live-twin test, because the winner is live by then. So
+        # they warn nightly, forever, with no action available and none
+        # needed — every row in the group carries byte-identical content,
+        # and one of them is live. Read a STEADY count as that benign
+        # steady state; read a GROWING one as worth a look.
         logger.warning(
             "memory_anchor_restore_blocked_by_live_twin",
             blocked=anchor_gone_restore_blocked,
