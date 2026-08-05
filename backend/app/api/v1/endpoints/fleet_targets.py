@@ -76,9 +76,13 @@ def _normalize_command(raw: str) -> str | None:
     ``fresh_only`` dispatcher then routes tests to that host while it still
     serves the previous artifact.
 
-    Matches ``normalize_command`` in the runner's
-    ``src-tauri/src/database/pg/apps.rs`` — this table has two independent
-    writers and they must agree.
+    ``project.apps`` has TWO independent writers: this backend, and the runner's
+    own ``PATCH /apps/:app_id``. On ``main`` today the runner side does NOT
+    normalize — it applies ``COALESCE($n, column)``, which stores ``""`` and
+    ``"   "`` verbatim and cannot clear a command at all. A companion runner
+    change adds the matching ``normalize_command``; until it lands, this
+    endpoint is the only normalized door, and the runner's engine-side blank
+    check is what protects rows written through the other one.
     """
     return raw.strip() or None
 

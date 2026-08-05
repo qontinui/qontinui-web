@@ -143,11 +143,24 @@ function AppCard({
   const saveConfig = useCallback(async () => {
     setSaving(true);
     try {
-      await httpClient.patch(`${API}/fleet/apps/${app.app_id}`, {
-        update_strategy: strategy,
-        build_command: buildCommand,
-        start_command: startCommand,
-      });
+      // Seed local state from the PATCH RESPONSE rather than waiting for the
+      // refetch to change the props. The server normalizes a blank command to
+      // NULL and trims the rest, so a save can legitimately leave the props
+      // identical (blank -> already null, "cmd  " -> already "cmd") — and this
+      // component's resync effect is keyed on those props, so it would never
+      // fire. The input would keep the whitespace the server discarded and the
+      // row would stay `dirty` forever, right after a green "Saved" toast.
+      const updated = await httpClient.patch<AppConfig>(
+        `${API}/fleet/apps/${app.app_id}`,
+        {
+          update_strategy: strategy,
+          build_command: buildCommand,
+          start_command: startCommand,
+        }
+      );
+      setStrategy(updated.update_strategy);
+      setBuildCommand(updated.build_command ?? "");
+      setStartCommand(updated.start_command ?? "");
       toast.success(`Saved config for ${app.display_name}`);
       onChanged();
     } catch (e) {
