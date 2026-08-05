@@ -140,9 +140,16 @@ export interface FeatureRollout {
 }
 
 export interface AutoMergeRollout {
-  live: string[];
-  shadow: string[];
-  dry_run: string[];
+  /**
+   * RESOLVED per-repo merge enablement, with the dominant tenant-wide
+   * `merge_paused` pause already folded in by coord. Two buckets, not the
+   * former `live`/`shadow`/`dry_run` three: plan
+   * `2026-07-29-retire-merge-rollout-tristate-and-fix-the-dead-kill-switch`
+   * Phase 5 dropped the `rollout_state` column. `enabled` is the direct
+   * successor of `live`; `disabled` absorbs both former off states.
+   */
+  enabled: string[];
+  disabled: string[];
 }
 
 export interface RolloutOverview {

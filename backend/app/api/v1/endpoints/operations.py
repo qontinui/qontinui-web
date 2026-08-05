@@ -920,9 +920,12 @@ async def get_pr_merge_health(
       (the engine is evaluating; nothing is landing).
     - ``leader`` — the ``coord.leader_lease`` row. ``lease_fresh=false`` means
       leadership is lapsing, which stalls every repo at once.
-    - ``dry_run`` — repos frozen in ``rollout_state=dry_run`` (coord issue
-      #776). A silently frozen tenant merges nothing and, before this field
-      existed, produced no signal at all.
+    - ``dry_run`` — a LEGACY WIRE KEY: repos where merging is suppressed
+      (coord issue #776). Coord computes it from ``merge_permitted()`` now,
+      not from the retired ``rollout_state`` tri-state; the key kept its old
+      name so renaming it could not silently zero the detector. A silently
+      frozen tenant merges nothing and, before this field existed, produced no
+      signal at all.
 
     It also returns ``ready_unmerged.prs[]`` — green + CLEAN + unlanded PRs
     with a readiness-onset age and the latest proposal's ``status``/``error``
@@ -1664,7 +1667,7 @@ async def get_pr_merge_onboarding_doctor(
     "skip", "ready_to_land"}}``
 
     with the fixed 8-check vocabulary ``tenant_mapped / repo_enrolled /
-    profile_present / rollout_state / config_yaml / bootstrap_pr /
+    profile_present / merge_enabled / config_yaml / bootstrap_pr /
     ci_workflow / ruleset_bypass`` and ``status`` in
     ``pass|warn|fail|skip``. Backs the ``/admin/coord/onboarding-status``
     page (the GitHub App's post-install Setup URL target). Operator
@@ -1687,7 +1690,7 @@ async def get_pr_merge_onboarding_doctor(
 # The account-level read backing the onboarding-status page's "Connected
 # organizations" summary (the bare visit — no ``?code``, no ``?repo``). Coord
 # returns every GitHub account bound to the operator's tenant with its enrolled
-# repos (``rollout_state`` + ``profile_source`` per repo), so a freshly-connected
+# repos (``merge_enabled`` + ``profile_source`` per repo), so a freshly-connected
 # org with an empty ``repos`` list reads as success ("connected · no repositories
 # enrolled yet") rather than a dead end. Kept in one constant so a coord-side
 # path change is a one-line fix here.
@@ -1704,10 +1707,12 @@ async def get_pr_merge_onboarding_accounts(
     Response envelope (coord-owned):
 
     ``{"accounts": [{"account_login", "account_type", "installation_id",
-    "repos": [{"repo", "rollout_state", "profile_source"}]}]}``
+    "repos": [{"repo", "merge_enabled", "profile_source"}]}]}``
 
-    (``repos`` may be ``[]`` for a freshly-connected org; ``rollout_state`` /
-    ``profile_source`` may be null.) Reuses the onboarding-doctor proxy's auth
+    (``repos`` may be ``[]`` for a freshly-connected org; ``merge_enabled`` /
+    ``profile_source`` may be null. ``merge_enabled`` is the RAW per-repo pin —
+    ``true``/``false`` = pinned, ``null`` = inheriting — not the resolved
+    verdict.) Reuses the onboarding-doctor proxy's auth
     exactly: ``get_tenant_id`` resolves the operator and captures the caller's
     bearer, which ``_tenant_headers`` forwards so coord scopes the read to the
     operator's own tenant. ``_proxy_coord_get`` passes coord's status code
@@ -2314,11 +2319,13 @@ async def get_pr_merge_slo(
     RESOLVED boolean) + ``merge_enabled_override`` (the RAW per-repo pin:
     ``true``/``false`` = pinned, ``null`` = inheriting) + 7/30 day windows of
     ``auto_merge_success_rate``, ``escalation_rate``,
-    ``operator_override_rate``, ``shadow_vs_live_agreement_rate``,
-    ``total_decisions``, ``shadow_decisions``.
+    ``operator_override_rate``, ``total_decisions``.
 
-    Each repo still carries the legacy ``current_rollout_state`` string until
-    coord drops the column; nothing on this dashboard reads it any more.
+    ``current_rollout_state`` / ``shadow_vs_live_agreement_rate`` /
+    ``shadow_decisions`` were REMOVED from coord's payload by plan
+    ``2026-07-29-retire-merge-rollout-tristate-and-fix-the-dead-kill-switch``
+    Phase 5, along with the ``rollout_state`` column and the ``shadow`` state
+    the last two existed to justify exiting.
 
     Drives MergeOrchestrationSettings.tsx's SLO Dashboard section.
     """

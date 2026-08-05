@@ -101,24 +101,18 @@ export function SummaryCards({ overview }: { overview: DevOverview }) {
         />
       </div>
 
-      <div className="grid grid-cols-3 gap-2 sm:gap-3" data-testid="summary-rollout">
+      <div className="grid grid-cols-2 gap-2 sm:gap-3" data-testid="summary-rollout">
         <StatCard
-          label="Auto-merge: live"
-          value={am.live.length}
-          testId="summary-rollout-live"
+          label="Auto-merge: enabled"
+          value={am.enabled.length}
+          testId="summary-rollout-enabled"
           tone="success"
         />
         <StatCard
-          label="Auto-merge: shadow"
-          value={am.shadow.length}
-          testId="summary-rollout-shadow"
+          label="Auto-merge: disabled"
+          value={am.disabled.length}
+          testId="summary-rollout-disabled"
           tone="warning"
-        />
-        <StatCard
-          label="Auto-merge: dry-run"
-          value={am.dry_run.length}
-          testId="summary-rollout-dry-run"
-          tone="muted"
         />
       </div>
     </div>
