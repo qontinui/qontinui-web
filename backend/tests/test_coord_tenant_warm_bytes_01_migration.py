@@ -58,6 +58,7 @@ credentials.
 
 from __future__ import annotations
 
+import re
 import uuid
 
 import pytest
@@ -76,8 +77,16 @@ from tests._alembic_harness import (
 
 # Pinned explicitly rather than "head" so a later migration landing on top
 # cannot silently change what this test walks.
+#
+# `_PARENT_REVISION_ID` MUST stay equal to the revision's own `down_revision`;
+# `test_the_pinned_parent_matches_the_revisions_down_revision` below enforces
+# it. Re-pointing a stale PR onto a new main head edits only the migration, and
+# a parent left behind here is not a cosmetic mismatch: the walks below rewind
+# with `stamp`/`downgrade` to `_PARENT_REVISION_ID` and then `upgrade`, so too
+# far a rewind REPLAYS every intervening revision. None of them are idempotent,
+# so the test dies on a `DuplicateTable` raised by an unrelated migration.
 _REVISION_ID = "coord_tenant_warm_bytes_01"
-_PARENT_REVISION_ID = "memhold_adjudicate_02"
+_PARENT_REVISION_ID = "memhold_adjudicate_03"
 _REVISION_FILENAME = "coord_tenant_warm_bytes_01_counter_table.py"
 
 _CHECK_NAME = "tenant_warm_bytes_bytes_nonnegative"
@@ -101,6 +110,29 @@ _DRIFTED = 999_999
 def _revision_source() -> str:
     path = backend_root() / "alembic" / "versions" / _REVISION_FILENAME
     return path.read_text(encoding="utf-8")
+
+
+def test_the_pinned_parent_matches_the_revisions_down_revision() -> None:
+    """`_PARENT_REVISION_ID` is the revision's real parent — no database needed.
+
+    Every walk below rewinds to `_PARENT_REVISION_ID` and upgrades forward. That
+    only exercises THIS revision while the pin names its actual parent. Let the
+    two drift and the rewind lands further back, `upgrade` replays a stretch of
+    unrelated non-idempotent revisions, and the failure surfaces as a
+    `DuplicateTable` from a migration this test never meant to touch — a red
+    that reads as someone else's bug. Cheap to assert, expensive to diagnose.
+    """
+    match = re.search(
+        r'^down_revision[^=]*=\s*["\'](?P<parent>[^"\']+)["\']',
+        _revision_source(),
+        re.MULTILINE,
+    )
+    assert match is not None, f"no down_revision found in {_REVISION_FILENAME}"
+    assert match.group("parent") == _PARENT_REVISION_ID, (
+        f"{_REVISION_FILENAME} declares down_revision="
+        f"{match.group('parent')!r} but this test pins "
+        f"_PARENT_REVISION_ID={_PARENT_REVISION_ID!r}. Re-point both together."
+    )
 
 
 def test_the_backfill_runs_before_the_constraint_is_added() -> None:
