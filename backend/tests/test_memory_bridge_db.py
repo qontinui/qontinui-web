@@ -190,7 +190,13 @@ class TestBridgeUpsert:
         _write_memory(db, tenant, "feedback_beta", 1, "beta memory body")
 
         stats = _sync(db)
-        assert stats == {"upserted": 2, "superseded": 0, "tombstoned": 0, "enqueued": 1}
+        assert stats == {
+            "upserted": 2,
+            "superseded": 0,
+            "supersede_refused": 0,
+            "tombstoned": 0,
+            "enqueued": 1,
+        }
 
         bridged = {r["name"]: r for r in _bridged(db, tenant)}
         assert set(bridged) == {"proj_alpha_notes", "feedback_beta"}
@@ -212,7 +218,13 @@ class TestBridgeUpsert:
 
         # Re-run: nothing to do, and no duplicate rows.
         stats = _sync(db)
-        assert stats == {"upserted": 0, "superseded": 0, "tombstoned": 0, "enqueued": 0}
+        assert stats == {
+            "upserted": 0,
+            "superseded": 0,
+            "supersede_refused": 0,
+            "tombstoned": 0,
+            "enqueued": 0,
+        }
         count = _scalar(
             db,
             "SELECT count(*) FROM coord.memory_records WHERE tenant_id = :t",
@@ -308,7 +320,13 @@ class TestBridgeUpsert:
 
         # Converged: the next run is a no-op.
         stats = _sync(db)
-        assert stats == {"upserted": 0, "superseded": 0, "tombstoned": 0, "enqueued": 0}
+        assert stats == {
+            "upserted": 0,
+            "superseded": 0,
+            "supersede_refused": 0,
+            "tombstoned": 0,
+            "enqueued": 0,
+        }
 
     def test_tenants_are_isolated(self, db: AsyncEngine) -> None:
         tenant_a, tenant_b = uuid4(), uuid4()
@@ -347,7 +365,13 @@ class TestBridgeTombstone:
 
         # Idempotent afterwards.
         stats = _sync(db)
-        assert stats == {"upserted": 0, "superseded": 0, "tombstoned": 0, "enqueued": 0}
+        assert stats == {
+            "upserted": 0,
+            "superseded": 0,
+            "supersede_refused": 0,
+            "tombstoned": 0,
+            "enqueued": 0,
+        }
 
 
 def _set_hold(engine: AsyncEngine, memory_id: UUID, held: bool = True) -> None:
@@ -473,6 +497,7 @@ class TestBridgeRedaction:
         assert _sync(db) == {
             "upserted": 0,
             "superseded": 0,
+            "supersede_refused": 0,
             "tombstoned": 0,
             "enqueued": 0,
         }
@@ -482,6 +507,12 @@ class TestBridgeSkips:
     def test_null_tenant_memories_are_skipped(self, db: AsyncEngine) -> None:
         _write_memory(db, None, "unbound_memory", 1, "no tenant binding")
         stats = _sync(db)
-        assert stats == {"upserted": 0, "superseded": 0, "tombstoned": 0, "enqueued": 0}
+        assert stats == {
+            "upserted": 0,
+            "superseded": 0,
+            "supersede_refused": 0,
+            "tombstoned": 0,
+            "enqueued": 0,
+        }
         count = _scalar(db, "SELECT count(*) FROM coord.memory_records")
         assert count == 0
