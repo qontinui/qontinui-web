@@ -162,9 +162,19 @@ def _empty_overview(detail: str) -> dict[str, Any]:
             "muted": 0,
             "snoozed": 0,
             "archived": 0,
+            # Required by the frontend's `GateCounts` and rendered unguarded by
+            # SummaryCards. Omitting it is the same envelope-drift that made the
+            # `auto_merge` buckets crash this page: a hand-written "shape matches
+            # coord's contract" fallback is a wire consumer too, and nothing
+            # typechecks it against the real one.
+            "would_reap": 0,
         },
         "rollouts": {
             "auto_merge": {"enabled": [], "disabled": []},
+            # Tenant-level `auto_merge_enabled` is UNKNOWN on the coord-down
+            # path — `null`, not `false`. Guessing `false` here would render
+            # "tenant has not opted in" as a fact during an outage.
+            "auto_merge_enabled": None,
             "features": [],
         },
         "coord_error": detail,
