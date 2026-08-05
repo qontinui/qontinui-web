@@ -104,13 +104,13 @@ export function SummaryCards({ overview }: { overview: DevOverview }) {
       <div className="grid grid-cols-2 gap-2 sm:gap-3" data-testid="summary-rollout">
         <StatCard
           label="Auto-merge: enabled"
-          value={am.enabled.length}
+          value={(am.enabled ?? []).length}
           testId="summary-rollout-enabled"
           tone="success"
         />
         <StatCard
           label="Auto-merge: disabled"
-          value={am.disabled.length}
+          value={(am.disabled ?? []).length}
           testId="summary-rollout-disabled"
           tone="warning"
         />

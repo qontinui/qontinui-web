@@ -152,9 +152,7 @@ interface SloWindowMetrics {
   post_merge_verification_lag_p95_seconds: number | null;
   author_feedback_latency_p95_seconds: number | null;
   operator_override_rate: number | null;
-  shadow_vs_live_agreement_rate: number | null;
   total_decisions: number;
-  shadow_decisions: number;
 }
 
 interface RepoSlo {
@@ -1045,7 +1043,7 @@ function ratingColor(
   goodAtOrAbove: number,
   warnAtOrAbove: number
 ): string {
-  if (value === null) return "text-muted-foreground";
+  if (value == null) return "text-muted-foreground";
   if (value >= goodAtOrAbove) return "text-green-400";
   if (value >= warnAtOrAbove) return "text-amber-300";
   return "text-red-300";
@@ -1057,19 +1055,19 @@ function ratingColorInverse(
   goodAtOrBelow: number,
   warnAtOrBelow: number
 ): string {
-  if (value === null) return "text-muted-foreground";
+  if (value == null) return "text-muted-foreground";
   if (value <= goodAtOrBelow) return "text-green-400";
   if (value <= warnAtOrBelow) return "text-amber-300";
   return "text-red-300";
 }
 
 function fmtRate(value: number | null): string {
-  if (value === null) return "—";
+  if (value == null) return "—";
   return `${(value * 100).toFixed(1)}%`;
 }
 
 function fmtSecs(value: number | null): string {
-  if (value === null) return "—";
+  if (value == null) return "—";
   return `${value.toFixed(1)}s`;
 }
 
@@ -1257,18 +1255,6 @@ function SloRepoCard({
             </p>
           </div>
           <div>
-            <p className="text-muted-foreground">Shadow↔live agree</p>
-            <p
-              className={ratingColor(
-                w.shadow_vs_live_agreement_rate,
-                0.95,
-                0.85
-              )}
-            >
-              {fmtRate(w.shadow_vs_live_agreement_rate)} (7d)
-            </p>
-          </div>
-          <div>
             <p className="text-muted-foreground">Verify lag p95</p>
             <p className="text-foreground">
               {fmtSecs(w.post_merge_verification_lag_p95_seconds)}
@@ -1282,8 +1268,7 @@ function SloRepoCard({
           </div>
         </div>
         <p className="text-muted-foreground pt-1 border-t border-border/40">
-          {w.total_decisions} decision(s) in 7d ({w.shadow_decisions} shadow) /{" "}
-          {w30.total_decisions} in 30d ({w30.shadow_decisions} shadow).
+          {w.total_decisions} decision(s) in 7d / {w30.total_decisions} in 30d.
         </p>
         <CoordAdminOnly>
           <MergeEnabledControl

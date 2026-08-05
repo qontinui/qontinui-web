@@ -164,7 +164,7 @@ def _empty_overview(detail: str) -> dict[str, Any]:
             "archived": 0,
         },
         "rollouts": {
-            "auto_merge": {"live": [], "shadow": [], "dry_run": []},
+            "auto_merge": {"enabled": [], "disabled": []},
             "features": [],
         },
         "coord_error": detail,

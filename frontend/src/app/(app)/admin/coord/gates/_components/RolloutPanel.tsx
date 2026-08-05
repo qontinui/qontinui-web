@@ -100,8 +100,15 @@ export function RolloutPanel({ rollouts }: { rollouts: RolloutOverview }) {
               WHICH lever put a repo there — a per-repo pin or the tenant
               pause — use /admin/coord/merge-settings, which renders the
               resolved value alongside the raw override. */}
-          <RepoStateGroup state="enabled" repos={auto_merge.enabled} />
-          <RepoStateGroup state="disabled" repos={auto_merge.disabled} />
+          {/* `?? []` is NOT belt-and-braces: this panel also renders on the
+              coord-DOWN path (the gates page shows `coord_error` as an additive
+              banner, not a gate), and during a deploy window an older coord can
+              still be serving the retired live/shadow/dry_run buckets. Without
+              the guard a missing key is `undefined.length` — a TypeError that
+              white-screens the whole /admin/coord/gates route, on exactly the
+              path the SWR last-known-good apparatus exists to keep alive. */}
+          <RepoStateGroup state="enabled" repos={auto_merge.enabled ?? []} />
+          <RepoStateGroup state="disabled" repos={auto_merge.disabled ?? []} />
         </CardContent>
       </Card>
 
