@@ -2533,7 +2533,7 @@
         "type": "object"
       },
       "AppConfigUpdate": {
-        "description": "Partial update of an app's fleet-fresh config.\n\nOnly the fields the operator edits from the fleet UI. ``None`` leaves a\nfield unchanged (build/start commands can be cleared by sending an empty\nstring).",
+        "description": "Partial update of an app's fleet-fresh config.\n\nOnly the fields the operator edits from the fleet UI. ``None`` leaves a\nfield unchanged (build/start commands are cleared by sending a blank\nvalue: empty or whitespace-only).",
         "properties": {
           "build_command": {
             "anyOf": [
@@ -68916,7 +68916,7 @@
     },
     "/api/v1/fleet/apps/{app_id}": {
       "patch": {
-        "description": "Edit an app's update strategy + build/start commands.\n\nFields left ``None`` are unchanged. ``build_command`` / ``start_command``\ncan be cleared by sending an empty string.",
+        "description": "Edit an app's update strategy + build/start commands.\n\nFields left ``None`` are unchanged. ``build_command`` / ``start_command``\nare cleared by sending a blank value (empty or whitespace-only).",
         "operationId": "api_v1_fleet_apps_app_id_patch",
         "parameters": [
           {
@@ -80116,7 +80116,7 @@
     },
     "/api/v1/operations/migrations/queue": {
       "get": {
-        "description": "Proxy coord's ``GET /coord/migrations/queue?repo=<owner/repo>``.\n\nThe coord-authoritative migration-reservation queue read-side: the\nordered live set (``queued`` / ``pr_bound``, each carrying its 1-based\n``position``) plus the last ``terminal_limit`` terminal rows. Backs the\nOperations dashboard's Migration Queue tile.\n\n``repo`` is required \u2014 coord 400s without it, since the queue is\nper-repo. Fleet-wide read; ``tenant_id`` is resolved only to forward the\noperator bearer so coord requires an authenticated operator (same posture\nas ``/merge/queue`` and ``/pr-merge/prs``).",
+        "description": "Proxy coord's ``GET /coord/migrations/queue?repo=<owner/repo>``.\n\nThe coord-authoritative migration-reservation queue read-side: the\nordered live set (``queued`` / ``pr_bound``, each carrying its 1-based\n``position``). Backs the Operations dashboard's Migration Queue tile.\n\n``repo`` is required \u2014 coord 400s without it, since the queue is\nper-repo. Fleet-wide read; ``tenant_id`` is resolved only to forward the\noperator bearer so coord requires an authenticated operator (same posture\nas ``/merge/queue`` and ``/pr-merge/prs``).",
         "operationId": "api_v1_operations_migrations_queue_get",
         "parameters": [
           {
@@ -80126,16 +80126,6 @@
             "schema": {
               "title": "Repo",
               "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "terminal_limit",
-            "required": false,
-            "schema": {
-              "default": 5,
-              "title": "Terminal Limit",
-              "type": "integer"
             }
           }
         ],
