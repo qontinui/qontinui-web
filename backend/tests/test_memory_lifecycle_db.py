@@ -1938,13 +1938,24 @@ class TestAnchoredRowsAreConsolidationExempt:
     def test_anchored_candidate_is_excluded_and_its_twin_is_not(
         self, db: AsyncEngine
     ) -> None:
-        """The direct assertion — one selector, two otherwise-identical rows."""
+        """The direct assertion — one selector, two otherwise-identical rows.
+
+        ``kind="episode"`` is load-bearing, not incidental:
+        `fetch_cluster_candidates` reads ``kind = 'episode'`` alone (it was
+        narrowed from ``IN ('episode', 'observation')`` after the 2026-07-28
+        597-document incident — see that function's docstring). Seeded as
+        ``observation`` BOTH rows are excluded by the kind term, the
+        candidate set is empty, and the test passes its `anchored not in ids`
+        half for a reason that has nothing to do with anchors. The
+        `twin in ids` assertion below is what keeps that vacuous reading
+        out, so the two must be a kind the selector actually admits.
+        """
         tenant = uuid4()
         anchored = _seed(
             db,
             tenant,
-            content="an anchored observation",
-            kind="observation",
+            content="an anchored episode",
+            kind="episode",
             embedding=_axis(3),
             anchors=[_BLOB_ANCHOR],
             anchor_state="fresh",
@@ -1952,8 +1963,8 @@ class TestAnchoredRowsAreConsolidationExempt:
         twin = _seed(
             db,
             tenant,
-            content="an anchorless observation",
-            kind="observation",
+            content="an anchorless episode",
+            kind="episode",
             embedding=_axis(3),
         )
 

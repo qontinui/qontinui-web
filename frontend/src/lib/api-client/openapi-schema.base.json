@@ -1638,6 +1638,29 @@
         "title": "AnalysisSettingsSchema",
         "type": "object"
       },
+      "AnchoredTo": {
+        "description": "One proactive-recall clause: ``{repo, path_glob}`` (Phase 5).\n\n``path_glob`` matches an anchor's ``path`` with ``*`` / ``?`` /\n``[...]`` glob syntax. ``repo`` is exact \u2014 it is what the GIN\ncontainment index narrows on before the glob is applied.",
+        "properties": {
+          "path_glob": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Path Glob",
+            "type": "string"
+          },
+          "repo": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Repo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "path_glob"
+        ],
+        "title": "AnchoredTo",
+        "type": "object"
+      },
       "AnnotationConflictCheckRequest": {
         "description": "Request schema for checking annotation conflicts before saving.",
         "properties": {
@@ -3862,6 +3885,43 @@
           "screenshot_ids"
         ],
         "title": "BatchProjectScreenshotDelete",
+        "type": "object"
+      },
+      "BlobAnchor": {
+        "additionalProperties": false,
+        "description": "A file at a known content revision.\n\n``sha`` is the GIT BLOB sha \u2014 exactly what\n``GET /repos/{repo}/contents/{path}`` returns, so resolving this\nanchor costs the watcher one call it already makes and no separate\nsha lookup.",
+        "properties": {
+          "path": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "repo": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Repo",
+            "type": "string"
+          },
+          "sha": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Sha",
+            "type": "string"
+          },
+          "type": {
+            "const": "blob",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "repo",
+          "path",
+          "sha"
+        ],
+        "title": "BlobAnchor",
         "type": "object"
       },
       "Body_create_baseline_from_upload_api_v1_testing_baselines_post": {
@@ -20060,6 +20120,29 @@
         "title": "FindingResponseSubmit",
         "type": "object"
       },
+      "FlagAnchor": {
+        "additionalProperties": false,
+        "description": "A catalogued feature flag, resolved against coord's flag registry.",
+        "properties": {
+          "name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "type": {
+            "const": "flag",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "name"
+        ],
+        "title": "FlagAnchor",
+        "type": "object"
+      },
       "FolderCreateRequest": {
         "description": "Request to create a folder.",
         "properties": {
@@ -25111,8 +25194,13 @@
         "type": "object"
       },
       "MemoryQueryHit": {
-        "description": "One fused retrieval hit.",
+        "description": "One fused retrieval hit.\n\n``anchor_state`` is the watcher's roll-up verdict over the record's\nanchors \u2014 ``none`` (anchorless, today's Ebbinghaus lifecycle),\n``fresh``, ``moved`` or ``gone``. It is carried on every hit because\n``moved`` is ADVISORY: the record stays retrievable and normally\nranked, and the only thing that makes it useful is that the reader\nis told the ground truth shifted under it. A flag the response does\nnot carry is a flag nobody can act on.\n\nTyped ``str`` rather than a ``Literal`` on purpose: this is a READ\nshape over a column the watcher owns, and a value this build has\nnever heard of must render, not 500.",
         "properties": {
+          "anchor_state": {
+            "default": "none",
+            "title": "Anchor State",
+            "type": "string"
+          },
           "content": {
             "title": "Content",
             "type": "string"
@@ -25214,6 +25302,21 @@
       "MemoryQueryRequest": {
         "description": "``POST /memory/query`` body \u2014 hybrid RRF retrieval parameters.\n\n``query_text`` is ALWAYS required: the lexical arm is pure Postgres\n(``websearch_to_tsquery``), costs the caller nothing, and stays\nserver-side. ``query_embedding`` is the caller's own vector for the\nsemantic arm \u2014 omit it and that arm is SKIPPED (the response says so\nvia ``vector_arm``); the query degrades to FTS-only rather than\nmaking the backend embed.\n\n``query_embedding_model`` is REQUIRED whenever ``query_embedding`` is\npresent. Validating the vector's DIMENSION is not enough: every\n384-dim model would pass that check while living in a different\nspace, and the server has no other way to tell which space an\nincoming query is in.",
         "properties": {
+          "anchored_to": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/AnchoredTo"
+                },
+                "maxItems": 16,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anchored To"
+          },
           "as_of": {
             "anyOf": [
               {
@@ -25361,6 +25464,23 @@
       "MemoryQueryResponse": {
         "description": "``POST /memory/query`` result.\n\n``vector_arm`` is REQUIRED and un-defaulted on purpose: FTS-only\nresults must never be indistinguishable from hybrid ones. Its three\nstates are the only ways a query can end:\n\n* ``hybrid`` \u2014 both arms ran and were RRF-fused.\n* ``skipped_no_embedding`` \u2014 the caller sent no ``query_embedding``,\n  so the semantic arm had no vector to run with.\n* ``skipped_migrating`` \u2014 the caller DID send a vector, but this\n  tenant still holds vectors written under a different model tag, so\n  scoring against that mixed corpus would compare across two\n  non-interchangeable spaces (Phase 0 measured min cosine 0.71 /\n  k=10 exact-order 0% between them). The arm is skipped until the\n  runner-paid reindex drains the tenant back to a single space. This\n  is driven off actual corpus state, never a timer or a flag, so it\n  clears itself the moment the last foreign-tag vector is rewritten.\n\n``link_arm`` is REQUIRED and un-defaulted for exactly the same\nreason: a result that never consulted the graph must never be\nindistinguishable from one that did, and the arm is default-off, so\n\"did it run\" is the common question rather than the rare one. Its\nthree states are the only ways the arm can end:\n\n* ``expanded`` \u2014 the expansion query RAN. (It running and finding no\n  neighbour is still ``expanded``: the graph was consulted and had\n  nothing to add, which is a different fact from not consulting it.)\n* ``skipped_disabled`` \u2014 the request did not set ``link_expansion``,\n  so no expansion query was issued.\n* ``skipped_no_seeds`` \u2014 the arm was requested, but the vector+FTS\n  fuse returned nothing to expand FROM. One-hop expansion is\n  seeded by the other arms' heads; with no head there is no hop.",
         "properties": {
+          "anchored_arm": {
+            "default": "not_requested",
+            "enum": [
+              "ran",
+              "not_requested",
+              "skipped_disabled"
+            ],
+            "title": "Anchored Arm",
+            "type": "string"
+          },
+          "anchored_hits": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryQueryHit"
+            },
+            "title": "Anchored Hits",
+            "type": "array"
+          },
           "hits": {
             "items": {
               "$ref": "#/components/schemas/MemoryQueryHit"
@@ -25396,8 +25516,42 @@
         "type": "object"
       },
       "MemoryRecordIn": {
-        "description": "One record in a batch write.\n\n``embedding`` is computed by the CALLER. Omit it (with\n``embedding_model``) to store the row unvectorized \u2014 it is still\nretrievable via FTS and is picked up by the reindex sweep.",
+        "description": "One record in a batch write.\n\n``embedding`` is computed by the CALLER. Omit it (with\n``embedding_model``) to store the row unvectorized \u2014 it is still\nretrievable via FTS and is picked up by the reindex sweep.\n\n``anchors`` names the ground truth this record asserts something\nabout. A record with a non-empty array is decay-EXEMPT: its\nvisibility is governed by the watcher's ``anchor_state`` rather than\nby the Ebbinghaus curve. Re-writing an identical record with a new\nanchor MERGES the anchor onto the existing live row (see\n``memory_store.insert_record``'s ON CONFLICT clause), which is the\nonly supported way to anchor an existing record.",
         "properties": {
+          "anchors": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "blob": "#/components/schemas/BlobAnchor",
+                  "flag": "#/components/schemas/FlagAnchor",
+                  "migration": "#/components/schemas/MigrationAnchor",
+                  "pr": "#/components/schemas/PRAnchor",
+                  "schema": "#/components/schemas/SchemaAnchor"
+                },
+                "propertyName": "type"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/BlobAnchor"
+                },
+                {
+                  "$ref": "#/components/schemas/PRAnchor"
+                },
+                {
+                  "$ref": "#/components/schemas/MigrationAnchor"
+                },
+                {
+                  "$ref": "#/components/schemas/SchemaAnchor"
+                },
+                {
+                  "$ref": "#/components/schemas/FlagAnchor"
+                }
+              ]
+            },
+            "maxItems": 16,
+            "title": "Anchors",
+            "type": "array"
+          },
           "content": {
             "minLength": 1,
             "title": "Content",
@@ -25508,8 +25662,21 @@
         "type": "object"
       },
       "MemoryRecordOut": {
-        "description": "One record in a ``GET /memory/records`` page.\n\nThe query-hit field shape plus sync-relevant extras\n(``scope_ref`` / ``content_hash`` / ``updated_at``) and the record's\noutbound ``links``.",
+        "description": "One record in a ``GET /memory/records`` page.\n\nThe query-hit field shape plus sync-relevant extras\n(``scope_ref`` / ``content_hash`` / ``updated_at``) and the record's\noutbound ``links``.\n\nThis is the SYNC/LIST shape, so it carries the anchor array ITSELF\nand not just the roll-up: a mirror that pulled records without their\nanchors would round-trip them back anchorless on the next write, and\nthe dedup-merge (union, never replace) would then be unable to tell\n\"this writer has no anchors to add\" from \"this writer dropped them\".\n\n``anchors`` is typed as raw objects rather than the ``Anchor``\ndiscriminated union. On the WRITE side an unknown ``type`` must be a\nloud 422; on the READ side it must render \u2014 the watcher and a future\ncoord build own this column's vocabulary, and a list endpoint that\n500s on a type this build predates would take the whole sync page\ndown with it.",
         "properties": {
+          "anchor_state": {
+            "default": "none",
+            "title": "Anchor State",
+            "type": "string"
+          },
+          "anchors": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Anchors",
+            "type": "array"
+          },
           "content": {
             "title": "Content",
             "type": "string"
@@ -25801,6 +25968,29 @@
           "config_id"
         ],
         "title": "MergeRecordingRequest",
+        "type": "object"
+      },
+      "MigrationAnchor": {
+        "additionalProperties": false,
+        "description": "An alembic revision, resolved against ``coord.migration_revisions``.",
+        "properties": {
+          "revision": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Revision",
+            "type": "string"
+          },
+          "type": {
+            "const": "migration",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "revision"
+        ],
+        "title": "MigrationAnchor",
         "type": "object"
       },
       "MockExecutionRequest": {
@@ -27248,6 +27438,35 @@
           "generated_at"
         ],
         "title": "PDFReportResponse",
+        "type": "object"
+      },
+      "PRAnchor": {
+        "additionalProperties": false,
+        "description": "A pull request, resolved against coord's PR twin.",
+        "properties": {
+          "number": {
+            "minimum": 1.0,
+            "title": "Number",
+            "type": "integer"
+          },
+          "repo": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Repo",
+            "type": "string"
+          },
+          "type": {
+            "const": "pr",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "repo",
+          "number"
+        ],
+        "title": "PRAnchor",
         "type": "object"
       },
       "PackageCreate": {
@@ -34528,6 +34747,29 @@
         "title": "ScheduledWorkflowRunUpdate",
         "type": "object"
       },
+      "SchemaAnchor": {
+        "additionalProperties": false,
+        "description": "A database object (``coord.memory_records.access_count``).",
+        "properties": {
+          "object": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Object",
+            "type": "string"
+          },
+          "type": {
+            "const": "schema",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "object"
+        ],
+        "title": "SchemaAnchor",
+        "type": "object"
+      },
       "Screenshot-Input": {
         "description": "Individual screenshot metadata",
         "properties": {
@@ -38151,8 +38393,49 @@
         "type": "object"
       },
       "SupersedeRequest": {
-        "description": "``POST /memory/records/{id}/supersede`` body.\n\n``title``/``content`` are the replacement; every omitted field is\ninherited from the record being superseded. ``embedding`` is NOT\ninherited \u2014 it belongs to the OLD content and would be a lie about\nthe new one; omit it and the successor lands unvectorized (NULL) for\nthe reindex sweep to pick up.",
+        "description": "``POST /memory/records/{id}/supersede`` body.\n\n``title``/``content`` are the replacement; every omitted field is\ninherited from the record being superseded. ``embedding`` is NOT\ninherited \u2014 it belongs to the OLD content and would be a lie about\nthe new one; omit it and the successor lands unvectorized (NULL) for\nthe reindex sweep to pick up.\n\n``anchors`` follows the INHERIT rule, not the embedding rule, and is\nthree-valued on purpose (see the call site in\n``endpoints/memory.py:supersede_record`` for the full argument):\n\n* **omitted / ``null``** \u2014 the successor INHERITS the superseded\n  record's anchors. Superseding is how a record is corrected, and a\n  correction is almost always about the same artifact; dropping the\n  binding would silently demote an anchored record back onto the\n  time-decay curve whose terminus is a hard delete.\n* **``[]``** \u2014 deliberately un-anchor. This is the escape hatch that\n  makes inheritance safe: a rewrite that genuinely no longer asserts\n  anything about the old artifact can say so explicitly.\n* **non-empty** \u2014 replaces the inherited set wholesale. Supersede is\n  the explicit, human-initiated path, so \"this is what the record is\n  about now\" is authoritative rather than additive.\n\n``anchor_state`` is NOT inherited under any of the three: it is the\nwatcher's derived verdict about the OLD row's anchors, so the\nsuccessor starts at the column default ``none`` and is re-resolved on\nthe next tick. Inheriting a verdict would assert a check that never\nran against this row.",
         "properties": {
+          "anchors": {
+            "anyOf": [
+              {
+                "items": {
+                  "discriminator": {
+                    "mapping": {
+                      "blob": "#/components/schemas/BlobAnchor",
+                      "flag": "#/components/schemas/FlagAnchor",
+                      "migration": "#/components/schemas/MigrationAnchor",
+                      "pr": "#/components/schemas/PRAnchor",
+                      "schema": "#/components/schemas/SchemaAnchor"
+                    },
+                    "propertyName": "type"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/BlobAnchor"
+                    },
+                    {
+                      "$ref": "#/components/schemas/PRAnchor"
+                    },
+                    {
+                      "$ref": "#/components/schemas/MigrationAnchor"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SchemaAnchor"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FlagAnchor"
+                    }
+                  ]
+                },
+                "maxItems": 16,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anchors"
+          },
           "content": {
             "minLength": 1,
             "title": "Content",
@@ -70648,7 +70931,7 @@
     },
     "/api/v1/memory/query": {
       "post": {
-        "description": "Hybrid retrieval: pgvector cosine + websearch FTS, RRF-fused.\n\nOptionally a THIRD arm: with ``link_expansion=true`` the endpoint\nfuses twice \u2014 once over vector+FTS to pick the top\n:data:`LINK_SEED_COUNT` seeds, then again after one-hop expansion of\nthose seeds over ``coord.memory_links``. ``link_arm`` says which of\n``expanded`` / ``skipped_disabled`` / ``skipped_no_seeds`` happened,\nand a hit reached only that way carries ``link_rank`` with both other\nranks null. The arm is default-OFF until the recall-efficacy harness\ncan say whether it helps.\n\nAll arms are tenant-bound and validity-filtered (tombstones out,\n``valid_from``/``valid_until`` against now() or ``as_of``).\n``agent``/``session``-scoped rows are only visible when the request\nnames those scopes AND supplies the matching ``scope_ref``.\n\nThe semantic arm needs a vector, and this endpoint never computes\none. It runs only when the caller supplies ``query_embedding`` (with\nits ``query_embedding_model``) AND this tenant's corpus is entirely\nin the deployed space. Otherwise it is SKIPPED and the result is\nFTS-only. Which of the three happened is reported in ``vector_arm``\n\u2014 never inferred, so an FTS-only result can't pass for a hybrid one.\n\nThe mid-migration skip is what makes the model transition atomic per\ntenant: the old and new spaces are not interchangeable, so a\nnew-space query is served FTS-only rather than cosine-scored against\ndocuments the runner-paid reindex has not rewritten yet.",
+        "description": "Hybrid retrieval: pgvector cosine + websearch FTS, RRF-fused.\n\nOptionally a THIRD arm: with ``link_expansion=true`` the endpoint\nfuses twice \u2014 once over vector+FTS to pick the top\n:data:`LINK_SEED_COUNT` seeds, then again after one-hop expansion of\nthose seeds over ``coord.memory_links``. ``link_arm`` says which of\n``expanded`` / ``skipped_disabled`` / ``skipped_no_seeds`` happened,\nand a hit reached only that way carries ``link_rank`` with both other\nranks null. The arm is default-OFF until the recall-efficacy harness\ncan say whether it helps.\n\nAll arms are tenant-bound and validity-filtered (tombstones out,\n``valid_from``/``valid_until`` against now() or ``as_of``).\n``agent``/``session``-scoped rows are only visible when the request\nnames those scopes AND supplies the matching ``scope_ref``.\n\nThe semantic arm needs a vector, and this endpoint never computes\none. It runs only when the caller supplies ``query_embedding`` (with\nits ``query_embedding_model``) AND this tenant's corpus is entirely\nin the deployed space. Otherwise it is SKIPPED and the result is\nFTS-only. Which of the three happened is reported in ``vector_arm``\n\u2014 never inferred, so an FTS-only result can't pass for a hybrid one.\n\nThe mid-migration skip is what makes the model transition atomic per\ntenant: the old and new spaces are not interchangeable, so a\nnew-space query is served FTS-only rather than cosine-scored against\ndocuments the runner-paid reindex has not rewritten yet.\n\nEvery hit carries ``anchor_state``. ``moved`` means the ground truth\nthe record is anchored to changed under it: the record is still\nretrievable and normally ranked (\u00a73.2 makes ``moved`` advisory on\npurpose \u2014 silently hiding a true memory is the failure mode that\nmatters), and the flag is how a reader learns to check.\n\n``anchored_to`` is the separate PROACTIVE arm (Phase 5): records\nanchored to the files the caller is touching, ranked by importance x\nfreshness, returned in ``anchored_hits`` rather than fused into\n``hits``. It is gated on ``MEMORY_ANCHORED_RECALL_ENABLED``, which is\nOFF by default; ``anchored_arm`` always says which of ran /\nnot_requested / skipped_disabled happened.",
         "operationId": "api_v1_memory_query_post",
         "requestBody": {
           "content": {
@@ -70999,7 +71282,7 @@
     },
     "/api/v1/memory/records/{memory_id}/supersede": {
       "post": {
-        "description": "Replace a record: insert the successor, end the old row's validity.\n\n404 for records that don't exist in the caller's tenant (including\ncross-tenant ids \u2014 never disclosed). The successor's ``embedding`` is\nthe caller's (of the replacement content) or NULL \u2014 the old row's\nvector is never inherited, and nothing is embedded server-side.",
+        "description": "Replace a record: insert the successor, end the old row's validity.\n\n404 for records that don't exist in the caller's tenant (including\ncross-tenant ids \u2014 never disclosed). The successor's ``embedding`` is\nthe caller's (of the replacement content) or NULL \u2014 the old row's\nvector is never inherited, and nothing is embedded server-side.\n\n``anchors`` ARE inherited when omitted (unlike ``embedding``) \u2014 see\nthe comment on the insert below for why the two go opposite ways.\nThis is the \"superseded, or corrected\" arm of the plan's Phase 6.",
         "operationId": "api_v1_memory_records_memory_id_supersede_post",
         "parameters": [
           {
