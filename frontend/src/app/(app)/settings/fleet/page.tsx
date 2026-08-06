@@ -169,7 +169,8 @@ export default function FleetSettingsPage() {
     try {
       const updated = await updateFleetApp(app.app_id, {
         update_strategy: draft.update_strategy,
-        // Empty string clears the command server-side.
+        // A blank value (empty or whitespace-only) clears the command
+        // server-side; anything else is stored trimmed.
         build_command: draft.build_command,
         start_command: draft.start_command,
       });
