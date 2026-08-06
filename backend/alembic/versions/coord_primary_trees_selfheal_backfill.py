@@ -40,15 +40,52 @@ migration a no-op there.
 
 Also restores ``idx_primary_trees_stale``, the partial index that shipped from
 the same deleted self-heal and is likewise absent from the whole alembic chain.
-It covers the stale-tree scan predicate (``behind_count > 0 OR untracked_count >
-0 OR head_detached = true``) that the primary-tree staleness watcher and the
-pull-decision watcher run; without it a fresh database sequentially scans
-``coord.primary_trees`` on every pass.
+
+It is carried for PARITY with the canonical catalog, NOT for performance —
+**no current query can use it.** Corrected 2026-08-06 (pre-PR review of this
+migration): an earlier version of this docstring claimed the index "covers the
+stale-tree scan predicate … the staleness and pull-decision watchers run". It
+does not. A partial index is only usable when the query's predicate IMPLIES the
+index's, and neither does:
+
+* ``primary_tree_staleness_watcher.rs`` scans
+  ``behind_count IS NOT NULL OR head_detached IS NOT NULL OR untracked_count IS
+  NOT NULL OR behind_default_count IS NOT NULL OR branch <> $1``. ``IS NOT
+  NULL`` is strictly broader than ``> 0`` (a row with ``behind_count = 0``
+  matches the query and not the index), and the last two disjuncts are not
+  covered at all.
+* ``pull_decision_watcher.rs`` scans ``(behind_count IS NOT NULL AND
+  behind_count > 0) OR (behind_default_count IS NOT NULL AND
+  behind_default_count > 0)``. The ``behind_default_count`` disjunct admits
+  rows the index predicate excludes, so the implication fails there too.
+
+Both watchers sequentially scan ``coord.primary_trees`` with this index exactly
+as they do without it. Keeping it is still right — prod carries it, and a fresh
+database that silently differs from prod is the whole class of bug this
+migration exists to close — but do not treat it as load-bearing. Making it
+usable would require changing those two predicates first, not adding another
+index.
 
 Idempotency: ``ADD COLUMN IF NOT EXISTS`` + ``CREATE INDEX IF NOT EXISTS``
 throughout, matching the guarded-DDL house pattern
 (``coord_policy_rules_tenant_override``). Re-applying is a strict no-op whether
 or not the self-heal already created the objects.
+
+**The no-op property is one-directional — DO NOT downgrade past this revision
+against the canonical RDS.** ``upgrade()`` is a no-op in prod precisely because
+prod already has these objects; ``downgrade()`` is not conditioned on that and
+drops all four unconditionally. On a fresh database that is symmetric and
+correct. In prod it would DESTROY three live columns that the tree-report upsert
+writes and both watchers read — reintroducing the exact ``42703`` this migration
+exists to prevent, and losing the stored counts permanently, because alembic
+never populated them and no backfill would restore them. This asymmetry is
+inherent to backfilling objects that already exist and is why it is called out
+here rather than "fixed": the sibling migrations
+(``coord_primary_trees_local_ahead``, ``chkguard_01_behind_default_count``)
+carry unconditional drops safely only because they genuinely authored their own
+columns. Migrations are forward-only here in any case — see
+``qontinui-web/.github/workflows/migrate.yml``, which states the deploy path
+never auto-reverts a migration.
 
 alembic is the SOLE author of ``coord.*`` schema; the coord binary asserts table
 presence at boot and never authors DDL in production. These columns are authored
