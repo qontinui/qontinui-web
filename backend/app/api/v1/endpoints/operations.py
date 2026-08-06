@@ -2563,9 +2563,29 @@ async def post_pr_merge_proposal_cancel(
       cross-tenant. Deliberately 404 and not 403 so it cannot leak whether the
       row exists; it must surface as "not found", never as "forbidden".
     """
+    # Target the TIER-2 path, not the same-named admin one.
+    #
+    # coord serves proposal-cancel on two distinct paths because the two tiers
+    # hold genuinely different capabilities, and axum forbids two handlers on
+    # one path:
+    #
+    #   POST /pr-merge/proposals/:id/cancel          -- Tier 3, admin-gated.
+    #       Passes RemediationActor::Operator, which is the ONLY thing that
+    #       unlocks the terminal reap-hardcap unblock and skips the per-tenant
+    #       rate limit. It is the escalation door of last resort.
+    #   POST /pr-merge/tenant/proposals/:id/cancel   -- Tier 2.
+    #       Passes RemediationActor::Tenant. Authorized by the tenant-ownership
+    #       floor over EVERY repo of the proposal, rate-limited, and refuses the
+    #       hardcap breaker.
+    #
+    # This surface is tenant self-service (`get_tenant_id`, not
+    # `require_coord_tenant_admin`), so it must use the Tier-2 door. Pointing it
+    # at the admin path 403s every non-admin tenant member — which is the exact
+    # "only a fleet admin can fix it" problem this whole feature exists to
+    # remove.
     return await _proxy_coord_passthrough(
         "POST",
-        f"/pr-merge/proposals/{quote(proposal_id, safe='')}/cancel",
+        f"/pr-merge/tenant/proposals/{quote(proposal_id, safe='')}/cancel",
         tenant_id=tenant_id,
         body=body.model_dump(exclude_none=True),
     )
