@@ -33,6 +33,7 @@ import {
 
 export function InstallGitHubAppButton({
   flow,
+  runnerState = null,
   label = "Install the GitHub App",
   testId,
   variant = "default",
@@ -50,6 +51,14 @@ export function InstallGitHubAppButton({
    * compile error.
    */
   flow: ConnectFlow;
+  /**
+   * P2 runner-native hand-off: the runner's return nonce, when this page was
+   * opened by a deep-link-capable runner (`?state=<nonce>`). It rides slot 5 of
+   * the wire format so the callback can deep-link the claim back to the runner
+   * window that started the flow. Omitted on every browser-only entry point,
+   * which keeps the exact 4-field state shape.
+   */
+  runnerState?: string | null;
   label?: string;
   testId: string;
   variant?: "default" | "secondary";
@@ -75,7 +84,7 @@ export function InstallGitHubAppButton({
       const token = await mintConnectState({ flow });
       // Empty login for the same reason — on the fresh-install path the
       // Setup-URL redirect carries `installation_id`, so `state` needs no login.
-      const state = beginConnectState(flow, "", token);
+      const state = beginConnectState(flow, "", token, runnerState);
       // Same-tab nav so GitHub's post-install redirect returns into THIS
       // authenticated session — the Setup URL can't complete a claim without one.
       window.location.assign(installUrl(GITHUB_APP_SLUG, state));
@@ -83,7 +92,7 @@ export function InstallGitHubAppButton({
       setError(e instanceof Error ? e.message : String(e));
       setMinting(false);
     }
-  }, [flow, minting]);
+  }, [flow, minting, runnerState]);
 
   return (
     <div className="space-y-2">

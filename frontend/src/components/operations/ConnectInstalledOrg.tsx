@@ -42,6 +42,7 @@ import { httpClient } from "@/services/service-factory";
 import {
   authorizeUrl,
   beginConnectState,
+  isValidLogin,
   mintConnectState,
   type ConnectFlow,
 } from "@/lib/onboarding-connect-state";
@@ -53,15 +54,9 @@ interface GithubAppConfig {
   oauth_configured: boolean;
 }
 
-/**
- * GitHub org/user logins are alphanumeric + single hyphens, no leading/trailing
- * hyphen. Validated here only to catch typos before a pointless round-trip —
- * the authoritative check is coord's org-admin gate.
- */
-const LOGIN_RE = /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/;
-
 export function ConnectInstalledOrg({
   flow,
+  runnerState = null,
 }: {
   /**
    * `runner-clone` claims bind-only (no enrollment / bootstrap PRs).
@@ -72,6 +67,13 @@ export function ConnectInstalledOrg({
    * would let a future call site escalate by omission.
    */
   flow: ConnectFlow;
+  /**
+   * P2 runner-native hand-off: the runner's return nonce, when this page was
+   * opened by a deep-link-capable runner. Rides slot 5 of the wire format so
+   * the callback can deep-link the claim back to the originating runner window.
+   * Omitted on browser-only entry points.
+   */
+  runnerState?: string | null;
 }) {
   const [config, setConfig] = useState<GithubAppConfig | null>(null);
   const [loading, setLoading] = useState(true);
@@ -107,7 +109,12 @@ export function ConnectInstalledOrg({
   useResetOnBackNavigation(clearMinting);
 
   const trimmed = login.trim();
-  const valid = LOGIN_RE.test(trimmed);
+  // Catches typos before a pointless round-trip; the authoritative check is
+  // coord's org-admin gate. Deliberately the SAME predicate `parseConnectState`
+  // applies on the way back in, not a second copy of the regex — the two must
+  // agree, or a login accepted outbound would be dropped to null inbound and
+  // silently turn a valid authorize callback into a doctor-page fall-through.
+  const valid = isValidLogin(trimmed);
   const clientId = config?.client_id ?? null;
 
   /**
@@ -123,7 +130,7 @@ export function ConnectInstalledOrg({
    * to a stateless authorize URL that coord will refuse to complete.
    *
    * This is the ONE path where the target org is known before the GitHub hop
-   * (the user typed it, and `LOGIN_RE` has already validated it), so the mint
+   * (the user typed it, and `isValidLogin` has already validated it), so the mint
    * binds it: the token then authorises a claim of *that* org only, rather than
    * of any org the caller happens to administer.
    */
@@ -133,7 +140,7 @@ export function ConnectInstalledOrg({
     setMintError(null);
     try {
       const token = await mintConnectState({ flow, targetLogin: trimmed });
-      const state = beginConnectState(flow, trimmed, token);
+      const state = beginConnectState(flow, trimmed, token, runnerState);
       // Same-tab nav: the callback must return into this authenticated session
       // (a session-less tab can't complete the claim).
       window.location.assign(authorizeUrl(clientId, state));
@@ -141,7 +148,7 @@ export function ConnectInstalledOrg({
       setMintError(e instanceof Error ? e.message : String(e));
       setMinting(false);
     }
-  }, [clientId, flow, minting, trimmed, valid]);
+  }, [clientId, flow, minting, runnerState, trimmed, valid]);
 
   // Hide entirely when coord has no OAuth creds: without them the authorize
   // round-trip would end in a 500 `oauth_not_configured`, so offering it would
