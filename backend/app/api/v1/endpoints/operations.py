@@ -984,15 +984,13 @@ async def get_pr_merge_pr_checks(
 @router.get("/migrations/queue")
 async def get_migrations_queue(
     repo: str,
-    terminal_limit: int = 5,
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Proxy coord's ``GET /coord/migrations/queue?repo=<owner/repo>``.
 
     The coord-authoritative migration-reservation queue read-side: the
     ordered live set (``queued`` / ``pr_bound``, each carrying its 1-based
-    ``position``) plus the last ``terminal_limit`` terminal rows. Backs the
-    Operations dashboard's Migration Queue tile.
+    ``position``). Backs the Operations dashboard's Migration Queue tile.
 
     ``repo`` is required — coord 400s without it, since the queue is
     per-repo. Fleet-wide read; ``tenant_id`` is resolved only to forward the
@@ -1001,7 +999,7 @@ async def get_migrations_queue(
     """
     return await _proxy_coord_get(
         "/coord/migrations/queue",
-        params={"repo": repo, "terminal_limit": terminal_limit},
+        params={"repo": repo},
         tenant_id=tenant_id,
     )
 
