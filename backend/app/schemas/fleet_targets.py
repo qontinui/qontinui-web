@@ -39,8 +39,8 @@ class AppConfigUpdate(BaseModel):
     """Partial update of an app's fleet-fresh config.
 
     Only the fields the operator edits from the fleet UI. ``None`` leaves a
-    field unchanged (build/start commands can be cleared by sending an empty
-    string).
+    field unchanged (build/start commands are cleared by sending a blank
+    value: empty or whitespace-only).
     """
 
     update_strategy: UpdateStrategyEnum | None = None
