@@ -11,8 +11,6 @@ const log = createLogger("MigrationQueueStream");
 export interface UseMigrationQueueStreamResult {
   /** The ordered live queue (oldest-first; each row carries `position`). */
   live: MigrationReservation[];
-  /** The last few terminal rows (newest-first), for recent context. */
-  recentTerminal: MigrationReservation[];
   /** True once the initial fetch for the current repo has settled (success
    *  OR error). Lets the tile distinguish "still loading" from an honest
    *  empty queue. */
@@ -42,9 +40,6 @@ export function useMigrationQueueStream(
   repo: string
 ): UseMigrationQueueStreamResult {
   const [live, setLive] = useState<MigrationReservation[]>([]);
-  const [recentTerminal, setRecentTerminal] = useState<MigrationReservation[]>(
-    []
-  );
   const [seeded, setSeeded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -62,7 +57,6 @@ export function useMigrationQueueStream(
     if (!requested.trim()) {
       if (cleanedUpRef.current) return;
       setLive([]);
-      setRecentTerminal([]);
       setError(null);
       setSeeded(true);
       return;
@@ -76,7 +70,6 @@ export function useMigrationQueueStream(
       // Drop the response if the operator switched repos mid-flight.
       if (cleanedUpRef.current || repoRef.current !== requested) return;
       setLive(data.live ?? []);
-      setRecentTerminal(data.recent_terminal ?? []);
       setError(null);
       setSeeded(true);
     } catch (err) {
@@ -132,5 +125,5 @@ export function useMigrationQueueStream(
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, [fetchOnce, startPolling, stopPolling]);
 
-  return { live, recentTerminal, seeded, error, refetch: fetchOnce };
+  return { live, seeded, error, refetch: fetchOnce };
 }
