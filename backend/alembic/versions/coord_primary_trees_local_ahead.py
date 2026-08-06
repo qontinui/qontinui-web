@@ -20,10 +20,23 @@ move ``/pull-scoped`` forbids, so that case must self-escalate. Without
 this column coord cannot distinguish "clean + safe to ff" from "clean but
 locally ahead → must escalate".
 
-``coord.primary_trees`` already tracks ``behind_count`` (HEAD behind
-``origin/<branch>``), ``dirty`` / ``dirty_files`` / ``untracked_count``,
-and ``head_detached`` — but has *no* unpushed-ahead column. This migration
-adds exactly that one column.
+``coord.primary_trees`` already tracks ``dirty`` / ``dirty_files`` — but has
+*no* unpushed-ahead column. This migration adds exactly that one column.
+
+Corrected 2026-08-05: the paragraph above originally also claimed the table
+"already tracks" ``behind_count``, ``untracked_count`` and ``head_detached``.
+That was true of the PRODUCTION database but false of the alembic chain —
+those three columns existed only because the (since deleted, plan
+``2026-05-29-delete-stale-rust-table-self-heals``) Rust ``ALTER TABLE``
+self-heal created them, and no migration ever authored them, so a FRESH
+database migrated to head lacked all three. This docstring is where that false
+premise was recorded, and it helped the gap survive unnoticed until coord's
+live-catalog read-contract gate found it (coord PR #1271). The columns joined
+the chain in ``coord_primary_trees_selfheal_backfill`` (plan
+``2026-07-28-web-primary-trees-backfill-migration``), which runs well after this
+revision — so on a fresh database the three columns still do not exist at this
+point in the chain. This revision's DDL is unchanged from when it was applied;
+the correction is to the prose only.
 
 * ``local_ahead INT NOT NULL DEFAULT 0`` — ``git rev-list --count
   origin/<default>..<default>`` as computed by the runner publisher

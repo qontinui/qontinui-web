@@ -12,20 +12,38 @@ Adds the one persisted git-state field the staleness watcher needs that
 ``coord.primary_trees`` lacks today: ``behind_default_count`` — the number of
 commits the machine's checkout ``HEAD`` is behind ``origin/<default_branch>``.
 
-Why the watcher needs it (plan §Phase 1): the existing ``behind_count`` column
-measures HEAD behind ``origin/<current_branch>``. When a primary checkout is
-*parked on a non-default branch* (a peer branch-switched the contested shared
-tree), that distance reads ~0 against its own upstream ref even though the tree
-is badly stale relative to ``main`` — the very condition that lets a session
-vet/implement against a stale checkout. ``behind_default_count`` measures
-distance from ``origin/<default_branch>`` explicitly, so the watcher can fire
-the parked-on-merged-branch staleness signal regardless of which branch the
-checkout currently sits on.
+Why the watcher needs it (plan §Phase 1): the ``behind_count`` column measures
+HEAD behind ``origin/<current_branch>``. (At the time this revision was
+authored, ``behind_count`` was in the production database only, not in the
+alembic chain — see the correction note below.) When a primary
+checkout is *parked on a non-default branch* (a peer branch-switched the
+contested shared tree), that distance reads ~0 against its own upstream ref
+even though the tree is badly stale relative to ``main`` — the very condition
+that lets a session vet/implement against a stale checkout.
+``behind_default_count`` measures distance from ``origin/<default_branch>``
+explicitly, so the watcher can fire the parked-on-merged-branch staleness
+signal regardless of which branch the checkout currently sits on.
+
+Clarified 2026-08-05: the paragraph above originally called ``behind_count``
+"the existing column". That was true of the PRODUCTION database but NOT of the
+alembic chain at the time this revision was authored, so the parenthetical
+qualifying it was added and this note records why. ``behind_count`` (with
+``head_detached`` and ``untracked_count``) existed only because the
+since-deleted Rust ``ALTER TABLE`` self-heal created it, so a FRESH database
+migrated to head did not have it. It joined the chain much later, in
+``coord_primary_trees_selfheal_backfill`` (plan
+``2026-07-28-web-primary-trees-backfill-migration``) — which runs *after* this
+revision, so on a fresh database ``behind_count`` still does not exist at this
+point in the chain; the "existing column" reading holds only from that revision
+onward. Do not read this note as clearance to reference ``behind_count`` from a
+revision at this position: that is a 42703 on a fresh database. Recorded because
+the original phrasing — repeated across two migrations — is what made the chain
+gap look already-solved for two months.
 
 * ``behind_default_count INTEGER`` (nullable) — ``git rev-list --count
   HEAD..origin/<default_branch>`` as computed by the runner publisher
   (``capture_tree``). NULL = not sampled / on the default branch (where the
-  signal is moot and the existing ``behind_count`` already covers it) / an old
+  signal is moot and ``behind_count`` already covers it) / an old
   runner that does not yet report the field (honest unknown). Nullable rather
   than ``DEFAULT 0`` precisely because 0 and "unknown" must stay distinct here:
   a real 0 (up to date with default) and an unsampled NULL drive different
