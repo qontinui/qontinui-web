@@ -1,7 +1,7 @@
 """merge rollout retirement 02 — drop both rollout_state columns
 
 Revision ID: merge_enabled_02
-Revises: coord_primary_trees_selfheal_backfill
+Revises: coord_sesscompl_04
 Create Date: 2026-08-05
 
 Phase 5 (the final phase) of the plan
@@ -120,7 +120,7 @@ logger = logging.getLogger("alembic.runtime.migration")
 
 # revision identifiers, used by Alembic.
 revision: str = "merge_enabled_02"
-down_revision: str = "coord_primary_trees_selfheal_backfill"
+down_revision: str = "coord_sesscompl_04"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
