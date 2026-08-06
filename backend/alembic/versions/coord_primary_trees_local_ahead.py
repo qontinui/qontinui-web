@@ -33,8 +33,10 @@ database migrated to head lacked all three. This docstring is where that false
 premise was recorded, and it helped the gap survive unnoticed until coord's
 live-catalog read-contract gate found it (coord PR #1271). The columns joined
 the chain in ``coord_primary_trees_selfheal_backfill`` (plan
-``2026-07-28-web-primary-trees-backfill-migration``). No DDL in this revision
-changed; the correction is to the prose only.
+``2026-07-28-web-primary-trees-backfill-migration``), which runs well after this
+revision — so on a fresh database the three columns still do not exist at this
+point in the chain. This revision's DDL is unchanged from when it was applied;
+the correction is to the prose only.
 
 * ``local_ahead INT NOT NULL DEFAULT 0`` — ``git rev-list --count
   origin/<default>..<default>`` as computed by the runner publisher
