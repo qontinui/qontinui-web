@@ -1940,15 +1940,14 @@ class TestAnchoredRowsAreConsolidationExempt:
     ) -> None:
         """The direct assertion — one selector, two otherwise-identical rows.
 
-        ``kind="episode"`` is load-bearing, not incidental:
-        `fetch_cluster_candidates` reads ``kind = 'episode'`` alone (it was
-        narrowed from ``IN ('episode', 'observation')`` after the 2026-07-28
-        597-document incident — see that function's docstring). Seeded as
-        ``observation`` BOTH rows are excluded by the kind term, the
-        candidate set is empty, and the test passes its `anchored not in ids`
-        half for a reason that has nothing to do with anchors. The
-        `twin in ids` assertion below is what keeps that vacuous reading
-        out, so the two must be a kind the selector actually admits.
+        ``kind='episode'`` on BOTH rows is load-bearing for the negative
+        control, not incidental. These were ``observation`` until #932
+        narrowed ``fetch_cluster_candidates`` to episodes only, at which
+        point the twin stopped being a candidate for a reason that has
+        nothing to do with anchors — and a control that is excluded by the
+        wrong term proves nothing about the term under test. The selector
+        now carries ``kind = 'episode' AND anchors = '[]'::jsonb`` and this
+        test isolates the SECOND conjunct by holding the first fixed.
         """
         tenant = uuid4()
         anchored = _seed(
@@ -2065,13 +2064,19 @@ class TestAnchoredRowsAreConsolidationExempt:
         assert _row(db, anchored, "valid_until") is None
 
     def test_exemption_survives_the_whole_daily_pass(self, db: AsyncEngine) -> None:
-        """Both mechanisms together: neither the clock nor the clusterer."""
+        """Both mechanisms together: neither the clock nor the clusterer.
+
+        ``kind='episode'`` because #932 narrowed ``fetch_cluster_candidates``
+        to episodes: seeded as ``observation`` the consolidation half of
+        this assertion passes for a reason unrelated to anchors, so the
+        anchor exemption would no longer be the thing under test.
+        """
         tenant = uuid4()
         anchored = _seed(
             db,
             tenant,
-            content="an old anchored observation",
-            kind="observation",
+            content="an old anchored episode",
+            kind="episode",
             importance=0.5,
             age_days=720,
             embedding=_axis(4),
@@ -2211,7 +2216,8 @@ class TestAnchoredRowsAreNearDupExempt:
     """F9 — the third supersede mechanism, and the broadest of them.
 
     ``find_near_duplicate_pairs`` runs FIRST in ``consolidate_tenant``,
-    covers ALL kinds (not just episode/observation), and ``apply_merge``
+    covers ALL kinds (where ``fetch_cluster_candidates`` sees only
+    ``episode`` since #932), and ``apply_merge``
     supersedes the loser unconditionally — and ``superseded_by`` is one of
     ``decay_prune``'s terminal markers, so a merged-away anchored record
     is on a path to a physical delete. The fold also carries importance
