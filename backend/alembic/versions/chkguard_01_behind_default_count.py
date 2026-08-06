@@ -12,9 +12,10 @@ Adds the one persisted git-state field the staleness watcher needs that
 ``coord.primary_trees`` lacks today: ``behind_default_count`` — the number of
 commits the machine's checkout ``HEAD`` is behind ``origin/<default_branch>``.
 
-Why the watcher needs it (plan §Phase 1): the ``behind_count`` column (present
-in production only at the time this revision was authored — see the correction
-note below) measures HEAD behind ``origin/<current_branch>``. When a primary
+Why the watcher needs it (plan §Phase 1): the ``behind_count`` column measures
+HEAD behind ``origin/<current_branch>``. (At the time this revision was
+authored, ``behind_count`` was in the production database only, not in the
+alembic chain — see the correction note below.) When a primary
 checkout is *parked on a non-default branch* (a peer branch-switched the
 contested shared tree), that distance reads ~0 against its own upstream ref
 even though the tree is badly stale relative to ``main`` — the very condition
@@ -42,7 +43,7 @@ gap look already-solved for two months.
 * ``behind_default_count INTEGER`` (nullable) — ``git rev-list --count
   HEAD..origin/<default_branch>`` as computed by the runner publisher
   (``capture_tree``). NULL = not sampled / on the default branch (where the
-  signal is moot and the existing ``behind_count`` already covers it) / an old
+  signal is moot and ``behind_count`` already covers it) / an old
   runner that does not yet report the field (honest unknown). Nullable rather
   than ``DEFAULT 0`` precisely because 0 and "unknown" must stay distinct here:
   a real 0 (up to date with default) and an unsampled NULL drive different
