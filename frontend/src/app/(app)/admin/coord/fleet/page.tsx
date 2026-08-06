@@ -33,6 +33,7 @@ import {
   MergeDependencyGraph,
   MergePipeline,
   MigrationQueueTile,
+  StuckPrRecoveryPanel,
 } from "@/components/operations";
 // Imported from its own module (not the barrel) so the inline HealthSummaryCard
 // renders the real presentational primitive even when tests mock the heavy
@@ -263,6 +264,14 @@ export default function CoordFleetPage() {
       className="p-3 sm:p-6 space-y-4 overflow-x-auto"
       data-testid="coord-fleet-page"
     >
+      {/* Above the hero, and only when there IS one: the tenant's own door out
+          of a wedged merge train (plan
+          2026-07-30-coord-tenant-self-service-merge-recovery Phase 4). coord
+          already detects and nudges; this is the remediation attached to the
+          alarm. Renders null when nothing is stuck, so a healthy day looks
+          exactly as it did before. */}
+      <StuckPrRecoveryPanel />
+
       {/* The hero: unified PR pipeline (health strip + one row per PR). */}
       <MergePipeline />
 

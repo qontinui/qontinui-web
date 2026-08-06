@@ -41,6 +41,7 @@ vi.mock("@/components/operations", () => ({
   GatesPanel: () => null,
   MigrationQueueTile: () => null,
   LandedFeaturesPanel: () => null,
+  StuckPrRecoveryPanel: () => null,
 }));
 
 import CoordFleetPage from "./page";

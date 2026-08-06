@@ -2369,6 +2369,239 @@ async def post_pr_merge_red_main_spawn_fix(
     )
 
 
+# ---- Tenant self-service merge recovery ----------------------------------
+#
+# Plan `2026-07-30-coord-tenant-self-service-merge-recovery.md` Phase 4.
+#
+# coord already DETECTS a wedged PR and already NOTIFIES its author
+# (`GET /pr-merge/:repo/stuck-nudges`); what it never exposed to the party who
+# owns the PR is a door. These four routes are that door's web half: two reads
+# that say WHY a PR is wedged, and the two Tier-2 writes that clear it.
+#
+# Authorization: ``get_tenant_id`` (any authenticated member of the tenant), NOT
+# ``require_coord_tenant_admin``. Per the plan's product decision, remediation
+# is TENANT-scoped rather than author-scoped — a tenant is a group working on
+# one project and any member may clear its wedges. The real floor is coord's:
+# every one of these routes re-checks ``tenant_owns_repo`` server-side and
+# answers 404 (never 403) for a row outside the caller's tenant, so a web-side
+# bug cannot widen the scope.
+#
+# Error posture: these use ``_proxy_coord_passthrough`` rather than
+# ``_proxy_coord_post``/``_proxy_coord_get``. The generic helpers re-raise
+# coord's failures as ``HTTPException(detail=resp.text)``, which double-wraps
+# coord's JSON body inside FastAPI's ``{"detail": "<json text>"}`` envelope —
+# the browser then has to parse JSON out of a string to find out WHICH refusal
+# it hit. Every refusal on this surface is load-bearing UI (`land_in_flight`
+# reads as "already landing, nothing to cancel"; `batch_in_flight` as "it will
+# land with its batch"; `*_not_found_in_tenant_scope` as NOT FOUND and never as
+# forbidden), so the passthrough forwards coord's status code and parsed JSON
+# body verbatim instead.
+
+
+async def _proxy_coord_passthrough(
+    method: Literal["GET", "POST"],
+    path: str,
+    *,
+    tenant_id: UUID,
+    body: Any = None,
+) -> JSONResponse:
+    """Proxy to coord, forwarding its status code and JSON body VERBATIM.
+
+    Unlike :func:`_proxy_coord_get` / :func:`_proxy_coord_post`, a coord 4xx is
+    NOT re-raised as an ``HTTPException`` — it is returned as-is. That keeps
+    coord's machine-readable error contract (``{"error": "land_in_flight",
+    "detail": …, "proposal_id": …, "status": …}``) intact all the way to the
+    browser, which is what lets the recovery card render each refusal
+    specifically rather than as a generic failure.
+
+    The caller's Cognito bearer is always forwarded (``_tenant_headers``), so
+    coord authorizes on the caller's real identity and applies its own
+    tenant-ownership floor. ``tenant_id`` is required — it is what marks this
+    call as tenant-scoped and triggers bearer forwarding — but, as everywhere
+    else on this surface, it does not itself go on the wire.
+
+    Only transport failures become web-originated errors: coord unreachable is
+    a 502 and a coord timeout a 504, exactly as the generic helpers do, because
+    those are the web's own failures to report rather than coord's answers.
+    """
+    url = f"{settings.COORD_URL}{path}"
+    headers = _tenant_headers(tenant_id)
+    async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
+        try:
+            if method == "GET":
+                resp = await client.get(url, headers=headers)
+            else:
+                resp = await client.post(url, json=body or {}, headers=headers)
+        except httpx.ConnectError:
+            raise HTTPException(status_code=502, detail="coord is not reachable")
+        except httpx.TimeoutException:
+            raise HTTPException(status_code=504, detail="timeout waiting for coord")
+    try:
+        payload: Any = resp.json()
+    except ValueError:
+        # coord answered with something that isn't JSON (a proxy error page, an
+        # empty 204). Report that honestly in coord's own `error` key rather
+        # than inventing a shape the caller would mis-read as a coord code.
+        payload = {"error": resp.text or f"coord returned HTTP {resp.status_code}"}
+    return JSONResponse(status_code=resp.status_code, content=payload)
+
+
+@router.get("/pr-merge/{repo:path}/stuck-nudges")
+async def get_pr_merge_stuck_nudges(
+    repo: str,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """coord's "your PR is stuck" nudges for one repo.
+
+    Proxies coord's ``GET /pr-merge/:repo/stuck-nudges`` — the alarm coord
+    already raises for a wedged PR's author. This is the read the self-service
+    recovery card is built on: it converts an alarm nobody could act on into a
+    surface that carries the remediation.
+
+    ``repo`` is ``owner/name``, captured inline via ``{repo:path}`` (the same
+    shape as ``/pr-merge/repos/:repo/profile``). coord resolves the tenant FROM
+    THE REPO and 404s a repo no tenant owns.
+
+    Returns ``{"repo", "enabled", "cooldown_secs", "max_nudges", "nudges": [
+    {"pr_number", "reason", "first_nudged_at", "last_nudged_at", "nudge_count",
+    "last_outcome"} ], "stuck_now": [{"pr_number", "reason"}]}``, where
+    ``stuck_now`` is coord's LIVE classification and ``nudges`` the history.
+    """
+    return await _proxy_coord_passthrough(
+        "GET",
+        f"/pr-merge/{repo}/stuck-nudges",
+        tenant_id=tenant_id,
+    )
+
+
+@router.get("/pr-merge/verdict/{owner}/{name}/{pr_number}")
+async def get_pr_merge_verdict(
+    owner: str,
+    name: str,
+    pr_number: int,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """coord's merge verdict for one PR, including its live merge proposal.
+
+    Proxies coord's ``GET /pr-merge/verdict/:owner/:name/:pr_number``. The
+    recovery card needs this for exactly one thing the PR list does not carry:
+    ``proposal.proposal_id``. ``GET /pr-merge/repo/:repo/prs`` hard-codes every
+    proposal field to null, and the fleet-wide ``/pr-merge/prs`` carries
+    ``proposal_status`` but no id — and a cancel has to be addressed to an id.
+
+    The ``proposal`` key is OMITTED when coord has no proposal cut at the PR's
+    current head; when present it carries ``{proposal_id, status, age_seconds,
+    seconds_since_update, candidate_ref, error, updated_at,
+    had_rebase_conflict}``. Terminal rows are included on purpose — a terminal
+    prior at the current head is precisely what blocks a re-enqueue, so it is
+    the diagnosis, not noise.
+    """
+    return await _proxy_coord_passthrough(
+        "GET",
+        f"/pr-merge/verdict/{quote(owner, safe='')}/{quote(name, safe='')}/{pr_number}",
+        tenant_id=tenant_id,
+    )
+
+
+class CancelProposalBody(BaseModel):
+    """Body for ``POST /pr-merge/proposals/{proposal_id}/cancel``.
+
+    Mirrors coord's ``CancelProposalRequest`` exactly. ``unblock`` is the whole
+    point of the pair and is NOT a modifier on one action — it selects between
+    two actions that do opposite things:
+
+    - ``unblock=False`` (default) — **STOP.** The proposal flips to
+      ``cancelled`` and STAYS on record at this head, which is itself what
+      blocks coord re-enqueueing the PR at the same commit.
+    - ``unblock=True`` — **RETRY.** Clears the stuck attempt and lets coord
+      queue a fresh one at the same commit.
+
+    The web surface renders these as two separately-labelled buttons for that
+    reason; they must never be collapsed into one "Cancel".
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str | None = Field(
+        default=None,
+        description="Free-text justification, stamped into the proposal's "
+        "error column and the PR comment.",
+    )
+    unblock: bool = Field(
+        default=False,
+        description="False = stop (cancelled prior keeps blocking this "
+        "commit); True = clear the block and re-queue a fresh attempt.",
+    )
+
+
+@router.post("/pr-merge/proposals/{proposal_id}/cancel")
+async def post_pr_merge_proposal_cancel(
+    proposal_id: str,
+    body: CancelProposalBody,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Cancel a stuck merge proposal — the lever that clears today's wedge.
+
+    Proxies coord's ``POST /pr-merge/proposals/:proposal_id/cancel``, the same
+    route coord's own MCP cancel tool drives, so the web and agent paths land
+    on one core and cannot diverge in effect.
+
+    DESTRUCTIVE-SHAPED: coord deletes the merge-candidate ref and comments on
+    the linked PR. The web card states both before the click.
+
+    Coord's answers, all forwarded verbatim (status + body):
+
+    - ``200 {"proposal_id", "previous_status", "status": "cancelled"}``
+    - ``409 {"error": "land_in_flight", …}`` — a ``landing`` row's
+      fast-forward push may already be executing; coord refuses rather than
+      risk a half-landed merge.
+    - ``409 {"error": "batch_in_flight", …}`` — the commits are already in a
+      batch's combined tip, so a "cancelled" member would land anyway.
+    - ``409 {"error": "proposal already in terminal status: <s>", …}`` — the
+      idempotence answer. A second cancel is a 409, never a double effect.
+    - ``404 {"error": "proposal_not_found_in_tenant_scope", …}`` — unknown OR
+      cross-tenant. Deliberately 404 and not 403 so it cannot leak whether the
+      row exists; it must surface as "not found", never as "forbidden".
+    """
+    return await _proxy_coord_passthrough(
+        "POST",
+        f"/pr-merge/proposals/{quote(proposal_id, safe='')}/cancel",
+        tenant_id=tenant_id,
+        body=body.model_dump(exclude_none=True),
+    )
+
+
+@router.post("/pr-merge/prs/{owner}/{name}/{pr_number}/reevaluate")
+async def post_pr_merge_reevaluate(
+    owner: str,
+    name: str,
+    pr_number: int,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Re-run coord's merge decision for one PR against fresh GitHub truth.
+
+    Proxies coord's ``POST /pr-merge/prs/:owner/:name/:pr_number/reevaluate``.
+    Takes NO body — coord force-refreshes PR state (GraphQL hydrate + merge
+    state heal) and then re-evaluates. Read-then-decide: it never pushes,
+    deletes a ref, or comments, which is why the card offers it unconditionally
+    while gating cancel.
+
+    Coord's answers, forwarded verbatim:
+
+    - ``200 {"repo", "pr_number", "evaluated": true, "result": "pass"|"block",
+      "outer_state", "block_reason_code", "block_payload"}``
+    - ``404 {"error": "pr_not_found_in_tenant_scope", "repo", "pr_number"}`` —
+      the PR is not evaluable, was never ingested, OR belongs to another
+      tenant. 404-not-403 for the same non-leaking reason as cancel.
+    """
+    return await _proxy_coord_passthrough(
+        "POST",
+        f"/pr-merge/prs/{quote(owner, safe='')}/{quote(name, safe='')}"
+        f"/{pr_number}/reevaluate",
+        tenant_id=tenant_id,
+    )
+
+
 async def _proxy_coord_post(
     path: str,
     body: Any,

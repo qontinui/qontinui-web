@@ -109,6 +109,92 @@ export function redMainSpawnFixUrl(repo: string): string {
   return `${OPERATIONS_API}/pr-merge/red-main/${repo}/spawn-fix`;
 }
 
+// ---------------------------------------------------------------------------
+// Tenant self-service merge recovery (plan
+// `2026-07-30-coord-tenant-self-service-merge-recovery` Phase 4)
+// ---------------------------------------------------------------------------
+//
+// Two reads that tell a tenant WHY their PR is wedged, and two Tier-2 writes
+// that let them clear it themselves. All four proxy straight through the web
+// backend to coord on the SAME paths coord's MCP tools drive, so the web and
+// agent paths cannot diverge in effect. The backend proxies coord's status
+// code + JSON body VERBATIM (see `_proxy_coord_passthrough` in
+// `operations.py`), so coord's 409 `land_in_flight` / `batch_in_flight` and its
+// deliberate 404-not-403 `*_not_found_in_tenant_scope` reach the browser
+// intact instead of being flattened into a generic 500.
+//
+// `repo` is `owner/name` and is inlined inside the path (the backend captures
+// it as `{repo:path}`, the same shape as `/pr-merge/repos/:repo/profile`).
+
+/**
+ * GET coord's "your PR is stuck" nudges for a repo — the alarm coord already
+ * raises. Returns `{repo, enabled, cooldown_secs, max_nudges, nudges[],
+ * stuck_now[]}`; `stuck_now[]` is coord's LIVE classification of currently
+ * dirty open PRs, `nudges[]` is the notification history.
+ */
+export function stuckNudgesUrl(repo: string): string {
+  return `${OPERATIONS_API}/pr-merge/${repo}/stuck-nudges`;
+}
+
+/**
+ * GET coord's merge verdict for one PR. The card needs it for exactly one
+ * thing the PR list does not carry: `proposal.proposal_id`, without which
+ * there is nothing to address a cancel to.
+ */
+export function prMergeVerdictUrl(
+  owner: string,
+  name: string,
+  prNumber: number
+): string {
+  return `${OPERATIONS_API}/pr-merge/verdict/${encodeURIComponent(
+    owner
+  )}/${encodeURIComponent(name)}/${prNumber}`;
+}
+
+/**
+ * POST cancel a merge proposal. Body `{reason?, unblock}` — and the two
+ * `unblock` values are genuinely different actions, never one button:
+ * `false` STOPS (the cancelled prior stays on record and blocks a retry at
+ * this commit), `true` clears the block AND re-enqueues a fresh attempt.
+ * Coord 409s `land_in_flight` / `batch_in_flight` / already-terminal, and
+ * 404s `proposal_not_found_in_tenant_scope` cross-tenant.
+ */
+export function proposalCancelUrl(proposalId: string): string {
+  return `${OPERATIONS_API}/pr-merge/proposals/${encodeURIComponent(
+    proposalId
+  )}/cancel`;
+}
+
+/**
+ * POST re-run coord's merge decision for one PR against fresh GitHub truth.
+ * No body. Returns `{repo, pr_number, evaluated, result: "pass"|"block",
+ * outer_state, block_reason_code, block_payload}`, or 404
+ * `pr_not_found_in_tenant_scope` when the PR is outside the caller's tenant.
+ */
+export function prReevaluateUrl(
+  owner: string,
+  name: string,
+  prNumber: number
+): string {
+  return `${OPERATIONS_API}/pr-merge/prs/${encodeURIComponent(
+    owner
+  )}/${encodeURIComponent(name)}/${prNumber}/reevaluate`;
+}
+
+/**
+ * Polling interval for the stuck-PR recovery panel (ms). A wedge is a
+ * minutes-to-hours condition and each poll costs coord a nudge scan, so 30s is
+ * fresh enough to reflect a remediation without hot-looping the proxy.
+ */
+export const STUCK_PR_POLL_MS = 30_000;
+
+/**
+ * Maximum stuck PRs the recovery panel renders at once. A repo with 30 wedged
+ * PRs has a systemic problem, not 30 individual ones — the panel says so
+ * rather than rendering 30 diagnosis cards.
+ */
+export const STUCK_PR_MAX_CARDS = 6;
+
 /**
  * REST + action endpoints for the gates panel (plan
  * `2026-06-05-plan-gate-web-surface-and-productization` Phase 2). All
