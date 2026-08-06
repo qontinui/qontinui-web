@@ -607,21 +607,13 @@ export interface MigrationReservation {
   revision: string;
   down_revision: string;
   state: "queued" | "pr_bound" | "merged" | "expired" | "withdrawn" | string;
-  pr_number: number | null;
-  pr_url: string | null;
   requested_by_machine?: string | null;
   requested_by_session: string | null;
   tenant_id?: string | null;
-  authoring_deadline: string | null;
   created_at: string;
-  bound_at: string | null;
-  merged_at: string | null;
-  terminated_at: string | null;
-  terminal_reason: string | null;
   /**
    * 1-based position in the live queue (created_at order), matching what
-   * `POST /coord/migrations/reserve` returns to the author. Present only on
-   * live rows (`queued` / `pr_bound`); absent on terminal rows and on older
+   * `POST /coord/migrations/reserve` returns to the author. Absent on older
    * coord deploys that predate the field — render falls back to the list
    * index in that case.
    */
@@ -629,11 +621,9 @@ export interface MigrationReservation {
 }
 
 /**
- * The queue read response: the ordered live set plus the last few terminal
- * rows for the given repo.
+ * The queue read response: the ordered live set for the given repo.
  */
 export interface MigrationQueueResponse {
   repo: string;
   live: MigrationReservation[];
-  recent_terminal: MigrationReservation[];
 }
