@@ -1,7 +1,7 @@
 """coord memory_records — anchors + anchor_state (anchored/derived memory)
 
 Revision ID: coord_memory_anchors
-Revises: avac_01_agent_commands
+Revises: coord_tenant_warm_bytes_01
 Create Date: 2026-08-04
 
 Phase 1 of plan ``2026-07-29-memory-anchored-derived-records``
@@ -90,7 +90,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_memory_anchors"
-down_revision: str | Sequence[str] | None = "avac_01_agent_commands"
+down_revision: str | Sequence[str] | None = "coord_tenant_warm_bytes_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
