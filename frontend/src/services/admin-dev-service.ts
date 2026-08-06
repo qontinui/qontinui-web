@@ -139,14 +139,27 @@ export interface FeatureRollout {
   threshold: number | null;
 }
 
+/**
+ * Two buckets, not three: the `live` / `shadow` / `dry_run` tri-state was
+ * deleted with `rollout_state` (coord plan
+ * `2026-07-29-retire-merge-rollout-tristate-and-fix-the-dead-kill-switch`
+ * Phase 5). `enabled` is the successor of the old `live` bucket; `disabled`
+ * absorbs both former off states. Bucketed on the COMPOSED verdict
+ * (`auto_merge_enabled && merge_enabled`), not the enablement axis alone.
+ */
 export interface AutoMergeRollout {
-  live: string[];
-  shadow: string[];
-  dry_run: string[];
+  enabled: string[];
+  disabled: string[];
 }
 
 export interface RolloutOverview {
   auto_merge: AutoMergeRollout;
+  /**
+   * The tenant's `auto_merge_enabled` opt-in — the second factor the
+   * composed `auto_merge` verdict buckets on. `null` when no repo resolved a
+   * profile.
+   */
+  auto_merge_enabled: boolean | null;
   features: FeatureRollout[];
 }
 

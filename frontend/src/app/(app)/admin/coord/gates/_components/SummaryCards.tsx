@@ -4,7 +4,8 @@
  * SummaryCards — at-a-glance counts for the gates & rollout dashboard.
  *
  * Open / cleared-today / failed / stale / snoozed / muted / archived gate
- * counts, plus a rollout summary (live/shadow/dry_run auto-merge repo counts).
+ * counts, plus a rollout summary (enabled/disabled auto-merge repo counts —
+ * bucketed on the composed `auto_merge_enabled && merge_enabled` verdict).
  */
 
 import { Card, CardContent } from "@/components/ui/card";
@@ -101,23 +102,17 @@ export function SummaryCards({ overview }: { overview: DevOverview }) {
         />
       </div>
 
-      <div className="grid grid-cols-3 gap-2 sm:gap-3" data-testid="summary-rollout">
+      <div className="grid grid-cols-2 gap-2 sm:gap-3" data-testid="summary-rollout">
         <StatCard
-          label="Auto-merge: live"
-          value={am.live.length}
-          testId="summary-rollout-live"
+          label="Auto-merge: enabled"
+          value={am.enabled.length}
+          testId="summary-rollout-enabled"
           tone="success"
         />
         <StatCard
-          label="Auto-merge: shadow"
-          value={am.shadow.length}
-          testId="summary-rollout-shadow"
-          tone="warning"
-        />
-        <StatCard
-          label="Auto-merge: dry-run"
-          value={am.dry_run.length}
-          testId="summary-rollout-dry-run"
+          label="Auto-merge: disabled"
+          value={am.disabled.length}
+          testId="summary-rollout-disabled"
           tone="muted"
         />
       </div>
