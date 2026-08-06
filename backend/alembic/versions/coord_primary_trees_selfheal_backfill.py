@@ -9,8 +9,14 @@ Plan ``2026-07-28-web-primary-trees-backfill-migration``.
 Three ``coord.primary_trees`` columns — ``behind_count``, ``head_detached``,
 ``untracked_count`` — are written by coord's tree-report upsert
 (``qontinui-coord/src/data/primary_trees.rs``, the ``POST /coord/trees/upsert``
-path) and read back by the stale-WIP watcher, the pull-decision watcher and the
-operator dashboard. They EXIST in the canonical RDS, but only because the Rust
+path) and read back by the primary-tree staleness watcher
+(``primary_tree_staleness_watcher.rs``), the pull-decision watcher
+(``pull_decision_watcher.rs``), the ``repo_pull`` observation
+(``policies/decide.rs``) and the operator-dashboard reads
+(``data/primary_trees.rs``). (Corrected 2026-08-06: an earlier version of this
+paragraph named the stale-WIP watcher, which reads ``dirty`` / ``dirty_files`` /
+``last_edit_at`` and none of these three columns.)
+They EXIST in the canonical RDS, but only because the Rust
 ``ALTER TABLE ... ADD COLUMN IF NOT EXISTS`` self-heal created them historically;
 that self-heal was deleted from the production binary (plan
 ``2026-05-29-delete-stale-rust-table-self-heals``) and survives only as the
@@ -51,9 +57,10 @@ index's, and neither does:
 * ``primary_tree_staleness_watcher.rs`` scans
   ``behind_count IS NOT NULL OR head_detached IS NOT NULL OR untracked_count IS
   NOT NULL OR behind_default_count IS NOT NULL OR branch <> $1``. ``IS NOT
-  NULL`` is strictly broader than ``> 0`` (a row with ``behind_count = 0``
-  matches the query and not the index), and the last two disjuncts are not
-  covered at all.
+  NULL`` is strictly broader than ``> 0`` (witness: a row with
+  ``behind_count = 0``, ``untracked_count = 0`` and ``head_detached = false``
+  matches the query and is absent from the index), and the last two disjuncts
+  are not covered at all.
 * ``pull_decision_watcher.rs`` scans ``(behind_count IS NOT NULL AND
   behind_count > 0) OR (behind_default_count IS NOT NULL AND
   behind_default_count > 0)``. The ``behind_default_count`` disjunct admits
@@ -74,11 +81,13 @@ or not the self-heal already created the objects.
 **The no-op property is one-directional — DO NOT downgrade past this revision
 against the canonical RDS.** ``upgrade()`` is a no-op in prod precisely because
 prod already has these objects; ``downgrade()`` is not conditioned on that and
-drops all four unconditionally. On a fresh database that is symmetric and
-correct. In prod it would DESTROY three live columns that the tree-report upsert
-writes and both watchers read — reintroducing the exact ``42703`` this migration
-exists to prevent, and losing the stored counts permanently, because alembic
-never populated them and no backfill would restore them. This asymmetry is
+drops all four with no provenance check (the DDL is ``IF EXISTS``, but nothing
+asks whether THIS revision created them). On a fresh database that is symmetric
+and correct. In prod it would DROP three live columns that the tree-report
+upsert writes and the readers above consume — reintroducing the exact ``42703``
+this migration exists to prevent. The stored counts are per-tick derived git
+facts, so each ``(device_id, repo)`` repopulates on its next tree report; the
+damage is the ``42703`` read window, not permanent data loss. This asymmetry is
 inherent to backfilling objects that already exist and is why it is called out
 here rather than "fixed": the sibling migrations
 (``coord_primary_trees_local_ahead``, ``chkguard_01_behind_default_count``)
@@ -104,7 +113,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    """Add the three self-heal columns + the stale-scan index. Idempotent."""
+    """Add the three self-heal columns + the parity index. Idempotent."""
     # ----------------------------------------------------------------
     # 1. The three columns. Nullable, no default — matching the live
     #    canonical catalog so this is a no-op against prod.
@@ -129,9 +138,11 @@ def upgrade() -> None:
     )
 
     # ----------------------------------------------------------------
-    # 2. The stale-tree partial index, same origin as the columns and
-    #    likewise missing from the chain. Predicate matches the staleness
-    #    / pull-decision watchers' scan.
+    # 2. The partial index, same origin as the columns and likewise
+    #    missing from the chain. Carried for PARITY with the canonical
+    #    catalog, NOT for performance — no current query's predicate
+    #    implies this one, so nothing can use it. See the module
+    #    docstring for the two watcher predicates and why each fails.
     # ----------------------------------------------------------------
     op.execute(
         """
