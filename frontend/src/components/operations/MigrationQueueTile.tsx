@@ -7,8 +7,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { ExternalLink, Layers, RefreshCw } from "lucide-react";
-import { relativeTime } from "./utils";
+import { Layers, RefreshCw } from "lucide-react";
 import { useMigrationQueueStream } from "./useMigrationQueueStream";
 import { useTenantDefaultRepo } from "./useTenantDefaultRepo";
 import { CollapsiblePanel } from "./CollapsiblePanel";
@@ -69,7 +68,7 @@ function shortRev(rev: string | null | undefined): string {
 
 /** A live queue row — leads with the 1-based queue position (the field this
  *  tile exists to surface), then revision → down_revision chaining, state,
- *  PR link, session, and the authoring deadline. */
+ *  and the requesting session. */
 export function LiveRow({
   res,
   fallbackPosition,
@@ -132,22 +131,6 @@ export function LiveRow({
       <div className="flex-1 min-w-0" />
 
       <div className="flex items-center gap-3 text-xs text-muted-foreground shrink-0">
-        {res.pr_number != null &&
-          (res.pr_url ? (
-            <a
-              href={res.pr_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 font-mono hover:text-foreground"
-              data-ui-bridge-id="operations.migration-queue-pr-link"
-            >
-              #{res.pr_number}
-              <ExternalLink className="h-3 w-3" />
-            </a>
-          ) : (
-            <span className="font-mono">#{res.pr_number}</span>
-          ))}
-
         {res.requested_by_session && (
           <Tooltip>
             <TooltipTrigger asChild>
@@ -163,62 +146,7 @@ export function LiveRow({
             </TooltipContent>
           </Tooltip>
         )}
-
-        {res.authoring_deadline && (
-          <span
-            className="tabular-nums"
-            data-ui-bridge-id="operations.migration-queue-deadline"
-            title={`authoring deadline ${new Date(
-              res.authoring_deadline
-            ).toLocaleString()}`}
-          >
-            ⏳ {relativeTime(res.authoring_deadline)}
-          </span>
-        )}
       </div>
-    </li>
-  );
-}
-
-/** A recent terminal row — merged/expired/withdrawn context under the live
- *  set. Shows the state, revision, the terminal reason, and when it landed. */
-function TerminalRow({ res }: { res: MigrationReservation }) {
-  const when = res.merged_at ?? res.terminated_at ?? res.created_at;
-  return (
-    <li
-      data-ui-bridge-id="operations.migration-queue-terminal-row"
-      data-reservation-id={res.id}
-      data-state={res.state}
-      className="flex items-center gap-3 px-3 py-1.5 text-xs text-muted-foreground"
-    >
-      <Badge
-        variant={stateVariant(res.state)}
-        className="text-[10px] shrink-0"
-        data-ui-bridge-id="operations.migration-queue-terminal-state"
-      >
-        {res.state}
-      </Badge>
-      <span
-        className="font-mono truncate max-w-[9rem] text-foreground/80"
-        title={res.revision}
-      >
-        {shortRev(res.revision)}
-      </span>
-      {res.terminal_reason && (
-        <span
-          className="truncate max-w-[14rem] italic"
-          title={res.terminal_reason}
-        >
-          {res.terminal_reason}
-        </span>
-      )}
-      <div className="flex-1 min-w-0" />
-      <span
-        className="tabular-nums shrink-0"
-        title={when ? new Date(when).toLocaleString() : ""}
-      >
-        {relativeTime(when)}
-      </span>
     </li>
   );
 }
@@ -229,15 +157,14 @@ function TerminalRow({ res }: { res: MigrationReservation }) {
 
 /**
  * Migration reservation queue tile for the operations dashboard. Renders
- * coord's coord-authoritative reservation queue for a repo (default
- * `qontinui/qontinui-web`): the ordered live set — each row leading with its
- * 1-based queue **position** and showing how it chains off its predecessor —
- * plus a handful of recent terminal rows for context.
+ * coord's coord-authoritative reservation queue for a repo (seeded from the
+ * active tenant's first registered repo — see `useTenantDefaultRepo`): the
+ * ordered live set — each row leading with its 1-based queue **position** and
+ * showing how it chains off its predecessor.
  *
  * The queue is per-repo (coord requires `repo`), so the tile carries a small
  * repo input. Data comes from the `useMigrationQueueStream` poll hook;
- * modeled on `DevActionsTile` (section/header/list shape + a tick clock for
- * relative-time refresh).
+ * modeled on `DevActionsTile` (section/header/list shape).
  */
 export function MigrationQueueTile() {
   // `repo` is the committed selection driving the fetch; `repoInput` is the
@@ -261,15 +188,7 @@ export function MigrationQueueTile() {
     }
   }, [defaultRepo, userPicked, repo]);
 
-  const { live, recentTerminal, seeded, error, refetch } =
-    useMigrationQueueStream(repo);
-  const [, setNowTick] = useState(0);
-
-  // Tick every 15s so relative-time labels refresh without a server event.
-  useEffect(() => {
-    const t = setInterval(() => setNowTick((n) => n + 1), 15_000);
-    return () => clearInterval(t);
-  }, []);
+  const { live, seeded, error, refetch } = useMigrationQueueStream(repo);
 
   const commitRepo = useCallback(() => {
     const next = repoInput.trim();
@@ -360,22 +279,6 @@ export function MigrationQueueTile() {
                 <LiveRow key={res.id} res={res} fallbackPosition={i + 1} />
               ))}
             </ul>
-          )}
-
-          {recentTerminal.length > 0 && (
-            <div className="mt-3">
-              <h3 className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1 px-1">
-                Recent
-              </h3>
-              <ul
-                className="flex flex-col rounded-md border border-border/40 bg-muted/5 divide-y divide-border/30"
-                data-ui-bridge-id="operations.migration-queue-terminal-list"
-              >
-                {recentTerminal.map((res) => (
-                  <TerminalRow key={res.id} res={res} />
-                ))}
-              </ul>
-            </div>
           )}
         </>
       )}

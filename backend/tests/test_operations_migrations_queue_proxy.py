@@ -75,19 +75,13 @@ def _queue_payload() -> dict:
                 "revision": "abc123def456",
                 "down_revision": "root0000",
                 "state": "queued",
-                "pr_number": None,
-                "pr_url": None,
+                "requested_by_machine": None,
                 "requested_by_session": "agent-7",
-                "authoring_deadline": "2026-06-11T10:45:00Z",
+                "tenant_id": None,
                 "created_at": "2026-06-11T10:00:00Z",
-                "bound_at": None,
-                "merged_at": None,
-                "terminated_at": None,
-                "terminal_reason": None,
                 "position": 1,
             }
         ],
-        "recent_terminal": [],
     }
 
 
@@ -109,21 +103,7 @@ class TestGetMigrationsQueue:
         called_url = instance.get.call_args.args[0]
         assert called_url.endswith("/coord/migrations/queue")
 
-    def test_repo_and_terminal_limit_forwarded(self, auth_client: TestClient):
-        mock_resp = _mock_response(json_data=_queue_payload())
-        with _patch_httpx() as MockClient:
-            instance = AsyncMock()
-            instance.get.return_value = mock_resp
-            _configure_mock_client(MockClient, instance)
-            resp = auth_client.get(
-                f"{API_PREFIX}/migrations/queue?repo=acme/widgets&terminal_limit=12"
-            )
-        assert resp.status_code == 200
-        called_params = instance.get.call_args.kwargs.get("params", {})
-        assert called_params.get("repo") == "acme/widgets"
-        assert called_params.get("terminal_limit") == 12
-
-    def test_terminal_limit_defaults_to_5(self, auth_client: TestClient):
+    def test_repo_forwarded(self, auth_client: TestClient):
         mock_resp = _mock_response(json_data=_queue_payload())
         with _patch_httpx() as MockClient:
             instance = AsyncMock()
@@ -132,7 +112,11 @@ class TestGetMigrationsQueue:
             resp = auth_client.get(f"{API_PREFIX}/migrations/queue?repo=acme/widgets")
         assert resp.status_code == 200
         called_params = instance.get.call_args.kwargs.get("params", {})
-        assert called_params.get("terminal_limit") == 5
+        # Exact equality, not a subset check: this endpoint forwards `repo` and
+        # NOTHING else. `terminal_limit` was removed here (coord's terminal-rows
+        # read is gone), and a subset assert would stay green if it — or any
+        # other param — came back by accident.
+        assert called_params == {"repo": "acme/widgets"}
 
     def test_repo_required(self, auth_client: TestClient):
         # `repo` has no default → FastAPI rejects the request before any proxy

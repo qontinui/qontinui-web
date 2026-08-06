@@ -22,15 +22,8 @@ function reservation(
     revision: "abc123def4567890",
     down_revision: "root0000",
     state: "queued",
-    pr_number: null,
-    pr_url: null,
     requested_by_session: "agent-7",
-    authoring_deadline: "2026-06-11T10:45:00Z",
     created_at: "2026-06-11T10:00:00Z",
-    bound_at: null,
-    merged_at: null,
-    terminated_at: null,
-    terminal_reason: null,
     position: 1,
     ...overrides,
   };
@@ -63,24 +56,6 @@ describe("MigrationQueueTile LiveRow", () => {
   it("falls back to the list index when position is absent (older coord)", () => {
     const { getByText } = renderRow(reservation({ position: undefined }), 2);
     expect(getByText("#2")).toBeTruthy();
-  });
-
-  it("renders a PR link when the reservation is bound to a PR", () => {
-    const { container } = renderRow(
-      reservation({
-        state: "pr_bound",
-        pr_number: 533,
-        pr_url: "https://github.com/qontinui/qontinui-web/pull/533",
-      }),
-      1
-    );
-    const link = container.querySelector(
-      "[data-ui-bridge-id='operations.migration-queue-pr-link']"
-    );
-    expect(link).not.toBeNull();
-    expect(link?.getAttribute("href")).toBe(
-      "https://github.com/qontinui/qontinui-web/pull/533"
-    );
   });
 
   it("renders the state chip with the reservation state", () => {
