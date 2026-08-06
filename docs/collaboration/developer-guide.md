@@ -32,9 +32,15 @@ npm run dev
 
 ### Database Migrations
 
+`alembic revision --autogenerate` is prohibited in this repo. The `coord`
+schema is almost entirely unmodeled — the chain creates ~78 `coord` tables
+and only 3 have a SQLAlchemy model — so autogenerate cannot see the rest and
+proposes dropping them. Scaffold an empty revision and hand-author the
+`upgrade()` / `downgrade()` bodies, with an explicit `schema=` on every op.
+
 ```bash
-# Create new migration
-alembic revision --autogenerate -m "Add collaboration models"
+# Create a new, EMPTY migration — never --autogenerate
+alembic revision -m "Add collaboration models"
 
 # Apply migrations
 alembic upgrade head

@@ -811,9 +811,19 @@ PostgreSQL GIN indexes for JSONB columns:
 
 ### Alembic Commands
 
+> **`alembic revision --autogenerate` is prohibited in this repo.** The
+> `coord` schema is almost entirely unmodeled: the migration chain creates
+> ~78 `coord` tables and only 3 of them have a SQLAlchemy model.
+> Autogenerate diffs `Base.metadata` against the live database, cannot see
+> the other ~75, and proposes **dropping** them. Scaffold an empty revision
+> (`alembic revision -m "…"`, which loads no model metadata) and hand-author
+> the `upgrade()` / `downgrade()` bodies, giving every op an explicit
+> `schema=` argument (the `alembic-schema-arg-gate` pre-commit hook enforces
+> this for `backend/alembic/versions/`).
+
 ```bash
-# Generate new migration
-alembic revision --autogenerate -m "description"
+# Scaffold a new, EMPTY migration — never --autogenerate
+alembic revision -m "description"
 
 # Apply migrations
 alembic upgrade head

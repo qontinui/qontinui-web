@@ -65,7 +65,11 @@ No data lock-in!
 
 If this becomes production-critical with many users:
 - Switch to Alembic migrations
-- Use `alembic revision --autogenerate`
+- Hand-author the revision (`alembic revision -m "..."`, then fill in
+  `upgrade()` / `downgrade()` with an explicit `schema=` on every op).
+  `--autogenerate` is prohibited in this repo: the `coord` schema is almost
+  entirely unmodeled (~78 tables, 3 models), so autogenerate cannot see most
+  of it and proposes dropping the tables it misses.
 - This preserves existing data during schema changes
 
 But for now, keep it simple!

@@ -54,7 +54,6 @@ jobs:
             ':!*.md'
             ':!backend/alembic/versions/*'
             ':!backend/alembic/_staged_phase7/*'
-            ':!backend/alembic/_staged_consolidation/*'
             # Self-reference: this workflow file contains the pattern
             # strings as part of its definition.
             ':!.github/workflows/forbid-public-schema.yml'
