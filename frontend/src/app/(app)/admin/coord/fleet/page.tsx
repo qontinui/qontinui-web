@@ -32,6 +32,7 @@ import {
   MergeDependencyGraph,
   MergePipeline,
   MigrationQueueTile,
+  StuckPrRecoveryPanel,
 } from "@/components/operations";
 // Imported from its own module (not the barrel) so the inline HealthSummaryCard
 // renders the real presentational primitive even when tests mock the heavy
@@ -155,59 +156,59 @@ function HealthSummaryCard({
         </Button>
       }
     >
-        {error && (
-          <p className="text-sm text-destructive">
-            Failed to load fleet/health: {error}
-          </p>
-        )}
-        {loading && !data ? (
-          <Skeleton className="h-20 w-full" />
-        ) : devices.length === 0 ? (
-          <p className="text-sm text-muted-foreground italic">
-            No devices reporting health.
-          </p>
-        ) : (
-          <ul className="space-y-1">
-            {devices.map((d) => (
-              <li
-                key={d.device_id}
-                data-testid="coord-fleet-health-row"
-                className="flex items-center justify-between gap-2 text-sm"
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="font-mono text-xs truncate">
-                    {d.hostname || d.device_id}
-                  </span>
-                  <Badge variant={deviceStateBadgeVariant(d.state)}>
-                    {d.state ?? "unknown"}
-                  </Badge>
-                </div>
-                <div className="flex items-center gap-1">
-                  <Link
-                    href={`/admin/coord/trees?device_id=${encodeURIComponent(d.device_id)}`}
-                    className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-0.5"
-                  >
-                    trees <ExternalLink className="h-3 w-3" />
-                  </Link>
-                  <span className="text-muted-foreground">·</span>
-                  <Link
-                    href={`/admin/agent-claims`}
-                    className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-0.5"
-                  >
-                    claims <ExternalLink className="h-3 w-3" />
-                  </Link>
-                  <span className="text-muted-foreground">·</span>
-                  <Link
-                    href={`/admin/agent-sessions`}
-                    className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-0.5"
-                  >
-                    sessions <ExternalLink className="h-3 w-3" />
-                  </Link>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+      {error && (
+        <p className="text-sm text-destructive">
+          Failed to load fleet/health: {error}
+        </p>
+      )}
+      {loading && !data ? (
+        <Skeleton className="h-20 w-full" />
+      ) : devices.length === 0 ? (
+        <p className="text-sm text-muted-foreground italic">
+          No devices reporting health.
+        </p>
+      ) : (
+        <ul className="space-y-1">
+          {devices.map((d) => (
+            <li
+              key={d.device_id}
+              data-testid="coord-fleet-health-row"
+              className="flex items-center justify-between gap-2 text-sm"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="font-mono text-xs truncate">
+                  {d.hostname || d.device_id}
+                </span>
+                <Badge variant={deviceStateBadgeVariant(d.state)}>
+                  {d.state ?? "unknown"}
+                </Badge>
+              </div>
+              <div className="flex items-center gap-1">
+                <Link
+                  href={`/admin/coord/trees?device_id=${encodeURIComponent(d.device_id)}`}
+                  className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-0.5"
+                >
+                  trees <ExternalLink className="h-3 w-3" />
+                </Link>
+                <span className="text-muted-foreground">·</span>
+                <Link
+                  href={`/admin/agent-claims`}
+                  className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-0.5"
+                >
+                  claims <ExternalLink className="h-3 w-3" />
+                </Link>
+                <span className="text-muted-foreground">·</span>
+                <Link
+                  href={`/admin/agent-sessions`}
+                  className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-0.5"
+                >
+                  sessions <ExternalLink className="h-3 w-3" />
+                </Link>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
     </CollapsiblePanel>
   );
 }
@@ -227,6 +228,14 @@ export default function CoordFleetPage() {
       className="p-3 sm:p-6 space-y-4 overflow-x-auto"
       data-testid="coord-fleet-page"
     >
+      {/* Above the hero, and only when there IS one: the tenant's own door out
+          of a wedged merge train (plan
+          2026-07-30-coord-tenant-self-service-merge-recovery Phase 4). coord
+          already detects and nudges; this is the remediation attached to the
+          alarm. Renders null when nothing is stuck, so a healthy day looks
+          exactly as it did before. */}
+      <StuckPrRecoveryPanel />
+
       {/* The hero: unified PR pipeline (health strip + one row per PR). */}
       <MergePipeline />
 

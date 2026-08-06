@@ -37,6 +37,7 @@ vi.mock("@/components/operations", () => ({
   GatesPanel: () => null,
   MigrationQueueTile: () => null,
   LandedFeaturesPanel: () => null,
+  StuckPrRecoveryPanel: () => null,
 }));
 
 import CoordFleetPage from "./page";
@@ -152,7 +153,7 @@ describe("/admin/coord/fleet HealthSummaryCard", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText(/No devices reporting health/i),
+        screen.getByText(/No devices reporting health/i)
       ).toBeInTheDocument();
     });
   });
