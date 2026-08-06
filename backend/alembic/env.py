@@ -13,9 +13,11 @@ load_dotenv()
 # access to the values within the .ini file in use.
 config = context.config
 
-# Override sqlalchemy.url with DATABASE_URL from environment if present
-if os.getenv("DATABASE_URL"):
-    database_url = os.getenv("DATABASE_URL")
+# Override sqlalchemy.url with DATABASE_URL from environment if present.
+# Read once and branch on the binding: calling os.getenv twice left the
+# second result typed `str | None`, so the guard narrowed nothing.
+database_url = os.getenv("DATABASE_URL")
+if database_url:
     # Replace asyncpg driver with psycopg2 for synchronous Alembic operations
     if "postgresql+asyncpg://" in database_url:
         database_url = database_url.replace("postgresql+asyncpg://", "postgresql://")
@@ -48,10 +50,15 @@ target_metadata = Base.metadata
 #
 # Atlas Community is the source of truth for this set; the HCL lives at
 # ``qontinui-runner/atlas/schema.hcl``. Historical alembic migrations for
-# these tables remain in ``versions/`` as frozen history, but new
-# ``alembic revision --autogenerate`` runs MUST skip them — otherwise
-# autogenerate would propose drop/recreate ops every time, since the
-# tables aren't declared as SQLAlchemy models on the alembic side.
+# these tables remain in ``versions/`` as frozen history.
+#
+# NOTE: ``alembic revision --autogenerate`` is PROHIBITED in this repo —
+# revisions are hand-authored (see .github/PULL_REQUEST_TEMPLATE.md). The
+# reason is much broader than this set: the ``coord`` schema is almost
+# entirely unmodeled (the chain creates ~78 coord tables; 3 have SQLAlchemy
+# models), so an autogenerate run would propose DROPPING the ~75 it cannot
+# see. The filter below is defense-in-depth for the Atlas-owned subset if
+# anyone ever runs it anyway; it is not a licence to.
 #
 # When Atlas takes over additional tables, add them here too.
 ATLAS_OWNED_TABLES: set[tuple[str, str]] = {
