@@ -45,13 +45,19 @@ repos:
         name: Alembic ops require schema= (consolidation gate)
         entry: python .pre-commit-hooks/check_alembic_schema_args.py
         language: system
-        files: ^backend/alembic/(_staged_consolidation|versions)/.*\.py$
+        files: ^backend/alembic/versions/.*\.py$
         # Two checks: (1) op.<gated_func>(..., schema=...) kwarg
         # presence, (2) raw SQL inside op.execute("...") names a
         # schema for every CREATE/ALTER/DROP/REFERENCES/INDEX-ON.
         # Pre-commit invokes with the changed-file list so the audit
         # only runs on migrations actually being touched — already-
         # applied legacy revisions aren't re-audited.
+        # The pattern must stay in sync with SCOPED_DIRS in
+        # check_alembic_schema_args.py: the script re-filters whatever
+        # pre-commit hands it through _is_in_scope(), so a wider pattern
+        # here buys nothing and misdescribes the coverage. It previously
+        # also named `_staged_consolidation/`, which the transplant
+        # removed from both the tree and SCOPED_DIRS.
 
       - id: web-boundary-lint
         name: web/backend ↔ qontinui boundary lint

@@ -27,17 +27,23 @@ Skip this section if the PR doesn't touch the database schema.
       `op.create_check_constraint` / `op.rename_table` /
       `op.batch_alter_table` call carries an explicit
       `schema=` keyword argument with one of:
-      `project`, `coord`, `agent`, `auth`, `public`.
+      `project`, `coord`, `agent`, `auth`, `cloud`, `strategy`, `web`.
+      **`public` is not accepted on an `op.*` call** — Phase 7 drained it to
+      `alembic_version` alone. It stays legal only inside raw
+      `op.execute("…")` SQL, which the gate checks against a separate set.
       (Pre-commit gate `alembic-schema-arg-gate` enforces this for
-      **both** `versions/` and `_staged_consolidation/` — its `files:`
-      pattern is `^backend/alembic/(_staged_consolidation|versions)/.*\.py$`.
-      The required `forbid-public-schema` check is the server-side half.)
+      `backend/alembic/versions/` — the only directory its `SCOPED_DIRS`
+      covers. There is **no server-side mirror**: `forbid-public-schema`
+      excludes `backend/alembic/versions/*`, so it guards the rest of the
+      tree, not your migration. Committing with `--no-verify` skips this
+      check entirely and nothing downstream re-runs it.)
 - [ ] **Did NOT run `alembic revision --autogenerate`.** Raw autogenerate is
-      prohibited: no SQLAlchemy models back the `coord` schema, so it has
-      nothing to compare against there and emits spurious drops — most
-      visibly `op.drop_table(..., schema="runner")` for every runner-managed
-      table, which is Atlas-managed and must not be touched by alembic.
-      Hand-author the `upgrade()` / `downgrade()` bodies instead.
+      prohibited because the `coord` schema is almost entirely unmodeled:
+      the chain creates ~78 `coord` tables and only 3 of them have a
+      SQLAlchemy model. Autogenerate diffs `Base.metadata` against the live
+      database, cannot see the other ~75, and proposes **dropping** them.
+      Scaffold with bare `alembic revision -m "…"` (no model diff is loaded)
+      and hand-author the `upgrade()` / `downgrade()` bodies instead.
 - [ ] Cross-schema FKs (e.g. `project.* → coord.*`) use schema-qualified
       ForeignKey strings (e.g. `sa.ForeignKey("coord.tasks.id")`).
 - [ ] Downgrade reverses upgrade where reasonable; documented in

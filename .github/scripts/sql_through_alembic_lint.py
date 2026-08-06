@@ -15,11 +15,10 @@ Exit codes:
   2 = error (script failure)
 """
 
-import sys
 import re
 import subprocess
+import sys
 from pathlib import Path
-from typing import Set, Tuple, List
 
 # Paths exempt from the sql-through-alembic lint
 EXEMPT_PATTERNS = [
@@ -36,7 +35,7 @@ EXEMPT_PATTERNS = [
 DDL_KEYWORDS = r"\b(CREATE|ALTER|DROP|TRUNCATE)\s+(TABLE|DATABASE|SCHEMA|INDEX|TRIGGER|VIEW|COLUMN|CONSTRAINT)\b"
 
 
-def get_changed_files(base_ref: str, head_ref: str) -> List[str]:
+def get_changed_files(base_ref: str, head_ref: str) -> list[str]:
     """Get list of files changed between base and head."""
     try:
         result = subprocess.run(
@@ -70,7 +69,7 @@ def has_ddl(filepath: str) -> bool:
         return False
 
 
-def extract_table_names(sql_content: str) -> Set[str]:
+def extract_table_names(sql_content: str) -> set[str]:
     """Extract table names from DDL statements."""
     patterns = [
         r"(?:ALTER|CREATE|DROP)\s+TABLE\s+(?:IF\s+EXISTS\s+)?(\w+)",
@@ -88,8 +87,8 @@ def extract_table_names(sql_content: str) -> Set[str]:
 
 
 def has_companion_revision(
-    sql_file: str, changed_files: List[str]
-) -> Tuple[bool, str]:
+    sql_file: str, changed_files: list[str]
+) -> tuple[bool, str]:
     """Check if a companion alembic revision exists."""
     try:
         sql_content = Path(sql_file).read_text(errors="ignore")
@@ -167,12 +166,22 @@ def main():
         print(
             "\nFix: Create an alembic revision that applies the same DDL, then commit both:"
         )
-        print("  poetry run alembic revision --autogenerate -m 'description'")
-        print("  # Edit the generated file to match your .sql file, then:")
+        # NOT `alembic revision --autogenerate`: raw autogenerate is prohibited
+        # in this repo. The `coord` schema is almost entirely unmodeled — the
+        # chain creates ~78 coord tables and only 3 have a SQLAlchemy model —
+        # so autogenerate diffs Base.metadata against the live DB, cannot see
+        # the other ~75, and proposes DROPPING them. Bare `alembic revision`
+        # scaffolds an EMPTY revision (correct down_revision, empty
+        # upgrade/downgrade bodies); revision_environment is off, so env.py
+        # and target_metadata never load and no model diff can occur.
+        print("  # Scaffold an empty revision — never --autogenerate:")
+        print("  poetry run alembic revision -m 'description'")
+        print("  # Hand-author upgrade()/downgrade() to match your .sql file,")
+        print("  # giving every op an explicit schema= argument, then:")
         print("  git add backend/alembic/versions/... " + violations[0])
         return 1
 
-    print(f"\n✓ All .sql files have companion revisions (or are exempt)")
+    print("\n✓ All .sql files have companion revisions (or are exempt)")
     return 0
 
 
