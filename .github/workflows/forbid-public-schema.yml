@@ -6,7 +6,9 @@ name: forbid public.* schema regressions
 # Fails if any source file (re-)introduces a `public.<table>` schema
 # reference. Post-Phase-7 the `public` schema contains only
 # `alembic_version` (alembic's own bookkeeping); domain tables live in
-# project / coord / agent / auth / cloud.
+# project / coord / agent / auth / cloud / strategy / web (the canonical
+# set in .pre-commit-hooks/check_alembic_schema_args.py's ALLOWED_SCHEMAS —
+# keep this comment in sync with it).
 #
 # Exclusions (legitimate public.* references that must not trigger):
 # - All Markdown documentation (historical context, plan archaeology).
@@ -65,7 +67,7 @@ jobs:
           forbidden=$(echo "$matches" | grep -v 'public\.alembic_version' | grep -v '^$' || true)
 
           if [ -n "$forbidden" ]; then
-            echo "::error::public.* schema reference detected in source. Post-Phase-7, the public schema contains only alembic_version; domain tables live in project / coord / agent / auth / cloud."
+            echo "::error::public.* schema reference detected in source. Post-Phase-7, the public schema contains only alembic_version; domain tables live in project / coord / agent / auth / cloud / strategy / web."
             echo "$forbidden"
             echo "::error::If this is a legitimate historical reference (docs, alembic chain history), add the file pattern to the exclude list in .github/workflows/forbid-public-schema.yml."
             echo "::error::If the reference is to public.alembic_version, the filter should already exclude it — surface to the gate maintainer if it is failing on that pattern."

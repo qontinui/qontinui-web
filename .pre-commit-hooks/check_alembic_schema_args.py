@@ -344,11 +344,14 @@ def check_file(path: Path) -> list[str]:
 SCOPED_DIRS = (
     # Post-transplant scope: every alembic revision lives in versions/
     # now. Pre-consolidation revisions still use unqualified table
-    # names that resolve to `public` via search_path; the gate accepts
-    # `public` (in ALLOWED_SCHEMAS) so existing files don't false-
-    # positive. New PRs that add canonical-schema ops must pass the
-    # gate. The previous `_staged_consolidation/`-only scope predated
-    # the transplant; that directory no longer exists post-transplant.
+    # names that resolve to `public` via search_path — those don't
+    # false-positive because pre-commit only passes CHANGED files
+    # (see module docstring), not because `public` is an allowed
+    # schema: it was dropped from ALLOWED_SCHEMAS post-Phase-7 (see
+    # module docstring above). New PRs that add canonical-schema ops
+    # must pass the gate. The previous `_staged_consolidation/`-only
+    # scope predated the transplant; that directory no longer exists
+    # post-transplant.
     Path("backend/alembic/versions"),
 )
 
