@@ -406,6 +406,11 @@ class MemoryQueryRequest(BaseModel):
     # into ``hits``, whose RRF ranking means something else. DEFAULT-OFF
     # behind ``settings.MEMORY_ANCHORED_RECALL_ENABLED``; when the flag is
     # off the arm is skipped and ``anchored_arm`` says so.
+    #
+    # Independent of ``link_expansion`` above: separate request field,
+    # separate settings flag, separate response arm, and neither reads the
+    # other's state. The link arm re-fuses INTO ``hits`` by RRF; this one
+    # never touches ``hits``.
     anchored_to: list[AnchoredTo] | None = Field(
         default=None, max_length=MAX_ANCHORED_TO_CLAUSES
     )
