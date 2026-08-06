@@ -2980,7 +2980,9 @@ async def find_near_duplicate_pairs(
 
     This arm is BROADER than the clustering one: 0.95 cosine over a
     90-day window across ALL kinds, where :func:`fetch_cluster_candidates`
-    only ever sees ``episode``/``observation``. It also runs FIRST in
+    only ever sees ``episode`` (it read ``episode``/``observation`` until
+    #932 narrowed it, which widens this gap rather than closing it). It
+    also runs FIRST in
     ``consolidate_tenant``, so an anchored row reaches it before the
     clustering gate ever gets a chance.
 
@@ -3187,8 +3189,11 @@ async def fetch_cluster_candidates(
     today — enrolled in the same lifecycle.
 
     Near-duplicate merge (`find_near_duplicate_pairs`, cosine > 0.95) is a
-    SEPARATE supersede path and is deliberately untouched: collapsing genuine
-    duplicates is not lossy in the way distillation is.
+    SEPARATE supersede path, and the KIND narrowing above deliberately does
+    not extend to it: collapsing genuine duplicates is not lossy in the way
+    distillation is, so it still runs across all kinds. (It does carry the
+    anchor term below — that exemption is about the anchor, not the kind, and
+    applies to every path that supersedes a row it did not author.)
 
     Rows held by :func:`_not_lifecycle_held` are excluded. This is the
     DOMINANT supersede path of the two: a cluster that survives synthesis
@@ -3221,6 +3226,33 @@ async def fetch_cluster_candidates(
     can sit in an inconsistent combination of the two. Do not "clean up"
     this predicate without also removing the decay one; they are the same
     rule and neither is meaningful alone.
+
+    ## The two terms are INDEPENDENT — do not collapse them
+
+    ``kind = 'episode'`` and ``anchors = '[]'::jsonb`` arrived from two
+    different investigations and neither implies the other. Spelled out
+    because they now sit on adjacent lines of one ``WHERE``, which is exactly
+    the shape that invites a future reader to delete one as redundant:
+
+    * The KIND term says ``observation`` was never the right kind for a
+      distillation path that supersedes its members — it is about which
+      POPULATION consolidation was designed for. It would be correct even if
+      anchors had never been built.
+    * The ANCHOR term says a record whose truth is owned by an external
+      artifact is invalidated by that artifact and by nothing else — it is
+      about the INVALIDATION SOURCE, and it is applied identically to
+      ``decay_invalidate``, ``supersede_many`` and both join sides of
+      ``find_near_duplicate_pairs``, none of which carry the kind term.
+      It would be correct even if consolidation still read observations.
+
+    Their conjunction has a real, INTENDED consequence: **an anchored episode
+    stops consolidating.** That is not an accident of stacking two filters. An
+    anchored episode is a claim about a live artifact, and the whole point of
+    Phase 3 is that such a claim is retired by its anchor going ``gone``, not
+    by being folded into a summary that then prunes it. Removing either term
+    to "let anchored episodes cluster again" reopens a defect that cost 597
+    documents (the kind term) or defeats the plan's central thesis (the anchor
+    term). Remove neither without the other's investigation redone.
     """
     rows = await session.execute(
         text(

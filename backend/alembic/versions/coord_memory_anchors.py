@@ -89,6 +89,21 @@ from collections.abc import Sequence
 from alembic import op
 
 # revision identifiers, used by Alembic.
+#
+# Re-chained TWICE, and the second time is the argument for the note. This
+# revision was authored on ``avac_01_agent_commands``, which main has since
+# given a SECOND child (``coord_memory_obs_access_distribution``). Two children
+# of one parent is a FORK — two heads the moment this lands, and coord's
+# migration-state read escalates a predicted fork to ``divergent`` as soon as
+# the PR is visible. It was re-chained onto ``coord_primary_trees_selfheal_backfill``
+# on 2026-08-05, and main moved again the same night (``parkwuslug_01`` #907,
+# ``coord_tenant_warm_bytes_01`` #916), which forked it a second time — so this
+# now sits on ``coord_tenant_warm_bytes_01``, main's actual head.
+#
+# If main moves again before this merges, re-chain again; prove it with
+# ``ScriptDirectory.from_config(...).get_heads()`` returning exactly ONE head,
+# never by reading one file. Re-point the ``Revises:`` line in the docstring
+# above in the same edit — it is the only other place the parent is written.
 revision: str = "coord_memory_anchors"
 down_revision: str | Sequence[str] | None = "coord_tenant_warm_bytes_01"
 branch_labels: str | Sequence[str] | None = None
