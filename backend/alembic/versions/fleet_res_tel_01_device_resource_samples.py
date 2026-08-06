@@ -18,7 +18,7 @@ nothing to degrade today; the obligation runs the other way, on the coord PR
 that follows: its read must degrade on a missing relation
 (``pg_error::is_missing_schema_object``, or the module-local
 ``is_missing_relation`` that ``src/ci_dispatch.rs:122`` already uses for
-exactly this at eleven call sites) so a coord deploy that lands ahead of this
+exactly this at nine call sites) so a coord deploy that lands ahead of this
 migration fails open rather than erroring.
 
 What this table is for
