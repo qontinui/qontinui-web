@@ -119,12 +119,37 @@ export function SessionComplianceReportDialog({
             )}
 
             {absent ? (
-              <div className="rounded-lg border border-border bg-muted/40 px-3 py-3 text-sm text-muted-foreground">
-                This session closed without emitting a POLICY_COMPLIANCE block,
-                so there is nothing to reconcile. That is recorded as unverified
-                with the reason <code>absent</code> — the same verdict as a
-                report whose claims didn&apos;t hold up, because in both cases
-                the work was not shown to be finished.
+              <div
+                className="rounded-lg border border-border bg-muted/40 px-3 py-3 text-sm text-muted-foreground"
+                data-testid="absent-explanation"
+              >
+                {/*
+                  Whether the session CLOSED is a separate fact from whether a
+                  report is absent, and only coord's `finalized` flag carries
+                  it. This paragraph used to assert "This session closed"
+                  for every absent row — which, for a still-running session,
+                  contradicted the "still running" notice directly above it and
+                  claimed an ending that had not happened.
+
+                  It was unreachable until enforcement was switched on: while
+                  every verdict was `not_applicable`, `absent` never rendered.
+                  Under `mode: nudge` a verdict is rewritten at EVERY turn end,
+                  so the mid-session absent row is now the common case, not the
+                  edge one.
+
+                  Three states, because `finalized` absent means UNKNOWN and
+                  unknown may not be reported as either — the same rule the
+                  sessions table applies to the "not final" marker.
+                */}
+                {row.finalized === true
+                  ? "This session closed without emitting a POLICY_COMPLIANCE block, so there was nothing to reconcile."
+                  : row.finalized === false
+                    ? "This session has not emitted a POLICY_COMPLIANCE block as of this turn end, so there is nothing to reconcile yet — it may still emit one before it closes."
+                    : "No POLICY_COMPLIANCE block has been recorded for this session, so there is nothing to reconcile."}{" "}
+                That is recorded as unverified with the reason{" "}
+                <code>absent</code> — the same verdict as a report whose claims
+                didn&apos;t hold up, because in both cases the work was not
+                shown to be finished.
               </div>
             ) : row.report == null ? (
               /* Not the same claim as "no report": coord said nothing about

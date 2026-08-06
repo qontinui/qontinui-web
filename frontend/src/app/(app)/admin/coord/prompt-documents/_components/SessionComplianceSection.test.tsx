@@ -209,6 +209,82 @@ describe("SessionComplianceSection", () => {
     expect(count).not.toHaveTextContent("0");
   });
 
+  /**
+   * Whether a session CLOSED and whether its report is ABSENT are separate
+   * facts, and only coord's `finalized` flag carries the first.
+   *
+   * The absent explanation asserted "This session closed without emitting a
+   * POLICY_COMPLIANCE block" for every absent row — so a live session got that
+   * sentence immediately after the "This session is still running" notice, the
+   * two contradicting each other one line apart, and the page claimed an ending
+   * that had not happened.
+   *
+   * It was unreachable until enforcement was switched on: while every verdict
+   * was `not_applicable`, the absent branch never rendered at all. Under
+   * `mode: nudge` a verdict is rewritten at EVERY turn end, which makes the
+   * mid-session absent row the common case rather than the edge one.
+   */
+  it("does not claim a still-running session has closed", async () => {
+    const user = userEvent.setup();
+    routeGets({
+      sessions: {
+        sessions: [
+          {
+            id: "sc-4",
+            claude_session_id: "sess-live-absent",
+            verdict: "unverified",
+            reason: "absent",
+            report: null,
+            reconciliation: { reason: "absent", items: [] },
+            checked_at: "2026-08-06T15:42:36Z",
+            finalized: false,
+          },
+        ],
+      },
+    });
+
+    render(<SessionComplianceSection />);
+    await user.click(
+      await screen.findByTestId("compliance-open-report-sess-live-absent")
+    );
+
+    const explanation = await screen.findByTestId("absent-explanation");
+    expect(explanation).not.toHaveTextContent(/this session closed/i);
+    expect(explanation).toHaveTextContent(/has not emitted/i);
+    // Softening the wording must not soften the VERDICT — it is still
+    // unverified, and the reason is still named.
+    expect(explanation).toHaveTextContent(/unverified with the reason/i);
+  });
+
+  it("still says a closed session closed", async () => {
+    const user = userEvent.setup();
+    routeGets({
+      sessions: {
+        sessions: [
+          {
+            id: "sc-5",
+            claude_session_id: "sess-closed-absent",
+            verdict: "unverified",
+            reason: "absent",
+            report: null,
+            reconciliation: { reason: "absent", items: [] },
+            checked_at: "2026-08-06T15:42:36Z",
+            finalized: true,
+          },
+        ],
+      },
+    });
+
+    render(<SessionComplianceSection />);
+    await user.click(
+      await screen.findByTestId("compliance-open-report-sess-closed-absent")
+    );
+
+    expect(await screen.findByTestId("absent-explanation")).toHaveTextContent(
+      /this session closed without emitting/i
+    );
+  });
+
   it("distinguishes an unresolved clause lookup from a removed clause", async () => {
     routeGets({
       config: {
