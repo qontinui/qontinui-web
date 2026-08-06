@@ -7,10 +7,20 @@
 // coord already DETECTS a wedged PR and already NOTIFIES its author
 // (`GET /pr-merge/:repo/stuck-nudges`). What it has never exposed to the party
 // who owns the PR is a door: the levers that clear a wedge
-// (`POST /pr-merge/proposals/:id/cancel`, `POST /pr-merge/prs/:o/:n/:pr/
+// (`POST /pr-merge/tenant/proposals/:id/cancel`, `POST /pr-merge/prs/:o/:n/:pr/
 // reevaluate`) were admin-only. Phase 1/2 of the plan moves those two onto a
-// Tier-2 (`require_jwt` + tenant-owns-repo) authorization tier — the PATHS do
-// not change, only the tier — and this module is the web half.
+// Tier-2 (`require_jwt`-or-operator-Cognito + tenant-owns-repo) authorization
+// tier, and this module is the web half.
+//
+// The two levers moved differently, and the difference is load-bearing here:
+//   * `reevaluate` kept its URL — only its tier changed, so there is exactly
+//     one registration and no admin twin.
+//   * `cancel` got a DISTINCT `/tenant/` path. The admin cancel survives as the
+//     only door to the terminal reap-hardcap unblock (a capability Tier 2 is
+//     refused, not merely rate-limited), and axum forbids two handlers on one
+//     path. So a `device`/`agent` lever must name `/pr-merge/tenant/proposals/
+//     :id/cancel`; only the `operator_cognito` hardcap lever names the bare
+//     admin path.
 //
 // ---------------------------------------------------------------------------
 // Why the types below mirror coord's `diagnose.rs` verbatim
@@ -100,8 +110,8 @@ export interface Lever {
  * coord route the web backend proxies:
  *
  * - `reevaluate`     → `POST /pr-merge/prs/:owner/:name/:pr/reevaluate`
- * - `cancel_stop`    → `POST /pr-merge/proposals/:id/cancel {"unblock": false}`
- * - `cancel_unblock` → `POST /pr-merge/proposals/:id/cancel {"unblock": true}`
+ * - `cancel_stop`    → `POST /pr-merge/tenant/proposals/:id/cancel {"unblock": false}`
+ * - `cancel_unblock` → `POST /pr-merge/tenant/proposals/:id/cancel {"unblock": true}`
  *
  * `cancel_stop` and `cancel_unblock` are deliberately SEPARATE actions and
  * never share a button: they read identically as "Cancel" and do opposite
@@ -372,7 +382,14 @@ function leverCancelStop(
   opts: { safeNow: boolean; why?: string }
 ): StuckPrLever {
   return {
-    lever: `POST /pr-merge/proposals/${proposalId}/cancel {"unblock": false}`,
+    // The TIER-2 path. coord serves proposal-cancel on two paths, and the one
+    // named here must match this lever's `required_identity`: `/tenant/…` is
+    // Tier 2 (ownership floor, rate-limited, refuses the hardcap breaker),
+    // while the bare `/pr-merge/proposals/:id/cancel` is the admin escalation
+    // door — see `leverHardcapUnblock`, which is `operator_cognito` and names
+    // that one. Printing the admin path on a `device` lever would hand a tenant
+    // a call they are 403'd on.
+    lever: `POST /pr-merge/tenant/proposals/${proposalId}/cancel {"unblock": false}`,
     transport: "http",
     required_identity: "device",
     safe_now: opts.safeNow,
@@ -399,7 +416,8 @@ function leverCancelStop(
  */
 function leverCancelUnblock(proposalId: string): StuckPrLever {
   return {
-    lever: `POST /pr-merge/proposals/${proposalId}/cancel {"unblock": true}`,
+    // Tier-2 path — see the note in `leverCancelStop`.
+    lever: `POST /pr-merge/tenant/proposals/${proposalId}/cancel {"unblock": true}`,
     transport: "http",
     required_identity: "device",
     safe_now: true,
