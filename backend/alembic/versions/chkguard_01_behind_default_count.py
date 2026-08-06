@@ -22,6 +22,16 @@ distance from ``origin/<default_branch>`` explicitly, so the watcher can fire
 the parked-on-merged-branch staleness signal regardless of which branch the
 checkout currently sits on.
 
+Clarified 2026-08-05: where this docstring calls ``behind_count`` "the existing
+column", that was true of the PRODUCTION database but NOT of the alembic chain
+at the time this revision was authored. ``behind_count`` (with ``head_detached``
+and ``untracked_count``) existed only because the since-deleted Rust
+``ALTER TABLE`` self-heal created it, so a FRESH database migrated to head did
+not have it. It joined the chain in ``coord_primary_trees_selfheal_backfill``
+(plan ``2026-07-28-web-primary-trees-backfill-migration``), and the statement
+now holds for both. Recorded because this phrasing — repeated across two
+migrations — is what made the chain gap look already-solved for two months.
+
 * ``behind_default_count INTEGER`` (nullable) — ``git rev-list --count
   HEAD..origin/<default_branch>`` as computed by the runner publisher
   (``capture_tree``). NULL = not sampled / on the default branch (where the
