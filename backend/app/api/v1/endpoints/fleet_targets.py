@@ -64,6 +64,29 @@ async def list_apps(
     return [AppConfig.model_validate(row) for row in result.scalars().all()]
 
 
+def _normalize_command(raw: str) -> str | None:
+    """Blank (empty or whitespace-only) clears the column; otherwise store trimmed.
+
+    The trim is load-bearing, not tidiness. The previous ``raw or None`` used
+    Python truthiness, so ``""`` cleared but ``"   "`` was **stored verbatim** —
+    and the runner's auto-fresh engine runs a stored command with
+    ``sh -c``/``cmd /C`` and checks only the exit status. A whitespace command
+    exits 0 on every platform, so the engine recorded a successful build having
+    built nothing, and marked the app ``fresh`` at the newly-pulled SHA. The
+    ``fresh_only`` dispatcher then routes tests to that host while it still
+    serves the previous artifact.
+
+    ``project.apps`` has TWO independent writers: this backend, and the runner's
+    own ``PATCH /apps/:app_id``. On ``main`` today the runner side does NOT
+    normalize — it applies ``COALESCE($n, column)``, which stores ``""`` and
+    ``"   "`` verbatim and cannot clear a command at all. A companion runner
+    change adds the matching ``normalize_command``; until it lands, this
+    endpoint is the only normalized door, and the runner's engine-side blank
+    check is what protects rows written through the other one.
+    """
+    return raw.strip() or None
+
+
 @router.patch("/apps/{app_id}", response_model=AppConfig)
 async def update_app_config(
     app_id: str,
@@ -74,7 +97,7 @@ async def update_app_config(
     """Edit an app's update strategy + build/start commands.
 
     Fields left ``None`` are unchanged. ``build_command`` / ``start_command``
-    can be cleared by sending an empty string.
+    are cleared by sending a blank value (empty or whitespace-only).
     """
     app = await db.get(App, app_id)
     if app is None:
@@ -86,9 +109,9 @@ async def update_app_config(
     if body.update_strategy is not None:
         app.update_strategy = body.update_strategy.value
     if body.build_command is not None:
-        app.build_command = body.build_command or None
+        app.build_command = _normalize_command(body.build_command)
     if body.start_command is not None:
-        app.start_command = body.start_command or None
+        app.start_command = _normalize_command(body.start_command)
 
     await db.commit()
     await db.refresh(app)
