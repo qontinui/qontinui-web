@@ -19,7 +19,7 @@ import {
   fuseStuckCandidates,
   type StuckCandidate,
 } from "./StuckPrRecoveryPanel";
-import { EVIDENCE_REAP_HARDCAP_PREFIX } from "./stuckPrDiagnosis";
+import { EVIDENCE_REAP_HARDCAP_PREFIX, type StuckPr } from "./stuckPrDiagnosis";
 import type { PrRow } from "./mergeTypes";
 
 /**
@@ -100,6 +100,18 @@ function zombieProposal(overrides: Record<string, unknown> = {}) {
     candidate_ref: "refs/heads/coord/mc/1",
     error: null,
     had_rebase_conflict: false,
+    status_note: null,
+    ...overrides,
+  };
+}
+
+/** One `stuck_now[]` PR as `parseStuckNudges` hands it to the fusion. */
+function nudgedPr(overrides: Partial<StuckPr> & { prNumber: number }): StuckPr {
+  return {
+    reason: null,
+    nudgeCount: 0,
+    lastNudgedAt: null,
+    lastOutcome: null,
     ...overrides,
   };
 }
@@ -128,7 +140,7 @@ describe("fuseStuckCandidates", () => {
   it("takes coord's live nudges AND stale non-terminal proposals", () => {
     const got = fuseStuckCandidates(
       REPO,
-      [{ prNumber: 7, reason: "merge_conflict", nudgeCount: 2 }],
+      [nudgedPr({ prNumber: 7, reason: "merge_conflict", nudgeCount: 2 })],
       3,
       [stalePrRow(9) as PrRow]
     );
@@ -140,10 +152,31 @@ describe("fuseStuckCandidates", () => {
     expect(got[1].blockingSummary).toBe("waiting for candidate CI");
   });
 
+  it("carries the nudge history `parseStuckNudges` resolved", () => {
+    // These two were parsed off coord's `nudges[]` and then dropped here, so
+    // the diagnosis could never date the problem or say whether the author was
+    // actually reached.
+    const got = fuseStuckCandidates(
+      REPO,
+      [
+        nudgedPr({
+          prNumber: 7,
+          nudgeCount: 2,
+          lastNudgedAt: "2026-08-07T09:00:00Z",
+          lastOutcome: "delivered",
+        }),
+      ],
+      3,
+      []
+    );
+    expect(got[0].lastNudgedAt).toBe("2026-08-07T09:00:00Z");
+    expect(got[0].lastOutcome).toBe("delivered");
+  });
+
   it("enriches a nudged PR with coord's blocking summary rather than duplicating it", () => {
     const got = fuseStuckCandidates(
       REPO,
-      [{ prNumber: 7, reason: "merge_conflict", nudgeCount: 1 }],
+      [nudgedPr({ prNumber: 7, reason: "merge_conflict", nudgeCount: 1 })],
       3,
       [{ ...stalePrRow(7), blocking_summary: "conflict with base" } as PrRow]
     );
@@ -455,5 +488,123 @@ describe("<StuckPrRecoveryPanel>", () => {
     await waitFor(() =>
       expect(screen.queryByTestId("stuck-pr-panel")).toBeNull()
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The verdict read, and what it corrects
+// ---------------------------------------------------------------------------
+
+describe("<StuckPrRecoveryPanel> — the verdict overrides the age screen", () => {
+  it("stays silent about a proposal that is old but still moving", async () => {
+    // `/pr-merge/prs` carries proposal AGE only, so an ordinary 45-minute CI
+    // round trip clears the candidate screen. Before the verdict was consulted
+    // for the list, this rendered "1 pull request is stuck in the merge queue"
+    // over a 0.3-confidence guess about a perfectly healthy PR.
+    wire({
+      prs: [stalePrRow(503)],
+      proposal: zombieProposal({ seconds_since_update: 90 }),
+    });
+    const { container } = render(<StuckPrRecoveryPanel />);
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some((c) =>
+          String(c[0]).includes("/pr-merge/verdict/")
+        )
+      ).toBe(true)
+    );
+    await waitFor(() => expect(container.textContent).toBe(""));
+    expect(screen.queryByTestId("stuck-pr-panel")).toBeNull();
+  });
+
+  it("keeps a moving proposal that coord's live nudges DID flag", async () => {
+    // The screen was not the only accuser, so there is nothing to retract.
+    wire({
+      stuckNow: [{ pr_number: 503, reason: "merge_conflict" }],
+      proposal: zombieProposal({ seconds_since_update: 90 }),
+    });
+    render(<StuckPrRecoveryPanel />);
+    expect(await screen.findByTestId("stuck-pr-panel")).toBeTruthy();
+  });
+
+  it("leads with coord's own status/error contradiction", async () => {
+    wire({
+      prs: [stalePrRow(503)],
+      proposal: zombieProposal({
+        error: "authority_mismatch",
+        status_note:
+          "status `awaiting-ci` describes this proposal's QUEUE SLOT, not " +
+          "its outcome",
+      }),
+    });
+    render(<StuckPrRecoveryPanel />);
+
+    const first = (await screen.findAllByTestId("stuck-pr-hypothesis"))[0];
+    expect(first.getAttribute("data-hypothesis")).toBe(
+      "status-contradicts-recorded-error"
+    );
+    expect(first.textContent).toContain("QUEUE SLOT");
+    // The duplicate it replaces must be gone.
+    expect(
+      screen
+        .queryAllByTestId("stuck-pr-hypothesis")
+        .map((n) => n.getAttribute("data-hypothesis"))
+    ).not.toContain("stale-proposal-zombie");
+  });
+
+  it("sends a rebase conflict to the branch, not to a same-commit retry", async () => {
+    wire({
+      prs: [stalePrRow(503)],
+      proposal: zombieProposal({
+        status: "conflict",
+        had_rebase_conflict: true,
+      }),
+    });
+    render(<StuckPrRecoveryPanel />);
+
+    const first = (await screen.findAllByTestId("stuck-pr-hypothesis"))[0];
+    expect(first.getAttribute("data-hypothesis")).toBe(
+      "rebase-conflict-needs-your-branch"
+    );
+    // "Clear the block and try again" would re-run the same rebase into the
+    // same conflict, so that button must not exist on this card.
+    expect(screen.queryByTestId("stuck-pr-lever-cancel_unblock")).toBeNull();
+    expect(
+      screen.getAllByTestId("stuck-pr-lever-manual").length
+    ).toBeGreaterThan(0);
+  });
+
+  it("names the candidate ref a cancel would delete", async () => {
+    wire({ prs: [stalePrRow(503)], proposal: zombieProposal() });
+    render(<StuckPrRecoveryPanel />);
+    const evidence = await screen.findByTestId("stuck-pr-evidence");
+    expect(evidence.textContent).toContain("refs/heads/coord/mc/1");
+  });
+
+  it("says so when coord's author nudges are switched off for the repo", async () => {
+    // Zero nudges with the flag OFF is not "coord saw nothing wrong" — coord
+    // was not looking, and the card must not read the silence as health.
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes("/stuck-nudges")) {
+        return Promise.resolve(
+          jsonResponse({
+            repo: REPO,
+            enabled: false,
+            max_nudges: 3,
+            nudges: [],
+            stuck_now: [],
+          })
+        );
+      }
+      if (url.includes("/pr-merge/verdict/")) {
+        return Promise.resolve(jsonResponse({ proposal: zombieProposal() }));
+      }
+      return Promise.resolve(
+        jsonResponse({ prs: [stalePrRow(503)], total: 1 })
+      );
+    });
+    render(<StuckPrRecoveryPanel />);
+    const evidence = await screen.findByTestId("stuck-pr-evidence");
+    expect(evidence.textContent).toContain("author nudges are off");
   });
 });

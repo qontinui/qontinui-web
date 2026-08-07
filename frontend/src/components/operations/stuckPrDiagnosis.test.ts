@@ -12,6 +12,7 @@ import {
   durationLabel,
   identityLabel,
   isHardcapError,
+  isRetractedByVerdict,
   isTerminalProposalStatus,
   leverAffordance,
   parseProposalView,
@@ -45,6 +46,7 @@ function proposal(overrides: Partial<ProposalView> = {}): ProposalView {
     candidateRef: "refs/heads/coord/merge-candidate/1",
     error: null,
     hadRebaseConflict: false,
+    statusNote: null,
     ...overrides,
   };
 }
@@ -56,6 +58,9 @@ function input(overrides: Partial<StuckPrInput> = {}): StuckPrInput {
     reason: null,
     nudgeCount: 0,
     maxNudges: 3,
+    lastNudgedAt: null,
+    lastOutcome: null,
+    nudgesEnabled: true,
     blockingSummary: null,
     proposal: null,
     proposalLoaded: true,
@@ -92,6 +97,8 @@ describe("parseProposalView", () => {
           candidate_ref: "refs/heads/x",
           error: "boom",
           had_rebase_conflict: true,
+          status_note:
+            "status `awaiting-ci` describes this proposal's QUEUE SLOT",
         },
       })
     ).toEqual<ProposalView>({
@@ -102,7 +109,17 @@ describe("parseProposalView", () => {
       candidateRef: "refs/heads/x",
       error: "boom",
       hadRebaseConflict: true,
+      statusNote: "status `awaiting-ci` describes this proposal's QUEUE SLOT",
     });
+  });
+
+  it("nulls `status_note` when coord omits it (status and error agree)", () => {
+    // coord emits the key only on the contradiction, so its absence is the
+    // common case and must not become a truthy empty string.
+    const parsed = parseProposalView({
+      proposal: { proposal_id: "a", status: "queued" },
+    });
+    expect(parsed?.statusNote).toBeNull();
   });
 
   it("returns null when coord omits `proposal` (no attempt at this head)", () => {
@@ -413,6 +430,255 @@ describe("diagnoseStuckPr", () => {
     const b = diagnoseStuckPr(args).map((h) => h.hypothesis);
     expect(a).toEqual(b);
     expect(a[0]).toBe("merge-conflict-blocks-candidate");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fields coord returns that the card must actually READ
+// ---------------------------------------------------------------------------
+
+describe("diagnoseStuckPr — coord's status/error contradiction", () => {
+  const NOTE =
+    "status `awaiting-ci` describes this proposal's QUEUE SLOT, not its " +
+    "outcome — the row carries an error, so a prior attempt did not complete: " +
+    'authority_mismatch. Do NOT read `awaiting-ci` as "still waiting".';
+
+  it("leads with `status_note` and outranks every inferred hypothesis", () => {
+    // coord ASSERTS this one; everything else on the card is inferred from
+    // shapes. It has to sort first or the user reads the guess and stops.
+    const got = diagnoseStuckPr(
+      input({
+        proposal: proposal({
+          status: "awaiting-ci",
+          error: "authority_mismatch",
+          statusNote: NOTE,
+          secondsSinceUpdate: STALE_PROPOSAL_SECS + 1,
+        }),
+      })
+    );
+    expect(got[0].hypothesis).toBe("status-contradicts-recorded-error");
+    expect(got[0].confidence).toBeGreaterThan(0.9);
+    expect(
+      got[0].evidence.some((e) => e.pointer.endsWith(".status_note"))
+    ).toBe(true);
+  });
+
+  it("suppresses the zombie hypothesis it would otherwise duplicate", () => {
+    // Same stale row: without the note this is `stale-proposal-zombie`. With
+    // it, "coord says exactly why" must not sit above "we don't know why".
+    const stale = {
+      status: "awaiting-ci",
+      secondsSinceUpdate: STALE_PROPOSAL_SECS + 1,
+    };
+    const without = diagnoseStuckPr(input({ proposal: proposal(stale) })).map(
+      (h) => h.hypothesis
+    );
+    const withNote = diagnoseStuckPr(
+      input({ proposal: proposal({ ...stale, statusNote: NOTE }) })
+    ).map((h) => h.hypothesis);
+
+    expect(without).toContain("stale-proposal-zombie");
+    expect(withNote).not.toContain("stale-proposal-zombie");
+  });
+
+  it("respects coord's land-in-flight refusal when the note fires on `landing`", () => {
+    // `status_note` fires on any in-flight status, `landing` included. Offering
+    // an enabled cancel there would be a button coord answers with a 409.
+    const got = diagnoseStuckPr(
+      input({
+        proposal: proposal({
+          status: "landing",
+          error: "boom",
+          statusNote: NOTE,
+        }),
+      })
+    );
+    const top = got.find(
+      (h) => h.hypothesis === "status-contradicts-recorded-error"
+    );
+    expect(top).toBeDefined();
+    expect(leverFor([top!], "cancel_unblock")).toBeUndefined();
+    expect(leverAffordance(leverFor([top!], "cancel_stop")!).kind).toBe(
+      "blocked"
+    );
+  });
+});
+
+describe("diagnoseStuckPr — had_rebase_conflict", () => {
+  it("does NOT offer a same-commit retry for a rebase conflict", () => {
+    // The regression this guards: `conflict` is terminal, so without reading
+    // `had_rebase_conflict` the terminal-prior arm fires and leads with "Clear
+    // the block and try again" — a retry that re-runs the same rebase into the
+    // same conflict.
+    const got = diagnoseStuckPr(
+      input({
+        proposal: proposal({ status: "conflict", hadRebaseConflict: true }),
+      })
+    );
+    expect(got[0].hypothesis).toBe("rebase-conflict-needs-your-branch");
+    expect(got.map((h) => h.hypothesis)).not.toContain(
+      "terminal-prior-blocks-this-commit"
+    );
+    expect(leverFor(got, "cancel_unblock")).toBeUndefined();
+    // The real fix is in the user's checkout.
+    expect(leverAffordance(got[0].levers[0]).kind).toBe("manual");
+  });
+
+  it("still offers the retry for a terminal row that is NOT a rebase conflict", () => {
+    const got = diagnoseStuckPr(
+      input({
+        proposal: proposal({ status: "conflict", hadRebaseConflict: false }),
+      })
+    );
+    expect(got[0].hypothesis).toBe("terminal-prior-blocks-this-commit");
+    expect(leverFor(got, "cancel_unblock")).toBeDefined();
+  });
+
+  it("does not name the same conflict twice when stuck-nudges already did", () => {
+    const got = diagnoseStuckPr(
+      input({
+        reason: "merge_conflict",
+        proposal: proposal({ status: "conflict", hadRebaseConflict: true }),
+      })
+    ).map((h) => h.hypothesis);
+    expect(got).toContain("merge-conflict-blocks-candidate");
+    expect(got).not.toContain("rebase-conflict-needs-your-branch");
+  });
+
+  it("leaves the hardcap breaker ahead of it — that one is operator-only", () => {
+    const got = diagnoseStuckPr(
+      input({
+        proposal: proposal({
+          status: "conflict",
+          hadRebaseConflict: true,
+          error: `${EVIDENCE_REAP_HARDCAP_PREFIX}3 reaps`,
+        }),
+      })
+    ).map((h) => h.hypothesis);
+    expect(got).toContain("reap-hardcap-breaker-tripped");
+    expect(got).not.toContain("rebase-conflict-needs-your-branch");
+  });
+});
+
+describe("diagnoseStuckPr — nudge history and the nudge feature flag", () => {
+  it("carries `last_nudged_at` and `last_outcome` into the evidence", () => {
+    // Both were parsed off coord's payload and then dropped on the floor: a
+    // bare count cannot date the problem, and only `last_outcome` says whether
+    // the nudges coord counted ever reached anyone.
+    const got = diagnoseStuckPr(
+      input({
+        reason: "merge_conflict",
+        nudgeCount: 2,
+        lastNudgedAt: "2026-08-07T09:00:00Z",
+        lastOutcome: "delivered",
+      })
+    );
+    const pointers = got[0].evidence.map((e) => e.pointer);
+    expect(pointers.some((p) => p.endsWith(".last_nudged_at"))).toBe(true);
+    expect(pointers.some((p) => p.endsWith(".last_outcome"))).toBe(true);
+  });
+
+  it("says nudges are OFF rather than letting silence read as health", () => {
+    const got = diagnoseStuckPr(
+      input({
+        nudgesEnabled: false,
+        proposal: proposal({
+          status: "awaiting-ci",
+          secondsSinceUpdate: STALE_PROPOSAL_SECS + 1,
+        }),
+      })
+    );
+    const flag = got[0].evidence.find((e) => e.pointer.endsWith(".enabled"));
+    expect(flag?.value).toContain("false");
+  });
+
+  it("stays quiet about the flag when it is on", () => {
+    const got = diagnoseStuckPr(
+      input({
+        nudgesEnabled: true,
+        proposal: proposal({
+          status: "awaiting-ci",
+          secondsSinceUpdate: STALE_PROPOSAL_SECS + 1,
+        }),
+      })
+    );
+    expect(got[0].evidence.some((e) => e.pointer.endsWith(".enabled"))).toBe(
+      false
+    );
+  });
+
+  it("names the candidate ref a cancel would delete", () => {
+    const got = diagnoseStuckPr(
+      input({
+        proposal: proposal({
+          status: "awaiting-ci",
+          secondsSinceUpdate: STALE_PROPOSAL_SECS + 1,
+          candidateRef: "refs/heads/merge-candidate/abc",
+        }),
+      })
+    );
+    expect(
+      got[0].evidence.find((e) => e.pointer.endsWith(".candidate_ref"))?.value
+    ).toBe("refs/heads/merge-candidate/abc");
+  });
+});
+
+describe("isRetractedByVerdict", () => {
+  const moving = { status: "awaiting-ci", secondsSinceUpdate: 60 };
+
+  it("retracts a PR the age screen caught but the verdict cleared", () => {
+    // The false alarm: `/pr-merge/prs` only carries proposal AGE, so an
+    // ordinary 45-minute CI round trip clears the screen every time.
+    expect(isRetractedByVerdict(input({ proposal: proposal(moving) }))).toBe(
+      true
+    );
+  });
+
+  it("keeps the PR when coord's live nudges also accused it", () => {
+    expect(
+      isRetractedByVerdict(
+        input({ reason: "merge_conflict", proposal: proposal(moving) })
+      )
+    ).toBe(false);
+    expect(
+      isRetractedByVerdict(input({ nudgeCount: 1, proposal: proposal(moving) }))
+    ).toBe(false);
+  });
+
+  it("keeps the PR when the proposal is stalled, terminal, or contradicted", () => {
+    expect(
+      isRetractedByVerdict(
+        input({
+          proposal: proposal({
+            ...moving,
+            secondsSinceUpdate: STALE_PROPOSAL_SECS,
+          }),
+        })
+      )
+    ).toBe(false);
+    expect(
+      isRetractedByVerdict(
+        input({ proposal: proposal({ status: "conflict" }) })
+      )
+    ).toBe(false);
+    expect(
+      isRetractedByVerdict(
+        input({
+          proposal: proposal({ ...moving, statusNote: "contradiction" }),
+        })
+      )
+    ).toBe(false);
+  });
+
+  it("never retracts on an unsettled or absent read", () => {
+    // "Not read yet" and "no merge attempt" are the two states with the LEAST
+    // evidence — neither is grounds to tell the user nothing is wrong.
+    expect(
+      isRetractedByVerdict(
+        input({ proposal: proposal(moving), proposalLoaded: false })
+      )
+    ).toBe(false);
+    expect(isRetractedByVerdict(input({ proposal: null }))).toBe(false);
   });
 });
 
