@@ -153,11 +153,28 @@ function messageForClaimError(status: number, body: unknown): string {
  * history.replaceState so we don't trigger a Next.js navigation (which would
  * remount + re-fire the claim).
  *
- * Called after a claim resolves EITHER way. After success the code is spent, so
- * this stops a refresh re-POSTing it. After a `recover` the code is *unspent*
- * and the connect-state token is still live for the rest of its TTL — both are
- * credentials sitting in the address bar, browser history and the `Referer` of
- * anything the recover card links to, so they are worth dropping there too.
+ * Called ONCE, UNCONDITIONALLY, the moment the claim effect commits to running
+ * — before any branch, before any `await`, and before the claim POST is issued.
+ *
+ * This used to say "called after a claim resolves either way", and that was
+ * false: three exits returned without stripping — the hard claim error
+ * (403/409/500), the malformed-`installation_id` early return, and the async
+ * `catch` (network failure / non-JSON body). Each left a **live OAuth code and
+ * a live connect-state token** in the address bar, in browser history, and in
+ * the `Referer` of everything the page then renders (`OnboardingDoctor` mounts
+ * on the error path). The code stays spendable until it is spent; the token
+ * stays live for the rest of its 15-minute TTL.
+ *
+ * It deliberately is NOT a `finally`, and NOT a list of the failing exits:
+ * - a `finally` on the async IIFE cannot fire for the early returns, which run
+ *   before that IIFE is ever created;
+ * - an enumeration of exits was already wrong once, in this very file.
+ *
+ * Stripping up front is the only shape with no list to keep in sync, and it is
+ * strictly stronger: it shrinks the exposure window rather than merely closing
+ * the error paths. Nothing downstream reads these params back off the URL —
+ * `code`, `stateToken`, `stateLogin` and `installationIdRaw` are all captured in
+ * closure consts — and `firedRef` guards a re-fire if `searchParams` updates.
  */
 function stripClaimParamsFromUrl(): void {
   if (typeof window === "undefined") return;
@@ -213,6 +230,13 @@ export default function OnboardingStatusPage() {
     if (!hasClaimParams || firedRef.current) return;
     firedRef.current = true;
 
+    // Drop the live OAuth code + connect-state token from the URL FIRST, on
+    // EVERY path, before any branch or `await`. See `stripClaimParamsFromUrl`
+    // for why this is here and not in a `finally` or on the error returns.
+    // Every value the rest of this effect needs is already in a closure const
+    // above, so this cannot starve a downstream branch.
+    stripClaimParamsFromUrl();
+
     // FAIL CLOSED without a server-minted connect state. This callback carries a
     // live OAuth code, and until now a state-less one was claimed anyway —
     // binding whatever org the URL named into whichever tenant happened to load
@@ -226,7 +250,6 @@ export default function OnboardingStatusPage() {
           "will bring you straight back.",
       );
       setPhase("recover");
-      stripClaimParamsFromUrl();
       return;
     }
 
@@ -239,7 +262,6 @@ export default function OnboardingStatusPage() {
           "stopped before using it. Start the connect again below.",
       );
       setPhase("recover");
-      stripClaimParamsFromUrl();
       return;
     }
 
@@ -290,7 +312,6 @@ export default function OnboardingStatusPage() {
                 "stopped before binding anything. Start the connect again below.",
             );
             setPhase("recover");
-            stripClaimParamsFromUrl();
             return;
           }
           setClaimError(messageForClaimError(res.status, body));
@@ -299,9 +320,6 @@ export default function OnboardingStatusPage() {
         }
         setClaim(body as ClaimResponse);
         setPhase("success");
-        // The code + state are single-use — drop them so a refresh can't
-        // re-submit them.
-        stripClaimParamsFromUrl();
       } catch (e) {
         if (cancelled) return;
         setClaimError(e instanceof Error ? e.message : String(e));

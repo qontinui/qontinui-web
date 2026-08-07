@@ -288,6 +288,134 @@ describe("onboarding-status claim", () => {
 });
 
 /**
+ * The live OAuth `code` and the live connect-state token must leave the URL on
+ * EVERY outcome, not just the resolving-claim ones.
+ *
+ * Three exits used to return without stripping — the hard claim error, the
+ * malformed-`installation_id` early return, and the async `catch` — leaving both
+ * credentials in the address bar, in browser history, and in the `Referer` of
+ * everything the page then renders (`OnboardingDoctor` mounts on the error
+ * path). The fix strips once, unconditionally, up front; these tests pin that
+ * shape rather than the enumeration it replaced, which was already wrong once
+ * (plan `2026-08-01-connect-state-residual-hardenings` P2 / F7).
+ */
+describe("claim params are stripped on every exit", () => {
+  /** Point `window.location` at a real claim callback URL and track replaceState. */
+  function withCallbackUrl(search: string): { current: () => string } {
+    const href = `https://qontinui.io/admin/coord/onboarding-status?${search}`;
+    Object.defineProperty(window, "location", {
+      value: { ...originalLocation, assign: vi.fn(), href },
+      writable: true,
+    });
+    // `stripClaimParamsFromUrl` uses history.replaceState (deliberately — a
+    // Next.js navigation would remount and re-fire the claim), so the rewritten
+    // URL only ever shows up there.
+    let latest = href;
+    vi.spyOn(window.history, "replaceState").mockImplementation(
+      (_state, _unused, url) => {
+        latest = String(url);
+      }
+    );
+    return { current: () => latest };
+  }
+
+  function assertNoCredentials(url: string): void {
+    const params = new URL(url).searchParams;
+    expect(params.get("code")).toBeNull();
+    expect(params.get("state")).toBeNull();
+    // The non-credential params are NOT collateral damage.
+    expect(params.get("installation_id")).not.toBeNull();
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("drops code + state after a hard 403 claim error", async () => {
+    sessionStorage.setItem("qontinui.onboarding_connect_nonce", NONCE);
+    const search = `code=gho_code&installation_id=4242&state=connect~~${NONCE}~${TOKEN}`;
+    const url = withCallbackUrl(search);
+    mockSearchParams = new URLSearchParams(search);
+    fetchMock.mockResolvedValue(
+      jsonResponse({ error: "installation_not_administered" }, 403)
+    );
+
+    render(<OnboardingStatusPage />);
+
+    await screen.findByTestId("onboarding-claim-error");
+    assertNoCredentials(url.current());
+  });
+
+  it("drops code + state on the malformed installation_id return", async () => {
+    // The exit a `finally` on the async IIFE would have missed entirely: this
+    // returns before that IIFE is ever created, and it consumes nothing — so the
+    // code is still UNSPENT and the token still live for the rest of its TTL.
+    sessionStorage.setItem("qontinui.onboarding_connect_nonce", NONCE);
+    const search = `code=gho_code&installation_id=not-a-number&state=connect~~${NONCE}~${TOKEN}`;
+    const url = withCallbackUrl(search);
+    mockSearchParams = new URLSearchParams(search);
+
+    render(<OnboardingStatusPage />);
+
+    await screen.findByTestId("onboarding-claim-error");
+    expect(
+      fetchMock.mock.calls.filter((c) =>
+        String(c[0]).includes("/onboarding/claim")
+      )
+    ).toHaveLength(0);
+    assertNoCredentials(url.current());
+  });
+
+  it("drops code + state when the claim POST itself throws", async () => {
+    // The `catch` arm — a flaky network hits this one most often.
+    sessionStorage.setItem("qontinui.onboarding_connect_nonce", NONCE);
+    const search = `code=gho_code&installation_id=4242&state=connect~~${NONCE}~${TOKEN}`;
+    const url = withCallbackUrl(search);
+    mockSearchParams = new URLSearchParams(search);
+    fetchMock.mockRejectedValue(new Error("network down"));
+
+    render(<OnboardingStatusPage />);
+
+    await screen.findByTestId("onboarding-claim-error");
+    assertNoCredentials(url.current());
+  });
+
+  it("has ALREADY stripped the URL by the time the claim POST is issued", async () => {
+    // This is the assertion that pins the strip-up-front shape specifically: a
+    // `finally` (or a call on each error return) would still be carrying both
+    // credentials in the address bar for the whole duration of the round-trip.
+    sessionStorage.setItem("qontinui.onboarding_connect_nonce", NONCE);
+    const search = `code=gho_code&installation_id=4242&state=connect~~${NONCE}~${TOKEN}`;
+    const url = withCallbackUrl(search);
+    mockSearchParams = new URLSearchParams(search);
+
+    let urlAtPost: string | null = null;
+    fetchMock.mockImplementation((requested: string) => {
+      if (String(requested).includes("/onboarding/claim")) {
+        urlAtPost = url.current();
+      }
+      return Promise.resolve(
+        jsonResponse({
+          ok: true,
+          account_login: "acme",
+          installation_id: 4242,
+          tenant_id: "t-1",
+        })
+      );
+    });
+
+    render(<OnboardingStatusPage />);
+
+    await screen.findByTestId("onboarding-claim-success");
+    expect(urlAtPost).not.toBeNull();
+    assertNoCredentials(String(urlAtPost));
+    // …and the claim still carried the token it read BEFORE the strip, so
+    // stripping early cannot starve the request it precedes.
+    expect(claimBody().connect_state).toBe(TOKEN);
+  });
+});
+
+/**
  * The recovery card is the FOURTH connect-initiation site, and the only one
  * that *computes* its flow instead of hardcoding it. Inverting that ternary is
  * the cheapest possible regression in this feature — it would silently upgrade
