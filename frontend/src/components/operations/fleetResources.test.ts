@@ -15,7 +15,9 @@ import {
   classifyFreshness,
   coupledWslHeadroomBytes,
   describeFloor,
+  describePressureFloor,
   formatFloor,
+  formatPressureFloor,
   formatRatioOfCeiling,
   formatWarnMargin,
   hasPressureValue,
@@ -33,7 +35,11 @@ import {
   EXPIRED_AFTER_SECS,
   STALE_AFTER_SECS,
 } from "./fleetResources";
-import type { EffectiveFloor, ResourceSampleRow } from "./fleetResources";
+import type {
+  EffectiveFloor,
+  EffectivePressureFloor,
+  ResourceSampleRow,
+} from "./fleetResources";
 
 const GIB = 1024 ** 3;
 
@@ -56,6 +62,19 @@ const DISK_FLOOR: EffectiveFloor = {
   verdict: "reject",
   reject_bytes: 30 * GIB,
   reject_source: "policy",
+};
+
+/**
+ * The `ci_node` swap-ratio defer — the ONLY guard on the Linux lanes, since
+ * nothing in the fleet floors `mem_available_bytes`.
+ */
+const SWAP_FLOOR: EffectivePressureFloor = {
+  basis: "swap_ratio",
+  ratio: 0.5,
+  source: "default",
+  verdict: "defer",
+  reject_ratio: null,
+  reject_source: null,
 };
 
 function sample(overrides: Partial<ResourceSampleRow> = {}): ResourceSampleRow {
@@ -85,6 +104,8 @@ function sample(overrides: Partial<ResourceSampleRow> = {}): ResourceSampleRow {
     floor: MEM_FLOOR,
     disk_floor: DISK_FLOOR,
     headroom: "ok",
+    // The Windows host lane: byte floors, no pressure ceiling.
+    pressure_floor: null,
     ...overrides,
   };
 }
@@ -101,6 +122,7 @@ function preFloorSample(
   const row = sample(overrides);
   delete row.floor;
   delete row.disk_floor;
+  delete row.pressure_floor;
   delete row.headroom;
   return row;
 }
@@ -451,6 +473,100 @@ describe("§C3 — why a row is unknown has three distinct answers", () => {
       )
     ).toBe("unrecognized");
     expect(headroomReport(null)).toBe("absent");
+  });
+});
+
+describe("§C3 — the pressure axis, where the Linux lanes' only guard lives", () => {
+  it("renders the ratio on the same axis the pressure column already uses", () => {
+    // Directly comparable by eye with the row's pressure percentage — a
+    // threshold the operator cannot compare to the number beside it says
+    // nothing.
+    expect(formatPressureFloor(SWAP_FLOOR)).toBe("50% swap used");
+  });
+
+  it("runs the direction the OTHER way from a byte floor", () => {
+    // A byte floor is crossed going down; a pressure ceiling going up. One
+    // preposition cannot serve both without inverting the meaning.
+    const bytes = describeFloor(MEM_FLOOR)!;
+    const ratio = describePressureFloor(SWAP_FLOOR)!;
+    expect(bytes.axis).toBe("bytes");
+    expect(bytes.direction).toBe("below");
+    expect(ratio.axis).toBe("ratio");
+    expect(ratio.direction).toBe("at or above");
+    expect(ratio.direction).not.toBe(bytes.direction);
+    expect(ratio.verdictLabel).toBe("defers");
+  });
+
+  it("keeps 'no pressure threshold' apart from 'not reported'", () => {
+    // null on the Windows host lane is a fact: its guards are byte-based.
+    expect(describePressureFloor(null)).toBeNull();
+    expect(describePressureFloor(undefined)).toBeNull();
+    // …the distinction itself is carried by the row field, not the describer:
+    expect(sample().pressure_floor).toBeNull();
+    expect(preFloorSample().pressure_floor).toBeUndefined();
+  });
+
+  it("refuses a ratio outside [0, 1] rather than printing 110%", () => {
+    expect(describePressureFloor({ ...SWAP_FLOOR, ratio: 1.2 })).toBeNull();
+    expect(describePressureFloor({ ...SWAP_FLOOR, ratio: -0.1 })).toBeNull();
+    expect(describePressureFloor({ ...SWAP_FLOOR, ratio: NaN })).toBeNull();
+    expect(formatPressureFloor({ ...SWAP_FLOOR, ratio: 2 })).toBe("unknown");
+  });
+
+  it("carries a rejecting enforcer on the ratio axis too", () => {
+    const d = describePressureFloor({
+      ...SWAP_FLOOR,
+      reject_ratio: 0.9,
+      reject_source: "policy",
+    })!;
+    expect(d.reject).toEqual({
+      kind: "present",
+      value: "90% swap used",
+      source: "policy",
+      sourceLabel: "policy",
+    });
+  });
+
+  it("degrades an unrecognized ratio verdict to unknown, not to the softer arm", () => {
+    const d = describePressureFloor({
+      ...SWAP_FLOOR,
+      verdict: "defers" as unknown as EffectivePressureFloor["verdict"],
+    })!;
+    expect(d.verdict).toBe("unknown");
+    expect(d.verdictLabel).toMatch(/defers\)/);
+    expect(d.direction).toBe("");
+  });
+});
+
+describe("§C3 — a threshold nothing enforces must not inherit a verb", () => {
+  it("renders a null verdict as 'set, not enforced'", () => {
+    // `min_free_mem_bytes_wsl` ships, validates and versions with NO
+    // consumer. A tenant can set it, coord reports it, nothing acts on it.
+    // Showing it as though it acts is this task's own defect in miniature.
+    const d = describeFloor({ ...MEM_FLOOR, verdict: null })!;
+    expect(d.verdict).toBe("unset");
+    expect(d.verdictLabel).toBe("set, not enforced");
+    // No verb, and no direction word — there is no behaviour to describe.
+    expect(d.verdictLabel).not.toMatch(/defers|rejects/);
+    expect(d.direction).toBe("");
+    // The number itself is still shown: it IS configured, just inert.
+    expect(d.value).toBe("5.0 GB free commit");
+  });
+
+  it("does the same on the pressure axis", () => {
+    const d = describePressureFloor({ ...SWAP_FLOOR, verdict: null })!;
+    expect(d.verdict).toBe("unset");
+    expect(d.direction).toBe("");
+  });
+
+  it("keeps 'unset' distinct from 'unknown' — different causes, different fixes", () => {
+    const unset = describeFloor({ ...MEM_FLOOR, verdict: null })!;
+    const unknown = describeFloor({
+      ...MEM_FLOOR,
+      verdict: "defers" as unknown as EffectiveFloor["verdict"],
+    })!;
+    expect(unset.verdict).not.toBe(unknown.verdict);
+    expect(unset.verdictLabel).not.toBe(unknown.verdictLabel);
   });
 });
 

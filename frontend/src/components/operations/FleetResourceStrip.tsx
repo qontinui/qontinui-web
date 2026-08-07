@@ -80,6 +80,7 @@ import {
   buildMachineGroups,
   coupledWslHeadroomBytes,
   describeFloor,
+  describePressureFloor,
   formatAge,
   formatBytes,
   formatPercent,
@@ -101,7 +102,6 @@ import {
   STALE_AFTER_SECS,
 } from "./fleetResources";
 import type {
-  EffectiveFloor,
   FleetDeviceRef,
   FloorDetail,
   Headroom,
@@ -429,20 +429,71 @@ function PressureCell({ row }: { row: StripRow }) {
  */
 function FloorLine({
   label,
-  floor,
+  detail,
+  reported,
 }: {
   label: string;
-  floor: EffectiveFloor | null | undefined;
+  /** `describeFloor` / `describePressureFloor` output — already normalized. */
+  detail: FloorDetail | null;
+  /**
+   * Three-way, because the two absences are different claims: `"absent"` is
+   * an older coord that never mentioned this axis, `"null"` is coord saying
+   * no threshold governs it. Only the second is a fact about the fleet.
+   */
+  reported: "present" | "null" | "absent";
 }) {
-  const d = describeFloor(floor);
-  if (!d) {
+  if (reported === "absent") {
     return (
       <span
         className="text-[10px] text-muted-foreground italic"
         data-testid="fleet-resource-floor-missing"
       >
-        {label} floor not reported
+        {label} threshold not reported
       </span>
+    );
+  }
+  // ORDER MATTERS: an explicit null must be answered before the
+  // undescribable-value fallback, or "coord says this axis has no guard"
+  // would print as "coord told us nothing" — collapsing the two claims the
+  // three-way split exists to keep apart.
+  if (reported === "null") {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            className="text-[10px] text-muted-foreground underline decoration-dotted"
+            data-testid="fleet-resource-floor-none"
+          >
+            no {label} threshold
+          </span>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-[20rem] text-[11px]">
+          coord reports no guard on this axis for this lane. Not the same as
+          unmeasured — and not the same as unguarded overall, since the other
+          axis may still carry one.
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+  if (!detail) {
+    // Reported, but this build cannot read the value (out of range, corrupt).
+    // Distinct from both absences: something IS there and we cannot use it.
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            className="text-[10px] text-muted-foreground italic underline decoration-dotted"
+            data-testid="fleet-resource-floor-unreadable"
+          >
+            {label} threshold unreadable
+          </span>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-[20rem] text-[11px]">
+          coord reported a threshold on this axis whose value this build cannot
+          interpret. Treat the lane as guarded by an unknown rule, not as
+          unguarded.
+        </TooltipContent>
+      </Tooltip>
     );
   }
   return (
@@ -451,45 +502,60 @@ function FloorLine({
       data-testid="fleet-resource-floor"
     >
       <span className="text-muted-foreground">{label}</span>
-      <span className="tabular-nums">{d.value}</span>
       <Tooltip>
         <TooltipTrigger asChild>
           <Badge
             variant={
-              d.verdict === "reject"
+              detail.verdict === "reject"
                 ? "destructive"
-                : d.verdict === "defer"
+                : detail.verdict === "defer"
                   ? "secondary"
                   : "outline"
             }
             className="text-[9px] px-1 py-0"
           >
-            {d.verdictLabel}
+            {detail.verdictLabel}
           </Badge>
         </TooltipTrigger>
         <TooltipContent className="max-w-[20rem] text-[11px]">
-          {d.verdict === "unknown"
-            ? "This build does not recognize what coord says happens at this floor. It may refuse work outright — do not read it as a delay."
-            : FLOOR_VERDICT_HINT[d.verdict]}
+          {detail.verdict === "unset"
+            ? "coord reports this threshold but nothing enforces it — a control that validates and versions with no consumer. It is a number somebody set, not a rule anything acts on."
+            : detail.verdict === "unknown"
+              ? "This build does not recognize what coord says happens at this threshold. It may refuse work outright — do not read it as a delay."
+              : FLOOR_VERDICT_HINT[detail.verdict]}
         </TooltipContent>
       </Tooltip>
+      {/* The direction word is load-bearing: a byte floor is crossed going
+          DOWN and a pressure ceiling going UP, so one preposition cannot
+          serve both without inverting the meaning for the reader. */}
+      {detail.direction && (
+        <span className="text-muted-foreground">{detail.direction}</span>
+      )}
+      <span className="tabular-nums">{detail.value}</span>
       <Tooltip>
         <TooltipTrigger asChild>
           <Badge variant="outline" className="text-[9px] px-1 py-0">
-            {d.sourceLabel}
+            {detail.sourceLabel}
           </Badge>
         </TooltipTrigger>
         <TooltipContent className="max-w-[20rem] text-[11px]">
-          {d.source === "policy"
+          {detail.source === "policy"
             ? "Set for this tenant in the fleet runtime policy — an operator chose this number."
-            : d.source === "default"
+            : detail.source === "default"
               ? "coord's built-in default — no tenant policy overrides it."
               : "coord reported a provenance this build does not recognize. Whether anybody configured this number is unknown."}
         </TooltipContent>
       </Tooltip>
-      <RejectClause detail={d} />
+      <RejectClause detail={detail} />
     </span>
   );
+}
+
+/** Which of the three states a wire field is in, without collapsing two. */
+function reportedState(value: unknown): "present" | "null" | "absent" {
+  if (value === undefined) return "absent";
+  if (value === null) return "null";
+  return "present";
 }
 
 /**
@@ -546,11 +612,15 @@ function RejectClause({ detail }: { detail: FloorDetail }) {
           </Badge>
         </TooltipTrigger>
         <TooltipContent className="max-w-[20rem] text-[11px]">
-          {FLOOR_VERDICT_HINT.reject} This threshold sits below the one on the
-          left on purpose: the deferring guard trips first, so a recoverable
-          wait does not become a failed build.
+          {FLOOR_VERDICT_HINT.reject} It is set past the one on the left on
+          purpose — lower on a byte floor, higher on a pressure ceiling — so the
+          deferring guard trips first and a recoverable wait does not become a
+          failed build.
         </TooltipContent>
       </Tooltip>
+      {detail.direction && (
+        <span className="text-muted-foreground">{detail.direction}</span>
+      )}
       <span className="tabular-nums">{detail.reject.value}</span>
       <Badge variant="outline" className="text-[9px] px-1 py-0">
         {detail.reject.sourceLabel}
@@ -637,11 +707,41 @@ function AdmissionCell({ row, tone }: { row: StripRow; tone: RowTone }) {
       {row.freshness !== "unknown" && (
         <>
           <Aged freshness={row.freshness}>
-            <FloorLine label="mem" floor={row.sample?.floor} />
+            <FloorLine
+              label="mem"
+              detail={describeFloor(row.sample?.floor)}
+              reported={reportedState(row.sample?.floor)}
+            />
           </Aged>
           <Aged freshness={row.freshness}>
-            <FloorLine label="disk" floor={row.sample?.disk_floor} />
+            <FloorLine
+              label="disk"
+              detail={describeFloor(row.sample?.disk_floor)}
+              reported={reportedState(row.sample?.disk_floor)}
+            />
           </Aged>
+          {/* The pressure axis. On the Linux lanes this is the ONLY guard —
+              `ci_node` reads free commit and nothing floors mem_available —
+              so omitting it would render a WSL row at swap 0.6 as "no guard
+              acting" while the dispatcher had already stepped back.
+
+              Suppressed on a lane that shows no swap figure UNLESS coord
+              actually asserts a threshold there. §C1 forbids a swap word on
+              a Windows host row because swap is the commit counters printed
+              twice — and "no swap threshold" on a lane that has no swap axis
+              is noise, not disclosure. A real reported ceiling still prints:
+              withholding a rule the dispatcher enforces is the inversion this
+              column exists to prevent, and it outranks the tidiness rule. */}
+          {(laneShowsSwap(row.lane ?? "") ||
+            row.sample?.pressure_floor != null) && (
+            <Aged freshness={row.freshness}>
+              <FloorLine
+                label="swap"
+                detail={describePressureFloor(row.sample?.pressure_floor)}
+                reported={reportedState(row.sample?.pressure_floor)}
+              />
+            </Aged>
+          )}
         </>
       )}
     </span>
@@ -822,6 +922,17 @@ function FloorsLegend({
           </Badge>
           coord&apos;s built-in fallback.
         </li>
+        <li data-testid="fleet-resource-axes">
+          Thresholds live on two axes and run in <em>opposite</em> directions: a{" "}
+          <strong>byte floor</strong> (mem, disk) is crossed going <em>down</em>
+          , a <strong>pressure ceiling</strong> (swap) going <em>up</em>. A
+          Windows <code>host</code> row currently carries byte floors and no
+          swap ceiling; a Linux lane carries the swap ceiling and no memory
+          floor, because nothing in the fleet floors <code>mem_available</code>.
+          Both absent on one axis means genuinely unguarded there — which is not
+          the same as unmeasured, and is why &quot;no threshold&quot; and
+          &quot;not reported&quot; are worded differently.
+        </li>
         <li data-testid="fleet-resource-warn-margin">
           A lane reads <strong>work waits</strong> from{" "}
           <span className="tabular-nums">{formatWarnMargin(warnMargin)}</span>{" "}
@@ -932,7 +1043,12 @@ export function FleetResourceStrip({
           if (
             r.freshness !== "unknown" &&
             r.sample != null &&
-            (r.sample.floor == null || r.sample.disk_floor == null)
+            (r.sample.floor === undefined ||
+              r.sample.disk_floor === undefined ||
+              // Only on a lane that HAS a pressure axis — a Windows host row
+              // saying nothing about swap is correct, not a reporting gap.
+              (laneShowsSwap(r.lane ?? "") &&
+                r.sample.pressure_floor === undefined))
           ) {
             missing += 1;
           }

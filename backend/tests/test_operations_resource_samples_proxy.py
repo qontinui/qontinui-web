@@ -139,6 +139,7 @@ SAMPLE_ROW = {
         "source": "default",
         "verdict": "reject",
     },
+    "pressure_floor": None,
     "headroom": "warn",
 }
 
@@ -297,6 +298,61 @@ class TestResourceSamplesProxy:
         # `null` survives as null — not dropped, and not replaced by `bytes`.
         assert row["disk_floor"]["reject_bytes"] is None
         assert row["disk_floor"]["reject_source"] is None
+
+    def test_forwards_the_pressure_axis_and_a_null_verdict(
+        self, auth_client: TestClient
+    ):
+        """The ratio-axis threshold and the unenforced-threshold marker.
+
+        Two things the browser cannot reconstruct if this hop edits them:
+
+        * ``pressure_floor`` is the ONLY guard on the Linux lanes —
+          nothing in the fleet floors ``mem_available_bytes``, so those
+          rows carry ``floor: null`` and a swap-ratio ceiling. Dropping
+          it would render a lane under an active guard as unguarded.
+        * ``verdict: null`` means coord reports a threshold that nothing
+          enforces. Coercing it to a verb would show an operator a rule
+          where there is only a number.
+        """
+        wsl_row = {
+            **SAMPLE_ROW,
+            "lane": "wsl",
+            "floor": None,
+            "pressure_floor": {
+                "basis": "swap_ratio",
+                "ratio": 0.5,
+                "source": "default",
+                "verdict": "defer",
+                "reject_ratio": None,
+                "reject_source": None,
+            },
+            "disk_floor": {
+                "basis": "disk_free",
+                "bytes": 32_212_254_720,
+                "source": "policy",
+                # A §D1 control with no consumer.
+                "verdict": None,
+                "reject_bytes": None,
+                "reject_source": None,
+            },
+        }
+        with _patch_httpx() as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.get = AsyncMock(
+                return_value=_mock_response(200, {"latest": [wsl_row], "count": 1})
+            )
+            _configure_mock_client(MockClient, mock_instance)
+
+            resp = auth_client.get(ROUTE)
+
+        row = resp.json()["latest"][0]
+        # `null` survives as null — the lane has no BYTE floor, which is a
+        # fact about the fleet and not a reporting gap.
+        assert row["floor"] is None
+        assert row["pressure_floor"]["basis"] == "swap_ratio"
+        assert row["pressure_floor"]["ratio"] == 0.5
+        assert row["pressure_floor"]["verdict"] == "defer"
+        assert row["disk_floor"]["verdict"] is None
 
     def test_calls_the_coord_read_route(self, auth_client: TestClient):
         with _patch_httpx() as MockClient:

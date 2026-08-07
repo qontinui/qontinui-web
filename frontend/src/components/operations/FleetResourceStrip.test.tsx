@@ -66,6 +66,8 @@ function sample(overrides: Partial<ResourceSampleRow> = {}): ResourceSampleRow {
       reject_source: "policy",
     },
     headroom: "ok",
+    // Windows host lane: byte floors, no pressure ceiling.
+    pressure_floor: null,
     ...overrides,
   };
 }
@@ -81,6 +83,7 @@ function preFloorSample(
   const row = sample(overrides);
   delete row.floor;
   delete row.disk_floor;
+  delete row.pressure_floor;
   delete row.headroom;
   return row;
 }
@@ -366,11 +369,25 @@ describe("§C3 — the effective floor, as coord reports it", () => {
   it("says a floor is NOT REPORTED rather than implying the lane has none", () => {
     renderStrip({ latest: [preFloorSample()], history: [] });
     const missing = screen.getAllByTestId("fleet-resource-floor-missing");
-    // Both the memory floor and the disk floor.
+    // The memory floor and the disk floor. NOT the pressure ceiling: this is
+    // a host row, where §C1 keeps the swap axis off the row entirely.
     expect(missing).toHaveLength(2);
     expect(missing[0].textContent).toMatch(/not reported/i);
     expect(screen.queryByTestId("fleet-resource-floor")).toBeNull();
     // And the legend counts it rather than leaving the gap invisible.
+    expect(
+      screen.getByTestId("fleet-resource-floors-missing").textContent
+    ).toMatch(/reported no\s+floor/i);
+  });
+
+  it("reports all three axes as unreported on a lane that has all three", () => {
+    // The same older-coord payload on a Linux lane, where the pressure axis
+    // IS published — so its silence is a real gap and says so.
+    const legacy = preFloorSample({ lane: "wsl" });
+    renderStrip({ latest: [legacy], history: [] });
+    expect(screen.getAllByTestId("fleet-resource-floor-missing")).toHaveLength(
+      3
+    );
     expect(
       screen.getByTestId("fleet-resource-floors-missing").textContent
     ).toMatch(/reported no\s+floor/i);
@@ -392,6 +409,134 @@ describe("§C3 — the effective floor, as coord reports it", () => {
  * The defect this change fixes: the strip rendered its own opinion of red.
  * Every state below is coord's verdict, rendered verbatim.
  */
+describe("§C3 — the pressure axis is rendered where the byte floor is null", () => {
+  /** A Linux lane as coord now reports it: no byte floor, a swap ceiling. */
+  function wslRow(overrides = {}) {
+    return sample({
+      lane: "wsl",
+      swap_total_bytes: 8 * GIB,
+      swap_used_bytes: 5 * GIB,
+      commit_total_bytes: null,
+      commit_available_bytes: null,
+      pressure: { ratio: 0.6, basis: "swap" },
+      floor: null,
+      pressure_floor: {
+        basis: "swap_ratio",
+        ratio: 0.5,
+        source: "default",
+        verdict: "defer",
+        reject_ratio: null,
+        reject_source: null,
+      },
+      ...overrides,
+    });
+  }
+
+  it("shows the swap ceiling with the direction running the OTHER way", () => {
+    // A WSL row at swap 0.6 with a 0.5 defer ceiling: without this the row
+    // would read "no guard acting" while the dispatcher had already stepped
+    // back — the exact inversion this task removes.
+    renderStrip({ latest: [wslRow({ headroom: "warn" })], history: [] });
+    const admission = screen.getByTestId("fleet-resource-admission");
+    expect(admission.textContent).toMatch(/defers/);
+    expect(admission.textContent).toMatch(/at or above/);
+    expect(admission.textContent).toMatch(/50% swap used/);
+    // NOT the byte floor's preposition.
+    expect(admission.textContent).not.toMatch(/below\s*50%/);
+  });
+
+  it("says 'no mem threshold' on that lane rather than 'not reported'", () => {
+    // coord SAYS there is no byte floor here. That is a fact about the fleet;
+    // silence would not be.
+    renderStrip({ latest: [wslRow()], history: [] });
+    const none = screen.getAllByTestId("fleet-resource-floor-none");
+    expect(none.some((n) => /no mem threshold/.test(n.textContent ?? ""))).toBe(
+      true
+    );
+    // …and it is NOT counted as a coord that failed to report.
+    expect(screen.queryByTestId("fleet-resource-floors-missing")).toBeNull();
+  });
+
+  it("says NOTHING about swap on a Windows host row — §C1 outranks tidiness", () => {
+    // The host lane's guards are byte-based and its "swap" is the commit
+    // counters printed twice, so even the word is forbidden there. An empty
+    // pressure axis on that lane is correct, not a gap.
+    renderStrip({ latest: [sample()], history: [] });
+    const row = screen.getByTestId("fleet-resource-row");
+    expect(row.getAttribute("data-lane")).toBe("host");
+    expect(row.textContent).not.toMatch(/swap/i);
+    expect(screen.queryByTestId("fleet-resource-floors-missing")).toBeNull();
+  });
+
+  it("still prints a host-lane ceiling coord actually asserts", () => {
+    // A Linux `host` lane has a real swap device. Withholding a rule the
+    // dispatcher enforces would be the inversion this column exists to stop,
+    // so a REPORTED threshold prints even on a lane whose figures are hidden.
+    renderStrip({
+      latest: [
+        sample({
+          pressure_floor: {
+            basis: "swap_ratio",
+            ratio: 0.5,
+            source: "policy",
+            verdict: "reject",
+            reject_ratio: 0.5,
+            reject_source: "policy",
+          },
+        }),
+      ],
+      history: [],
+    });
+    const admission = screen.getByTestId("fleet-resource-admission");
+    expect(admission.textContent).toMatch(/at or above\s*50% swap used/);
+    expect(admission.textContent).toMatch(/rejects/);
+  });
+
+  it("keeps 'below' on the byte floor and 'at or above' on the ceiling, on one table", () => {
+    renderStrip({ latest: [sample(), wslRow()], history: [] });
+    const cells = screen.getAllByTestId("fleet-resource-admission");
+    const host = cells[0].textContent ?? "";
+    const wsl = cells[1].textContent ?? "";
+    expect(host).toMatch(/below\s*5\.0 GB free commit/);
+    expect(wsl).toMatch(/at or above\s*50% swap used/);
+  });
+
+  it("explains the two axes and what 'no threshold' means in the legend", () => {
+    renderStrip({ latest: [sample()], history: [] });
+    const axes = screen.getByTestId("fleet-resource-axes");
+    expect(axes.textContent).toMatch(/opposite/i);
+    expect(axes.textContent).toMatch(/unguarded/i);
+    expect(axes.textContent).toMatch(/not the same as unmeasured/i);
+  });
+});
+
+describe("§C3 — a threshold nothing enforces renders without a verb", () => {
+  it("shows 'set, not enforced' and no direction word", () => {
+    // min_free_mem_bytes_wsl: a shipped control with no consumer.
+    renderStrip({
+      latest: [
+        sample({
+          floor: {
+            basis: "mem_available",
+            bytes: 4 * GIB,
+            source: "policy",
+            verdict: null,
+            reject_bytes: null,
+            reject_source: null,
+          },
+        }),
+      ],
+      history: [],
+    });
+    const floor = screen.getAllByTestId("fleet-resource-floor")[0];
+    expect(floor.textContent).toMatch(/set, not enforced/);
+    expect(floor.textContent).toMatch(/4\.0 GB available memory/);
+    // The number is shown; the behaviour is not claimed.
+    expect(floor.textContent).not.toMatch(/defers|rejects/);
+    expect(floor.textContent).not.toMatch(/below|at or above/);
+  });
+});
+
 describe("§C3 — the row is coloured from `headroom`, never from the ratio", () => {
   it("renders breach as the strongest state", () => {
     renderStrip({

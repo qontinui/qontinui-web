@@ -3444,8 +3444,10 @@ async def get_fleet_resource_samples(
     Each ``ResourceSampleRow`` carries a **server-computed** ``pressure``
     (``{ratio, basis}``, or ``null`` for "no opinion"), ``age_secs``, and
     the admission fields ``floor`` / ``disk_floor``
-    (``{basis, bytes, source, verdict, reject_bytes, reject_source}``)
-    plus ``headroom`` (``ok | warn | breach | unknown``). All are passed
+    (``{basis, bytes, source, verdict, reject_bytes, reject_source}``),
+    ``pressure_floor``
+    (``{basis, ratio, source, verdict, reject_ratio, reject_source}``)
+    and ``headroom`` (``ok | warn | breach | unknown``). All are passed
     through untouched on purpose:
 
     * ``pressure`` is the ONE lane-pressure definition that coord's CI
@@ -3472,6 +3474,20 @@ async def get_fleet_resource_samples(
       means an older coord. The envelope's ``headroom_warn_margin``
       travels the same way — the client reads the amber margin off the
       response rather than naming one.
+    * ``pressure_floor`` is a threshold on the RATIO axis, not the byte
+      axis, and the two run in opposite directions: a byte floor is
+      crossed going down, a pressure ceiling going up. The Linux lanes
+      have no byte memory floor at all (nothing in the fleet floors
+      ``mem_available_bytes``) — their only guard is ``ci_node``'s
+      swap-ratio defer — so dropping this field would render a WSL row
+      under an active guard as unguarded. ``null`` on the Windows host
+      lane, whose guards are byte-based, is a fact about that lane and
+      is not the same as the field being absent.
+    * A ``verdict`` of ``null`` means a threshold coord reports and
+      NOTHING enforces (``min_free_mem_bytes_wsl`` is exactly that: a
+      §D1 control that validates and versions with no consumer). It must
+      reach the browser as null so it can render "set, not enforced"
+      instead of inheriting a verb it does not have.
 
     ``schema_pending: true`` means the sibling alembic migration
     (qontinui-web#949) has not reached coord's database yet — coord

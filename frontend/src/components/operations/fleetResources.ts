@@ -80,6 +80,20 @@ export type FloorBasis = "commit_available" | "mem_available" | "disk_free";
 export type FloorVerdict = "reject" | "defer";
 
 /**
+ * The axis a threshold lives on, because the two run in OPPOSITE directions
+ * and the copy has to say so.
+ *
+ * * `bytes` — a byte floor. **Lower is worse**: the guard acts *below* it.
+ * * `ratio` — a pressure ceiling. **Higher is worse**: the guard acts *at or
+ *   above* it.
+ *
+ * Rendering a ratio threshold with the byte threshold's "below" would invert
+ * the meaning for a reader, which is the same class of error as inverting it
+ * in the code.
+ */
+export type ThresholdAxis = "bytes" | "ratio";
+
+/**
  * A floor coord is actually enforcing for this lane, as reported per row.
  *
  * `source` distinguishes a tenant's configured value (§D1 policy) from the
@@ -90,7 +104,17 @@ export interface EffectiveFloor {
   basis: FloorBasis;
   bytes: number;
   source: "policy" | "default";
-  verdict: FloorVerdict;
+  /**
+   * What happens at this floor — or `null` for a threshold **nothing
+   * enforces**.
+   *
+   * `null` is real and shipped: `min_free_mem_bytes_wsl` is a §D1 control
+   * that validates and versions with no consumer, so a tenant can set a
+   * number coord will report and no guard will act on. It renders as "set,
+   * not enforced" and inherits no verb — showing an operator a threshold as
+   * though it acts is this task's own defect in miniature.
+   */
+  verdict: FloorVerdict | null;
   /**
    * The threshold of the **rejecting** enforcer on the same column, when one
    * exists.
@@ -108,6 +132,38 @@ export interface EffectiveFloor {
    */
   reject_bytes?: number | null;
   /** Provenance of `reject_bytes`, on the same terms as `source`. */
+  reject_source?: "policy" | "default" | null;
+}
+
+/** The quantity a pressure threshold is measured on. */
+export type PressureFloorBasis = "swap_ratio";
+
+/**
+ * A threshold expressed as a **ratio on the same axis `pressure` already
+ * carries** — not a byte floor.
+ *
+ * The `wsl` / `container` lanes turned out to have no byte floor at all:
+ * `ci_node` reads free commit, and nothing in the fleet floors
+ * `mem_available_bytes`. They are NOT unguarded, though — `ci_node` defers on
+ * `swap_used / swap_total >= 0.5`. A WSL row at swap 0.6 rendering "no guard
+ * acting" while the dispatcher steps back is the exact inversion this surface
+ * exists to remove, so the ratio guard is reported too.
+ *
+ * This is not the thing we refused to do. Projecting a *byte* floor onto a
+ * *ratio* axis would need a conversion nobody can compute, and the number
+ * would be fabricated. This threshold is natively a ratio on the exact
+ * quantity `pressure` carries for those lanes — same axis, no conversion.
+ *
+ * **Direction is inverted from `EffectiveFloor`**: higher is worse.
+ */
+export interface EffectivePressureFloor {
+  basis: PressureFloorBasis;
+  ratio: number;
+  source: "policy" | "default";
+  /** `null` = reported but unenforced, exactly as on `EffectiveFloor`. */
+  verdict: FloorVerdict | null;
+  /** The rejecting enforcer on the same axis; `null` = there is none. */
+  reject_ratio?: number | null;
   reject_source?: "policy" | "default" | null;
 }
 
@@ -177,6 +233,16 @@ export interface ResourceSampleRow {
   floor?: EffectiveFloor | null;
   /** The disk floor. Split from `floor` because memory frees and disk does not. */
   disk_floor?: EffectiveFloor | null;
+  /**
+   * The lane's threshold on the PRESSURE axis, when a guard reads that axis.
+   *
+   * Populated on the Linux lanes (`ci_node`'s swap-ratio defer) and `null` on
+   * the Windows `host` lane, whose guards are all byte-based and already
+   * covered by `floor` — currently the reverse of `floor`, which is null on
+   * the Linux lanes. Both being null is possible and means genuinely
+   * unguarded on both axes, which is NOT the same as unmeasured.
+   */
+  pressure_floor?: EffectivePressureFloor | null;
   /**
    * SERVER-decided admission state. The row's colour comes from THIS, not
    * from `pressure` — see the module header.
@@ -478,6 +544,31 @@ export function formatWarnMargin(margin: number | null | undefined): string {
     return "not reported";
   }
   return `x${margin}`;
+}
+
+export const PRESSURE_FLOOR_BASIS_LABEL: Record<PressureFloorBasis, string> = {
+  swap_ratio: "swap used",
+};
+
+/**
+ * `"50% swap used"` — a pressure threshold's value and the quantity it is
+ * measured on. A percentage, because that is the axis `pressure` itself is
+ * rendered on: the two must be directly comparable by eye or the threshold
+ * tells the operator nothing about the number beside it.
+ */
+export function formatPressureFloor(
+  floor: EffectivePressureFloor | null | undefined
+): string {
+  if (
+    !floor ||
+    !Number.isFinite(floor.ratio) ||
+    floor.ratio < 0 ||
+    floor.ratio > 1
+  ) {
+    return "unknown";
+  }
+  const basis = PRESSURE_FLOOR_BASIS_LABEL[floor.basis] ?? floor.basis;
+  return `${formatPercent(floor.ratio)} ${basis}`;
 }
 
 /** `"4.0 GB free commit"` — the floor's value and the column it is measured on. */
@@ -783,10 +874,24 @@ export function summarizeFleetAdmission(
 // Where coord reports no floor, the row says so — see `describeFloor`.
 
 export interface FloorDetail {
-  /** `"4.0 GB free commit"`. */
+  /** `"4.0 GB free commit"` or `"50% swap used"`. */
   value: string;
-  /** Normalized verdict, or `"unknown"` when this build does not know it. */
-  verdict: FloorVerdict | "unknown";
+  /** Which axis, so a reader knows which way "worse" runs. */
+  axis: ThresholdAxis;
+  /**
+   * The preposition that makes the direction right: `"below"` for a byte
+   * floor, `"at or above"` for a pressure ceiling. Empty when nothing
+   * enforces the threshold, since there is no behaviour to describe.
+   */
+  direction: string;
+  /**
+   * Normalized verdict.
+   *
+   * `"unset"` = coord reported `null`: a threshold nothing enforces.
+   * `"unknown"` = a value this build does not recognize (or an absent field).
+   * Neither inherits a verb.
+   */
+  verdict: FloorVerdict | "unset" | "unknown";
   /** What to print for the verdict — the label, or the raw string. */
   verdictLabel: string;
   /** Normalized provenance, or `"unknown"`. */
@@ -813,6 +918,30 @@ export interface FloorDetail {
     | { kind: "same" }
     | { kind: "none" }
     | { kind: "not-reported" };
+}
+
+/**
+ * Normalize a wire verdict.
+ *
+ * Three failure modes, three different words. `null` is a threshold coord
+ * reports and nothing acts on (`min_free_mem_bytes_wsl` is exactly this: a
+ * §D1 control that validates and versions with no consumer). An unrecognized
+ * string is a coord this build cannot read. Neither may borrow the verb of
+ * the milder arm — that is the defect this whole task removes, one field
+ * over.
+ */
+function normalizeVerdict(raw: unknown): {
+  verdict: FloorVerdict | "unset" | "unknown";
+  label: string;
+} {
+  if (raw === "reject" || raw === "defer") {
+    return { verdict: raw, label: FLOOR_VERDICT_LABEL[raw] };
+  }
+  if (raw === null) return { verdict: "unset", label: "set, not enforced" };
+  if (raw === undefined) {
+    return { verdict: "unknown", label: "verdict not reported" };
+  }
+  return { verdict: "unknown", label: `verdict unknown (${String(raw)})` };
 }
 
 function normalizeSource(raw: unknown): {
@@ -849,10 +978,7 @@ export function describeFloor(
   // A negative floor is not a small floor; it is a corrupt one, and
   // `Number.isFinite(-1)` would let it print as "-1.0 B free commit".
   if (!floor || !Number.isFinite(floor.bytes) || floor.bytes < 0) return null;
-  const verdict: FloorVerdict | "unknown" =
-    floor.verdict === "reject" || floor.verdict === "defer"
-      ? floor.verdict
-      : "unknown";
+  const v = normalizeVerdict(floor.verdict);
   const src = normalizeSource(floor.source);
 
   // Three-way, not two: `undefined` is "an older coord never mentioned a
@@ -867,7 +993,7 @@ export function describeFloor(
     floor.reject_bytes < 0
   ) {
     reject = { kind: "none" };
-  } else if (verdict === "reject" && floor.reject_bytes === floor.bytes) {
+  } else if (v.verdict === "reject" && floor.reject_bytes === floor.bytes) {
     // The one enforcer on this column already rejects, and the primary badge
     // says so. A second identical clause reads as two guards where there is
     // one — the same "corroboration from one instrument printed twice" the
@@ -885,11 +1011,71 @@ export function describeFloor(
 
   return {
     value: formatFloor(floor),
-    verdict,
-    verdictLabel:
-      verdict === "unknown"
-        ? `verdict unknown (${String(floor.verdict)})`
-        : FLOOR_VERDICT_LABEL[verdict],
+    axis: "bytes",
+    // Byte floors run downward: the guard acts BELOW the number.
+    direction: v.verdict === "unset" || v.verdict === "unknown" ? "" : "below",
+    verdict: v.verdict,
+    verdictLabel: v.label,
+    source: src.source,
+    sourceLabel: src.label,
+    reject,
+  };
+}
+
+/**
+ * The same description for a threshold on the PRESSURE axis.
+ *
+ * Identical rules — `null` vs absent, unrecognized enums degrading to an
+ * explicit unknown, a rejecting enforcer reported separately — with the
+ * direction **inverted**: this is a ceiling, so the guard acts *at or above*
+ * it, and the copy has to say that or it inverts the meaning for the reader.
+ */
+export function describePressureFloor(
+  floor: EffectivePressureFloor | null | undefined
+): FloorDetail | null {
+  // A ratio outside [0, 1] is not a threshold on this axis; `pressure` is
+  // normalized, so 1.2 would be unreachable and 110% unreadable.
+  if (
+    !floor ||
+    !Number.isFinite(floor.ratio) ||
+    floor.ratio < 0 ||
+    floor.ratio > 1
+  ) {
+    return null;
+  }
+  const v = normalizeVerdict(floor.verdict);
+  const src = normalizeSource(floor.source);
+
+  let reject: FloorDetail["reject"];
+  if (floor.reject_ratio === undefined) {
+    reject = { kind: "not-reported" };
+  } else if (
+    floor.reject_ratio === null ||
+    !Number.isFinite(floor.reject_ratio) ||
+    floor.reject_ratio < 0 ||
+    floor.reject_ratio > 1
+  ) {
+    reject = { kind: "none" };
+  } else if (v.verdict === "reject" && floor.reject_ratio === floor.ratio) {
+    reject = { kind: "same" };
+  } else {
+    const rsrc = normalizeSource(floor.reject_source);
+    reject = {
+      kind: "present",
+      value: formatPressureFloor({ ...floor, ratio: floor.reject_ratio }),
+      source: rsrc.source,
+      sourceLabel: rsrc.label,
+    };
+  }
+
+  return {
+    value: formatPressureFloor(floor),
+    axis: "ratio",
+    // A ceiling runs the other way: the guard acts AT OR ABOVE the number.
+    direction:
+      v.verdict === "unset" || v.verdict === "unknown" ? "" : "at or above",
+    verdict: v.verdict,
+    verdictLabel: v.label,
     source: src.source,
     sourceLabel: src.label,
     reject,
