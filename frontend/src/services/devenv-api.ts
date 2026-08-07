@@ -108,6 +108,91 @@ export interface MachineUpdate {
 }
 
 // ---------------------------------------------------------------------------
+// CI-node configuration (per machine)
+//
+// Mirrors the runner's Rust `CiNodeSettings`
+// (qontinui-runner/src-tauri/src/settings.rs). THAT STRUCT IS THE AUTHORITY
+// for the shape; this is the editor's view of it. When it gains a field, add
+// it here and to the backend's `CiNodeConfig` in the same PR.
+// ---------------------------------------------------------------------------
+
+/** The four `CiNodeSettings` fields. */
+export interface CiNodeConfig {
+  /** Master opt-in. Enabling lets coord run repo-declared commands here. */
+  enabled: boolean;
+  /** Concurrent CI builds this device admits (and advertises as its budget). */
+  max_concurrent_builds: number;
+  /**
+   * Repos this device may build. Empty means NOTHING is runnable even when
+   * `enabled` — allowlisting is a deliberate act. There is deliberately no
+   * wildcard entry; the server rejects one.
+   */
+  repo_allowlist: string[];
+  /** Free disk (GiB) required on the runner's volume to START a build. */
+  min_free_disk_gb: number;
+}
+
+/**
+ * How reachable the paired coord device is, as far as coord will say.
+ *
+ * `unknown` is NOT a synonym for `offline`: "we could not ask coord" and "the
+ * device is not connected" are different claims and the UI must not merge them.
+ */
+export type CiNodeReachability = "unlinked" | "offline" | "online" | "unknown";
+
+/**
+ * A machine's DESIRED CI-node config plus how far it has travelled.
+ *
+ * qontinui.io has NO read-back channel for the runner's settings file, and the
+ * runner sends no acknowledgement for settings. So `requested` is what was
+ * asked for, `dispatched_at` is when coord accepted it for delivery, and
+ * neither is evidence that the runner applied it. Render them as such.
+ */
+export interface CiNodeConfigState {
+  machine_id: string;
+  coord_device_id: string | null;
+  requested: CiNodeConfig;
+  /** False when this surface has never saved a config for the machine. */
+  configured: boolean;
+  requested_at: string | null;
+  /** When coord last ACCEPTED the directive. Handed off, never confirmed. */
+  dispatched_at: string | null;
+  reachability: CiNodeReachability;
+  /** Outcome of THIS request's dispatch; null on a read (nothing attempted). */
+  dispatched: boolean | null;
+  dispatch_detail: string | null;
+}
+
+/**
+ * The runner's OWN defaults, copied from its `Default for CiNodeSettings`.
+ * A machine nobody has configured must render as the posture the runner
+ * actually ships with — off, with an empty allowlist — never a friendlier one.
+ */
+export const CI_NODE_DEFAULTS: CiNodeConfig = {
+  enabled: false,
+  max_concurrent_builds: 1,
+  repo_allowlist: [],
+  min_free_disk_gb: 20,
+};
+
+export function getCiNodeConfig(machineId: string): Promise<CiNodeConfigState> {
+  return request<CiNodeConfigState>(
+    `/machines/${encodeURIComponent(machineId)}/ci-node`
+  );
+}
+
+/** Save the desired config AND ask coord to deliver it to the paired runner. */
+export function setCiNodeConfig(
+  machineId: string,
+  config: CiNodeConfig
+): Promise<CiNodeConfigState> {
+  return request<CiNodeConfigState>(
+    `/machines/${encodeURIComponent(machineId)}/ci-node`,
+    { method: "PUT", body: JSON.stringify(config) }
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Environments
 // ---------------------------------------------------------------------------
 
