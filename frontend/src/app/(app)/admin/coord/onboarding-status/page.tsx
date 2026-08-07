@@ -11,8 +11,10 @@
  *    `installation_id` to the web-backend proxy at
  *    `POST /api/v1/operations/pr-merge/onboarding/claim`, which forwards to
  *    coord's `POST /coord/onboarding/github-accounts/claim` (coord PR #901).
- *    Coord exchanges the code, verifies the operator administers the org,
- *    binds the GitHub account to their tenant, and enrolls its repos. We show
+ *    Coord exchanges the code, verifies the operator can REACH the org's
+ *    installation (their own `/user/installations` lists it — MEMBERSHIP, not
+ *    org-admin AUTHORITY; plan `2026-08-01-onboarding-bind-requires-org-admin`,
+ *    F8), binds the GitHub account to their tenant, and enrolls its repos. We show
  *    a claiming → success / error state, then render {@link OnboardingDoctor}
  *    so the operator can watch the newly-enrolled repos go green.
  *
@@ -118,9 +120,15 @@ function messageForClaimError(status: number, body: unknown): string {
           "— sign in to that workspace, or start the connect again from here."
         );
       }
+      // Deliberately says "can't reach" rather than "you're not an admin":
+      // coord's gate checks whether your own `/user/installations` lists the
+      // installation, which is reachability/membership, not authority. The
+      // weaker wording also presupposes nothing about the installation
+      // existing, matching coord's own 403 text.
       return (
-        "You don't administer this GitHub installation — only the org " +
-        "owner/admin who installed the app can complete onboarding."
+        "Your GitHub account can't reach this installation — check you're " +
+        "signed in to GitHub as a user with access to that organization, and " +
+        "that the app is installed there."
       );
     case 409:
       return "This GitHub account is already connected to a different Qontinui tenant.";
