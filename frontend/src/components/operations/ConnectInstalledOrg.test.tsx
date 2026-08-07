@@ -134,7 +134,7 @@ describe("<ConnectInstalledOrg> authorize CTA", () => {
 
   it("mints with flow=connect AND the entered org as the target", async () => {
     // This is the one initiation site where the target is known before the
-    // GitHub hop — the user typed it and `LOGIN_RE` validated it — so the token
+    // GitHub hop — the user typed it and `isValidLogin` validated it — so the token
     // is bound to that org rather than authorising a claim of any org the
     // caller happens to administer.
     stubFetch(jsonResponse({ connect_state: TOKEN }));
@@ -150,6 +150,51 @@ describe("<ConnectInstalledOrg> authorize CTA", () => {
 
     await waitFor(() => expect(assign).toHaveBeenCalledTimes(1));
     expect(mintBody()).toEqual({ flow: "connect", target_login: "acme-org" });
+  });
+
+  it("appends the runner return-nonce as wire-format slot 5 when supplied", async () => {
+    // P2 runner-native hand-off: `/connect-runner-github` threads the runner's
+    // return nonce down as a prop. This pins that `beginConnectState` actually
+    // receives it on the authorize path too, not just the install-button path.
+    stubFetch(jsonResponse({ connect_state: TOKEN }));
+    const runnerNonce = "b".repeat(64);
+    render(<ConnectInstalledOrg flow="runner-clone" runnerState={runnerNonce} />);
+
+    await userEvent.type(
+      await screen.findByTestId("connect-installed-org-login"),
+      "acme-org"
+    );
+    await userEvent.click(
+      screen.getByTestId("connect-installed-org-authorize")
+    );
+
+    await waitFor(() => expect(assign).toHaveBeenCalledTimes(1));
+    const segments = (
+      new URL(assign.mock.calls[0][0] as string).searchParams.get("state") ??
+      ""
+    ).split("~");
+    expect(segments).toHaveLength(5);
+    expect(segments[4]).toBe(runnerNonce);
+  });
+
+  it("keeps the 4-field shape when no runner return-nonce is supplied", async () => {
+    stubFetch(jsonResponse({ connect_state: TOKEN }));
+    render(<ConnectInstalledOrg flow="connect" />);
+
+    await userEvent.type(
+      await screen.findByTestId("connect-installed-org-login"),
+      "acme-org"
+    );
+    await userEvent.click(
+      screen.getByTestId("connect-installed-org-authorize")
+    );
+
+    await waitFor(() => expect(assign).toHaveBeenCalledTimes(1));
+    const segments = (
+      new URL(assign.mock.calls[0][0] as string).searchParams.get("state") ??
+      ""
+    ).split("~");
+    expect(segments).toHaveLength(4);
   });
 
   it("surfaces a mint failure without navigating", async () => {
