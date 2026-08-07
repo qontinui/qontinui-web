@@ -23,6 +23,11 @@ vi.mock("@/services/service-factory", () => ({
   },
 }));
 
+let mockSearchParams = new URLSearchParams();
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => mockSearchParams,
+}));
+
 import ConnectRunnerGithubPage from "./page";
 
 // `test-token-` prefix is load-bearing, not cosmetic: a bare hex literal trips
@@ -53,6 +58,7 @@ function mintBody(): Record<string, unknown> {
 beforeEach(() => {
   fetchMock.mockReset();
   assign.mockReset();
+  mockSearchParams = new URLSearchParams();
   // The page also renders <ConnectInstalledOrg>, which probes coord's app
   // config on mount. Route by URL so that probe can't consume the mint stub.
   fetchMock.mockImplementation((url: string) => {
@@ -105,5 +111,40 @@ describe("/connect-runner-github install CTA", () => {
     await waitFor(() => expect(assign).toHaveBeenCalledTimes(1));
 
     expect(mintBody()).toEqual({ flow: "runner-clone" });
+  });
+});
+
+describe("/connect-runner-github P2 runner-native hand-off (?state=<nonce>)", () => {
+  const RUNNER_NONCE = "c".repeat(64);
+
+  it("threads a valid ?state= runner nonce into wire-format slot 5", async () => {
+    mockSearchParams = new URLSearchParams({ state: RUNNER_NONCE });
+    render(<ConnectRunnerGithubPage />);
+
+    await userEvent.click(screen.getByTestId("connect-runner-github-install"));
+    await waitFor(() => expect(assign).toHaveBeenCalledTimes(1));
+
+    const segments = (
+      new URL(assign.mock.calls[0][0] as string).searchParams.get("state") ??
+      ""
+    ).split("~");
+    expect(segments).toHaveLength(5);
+    expect(segments[4]).toBe(RUNNER_NONCE);
+  });
+
+  it("drops a ?state= value that isn't runner-minted hex, keeping the 4-field shape", async () => {
+    // Ingress guard: an arbitrary query value must never reach the wire format
+    // (and later the `qontinui://` deep link built from it).
+    mockSearchParams = new URLSearchParams({ state: "<script>not-hex</script>" });
+    render(<ConnectRunnerGithubPage />);
+
+    await userEvent.click(screen.getByTestId("connect-runner-github-install"));
+    await waitFor(() => expect(assign).toHaveBeenCalledTimes(1));
+
+    const segments = (
+      new URL(assign.mock.calls[0][0] as string).searchParams.get("state") ??
+      ""
+    ).split("~");
+    expect(segments).toHaveLength(4);
   });
 });

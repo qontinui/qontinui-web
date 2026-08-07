@@ -44,12 +44,20 @@ const ENROLL_POLL_MAX_ATTEMPTS = 20;
 
 // ----------------------------------------------------------------------------
 // Wire types — coord-owned contract (GET /coord/onboarding/github-accounts).
-// `repos` may be []; `rollout_state` / `profile_source` may be null.
+// `repos` may be []; `merge_enabled` / `profile_source` may be null.
 // ----------------------------------------------------------------------------
 
 interface AccountRepo {
   repo: string;
-  rollout_state: string | null;
+  /**
+   * The RAW per-repo enablement pin: `true`/`false` = explicitly pinned,
+   * `null` = inheriting the enabled default. NOT the resolved verdict — the
+   * tenant-wide `merge_paused` pause dominates it and is not folded in here.
+   * Replaced `rollout_state` when plan
+   * `2026-07-29-retire-merge-rollout-tristate-and-fix-the-dead-kill-switch`
+   * Phase 5 dropped that column.
+   */
+  merge_enabled: boolean | null;
   profile_source: string | null;
 }
 
@@ -237,21 +245,18 @@ function AccountRow({
               >
                 {r.repo}
               </Link>
-              {/* LEGACY — no longer maintained. `rollout_state` is the
-                  tri-state retired by plan
-                  `2026-07-29-retire-merge-rollout-tristate-and-fix-the-dead-kill-switch`;
-                  after its Phase 2-4 nothing writes the column except the
-                  clear-to-inherit path, so this badge freezes at whatever the
-                  repo was enrolled with. Kept only as a provenance hint on an
-                  onboarding list, never as merge posture — Merge settings owns
-                  that. Phase 5 drops the column and this badge. */}
-              {r.rollout_state && (
+              {/* The RAW per-repo pin, shown ONLY when one is set. An
+                  inheriting repo (`null`) renders no badge, which is the
+                  common case and the correct one: this is an onboarding list,
+                  not a merge-posture view, and the resolved verdict needs the
+                  tenant-wide pause folded in — Merge settings owns that. */}
+              {r.merge_enabled !== null && r.merge_enabled !== undefined && (
                 <Badge
-                  variant="secondary"
+                  variant={r.merge_enabled ? "secondary" : "destructive"}
                   className="text-[10px]"
-                  title="Legacy enrollment state — not current merge posture. See Merge settings."
+                  title="Explicit per-repo pin — not the resolved merge posture (a tenant-wide pause overrides it). See Merge settings."
                 >
-                  {r.rollout_state}
+                  {r.merge_enabled ? "merge pinned on" : "merge pinned off"}
                 </Badge>
               )}
             </li>

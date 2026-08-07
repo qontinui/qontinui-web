@@ -769,9 +769,7 @@ describe("<MergeOrchestrationSettings> SLO per-repo merge-enabled control", () =
       post_merge_verification_lag_p95_seconds: null,
       author_feedback_latency_p95_seconds: null,
       operator_override_rate: null,
-      shadow_vs_live_agreement_rate: null,
       total_decisions: 0,
-      shadow_decisions: 0,
     };
   }
 
@@ -795,8 +793,6 @@ describe("<MergeOrchestrationSettings> SLO per-repo merge-enabled control", () =
         repos: [
           {
             repo: REPO,
-            // coord still serves the legacy tri-state; nothing renders it.
-            current_rollout_state: "dry_run",
             merge_enabled: resolved,
             merge_enabled_override: pin,
             windows: { last_7d: emptyWindow(), last_30d: emptyWindow() },
@@ -948,9 +944,7 @@ describe("<MergeOrchestrationSettings> pinned-ON repo under a tenant pause", () 
       post_merge_verification_lag_p95_seconds: null,
       author_feedback_latency_p95_seconds: null,
       operator_override_rate: null,
-      shadow_vs_live_agreement_rate: null,
       total_decisions: 0,
-      shadow_decisions: 0,
     };
   }
 
@@ -962,7 +956,6 @@ describe("<MergeOrchestrationSettings> pinned-ON repo under a tenant pause", () 
         repos: [
           {
             repo: REPO,
-            current_rollout_state: "live",
             merge_enabled: false,
             merge_enabled_override: true,
             windows: { last_7d: emptyWindow(), last_30d: emptyWindow() },

@@ -6,7 +6,7 @@
  * Renders the per-repo onboarding checklist from coord's onboarding-doctor
  * endpoint (proxied at `GET /api/v1/operations/pr-merge/onboarding/doctor`):
  * eight fixed checks (tenant_mapped / repo_enrolled / profile_present /
- * rollout_state / config_yaml / bootstrap_pr / ci_workflow / ruleset_bypass),
+ * merge_enabled / config_yaml / bootstrap_pr / ci_workflow / ruleset_bypass),
  * each `pass | warn | fail | skip`, plus a `ready_to_land` headline badge.
  *
  * This page is the GitHub App's post-install Setup URL target, so it

@@ -140,13 +140,36 @@ export interface FeatureRollout {
 }
 
 export interface AutoMergeRollout {
-  live: string[];
-  shadow: string[];
-  dry_run: string[];
+  /**
+   * The RESOLVED verdict per repo — coord buckets on `merge_permitted()`,
+   * i.e. `auto_merge_enabled && merge_enabled`, so `enabled` means "coord will
+   * actually auto-merge this repo" rather than merely "nothing pinned it off".
+   *
+   * Two buckets, not the former `live`/`shadow`/`dry_run` three: plan
+   * `2026-07-29-retire-merge-rollout-tristate-and-fix-the-dead-kill-switch`
+   * Phase 5 dropped the `rollout_state` column. `enabled` succeeds `live`;
+   * `disabled` absorbs both former off states.
+   *
+   * THREE levers can put a repo in `disabled`, and they are not equally
+   * visible: a per-repo `merge_enabled = false` pin, the dominant tenant-wide
+   * `merge_paused`, or the tenant never having set `auto_merge_enabled` (which
+   * defaults FALSE and therefore disables every repo at once). Read
+   * `RolloutOverview.auto_merge_enabled` to tell the third case apart.
+   */
+  enabled: string[];
+  disabled: string[];
 }
 
 export interface RolloutOverview {
   auto_merge: AutoMergeRollout;
+  /**
+   * The tenant's `auto_merge_enabled` opt-in — the second factor in the
+   * composed verdict `auto_merge` buckets on, surfaced separately so an
+   * all-`disabled` board has a visible cause. `null` = unknown (coord-down
+   * envelope, or no repo resolved) — deliberately not `false`, which would
+   * assert "has not opted in" as a fact during an outage.
+   */
+  auto_merge_enabled?: boolean | null;
   features: FeatureRollout[];
 }
 
