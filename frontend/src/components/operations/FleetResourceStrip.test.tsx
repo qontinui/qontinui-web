@@ -264,6 +264,15 @@ describe("§C3 — the effective floor, as coord reports it", () => {
     expect(admission.textContent).toMatch(/4\.0 GB free commit/);
   });
 
+  it("prints a self-rejecting floor once, not twice", () => {
+    renderStrip({ latest: [sample()], history: [] });
+    const admission = screen.getByTestId("fleet-resource-admission");
+    // The disk floor rejects at its own value; "30.0 GB free disk" appears
+    // exactly once, under one verdict badge.
+    const hits = admission.textContent?.match(/30\.0 GB free disk/g) ?? [];
+    expect(hits).toHaveLength(1);
+  });
+
   it("says 'no reject threshold' rather than falling back to the defer number", () => {
     renderStrip({
       latest: [

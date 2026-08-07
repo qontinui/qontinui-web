@@ -359,6 +359,12 @@ describe("§C3 — the effective floor, its provenance, and defer vs reject", ()
     });
   });
 
+  it("does not print the rejecting enforcer twice when it IS the floor", () => {
+    // The disk floor has one enforcer and it rejects. Repeating the same
+    // number under a second badge reads as two guards where there is one.
+    expect(describeFloor(DISK_FLOOR)!.reject).toEqual({ kind: "same" });
+  });
+
   it("keeps 'no rejecting enforcer' apart from 'nobody told us'", () => {
     // null: coord says nothing refuses work on this column.
     expect(describeFloor({ ...MEM_FLOOR, reject_bytes: null })!.reject).toEqual(

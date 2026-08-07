@@ -135,7 +135,11 @@ const TONE_ROW: Record<RowTone, string> = {
   ok: "border-l-2 border-l-green-500/60",
   warn: "border-l-2 border-l-yellow-500",
   critical: "border-l-2 border-l-red-500",
-  unknown: "border-l-2 border-l-muted-foreground/30",
+  // A neutral grey from the palette rather than `border-l-muted-foreground`:
+  // the theme-token guard reads the directional utility's token as
+  // `l-muted-foreground`, which the theme does not define. The tone dots in
+  // this file already use palette colours for the same reason.
+  unknown: "border-l-2 border-l-zinc-400/50",
 };
 
 const TONE_BADGE: Record<
@@ -502,6 +506,7 @@ function FloorLine({
  * render differently: only the first is a fact about the fleet.
  */
 function RejectClause({ detail }: { detail: FloorDetail }) {
+  if (detail.reject.kind === "same") return null;
   if (detail.reject.kind === "not-reported") {
     return (
       <span

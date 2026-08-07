@@ -809,6 +809,8 @@ export interface FloorDetail {
         source: "policy" | "default" | "unknown";
         sourceLabel: string;
       }
+    /** The rejecting enforcer IS this floor — printing it again says nothing. */
+    | { kind: "same" }
     | { kind: "none" }
     | { kind: "not-reported" };
 }
@@ -865,6 +867,12 @@ export function describeFloor(
     floor.reject_bytes < 0
   ) {
     reject = { kind: "none" };
+  } else if (verdict === "reject" && floor.reject_bytes === floor.bytes) {
+    // The one enforcer on this column already rejects, and the primary badge
+    // says so. A second identical clause reads as two guards where there is
+    // one — the same "corroboration from one instrument printed twice" the
+    // host-lane swap rule exists to prevent.
+    reject = { kind: "same" };
   } else {
     const rsrc = normalizeSource(floor.reject_source);
     reject = {
